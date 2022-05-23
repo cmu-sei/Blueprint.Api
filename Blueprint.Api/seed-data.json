@@ -1,0 +1,145 @@
+{
+  "Permissions": [
+    {
+      "Id": "2f82cb36-4c0a-4b60-857f-c4f2a9e70817",
+      "Key": "SystemAdmin",
+      "Value": "true",
+      "Description": "Has Full Rights.  Can do everything.",
+      "ReadOnly": true
+    }
+  ],
+  "Users": [
+    {
+      "Id": "9fd3c38e-58b0-4af1-80d1-1895af91f1f9",
+      "Name": "Admin"
+    }
+  ],
+  "UserPermissions": [
+    {
+      "UserId": "9fd3c38e-58b0-4af1-80d1-1895af91f1f9",
+      "PermissionId": "2f82cb36-4c0a-4b60-857f-c4f2a9e70817"
+    }
+  ],
+  "Teams": [
+    {
+      "Id": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8",
+      "Name": "Admin"
+    },
+    {
+      "Id": "afd3c38e-58b0-4af1-80d1-1895af91f1fa",
+      "Name": "Not Used"
+    }
+  ],
+  "TeamUsers": [
+    {
+      "TeamId": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8",
+      "UserId": "9fd3c38e-58b0-4af1-80d1-1895af91f1f9"
+    }
+  ],
+  "Msels": [
+    {
+      "Id": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Description": "Standard MSEL",
+      "Status": 20,
+      "IsTemplate": true
+    }
+  ],
+  "ScenarioEvents": [
+    {
+      "Id": "45453b75-92f4-4568-8a21-c1adf8a639eb",
+      "MoveNumber": 1,
+      "ScenarioEventNumber": 1,
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31"
+    }
+  ],
+  "Moves": [
+    {
+      "Id": "bb6dbeb0-c441-4b54-8e91-3716e3404e42",
+      "Description": "The fun begins",
+      "MoveNumber": 1,
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31"
+    }
+  ],
+  "DataFields": [
+    {
+      "Id": "aa8dbeb0-cccc-4b54-0001-3716e3404d31",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "ScenarioEvent",
+      "DataType": 10,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "aa8dbeb0-cccc-4b54-0002-3716e3404d31",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "Move",
+      "DataType": 10,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "aa8dbeb0-cccc-4b54-0005-3716e3404d31",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "Real Time",
+      "DataType": 50,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "aa8dbeb0-cccc-4b54-0006-3716e3404d31",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "Simulated Time",
+      "DataType": 50,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "aa8dbeb0-cccc-4b54-0003-3716e3404d31",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "Title",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "aa8dbeb0-cccc-4b54-0004-3716e3404d31",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "Description",
+      "DataType": 0,
+      "DisplayOrder": 6,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "aa8dbeb0-cccc-4b54-0007-3716e3404d31",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "To",
+      "DataType": 0,
+      "DisplayOrder": 7,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "aa8dbeb0-cccc-4b54-0008-3716e3404d31",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "From",
+      "DataType": 0,
+      "DisplayOrder": 8,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "aa8dbeb0-cccc-4b54-0009-3716e3404d31",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "Details",
+      "DataType": 0,
+      "DisplayOrder": 9,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "aa8dbeb0-cccc-4b54-0010-3716e3404d31",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "Expected Actions",
+      "DataType": 0,
+      "DisplayOrder": 10,
+      "IsChosenFromList": false
+    }
+  ]
+}

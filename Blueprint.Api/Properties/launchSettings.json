@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "Blueprint.Api": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "http://localhost:4724/api/index.html",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "http://localhost:4724/"
+    }
+  }
+}

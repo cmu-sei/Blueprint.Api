@@ -17,8 +17,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    [Migration("20220315144843_initial-migration")]
-    partial class initialmigration
+    [Migration("20220531155500_add-organizations")]
+    partial class addorganizations
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
@@ -276,6 +276,49 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.ToTable("msels");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.OrganizationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<DateTime?>("DateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_modified");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modified_by");
+
+                    b.Property<Guid>("MselId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("msel_id");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MselId");
+
+                    b.ToTable("organizations");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.PermissionEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -343,6 +386,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<DateTime?>("DateModified")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("date_modified");
+
+                    b.Property<string>("Group")
+                        .HasColumnType("text")
+                        .HasColumnName("group");
 
                     b.Property<Guid?>("ModifiedBy")
                         .HasColumnType("uuid")
@@ -610,6 +657,17 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasForeignKey("TeamId");
 
                     b.Navigation("Team");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.OrganizationEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
+                        .WithMany()
+                        .HasForeignKey("MselId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Msel");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventEntity", b =>

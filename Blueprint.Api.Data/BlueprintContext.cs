@@ -29,6 +29,7 @@ namespace Blueprint.Api.Data
         public DbSet<DataFieldEntity> DataFields { get; set; }
         public DbSet<DataOptionEntity> DataOptions { get; set; }
         public DbSet<DataValueEntity> DataValues { get; set; }
+        public DbSet<OrganizationEntity> Organizations { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

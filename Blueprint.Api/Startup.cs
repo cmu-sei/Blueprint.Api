@@ -146,6 +146,7 @@ namespace Blueprint.Api
             services.AddScoped<IMselService, MselService>();
             services.AddScoped<IGalleryService, GalleryService>();
             services.AddScoped<IMoveService, MoveService>();
+            services.AddScoped<IOrganizationService, OrganizationService>();
             services.AddScoped<IPermissionService, PermissionService>();
             services.AddScoped<ITeamService, TeamService>();
             services.AddScoped<ITeamUserService, TeamUserService>();

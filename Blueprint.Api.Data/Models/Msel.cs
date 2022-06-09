@@ -25,6 +25,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<MoveEntity> Moves { get; set; } = new HashSet<MoveEntity>();
         public virtual ICollection<DataFieldEntity> DataFields { get; set; } = new HashSet<DataFieldEntity>();
         public virtual ICollection<ScenarioEventEntity> ScenarioEvents { get; set; } = new HashSet<ScenarioEventEntity>();
+        public string HeaderRowMetadata { get; set; }
     }
 }
 

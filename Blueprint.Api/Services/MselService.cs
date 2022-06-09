@@ -214,15 +214,6 @@ namespace Blueprint.Api.Services
         {
             var uploadItem = form.ToUpload;
             var mselId = form.MselId != null ? (Guid)form.MselId : Guid.NewGuid();
-            // create the MSEL enitiy
-            var msel = new MselEntity() {
-                Id = mselId,
-                Description = uploadItem.FileName,
-                Status = ItemStatus.Pending,
-                TeamId = form.TeamId,
-                IsTemplate = false
-            };
-            await _context.Msels.AddAsync(msel, ct);
             using (SpreadsheetDocument doc = SpreadsheetDocument.Open(uploadItem.OpenReadStream(),false))
             {
                 //create the object for workbook part
@@ -240,8 +231,20 @@ namespace Blueprint.Api.Services
                 SheetData sheetData = (SheetData)worksheet.GetFirstChild<SheetData>();
                 var headerRow = sheetData.GetFirstChild<Row>();
                 var columns = worksheet.GetFirstChild<Columns>();
+                // create the MSEL enitiy
+                var msel = new MselEntity() {
+                    Id = mselId,
+                    Description = uploadItem.FileName,
+                    Status = ItemStatus.Pending,
+                    TeamId = form.TeamId,
+                    IsTemplate = false,
+                    HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : ""
+                };
+                await _context.Msels.AddAsync(msel, ct);
+                // create the data fields
                 var dataFields = CreateDataFields(mselId, headerRow, workbookPart, columns);
                 await _context.DataFields.AddRangeAsync(dataFields);
+                // create the sceanrio events and data values
                 sheetData.RemoveChild<Row>(headerRow);
                 await CreateScenarioEventsAsync(mselId, sheetData, workbookPart, dataFields);
             }
@@ -308,6 +311,7 @@ namespace Blueprint.Api.Services
                 .Where(n => n.MselId == mselId)
                 .OrderBy(n => n.MoveNumber)
                 .ThenBy(n => n.Time)
+                .ThenBy(n => n.RowIndex)
                 .ToListAsync(ct);
             var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
             // create the xlsx file in memory
@@ -318,9 +322,9 @@ namespace Blueprint.Api.Services
                 workbookPart.Workbook = new Workbook();
 
                 // add styles to sheet
-                Dictionary<string, int> uniqueColors = await GetUniqueColorsAsync(mselId, ct);
+                Dictionary<string, int> uniqueStyles = await GetUniqueStylesAsync(mselId, ct);
                 WorkbookStylesPart workbookStylesPart = workbookPart.AddNewPart<WorkbookStylesPart>();
-                workbookStylesPart.Stylesheet = CreateStylesheet(uniqueColors.OrderBy(uc => uc.Value).Select(uc => uc.Key).ToList());
+                workbookStylesPart.Stylesheet = CreateStylesheet(uniqueStyles.OrderBy(uc => uc.Value).Select(uc => uc.Key).ToList());
                 workbookStylesPart.Stylesheet.Save();
 
                 WorksheetPart worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
@@ -333,6 +337,11 @@ namespace Blueprint.Api.Services
                 sheets.Append(sheet);
 
                 Row headerRow = new Row();
+                if (msel.HeaderRowMetadata != "")
+                {
+                    headerRow.Height = double.Parse(msel.HeaderRowMetadata);
+                    headerRow.CustomHeight = true;
+                }
                 Columns columns = new Columns();
                 foreach (System.Data.DataColumn column in dataTable.Columns)
                 {
@@ -340,8 +349,7 @@ namespace Blueprint.Api.Services
                         .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
                         .FirstOrDefaultAsync();
                     var width = double.Parse(dataField.ColumnMetadata);
-                    var cellMetadata = dataField.CellMetadata.Split(",");
-                    var color = cellMetadata[0] + "," + cellMetadata[1];
+                    var cellMetadata = dataField.CellMetadata;
                     columns.Append(new Column() {
                         Min = (UInt32)(column.Ordinal + 1),
                         Max = (UInt32)(column.Ordinal + 1),
@@ -352,7 +360,7 @@ namespace Blueprint.Api.Services
                     Cell cell = new Cell();
                     cell.DataType = CellValues.String;
                     cell.CellValue = new CellValue(column.ColumnName);
-                    cell.StyleIndex = (UInt32)uniqueColors[color];
+                    cell.StyleIndex = (UInt32)uniqueStyles[cellMetadata];
                     headerRow.AppendChild(cell);
                 }
                 worksheetPart.Worksheet.InsertAt(columns, 0);
@@ -363,6 +371,11 @@ namespace Blueprint.Api.Services
                 {
                     DataRow dsrow = dataTable.Rows[i];
                     Row newRow = new Row();
+                    if (!String.IsNullOrEmpty(scenarioEventList[i].RowMetadata))
+                    {
+                        newRow.Height = double.Parse(scenarioEventList[i].RowMetadata);
+                        newRow.CustomHeight = true;
+                    }
                     foreach (System.Data.DataColumn column in dataTable.Columns)
                     {
                         Cell cell = new Cell();
@@ -374,9 +387,8 @@ namespace Blueprint.Api.Services
                         var dataValue = await _context.DataValues
                             .Where(dv => dv.ScenarioEventId == scenarioEventList[i].Id && dv.DataFieldId == dataField.Id)
                             .FirstOrDefaultAsync();
-                        var cellMetadata = dataValue.CellMetadata.Split(",");
-                        var color = cellMetadata[0] + "," + cellMetadata[1];
-                        cell.StyleIndex = (UInt32)uniqueColors[color];
+                        var cellMetadata = dataValue.CellMetadata;
+                        cell.StyleIndex = String.IsNullOrEmpty(cellMetadata) ? 0 : (UInt32)uniqueStyles[cellMetadata];
                         newRow.AppendChild(cell);
                     }
 
@@ -403,6 +415,7 @@ namespace Blueprint.Api.Services
                 .Where(n => n.MselId == mselId)
                 .OrderBy(n => n.MoveNumber)
                 .ThenBy(n => n.Time)
+                .ThenBy(n => n.RowIndex)
                 .ToListAsync(ct);
             // get the MSEL data into a DataTable
             var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
@@ -485,7 +498,7 @@ namespace Blueprint.Api.Services
                         DataType = DataFieldType.String,
                         DisplayOrder = displayOrder,
                         IsChosenFromList = false,
-                        CellMetadata = cellColor + "," + cellTint,
+                        CellMetadata = cellColor + "," + cellTint + ",bold",
                         ColumnMetadata = columnMetadata
                     };
                     dataFields.Add(dataField);
@@ -525,7 +538,9 @@ namespace Blueprint.Api.Services
                 var scenarioEventId = Guid.NewGuid();
                 var scenarioEvent = new ScenarioEventEntity() {
                     Id = scenarioEventId,
-                    MselId = mselId
+                    MselId = mselId,
+                    RowIndex = (int)dataRow.RowIndex.Value,
+                    RowMetadata = dataRow.Height != null ? dataRow.Height.Value.ToString() : ""
                 };
                 await _context.ScenarioEvents.AddAsync(scenarioEvent);
                 await CreateDataValuesAsync(scenarioEvent, dataRow, workbookPart, dataFields);
@@ -602,12 +617,13 @@ namespace Blueprint.Api.Services
                         }
                         cellTint = colorType.Tint == null ? 0.0 : colorType.Tint.Value;
                     }
+                    var fontWeight = dataField.DisplayOrder == 1 ? "bold" : "normal";
                     var dataValue = new DataValueEntity() {
                         Id = Guid.NewGuid(),
                         ScenarioEventId = scenarioEvent.Id,
                         DataFieldId = dataField.Id,
                         Value = currentcellvalue,
-                        CellMetadata = cellColor + "," + cellTint
+                        CellMetadata = cellColor + "," + cellTint + "," + fontWeight
                     };
                     await _context.DataValues.AddAsync(dataValue);
                     // set scenarioEvent move or scenarioEvent based on value
@@ -657,49 +673,40 @@ namespace Blueprint.Api.Services
             return dataTable;
         }
 
-        private async Task<Dictionary<string, int>> GetUniqueColorsAsync(Guid mselId, CancellationToken ct)
+        private async Task<Dictionary<string, int>> GetUniqueStylesAsync(Guid mselId, CancellationToken ct)
         {
-            var uniqueColors = new Dictionary<string, int>();
+            var uniqueStyles = new Dictionary<string, int>();
             var dataFields = await _context.DataFields
                 .Where(df => df.MselId == mselId)
                 .ToListAsync();
             var dataFieldColors = dataFields.Where(df => df.CellMetadata != null).DistinctBy(df => df.CellMetadata).Select(df => df.CellMetadata);
             var dataFieldIds = dataFields.Select(df => df.Id);
             var dataValueColors = await _context.DataValues
-                .Where(dv => dataFieldIds.Contains(dv.DataFieldId))
+                .Where(dv => dataFieldIds.Contains(dv.DataFieldId) && dv.CellMetadata != null)
                 .Select(dv => dv.CellMetadata)
                 .ToListAsync();
             var allColors = dataFieldColors.Union(dataValueColors);
             foreach (var color in allColors)
             {
-                uniqueColors[color] = uniqueColors.Count + 1;
+                uniqueStyles[color] = uniqueStyles.Count + 1;
             }
 
-            return uniqueColors;
+            return uniqueStyles;
         }
 
-        private Stylesheet CreateStylesheet(List<string> uniqueColors)
+        private Stylesheet CreateStylesheet(List<string> uniqueStyles)
         {
             Stylesheet stylesheet = new Stylesheet() { MCAttributes = new MarkupCompatibilityAttributes() { Ignorable = "x14ac" } };
             stylesheet.AddNamespaceDeclaration("mc", "http://schemas.openxmlformats.org/markup-compatibility/2006");
             stylesheet.AddNamespaceDeclaration("x14ac", "http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac");
 
-            Fonts fonts = new Fonts() { Count = (UInt32Value)1U, KnownFonts = true };
+            Fonts fonts = new Fonts();
 
             Font font = new Font();
-            FontSize fontSize = new FontSize() { Val = 11D };
-            Color color = new Color() { Theme = (UInt32Value)1U };
-            FontName fontName = new FontName() { Val = "Calibri" };
-            FontFamilyNumbering fontFamilyNumbering1 = new FontFamilyNumbering() { Val = 2 };
-            FontScheme fontScheme1 = new FontScheme() { Val = FontSchemeValues.Minor };
-
-            font.Append(fontSize);
-            font.Append(color);
-            font.Append(fontName);
-            font.Append(fontFamilyNumbering1);
-            font.Append(fontScheme1);
-
+            Font boldFont = new Font();
+            boldFont.Append(new Bold());
             fonts.Append(font);
+            fonts.Append(boldFont);
 
             Fills fills = new Fills() { Count = (UInt32Value)5U };
 
@@ -715,9 +722,9 @@ namespace Blueprint.Api.Services
             fill2.Append(patternFill2);
             fills.Append(fill2);
 
-            for (var i=0; i < uniqueColors.Count; i++)
+            for (var i=0; i < uniqueStyles.Count; i++)
             {
-                var colorAndTint = uniqueColors[i].Split(',');
+                var colorAndTint = uniqueStyles[i].Split(',');
                 Fill newFill = new Fill();
                 PatternFill patternFill = new PatternFill() { PatternType = PatternValues.Solid };
                 ForegroundColor foregroundColor = new ForegroundColor() { Rgb = colorAndTint[0], Tint = double.Parse(colorAndTint[1]) };
@@ -728,13 +735,18 @@ namespace Blueprint.Api.Services
                 fills.Append(newFill);
             }
 
+            // borders
             Borders borders = new Borders() { Count = (UInt32Value)1U };
             Border border = new Border();
-            LeftBorder leftBorder = new LeftBorder();
-            RightBorder rightBorder = new RightBorder();
-            TopBorder topBorder = new TopBorder();
-            BottomBorder bottomBorder = new BottomBorder();
-            DiagonalBorder diagonalBorder = new DiagonalBorder();
+            LeftBorder leftBorder = new LeftBorder(){ Style = BorderStyleValues.Thin };
+            leftBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
+            RightBorder rightBorder = new RightBorder(){ Style = BorderStyleValues.Thin };
+            rightBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
+            TopBorder topBorder = new TopBorder(){ Style = BorderStyleValues.Thin };
+            topBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
+            BottomBorder bottomBorder = new BottomBorder(){ Style = BorderStyleValues.Thin };
+            bottomBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
+            DiagonalBorder diagonalBorder = new DiagonalBorder(){ Style = BorderStyleValues.Thin };
             border.Append(leftBorder);
             border.Append(rightBorder);
             border.Append(topBorder);
@@ -750,9 +762,10 @@ namespace Blueprint.Api.Services
             CellFormats cellFormats = new CellFormats() { Count = (UInt32Value)4U };
             CellFormat cellFormat2 = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)0U, BorderId = (UInt32Value)0U, FormatId = (UInt32Value)0U };
             cellFormats.Append(cellFormat2);
-            for (UInt32 i=0; i < uniqueColors.Count; i++)
+            for (int i=0; i < uniqueStyles.Count; i++)
             {
-                CellFormat cellFormat = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)(i + 2), BorderId = (UInt32Value)0U, FormatId = (UInt32Value)0U, ApplyFill = true };
+                UInt32 fontId = uniqueStyles[i].Split(",")[2] == "bold" ? 1U : 0U;
+                CellFormat cellFormat = new CellFormat(new Alignment() { WrapText = true }) { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)fontId, FillId = (UInt32Value)((UInt32)i + 2), BorderId = (UInt32Value)0U, FormatId = (UInt32Value)0U, ApplyFill = true };
                 cellFormats.Append(cellFormat);
             }
 

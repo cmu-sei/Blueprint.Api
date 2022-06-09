@@ -15,8 +15,7 @@ namespace Blueprint.Api.Data.Models
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
         public int MoveNumber { get; set; }
-        public string Group { get; set; }
-        public int ScenarioEventNumber { get; set; }
+        public string Time { get; set; }
         public Guid MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
         public ItemStatus Status { get; set; }

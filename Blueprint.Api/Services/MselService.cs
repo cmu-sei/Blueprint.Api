@@ -214,26 +214,33 @@ namespace Blueprint.Api.Services
         {
             var uploadItem = form.ToUpload;
             var mselId = form.MselId != null ? (Guid)form.MselId : Guid.NewGuid();
+            // create the MSEL enitiy
+            var msel = new MselEntity() {
+                Id = mselId,
+                Description = uploadItem.FileName,
+                Status = ItemStatus.Pending,
+                TeamId = form.TeamId,
+                IsTemplate = false
+            };
+            await _context.Msels.AddAsync(msel, ct);
             using (SpreadsheetDocument doc = SpreadsheetDocument.Open(uploadItem.OpenReadStream(),false))
             {
                 //create the object for workbook part
                 WorkbookPart workbookPart = doc.WorkbookPart;
                 Sheets sheetCollection = workbookPart.Workbook.GetFirstChild<Sheets>();
 
+                // handle multiple sheets
+                // foreach (Sheet sheet in sheetCollection)
+                // {
+                //     Worksheet worksheet = ((WorksheetPart)workbookPart.GetPartById(sheet.Id)).Worksheet;
+                // }
+
                 //statement to get the worksheet object by using the sheet id
                 Worksheet worksheet = ((WorksheetPart)workbookPart.GetPartById(sheetCollection.GetFirstChild<Sheet>().Id)).Worksheet;
-
                 SheetData sheetData = (SheetData)worksheet.GetFirstChild<SheetData>();
-                var msel = new MselEntity() {
-                    Id = mselId,
-                    Description = uploadItem.FileName,
-                    Status = ItemStatus.Pending,
-                    TeamId = form.TeamId,
-                    IsTemplate = false
-                };
-                await _context.Msels.AddAsync(msel, ct);
                 var headerRow = sheetData.GetFirstChild<Row>();
-                var dataFields = CreateDataFields(mselId, headerRow, workbookPart);
+                var columns = worksheet.GetFirstChild<Columns>();
+                var dataFields = CreateDataFields(mselId, headerRow, workbookPart, columns);
                 await _context.DataFields.AddRangeAsync(dataFields);
                 sheetData.RemoveChild<Row>(headerRow);
                 await CreateScenarioEventsAsync(mselId, sheetData, workbookPart, dataFields);
@@ -278,7 +285,7 @@ namespace Blueprint.Api.Services
                 };
                 await _context.Msels.AddAsync(newMsel, ct);
                 var headerRow = sheetData.GetFirstChild<Row>();
-                var dataFields = CreateDataFields(mselId, headerRow, workbookPart);
+                var dataFields = CreateDataFields(mselId, headerRow, workbookPart, null);
                 await _context.DataFields.AddRangeAsync(dataFields);
                 sheetData.RemoveChild<Row>(headerRow);
                 await CreateScenarioEventsAsync(mselId, sheetData, workbookPart, dataFields);
@@ -297,13 +304,24 @@ namespace Blueprint.Api.Services
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
             // get the MSEL data into a DataTable
-            var dataTable = await GetMselDataAsync(mselId, ct);
+            var scenarioEventList = await _context.ScenarioEvents
+                .Where(n => n.MselId == mselId)
+                .OrderBy(n => n.MoveNumber)
+                .ThenBy(n => n.Time)
+                .ToListAsync(ct);
+            var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
             // create the xlsx file in memory
             MemoryStream memoryStream = new MemoryStream();
             using (SpreadsheetDocument document = SpreadsheetDocument.Create(memoryStream, SpreadsheetDocumentType.Workbook))
             {
                 WorkbookPart workbookPart = document.AddWorkbookPart();
                 workbookPart.Workbook = new Workbook();
+
+                // add styles to sheet
+                Dictionary<string, int> uniqueColors = await GetUniqueColorsAsync(mselId, ct);
+                WorkbookStylesPart workbookStylesPart = workbookPart.AddNewPart<WorkbookStylesPart>();
+                workbookStylesPart.Stylesheet = CreateStylesheet(uniqueColors.OrderBy(uc => uc.Value).Select(uc => uc.Key).ToList());
+                workbookStylesPart.Stylesheet.Save();
 
                 WorksheetPart worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
                 var sheetData = new SheetData();
@@ -315,28 +333,50 @@ namespace Blueprint.Api.Services
                 sheets.Append(sheet);
 
                 Row headerRow = new Row();
-
-                List<String> columns = new List<string>();
+                Columns columns = new Columns();
                 foreach (System.Data.DataColumn column in dataTable.Columns)
                 {
-                    columns.Add(column.ColumnName);
+                    var dataField = await _context.DataFields
+                        .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
+                        .FirstOrDefaultAsync();
+                    var width = double.Parse(dataField.ColumnMetadata);
+                    var cellMetadata = dataField.CellMetadata.Split(",");
+                    var color = cellMetadata[0] + "," + cellMetadata[1];
+                    columns.Append(new Column() {
+                        Min = (UInt32)(column.Ordinal + 1),
+                        Max = (UInt32)(column.Ordinal + 1),
+                        Width = width,
+                        CustomWidth = true
+                    });
 
                     Cell cell = new Cell();
                     cell.DataType = CellValues.String;
                     cell.CellValue = new CellValue(column.ColumnName);
+                    cell.StyleIndex = (UInt32)uniqueColors[color];
                     headerRow.AppendChild(cell);
                 }
+                worksheetPart.Worksheet.InsertAt(columns, 0);
 
                 sheetData.AppendChild(headerRow);
 
-                foreach (DataRow dsrow in dataTable.Rows)
+                for (var i=0; i < dataTable.Rows.Count; i++)
                 {
+                    DataRow dsrow = dataTable.Rows[i];
                     Row newRow = new Row();
-                    foreach (String col in columns)
+                    foreach (System.Data.DataColumn column in dataTable.Columns)
                     {
                         Cell cell = new Cell();
                         cell.DataType = CellValues.String;
-                        cell.CellValue = new CellValue(dsrow[col].ToString());
+                        cell.CellValue = new CellValue(dsrow[column.ColumnName].ToString());
+                        var dataField = await _context.DataFields
+                            .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
+                            .FirstOrDefaultAsync();
+                        var dataValue = await _context.DataValues
+                            .Where(dv => dv.ScenarioEventId == scenarioEventList[i].Id && dv.DataFieldId == dataField.Id)
+                            .FirstOrDefaultAsync();
+                        var cellMetadata = dataValue.CellMetadata.Split(",");
+                        var color = cellMetadata[0] + "," + cellMetadata[1];
+                        cell.StyleIndex = (UInt32)uniqueColors[color];
                         newRow.AppendChild(cell);
                     }
 
@@ -359,19 +399,23 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
+            var scenarioEventList = await _context.ScenarioEvents
+                .Where(n => n.MselId == mselId)
+                .OrderBy(n => n.MoveNumber)
+                .ThenBy(n => n.Time)
+                .ToListAsync(ct);
             // get the MSEL data into a DataTable
-            var dataTable = await GetMselDataAsync(mselId, ct);
+            var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
 
             return dataTable;
         }
 
-        private List<DataFieldEntity> CreateDataFields(Guid mselId, Row headerRow, WorkbookPart workbookPart)
+        private List<DataFieldEntity> CreateDataFields(Guid mselId, Row headerRow, WorkbookPart workbookPart, Columns columns)
         {
             var dataFields = new List<DataFieldEntity>();
             var displayOrder = 1;
             foreach (Cell thecurrentcell in headerRow)
             {
-                //statement to take the integer value
                 string currentcellvalue = string.Empty;
                 if (thecurrentcell.DataType != null)
                 {
@@ -402,13 +446,47 @@ namespace Blueprint.Api.Services
                 }
                 if (!string.IsNullOrEmpty(currentcellvalue))
                 {
+                    int cellStyleIndex;
+                    if (thecurrentcell.StyleIndex == null)
+                    {
+                        cellStyleIndex = 0;
+                    }
+                    else
+                    {
+                        cellStyleIndex = (int)thecurrentcell.StyleIndex.Value;
+                    }
+                    WorkbookStylesPart styles = (WorkbookStylesPart)workbookPart.WorkbookStylesPart;
+                    CellFormat cellFormat = (CellFormat)styles.Stylesheet.CellFormats.ChildElements[cellStyleIndex];
+                    Fill fill = (Fill)styles.Stylesheet.Fills.ChildElements[(int)cellFormat.FillId.Value];
+                    PatternFill patternFill = fill.PatternFill;
+                    var cellColor = "";
+                    double cellTint = 0.0;
+                    var pfType = patternFill.PatternType;
+                    var colorType = (ColorType)patternFill.ForegroundColor;
+                    if (colorType != null)
+                    {
+                        if (colorType.Rgb != null)
+                        {
+                            cellColor = colorType.Rgb.Value;
+                        }
+                        else if (colorType.Theme != null)
+                        {
+                            cellColor = ((DocumentFormat.OpenXml.Drawing.Color2Type)workbookPart.ThemePart.Theme.ThemeElements.ColorScheme.ChildElements[(int)colorType.Theme.Value]).RgbColorModelHex.Val;
+                        }
+                        cellTint = colorType.Tint == null ? 0.0 : colorType.Tint.Value;
+                    }
+                    var columnIndex = GetColumnIndex(thecurrentcell.CellReference.Value);
+                    var column = (Column)columns.ChildElements.FirstOrDefault(ce => columnIndex >= ((Column)ce).Min.Value && columnIndex<= ((Column)ce).Max.Value);
+                    var columnMetadata = column.Width == null ? "0.0" : column.Width.Value.ToString();
                     var dataField = new DataFieldEntity() {
                         Id = Guid.NewGuid(),
                         MselId = mselId,
                         Name = currentcellvalue,
                         DataType = DataFieldType.String,
                         DisplayOrder = displayOrder,
-                        IsChosenFromList = false
+                        IsChosenFromList = false,
+                        CellMetadata = cellColor + "," + cellTint,
+                        ColumnMetadata = columnMetadata
                     };
                     dataFields.Add(dataField);
                 }
@@ -417,6 +495,27 @@ namespace Blueprint.Api.Services
 
             return dataFields;
         }
+
+        private int GetColumnIndex(string columnRef)
+        {
+            if (string.IsNullOrEmpty(columnRef)) throw new ArgumentNullException("columnName");
+
+            columnRef = columnRef.ToUpperInvariant();
+
+            int columnIndex = 0;
+
+            for (int i = 0; i < columnRef.Length; i++)
+            {
+                if (columnRef[i] >= 'A' && columnRef[i] <= 'Z')
+                {
+                    columnIndex *= 26;
+                    columnIndex += (columnRef[i] - 'A' + 1);
+                }
+            }
+
+            return columnIndex;
+        }
+
 
         private async Task CreateScenarioEventsAsync(Guid mselId, SheetData dataRows, WorkbookPart workbookPart, List<DataFieldEntity> dataFields)
         {
@@ -471,33 +570,61 @@ namespace Blueprint.Api.Services
                     currentcellvalue = cell.InnerText;
                 }
                 var displayOrder = (int)cell.CellReference.Value[0] - 64;
-                var dataField = dataFields.First(df => df.MselId == scenarioEvent.MselId && df.DisplayOrder == displayOrder);
-                var dataValue = new DataValueEntity() {
-                    Id = Guid.NewGuid(),
-                    ScenarioEventId = scenarioEvent.Id,
-                    DataFieldId = dataField.Id,
-                    Value = currentcellvalue
-                };
-                await _context.DataValues.AddAsync(dataValue);
-                // set scenarioEvent move or scenarioEvent based on value
-                if (dataField.Name.ToLower() == "move")
+                var dataField = dataFields.FirstOrDefault(df => df.MselId == scenarioEvent.MselId && df.DisplayOrder == displayOrder);
+                if (dataField != null)
                 {
-                    int moveNumber = 0;
-                    scenarioEvent.MoveNumber = int.TryParse(currentcellvalue, out moveNumber) ? moveNumber : 0;
-                }
-                else if (dataField.Name.ToLower().Replace(" ", "") == "scenarioevent" || dataField.Name.ToLower() == "inject")
-                {
-                    int scenarioEventNumber = 0;
-                    scenarioEvent.ScenarioEventNumber = int.TryParse(currentcellvalue, out scenarioEventNumber) ? scenarioEventNumber : 0;
-                }
-                else if (dataField.Name.ToLower().Replace(" ", "") == "group")
-                {
-                    scenarioEvent.Group = currentcellvalue;
+                    int cellStyleIndex;
+                    if (cell.StyleIndex == null)
+                    {
+                        cellStyleIndex = 0;
+                    }
+                    else
+                    {
+                        cellStyleIndex = (int)cell.StyleIndex.Value;
+                    }
+                    WorkbookStylesPart styles = (WorkbookStylesPart)workbookPart.WorkbookStylesPart;
+                    CellFormat cellFormat = (CellFormat)styles.Stylesheet.CellFormats.ChildElements[cellStyleIndex];
+                    Fill fill = (Fill)styles.Stylesheet.Fills.ChildElements[(int)cellFormat.FillId.Value];
+                    PatternFill patternFill = fill.PatternFill;
+                    var cellColor = "";
+                    double cellTint = 0.0;
+                    var pfType = patternFill.PatternType;
+                    var colorType = (ColorType)patternFill.ForegroundColor;
+                    if (colorType != null)
+                    {
+                        if (colorType.Rgb != null)
+                        {
+                            cellColor = colorType.Rgb.Value;
+                        }
+                        else if (colorType.Theme != null)
+                        {
+                            cellColor = ((DocumentFormat.OpenXml.Drawing.Color2Type)workbookPart.ThemePart.Theme.ThemeElements.ColorScheme.ChildElements[(int)colorType.Theme.Value]).RgbColorModelHex.Val;
+                        }
+                        cellTint = colorType.Tint == null ? 0.0 : colorType.Tint.Value;
+                    }
+                    var dataValue = new DataValueEntity() {
+                        Id = Guid.NewGuid(),
+                        ScenarioEventId = scenarioEvent.Id,
+                        DataFieldId = dataField.Id,
+                        Value = currentcellvalue,
+                        CellMetadata = cellColor + "," + cellTint
+                    };
+                    await _context.DataValues.AddAsync(dataValue);
+                    // set scenarioEvent move or scenarioEvent based on value
+                    if (dataField.Name.ToLower() == "move")
+                    {
+                        int moveNumber = 0;
+                        scenarioEvent.MoveNumber = int.TryParse(currentcellvalue, out moveNumber) ? moveNumber : 0;
+                    }
+                    else if (dataField.Name.ToLower().Replace(" ", "") == "time")
+                    {
+                        scenarioEvent.Time = currentcellvalue;
+                    }
                 }
             }
         }
 
-        private async Task<DataTable> GetMselDataAsync(Guid mselId, CancellationToken ct)
+        private async Task<DataTable> GetMselDataAsync(Guid mselId, List<ScenarioEventEntity> scenarioEventList, CancellationToken ct)
         {
             // create data table to hold all of the scenarioEvent data
             DataTable dataTable = new DataTable();
@@ -506,18 +633,12 @@ namespace Blueprint.Api.Services
             var dataFieldList = await _context.DataFields
                 .Where(df => df.MselId == mselId)
                 .OrderBy(df => df.DisplayOrder)
-                .Select(df => new { DisplayOrder = df.DisplayOrder, Name = df.Name })
                 .ToListAsync(ct);
             foreach (var dataField in dataFieldList)
             {
                 dataTable.Columns.Add(dataField.Name);
             }
             // add a row for each scenarioEvent
-            var scenarioEventList = await _context.ScenarioEvents
-                .Where(n => n.MselId == mselId)
-                .OrderBy(n => n.MoveNumber)
-                .ThenBy(n => n.ScenarioEventNumber)
-                .ToListAsync(ct);
             foreach (var scenarioEvent in scenarioEventList)
             {
                 var dataRow = dataTable.NewRow();
@@ -534,6 +655,131 @@ namespace Blueprint.Api.Services
             }
 
             return dataTable;
+        }
+
+        private async Task<Dictionary<string, int>> GetUniqueColorsAsync(Guid mselId, CancellationToken ct)
+        {
+            var uniqueColors = new Dictionary<string, int>();
+            var dataFields = await _context.DataFields
+                .Where(df => df.MselId == mselId)
+                .ToListAsync();
+            var dataFieldColors = dataFields.Where(df => df.CellMetadata != null).DistinctBy(df => df.CellMetadata).Select(df => df.CellMetadata);
+            var dataFieldIds = dataFields.Select(df => df.Id);
+            var dataValueColors = await _context.DataValues
+                .Where(dv => dataFieldIds.Contains(dv.DataFieldId))
+                .Select(dv => dv.CellMetadata)
+                .ToListAsync();
+            var allColors = dataFieldColors.Union(dataValueColors);
+            foreach (var color in allColors)
+            {
+                uniqueColors[color] = uniqueColors.Count + 1;
+            }
+
+            return uniqueColors;
+        }
+
+        private Stylesheet CreateStylesheet(List<string> uniqueColors)
+        {
+            Stylesheet stylesheet = new Stylesheet() { MCAttributes = new MarkupCompatibilityAttributes() { Ignorable = "x14ac" } };
+            stylesheet.AddNamespaceDeclaration("mc", "http://schemas.openxmlformats.org/markup-compatibility/2006");
+            stylesheet.AddNamespaceDeclaration("x14ac", "http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac");
+
+            Fonts fonts = new Fonts() { Count = (UInt32Value)1U, KnownFonts = true };
+
+            Font font = new Font();
+            FontSize fontSize = new FontSize() { Val = 11D };
+            Color color = new Color() { Theme = (UInt32Value)1U };
+            FontName fontName = new FontName() { Val = "Calibri" };
+            FontFamilyNumbering fontFamilyNumbering1 = new FontFamilyNumbering() { Val = 2 };
+            FontScheme fontScheme1 = new FontScheme() { Val = FontSchemeValues.Minor };
+
+            font.Append(fontSize);
+            font.Append(color);
+            font.Append(fontName);
+            font.Append(fontFamilyNumbering1);
+            font.Append(fontScheme1);
+
+            fonts.Append(font);
+
+            Fills fills = new Fills() { Count = (UInt32Value)5U };
+
+            // FillId = 0
+            Fill fill1 = new Fill();
+            PatternFill patternFill1 = new PatternFill() { PatternType = PatternValues.None };
+            fill1.Append(patternFill1);
+            fills.Append(fill1);
+
+            // FillId = 1
+            Fill fill2 = new Fill();
+            PatternFill patternFill2 = new PatternFill() { PatternType = PatternValues.Gray125 };
+            fill2.Append(patternFill2);
+            fills.Append(fill2);
+
+            for (var i=0; i < uniqueColors.Count; i++)
+            {
+                var colorAndTint = uniqueColors[i].Split(',');
+                Fill newFill = new Fill();
+                PatternFill patternFill = new PatternFill() { PatternType = PatternValues.Solid };
+                ForegroundColor foregroundColor = new ForegroundColor() { Rgb = colorAndTint[0], Tint = double.Parse(colorAndTint[1]) };
+                BackgroundColor backgroundColor = new BackgroundColor() { Indexed = (UInt32Value)64U };
+                patternFill.Append(foregroundColor);
+                patternFill.Append(backgroundColor);
+                newFill.Append(patternFill);
+                fills.Append(newFill);
+            }
+
+            Borders borders = new Borders() { Count = (UInt32Value)1U };
+            Border border = new Border();
+            LeftBorder leftBorder = new LeftBorder();
+            RightBorder rightBorder = new RightBorder();
+            TopBorder topBorder = new TopBorder();
+            BottomBorder bottomBorder = new BottomBorder();
+            DiagonalBorder diagonalBorder = new DiagonalBorder();
+            border.Append(leftBorder);
+            border.Append(rightBorder);
+            border.Append(topBorder);
+            border.Append(bottomBorder);
+            border.Append(diagonalBorder);
+            borders.Append(border);
+
+            CellStyleFormats cellStyleFormats = new CellStyleFormats() { Count = (UInt32Value)1U };
+            CellFormat cellFormat1 = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)0U, BorderId = (UInt32Value)0U };
+
+            cellStyleFormats.Append(cellFormat1);
+
+            CellFormats cellFormats = new CellFormats() { Count = (UInt32Value)4U };
+            CellFormat cellFormat2 = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)0U, BorderId = (UInt32Value)0U, FormatId = (UInt32Value)0U };
+            cellFormats.Append(cellFormat2);
+            for (UInt32 i=0; i < uniqueColors.Count; i++)
+            {
+                CellFormat cellFormat = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)(i + 2), BorderId = (UInt32Value)0U, FormatId = (UInt32Value)0U, ApplyFill = true };
+                cellFormats.Append(cellFormat);
+            }
+
+            CellStyles cellStyles = new CellStyles() { Count = (UInt32Value)1U };
+            CellStyle cellStyle1 = new CellStyle() { Name = "Normal", FormatId = (UInt32Value)0U, BuiltinId = (UInt32Value)0U };
+            cellStyles.Append(cellStyle1);
+            DifferentialFormats differentialFormats = new DifferentialFormats() { Count = (UInt32Value)0U };
+            TableStyles tableStyles = new TableStyles() { Count = (UInt32Value)0U, DefaultTableStyle = "TableStyleMedium2", DefaultPivotStyle = "PivotStyleMedium9" };
+
+            StylesheetExtensionList stylesheetExtensionList = new StylesheetExtensionList();
+            StylesheetExtension stylesheetExtension1 = new StylesheetExtension() { Uri = "{EB79DEF2-80B8-43e5-95BD-54CBDDF9020C}" };
+            stylesheetExtension1.AddNamespaceDeclaration("x14", "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main");
+            // X14.SlicerStyles slicerStyles1 = new X14.SlicerStyles() { DefaultSlicerStyle = "SlicerStyleLight1" };
+            // stylesheetExtension1.Append(slicerStyles1);
+            stylesheetExtensionList.Append(stylesheetExtension1);
+
+            stylesheet.Append(fonts);
+            stylesheet.Append(fills);
+            stylesheet.Append(borders);
+            stylesheet.Append(cellStyleFormats);
+            stylesheet.Append(cellFormats);
+            stylesheet.Append(cellStyles);
+            stylesheet.Append(differentialFormats);
+            stylesheet.Append(tableStyles);
+            stylesheet.Append(stylesheetExtensionList);
+
+            return stylesheet;
         }
 
     }

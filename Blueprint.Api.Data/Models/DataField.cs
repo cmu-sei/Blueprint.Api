@@ -21,7 +21,8 @@ namespace Blueprint.Api.Data.Models
         public int DisplayOrder { get; set; }
         public bool IsChosenFromList { get; set; }
         public virtual ICollection<DataOptionEntity> DataOptions { get; set; } = new HashSet<DataOptionEntity>();
-
+        public string CellMetadata { get; set; }
+        public string ColumnMetadata { get; set; }
     }
 
 }

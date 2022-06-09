@@ -13,8 +13,7 @@ namespace Blueprint.Api.ViewModels
     {
         public Guid Id { get; set; }
         public int MoveNumber { get; set; }
-        public string Group { get; set; }
-        public int ScenarioEventNumber { get; set; }
+        public string Time { get; set; }
         public Guid MselId { get; set; }
         public ItemStatus Status { get; set; }
         public virtual ICollection<DataValue> DataValues { get; set; } = new HashSet<DataValue>();

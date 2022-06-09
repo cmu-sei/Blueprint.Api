@@ -117,7 +117,7 @@ namespace Blueprint.Api.Services
                 scenarioEvents = _context.ScenarioEvents;
             }
             // order the results
-            scenarioEvents = scenarioEvents.OrderBy(n => n.MoveNumber).ThenBy(n => n.ScenarioEventNumber);
+            scenarioEvents = scenarioEvents.OrderBy(n => n.MoveNumber).ThenBy(n => n.Time);
 
             return _mapper.Map<IEnumerable<ScenarioEvent>>(await scenarioEvents.ToListAsync());
         }

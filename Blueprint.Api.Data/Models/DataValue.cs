@@ -17,6 +17,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ScenarioEventEntity ScenarioEvent { get; set; }
         public Guid DataFieldId { get; set; }
         public virtual DataFieldEntity DataField { get; set; }
+        public string CellMetadata { get; set; }
     }
 
 }

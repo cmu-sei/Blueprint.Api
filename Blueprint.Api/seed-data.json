@@ -61,6 +61,14 @@
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31"
     }
   ],
+  "Organizations": [
+    {
+      "Id": "e0f2e62c-c1b9-454f-a00b-e564100eca60",
+      "Name": "FEMA",
+      "Description": "The Federal Emergency Management Agency (FEMA) supports citizens and emergency personnel to build, sustain, and improve the nation's capability to prepare for, protect against, respond to, recover from, and mitigate all hazards.",
+      "MselId":"aa8dbeb0-c441-4b54-8e91-3716e3404d31"
+    }
+  ],
   "Moves": [
     {
       "Id": "bb6dbeb0-c441-4b54-8e91-3716e3404e42",

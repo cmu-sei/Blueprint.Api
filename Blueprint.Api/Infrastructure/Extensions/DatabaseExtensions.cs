@@ -189,6 +189,20 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 }
                 context.SaveChanges();
             }
+            // Organizations
+            if (options.Organizations != null && options.Organizations.Any())
+            {
+                var dbOrganizations = context.Organizations.ToList();
+
+                foreach (OrganizationEntity organization in options.Organizations)
+                {
+                    if (!dbOrganizations.Where(x => x.Id == organization.Id).Any())
+                    {
+                        context.Organizations.Add(organization);
+                    }
+                }
+                context.SaveChanges();
+            }
         }
 
         private static string DbProvider(IConfiguration config)

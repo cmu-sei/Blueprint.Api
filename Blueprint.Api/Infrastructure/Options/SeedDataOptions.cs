@@ -17,6 +17,7 @@ namespace Blueprint.Api.Infrastructure.Options
         public List<MoveEntity> Moves { get; set; }
         public List<ScenarioEventEntity> ScenarioEvents { get; set; }
         public List<DataFieldEntity> DataFields { get; set; }
+        public List<OrganizationEntity> Organizations { get; set; }
     }
 }
 

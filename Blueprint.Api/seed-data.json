@@ -47,8 +47,7 @@
   "ScenarioEvents": [
     {
       "Id": "45453b75-92f4-4568-8a21-c1adf8a639eb",
-      "MoveNumber": 1,
-      "Time": "1000",
+      "RowIndex": 1,
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31"
     }
   ],

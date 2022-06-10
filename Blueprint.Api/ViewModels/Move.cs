@@ -14,7 +14,7 @@ namespace Blueprint.Api.ViewModels
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
          public Guid Id { get; set; }
-        public int MoveNumber { get; set;}
+        public int RowIndex { get; set;}
         public string Description { get; set; }
         public Guid MselId { get; set; }
    }

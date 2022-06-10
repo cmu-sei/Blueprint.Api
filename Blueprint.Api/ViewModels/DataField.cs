@@ -20,6 +20,8 @@ namespace Blueprint.Api.ViewModels
         public int DisplayOrder { get; set; }
         public bool IsChosenFromList { get; set; }
         public virtual ICollection<DataOption> DataOptions { get; set; } = new HashSet<DataOption>();
+        public string CellMetadata { get; set; }
+        public string ColumnMetadata { get; set; }
 
     }
 

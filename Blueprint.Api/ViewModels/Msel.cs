@@ -21,6 +21,7 @@ namespace Blueprint.Api.ViewModels
         public virtual ICollection<Move> Moves { get; set; } = new HashSet<Move>();
         public virtual ICollection<DataField> DataFields { get; set; } = new HashSet<DataField>();
         public virtual ICollection<ScenarioEvent> ScenarioEvents { get; set; } = new HashSet<ScenarioEvent>();
+        public string HeaderRowMetadata { get; set; }
    }
 }
 

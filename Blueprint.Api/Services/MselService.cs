@@ -212,43 +212,8 @@ namespace Blueprint.Api.Services
 
         public async Task<Guid> UploadAsync(FileForm form, CancellationToken ct)
         {
-            var uploadItem = form.ToUpload;
             var mselId = form.MselId != null ? (Guid)form.MselId : Guid.NewGuid();
-            using (SpreadsheetDocument doc = SpreadsheetDocument.Open(uploadItem.OpenReadStream(),false))
-            {
-                //create the object for workbook part
-                WorkbookPart workbookPart = doc.WorkbookPart;
-                Sheets sheetCollection = workbookPart.Workbook.GetFirstChild<Sheets>();
-
-                // handle multiple sheets
-                // foreach (Sheet sheet in sheetCollection)
-                // {
-                //     Worksheet worksheet = ((WorksheetPart)workbookPart.GetPartById(sheet.Id)).Worksheet;
-                // }
-
-                //statement to get the worksheet object by using the sheet id
-                Worksheet worksheet = ((WorksheetPart)workbookPart.GetPartById(sheetCollection.GetFirstChild<Sheet>().Id)).Worksheet;
-                SheetData sheetData = (SheetData)worksheet.GetFirstChild<SheetData>();
-                var headerRow = sheetData.GetFirstChild<Row>();
-                var columns = worksheet.GetFirstChild<Columns>();
-                // create the MSEL enitiy
-                var msel = new MselEntity() {
-                    Id = mselId,
-                    Description = uploadItem.FileName,
-                    Status = ItemStatus.Pending,
-                    TeamId = form.TeamId,
-                    IsTemplate = false,
-                    HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : ""
-                };
-                await _context.Msels.AddAsync(msel, ct);
-                // create the data fields
-                var dataFields = CreateDataFields(mselId, headerRow, workbookPart, columns);
-                await _context.DataFields.AddRangeAsync(dataFields);
-                // create the sceanrio events and data values
-                sheetData.RemoveChild<Row>(headerRow);
-                await CreateScenarioEventsAsync(mselId, sheetData, workbookPart, dataFields);
-            }
-            await _context.SaveChangesAsync(ct);
+            await createMselFromXlsxFile(form, mselId, ct);
 
             return mselId;
         }
@@ -267,33 +232,7 @@ namespace Blueprint.Api.Services
             // delete the existing MSEL
             _context.Msels.Remove(msel);
             await _context.SaveChangesAsync(ct);
-            // create the replacement MSEL
-            var uploadItem = form.ToUpload;
-            using (SpreadsheetDocument doc = SpreadsheetDocument.Open(uploadItem.OpenReadStream(),false))
-            {
-                //create the object for workbook part
-                WorkbookPart workbookPart = doc.WorkbookPart;
-                Sheets sheetCollection = workbookPart.Workbook.GetFirstChild<Sheets>();
-
-                //statement to get the worksheet object by using the sheet id
-                Worksheet worksheet = ((WorksheetPart)workbookPart.GetPartById(sheetCollection.GetFirstChild<Sheet>().Id)).Worksheet;
-
-                SheetData sheetData = (SheetData)worksheet.GetFirstChild<SheetData>();
-                var newMsel = new MselEntity() {
-                    Id = mselId,
-                    Description = uploadItem.FileName,
-                    Status = ItemStatus.Pending,
-                    TeamId = form.TeamId,
-                    IsTemplate = false
-                };
-                await _context.Msels.AddAsync(newMsel, ct);
-                var headerRow = sheetData.GetFirstChild<Row>();
-                var dataFields = CreateDataFields(mselId, headerRow, workbookPart, null);
-                await _context.DataFields.AddRangeAsync(dataFields);
-                sheetData.RemoveChild<Row>(headerRow);
-                await CreateScenarioEventsAsync(mselId, sheetData, workbookPart, dataFields);
-            }
-            await _context.SaveChangesAsync(ct);
+            await createMselFromXlsxFile(form, mselId, ct);
             await _context.Database.CommitTransactionAsync(ct);
 
             return mselId;
@@ -309,9 +248,7 @@ namespace Blueprint.Api.Services
             // get the MSEL data into a DataTable
             var scenarioEventList = await _context.ScenarioEvents
                 .Where(n => n.MselId == mselId)
-                .OrderBy(n => n.MoveNumber)
-                .ThenBy(n => n.Time)
-                .ThenBy(n => n.RowIndex)
+                .OrderBy(n => n.RowIndex)
                 .ToListAsync(ct);
             var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
             // create the xlsx file in memory
@@ -413,14 +350,52 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselEntity>();
             var scenarioEventList = await _context.ScenarioEvents
                 .Where(n => n.MselId == mselId)
-                .OrderBy(n => n.MoveNumber)
-                .ThenBy(n => n.Time)
-                .ThenBy(n => n.RowIndex)
+                .OrderBy(n => n.RowIndex)
                 .ToListAsync(ct);
             // get the MSEL data into a DataTable
             var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
 
             return dataTable;
+        }
+
+        private async Task createMselFromXlsxFile(FileForm form, Guid mselId, CancellationToken ct)
+        {
+            var uploadItem = form.ToUpload;
+            using (SpreadsheetDocument doc = SpreadsheetDocument.Open(uploadItem.OpenReadStream(),false))
+            {
+                //create the object for workbook part
+                WorkbookPart workbookPart = doc.WorkbookPart;
+                Sheets sheetCollection = workbookPart.Workbook.GetFirstChild<Sheets>();
+
+                // handle multiple sheets
+                // foreach (Sheet sheet in sheetCollection)
+                // {
+                //     Worksheet worksheet = ((WorksheetPart)workbookPart.GetPartById(sheet.Id)).Worksheet;
+                // }
+
+                //statement to get the worksheet object by using the sheet id
+                Worksheet worksheet = ((WorksheetPart)workbookPart.GetPartById(sheetCollection.GetFirstChild<Sheet>().Id)).Worksheet;
+                SheetData sheetData = (SheetData)worksheet.GetFirstChild<SheetData>();
+                var headerRow = sheetData.GetFirstChild<Row>();
+                var columns = worksheet.GetFirstChild<Columns>();
+                // create the MSEL enitiy
+                var msel = new MselEntity() {
+                    Id = mselId,
+                    Description = uploadItem.FileName,
+                    Status = ItemStatus.Pending,
+                    TeamId = form.TeamId,
+                    IsTemplate = false,
+                    HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : ""
+                };
+                await _context.Msels.AddAsync(msel, ct);
+                // create the data fields
+                var dataFields = CreateDataFields(mselId, headerRow, workbookPart, columns);
+                await _context.DataFields.AddRangeAsync(dataFields);
+                // create the sceanrio events and data values
+                sheetData.RemoveChild<Row>(headerRow);
+                await CreateScenarioEventsAsync(mselId, sheetData, workbookPart, dataFields);
+            }
+            await _context.SaveChangesAsync(ct);
         }
 
         private List<DataFieldEntity> CreateDataFields(Guid mselId, Row headerRow, WorkbookPart workbookPart, Columns columns)
@@ -626,16 +601,6 @@ namespace Blueprint.Api.Services
                         CellMetadata = cellColor + "," + cellTint + "," + fontWeight
                     };
                     await _context.DataValues.AddAsync(dataValue);
-                    // set scenarioEvent move or scenarioEvent based on value
-                    if (dataField.Name.ToLower() == "move")
-                    {
-                        int moveNumber = 0;
-                        scenarioEvent.MoveNumber = int.TryParse(currentcellvalue, out moveNumber) ? moveNumber : 0;
-                    }
-                    else if (dataField.Name.ToLower().Replace(" ", "") == "time")
-                    {
-                        scenarioEvent.Time = currentcellvalue;
-                    }
                 }
             }
         }

@@ -12,12 +12,11 @@ namespace Blueprint.Api.ViewModels
     public class ScenarioEvent : Base
     {
         public Guid Id { get; set; }
-        public int MoveNumber { get; set; }
-        public string Group { get; set; }
-        public int ScenarioEventNumber { get; set; }
         public Guid MselId { get; set; }
         public ItemStatus Status { get; set; }
         public virtual ICollection<DataValue> DataValues { get; set; } = new HashSet<DataValue>();
+        public int RowIndex { get; set; }
+        public string RowMetadata { get; set; }
    }
 }
 

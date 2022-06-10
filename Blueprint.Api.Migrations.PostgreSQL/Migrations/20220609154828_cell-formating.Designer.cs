@@ -8,6 +8,7 @@ using System;
 using Blueprint.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -16,9 +17,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    partial class BlueprintContextModelSnapshot : ModelSnapshot
+    [Migration("20220609154828_cell-formating")]
+    partial class cellformating
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -259,10 +261,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("gallery_exhibit_id");
 
-                    b.Property<string>("HeaderRowMetadata")
-                        .HasColumnType("text")
-                        .HasColumnName("header_row_metadata");
-
                     b.Property<bool>("IsTemplate")
                         .HasColumnType("boolean")
                         .HasColumnName("is_template");
@@ -405,21 +403,21 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("modified_by");
 
+                    b.Property<int>("MoveNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("move_number");
+
                     b.Property<Guid>("MselId")
                         .HasColumnType("uuid")
                         .HasColumnName("msel_id");
 
-                    b.Property<int>("RowIndex")
-                        .HasColumnType("integer")
-                        .HasColumnName("row_index");
-
-                    b.Property<string>("RowMetadata")
-                        .HasColumnType("text")
-                        .HasColumnName("row_metadata");
-
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
+
+                    b.Property<string>("Time")
+                        .HasColumnType("text")
+                        .HasColumnName("time");
 
                     b.HasKey("Id");
 

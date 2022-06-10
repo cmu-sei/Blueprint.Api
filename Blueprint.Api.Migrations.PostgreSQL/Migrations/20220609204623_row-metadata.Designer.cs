@@ -8,6 +8,7 @@ using System;
 using Blueprint.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -16,9 +17,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    partial class BlueprintContextModelSnapshot : ModelSnapshot
+    [Migration("20220609204623_row-metadata")]
+    partial class rowmetadata
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -405,6 +407,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("modified_by");
 
+                    b.Property<int>("MoveNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("move_number");
+
                     b.Property<Guid>("MselId")
                         .HasColumnType("uuid")
                         .HasColumnName("msel_id");
@@ -420,6 +426,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
+
+                    b.Property<string>("Time")
+                        .HasColumnType("text")
+                        .HasColumnName("time");
 
                     b.HasKey("Id");
 

@@ -45,6 +45,18 @@
       "Description": "Standard MSEL",
       "Status": 20,
       "IsTemplate": true
+    },
+    {
+      "Id": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Description": "MITRE",
+      "Status": 20,
+      "IsTemplate": true
+    },
+    {
+      "Id": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "Description": "HSEEP",
+      "Status": 20,
+      "IsTemplate": true
     }
   ],
   "MselTeams": [
@@ -114,9 +126,17 @@
     {
       "Id": "aa8dbeb0-cccc-4b54-0005-3716e3404d31",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
-      "Name": "Exercise Time",
-      "DataType": 50,
+      "Name": "Real Time",
+      "DataType": 40,
       "DisplayOrder": 3,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "aa8dbeb0-cccc-4b54-0006-3716e3404d31",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "Simulated Time",
+      "DataType": 40,
+      "DisplayOrder": 4,
       "IsChosenFromList": false
     },
     {
@@ -165,6 +185,166 @@
       "Name": "Expected Actions",
       "DataType": 0,
       "DisplayOrder": 9,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "368ee9bf-4215-4529-b5c4-0a370c63ddf5",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Measure of Performance",
+      "DataType": 0,
+      "DisplayOrder": 10,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "0efe53d5-7796-48b6-8995-648b2b03f3f0",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Expected Actions",
+      "DataType": 0,
+      "DisplayOrder": 9,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "635d1b70-c3f0-4438-8efb-537c055cd92f",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Notes",
+      "DataType": 0,
+      "DisplayOrder": 8,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "0fefb2d3-9ec4-476b-8089-326b44d84be2",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Assumptions",
+      "DataType": 0,
+      "DisplayOrder": 7,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "799fbff6-a282-4edb-9b68-79541f26ab7d",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Description",
+      "DataType": 0,
+      "DisplayOrder": 6,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "b8fd568b-291d-46b3-aa18-8e9628a8b5fc",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Title",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "20a5e54c-3631-4d36-96c5-73e7e01528da",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Target",
+      "DataType": 0,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "f4e37018-0501-4ec0-849b-2618bec0c797",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Delivery Method",
+      "DataType": 0,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "971e4e80-94da-4d0a-bb50-24056816e738",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Local Time",
+      "DataType": 40,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "63935ad4-57dd-4778-aaa8-febef5c57761",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "ID",
+      "DataType": 0,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "c6413885-67fc-40bc-8e07-876d8ac4f021",
+      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "Name": "Notes",
+      "DataType": 0,
+      "DisplayOrder": 10,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "04e33c3c-a502-4c95-8645-6e3d468cc7ee",
+      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "Name": "Exercise Objective",
+      "DataType": 0,
+      "DisplayOrder": 9,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "d6fcdc1c-1f13-4500-a19d-fd97a44fcc78",
+      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "Name": "Expected Participant Response",
+      "DataType": 0,
+      "DisplayOrder": 8,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "af5b64a2-c003-4547-9019-f9fbf3687e5b",
+      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "Name": "Message",
+      "DataType": 0,
+      "DisplayOrder": 7,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "2993d03c-735b-4075-b781-ff9d2c743116",
+      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "Name": "To",
+      "DataType": 0,
+      "DisplayOrder": 6,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "6da5306f-a32a-414d-bd9c-2872628547ea",
+      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "Name": "From",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "4517cb08-2bc1-497b-8fe5-51b7e59ebbaa",
+      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "Name": "Inject Mode",
+      "DataType": 0,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "3ee555ef-181c-45f8-9b07-988a4489a9f3",
+      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "Name": "Event Type",
+      "DataType": 0,
+      "DisplayOrder": 3,
+      "IsChosenFromList": true
+    },
+    {
+      "Id": "ce4708a5-b403-4c59-a7d1-95757c45ae86",
+      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "Name": "Designated Scenario Time",
+      "DataType": 40,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "dd2740d6-8586-4c4b-be3b-12cd4088958e",
+      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "Name": "Event Number",
+      "DataType": 0,
+      "DisplayOrder": 1,
       "IsChosenFromList": false
     }
   ]

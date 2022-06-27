@@ -149,12 +149,24 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct)
         {
-            if (!(
-                    (await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded ||
-                    (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)msel.TeamId))).Succeeded
-                 )
-            )
-                throw new ForbiddenException();
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            {
+                TeamUserEntity teamUser;
+                if (msel.TeamId == null)
+                {
+                    teamUser = await _context.TeamUsers
+                        .FirstOrDefaultAsync(tu => tu.UserId == _user.GetId());
+                }
+                else
+                {
+                    teamUser = await _context.TeamUsers
+                        .FirstOrDefaultAsync(tu => tu.UserId == _user.GetId() && tu.TeamId == msel.TeamId);
+                }
+                if (teamUser == null)
+                    throw new ForbiddenException();
+
+                msel.TeamId = teamUser.TeamId;
+            }
 
             msel.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
             msel.DateCreated = DateTime.UtcNow;
@@ -385,7 +397,9 @@ namespace Blueprint.Api.Services
                     Status = ItemStatus.Pending,
                     TeamId = form.TeamId,
                     IsTemplate = false,
-                    HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : ""
+                    HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : "",
+                    CreatedBy = _user.GetId(),
+                    DateCreated = DateTime.UtcNow
                 };
                 await _context.Msels.AddAsync(msel, ct);
                 // create the data fields
@@ -717,7 +731,7 @@ namespace Blueprint.Api.Services
             border.Append(topBorder);
             border.Append(bottomBorder);
             border.Append(diagonalBorder);
-            borders.Append(border);
+            borders.AppendChild(border);
 
             CellStyleFormats cellStyleFormats = new CellStyleFormats() { Count = (UInt32Value)1U };
             CellFormat cellFormat1 = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)0U, BorderId = (UInt32Value)0U };
@@ -730,7 +744,7 @@ namespace Blueprint.Api.Services
             for (int i=0; i < uniqueStyles.Count; i++)
             {
                 UInt32 fontId = uniqueStyles[i].Split(",")[2] == "bold" ? 1U : 0U;
-                CellFormat cellFormat = new CellFormat(new Alignment() { WrapText = true }) { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)fontId, FillId = (UInt32Value)((UInt32)i + 2), BorderId = (UInt32Value)0U, FormatId = (UInt32Value)0U, ApplyFill = true };
+                CellFormat cellFormat = new CellFormat(new Alignment() { WrapText = true }) { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)fontId, FillId = (UInt32Value)((UInt32)i + 2), BorderId = (UInt32Value)0U, FormatId = (UInt32Value)0U, ApplyFill = true, ApplyBorder = true };
                 cellFormats.Append(cellFormat);
             }
 

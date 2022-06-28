@@ -62,8 +62,26 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValue DataValue, CancellationToken ct)
         {
+            // user must be a Content Developer or be on the requested team and be able to submit
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
+            {
+                var mselId = await _context.DataFields
+                    .Where(df => df.Id == DataValue.DataFieldId)
+                    .Select(df => df.MselId)
+                    .FirstOrDefaultAsync();
+                var teamId = await _context.Msels
+                    .Where(m => m.Id == mselId)
+                    .Select(m => m.TeamId)
+                    .FirstOrDefaultAsync();
+                if (!(
+                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
+                        teamId != null &&
+                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
+                     )
+                )
+                    throw new ForbiddenException();
+            }
+
             DataValue.Id = DataValue.Id != Guid.Empty ? DataValue.Id : Guid.NewGuid();
             DataValue.DateCreated = DateTime.UtcNow;
             DataValue.CreatedBy = _user.GetId();
@@ -80,13 +98,29 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValue DataValue, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var DataValueToUpdate = await _context.DataValues.SingleOrDefaultAsync(v => v.Id == id, ct);
-
             if (DataValueToUpdate == null)
                 throw new EntityNotFoundException<DataValue>();
+
+            // user must be a Content Developer or be on the requested team and be able to submit
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                var mselId = await _context.DataFields
+                    .Where(df => df.Id == DataValueToUpdate.DataFieldId)
+                    .Select(df => df.MselId)
+                    .FirstOrDefaultAsync();
+                var teamId = await _context.Msels
+                    .Where(m => m.Id == mselId)
+                    .Select(m => m.TeamId)
+                    .FirstOrDefaultAsync();
+                if (!(
+                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
+                        teamId != null &&
+                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
+                     )
+                )
+                    throw new ForbiddenException();
+            }
 
             DataValue.CreatedBy = DataValueToUpdate.CreatedBy;
             DataValue.DateCreated = DataValueToUpdate.DateCreated;
@@ -104,13 +138,29 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var DataValueToDelete = await _context.DataValues.SingleOrDefaultAsync(v => v.Id == id, ct);
-
             if (DataValueToDelete == null)
                 throw new EntityNotFoundException<DataValue>();
+
+            // user must be a Content Developer or be on the requested team and be able to submit
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                var mselId = await _context.DataFields
+                    .Where(df => df.Id == DataValueToDelete.DataFieldId)
+                    .Select(df => df.MselId)
+                    .FirstOrDefaultAsync();
+                var teamId = await _context.Msels
+                    .Where(m => m.Id == mselId)
+                    .Select(m => m.TeamId)
+                    .FirstOrDefaultAsync();
+                if (!(
+                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
+                        teamId != null &&
+                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
+                     )
+                )
+                    throw new ForbiddenException();
+            }
 
             _context.DataValues.Remove(DataValueToDelete);
             await _context.SaveChangesAsync(ct);

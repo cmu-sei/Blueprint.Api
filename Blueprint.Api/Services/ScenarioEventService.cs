@@ -125,6 +125,7 @@ namespace Blueprint.Api.Services
         public async Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct)
         {
             var item = await _context.ScenarioEvents
+                .Include(se => se.DataValues)
                 .SingleAsync(a => a.Id == id, ct);
 
             if (item == null)
@@ -219,6 +220,10 @@ namespace Blueprint.Api.Services
             if (scenarioEventToUpdate == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>();
 
+            // start a transaction, because we will also update DataValues
+            await _context.Database.BeginTransactionAsync();
+
+            await UpdateDataValues(scenarioEvent, ct);
             scenarioEvent.CreatedBy = scenarioEventToUpdate.CreatedBy;
             scenarioEvent.DateCreated = scenarioEventToUpdate.DateCreated;
             scenarioEvent.ModifiedBy = _user.GetId();
@@ -227,8 +232,10 @@ namespace Blueprint.Api.Services
 
             _context.ScenarioEvents.Update(scenarioEventToUpdate);
             await _context.SaveChangesAsync(ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
-            scenarioEvent = await GetAsync(scenarioEventToUpdate.Id, ct);
+            scenarioEvent = await GetAsync(id, ct);
 
             return scenarioEvent;
         }
@@ -260,6 +267,19 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
 
             return true;
+        }
+
+        private async Task UpdateDataValues(ScenarioEvent scenarioEvent, CancellationToken ct)
+        {
+            foreach (var dataValue in scenarioEvent.DataValues)
+            {
+                var dataValueToUpdate = await _context.DataValues
+                    .FindAsync(dataValue.Id);
+                if (dataValueToUpdate == null)
+                    throw new ArgumentException("A DataValue could not be found for ID " + dataValue.Id.ToString());
+                dataValueToUpdate.Value = dataValue.Value;
+                await _context.SaveChangesAsync(ct);
+            }
         }
 
     }

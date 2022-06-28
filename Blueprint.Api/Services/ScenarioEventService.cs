@@ -143,12 +143,21 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.ScenarioEvent> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
-            // user must be on the requested team and be able to submit
-            if (
-                !((await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded) &&
-                !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
-            )
-                throw new ForbiddenException();
+            // user must be a Content Developer or be on the requested team and be able to submit
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                var teamId = await _context.Msels
+                    .Where(m => m.Id == scenarioEvent.MselId)
+                    .Select(m => m.TeamId)
+                    .FirstOrDefaultAsync();
+                if (!(
+                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
+                        teamId != null &&
+                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
+                     )
+                )
+                    throw new ForbiddenException();
+            }
 
             // create the scenario event
             scenarioEvent.Id = scenarioEvent.Id != Guid.Empty ? scenarioEvent.Id : Guid.NewGuid();
@@ -189,12 +198,21 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
-            // user must be on the requested team and be able to submit
-            if (
-                !((await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded) &&
-                !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
-            )
-                throw new ForbiddenException();
+            // user must be a Content Developer or be on the requested team and be able to submit
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                var teamId = await _context.Msels
+                    .Where(m => m.Id == scenarioEvent.MselId)
+                    .Select(m => m.TeamId)
+                    .FirstOrDefaultAsync();
+                if (!(
+                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
+                        teamId != null &&
+                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
+                     )
+                )
+                    throw new ForbiddenException();
+            }
 
             var scenarioEventToUpdate = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
 
@@ -222,12 +240,21 @@ namespace Blueprint.Api.Services
             if (scenarioEventToDelete == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>();
 
-            // user must be on the requested team and be able to submit
-            if (
-                !((await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded) &&
-                !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
-            )
-                throw new ForbiddenException();
+            // user must be a Content Developer or be on the requested team and be able to submit
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                var teamId = await _context.Msels
+                    .Where(m => m.Id == id)
+                    .Select(m => m.TeamId)
+                    .FirstOrDefaultAsync();
+                if (!(
+                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
+                        teamId != null &&
+                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
+                     )
+                )
+                    throw new ForbiddenException();
+            }
 
             _context.ScenarioEvents.Remove(scenarioEventToDelete);
             await _context.SaveChangesAsync(ct);

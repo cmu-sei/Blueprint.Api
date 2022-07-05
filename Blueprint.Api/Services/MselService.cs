@@ -22,9 +22,7 @@ using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.ViewModels;
-using DocumentFormat.OpenXml;
-using DocumentFormat.OpenXml.Spreadsheet;
-using DocumentFormat.OpenXml.Packaging;
+using ClosedXML.Excel;
 
 namespace Blueprint.Api.Services
 {
@@ -433,23 +431,12 @@ namespace Blueprint.Api.Services
         private async Task createMselFromXlsxFile(FileForm form, Guid mselId, CancellationToken ct)
         {
             var uploadItem = form.ToUpload;
-            using (SpreadsheetDocument doc = SpreadsheetDocument.Open(uploadItem.OpenReadStream(),false))
+            using (var workbook = new XLWorkbook(uploadItem.OpenReadStream()))
             {
-                //create the object for workbook part
-                WorkbookPart workbookPart = doc.WorkbookPart;
-                Sheets sheetCollection = workbookPart.Workbook.GetFirstChild<Sheets>();
-
-                // handle multiple sheets
-                // foreach (Sheet sheet in sheetCollection)
-                // {
-                //     Worksheet worksheet = ((WorksheetPart)workbookPart.GetPartById(sheet.Id)).Worksheet;
-                // }
-
-                //statement to get the worksheet object by using the sheet id
-                Worksheet worksheet = ((WorksheetPart)workbookPart.GetPartById(sheetCollection.GetFirstChild<Sheet>().Id)).Worksheet;
-                SheetData sheetData = (SheetData)worksheet.GetFirstChild<SheetData>();
-                var headerRow = sheetData.GetFirstChild<Row>();
-                var columns = worksheet.GetFirstChild<Columns>();
+                var worksheet = workbook.Worksheet(1);
+                var headerRow = worksheet.FirstRowUsed();
+                var lastUsedRow = worksheet.LastRowUsed();
+                var columns = worksheet.Columns();
                 // create the MSEL enitiy
                 var msel = new MselEntity() {
                     Id = mselId,
@@ -457,92 +444,38 @@ namespace Blueprint.Api.Services
                     Status = ItemStatus.Pending,
                     TeamId = form.TeamId,
                     IsTemplate = false,
-                    HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : "",
+                    HeaderRowMetadata = headerRow.Height.ToString(),
                     CreatedBy = _user.GetId(),
                     DateCreated = DateTime.UtcNow
                 };
                 await _context.Msels.AddAsync(msel, ct);
                 // create the data fields
-                var dataFields = CreateDataFields(mselId, headerRow, workbookPart, columns);
-                await _context.DataFields.AddRangeAsync(dataFields);
+                var dataFields = CreateDataFields(mselId, headerRow, worksheet, columns);
                 // create the sceanrio events and data values
-                sheetData.RemoveChild<Row>(headerRow);
-                await CreateScenarioEventsAsync(mselId, sheetData, workbookPart, dataFields);
+                await CreateScenarioEventsAsync(mselId, headerRow, lastUsedRow, dataFields);
+                await _context.DataFields.AddRangeAsync(dataFields);
             }
             await _context.SaveChangesAsync(ct);
         }
 
-        private List<DataFieldEntity> CreateDataFields(Guid mselId, Row headerRow, WorkbookPart workbookPart, Columns columns)
+        private List<DataFieldEntity> CreateDataFields(Guid mselId, IXLRow headerRow, IXLWorksheet workbookPart, IXLColumns columns)
         {
             var dataFields = new List<DataFieldEntity>();
             var displayOrder = 1;
-            foreach (Cell thecurrentcell in headerRow)
+            foreach (IXLCell thecurrentcell in headerRow.Cells())
             {
-                string currentcellvalue = string.Empty;
-                if (thecurrentcell.DataType != null)
-                {
-                    if (thecurrentcell.DataType == CellValues.SharedString)
-                    {
-                        int id;
-                        if (Int32.TryParse(thecurrentcell.InnerText, out id))
-                        {
-                            SharedStringItem item = workbookPart.SharedStringTablePart.SharedStringTable.Elements<SharedStringItem>().ElementAt(id);
-                            if (item.Text != null)
-                            {
-                                currentcellvalue = item.Text.Text;
-                            }
-                            else if (item.InnerText != null)
-                            {
-                                currentcellvalue = item.InnerText;
-                            }
-                            else if (item.InnerXml != null)
-                            {
-                                currentcellvalue = item.InnerXml;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    currentcellvalue = thecurrentcell.InnerText;
-                }
+                string currentcellvalue = thecurrentcell.Value.ToString();
+                var theDataType = thecurrentcell.DataType;
                 if (!string.IsNullOrEmpty(currentcellvalue))
                 {
-                    int cellStyleIndex;
-                    if (thecurrentcell.StyleIndex == null)
-                    {
-                        cellStyleIndex = 0;
-                    }
-                    else
-                    {
-                        cellStyleIndex = (int)thecurrentcell.StyleIndex.Value;
-                    }
-                    WorkbookStylesPart styles = (WorkbookStylesPart)workbookPart.WorkbookStylesPart;
-                    CellFormat cellFormat = (CellFormat)styles.Stylesheet.CellFormats.ChildElements[cellStyleIndex];
-                    Fill fill = (Fill)styles.Stylesheet.Fills.ChildElements[(int)cellFormat.FillId.Value];
-                    PatternFill patternFill = fill.PatternFill;
-                    var cellColor = "";
-                    double cellTint = 0.0;
-                    var pfType = patternFill.PatternType;
-                    var colorType = (ColorType)patternFill.ForegroundColor;
-                    if (colorType != null)
-                    {
-                        if (colorType.Rgb != null)
-                        {
-                            cellColor = colorType.Rgb.Value;
-                        }
-                        else if (colorType.Theme != null)
-                        {
-                            cellColor = ((DocumentFormat.OpenXml.Drawing.Color2Type)workbookPart.ThemePart.Theme.ThemeElements.ColorScheme.ChildElements[(int)colorType.Theme.Value]).RgbColorModelHex.Val;
-                        }
-                        cellTint = colorType.Tint == null ? 0.0 : colorType.Tint.Value;
-                    }
+                    var fill = thecurrentcell.Style.Fill;
+                    var cellColor = fill.BackgroundColor;
+                    var isBold = thecurrentcell.Style.Font.Bold;
                     var columnMetadata = "0.0";
                     if (columns != null)
                     {
-                        var columnIndex = GetColumnIndex(thecurrentcell.CellReference.Value);
-                        var column = (Column)columns.ChildElements.FirstOrDefault(ce => columnIndex >= ((Column)ce).Min.Value && columnIndex<= ((Column)ce).Max.Value);
-                        columnMetadata = column.Width == null ? "0.0" : column.Width.Value.ToString();
+                        var columnWidth = thecurrentcell.WorksheetColumn().Width;
+                        columnMetadata = columnWidth.ToString();
                     }
                     var dataField = new DataFieldEntity() {
                         Id = Guid.NewGuid(),
@@ -551,8 +484,10 @@ namespace Blueprint.Api.Services
                         DataType = DataFieldType.String,
                         DisplayOrder = displayOrder,
                         IsChosenFromList = false,
-                        CellMetadata = cellColor + "," + cellTint + ",bold",
-                        ColumnMetadata = columnMetadata
+                        CellMetadata = cellColor + "," + isBold.ToString(),
+                        ColumnMetadata = columnMetadata,
+                        CreatedBy = _user.GetId(),
+                        DateCreated = DateTime.UtcNow
                     };
                     dataFields.Add(dataField);
                 }
@@ -562,122 +497,69 @@ namespace Blueprint.Api.Services
             return dataFields;
         }
 
-        private int GetColumnIndex(string columnRef)
+        private async Task CreateScenarioEventsAsync(Guid mselId, IXLRow headerRow, IXLRow lastUsedRow, List<DataFieldEntity> dataFields)
         {
-            if (string.IsNullOrEmpty(columnRef)) throw new ArgumentNullException("columnName");
-
-            columnRef = columnRef.ToUpperInvariant();
-
-            int columnIndex = 0;
-
-            for (int i = 0; i < columnRef.Length; i++)
-            {
-                if (columnRef[i] >= 'A' && columnRef[i] <= 'Z')
-                {
-                    columnIndex *= 26;
-                    columnIndex += (columnRef[i] - 'A' + 1);
-                }
-            }
-
-            return columnIndex;
-        }
-
-
-        private async Task CreateScenarioEventsAsync(Guid mselId, SheetData dataRows, WorkbookPart workbookPart, List<DataFieldEntity> dataFields)
-        {
+            var currentRow = headerRow;
             var scenarioEventList = new List<ScenarioEventEntity>();
-            foreach (Row dataRow in dataRows)
+            while (currentRow != lastUsedRow)
             {
+                currentRow = currentRow.RowBelow();
                 var scenarioEventId = Guid.NewGuid();
                 var scenarioEvent = new ScenarioEventEntity() {
                     Id = scenarioEventId,
                     MselId = mselId,
-                    RowIndex = (int)dataRow.RowIndex.Value,
-                    RowMetadata = dataRow.Height != null ? dataRow.Height.Value.ToString() : ""
+                    RowIndex = currentRow.RowNumber(),
+                    RowMetadata = currentRow.Height.ToString(),
+                    CreatedBy = _user.GetId(),
+                    DateCreated = DateTime.UtcNow
                 };
                 await _context.ScenarioEvents.AddAsync(scenarioEvent);
-                await CreateDataValuesAsync(scenarioEvent, dataRow, workbookPart, dataFields);
+                await CreateDataValuesAsync(scenarioEvent, currentRow, dataFields);
             }
         }
 
-        private async Task CreateDataValuesAsync(ScenarioEventEntity scenarioEvent, Row dataRow, WorkbookPart workbookPart, List<DataFieldEntity> dataFields)
+        private async Task CreateDataValuesAsync(ScenarioEventEntity scenarioEvent, IXLRow dataRow, List<DataFieldEntity> dataFields)
         {
-            foreach (Cell cell in dataRow)
+            foreach (IXLCell cell in dataRow.Cells())
             {
                 //statement to take the integer value
-                string currentcellvalue = string.Empty;
-                if (cell.DataType != null)
+                string currentcellvalue = "";
+                switch (cell.DataType)
                 {
-                    if (cell.DataType == CellValues.SharedString)
-                    {
-                        int id;
-                        if (Int32.TryParse(cell.InnerText, out id))
-                        {
-                            SharedStringItem item = workbookPart.SharedStringTablePart.SharedStringTable.Elements<SharedStringItem>().ElementAt(id);
-                            if (item.Text != null)
-                            {
-                                currentcellvalue = item.Text.Text;
-                            }
-                            else if (item.InnerText != null)
-                            {
-                                currentcellvalue = item.InnerText;
-                            }
-                            else if (item.InnerXml != null)
-                            {
-                                currentcellvalue = item.InnerXml;
-                            }
-                        }
-                    }
-                    else if (cell.DataType == CellValues.String)
-                    {
-                        currentcellvalue = cell.CellValue.Text;
-                    }
+                    case XLDataType.Boolean:
+                        currentcellvalue = cell.GetValue<bool>().ToString();
+                        dataFields[cell.WorksheetColumn().ColumnNumber() - 1].DataType = (DataFieldType.Boolean);
+                        break;
+                    case XLDataType.DateTime:
+                        currentcellvalue = cell.GetValue<DateTime>().ToString();
+                        dataFields[cell.WorksheetColumn().ColumnNumber() - 1].DataType = (DataFieldType.DateTime);
+                        break;
+                    case XLDataType.Number:
+                        currentcellvalue = cell.GetValue<double>().ToString();
+                        dataFields[cell.WorksheetColumn().ColumnNumber() - 1].DataType = (DataFieldType.Double);
+                        break;
+                    case XLDataType.TimeSpan:
+                        currentcellvalue = cell.GetValue<TimeSpan>().ToString();
+                        dataFields[cell.WorksheetColumn().ColumnNumber() - 1].DataType = (DataFieldType.DateTime);
+                        break;
+                    case XLDataType.Text:
+                    default:
+                        currentcellvalue = cell.GetValue<string>();
+                        break;
                 }
-                else
-                {
-                    currentcellvalue = cell.InnerText;
-                }
-                var displayOrder = (int)cell.CellReference.Value[0] - 64;
+                var displayOrder = cell.WorksheetColumn().ColumnNumber();
                 var dataField = dataFields.FirstOrDefault(df => df.MselId == scenarioEvent.MselId && df.DisplayOrder == displayOrder);
                 if (dataField != null)
                 {
-                    int cellStyleIndex;
-                    if (cell.StyleIndex == null)
-                    {
-                        cellStyleIndex = 0;
-                    }
-                    else
-                    {
-                        cellStyleIndex = (int)cell.StyleIndex.Value;
-                    }
-                    WorkbookStylesPart styles = (WorkbookStylesPart)workbookPart.WorkbookStylesPart;
-                    CellFormat cellFormat = (CellFormat)styles.Stylesheet.CellFormats.ChildElements[cellStyleIndex];
-                    Fill fill = (Fill)styles.Stylesheet.Fills.ChildElements[(int)cellFormat.FillId.Value];
-                    PatternFill patternFill = fill.PatternFill;
-                    var cellColor = "";
-                    double cellTint = 0.0;
-                    var pfType = patternFill.PatternType;
-                    var colorType = (ColorType)patternFill.ForegroundColor;
-                    if (colorType != null)
-                    {
-                        if (colorType.Rgb != null)
-                        {
-                            cellColor = colorType.Rgb.Value;
-                        }
-                        else if (colorType.Theme != null)
-                        {
-                            cellColor = ((DocumentFormat.OpenXml.Drawing.Color2Type)workbookPart.ThemePart.Theme.ThemeElements.ColorScheme.ChildElements[(int)colorType.Theme.Value]).RgbColorModelHex.Val;
-                        }
-                        cellTint = colorType.Tint == null ? 0.0 : colorType.Tint.Value;
-                    }
-                    Font font = (Font)styles.Stylesheet.Fonts.ChildElements[(int)cellFormat.FontId.Value];
-                    var fontWeight = font.Bold == null ? "normal" : "bold";
+                    var fill = cell.Style.Fill;
+                    var cellColor = fill.BackgroundColor;
+                    var isBold = cell.Style.Font.Bold;
                     var dataValue = new DataValueEntity() {
                         Id = Guid.NewGuid(),
                         ScenarioEventId = scenarioEvent.Id,
                         DataFieldId = dataField.Id,
                         Value = currentcellvalue,
-                        CellMetadata = cellColor + "," + cellTint + "," + fontWeight
+                        CellMetadata = cellColor + "," + isBold.ToString()
                     };
                     await _context.DataValues.AddAsync(dataValue);
                 }

@@ -83,24 +83,6 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets specific Msel data by id
-        /// </summary>
-        /// <remarks>
-        /// Returns a DataTable for the Msel with the id specified
-        /// </remarks>
-        /// <param name="id">The id of the Msel</param>
-        /// <param name="ct"></param>
-        /// <returns></returns>
-        [HttpGet("msels/{id}/data")]
-        [ProducesResponseType(typeof(DataTable), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getMselData")]
-        public async Task<IActionResult> GetData(Guid id, CancellationToken ct)
-        {
-            var mselData = await _mselService.GetDataTableAsync(id, ct);
-            return Ok(mselData);
-        }
-
-        /// <summary>
         /// Creates a new Msel
         /// </summary>
         /// <remarks>

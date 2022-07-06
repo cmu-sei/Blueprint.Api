@@ -37,7 +37,6 @@ namespace Blueprint.Api.Services
         Task<Guid> UploadAsync(FileForm form, CancellationToken ct);
         Task<Guid> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadAsync(Guid mselId, CancellationToken ct);
-        Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
     }
 
     public class MselService : IMselService
@@ -47,6 +46,7 @@ namespace Blueprint.Api.Services
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
         private readonly ILogger<GalleryService> _logger;
+        private Dictionary<XLThemeColor, string> _themeColors = new Dictionary<XLThemeColor, string>();
 
         public MselService(
             BlueprintContext context,
@@ -315,117 +315,19 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
+
+            var memoryStream = new MemoryStream();
+            var workbook = new XLWorkbook();
+            IXLWorksheet worksheet = workbook.Worksheets.Add("MSEL");
             // get the MSEL data into a DataTable
-            var scenarioEventList = await _context.ScenarioEvents
-                .Where(n => n.MselId == mselId)
-                .OrderBy(n => n.RowIndex)
-                .ToListAsync(ct);
-            var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
-            // create the xlsx file in memory
-            MemoryStream memoryStream = new MemoryStream();
-            using (SpreadsheetDocument document = SpreadsheetDocument.Create(memoryStream, SpreadsheetDocumentType.Workbook))
-            {
-                WorkbookPart workbookPart = document.AddWorkbookPart();
-                workbookPart.Workbook = new Workbook();
-
-                // add styles to sheet
-                Dictionary<string, int> uniqueStyles = await GetUniqueStylesAsync(mselId, ct);
-                WorkbookStylesPart workbookStylesPart = workbookPart.AddNewPart<WorkbookStylesPart>();
-                workbookStylesPart.Stylesheet = CreateStylesheet(uniqueStyles.OrderBy(uc => uc.Value).Select(uc => uc.Key).ToList());
-                workbookStylesPart.Stylesheet.Save();
-
-                WorksheetPart worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
-                var sheetData = new SheetData();
-                worksheetPart.Worksheet = new Worksheet(sheetData);
-
-                Sheets sheets = workbookPart.Workbook.AppendChild(new Sheets());
-                Sheet sheet = new Sheet() { Id = workbookPart.GetIdOfPart(worksheetPart), SheetId = 1, Name = "Sheet1" };
-
-                sheets.Append(sheet);
-
-                Row headerRow = new Row();
-                if (msel.HeaderRowMetadata != "")
-                {
-                    headerRow.Height = double.Parse(msel.HeaderRowMetadata);
-                    headerRow.CustomHeight = true;
-                }
-                Columns columns = new Columns();
-                foreach (System.Data.DataColumn column in dataTable.Columns)
-                {
-                    var dataField = await _context.DataFields
-                        .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
-                        .FirstOrDefaultAsync();
-                    var width = double.Parse(dataField.ColumnMetadata);
-                    var cellMetadata = dataField.CellMetadata;
-                    columns.Append(new Column() {
-                        Min = (UInt32)(column.Ordinal + 1),
-                        Max = (UInt32)(column.Ordinal + 1),
-                        Width = width,
-                        CustomWidth = true
-                    });
-
-                    Cell cell = new Cell();
-                    cell.DataType = CellValues.String;
-                    cell.CellValue = new CellValue(column.ColumnName);
-                    cell.StyleIndex = (UInt32)uniqueStyles[cellMetadata];
-                    headerRow.AppendChild(cell);
-                }
-                worksheetPart.Worksheet.InsertAt(columns, 0);
-
-                sheetData.AppendChild(headerRow);
-
-                for (var i=0; i < dataTable.Rows.Count; i++)
-                {
-                    DataRow dsrow = dataTable.Rows[i];
-                    Row newRow = new Row();
-                    if (!String.IsNullOrEmpty(scenarioEventList[i].RowMetadata))
-                    {
-                        newRow.Height = double.Parse(scenarioEventList[i].RowMetadata);
-                        newRow.CustomHeight = true;
-                    }
-                    foreach (System.Data.DataColumn column in dataTable.Columns)
-                    {
-                        Cell cell = new Cell();
-                        cell.DataType = CellValues.String;
-                        cell.CellValue = new CellValue(dsrow[column.ColumnName].ToString());
-                        var dataField = await _context.DataFields
-                            .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
-                            .FirstOrDefaultAsync();
-                        var dataValue = await _context.DataValues
-                            .Where(dv => dv.ScenarioEventId == scenarioEventList[i].Id && dv.DataFieldId == dataField.Id)
-                            .FirstOrDefaultAsync();
-                        var cellMetadata = dataValue.CellMetadata;
-                        cell.StyleIndex = String.IsNullOrEmpty(cellMetadata) ? 0 : (UInt32)uniqueStyles[cellMetadata];
-                        newRow.AppendChild(cell);
-                    }
-
-                    sheetData.AppendChild(newRow);
-                }
-
-                workbookPart.Workbook.Save();
-            }
-            //reset the stream position to the start of the stream
+            await PopulateWorksheetAsync(mselId, worksheet, ct);
+            // save the workbook to the memory stream
+            workbook.SaveAs(memoryStream, false, false);
+            // reset the stream position to the start of the stream
             memoryStream.Seek(0, SeekOrigin.Begin);
             var filename = msel.Description.ToLower().EndsWith(".xlsx") ? msel.Description : msel.Description + ".xlsx";
 
             return System.Tuple.Create(memoryStream, filename);
-        }
-
-        public async Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct)
-        {
-            var msel = await _context.Msels
-                .Where(f => f.Id == mselId)
-                .SingleOrDefaultAsync(ct);
-            if (msel == null)
-                throw new EntityNotFoundException<MselEntity>();
-            var scenarioEventList = await _context.ScenarioEvents
-                .Where(n => n.MselId == mselId)
-                .OrderBy(n => n.RowIndex)
-                .ToListAsync(ct);
-            // get the MSEL data into a DataTable
-            var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
-
-            return dataTable;
         }
 
         private async Task createMselFromXlsxFile(FileForm form, Guid mselId, CancellationToken ct)
@@ -436,7 +338,7 @@ namespace Blueprint.Api.Services
                 var worksheet = workbook.Worksheet(1);
                 var headerRow = worksheet.FirstRowUsed();
                 var lastUsedRow = worksheet.LastRowUsed();
-                var columns = worksheet.Columns();
+                LoadThemeColors(workbook);
                 // create the MSEL enitiy
                 var msel = new MselEntity() {
                     Id = mselId,
@@ -450,7 +352,7 @@ namespace Blueprint.Api.Services
                 };
                 await _context.Msels.AddAsync(msel, ct);
                 // create the data fields
-                var dataFields = CreateDataFields(mselId, headerRow, worksheet, columns);
+                var dataFields = CreateDataFields(mselId, headerRow);
                 // create the sceanrio events and data values
                 await CreateScenarioEventsAsync(mselId, headerRow, lastUsedRow, dataFields);
                 await _context.DataFields.AddRangeAsync(dataFields);
@@ -458,7 +360,21 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
         }
 
-        private List<DataFieldEntity> CreateDataFields(Guid mselId, IXLRow headerRow, IXLWorksheet workbookPart, IXLColumns columns)
+        private void LoadThemeColors(IXLWorkbook workbook)
+        {
+            _themeColors[XLThemeColor.Accent1] = workbook.Theme.Accent1.Color.ToArgb().ToString();
+            _themeColors[XLThemeColor.Accent2] = workbook.Theme.Accent2.Color.ToArgb().ToString();
+            _themeColors[XLThemeColor.Accent3] = workbook.Theme.Accent3.Color.ToArgb().ToString();
+            _themeColors[XLThemeColor.Accent4] = workbook.Theme.Accent4.Color.ToArgb().ToString();
+            _themeColors[XLThemeColor.Accent5] = workbook.Theme.Accent5.Color.ToArgb().ToString();
+            _themeColors[XLThemeColor.Accent6] = workbook.Theme.Accent6.Color.ToArgb().ToString();
+            _themeColors[XLThemeColor.Background1] = workbook.Theme.Background1.Color.ToArgb().ToString();
+            _themeColors[XLThemeColor.Background2] = workbook.Theme.Background2.Color.ToArgb().ToString();
+            _themeColors[XLThemeColor.Text1] = workbook.Theme.Text1.Color.ToArgb().ToString();
+            _themeColors[XLThemeColor.Text2] = workbook.Theme.Text2.Color.ToArgb().ToString();
+        }
+
+        private List<DataFieldEntity> CreateDataFields(Guid mselId, IXLRow headerRow)
         {
             var dataFields = new List<DataFieldEntity>();
             var displayOrder = 1;
@@ -468,11 +384,22 @@ namespace Blueprint.Api.Services
                 var theDataType = thecurrentcell.DataType;
                 if (!string.IsNullOrEmpty(currentcellvalue))
                 {
+                    var cellColor = "";
+                    var cellTint = "";
                     var fill = thecurrentcell.Style.Fill;
-                    var cellColor = fill.BackgroundColor;
+                    if (fill.BackgroundColor.ColorType == XLColorType.Theme)
+                    {
+                        cellColor = _themeColors[fill.BackgroundColor.ThemeColor];
+                        cellTint = fill.BackgroundColor.ThemeTint.ToString();
+                    }
+                    else
+                    {
+                        cellColor = fill.BackgroundColor.Color.ToArgb().ToString();
+                        cellTint = "0.0";
+                    }
                     var isBold = thecurrentcell.Style.Font.Bold;
                     var columnMetadata = "0.0";
-                    if (columns != null)
+                    if (thecurrentcell.WorksheetColumn() != null)
                     {
                         var columnWidth = thecurrentcell.WorksheetColumn().Width;
                         columnMetadata = columnWidth.ToString();
@@ -484,7 +411,7 @@ namespace Blueprint.Api.Services
                         DataType = DataFieldType.String,
                         DisplayOrder = displayOrder,
                         IsChosenFromList = false,
-                        CellMetadata = cellColor + "," + isBold.ToString(),
+                        CellMetadata = cellColor + "," + cellTint + "," + isBold.ToString(),
                         ColumnMetadata = columnMetadata,
                         CreatedBy = _user.GetId(),
                         DateCreated = DateTime.UtcNow
@@ -540,7 +467,7 @@ namespace Blueprint.Api.Services
                         break;
                     case XLDataType.TimeSpan:
                         currentcellvalue = cell.GetValue<TimeSpan>().ToString();
-                        dataFields[cell.WorksheetColumn().ColumnNumber() - 1].DataType = (DataFieldType.DateTime);
+                        dataFields[cell.WorksheetColumn().ColumnNumber() - 1].DataType = (DataFieldType.String);
                         break;
                     case XLDataType.Text:
                     default:
@@ -551,176 +478,87 @@ namespace Blueprint.Api.Services
                 var dataField = dataFields.FirstOrDefault(df => df.MselId == scenarioEvent.MselId && df.DisplayOrder == displayOrder);
                 if (dataField != null)
                 {
+                    var cellColor = "";
+                    var cellTint = "";
                     var fill = cell.Style.Fill;
-                    var cellColor = fill.BackgroundColor;
+                    if (fill.BackgroundColor.ColorType == XLColorType.Theme)
+                    {
+                        cellColor = _themeColors[fill.BackgroundColor.ThemeColor];
+                        cellTint = fill.BackgroundColor.ThemeTint.ToString();
+                    }
+                    else
+                    {
+                        cellColor = fill.BackgroundColor.Color.ToArgb().ToString();
+                        cellTint = "0.0";
+                    }
                     var isBold = cell.Style.Font.Bold;
                     var dataValue = new DataValueEntity() {
                         Id = Guid.NewGuid(),
                         ScenarioEventId = scenarioEvent.Id,
                         DataFieldId = dataField.Id,
                         Value = currentcellvalue,
-                        CellMetadata = cellColor + "," + isBold.ToString()
+                        CellMetadata = cellColor + "," + cellTint + "," + isBold.ToString()
                     };
                     await _context.DataValues.AddAsync(dataValue);
                 }
             }
         }
 
-        private async Task<DataTable> GetMselDataAsync(Guid mselId, List<ScenarioEventEntity> scenarioEventList, CancellationToken ct)
+        private async Task PopulateWorksheetAsync(Guid mselId, IXLWorksheet worksheet, CancellationToken ct)
         {
-            // create data table to hold all of the scenarioEvent data
-            DataTable dataTable = new DataTable();
-            dataTable.Clear();
             // add a column for each data field
             var dataFieldList = await _context.DataFields
                 .Where(df => df.MselId == mselId)
                 .OrderBy(df => df.DisplayOrder)
                 .ToListAsync(ct);
+            var columnIndexList = new Dictionary<string, int>();
             foreach (var dataField in dataFieldList)
             {
-                dataTable.Columns.Add(dataField.Name);
+                columnIndexList[dataField.Name] = dataField.DisplayOrder;
+                worksheet.Cell(1, dataField.DisplayOrder).DataType = XLDataType.Text;
+                worksheet.Cell(1, dataField.DisplayOrder).Value = dataField.Name;
+                worksheet.Cell(1, dataField.DisplayOrder).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                worksheet.Cell(1, dataField.DisplayOrder).Style.Fill.SetBackgroundColor(XLColor.FromArgb(int.Parse(dataField.CellMetadata.Split(",")[0])));
+                worksheet.Cell(1, dataField.DisplayOrder).WorksheetColumn().Width = double.Parse(dataField.ColumnMetadata.Split(",")[0]);
             }
             // add a row for each scenarioEvent
+            var scenarioEventList = await _context.ScenarioEvents
+                .Where(n => n.MselId == mselId)
+                .OrderBy(n => n.RowIndex)
+                .ToListAsync(ct);
             foreach (var scenarioEvent in scenarioEventList)
             {
-                var dataRow = dataTable.NewRow();
                 var dataValueList = await _context.DataValues
                     .Where(dv => dv.ScenarioEventId == scenarioEvent.Id)
                     .OrderBy(dv =>dv.DataField.DisplayOrder)
-                    .Select(dv => new { Name = dv.DataField.Name, Value = dv.Value })
+                    .Select(dv => new { Column = dv.DataField.DisplayOrder, DataType = dv.DataField.DataType, Value = dv.Value, CellMetadata = dv.CellMetadata })
                     .ToListAsync(ct);
                 foreach (var dataValue in dataValueList)
                 {
-                    dataRow[dataValue.Name] = dataValue.Value;
+                    worksheet.Cell(scenarioEvent.RowIndex, dataValue.Column).Value = dataValue.Value;
+                    var dataType = XLDataType.Text;
+                    switch (dataValue.DataType)
+                    {
+                        case DataFieldType.Boolean:
+                            dataType = XLDataType.Boolean;
+                            break;
+                        case DataFieldType.DateTime:
+                            dataType = XLDataType.DateTime;
+                            break;
+                        case DataFieldType.Integer:
+                        case DataFieldType.Double:
+                            dataType = XLDataType.Number;
+                            break;
+                        default:
+                            break;
+                    }
+                    worksheet.Cell(scenarioEvent.RowIndex, dataValue.Column).DataType = dataType;
+                    worksheet.Cell(scenarioEvent.RowIndex, dataValue.Column).Style.Fill.SetBackgroundColor(XLColor.FromArgb(int.Parse(dataValue.CellMetadata.Split(",")[0])));
+                    worksheet.Cell(scenarioEvent.RowIndex, dataValue.Column).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
                 }
-                dataTable.Rows.Add(dataRow);
+                // set row height
+                worksheet.Cell(scenarioEvent.RowIndex, 1).WorksheetRow().Height = double.Parse(scenarioEvent.RowMetadata.Split(",")[0]);
             }
-
-            return dataTable;
-        }
-
-        private async Task<Dictionary<string, int>> GetUniqueStylesAsync(Guid mselId, CancellationToken ct)
-        {
-            var uniqueStyles = new Dictionary<string, int>();
-            var dataFields = await _context.DataFields
-                .Where(df => df.MselId == mselId)
-                .ToListAsync();
-            var dataFieldColors = dataFields.Where(df => df.CellMetadata != null).DistinctBy(df => df.CellMetadata).Select(df => df.CellMetadata);
-            var dataFieldIds = dataFields.Select(df => df.Id);
-            var dataValueColors = await _context.DataValues
-                .Where(dv => dataFieldIds.Contains(dv.DataFieldId) && dv.CellMetadata != null)
-                .Select(dv => dv.CellMetadata)
-                .ToListAsync();
-            var allColors = dataFieldColors.Union(dataValueColors);
-            foreach (var color in allColors)
-            {
-                uniqueStyles[color] = uniqueStyles.Count + 1;
-            }
-
-            return uniqueStyles;
-        }
-
-        private Stylesheet CreateStylesheet(List<string> uniqueStyles)
-        {
-            Stylesheet stylesheet = new Stylesheet() { MCAttributes = new MarkupCompatibilityAttributes() { Ignorable = "x14ac" } };
-            stylesheet.AddNamespaceDeclaration("mc", "http://schemas.openxmlformats.org/markup-compatibility/2006");
-            stylesheet.AddNamespaceDeclaration("x14ac", "http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac");
-
-            Fonts fonts = new Fonts();
-
-            Font font = new Font();
-            Font boldFont = new Font();
-            boldFont.Append(new Bold());
-            fonts.Append(font);
-            fonts.Append(boldFont);
-
-            Fills fills = new Fills() { Count = (UInt32Value)5U };
-
-            // FillId = 0
-            Fill fill1 = new Fill();
-            PatternFill patternFill1 = new PatternFill() { PatternType = PatternValues.None };
-            fill1.Append(patternFill1);
-            fills.Append(fill1);
-
-            // FillId = 1
-            Fill fill2 = new Fill();
-            PatternFill patternFill2 = new PatternFill() { PatternType = PatternValues.Gray125 };
-            fill2.Append(patternFill2);
-            fills.Append(fill2);
-
-            for (var i=0; i < uniqueStyles.Count; i++)
-            {
-                var colorAndTint = uniqueStyles[i].Split(',');
-                Fill newFill = new Fill();
-                PatternFill patternFill = new PatternFill() { PatternType = PatternValues.Solid };
-                var rgb = colorAndTint[0] == "" ? "FFFFFF" : colorAndTint[0];
-                ForegroundColor foregroundColor = new ForegroundColor() { Rgb = rgb, Tint = double.Parse(colorAndTint[1]) };
-                BackgroundColor backgroundColor = new BackgroundColor() { Indexed = (UInt32Value)64U };
-                patternFill.Append(foregroundColor);
-                patternFill.Append(backgroundColor);
-                newFill.Append(patternFill);
-                fills.Append(newFill);
-            }
-
-            // borders
-            Borders borders = new Borders();
-            Border noBorder = new Border();
-            Border border = new Border();
-            LeftBorder leftBorder = new LeftBorder(){ Style = BorderStyleValues.Thin };
-            leftBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
-            RightBorder rightBorder = new RightBorder(){ Style = BorderStyleValues.Thin };
-            rightBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
-            TopBorder topBorder = new TopBorder(){ Style = BorderStyleValues.Thin };
-            topBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
-            BottomBorder bottomBorder = new BottomBorder(){ Style = BorderStyleValues.Thin };
-            bottomBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
-            border.Append(leftBorder);
-            border.Append(rightBorder);
-            border.Append(topBorder);
-            border.Append(bottomBorder);
-            borders.Append(noBorder);
-            borders.AppendChild(border);
-            borders.Count = (UInt32Value)2U;
-
-            CellStyleFormats cellStyleFormats = new CellStyleFormats() { Count = (UInt32Value)1U };
-            CellFormat cellFormat1 = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)0U, BorderId = (UInt32Value)1U };
-
-            cellStyleFormats.Append(cellFormat1);
-
-            CellFormats cellFormats = new CellFormats() { Count = (UInt32Value)4U };
-            CellFormat cellFormat2 = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)0U, BorderId = (UInt32Value)1U, FormatId = (UInt32Value)0U };
-            cellFormats.Append(cellFormat2);
-            for (int i=0; i < uniqueStyles.Count; i++)
-            {
-                UInt32 fontId = uniqueStyles[i].Split(",")[2] == "bold" ? 1U : 0U;
-                CellFormat cellFormat = new CellFormat(new Alignment() { WrapText = true }) { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)fontId, FillId = (UInt32Value)((UInt32)i + 2), BorderId = (UInt32Value)1U, FormatId = (UInt32Value)0U, ApplyFill = true, ApplyBorder = true };
-                cellFormats.Append(cellFormat);
-            }
-
-            CellStyles cellStyles = new CellStyles() { Count = (UInt32Value)1U };
-            CellStyle cellStyle1 = new CellStyle() { Name = "Normal", FormatId = (UInt32Value)0U, BuiltinId = (UInt32Value)0U };
-            cellStyles.Append(cellStyle1);
-            DifferentialFormats differentialFormats = new DifferentialFormats() { Count = (UInt32Value)0U };
-            TableStyles tableStyles = new TableStyles() { Count = (UInt32Value)0U, DefaultTableStyle = "TableStyleMedium2", DefaultPivotStyle = "PivotStyleMedium9" };
-
-            StylesheetExtensionList stylesheetExtensionList = new StylesheetExtensionList();
-            StylesheetExtension stylesheetExtension1 = new StylesheetExtension() { Uri = "{EB79DEF2-80B8-43e5-95BD-54CBDDF9020C}" };
-            stylesheetExtension1.AddNamespaceDeclaration("x14", "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main");
-            // X14.SlicerStyles slicerStyles1 = new X14.SlicerStyles() { DefaultSlicerStyle = "SlicerStyleLight1" };
-            // stylesheetExtension1.Append(slicerStyles1);
-            stylesheetExtensionList.Append(stylesheetExtension1);
-
-            stylesheet.Append(fonts);
-            stylesheet.Append(fills);
-            stylesheet.Append(borders);
-            stylesheet.Append(cellStyleFormats);
-            stylesheet.Append(cellFormats);
-            stylesheet.Append(cellStyles);
-            stylesheet.Append(differentialFormats);
-            stylesheet.Append(tableStyles);
-            stylesheet.Append(stylesheetExtensionList);
-
-            return stylesheet;
         }
 
     }

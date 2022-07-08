@@ -6,6 +6,20 @@
       "Value": "true",
       "Description": "Has Full Rights.  Can do everything.",
       "ReadOnly": true
+    },
+    {
+      "Id": "c881417e-02f1-4232-b06b-723901120e20",
+      "Key": "ContentDeveloper",
+      "Value": "true",
+      "Description": "Can create/edit/delete an Exercise/Directory/Workspace/File/Module",
+      "ReadOnly": true
+    },
+    {
+      "Id": "e0317506-fc9a-412d-a4bf-ac5ec915490e",
+      "Key": "CanSubmit",
+      "Value": "true",
+      "Description": "Can submit a score",
+      "ReadOnly": true
     }
   ],
   "Users": [

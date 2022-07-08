@@ -149,7 +149,7 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
             {
                 TeamUserEntity teamUser;
                 if (msel.TeamId == null)
@@ -184,11 +184,23 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new CanIncrementMoveRequirement())).Succeeded)
-                throw new ForbiddenException();
+            // user must be a Content Developer or be on the requested team and be able to submit
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                var teamId = await _context.Msels
+                    .Where(m => m.Id == msel.Id)
+                    .Select(m => m.TeamId)
+                    .FirstOrDefaultAsync();
+                if (!(
+                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
+                        teamId != null &&
+                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
+                     )
+                )
+                    throw new ForbiddenException();
+            }
 
             var mselToUpdate = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
-
             if (mselToUpdate == null)
                 throw new EntityNotFoundException<Msel>();
 
@@ -212,9 +224,22 @@ namespace Blueprint.Api.Services
             var mselToDelete = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (mselToDelete == null)
                 throw new EntityNotFoundException<Msel>();
-            // must be the user who created it or a content developer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded && mselToDelete.CreatedBy != _user.GetId() )
-                throw new ForbiddenException();
+
+            // user must be a Content Developer or be on the requested team and be able to submit
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                var teamId = await _context.Msels
+                    .Where(m => m.Id == mselToDelete.Id)
+                    .Select(m => m.TeamId)
+                    .FirstOrDefaultAsync();
+                if (!(
+                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
+                        teamId != null &&
+                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
+                     )
+                )
+                    throw new ForbiddenException();
+            }
 
             _context.Msels.Remove(mselToDelete);
             await _context.SaveChangesAsync(ct);
@@ -224,6 +249,25 @@ namespace Blueprint.Api.Services
 
         public async Task<Guid> UploadAsync(FileForm form, CancellationToken ct)
         {
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                TeamUserEntity teamUser;
+                if (form.TeamId == null)
+                {
+                    teamUser = await _context.TeamUsers
+                        .FirstOrDefaultAsync(tu => tu.UserId == _user.GetId());
+                }
+                else
+                {
+                    teamUser = await _context.TeamUsers
+                        .FirstOrDefaultAsync(tu => tu.UserId == _user.GetId() && tu.TeamId == form.TeamId);
+                }
+                if (teamUser == null)
+                    throw new ForbiddenException();
+
+                form.TeamId = teamUser.TeamId;
+            }
+
             var mselId = form.MselId != null ? (Guid)form.MselId : Guid.NewGuid();
             await createMselFromXlsxFile(form, mselId, ct);
 
@@ -238,6 +282,22 @@ namespace Blueprint.Api.Services
             var msel = await _context.Msels.FindAsync(mselId);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>("The MSEL does not exist to be replaced.  " + mselId.ToString());
+
+            // user must be a Content Developer or be on the requested team and be able to submit
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                var teamId = await _context.Msels
+                    .Where(m => m.Id == msel.Id)
+                    .Select(m => m.TeamId)
+                    .FirstOrDefaultAsync();
+                if (!(
+                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
+                        teamId != null &&
+                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
+                     )
+                )
+                    throw new ForbiddenException();
+            }
 
             // start a transaction, because we need the cascade delete to take affect before adding the new msel data
             await _context.Database.BeginTransactionAsync();
@@ -477,9 +537,13 @@ namespace Blueprint.Api.Services
                         }
                         cellTint = colorType.Tint == null ? 0.0 : colorType.Tint.Value;
                     }
-                    var columnIndex = GetColumnIndex(thecurrentcell.CellReference.Value);
-                    var column = (Column)columns.ChildElements.FirstOrDefault(ce => columnIndex >= ((Column)ce).Min.Value && columnIndex<= ((Column)ce).Max.Value);
-                    var columnMetadata = column.Width == null ? "0.0" : column.Width.Value.ToString();
+                    var columnMetadata = "0.0";
+                    if (columns != null)
+                    {
+                        var columnIndex = GetColumnIndex(thecurrentcell.CellReference.Value);
+                        var column = (Column)columns.ChildElements.FirstOrDefault(ce => columnIndex >= ((Column)ce).Min.Value && columnIndex<= ((Column)ce).Max.Value);
+                        columnMetadata = column.Width == null ? "0.0" : column.Width.Value.ToString();
+                    }
                     var dataField = new DataFieldEntity() {
                         Id = Guid.NewGuid(),
                         MselId = mselId,
@@ -606,7 +670,8 @@ namespace Blueprint.Api.Services
                         }
                         cellTint = colorType.Tint == null ? 0.0 : colorType.Tint.Value;
                     }
-                    var fontWeight = dataField.DisplayOrder == 1 ? "bold" : "normal";
+                    Font font = (Font)styles.Stylesheet.Fonts.ChildElements[(int)cellFormat.FontId.Value];
+                    var fontWeight = font.Bold == null ? "normal" : "bold";
                     var dataValue = new DataValueEntity() {
                         Id = Guid.NewGuid(),
                         ScenarioEventId = scenarioEvent.Id,
@@ -706,7 +771,8 @@ namespace Blueprint.Api.Services
                 var colorAndTint = uniqueStyles[i].Split(',');
                 Fill newFill = new Fill();
                 PatternFill patternFill = new PatternFill() { PatternType = PatternValues.Solid };
-                ForegroundColor foregroundColor = new ForegroundColor() { Rgb = colorAndTint[0], Tint = double.Parse(colorAndTint[1]) };
+                var rgb = colorAndTint[0] == "" ? "FFFFFF" : colorAndTint[0];
+                ForegroundColor foregroundColor = new ForegroundColor() { Rgb = rgb, Tint = double.Parse(colorAndTint[1]) };
                 BackgroundColor backgroundColor = new BackgroundColor() { Indexed = (UInt32Value)64U };
                 patternFill.Append(foregroundColor);
                 patternFill.Append(backgroundColor);
@@ -715,7 +781,8 @@ namespace Blueprint.Api.Services
             }
 
             // borders
-            Borders borders = new Borders() { Count = (UInt32Value)1U };
+            Borders borders = new Borders();
+            Border noBorder = new Border();
             Border border = new Border();
             LeftBorder leftBorder = new LeftBorder(){ Style = BorderStyleValues.Thin };
             leftBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
@@ -725,26 +792,26 @@ namespace Blueprint.Api.Services
             topBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
             BottomBorder bottomBorder = new BottomBorder(){ Style = BorderStyleValues.Thin };
             bottomBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
-            DiagonalBorder diagonalBorder = new DiagonalBorder(){ Style = BorderStyleValues.Thin };
             border.Append(leftBorder);
             border.Append(rightBorder);
             border.Append(topBorder);
             border.Append(bottomBorder);
-            border.Append(diagonalBorder);
+            borders.Append(noBorder);
             borders.AppendChild(border);
+            borders.Count = (UInt32Value)2U;
 
             CellStyleFormats cellStyleFormats = new CellStyleFormats() { Count = (UInt32Value)1U };
-            CellFormat cellFormat1 = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)0U, BorderId = (UInt32Value)0U };
+            CellFormat cellFormat1 = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)0U, BorderId = (UInt32Value)1U };
 
             cellStyleFormats.Append(cellFormat1);
 
             CellFormats cellFormats = new CellFormats() { Count = (UInt32Value)4U };
-            CellFormat cellFormat2 = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)0U, BorderId = (UInt32Value)0U, FormatId = (UInt32Value)0U };
+            CellFormat cellFormat2 = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)0U, BorderId = (UInt32Value)1U, FormatId = (UInt32Value)0U };
             cellFormats.Append(cellFormat2);
             for (int i=0; i < uniqueStyles.Count; i++)
             {
                 UInt32 fontId = uniqueStyles[i].Split(",")[2] == "bold" ? 1U : 0U;
-                CellFormat cellFormat = new CellFormat(new Alignment() { WrapText = true }) { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)fontId, FillId = (UInt32Value)((UInt32)i + 2), BorderId = (UInt32Value)0U, FormatId = (UInt32Value)0U, ApplyFill = true, ApplyBorder = true };
+                CellFormat cellFormat = new CellFormat(new Alignment() { WrapText = true }) { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)fontId, FillId = (UInt32Value)((UInt32)i + 2), BorderId = (UInt32Value)1U, FormatId = (UInt32Value)0U, ApplyFill = true, ApplyBorder = true };
                 cellFormats.Append(cellFormat);
             }
 

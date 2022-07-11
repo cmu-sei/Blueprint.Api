@@ -367,7 +367,7 @@ namespace Blueprint.Api.Services
                     });
 
                     Cell cell = new Cell();
-                    cell.DataType = CellValues.String;
+                    cell.DataType = GetCellDataType(dataField.DataType);
                     cell.CellValue = new CellValue(column.ColumnName);
                     cell.StyleIndex = (UInt32)uniqueStyles[cellMetadata];
                     headerRow.AppendChild(cell);
@@ -479,27 +479,43 @@ namespace Blueprint.Api.Services
             foreach (Cell thecurrentcell in headerRow)
             {
                 string currentcellvalue = string.Empty;
+                DataFieldType cellDataType = DataFieldType.String;
                 if (thecurrentcell.DataType != null)
                 {
-                    if (thecurrentcell.DataType == CellValues.SharedString)
+                    switch ((CellValues)thecurrentcell.DataType)
                     {
-                        int id;
-                        if (Int32.TryParse(thecurrentcell.InnerText, out id))
-                        {
-                            SharedStringItem item = workbookPart.SharedStringTablePart.SharedStringTable.Elements<SharedStringItem>().ElementAt(id);
-                            if (item.Text != null)
+                        case CellValues.SharedString:
+                            int id;
+                            if (Int32.TryParse(thecurrentcell.InnerText, out id))
                             {
-                                currentcellvalue = item.Text.Text;
+                                SharedStringItem item = workbookPart.SharedStringTablePart.SharedStringTable.Elements<SharedStringItem>().ElementAt(id);
+                                if (item.Text != null)
+                                {
+                                    currentcellvalue = item.Text.Text;
+                                }
+                                else if (item.InnerText != null)
+                                {
+                                    currentcellvalue = item.InnerText;
+                                }
+                                else if (item.InnerXml != null)
+                                {
+                                    currentcellvalue = item.InnerXml;
+                                }
                             }
-                            else if (item.InnerText != null)
-                            {
-                                currentcellvalue = item.InnerText;
-                            }
-                            else if (item.InnerXml != null)
-                            {
-                                currentcellvalue = item.InnerXml;
-                            }
-                        }
+                            break;
+                        case CellValues.Boolean:
+                            cellDataType = DataFieldType.Boolean;
+                            break;
+                        case CellValues.Number:
+                            cellDataType = DataFieldType.Double;
+                            break;
+                        case CellValues.Date:
+                            cellDataType = DataFieldType.DateTime;
+                            break;
+                        case CellValues.InlineString:
+                        case CellValues.String:
+                        default:
+                            break;
                     }
                 }
                 else
@@ -548,7 +564,7 @@ namespace Blueprint.Api.Services
                         Id = Guid.NewGuid(),
                         MselId = mselId,
                         Name = currentcellvalue,
-                        DataType = DataFieldType.String,
+                        DataType = cellDataType,
                         DisplayOrder = displayOrder,
                         IsChosenFromList = false,
                         CellMetadata = cellColor + "," + cellTint + ",bold",
@@ -602,35 +618,48 @@ namespace Blueprint.Api.Services
 
         private async Task CreateDataValuesAsync(ScenarioEventEntity scenarioEvent, Row dataRow, WorkbookPart workbookPart, List<DataFieldEntity> dataFields)
         {
-            foreach (Cell cell in dataRow)
+            foreach (Cell cell in dataRow.Elements<Cell>())
             {
                 //statement to take the integer value
                 string currentcellvalue = string.Empty;
+                DataFieldType cellDataType = DataFieldType.String;
                 if (cell.DataType != null)
                 {
-                    if (cell.DataType == CellValues.SharedString)
+                    switch (cell.DataType.Value)
                     {
-                        int id;
-                        if (Int32.TryParse(cell.InnerText, out id))
-                        {
-                            SharedStringItem item = workbookPart.SharedStringTablePart.SharedStringTable.Elements<SharedStringItem>().ElementAt(id);
-                            if (item.Text != null)
+                        case CellValues.SharedString:
+                            int id;
+                            if (Int32.TryParse(cell.InnerText, out id))
                             {
-                                currentcellvalue = item.Text.Text;
+                                SharedStringItem item = workbookPart.SharedStringTablePart.SharedStringTable.Elements<SharedStringItem>().ElementAt(id);
+                                if (item.Text != null)
+                                {
+                                    currentcellvalue = item.Text.Text;
+                                }
+                                else if (item.InnerText != null)
+                                {
+                                    currentcellvalue = item.InnerText;
+                                }
+                                else if (item.InnerXml != null)
+                                {
+                                    currentcellvalue = item.InnerXml;
+                                }
                             }
-                            else if (item.InnerText != null)
-                            {
-                                currentcellvalue = item.InnerText;
-                            }
-                            else if (item.InnerXml != null)
-                            {
-                                currentcellvalue = item.InnerXml;
-                            }
-                        }
-                    }
-                    else if (cell.DataType == CellValues.String)
-                    {
-                        currentcellvalue = cell.CellValue.Text;
+                            break;
+                        case CellValues.Boolean:
+                            cellDataType = DataFieldType.Boolean;
+                            break;
+                        case CellValues.Number:
+                            cellDataType = DataFieldType.Double;
+                            break;
+                        case CellValues.Date:
+                            cellDataType = DataFieldType.DateTime;
+                            break;
+                        case CellValues.InlineString:
+                        case CellValues.String:
+                        default:
+                            currentcellvalue = cell.CellValue.Text;
+                            break;
                     }
                 }
                 else
@@ -649,6 +678,10 @@ namespace Blueprint.Api.Services
                     else
                     {
                         cellStyleIndex = (int)cell.StyleIndex.Value;
+                    }
+                    if (cellDataType != DataFieldType.String)
+                    {
+                        dataField.DataType = cellDataType;
                     }
                     WorkbookStylesPart styles = (WorkbookStylesPart)workbookPart.WorkbookStylesPart;
                     CellFormat cellFormat = (CellFormat)styles.Stylesheet.CellFormats.ChildElements[cellStyleIndex];
@@ -841,6 +874,26 @@ namespace Blueprint.Api.Services
             return stylesheet;
         }
 
+        private CellValues GetCellDataType(DataFieldType dataFieldType)
+        {
+            var cellDataType = CellValues.String;
+            switch (dataFieldType)
+            {
+                case DataFieldType.Boolean:
+                    cellDataType = CellValues.Boolean;
+                    break;
+                case DataFieldType.DateTime:
+                    cellDataType = CellValues.Date;
+                    break;
+                case DataFieldType.Double:
+                case DataFieldType.Integer:
+                    cellDataType = CellValues.Number;
+                    break;
+                default:
+                    break;
+            }
+            return cellDataType;
+        }
     }
 }
 

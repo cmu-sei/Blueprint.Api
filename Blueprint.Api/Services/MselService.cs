@@ -372,7 +372,7 @@ namespace Blueprint.Api.Services
                     });
 
                     Cell cell = new Cell();
-                    cell.DataType = CellValues.String;
+                    cell.DataType = GetCellDataType(dataField.DataType);
                     cell.CellValue = new CellValue(column.ColumnName);
                     cell.StyleIndex = (UInt32)uniqueStyles[cellMetadata];
                     headerRow.AppendChild(cell);
@@ -651,6 +651,10 @@ namespace Blueprint.Api.Services
                     else
                     {
                         cellStyleIndex = (int)cell.StyleIndex.Value;
+                    }
+                    if (cellDataType != DataFieldType.String)
+                    {
+                        dataField.DataType = cellDataType;
                     }
                     WorkbookStylesPart styles = (WorkbookStylesPart)workbookPart.WorkbookStylesPart;
                     CellFormat cellFormat = (CellFormat)styles.Stylesheet.CellFormats.ChildElements[cellStyleIndex];

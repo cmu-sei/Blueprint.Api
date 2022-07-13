@@ -317,40 +317,45 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
+            var filename = msel.Description.ToLower().EndsWith(".xlsx") ? msel.Description : msel.Description + ".xlsx";
+
             // get the MSEL data into a DataTable
             var scenarioEventList = await _context.ScenarioEvents
                 .Where(n => n.MselId == mselId)
                 .OrderBy(n => n.RowIndex)
                 .ToListAsync(ct);
             var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
+
             // create the xlsx file in memory
             MemoryStream memoryStream = new MemoryStream();
             using (SpreadsheetDocument document = SpreadsheetDocument.Create(memoryStream, SpreadsheetDocumentType.Workbook))
             {
+                // create the workbook
                 WorkbookPart workbookPart = document.AddWorkbookPart();
                 workbookPart.Workbook = new Workbook();
 
-                // add styles to sheet
+                // create the style sheet
                 Dictionary<string, int> uniqueStyles = await GetUniqueStylesAsync(mselId, ct);
                 WorkbookStylesPart workbookStylesPart = workbookPart.AddNewPart<WorkbookStylesPart>();
                 workbookStylesPart.Stylesheet = CreateStylesheet(uniqueStyles.OrderBy(uc => uc.Value).Select(uc => uc.Key).ToList());
                 workbookStylesPart.Stylesheet.Save();
 
+                // create the worksheet with sheet data
                 WorksheetPart worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
                 var sheetData = new SheetData();
                 worksheetPart.Worksheet = new Worksheet(sheetData);
-
                 Sheets sheets = workbookPart.Workbook.AppendChild(new Sheets());
                 Sheet sheet = new Sheet() { Id = workbookPart.GetIdOfPart(worksheetPart), SheetId = 1, Name = "Sheet1" };
-
                 sheets.Append(sheet);
 
+                // add the header row
                 Row headerRow = new Row();
                 if (msel.HeaderRowMetadata != "")
                 {
                     headerRow.Height = double.Parse(msel.HeaderRowMetadata);
                     headerRow.CustomHeight = true;
                 }
+                // add the cells to the header row
                 Columns columns = new Columns();
                 foreach (System.Data.DataColumn column in dataTable.Columns)
                 {
@@ -367,17 +372,18 @@ namespace Blueprint.Api.Services
                     });
 
                     Cell cell = new Cell();
-                    cell.DataType = GetCellDataType(dataField.DataType);
+                    cell.DataType = CellValues.String;
                     cell.CellValue = new CellValue(column.ColumnName);
                     cell.StyleIndex = (UInt32)uniqueStyles[cellMetadata];
                     headerRow.AppendChild(cell);
                 }
                 worksheetPart.Worksheet.InsertAt(columns, 0);
-
                 sheetData.AppendChild(headerRow);
 
+                // add a row for each ScenarioEvent contained in a dataTable row
                 for (var i=0; i < dataTable.Rows.Count; i++)
                 {
+                    // create the row
                     DataRow dsrow = dataTable.Rows[i];
                     Row newRow = new Row();
                     if (!String.IsNullOrEmpty(scenarioEventList[i].RowMetadata))
@@ -385,11 +391,11 @@ namespace Blueprint.Api.Services
                         newRow.Height = double.Parse(scenarioEventList[i].RowMetadata);
                         newRow.CustomHeight = true;
                     }
+                    // add the cells for this row
                     foreach (System.Data.DataColumn column in dataTable.Columns)
                     {
                         Cell cell = new Cell();
-                        cell.DataType = CellValues.String;
-                        cell.CellValue = new CellValue(dsrow[column.ColumnName].ToString());
+                        var stringValue = dsrow[column.ColumnName].ToString();
                         var dataField = await _context.DataFields
                             .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
                             .FirstOrDefaultAsync();
@@ -398,17 +404,31 @@ namespace Blueprint.Api.Services
                             .FirstOrDefaultAsync();
                         var cellMetadata = dataValue.CellMetadata;
                         cell.StyleIndex = String.IsNullOrEmpty(cellMetadata) ? 0 : (UInt32)uniqueStyles[cellMetadata];
+                        // handle differences between data types
+                        if (!string.IsNullOrWhiteSpace(stringValue))
+                        {
+                            // Date data type
+                            if (cellMetadata.Split(",")[3] == "40")
+                            {
+                                cell.DataType = CellValues.Date;
+                                var dateValue = DateTime.FromOADate(int.Parse(stringValue)).ToString("s");
+                                cell.CellValue = new CellValue(dateValue);
+                            }
+                            // String data type
+                            else
+                            {
+                                cell.DataType = CellValues.String;
+                                cell.CellValue = new CellValue(stringValue);
+                            }
+                        }
                         newRow.AppendChild(cell);
                     }
-
                     sheetData.AppendChild(newRow);
                 }
-
                 workbookPart.Workbook.Save();
             }
             //reset the stream position to the start of the stream
             memoryStream.Seek(0, SeekOrigin.Begin);
-            var filename = msel.Description.ToLower().EndsWith(".xlsx") ? msel.Description : msel.Description + ".xlsx";
 
             return System.Tuple.Create(memoryStream, filename);
         }
@@ -438,12 +458,6 @@ namespace Blueprint.Api.Services
                 //create the object for workbook part
                 WorkbookPart workbookPart = doc.WorkbookPart;
                 Sheets sheetCollection = workbookPart.Workbook.GetFirstChild<Sheets>();
-
-                // handle multiple sheets
-                // foreach (Sheet sheet in sheetCollection)
-                // {
-                //     Worksheet worksheet = ((WorksheetPart)workbookPart.GetPartById(sheet.Id)).Worksheet;
-                // }
 
                 //statement to get the worksheet object by using the sheet id
                 Worksheet worksheet = ((WorksheetPart)workbookPart.GetPartById(sheetCollection.GetFirstChild<Sheet>().Id)).Worksheet;
@@ -479,49 +493,37 @@ namespace Blueprint.Api.Services
             foreach (Cell thecurrentcell in headerRow)
             {
                 string currentcellvalue = string.Empty;
+                // All DataFields are initialized as String data types
+                // this DataType can changed based on the data values found in this column
                 DataFieldType cellDataType = DataFieldType.String;
+
+                // get the cell value
                 if (thecurrentcell.DataType != null)
                 {
-                    switch ((CellValues)thecurrentcell.DataType)
+                    var id = 0;
+                    if (thecurrentcell.DataType == CellValues.SharedString && Int32.TryParse(thecurrentcell.InnerText, out id))
                     {
-                        case CellValues.SharedString:
-                            int id;
-                            if (Int32.TryParse(thecurrentcell.InnerText, out id))
-                            {
-                                SharedStringItem item = workbookPart.SharedStringTablePart.SharedStringTable.Elements<SharedStringItem>().ElementAt(id);
-                                if (item.Text != null)
-                                {
-                                    currentcellvalue = item.Text.Text;
-                                }
-                                else if (item.InnerText != null)
-                                {
-                                    currentcellvalue = item.InnerText;
-                                }
-                                else if (item.InnerXml != null)
-                                {
-                                    currentcellvalue = item.InnerXml;
-                                }
-                            }
-                            break;
-                        case CellValues.Boolean:
-                            cellDataType = DataFieldType.Boolean;
-                            break;
-                        case CellValues.Number:
-                            cellDataType = DataFieldType.Double;
-                            break;
-                        case CellValues.Date:
-                            cellDataType = DataFieldType.DateTime;
-                            break;
-                        case CellValues.InlineString:
-                        case CellValues.String:
-                        default:
-                            break;
+                        SharedStringItem item = workbookPart.SharedStringTablePart.SharedStringTable.Elements<SharedStringItem>().ElementAt(id);
+                        if (item.Text != null)
+                        {
+                            currentcellvalue = item.Text.Text;
+                        }
+                        else if (item.InnerText != null)
+                        {
+                            currentcellvalue = item.InnerText;
+                        }
+                        else if (item.InnerXml != null)
+                        {
+                            currentcellvalue = item.InnerXml;
+                        }
                     }
                 }
                 else
                 {
                     currentcellvalue = thecurrentcell.InnerText;
                 }
+
+                // get the cell style and save it to the cell metadata and column metadata
                 if (!string.IsNullOrEmpty(currentcellvalue))
                 {
                     int cellStyleIndex;
@@ -560,6 +562,7 @@ namespace Blueprint.Api.Services
                         var column = (Column)columns.ChildElements.FirstOrDefault(ce => columnIndex >= ((Column)ce).Min.Value && columnIndex<= ((Column)ce).Max.Value);
                         columnMetadata = column.Width == null ? "0.0" : column.Width.Value.ToString();
                     }
+                    // store the DataField
                     var dataField = new DataFieldEntity() {
                         Id = Guid.NewGuid(),
                         MselId = mselId,
@@ -567,7 +570,7 @@ namespace Blueprint.Api.Services
                         DataType = cellDataType,
                         DisplayOrder = displayOrder,
                         IsChosenFromList = false,
-                        CellMetadata = cellColor + "," + cellTint + ",bold",
+                        CellMetadata = cellColor + "," + cellTint + ",bold," + (int)cellDataType,
                         ColumnMetadata = columnMetadata
                     };
                     dataFields.Add(dataField);
@@ -618,9 +621,23 @@ namespace Blueprint.Api.Services
 
         private async Task CreateDataValuesAsync(ScenarioEventEntity scenarioEvent, Row dataRow, WorkbookPart workbookPart, List<DataFieldEntity> dataFields)
         {
+            // loop through the cells in the row (each DataField)
             foreach (Cell cell in dataRow.Elements<Cell>())
             {
-                //statement to take the integer value
+                // get the cell format from the style index
+                int cellStyleIndex;
+                if (cell.StyleIndex == null)
+                {
+                    cellStyleIndex = 0;
+                }
+                else
+                {
+                    cellStyleIndex = (int)cell.StyleIndex.Value;
+                }
+                WorkbookStylesPart styles = (WorkbookStylesPart)workbookPart.WorkbookStylesPart;
+                CellFormat cellFormat = (CellFormat)styles.Stylesheet.CellFormats.ChildElements[cellStyleIndex];
+
+                // get the cell data type and value
                 string currentcellvalue = string.Empty;
                 DataFieldType cellDataType = DataFieldType.String;
                 if (cell.DataType != null)
@@ -665,26 +682,28 @@ namespace Blueprint.Api.Services
                 else
                 {
                     currentcellvalue = cell.InnerText;
+                    if (cellFormat.ApplyNumberFormat != null && cellFormat.ApplyNumberFormat && cellFormat.NumberFormatId != null)
+                    {
+                        int numberFormatId = (int)cellFormat.NumberFormatId.Value;
+                        cellDataType = GetDataFieldDataTypeFromCellNumberFormat(numberFormatId);
+                    }
                 }
                 var displayOrder = (int)cell.CellReference.Value[0] - 64;
                 var dataField = dataFields.FirstOrDefault(df => df.MselId == scenarioEvent.MselId && df.DisplayOrder == displayOrder);
                 if (dataField != null)
                 {
-                    int cellStyleIndex;
-                    if (cell.StyleIndex == null)
-                    {
-                        cellStyleIndex = 0;
-                    }
-                    else
-                    {
-                        cellStyleIndex = (int)cell.StyleIndex.Value;
-                    }
-                    if (cellDataType != DataFieldType.String)
+                    if (cellDataType != DataFieldType.String && cellDataType != dataField.DataType)
                     {
                         dataField.DataType = cellDataType;
                     }
-                    WorkbookStylesPart styles = (WorkbookStylesPart)workbookPart.WorkbookStylesPart;
-                    CellFormat cellFormat = (CellFormat)styles.Stylesheet.CellFormats.ChildElements[cellStyleIndex];
+
+
+                    // if (cellDataType == DataFieldType.DateTime)
+                    // {
+                    //     currentcellvalue = DateTime.FromOADate(double.Parse(currentcellvalue)).ToShortDateString();
+                    // }
+
+
                     Fill fill = (Fill)styles.Stylesheet.Fills.ChildElements[(int)cellFormat.FillId.Value];
                     PatternFill patternFill = fill.PatternFill;
                     var cellColor = "";
@@ -710,7 +729,7 @@ namespace Blueprint.Api.Services
                         ScenarioEventId = scenarioEvent.Id,
                         DataFieldId = dataField.Id,
                         Value = currentcellvalue,
-                        CellMetadata = cellColor + "," + cellTint + "," + fontWeight
+                        CellMetadata = cellColor + "," + cellTint + "," + fontWeight + "," + (int)dataField.DataType
                     };
                     await _context.DataValues.AddAsync(dataValue);
                 }
@@ -756,16 +775,16 @@ namespace Blueprint.Api.Services
             var dataFields = await _context.DataFields
                 .Where(df => df.MselId == mselId)
                 .ToListAsync();
-            var dataFieldColors = dataFields.Where(df => df.CellMetadata != null).DistinctBy(df => df.CellMetadata).Select(df => df.CellMetadata);
+            var dataFieldStyles = dataFields.Where(df => df.CellMetadata != null).DistinctBy(df => df.CellMetadata).Select(df => df.CellMetadata);
             var dataFieldIds = dataFields.Select(df => df.Id);
-            var dataValueColors = await _context.DataValues
+            var dataValueStyles = await _context.DataValues
                 .Where(dv => dataFieldIds.Contains(dv.DataFieldId) && dv.CellMetadata != null)
                 .Select(dv => dv.CellMetadata)
                 .ToListAsync();
-            var allColors = dataFieldColors.Union(dataValueColors);
-            foreach (var color in allColors)
+            var allStyles = dataFieldStyles.Union(dataValueStyles);
+            foreach (var style in allStyles)
             {
-                uniqueStyles[color] = uniqueStyles.Count + 1;
+                uniqueStyles[style] = uniqueStyles.Count + 1;
             }
 
             return uniqueStyles;
@@ -801,11 +820,11 @@ namespace Blueprint.Api.Services
 
             for (var i=0; i < uniqueStyles.Count; i++)
             {
-                var colorAndTint = uniqueStyles[i].Split(',');
+                var styleParts = uniqueStyles[i].Split(',');
                 Fill newFill = new Fill();
                 PatternFill patternFill = new PatternFill() { PatternType = PatternValues.Solid };
-                var rgb = colorAndTint[0] == "" ? "FFFFFF" : colorAndTint[0];
-                ForegroundColor foregroundColor = new ForegroundColor() { Rgb = rgb, Tint = double.Parse(colorAndTint[1]) };
+                var rgb = styleParts[0] == "" ? "FFFFFF" : styleParts[0];
+                ForegroundColor foregroundColor = new ForegroundColor() { Rgb = rgb, Tint = double.Parse(styleParts[1]) };
                 BackgroundColor backgroundColor = new BackgroundColor() { Indexed = (UInt32Value)64U };
                 patternFill.Append(foregroundColor);
                 patternFill.Append(backgroundColor);
@@ -838,15 +857,36 @@ namespace Blueprint.Api.Services
 
             cellStyleFormats.Append(cellFormat1);
 
-            CellFormats cellFormats = new CellFormats() { Count = (UInt32Value)4U };
+            CellFormats cellFormats = new CellFormats();
             CellFormat cellFormat2 = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)0U, BorderId = (UInt32Value)1U, FormatId = (UInt32Value)0U };
             cellFormats.Append(cellFormat2);
             for (int i=0; i < uniqueStyles.Count; i++)
             {
-                UInt32 fontId = uniqueStyles[i].Split(",")[2] == "bold" ? 1U : 0U;
-                CellFormat cellFormat = new CellFormat(new Alignment() { WrapText = true }) { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)fontId, FillId = (UInt32Value)((UInt32)i + 2), BorderId = (UInt32Value)1U, FormatId = (UInt32Value)0U, ApplyFill = true, ApplyBorder = true };
+                var styleParts = uniqueStyles[i].Split(',');
+                UInt32 fontId = styleParts[2] == "bold" ? 1U : 0U;
+                UInt32 numberFormatId = 0;
+                var applyNumberFormat = false;
+                GetCellNumberFormatFromDataFieldDataType((DataFieldType)int.Parse(styleParts[3]), out numberFormatId, out applyNumberFormat);
+                CellFormat cellFormat = new CellFormat(new Alignment() { WrapText = true }) {
+                    NumberFormatId = (UInt32Value)numberFormatId,
+                    FontId = (UInt32Value)fontId,
+                    FillId = (UInt32Value)((UInt32)i + 2),
+                    BorderId = (UInt32Value)1U,
+                    FormatId = (UInt32Value)0U,
+                    ApplyFill = true,
+                    ApplyBorder = true,
+                    ApplyAlignment = true };
+                    if (applyNumberFormat)
+                    {
+                        cellFormat.ApplyNumberFormat = true;
+                    }
+                    if (fontId != 0)
+                    {
+                        cellFormat.ApplyFont = true;
+                    }
                 cellFormats.Append(cellFormat);
             }
+            cellFormats.Count = (uint)cellFormats.ChildElements.Count;
 
             CellStyles cellStyles = new CellStyles() { Count = (UInt32Value)1U };
             CellStyle cellStyle1 = new CellStyle() { Name = "Normal", FormatId = (UInt32Value)0U, BuiltinId = (UInt32Value)0U };
@@ -857,9 +897,12 @@ namespace Blueprint.Api.Services
             StylesheetExtensionList stylesheetExtensionList = new StylesheetExtensionList();
             StylesheetExtension stylesheetExtension1 = new StylesheetExtension() { Uri = "{EB79DEF2-80B8-43e5-95BD-54CBDDF9020C}" };
             stylesheetExtension1.AddNamespaceDeclaration("x14", "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main");
+            StylesheetExtension stylesheetExtension2 = new StylesheetExtension() { Uri = "{9260A510-F301-46a8-8635-F512D64BE5F5}" };
+            stylesheetExtension2.AddNamespaceDeclaration("x14", "http://schemas.microsoft.com/office/spreadsheetml/2010/11/main");
             // X14.SlicerStyles slicerStyles1 = new X14.SlicerStyles() { DefaultSlicerStyle = "SlicerStyleLight1" };
             // stylesheetExtension1.Append(slicerStyles1);
             stylesheetExtensionList.Append(stylesheetExtension1);
+            stylesheetExtensionList.Append(stylesheetExtension2);
 
             stylesheet.Append(fonts);
             stylesheet.Append(fills);
@@ -874,7 +917,7 @@ namespace Blueprint.Api.Services
             return stylesheet;
         }
 
-        private CellValues GetCellDataType(DataFieldType dataFieldType)
+        private CellValues GetCellDataTypeFromDataFieldType(DataFieldType dataFieldType)
         {
             var cellDataType = CellValues.String;
             switch (dataFieldType)
@@ -894,6 +937,99 @@ namespace Blueprint.Api.Services
             }
             return cellDataType;
         }
+
+        /**
+            the GetDataFieldDataTypeFromCellNumberFormat method makes use of these built-in number formats to determine a date value
+            in particular IDs 14-22, 30, and 45-47
+            0 = 'General';
+            1 = '0';
+            2 = '0.00';
+            3 = '#,##0';
+            4 = '#,##0.00';
+            5 = '$#,##0;\-$#,##0';
+            6 = '$#,##0;[Red]\-$#,##0';
+            7 = '$#,##0.00;\-$#,##0.00';
+            8 = '$#,##0.00;[Red]\-$#,##0.00';
+            9 = '0%';
+            10 = '0.00%';
+            11 = '0.00E+00';
+            12 = '# ?/?';
+            13 = '# ??/??';
+            14 = 'mm-dd-yy';
+            15 = 'd-mmm-yy';
+            16 = 'd-mmm';
+            17 = 'mmm-yy';
+            18 = 'h:mm AM/PM';
+            19 = 'h:mm:ss AM/PM';
+            20 = 'h:mm';
+            21 = 'h:mm:ss';
+            22 = 'm/d/yy h:mm';
+            27 = '[$-404]e/m/d';
+            30 = 'm/d/yy';
+            36 = '[$-404]e/m/d';
+            37 = '#,##0 ;(#,##0)';
+            38 = '#,##0 ;[Red](#,##0)';
+            39 = '#,##0.00;(#,##0.00)';
+            40 = '#,##0.00;[Red](#,##0.00)';
+            44 = '_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)';
+            45 = 'mm:ss';
+            46 = '[h]:mm:ss';
+            47 = 'mmss.0';
+            48 = '##0.0E+0';
+            49 = '@';
+            50 = '[$-404]e/m/d';
+            57 = '[$-404]e/m/d';
+            59 = 't0';
+            60 = 't0.00';
+            61 = 't#,##0';
+            62 = 't#,##0.00';
+            67 = 't0%';
+            68 = 't0.00%';
+            69 = 't# ?/?';
+            70 = 't# ??/??';
+        **/
+        private DataFieldType GetDataFieldDataTypeFromCellNumberFormat(int numberFormatId)
+        {
+            DataFieldType dataFieldType;
+            switch (numberFormatId)
+            {
+                // case 0:
+                // case 49:
+                //     dataFieldType = DataFieldType.String;
+                //     break;
+                case 14:
+                case 15:
+                case 16:
+                case 17:
+                case 30:
+                case 45:
+                case 46:
+                case 47:
+                    dataFieldType = DataFieldType.DateTime;
+                    break;
+                default:
+                    // dataFieldType = DataFieldType.Double;
+                    dataFieldType = DataFieldType.String;
+                    break;
+            }
+            return dataFieldType;
+        }
+
+        private void GetCellNumberFormatFromDataFieldDataType(DataFieldType dataFieldType, out UInt32 numberFormatId, out bool applyNumberFormat)
+        {
+                switch (dataFieldType)
+                {
+                    case DataFieldType.DateTime:
+                        numberFormatId = 14;
+                        applyNumberFormat = true;
+                        break;
+                    default:
+                        numberFormatId = 0;
+                        applyNumberFormat = false;
+                        break;
+                }
+        }
+
     }
 }
 

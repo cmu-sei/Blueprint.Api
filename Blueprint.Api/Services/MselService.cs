@@ -372,7 +372,7 @@ namespace Blueprint.Api.Services
                     });
 
                     Cell cell = new Cell();
-                    cell.DataType = GetCellDataType(dataField.DataType);
+                    cell.DataType = CellValues.String;
                     cell.CellValue = new CellValue(column.ColumnName);
                     cell.StyleIndex = (UInt32)uniqueStyles[cellMetadata];
                     headerRow.AppendChild(cell);

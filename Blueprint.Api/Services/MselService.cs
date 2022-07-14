@@ -718,7 +718,7 @@ namespace Blueprint.Api.Services
                     }
                     if (dataFieldType == DataFieldType.DateTime)
                     {
-                        currentCellValue = DateTime.FromOADate(int.Parse(currentCellValue)).ToString("s");
+                        currentCellValue = DateTime.FromOADate(int.Parse(currentCellValue)).ToString("M/d/yyyy");
                     }
                     Fill fill = (Fill)styles.Stylesheet.Fills.ChildElements[(int)cellFormat.FillId.Value];
                     PatternFill patternFill = fill.PatternFill;

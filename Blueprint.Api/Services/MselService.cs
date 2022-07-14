@@ -367,7 +367,7 @@ namespace Blueprint.Api.Services
                     columns.Append(new Column() {
                         Min = (UInt32)(column.Ordinal + 1),
                         Max = (UInt32)(column.Ordinal + 1),
-                        Width = width,
+                        Width = width == 0 ? 10 : width,
                         CustomWidth = true
                     });
 
@@ -407,18 +407,25 @@ namespace Blueprint.Api.Services
                         // handle differences between data types
                         if (!string.IsNullOrWhiteSpace(stringValue))
                         {
-                            // Date data type
-                            if (cellMetadata.Split(",")[3] == "40")
+                            var dataFieldType = (DataFieldType)int.Parse(cellMetadata.Split(",")[3]);
+                            switch (dataFieldType)
                             {
-                                cell.DataType = CellValues.Date;
-                                var dateValue = DateTime.FromOADate(int.Parse(stringValue)).ToString("s");
-                                cell.CellValue = new CellValue(dateValue);
-                            }
-                            // String data type
-                            else
-                            {
-                                cell.DataType = CellValues.String;
-                                cell.CellValue = new CellValue(stringValue);
+                                case DataFieldType.DateTime:
+                                    cell.DataType = CellValues.Date;
+                                    cell.CellValue = new CellValue(stringValue);
+                                    break;
+                                case DataFieldType.Boolean:
+                                    cell.DataType = CellValues.Boolean;
+                                    cell.CellValue = new CellValue(stringValue);
+                                    break;
+                                case DataFieldType.Double:
+                                case DataFieldType.Integer:
+                                    cell.CellValue = new CellValue(stringValue);
+                                    break;
+                                default:
+                                    cell.DataType = CellValues.String;
+                                    cell.CellValue = new CellValue(stringValue);
+                                    break;
                             }
                         }
                         newRow.AppendChild(cell);
@@ -560,7 +567,7 @@ namespace Blueprint.Api.Services
                     {
                         var columnIndex = GetColumnIndex(thecurrentcell.CellReference.Value);
                         var column = (Column)columns.ChildElements.FirstOrDefault(ce => columnIndex >= ((Column)ce).Min.Value && columnIndex<= ((Column)ce).Max.Value);
-                        columnMetadata = column.Width == null ? "0.0" : column.Width.Value.ToString();
+                        columnMetadata = column == null || column.Width == null ? "0.0" : column.Width.Value.ToString();
                     }
                     // store the DataField
                     var dataField = new DataFieldEntity() {
@@ -621,89 +628,90 @@ namespace Blueprint.Api.Services
 
         private async Task CreateDataValuesAsync(ScenarioEventEntity scenarioEvent, Row dataRow, WorkbookPart workbookPart, List<DataFieldEntity> dataFields)
         {
-            // loop through the cells in the row (each DataField)
-            foreach (Cell cell in dataRow.Elements<Cell>())
+            // loop through each DataField
+            var cells = dataRow.Elements<Cell>();
+            foreach (var dataField in dataFields)
             {
-                // get the cell format from the style index
-                int cellStyleIndex;
-                if (cell.StyleIndex == null)
+                string currentCellValue = string.Empty;
+                string cellMetadata = ",0,normal," + (int)dataField.DataType;
+                var cellReference = GetCellReference(dataField.DisplayOrder, (int)dataRow.RowIndex.Value);
+                var cell = cells.FirstOrDefault(c => c.CellReference == cellReference);
+                if (cell != null)
                 {
-                    cellStyleIndex = 0;
-                }
-                else
-                {
-                    cellStyleIndex = (int)cell.StyleIndex.Value;
-                }
-                WorkbookStylesPart styles = (WorkbookStylesPart)workbookPart.WorkbookStylesPart;
-                CellFormat cellFormat = (CellFormat)styles.Stylesheet.CellFormats.ChildElements[cellStyleIndex];
-
-                // get the cell data type and value
-                string currentcellvalue = string.Empty;
-                DataFieldType cellDataType = DataFieldType.String;
-                if (cell.DataType != null)
-                {
-                    switch (cell.DataType.Value)
+                    // get the cell format from the style index
+                    int cellStyleIndex;
+                    if (cell.StyleIndex == null)
                     {
-                        case CellValues.SharedString:
-                            int id;
-                            if (Int32.TryParse(cell.InnerText, out id))
-                            {
-                                SharedStringItem item = workbookPart.SharedStringTablePart.SharedStringTable.Elements<SharedStringItem>().ElementAt(id);
-                                if (item.Text != null)
-                                {
-                                    currentcellvalue = item.Text.Text;
-                                }
-                                else if (item.InnerText != null)
-                                {
-                                    currentcellvalue = item.InnerText;
-                                }
-                                else if (item.InnerXml != null)
-                                {
-                                    currentcellvalue = item.InnerXml;
-                                }
-                            }
-                            break;
-                        case CellValues.Boolean:
-                            cellDataType = DataFieldType.Boolean;
-                            break;
-                        case CellValues.Number:
-                            cellDataType = DataFieldType.Double;
-                            break;
-                        case CellValues.Date:
-                            cellDataType = DataFieldType.DateTime;
-                            break;
-                        case CellValues.InlineString:
-                        case CellValues.String:
-                        default:
-                            currentcellvalue = cell.CellValue.Text;
-                            break;
+                        cellStyleIndex = 0;
                     }
-                }
-                else
-                {
-                    currentcellvalue = cell.InnerText;
+                    else
+                    {
+                        cellStyleIndex = (int)cell.StyleIndex.Value;
+                    }
+                    WorkbookStylesPart styles = (WorkbookStylesPart)workbookPart.WorkbookStylesPart;
+                    CellFormat cellFormat = (CellFormat)styles.Stylesheet.CellFormats.ChildElements[cellStyleIndex];
+
+                    // get the cell data type and value
+                    DataFieldType dataFieldType = DataFieldType.String;
+                    if (cell.DataType != null)
+                    {
+                        switch (cell.DataType.Value)
+                        {
+                            case CellValues.SharedString:
+                                int id;
+                                if (Int32.TryParse(cell.InnerText, out id))
+                                {
+                                    SharedStringItem item = workbookPart.SharedStringTablePart.SharedStringTable.Elements<SharedStringItem>().ElementAt(id);
+                                    if (item.Text != null)
+                                    {
+                                        currentCellValue = item.Text.Text;
+                                    }
+                                    else if (item.InnerText != null)
+                                    {
+                                        currentCellValue = item.InnerText;
+                                    }
+                                    else if (item.InnerXml != null)
+                                    {
+                                        currentCellValue = item.InnerXml;
+                                    }
+                                }
+                                break;
+                            case CellValues.Boolean:
+                                dataFieldType = DataFieldType.Boolean;
+                                currentCellValue = cell.CellValue.Text;
+                                break;
+                            case CellValues.Number:
+                                dataFieldType = DataFieldType.Double;
+                                currentCellValue = cell.CellValue.Text;
+                                break;
+                            case CellValues.Date:
+                                dataFieldType = DataFieldType.DateTime;
+                                currentCellValue = cell.CellValue.Text;
+                                break;
+                            case CellValues.InlineString:
+                            case CellValues.String:
+                            default:
+                                currentCellValue = cell.CellValue.Text;
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        currentCellValue = cell.InnerText;
+                    }
                     if (cellFormat.ApplyNumberFormat != null && cellFormat.ApplyNumberFormat && cellFormat.NumberFormatId != null)
                     {
                         int numberFormatId = (int)cellFormat.NumberFormatId.Value;
-                        cellDataType = GetDataFieldDataTypeFromCellNumberFormat(numberFormatId);
+                        dataFieldType = GetDataFieldDataTypeFromCellNumberFormat(numberFormatId);
                     }
-                }
-                var displayOrder = (int)cell.CellReference.Value[0] - 64;
-                var dataField = dataFields.FirstOrDefault(df => df.MselId == scenarioEvent.MselId && df.DisplayOrder == displayOrder);
-                if (dataField != null)
-                {
-                    if (cellDataType != DataFieldType.String && cellDataType != dataField.DataType)
+                    if (dataFieldType != DataFieldType.String && dataFieldType != dataField.DataType)
                     {
-                        dataField.DataType = cellDataType;
+                        dataField.DataType = dataFieldType;
                     }
-
-
-                    // if (cellDataType == DataFieldType.DateTime)
-                    // {
-                    //     currentcellvalue = DateTime.FromOADate(double.Parse(currentcellvalue)).ToShortDateString();
-                    // }
-
-
+                    if (dataFieldType == DataFieldType.DateTime)
+                    {
+                        currentCellValue = DateTime.FromOADate(int.Parse(currentCellValue)).ToString("s");
+                    }
                     Fill fill = (Fill)styles.Stylesheet.Fills.ChildElements[(int)cellFormat.FillId.Value];
                     PatternFill patternFill = fill.PatternFill;
                     var cellColor = "";
@@ -718,21 +726,24 @@ namespace Blueprint.Api.Services
                         }
                         else if (colorType.Theme != null)
                         {
-                            cellColor = ((DocumentFormat.OpenXml.Drawing.Color2Type)workbookPart.ThemePart.Theme.ThemeElements.ColorScheme.ChildElements[(int)colorType.Theme.Value]).RgbColorModelHex.Val;
+                            var themeChild = (DocumentFormat.OpenXml.Drawing.Color2Type)workbookPart.ThemePart.Theme.ThemeElements.ColorScheme.ChildElements[(int)colorType.Theme.Value];
+                            cellColor = themeChild.RgbColorModelHex == null ? "" : themeChild.RgbColorModelHex.Val;
                         }
                         cellTint = colorType.Tint == null ? 0.0 : colorType.Tint.Value;
                     }
                     Font font = (Font)styles.Stylesheet.Fonts.ChildElements[(int)cellFormat.FontId.Value];
                     var fontWeight = font.Bold == null ? "normal" : "bold";
-                    var dataValue = new DataValueEntity() {
-                        Id = Guid.NewGuid(),
-                        ScenarioEventId = scenarioEvent.Id,
-                        DataFieldId = dataField.Id,
-                        Value = currentcellvalue,
-                        CellMetadata = cellColor + "," + cellTint + "," + fontWeight + "," + (int)dataField.DataType
-                    };
-                    await _context.DataValues.AddAsync(dataValue);
+                    cellMetadata = cellColor + "," + cellTint + "," + fontWeight + "," + (int)dataField.DataType;
                 }
+
+                var dataValue = new DataValueEntity() {
+                    Id = Guid.NewGuid(),
+                    ScenarioEventId = scenarioEvent.Id,
+                    DataFieldId = dataField.Id,
+                    Value = currentCellValue,
+                    CellMetadata = cellMetadata
+                };
+                await _context.DataValues.AddAsync(dataValue);
             }
         }
 
@@ -993,10 +1004,21 @@ namespace Blueprint.Api.Services
             DataFieldType dataFieldType;
             switch (numberFormatId)
             {
-                // case 0:
-                // case 49:
-                //     dataFieldType = DataFieldType.String;
-                //     break;
+                case 1:
+                    dataFieldType = DataFieldType.Integer;
+                    break;
+                case 2:
+                case 3:
+                case 4:
+                case 5:
+                case 6:
+                case 7:
+                case 8:
+                case 9:
+                case 10:
+                case 11:
+                    dataFieldType = DataFieldType.Double;
+                    break;
                 case 14:
                 case 15:
                 case 16:
@@ -1008,7 +1030,6 @@ namespace Blueprint.Api.Services
                     dataFieldType = DataFieldType.DateTime;
                     break;
                 default:
-                    // dataFieldType = DataFieldType.Double;
                     dataFieldType = DataFieldType.String;
                     break;
             }
@@ -1019,6 +1040,14 @@ namespace Blueprint.Api.Services
         {
                 switch (dataFieldType)
                 {
+                    case DataFieldType.Double:
+                        numberFormatId = 1;
+                        applyNumberFormat = true;
+                        break;
+                    case DataFieldType.Integer:
+                        numberFormatId = 1;
+                        applyNumberFormat = true;
+                        break;
                     case DataFieldType.DateTime:
                         numberFormatId = 14;
                         applyNumberFormat = true;
@@ -1028,6 +1057,14 @@ namespace Blueprint.Api.Services
                         applyNumberFormat = false;
                         break;
                 }
+        }
+
+        private string GetCellReference(int columnIndex, int rowIndex)
+        {
+            var firstLetter = columnIndex > 26 ? char.ConvertFromUtf32(64 + columnIndex / 26) : "";
+            var secondLetter = char.ConvertFromUtf32(64 + columnIndex % 26);
+
+            return firstLetter + secondLetter + rowIndex.ToString();
         }
 
     }

@@ -412,7 +412,11 @@ namespace Blueprint.Api.Services
                             {
                                 case DataFieldType.DateTime:
                                     cell.DataType = CellValues.Date;
-                                    cell.CellValue = new CellValue(stringValue);
+                                    var dateParts = stringValue.Split("/");
+                                    cell.CellValue = new CellValue(dateParts[2] + "-" +
+                                        dateParts[0].PadLeft(2, '0') + "-" +
+                                        dateParts[1].PadLeft(2, '0') +
+                                        "T00:00:00");
                                     break;
                                 case DataFieldType.Boolean:
                                     cell.DataType = CellValues.Boolean;
@@ -710,7 +714,7 @@ namespace Blueprint.Api.Services
                     }
                     if (dataFieldType == DataFieldType.DateTime)
                     {
-                        currentCellValue = DateTime.FromOADate(int.Parse(currentCellValue)).ToString("s");
+                        currentCellValue = DateTime.FromOADate(int.Parse(currentCellValue)).ToString("M/d/yyyy");
                     }
                     Fill fill = (Fill)styles.Stylesheet.Fills.ChildElements[(int)cellFormat.FillId.Value];
                     PatternFill patternFill = fill.PatternFill;

@@ -12,6 +12,7 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
         public string ShortName { get; set; }
         public ICollection<User> Users { get; set; } = new List<User>();
+        public ICollection<Msel> Msels { get; set; } = new List<Msel>();
     }
 
 }

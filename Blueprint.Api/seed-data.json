@@ -4,21 +4,14 @@
       "Id": "2f82cb36-4c0a-4b60-857f-c4f2a9e70817",
       "Key": "SystemAdmin",
       "Value": "true",
-      "Description": "Has Full Rights.  Can do everything.",
+      "Description": "Has Full Rights.  Can access administration pages.",
       "ReadOnly": true
     },
     {
       "Id": "c881417e-02f1-4232-b06b-723901120e20",
       "Key": "ContentDeveloper",
       "Value": "true",
-      "Description": "Can create/edit/delete an Exercise/Directory/Workspace/File/Module",
-      "ReadOnly": true
-    },
-    {
-      "Id": "e0317506-fc9a-412d-a4bf-ac5ec915490e",
-      "Key": "CanSubmit",
-      "Value": "true",
-      "Description": "Can submit a score",
+      "Description": "Can create/edit/delete MSELs",
       "ReadOnly": true
     }
   ],
@@ -93,17 +86,9 @@
     {
       "Id": "aa8dbeb0-cccc-4b54-0005-3716e3404d31",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
-      "Name": "Real Time",
+      "Name": "Exercise Time",
       "DataType": 50,
       "DisplayOrder": 3,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "aa8dbeb0-cccc-4b54-0006-3716e3404d31",
-      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
-      "Name": "Simulated Time",
-      "DataType": 50,
-      "DisplayOrder": 4,
       "IsChosenFromList": false
     },
     {
@@ -111,7 +96,7 @@
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Title",
       "DataType": 0,
-      "DisplayOrder": 5,
+      "DisplayOrder": 4,
       "IsChosenFromList": false
     },
     {
@@ -119,7 +104,7 @@
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Description",
       "DataType": 0,
-      "DisplayOrder": 6,
+      "DisplayOrder": 5,
       "IsChosenFromList": false
     },
     {
@@ -127,7 +112,7 @@
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "To",
       "DataType": 0,
-      "DisplayOrder": 7,
+      "DisplayOrder": 6,
       "IsChosenFromList": false
     },
     {
@@ -135,7 +120,7 @@
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "From",
       "DataType": 0,
-      "DisplayOrder": 8,
+      "DisplayOrder": 7,
       "IsChosenFromList": false
     },
     {
@@ -143,7 +128,7 @@
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Details",
       "DataType": 0,
-      "DisplayOrder": 9,
+      "DisplayOrder": 8,
       "IsChosenFromList": false
     },
     {
@@ -151,7 +136,7 @@
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Expected Actions",
       "DataType": 0,
-      "DisplayOrder": 10,
+      "DisplayOrder": 9,
       "IsChosenFromList": false
     }
   ]

@@ -3,6 +3,7 @@
 
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.ViewModels;
+using System.Linq;
 
 namespace Blueprint.Api.Infrastructure.Mappings
 {
@@ -10,7 +11,8 @@ namespace Blueprint.Api.Infrastructure.Mappings
     {
         public MselProfile()
         {
-            CreateMap<MselEntity, Msel>();
+            CreateMap<MselEntity, Msel>()
+                .ForMember(m => m.Teams, opt => opt.MapFrom(x => x.MselTeams.Select(y => y.Team)));
 
             CreateMap<Msel, MselEntity>();
 

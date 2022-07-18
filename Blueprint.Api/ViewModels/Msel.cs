@@ -12,8 +12,6 @@ namespace Blueprint.Api.ViewModels
         public Guid Id { get; set; }
         public string Description { get; set; }
         public ItemStatus Status { get; set; }
-        public Guid? TeamId { get; set; }
-        public virtual Team Team { get; set; }
         public Guid? GalleryExhibitId { get; set; }
         public Guid? CiteEvaluationId { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
@@ -21,6 +19,7 @@ namespace Blueprint.Api.ViewModels
         public virtual ICollection<Move> Moves { get; set; } = new HashSet<Move>();
         public virtual ICollection<DataField> DataFields { get; set; } = new HashSet<DataField>();
         public virtual ICollection<ScenarioEvent> ScenarioEvents { get; set; } = new HashSet<ScenarioEvent>();
+        public ICollection<Team> Teams { get; set; } = new List<Team>();
         public string HeaderRowMetadata { get; set; }
    }
 }

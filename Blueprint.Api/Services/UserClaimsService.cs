@@ -159,20 +159,6 @@ namespace Blueprint.Api.Services
                     claims.Add(new Claim(mselClaim.ToString(), "true"));
                 }
             }
-            // Object Permissions
-            var teamIdList = await _context.TeamUsers
-                .Where(x => x.UserId == userId)
-                .Select(x => x.TeamId)
-                .ToListAsync();
-            var mselIdList = await _context.Msels
-                .Where(x => x.TeamId == null || teamIdList.Contains((Guid)x.TeamId))
-                .Select(x => x.Id)
-                .ToListAsync();
-            // add IDs of allowed teams
-            claims.Add(new Claim(BlueprintClaimTypes.TeamUser.ToString(), String.Join(",", teamIdList.ToArray())));
-            // add IDs of allowed msels
-            claims.Add(new Claim(BlueprintClaimTypes.MselUser.ToString(), String.Join(",", mselIdList.ToArray())));
-
 
             return claims;
         }

@@ -66,7 +66,7 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
             IQueryable<MselEntity> msels = null;
@@ -84,13 +84,18 @@ namespace Blueprint.Api.Services
             {
                 Guid teamId;
                 Guid.TryParse(queryParameters.TeamId, out teamId);
+                var mselTeamIdList = await _context.MselTeams
+                    .Where(mt => mt.TeamId == teamId)
+                    .Select(mt => mt.TeamId)
+                    .ToListAsync();
                 if (msels == null)
                 {
-                    msels = _context.Msels.Where(m => m.TeamId == teamId);
+                    msels = _context.Msels
+                        .Where(m => mselTeamIdList.Contains(m.Id));
                 }
                 else
                 {
-                    msels = msels.Where(m => m.TeamId == teamId);
+                    msels = msels.Where(m => mselTeamIdList.Contains(m.Id));
                 }
             }
             // filter based on description
@@ -124,8 +129,9 @@ namespace Blueprint.Api.Services
                 .Select(tu => tu.TeamId)
                 .ToListAsync(ct);
             // get my teams' msels
-            var mselList = await _context.Msels
-                .Where(m => m.TeamId == null || teamIdList.Contains((Guid)m.TeamId))
+            var mselList = await _context.MselTeams
+                .Where(mt => teamIdList.Contains(mt.TeamId))
+                .Select(mt => mt.Msel)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<Msel>>(mselList);
@@ -133,7 +139,8 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Msel> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselViewRequirement.IsMet(_user.GetId(), id,_context)))
                 throw new ForbiddenException();
 
             var item = await _context.Msels
@@ -150,23 +157,7 @@ namespace Blueprint.Api.Services
         public async Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct)
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                TeamUserEntity teamUser;
-                if (msel.TeamId == null)
-                {
-                    teamUser = await _context.TeamUsers
-                        .FirstOrDefaultAsync(tu => tu.UserId == _user.GetId());
-                }
-                else
-                {
-                    teamUser = await _context.TeamUsers
-                        .FirstOrDefaultAsync(tu => tu.UserId == _user.GetId() && tu.TeamId == msel.TeamId);
-                }
-                if (teamUser == null)
-                    throw new ForbiddenException();
-
-                msel.TeamId = teamUser.TeamId;
-            }
+                throw new ForbiddenException();
 
             msel.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
             msel.DateCreated = DateTime.UtcNow;
@@ -184,21 +175,10 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, CancellationToken ct)
         {
-            // user must be a Content Developer or be on the requested team and be able to submit
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                var teamId = await _context.Msels
-                    .Where(m => m.Id == msel.Id)
-                    .Select(m => m.TeamId)
-                    .FirstOrDefaultAsync();
-                if (!(
-                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
-                        teamId != null &&
-                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
-                     )
-                )
-                    throw new ForbiddenException();
-            }
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !( await MselViewRequirement.IsMet(_user.GetId(), id, _context)))
+                throw new ForbiddenException();
 
             var mselToUpdate = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (mselToUpdate == null)
@@ -221,25 +201,14 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !( await MselViewRequirement.IsMet(_user.GetId(), id, _context)))
+                throw new ForbiddenException();
+
             var mselToDelete = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (mselToDelete == null)
                 throw new EntityNotFoundException<Msel>();
-
-            // user must be a Content Developer or be on the requested team and be able to submit
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                var teamId = await _context.Msels
-                    .Where(m => m.Id == mselToDelete.Id)
-                    .Select(m => m.TeamId)
-                    .FirstOrDefaultAsync();
-                if (!(
-                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
-                        teamId != null &&
-                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
-                     )
-                )
-                    throw new ForbiddenException();
-            }
 
             _context.Msels.Remove(mselToDelete);
             await _context.SaveChangesAsync(ct);
@@ -249,24 +218,9 @@ namespace Blueprint.Api.Services
 
         public async Task<Guid> UploadAsync(FileForm form, CancellationToken ct)
         {
+            // user must be a Content Developer
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                TeamUserEntity teamUser;
-                if (form.TeamId == null)
-                {
-                    teamUser = await _context.TeamUsers
-                        .FirstOrDefaultAsync(tu => tu.UserId == _user.GetId());
-                }
-                else
-                {
-                    teamUser = await _context.TeamUsers
-                        .FirstOrDefaultAsync(tu => tu.UserId == _user.GetId() && tu.TeamId == form.TeamId);
-                }
-                if (teamUser == null)
-                    throw new ForbiddenException();
-
-                form.TeamId = teamUser.TeamId;
-            }
+                throw new ForbiddenException();
 
             var mselId = form.MselId != null ? (Guid)form.MselId : Guid.NewGuid();
             await createMselFromXlsxFile(form, mselId, ct);
@@ -276,28 +230,17 @@ namespace Blueprint.Api.Services
 
         public async Task<Guid> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct)
         {
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !( await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
+                throw new ForbiddenException();
+
             if (form.MselId != null && form.MselId != mselId)
                 throw new ArgumentException("The mselId from the URL (" + mselId.ToString() + ") does not match the mselId supplied with the form (" + form.MselId.ToString() + ").");
 
             var msel = await _context.Msels.FindAsync(mselId);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>("The MSEL does not exist to be replaced.  " + mselId.ToString());
-
-            // user must be a Content Developer or be on the requested team and be able to submit
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                var teamId = await _context.Msels
-                    .Where(m => m.Id == msel.Id)
-                    .Select(m => m.TeamId)
-                    .FirstOrDefaultAsync();
-                if (!(
-                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
-                        teamId != null &&
-                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
-                     )
-                )
-                    throw new ForbiddenException();
-            }
 
             // start a transaction, because we need the cascade delete to take affect before adding the new msel data
             await _context.Database.BeginTransactionAsync();
@@ -480,7 +423,6 @@ namespace Blueprint.Api.Services
                     Id = mselId,
                     Description = uploadItem.FileName,
                     Status = ItemStatus.Pending,
-                    TeamId = form.TeamId,
                     IsTemplate = false,
                     HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : "",
                     CreatedBy = _user.GetId(),

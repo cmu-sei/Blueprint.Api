@@ -65,9 +65,23 @@ namespace Blueprint.Api.Services
             {
                 Guid mselId;
                 Guid.TryParse(queryParameters.MselId, out mselId);
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new MselUserRequirement(mselId))).Succeeded &&
-                    !(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
+
+                // user must be a Content Developer or be on the requested team and be able to submit
+                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+                {
+                    var teamId = await _context.Msels
+                        .Where(m => m.Id == mselId)
+                        .Select(m => m.TeamId)
+                        .FirstOrDefaultAsync();
+                    if (!(
+                            teamId != null &&
+                            (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
+                        )
+                    )
+                        throw new ForbiddenException();
+                }
+
+
                 scenarioEvents = _context.ScenarioEvents
                     .Where(i => i.MselId == mselId)
                     .Include(se => se.DataValues);

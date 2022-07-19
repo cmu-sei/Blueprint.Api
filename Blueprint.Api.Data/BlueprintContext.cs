@@ -27,6 +27,7 @@ namespace Blueprint.Api.Data
         public DbSet<UserMselRoleEntity> UserMselRoles { get; set; }
         public DbSet<MoveEntity> Moves { get; set; }
         public DbSet<ScenarioEventEntity> ScenarioEvents { get; set; }
+        public DbSet<ScenarioEventTeamEntity> ScenarioEventTeams { get; set; }
         public DbSet<DataFieldEntity> DataFields { get; set; }
         public DbSet<DataOptionEntity> DataOptions { get; set; }
         public DbSet<DataValueEntity> DataValues { get; set; }

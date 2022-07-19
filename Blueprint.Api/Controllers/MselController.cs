@@ -143,6 +143,46 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Adds a Team to a Msel
+        /// </summary>
+        /// <remarks>
+        /// Adds the team specified to the MSEL specified
+        /// <para />
+        /// Accessible only to a ContentDeveloper or a MSEL owner
+        /// </remarks>
+        /// <param name="mselId">The ID of the Msel to update</param>
+        /// <param name="teamId">The ID of the Team</param>
+        /// <param name="ct"></param>
+        [HttpPut("msels/{mselId}/addteam/{teamId}")]
+        [ProducesResponseType(typeof(Guid), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "AddTeamToMsel")]
+        public async Task<IActionResult> AddTeamToMsel([FromRoute] Guid mselId, [FromRoute] Guid teamId, CancellationToken ct)
+        {
+            var resultId = await _mselService.AddTeamToMselAsync(mselId, teamId, ct);
+            return Ok(resultId);
+        }
+
+        /// <summary>
+        /// Removes a Team from a Msel
+        /// </summary>
+        /// <remarks>
+        /// Removes the team specified from the MSEL specified
+        /// <para />
+        /// Accessible only to a ContentDeveloper or a MSEL owner
+        /// </remarks>
+        /// <param name="mselId">The ID of the Msel to update</param>
+        /// <param name="teamId">The ID of the Team</param>
+        /// <param name="ct"></param>
+        [HttpPut("msels/{mselId}/removeteam/{teamId}")]
+        [ProducesResponseType(typeof(bool), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "RemoveTeamFromMsel")]
+        public async Task<IActionResult> RemoveTeamFromMsel([FromRoute] Guid mselId, [FromRoute] Guid teamId, CancellationToken ct)
+        {
+            var result = await _mselService.RemoveTeamFromMselAsync(mselId, teamId, ct);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Deletes a Msel
         /// </summary>
         /// <remarks>

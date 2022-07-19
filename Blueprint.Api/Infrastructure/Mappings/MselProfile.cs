@@ -12,9 +12,11 @@ namespace Blueprint.Api.Infrastructure.Mappings
         public MselProfile()
         {
             CreateMap<MselEntity, Msel>()
-                .ForMember(m => m.Teams, opt => opt.MapFrom(x => x.MselTeams.Select(y => y.Team)));
+                .ForMember(mn => mn.Teams, opt => opt.MapFrom(m => m.MselTeams.Select(mt => mt.Team)));
 
-            CreateMap<Msel, MselEntity>();
+            CreateMap<Msel, MselEntity>()
+                .ForMember(m => m.MselTeams, opt => opt.Ignore())
+                .ForMember(m => m.Moves, opt => opt.Ignore());
 
             CreateMap<MselEntity, MselEntity>()
                 .ForMember(e => e.Id, opt => opt.Ignore());

@@ -13,7 +13,6 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<TeamEntity, Team>()
                 .ForMember(m => m.Users, opt => opt.MapFrom(x => x.TeamUsers.Select(y => y.User)))
-                .ForMember(m => m.Msels, opt => opt.MapFrom(x => x.MselTeams.Select(y => y.Msel)))
                 .ForMember(m => m.Users, opt => opt.ExplicitExpansion());
 
             CreateMap<Team, TeamEntity>()

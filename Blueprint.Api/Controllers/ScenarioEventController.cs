@@ -111,6 +111,46 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Assigns a ScenarioEvent to a Team
+        /// </summary>
+        /// <remarks>
+        /// Assigns the specified Team to the specified ScenarioEvent
+        /// <para />
+        /// Accessible only to a Content Developer or a MSEL owner
+        /// </remarks>
+        /// <param name="scenarioEventId">The ID of the ScenarioEvent</param>
+        /// <param name="teamId">The ID of the Team</param>
+        /// <param name="ct"></param>
+        [HttpPut("scenarioEvents/{scenarioEventId}/assignTeam/{teamId}")]
+        [ProducesResponseType(typeof(Guid), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "assignTeamToScenarioEvent")]
+        public async Task<IActionResult> assignTeamToScenarioEvent([FromRoute] Guid scenarioEventId, [FromRoute] Guid teamId, CancellationToken ct)
+        {
+            var resultId = await _scenarioEventService.AssignTeamAsync(scenarioEventId, teamId, ct);
+            return Ok(resultId);
+        }
+
+        /// <summary>
+        /// Unassigns a ScenarioEvent from a Team
+        /// </summary>
+        /// <remarks>
+        /// Unassigns the specified Team from the specified ScenarioEvent
+        /// <para />
+        /// Accessible only to a Content Developer or a MSEL owner
+        /// </remarks>
+        /// <param name="scenarioEventId">The ID of the ScenarioEvent</param>
+        /// <param name="teamId">The ID of the Team</param>
+        /// <param name="ct"></param>
+        [HttpPut("scenarioEvents/{scenarioEventId}/unassignTeam/{teamId}")]
+        [ProducesResponseType(typeof(bool), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "unassignTeamToScenarioEvent")]
+        public async Task<IActionResult> unassignTeamToScenarioEvent([FromRoute] Guid scenarioEventId, [FromRoute] Guid teamId, CancellationToken ct)
+        {
+            var result = await _scenarioEventService.UnassignTeamAsync(scenarioEventId, teamId, ct);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Deletes an ScenarioEvent
         /// </summary>
         /// <remarks>

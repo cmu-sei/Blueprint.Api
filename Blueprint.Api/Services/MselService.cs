@@ -35,6 +35,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.Msel> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct);
         Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, CancellationToken ct);
+        Task<Guid> AddTeamToMselAsync(Guid id, Guid teamId, CancellationToken ct);
+        Task<bool> RemoveTeamFromMselAsync(Guid id, Guid teamId, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<Guid> UploadAsync(FileForm form, CancellationToken ct);
         Task<Guid> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct);
@@ -129,10 +131,16 @@ namespace Blueprint.Api.Services
                 .Select(tu => tu.TeamId)
                 .ToListAsync(ct);
             // get my teams' msels
-            var mselList = await _context.MselTeams
+            var teamMselList = await _context.MselTeams
                 .Where(mt => teamIdList.Contains(mt.TeamId))
                 .Select(mt => mt.Msel)
                 .ToListAsync(ct);
+            // get msels I created
+            var myMselList = await _context.Msels
+                .Where(m => m.CreatedBy == userId)
+                .ToListAsync(ct);
+            // combine lists
+            var mselList = teamMselList.Union(myMselList).OrderByDescending(m => m.DateCreated);
 
             return _mapper.Map<IEnumerable<Msel>>(mselList);
         }
@@ -148,7 +156,11 @@ namespace Blueprint.Api.Services
                 .ThenInclude(df => df.DataOptions)
                 .Include(m => m.ScenarioEvents)
                 .ThenInclude(se => se.DataValues)
-                .AsSingleQuery()
+                .Include(m => m.MselTeams)
+                .ThenInclude(mt => mt.Team)
+                .ThenInclude(t => t.TeamUsers)
+                .ThenInclude(tu => tu.User)
+                .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
 
             return _mapper.Map<Msel>(item);
@@ -197,6 +209,52 @@ namespace Blueprint.Api.Services
             msel = await GetAsync(mselToUpdate.Id, ct);
 
             return msel;
+        }
+
+        public async Task<Guid> AddTeamToMselAsync(Guid mselId, Guid teamId, CancellationToken ct)
+        {
+            var msel = await _context.Msels.SingleOrDefaultAsync(v => v.Id == mselId, ct);
+            if (msel == null)
+                throw new EntityNotFoundException<MselEntity>();
+
+            var team = await _context.Teams.SingleOrDefaultAsync(v => v.Id == teamId, ct);
+            if (team == null)
+                throw new EntityNotFoundException<TeamEntity>();
+
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
+                throw new ForbiddenException();
+
+            if (await _context.MselTeams.AnyAsync(mt => mt.TeamId ==teamId && mt.MselId == mselId))
+                throw new ArgumentException("MSEL Team already exists.");
+
+            var mselTeam = new MselTeamEntity(teamId, mselId);
+            _context.MselTeams.Add(mselTeam);
+            await _context.SaveChangesAsync(ct);
+
+            return mselTeam.Id;
+        }
+
+        public async Task<bool> RemoveTeamFromMselAsync(Guid mselId, Guid teamId, CancellationToken ct)
+        {
+            var msel = await _context.Msels.SingleOrDefaultAsync(v => v.Id == mselId, ct);
+            if (msel == null)
+                throw new EntityNotFoundException<MselEntity>();
+
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
+                throw new ForbiddenException();
+
+            var item = await _context.MselTeams.FirstOrDefaultAsync(mt => mt.TeamId ==teamId && mt.MselId == mselId);
+            if (item == null)
+                throw new EntityNotFoundException<MselTeamEntity>();
+
+            _context.MselTeams.Remove(item);
+            await _context.SaveChangesAsync(ct);
+
+            return true;
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

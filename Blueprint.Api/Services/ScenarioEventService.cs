@@ -28,6 +28,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
+        Task<Guid> AssignTeamAsync(Guid id, Guid teamId, CancellationToken ct);
+        Task<bool> UnassignTeamAsync(Guid id, Guid teamId, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     }
 
@@ -184,6 +186,52 @@ namespace Blueprint.Api.Services
             scenarioEvent = await GetAsync(id, ct);
 
             return scenarioEvent;
+        }
+
+        public async Task<Guid> AssignTeamAsync(Guid id, Guid teamId, CancellationToken ct)
+        {
+            var scenarioEvent = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
+            if (scenarioEvent == null)
+                throw new EntityNotFoundException<ScenarioEventEntity>();
+
+            var team = await _context.Teams.SingleOrDefaultAsync(v => v.Id == id, ct);
+            if (team == null)
+                throw new EntityNotFoundException<TeamEntity>();
+
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
+                throw new ForbiddenException();
+
+            if (await _context.ScenarioEventTeams.AnyAsync(st => st.TeamId ==teamId && st.ScenarioEventId == id))
+                throw new ArgumentException("Assignment already exists.");
+
+            var scenarioEventTeam = new ScenarioEventTeamEntity(teamId, id);
+            _context.ScenarioEventTeams.Add(scenarioEventTeam);
+            await _context.SaveChangesAsync(ct);
+
+            return scenarioEventTeam.Id;
+        }
+
+        public async Task<bool> UnassignTeamAsync(Guid id, Guid teamId, CancellationToken ct)
+        {
+            var scenarioEvent = await _context.ScenarioEvents.FirstOrDefaultAsync(se => se.Id == id);
+            if (scenarioEvent == null)
+                throw new EntityNotFoundException<ScenarioEventTeamEntity>();
+
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
+                throw new ForbiddenException();
+
+            var item = await _context.ScenarioEventTeams.FirstOrDefaultAsync(st => st.TeamId ==teamId && st.ScenarioEventId == id);
+            if (item == null)
+                throw new EntityNotFoundException<ScenarioEventTeamEntity>();
+
+            _context.ScenarioEventTeams.Remove(item);
+            await _context.SaveChangesAsync(ct);
+
+            return true;
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

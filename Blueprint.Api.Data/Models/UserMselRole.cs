@@ -14,6 +14,13 @@ namespace Blueprint.Api.Data.Models
     {
         public UserMselRoleEntity() { }
 
+        public UserMselRoleEntity(Guid userId, Guid mselId, MselRole role)
+        {
+            MselId = mselId;
+            UserId = userId;
+            Role = role;
+        }
+
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }

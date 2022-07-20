@@ -24,6 +24,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<DataFieldEntity> DataFields { get; set; } = new HashSet<DataFieldEntity>();
         public virtual ICollection<ScenarioEventEntity> ScenarioEvents { get; set; } = new HashSet<ScenarioEventEntity>();
         public virtual ICollection<MselTeamEntity> MselTeams { get; set; } = new HashSet<MselTeamEntity>();
+        public virtual ICollection<UserMselRoleEntity> UserMselRoles { get; set; } = new HashSet<UserMselRoleEntity>();
         public string HeaderRowMetadata { get; set; }
     }
 }

@@ -9,8 +9,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Infrastructure.Extensions;
-using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
@@ -154,12 +154,12 @@ namespace Blueprint.Api.Controllers
         /// <param name="teamId">The ID of the Team</param>
         /// <param name="ct"></param>
         [HttpPut("msels/{mselId}/addteam/{teamId}")]
-        [ProducesResponseType(typeof(Guid), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "AddTeamToMsel")]
         public async Task<IActionResult> AddTeamToMsel([FromRoute] Guid mselId, [FromRoute] Guid teamId, CancellationToken ct)
         {
-            var resultId = await _mselService.AddTeamToMselAsync(mselId, teamId, ct);
-            return Ok(resultId);
+            var msel = await _mselService.AddTeamToMselAsync(mselId, teamId, ct);
+            return Ok(msel);
         }
 
         /// <summary>
@@ -174,12 +174,54 @@ namespace Blueprint.Api.Controllers
         /// <param name="teamId">The ID of the Team</param>
         /// <param name="ct"></param>
         [HttpPut("msels/{mselId}/removeteam/{teamId}")]
-        [ProducesResponseType(typeof(bool), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "RemoveTeamFromMsel")]
         public async Task<IActionResult> RemoveTeamFromMsel([FromRoute] Guid mselId, [FromRoute] Guid teamId, CancellationToken ct)
         {
-            var result = await _mselService.RemoveTeamFromMselAsync(mselId, teamId, ct);
-            return Ok(result);
+            var msel = await _mselService.RemoveTeamFromMselAsync(mselId, teamId, ct);
+            return Ok(msel);
+        }
+
+        /// <summary>
+        /// Adds a User Role to a Msel
+        /// </summary>
+        /// <remarks>
+        /// Adds the User Role specified to the MSEL specified
+        /// <para />
+        /// Accessible only to a ContentDeveloper or a MSEL owner
+        /// </remarks>
+        /// <param name="userId">The ID of the User</param>
+        /// <param name="mselId">The ID of the Msel to update</param>
+        /// <param name="mselRole">The MSEL Role to add</param>
+        /// <param name="ct"></param>
+        [HttpPut("msels/{mselId}/user/{userId}/role/{mselRole}/add")]
+        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "AddUserMselRole")]
+        public async Task<IActionResult> AddUserMselRole([FromRoute] Guid userId, [FromRoute] Guid mselId, [FromRoute] MselRole mselRole, CancellationToken ct)
+        {
+            var msel = await _mselService.AddUserMselRoleAsync(userId, mselId, mselRole, ct);
+            return Ok(msel);
+        }
+
+        /// <summary>
+        /// Removes a User Role from a Msel
+        /// </summary>
+        /// <remarks>
+        /// Removes the User Role specified from the MSEL specified
+        /// <para />
+        /// Accessible only to a ContentDeveloper or a MSEL owner
+        /// </remarks>
+        /// <param name="userId">The ID of the User</param>
+        /// <param name="mselId">The ID of the Msel to update</param>
+        /// <param name="mselRole">The MSEL Role to add</param>
+        /// <param name="ct"></param>
+        [HttpPut("msels/{mselId}/user/{userId}/role/{mselRole}/remove")]
+        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "RemoveUserMselRole")]
+        public async Task<IActionResult> RemoveUserMselRole([FromRoute] Guid userId, [FromRoute] Guid mselId, [FromRoute] MselRole mselRole, CancellationToken ct)
+        {
+            var msel = await _mselService.RemoveUserMselRoleAsync(userId, mselId, mselRole, ct);
+            return Ok(msel);
         }
 
         /// <summary>

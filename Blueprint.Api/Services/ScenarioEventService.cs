@@ -28,8 +28,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
-        Task<Guid> AssignTeamAsync(Guid id, Guid teamId, CancellationToken ct);
-        Task<bool> UnassignTeamAsync(Guid id, Guid teamId, CancellationToken ct);
+        // Task<Guid> AssignTeamAsync(Guid id, Guid teamId, CancellationToken ct);
+        // Task<bool> UnassignTeamAsync(Guid id, Guid teamId, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     }
 
@@ -158,20 +158,37 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
-            // user must be a Content Developer or a MSEL editor
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselEditorRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
-                throw new ForbiddenException();
-
             var scenarioEventToUpdate = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (scenarioEventToUpdate == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>();
 
-            // start a transaction, because we will also update DataValues
+            // Content developers and MSEL owners can update anything, others require condition checks
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
+            {
+                // to change the assignedTeam, user must be a Content Developer or a MSEL owner
+                if (scenarioEvent.AssignedTeamId != scenarioEventToUpdate.AssignedTeamId)
+                    throw new ForbiddenException("Cannot change the Assigned Team.");
+                // MSEL Approvers can change everything else
+                if (!(await MselApproverRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
+                {
+                    // to change the status, user must be a MSEL approver
+                    if (scenarioEvent.Status != scenarioEventToUpdate.Status)
+                            throw new ForbiddenException("Cannot change the Status.");
+                    // to change anything, user must be a MSEL editor
+                    if (!(await MselEditorRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
+                        throw new ForbiddenException();
+                }
+            }
+
+            // start a transaction, because we may also update DataValues
             await _context.Database.BeginTransactionAsync();
 
-            await UpdateDataValues(scenarioEvent, ct);
+            if (scenarioEvent.DataValues.Any())
+            {
+                await UpdateDataValues(scenarioEvent, ct);
+            }
             scenarioEvent.CreatedBy = scenarioEventToUpdate.CreatedBy;
             scenarioEvent.DateCreated = scenarioEventToUpdate.DateCreated;
             scenarioEvent.ModifiedBy = _user.GetId();
@@ -188,51 +205,6 @@ namespace Blueprint.Api.Services
             return scenarioEvent;
         }
 
-        public async Task<Guid> AssignTeamAsync(Guid id, Guid teamId, CancellationToken ct)
-        {
-            var scenarioEvent = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
-            if (scenarioEvent == null)
-                throw new EntityNotFoundException<ScenarioEventEntity>();
-
-            var team = await _context.Teams.SingleOrDefaultAsync(v => v.Id == id, ct);
-            if (team == null)
-                throw new EntityNotFoundException<TeamEntity>();
-
-            // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
-                throw new ForbiddenException();
-
-            if (await _context.ScenarioEventTeams.AnyAsync(st => st.TeamId ==teamId && st.ScenarioEventId == id))
-                throw new ArgumentException("Assignment already exists.");
-
-            var scenarioEventTeam = new ScenarioEventTeamEntity(teamId, id);
-            _context.ScenarioEventTeams.Add(scenarioEventTeam);
-            await _context.SaveChangesAsync(ct);
-
-            return scenarioEventTeam.Id;
-        }
-
-        public async Task<bool> UnassignTeamAsync(Guid id, Guid teamId, CancellationToken ct)
-        {
-            var scenarioEvent = await _context.ScenarioEvents.FirstOrDefaultAsync(se => se.Id == id);
-            if (scenarioEvent == null)
-                throw new EntityNotFoundException<ScenarioEventTeamEntity>();
-
-            // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
-                throw new ForbiddenException();
-
-            var item = await _context.ScenarioEventTeams.FirstOrDefaultAsync(st => st.TeamId ==teamId && st.ScenarioEventId == id);
-            if (item == null)
-                throw new EntityNotFoundException<ScenarioEventTeamEntity>();
-
-            _context.ScenarioEventTeams.Remove(item);
-            await _context.SaveChangesAsync(ct);
-
-            return true;
-        }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {

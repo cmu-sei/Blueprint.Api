@@ -17,7 +17,6 @@ namespace Blueprint.Api.Data.Models
         public string ShortName { get; set; }
         public ICollection<TeamUserEntity> TeamUsers { get; set; } = new List<TeamUserEntity>();
         public virtual ICollection<MselTeamEntity> MselTeams { get; set; } = new HashSet<MselTeamEntity>();
-        public virtual ICollection<ScenarioEventTeamEntity> ScenarioEventTeams { get; set; } = new HashSet<ScenarioEventTeamEntity>();
     }
 
     public class TeamConfiguration : IEntityTypeConfiguration<TeamEntity>

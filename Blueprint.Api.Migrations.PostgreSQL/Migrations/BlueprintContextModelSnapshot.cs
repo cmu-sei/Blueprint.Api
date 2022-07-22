@@ -404,6 +404,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("uuid_generate_v4()");
 
+                    b.Property<Guid?>("AssignedTeamId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_team_id");
+
                     b.Property<Guid>("CreatedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("created_by");
@@ -438,35 +442,11 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AssignedTeamId");
+
                     b.HasIndex("MselId");
 
                     b.ToTable("scenario_events");
-                });
-
-            modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventTeamEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("uuid_generate_v4()");
-
-                    b.Property<Guid>("ScenarioEventId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("scenario_event_id");
-
-                    b.Property<Guid>("TeamId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("team_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ScenarioEventId");
-
-                    b.HasIndex("TeamId", "ScenarioEventId")
-                        .IsUnique();
-
-                    b.ToTable("scenario_event_teams");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.TeamEntity", b =>
@@ -727,32 +707,19 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventEntity", b =>
                 {
+                    b.HasOne("Blueprint.Api.Data.Models.TeamEntity", "AssignedTeam")
+                        .WithMany()
+                        .HasForeignKey("AssignedTeamId");
+
                     b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
                         .WithMany("ScenarioEvents")
                         .HasForeignKey("MselId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.Navigation("AssignedTeam");
+
                     b.Navigation("Msel");
-                });
-
-            modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventTeamEntity", b =>
-                {
-                    b.HasOne("Blueprint.Api.Data.Models.ScenarioEventEntity", "ScenarioEvent")
-                        .WithMany("ScenarioEventTeams")
-                        .HasForeignKey("ScenarioEventId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Blueprint.Api.Data.Models.TeamEntity", "Team")
-                        .WithMany("ScenarioEventTeams")
-                        .HasForeignKey("TeamId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ScenarioEvent");
-
-                    b.Navigation("Team");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.TeamUserEntity", b =>
@@ -838,15 +805,11 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
             modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventEntity", b =>
                 {
                     b.Navigation("DataValues");
-
-                    b.Navigation("ScenarioEventTeams");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.TeamEntity", b =>
                 {
                     b.Navigation("MselTeams");
-
-                    b.Navigation("ScenarioEventTeams");
 
                     b.Navigation("TeamUsers");
                 });

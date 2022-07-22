@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
-    public partial class mselteams : Migration
+    public partial class teamroles : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
@@ -37,6 +37,12 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                 name: "team_id",
                 table: "msels");
 
+            migrationBuilder.AddColumn<Guid>(
+                name: "assigned_team_id",
+                table: "scenario_events",
+                type: "uuid",
+                nullable: true);
+
             migrationBuilder.CreateTable(
                 name: "msel_teams",
                 columns: table => new
@@ -62,36 +68,16 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
-            migrationBuilder.CreateTable(
-                name: "scenario_event_teams",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false, defaultValueSql: "uuid_generate_v4()"),
-                    team_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    scenario_event_id = table.Column<Guid>(type: "uuid", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_scenario_event_teams", x => x.id);
-                    table.ForeignKey(
-                        name: "FK_scenario_event_teams_scenario_events_scenario_event_id",
-                        column: x => x.scenario_event_id,
-                        principalTable: "scenario_events",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_scenario_event_teams_teams_team_id",
-                        column: x => x.team_id,
-                        principalTable: "teams",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
             migrationBuilder.CreateIndex(
                 name: "IX_user_msel_roles_msel_id_user_id_role",
                 table: "user_msel_roles",
                 columns: new[] { "msel_id", "user_id", "role" },
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_scenario_events_assigned_team_id",
+                table: "scenario_events",
+                column: "assigned_team_id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_msel_teams_msel_id",
@@ -104,29 +90,34 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                 columns: new[] { "team_id", "msel_id" },
                 unique: true);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_scenario_event_teams_scenario_event_id",
-                table: "scenario_event_teams",
-                column: "scenario_event_id");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_scenario_event_teams_team_id_scenario_event_id",
-                table: "scenario_event_teams",
-                columns: new[] { "team_id", "scenario_event_id" },
-                unique: true);
+            migrationBuilder.AddForeignKey(
+                name: "FK_scenario_events_teams_assigned_team_id",
+                table: "scenario_events",
+                column: "assigned_team_id",
+                principalTable: "teams",
+                principalColumn: "id");
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "msel_teams");
+            migrationBuilder.DropForeignKey(
+                name: "FK_scenario_events_teams_assigned_team_id",
+                table: "scenario_events");
 
             migrationBuilder.DropTable(
-                name: "scenario_event_teams");
+                name: "msel_teams");
 
             migrationBuilder.DropIndex(
                 name: "IX_user_msel_roles_msel_id_user_id_role",
                 table: "user_msel_roles");
+
+            migrationBuilder.DropIndex(
+                name: "IX_scenario_events_assigned_team_id",
+                table: "scenario_events");
+
+            migrationBuilder.DropColumn(
+                name: "assigned_team_id",
+                table: "scenario_events");
 
             migrationBuilder.AddColumn<Guid>(
                 name: "scenario_event_id",

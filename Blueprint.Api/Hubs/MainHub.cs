@@ -94,9 +94,9 @@ namespace Blueprint.Api.Hubs
             var teamIdList = teamList.Select(t => t.Id.ToString()).ToList();
             idList.AddRange(teamIdList);
             // user's msels
-            var mselIdList = await _context.Msels
+            var mselIdList = await _context.MselTeams
                 .Where(m => teamIdList.Contains(m.TeamId.ToString()))
-                .Select(m => m.Id.ToString())
+                .Select(m => m.MselId.ToString())
                 .ToListAsync();
             idList.AddRange(mselIdList);
 

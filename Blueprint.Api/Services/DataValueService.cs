@@ -69,16 +69,7 @@ namespace Blueprint.Api.Services
                     .Where(df => df.Id == DataValue.DataFieldId)
                     .Select(df => df.MselId)
                     .FirstOrDefaultAsync();
-                var teamId = await _context.Msels
-                    .Where(m => m.Id == mselId)
-                    .Select(m => m.TeamId)
-                    .FirstOrDefaultAsync();
-                if (!(
-                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
-                        teamId != null &&
-                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
-                     )
-                )
+                if (!( await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context)))
                     throw new ForbiddenException();
             }
 
@@ -109,16 +100,7 @@ namespace Blueprint.Api.Services
                     .Where(df => df.Id == DataValueToUpdate.DataFieldId)
                     .Select(df => df.MselId)
                     .FirstOrDefaultAsync();
-                var teamId = await _context.Msels
-                    .Where(m => m.Id == mselId)
-                    .Select(m => m.TeamId)
-                    .FirstOrDefaultAsync();
-                if (!(
-                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
-                        teamId != null &&
-                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
-                     )
-                )
+                if (!( await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context)))
                     throw new ForbiddenException();
             }
 
@@ -149,16 +131,7 @@ namespace Blueprint.Api.Services
                     .Where(df => df.Id == DataValueToDelete.DataFieldId)
                     .Select(df => df.MselId)
                     .FirstOrDefaultAsync();
-                var teamId = await _context.Msels
-                    .Where(m => m.Id == mselId)
-                    .Select(m => m.TeamId)
-                    .FirstOrDefaultAsync();
-                if (!(
-                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
-                        teamId != null &&
-                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
-                     )
-                )
+                if (!( await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context)))
                     throw new ForbiddenException();
             }
 

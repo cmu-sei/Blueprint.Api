@@ -23,6 +23,7 @@ namespace Blueprint.Api.Data
         public DbSet<TeamEntity> Teams { get; set; }
         public DbSet<TeamUserEntity> TeamUsers { get; set; }
         public DbSet<MselEntity> Msels { get; set; }
+        public DbSet<MselTeamEntity> MselTeams { get; set; }
         public DbSet<UserMselRoleEntity> UserMselRoles { get; set; }
         public DbSet<MoveEntity> Moves { get; set; }
         public DbSet<ScenarioEventEntity> ScenarioEvents { get; set; }

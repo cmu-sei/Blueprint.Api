@@ -3,8 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
 using Blueprint.Api.Data.Enumerations;
 
 namespace Blueprint.Api.ViewModels
@@ -14,6 +12,8 @@ namespace Blueprint.Api.ViewModels
         public Guid Id { get; set; }
         public Guid MselId { get; set; }
         public ItemStatus Status { get; set; }
+        public Guid? AssignedTeamId { get; set; }
+        public Team AssignedTeam { get; set; }
         public virtual ICollection<DataValue> DataValues { get; set; } = new HashSet<DataValue>();
         public int RowIndex { get; set; }
         public string RowMetadata { get; set; }

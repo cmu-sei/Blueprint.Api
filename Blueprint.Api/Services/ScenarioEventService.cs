@@ -28,6 +28,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
+        // Task<Guid> AssignTeamAsync(Guid id, Guid teamId, CancellationToken ct);
+        // Task<bool> UnassignTeamAsync(Guid id, Guid teamId, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     }
 
@@ -55,9 +57,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.ScenarioEvent>> GetAsync(ScenarioEventGet queryParameters, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             IQueryable<ScenarioEventEntity> scenarioEvents = null;
 
             // filter based on MSEL
@@ -66,69 +65,30 @@ namespace Blueprint.Api.Services
                 Guid mselId;
                 Guid.TryParse(queryParameters.MselId, out mselId);
 
-                // user must be a Content Developer or be on the requested team and be able to submit
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                {
-                    var teamId = await _context.Msels
-                        .Where(m => m.Id == mselId)
-                        .Select(m => m.TeamId)
-                        .FirstOrDefaultAsync();
-                    if (!(
-                            teamId != null &&
-                            (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
-                        )
-                    )
-                        throw new ForbiddenException();
-                }
-
+                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
+                    throw new ForbiddenException();
 
                 scenarioEvents = _context.ScenarioEvents
                     .Where(i => i.MselId == mselId)
                     .Include(se => se.DataValues);
             }
-            // filter based on team
-            if (!String.IsNullOrEmpty(queryParameters.TeamId))
-            {
-                Guid teamId;
-                Guid.TryParse(queryParameters.TeamId, out teamId);
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement(teamId))).Succeeded &&
-                    !(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-                var mselIdList = await _context.Msels.Where(m => m.TeamId == teamId).Select(m => m.Id).ToListAsync();
-                if (scenarioEvents == null)
-                {
-                    scenarioEvents = _context.ScenarioEvents.Where(i => mselIdList.Contains(i.MselId));
-                }
-                else
-                {
-                    scenarioEvents = scenarioEvents.Where(i => mselIdList.Contains(i.MselId));
-                }
-            }
-            // filter based on move
-            if (!String.IsNullOrEmpty(queryParameters.MoveId))
-            {
-                // Guid moveId;
-                // Guid.TryParse(queryParameters.MoveId, out moveId);
-                // var move = await _context.Moves.FindAsync(moveId);
-                // if (move == null)
-                //     throw new EntityNotFoundException<MoveEntity>("Requested Move Entity (" + moveId + ") was not found.");
-                // if (!(await _authorizationService.AuthorizeAsync(_user, null, new MselUserRequirement(move.MselId))).Succeeded &&
-                //     !(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                //     throw new ForbiddenException();
-                // if (scenarioEvents == null)
-                // {
-                //     scenarioEvents = _context.ScenarioEvents.Where(i => i.MoveId == moveId);
-                // }
-                // else
-                // {
-                //     scenarioEvents = scenarioEvents.Where(i => i.MoveId == moveId);
-                // }
-            }
             if (scenarioEvents == null)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
                 scenarioEvents = _context.ScenarioEvents;
+            }
+            else
+            {
+                // filter based on team
+                if (!String.IsNullOrEmpty(queryParameters.TeamId) && scenarioEvents != null)
+                {
+                    Guid teamId;
+                    Guid.TryParse(queryParameters.TeamId, out teamId);
+                    var mselIdList = await _context.MselTeams.Where(mt => mt.TeamId == teamId).Select(m => m.Id).ToListAsync();
+                    scenarioEvents = scenarioEvents.Where(i => mselIdList.Contains(i.MselId));
+                }
             }
             // order the results
             scenarioEvents = scenarioEvents.OrderBy(n => n.RowIndex);
@@ -145,12 +105,8 @@ namespace Blueprint.Api.Services
             if (item == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>();
 
-            var teamId = (await _context.Msels
-                .SingleAsync(m => m.Id == item.MselId))
-                .TeamId;
-
-            if ((teamId != null && !(await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded) &&
-                !(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, _context)))
                 throw new ForbiddenException();
 
             return _mapper.Map<ViewModels.ScenarioEvent>(item);
@@ -158,21 +114,10 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.ScenarioEvent> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
-            // user must be a Content Developer or be on the requested team and be able to submit
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                var teamId = await _context.Msels
-                    .Where(m => m.Id == scenarioEvent.MselId)
-                    .Select(m => m.TeamId)
-                    .FirstOrDefaultAsync();
-                if (!(
-                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
-                        teamId != null &&
-                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
-                     )
-                )
-                    throw new ForbiddenException();
-            }
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
+                throw new ForbiddenException();
 
             // create the scenario event
             scenarioEvent.Id = scenarioEvent.Id != Guid.Empty ? scenarioEvent.Id : Guid.NewGuid();
@@ -213,31 +158,37 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
-            // user must be a Content Developer or be on the requested team and be able to submit
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                var teamId = await _context.Msels
-                    .Where(m => m.Id == scenarioEvent.MselId)
-                    .Select(m => m.TeamId)
-                    .FirstOrDefaultAsync();
-                if (!(
-                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
-                        teamId != null &&
-                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
-                     )
-                )
-                    throw new ForbiddenException();
-            }
-
             var scenarioEventToUpdate = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (scenarioEventToUpdate == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>();
 
-            // start a transaction, because we will also update DataValues
+            // Content developers and MSEL owners can update anything, others require condition checks
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
+            {
+                // to change the assignedTeam, user must be a Content Developer or a MSEL owner
+                if (scenarioEvent.AssignedTeamId != scenarioEventToUpdate.AssignedTeamId)
+                    throw new ForbiddenException("Cannot change the Assigned Team.");
+                // MSEL Approvers can change everything else
+                if (!(await MselApproverRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
+                {
+                    // to change the status, user must be a MSEL approver
+                    if (scenarioEvent.Status != scenarioEventToUpdate.Status)
+                            throw new ForbiddenException("Cannot change the Status.");
+                    // to change anything, user must be a MSEL editor
+                    if (!(await MselEditorRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
+                        throw new ForbiddenException();
+                }
+            }
+
+            // start a transaction, because we may also update DataValues
             await _context.Database.BeginTransactionAsync();
 
-            await UpdateDataValues(scenarioEvent, ct);
+            if (scenarioEvent.DataValues.Any())
+            {
+                await UpdateDataValues(scenarioEvent, ct);
+            }
             scenarioEvent.CreatedBy = scenarioEventToUpdate.CreatedBy;
             scenarioEvent.DateCreated = scenarioEventToUpdate.DateCreated;
             scenarioEvent.ModifiedBy = _user.GetId();
@@ -254,6 +205,7 @@ namespace Blueprint.Api.Services
             return scenarioEvent;
         }
 
+
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
             var scenarioEventToDelete = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
@@ -261,21 +213,10 @@ namespace Blueprint.Api.Services
             if (scenarioEventToDelete == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>();
 
-            // user must be a Content Developer or be on the requested team and be able to submit
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                var teamId = await _context.Msels
-                    .Where(m => m.Id == id)
-                    .Select(m => m.TeamId)
-                    .FirstOrDefaultAsync();
-                if (!(
-                        (await _authorizationService.AuthorizeAsync(_user, null, new CanSubmitRequirement())).Succeeded &&
-                        teamId != null &&
-                        (await _authorizationService.AuthorizeAsync(_user, null, new TeamUserRequirement((Guid)teamId))).Succeeded
-                     )
-                )
-                    throw new ForbiddenException();
-            }
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEventToDelete.MselId, _context)))
+                throw new ForbiddenException();
 
             _context.ScenarioEvents.Remove(scenarioEventToDelete);
             await _context.SaveChangesAsync(ct);

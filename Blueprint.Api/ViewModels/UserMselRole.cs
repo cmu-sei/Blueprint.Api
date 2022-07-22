@@ -16,11 +16,7 @@ namespace Blueprint.Api.ViewModels
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
         public Guid MselId { get; set; }
-        public Msel Msel { get; set; }
-        public Guid? ScenarioEventId { get; set; }
-        public ScenarioEvent ScenarioEvent { get; set; }
         public Guid UserId { get; set; }
-        public User User { get; set; }
         public MselRole Role { get; set; }
     }
 

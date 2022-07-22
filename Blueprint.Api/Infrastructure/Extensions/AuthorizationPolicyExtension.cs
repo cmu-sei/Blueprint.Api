@@ -14,14 +14,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             services.AddAuthorization();
             services.AddSingleton<IAuthorizationHandler, FullRightsHandler>();
             services.AddSingleton<IAuthorizationHandler, ContentDeveloperHandler>();
-            services.AddSingleton<IAuthorizationHandler, OperatorHandler>();
-            services.AddSingleton<IAuthorizationHandler, CanIncrementMoveHandler>();
-            services.AddSingleton<IAuthorizationHandler, CanSubmitHandler>();
-            services.AddSingleton<IAuthorizationHandler, CanModifyHandler>();
             services.AddSingleton<IAuthorizationHandler, BaseUserHandler>();
-            services.AddSingleton<IAuthorizationHandler, TeamUserHandler>();
         }
-
-
     }
 }

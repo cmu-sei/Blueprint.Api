@@ -5,13 +5,10 @@ namespace Blueprint.Api.Data.Enumerations
 {
     public enum ItemStatus
     {
-        Pending = 10,
-        Active = 20,
-        Cancelled = 30,
-        Complete = 40,
-        Archived = 50,
-        Approved = 60,
-        Rejected = 70
+        Pending = 0,
+        Entered = 10,
+        Approved = 20,
+        Complete = 30
     }
 
     public enum DataFieldType{

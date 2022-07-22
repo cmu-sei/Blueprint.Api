@@ -321,24 +321,9 @@ namespace Blueprint.Api.Services
 
         public async Task<Guid> UploadAsync(FileForm form, CancellationToken ct)
         {
+            // user must be a Content Developer
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                TeamUserEntity teamUser;
-                if (form.TeamId == null)
-                {
-                    teamUser = await _context.TeamUsers
-                        .FirstOrDefaultAsync(tu => tu.UserId == _user.GetId());
-                }
-                else
-                {
-                    teamUser = await _context.TeamUsers
-                        .FirstOrDefaultAsync(tu => tu.UserId == _user.GetId() && tu.TeamId == form.TeamId);
-                }
-                if (teamUser == null)
-                    throw new ForbiddenException();
-
-                form.TeamId = teamUser.TeamId;
-            }
+                throw new ForbiddenException();
 
             var mselId = form.MselId != null ? (Guid)form.MselId : Guid.NewGuid();
             await createMselFromXlsxFile(form, mselId, ct);

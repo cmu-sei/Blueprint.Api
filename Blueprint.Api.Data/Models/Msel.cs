@@ -16,8 +16,6 @@ namespace Blueprint.Api.Data.Models
         public Guid Id { get; set; }
         public string Description { get; set; }
         public ItemStatus Status { get; set; }
-        public Guid? TeamId { get; set; }
-        public virtual TeamEntity Team { get; set; }
         public Guid? GalleryExhibitId { get; set; }
         public Guid? CiteEvaluationId { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
@@ -25,6 +23,8 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<MoveEntity> Moves { get; set; } = new HashSet<MoveEntity>();
         public virtual ICollection<DataFieldEntity> DataFields { get; set; } = new HashSet<DataFieldEntity>();
         public virtual ICollection<ScenarioEventEntity> ScenarioEvents { get; set; } = new HashSet<ScenarioEventEntity>();
+        public virtual ICollection<MselTeamEntity> MselTeams { get; set; } = new HashSet<MselTeamEntity>();
+        public virtual ICollection<UserMselRoleEntity> UserMselRoles { get; set; } = new HashSet<UserMselRoleEntity>();
         public string HeaderRowMetadata { get; set; }
     }
 }

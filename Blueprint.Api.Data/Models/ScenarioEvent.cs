@@ -17,6 +17,8 @@ namespace Blueprint.Api.Data.Models
         public Guid MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
         public ItemStatus Status { get; set; }
+        public Guid? AssignedTeamId { get; set; }
+        public virtual TeamEntity AssignedTeam { get; set; }
         public virtual ICollection<DataValueEntity> DataValues { get; set; } = new HashSet<DataValueEntity>();
         public int RowIndex { get; set; }
         public string RowMetadata { get; set; }

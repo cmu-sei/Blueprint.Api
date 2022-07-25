@@ -14,13 +14,18 @@ namespace Blueprint.Api.Data.Models
     {
         public UserMselRoleEntity() { }
 
+        public UserMselRoleEntity(Guid userId, Guid mselId, MselRole role)
+        {
+            MselId = mselId;
+            UserId = userId;
+            Role = role;
+        }
+
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
         public Guid MselId { get; set; }
         public MselEntity Msel { get; set; }
-        public Guid? ScenarioEventId { get; set; }
-        public ScenarioEventEntity ScenarioEvent { get; set; }
         public Guid UserId { get; set; }
         public UserEntity User { get; set; }
         public MselRole Role { get; set; }
@@ -30,7 +35,7 @@ namespace Blueprint.Api.Data.Models
     {
         public void Configure(EntityTypeBuilder<UserMselRoleEntity> builder)
         {
-            builder.HasIndex(x => new { x.MselId, x.ScenarioEventId, x.UserId, x.Role }).IsUnique();
+            builder.HasIndex(x => new { x.MselId, x.UserId, x.Role }).IsUnique();
         }
     }
 }

@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Blueprint.Api.Services;
 using Microsoft.AspNetCore.Authentication;
+using Blueprint.Api.Infrastructure.Extensions;
 
 namespace Blueprint.Api.Infrastructure.Authorization
 {
@@ -19,7 +20,8 @@ namespace Blueprint.Api.Infrastructure.Authorization
 
         public async Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
         {
-            var user = await _claimsService.AddUserClaims(principal, true);
+            var user = principal.NormalizeScopeClaims();
+            user = await _claimsService.AddUserClaims(user, true);
             _claimsService.SetCurrentClaimsPrincipal(user);
             return user;
         }

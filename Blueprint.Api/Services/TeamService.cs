@@ -49,7 +49,7 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Team>> GetAsync(CancellationToken ct)
         {
-            if(!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            if(!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
                 throw new ForbiddenException();
 
             var items = await _context.Teams
@@ -60,7 +60,7 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Team> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
             var item = await _context.Teams

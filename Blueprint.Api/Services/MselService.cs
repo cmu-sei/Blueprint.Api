@@ -453,7 +453,8 @@ namespace Blueprint.Api.Services
                         // handle differences between data types
                         if (!string.IsNullOrWhiteSpace(stringValue))
                         {
-                            var dataFieldType = (DataFieldType)int.Parse(cellMetadata.Split(",")[3]);
+                            var metadataParts = cellMetadata == null ? new string[0] : cellMetadata.Split(",");
+                            var dataFieldType = metadataParts.Count() >= 3 ? (DataFieldType)int.Parse(metadataParts[3]) : DataFieldType.String;
                             switch (dataFieldType)
                             {
                                 case DataFieldType.DateTime:

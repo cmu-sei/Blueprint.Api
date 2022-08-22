@@ -16,13 +16,13 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Services
 {
     public interface IOrganizationService
     {
+        Task<IEnumerable<ViewModels.Organization>> GetTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Organization>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Organization> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.Organization> CreateAsync(ViewModels.Organization organization, CancellationToken ct);
@@ -49,9 +49,21 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
         }
 
-        public async Task<IEnumerable<ViewModels.Organization>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Organization>> GetTemplatesAsync(CancellationToken ct)
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var organizationEntities = await _context.Organizations
+                .Where(organization => organization.IsTemplate)
+                .ToListAsync();
+
+            return _mapper.Map<IEnumerable<Organization>>(organizationEntities).ToList();;
+        }
+
+        public async Task<IEnumerable<ViewModels.Organization>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        {
+            if (!(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
 
             var organizationEntities = await _context.Organizations
@@ -67,14 +79,20 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var item = await _context.Organizations.SingleAsync(organization => organization.Id == id, ct);
+            if (!item.IsTemplate && !(await MselViewRequirement.IsMet(_user.GetId(), (Guid)item.MselId, _context)))
+                throw new ForbiddenException();
 
             return _mapper.Map<Organization>(item);
         }
 
         public async Task<ViewModels.Organization> CreateAsync(ViewModels.Organization organization, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
+            if (
+                (organization.MselId == null && !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded) &&
+                (organization.MselId != null && !(await MselViewRequirement.IsMet(_user.GetId(), (Guid)organization.MselId, _context)))
+               )
+                   throw new ForbiddenException();
+
             organization.Id = organization.Id != Guid.Empty ? organization.Id : Guid.NewGuid();
             organization.DateCreated = DateTime.UtcNow;
             organization.CreatedBy = _user.GetId();
@@ -91,8 +109,11 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Organization> UpdateAsync(Guid id, ViewModels.Organization organization, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
+            if (
+                (organization.MselId == null && !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded) &&
+                (organization.MselId != null && !(await MselViewRequirement.IsMet(_user.GetId(), (Guid)organization.MselId, _context)))
+               )
+                   throw new ForbiddenException();
 
             var organizationToUpdate = await _context.Organizations.SingleOrDefaultAsync(v => v.Id == id, ct);
 
@@ -115,10 +136,13 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var organizationToDelete = await _context.Organizations.SingleOrDefaultAsync(v => v.Id == id, ct);
+
+            if (
+                (organizationToDelete.MselId == null && !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded) &&
+                (organizationToDelete.MselId != null && !(await MselViewRequirement.IsMet(_user.GetId(), (Guid)organizationToDelete.MselId, _context)))
+               )
+                   throw new ForbiddenException();
 
             if (organizationToDelete == null)
                 throw new EntityNotFoundException<Organization>();

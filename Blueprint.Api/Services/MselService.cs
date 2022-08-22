@@ -137,9 +137,9 @@ namespace Blueprint.Api.Services
                 .Where(mt => teamIdList.Contains(mt.TeamId))
                 .Select(mt => mt.Msel)
                 .ToListAsync(ct);
-            // get msels I created
+            // get msels I created and all templates
             var myMselList = await _context.Msels
-                .Where(m => m.CreatedBy == userId)
+                .Where(m => m.CreatedBy == userId || m.IsTemplate)
                 .ToListAsync(ct);
             // combine lists
             var mselList = teamMselList.Union(myMselList).OrderByDescending(m => m.DateCreated);

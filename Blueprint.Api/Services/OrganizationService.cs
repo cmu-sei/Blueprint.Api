@@ -63,7 +63,10 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Organization>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
+            if (
+                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
+                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+               )
                 throw new ForbiddenException();
 
             var organizationEntities = await _context.Organizations

@@ -90,11 +90,16 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Organization> CreateAsync(ViewModels.Organization organization, CancellationToken ct)
         {
-            if (
-                (organization.MselId == null && !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded) &&
-                (organization.MselId != null && !(await MselViewRequirement.IsMet(_user.GetId(), (Guid)organization.MselId, _context)))
-               )
+            // content developers can create.  Others need further evaluation.
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                // non-content developers cannot create an organization template
+                if (organization.IsTemplate || organization.MselId == null)
                    throw new ForbiddenException();
+                // non-msel owners cannot create an organization on the msel
+                if (!(await MselOwnerRequirement.IsMet(_user.GetId(), (Guid)organization.MselId, _context)))
+                   throw new ForbiddenException();
+            }
 
             organization.Id = organization.Id != Guid.Empty ? organization.Id : Guid.NewGuid();
             organization.DateCreated = DateTime.UtcNow;
@@ -112,11 +117,16 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Organization> UpdateAsync(Guid id, ViewModels.Organization organization, CancellationToken ct)
         {
-            if (
-                (organization.MselId == null && !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded) &&
-                (organization.MselId != null && !(await MselViewRequirement.IsMet(_user.GetId(), (Guid)organization.MselId, _context)))
-               )
+            // content developers can update.  Others need further evaluation.
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                // non-content developers cannot update an organization template
+                if (organization.IsTemplate || organization.MselId == null)
                    throw new ForbiddenException();
+                // non-msel owners cannot update an organization on the msel
+                if (!(await MselOwnerRequirement.IsMet(_user.GetId(), (Guid)organization.MselId, _context)))
+                   throw new ForbiddenException();
+            }
 
             var organizationToUpdate = await _context.Organizations.SingleOrDefaultAsync(v => v.Id == id, ct);
 

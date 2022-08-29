@@ -4,8 +4,6 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Blueprint.Api.Data.Models
 {
@@ -16,7 +14,9 @@ namespace Blueprint.Api.Data.Models
         public Guid Id { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
-        public Guid MselId { get; set; }
+        public string Summary { get; set; }
+        public bool IsTemplate { get; set; }
+        public Guid? MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
     }
 

@@ -29,6 +29,23 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets Organization Templates
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of Organization Templates
+        /// </remarks>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("organizations/templates")]
+        [ProducesResponseType(typeof(IEnumerable<Organization>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getOrganizationTemplates")]
+        public async Task<IActionResult> GetOrganizationTemplates(CancellationToken ct)
+        {
+            var list = await _organizationService.GetTemplatesAsync(ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Gets Organizations by msel
         /// </summary>
         /// <remarks>

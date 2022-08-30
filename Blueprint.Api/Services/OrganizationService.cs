@@ -82,7 +82,9 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var item = await _context.Organizations.SingleAsync(organization => organization.Id == id, ct);
-            if (!item.IsTemplate && !(await MselViewRequirement.IsMet(_user.GetId(), (Guid)item.MselId, _context)))
+            if (!item.IsTemplate &&
+                !(await MselViewRequirement.IsMet(_user.GetId(), (Guid)item.MselId, _context)) &&
+                !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
             return _mapper.Map<Organization>(item);

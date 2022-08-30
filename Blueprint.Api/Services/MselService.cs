@@ -149,9 +149,16 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Msel> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselViewRequirement.IsMet(_user.GetId(), id,_context)))
-                throw new ForbiddenException();
+            if (
+                    !(await MselViewRequirement.IsMet(_user.GetId(), id, _context)) &&
+                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+               )
+            {
+                var msel = await _context.Msels.FindAsync(id);
+                if (!msel.IsTemplate)
+                    throw new ForbiddenException();
+            }
+
 
             var item = await _context.Msels
                 .Include(m => m.DataFields)

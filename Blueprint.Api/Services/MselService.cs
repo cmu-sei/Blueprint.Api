@@ -34,6 +34,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Msel>> GetMineAsync(CancellationToken ct);
         Task<ViewModels.Msel> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct);
+        Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, CancellationToken ct);
         Task<ViewModels.Msel> AddTeamToMselAsync(Guid mselId, Guid teamId, CancellationToken ct);
         Task<ViewModels.Msel> RemoveTeamFromMselAsync(Guid mselId, Guid teamId, CancellationToken ct);
@@ -191,6 +192,86 @@ namespace Blueprint.Api.Services
             _context.Msels.Add(mselEntity);
             await _context.SaveChangesAsync(ct);
             msel = await GetAsync(mselEntity.Id, ct);
+
+            return msel;
+        }
+
+        public async Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct)
+        {
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var mselEntity = await _context.Msels
+                .AsNoTracking()
+                .Include(m => m.DataFields)
+                .Include(m => m.Moves)
+                .Include(m => m.MselTeams)
+                .Include(m => m.Organizations)
+                .Include(m => m.UserMselRoles)
+                .Include(m => m.ScenarioEvents)
+                .ThenInclude(s => s.DataValues)
+                .AsSplitQuery()
+                .FirstOrDefaultAsync(m => m.Id == mselId);
+            if (mselEntity == null)
+                throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
+
+            mselEntity.Id = Guid.NewGuid();
+            mselEntity.DateCreated = DateTime.UtcNow;
+            mselEntity.CreatedBy = _user.GetId();
+            mselEntity.DateModified = null;
+            mselEntity.ModifiedBy = null;
+            mselEntity.Description = "Copy of " + mselEntity.Description;
+            var dataFieldIdCrossReference = new Dictionary<Guid, Guid>();
+            foreach (var dataField in mselEntity.DataFields)
+            {
+                var newDataFieldId = Guid.NewGuid();
+                dataFieldIdCrossReference[dataField.Id] = newDataFieldId;
+                dataField.Id = newDataFieldId;
+                dataField.MselId = mselEntity.Id;
+                dataField.Msel = null;
+            }
+            foreach (var move in mselEntity.Moves)
+            {
+                move.Id = Guid.NewGuid();
+                move.MselId = mselEntity.Id;
+                move.Msel = null;
+            }
+            foreach (var mselTeam in mselEntity.MselTeams)
+            {
+                mselTeam.Id = Guid.NewGuid();
+                mselTeam.MselId = mselEntity.Id;
+                mselTeam.Msel = null;
+            }
+            foreach (var organization in mselEntity.Organizations)
+            {
+                organization.Id = Guid.NewGuid();
+                organization.MselId = mselEntity.Id;
+                organization.Msel = null;
+            }
+            foreach (var userMselRole in mselEntity.UserMselRoles)
+            {
+                userMselRole.Id = Guid.NewGuid();
+                userMselRole.MselId = mselEntity.Id;
+                userMselRole.Msel = null;
+            }
+            foreach (var scenarioEvent in mselEntity.ScenarioEvents)
+            {
+                scenarioEvent.Id = Guid.NewGuid();
+                scenarioEvent.MselId = mselEntity.Id;
+                scenarioEvent.Msel = null;
+                foreach (var dataValue in scenarioEvent.DataValues)
+                {
+                    dataValue.Id = Guid.NewGuid();
+                    dataValue.ScenarioEventId = scenarioEvent.Id;
+                    dataValue.ScenarioEvent = null;
+                    dataValue.DataFieldId = dataFieldIdCrossReference[dataValue.DataFieldId];
+                    dataValue.DataField = null;
+                }
+            }
+
+            _context.Msels.Add(mselEntity);
+            await _context.SaveChangesAsync(ct);
+            var msel = await GetAsync(mselEntity.Id, ct);
 
             return msel;
         }

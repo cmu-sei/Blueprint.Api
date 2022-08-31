@@ -65,9 +65,15 @@ namespace Blueprint.Api.Services
                 Guid mselId;
                 Guid.TryParse(queryParameters.MselId, out mselId);
 
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
-                    throw new ForbiddenException();
+                if (
+                        !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
+                        !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+                )
+                {
+                    var msel = await _context.Msels.FindAsync(mselId);
+                    if (!msel.IsTemplate)
+                        throw new ForbiddenException();
+                }
 
                 scenarioEvents = _context.ScenarioEvents
                     .Where(i => i.MselId == mselId)

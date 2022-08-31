@@ -67,7 +67,11 @@ namespace Blueprint.Api.Services
                     !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
                     !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
                )
-                throw new ForbiddenException();
+            {
+                var msel = await _context.Msels.FindAsync(mselId);
+                if (!msel.IsTemplate)
+                    throw new ForbiddenException();
+            }
 
             var organizationEntities = await _context.Organizations
                 .Where(organization => organization.MselId == mselId)

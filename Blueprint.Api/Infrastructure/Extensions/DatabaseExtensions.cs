@@ -161,6 +161,20 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 }
                 context.SaveChanges();
             }
+            // MSELTEAMS
+            if (options.MselTeams != null && options.MselTeams.Any())
+            {
+                var dbMselTeams = context.MselTeams.ToList();
+
+                foreach (MselTeamEntity mselTeam in options.MselTeams)
+                {
+                    if (!dbMselTeams.Where(x => x.Id == mselTeam.Id  || (x.MselId == mselTeam.MselId && x.TeamId == mselTeam.TeamId)).Any())
+                    {
+                        context.MselTeams.Add(mselTeam);
+                    }
+                }
+                context.SaveChanges();
+            }
             // MOVES
             if (options.Moves != null && options.Moves.Any())
             {
@@ -185,6 +199,34 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     if (!dbDataFields.Where(x => x.Id == dataField.Id).Any())
                     {
                         context.DataFields.Add(dataField);
+                    }
+                }
+                context.SaveChanges();
+            }
+            // ORGANIZATIONS
+            if (options.Organizations != null && options.Organizations.Any())
+            {
+                var dbOrganizations = context.Organizations.ToList();
+
+                foreach (OrganizationEntity organization in options.Organizations)
+                {
+                    if (!dbOrganizations.Where(x => x.Id == organization.Id || (x.MselId == organization.MselId && x.Name == organization.Name)).Any())
+                    {
+                        context.Organizations.Add(organization);
+                    }
+                }
+                context.SaveChanges();
+            }
+            // USERMSELROLES
+            if (options.UserMselRoles != null && options.UserMselRoles.Any())
+            {
+                var dbUserMselRoles = context.UserMselRoles.ToList();
+
+                foreach (UserMselRoleEntity userMselRole in options.UserMselRoles)
+                {
+                    if (!dbUserMselRoles.Where(x => x.Id == userMselRole.Id || (x.MselId == userMselRole.MselId && x.UserId == userMselRole.UserId && x.Role == userMselRole.Role)).Any())
+                    {
+                        context.UserMselRoles.Add(userMselRole);
                     }
                 }
                 context.SaveChanges();

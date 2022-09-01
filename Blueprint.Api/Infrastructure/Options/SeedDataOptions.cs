@@ -14,9 +14,12 @@ namespace Blueprint.Api.Infrastructure.Options
         public List<TeamEntity> Teams { get; set; }
         public List<TeamUserEntity> TeamUsers { get; set; }
         public List<MselEntity> Msels { get; set; }
+        public List<MselTeamEntity> MselTeams { get; set; }
         public List<MoveEntity> Moves { get; set; }
+        public List<OrganizationEntity> Organizations { get; set; }
         public List<ScenarioEventEntity> ScenarioEvents { get; set; }
         public List<DataFieldEntity> DataFields { get; set; }
+        public List<UserMselRoleEntity> UserMselRoles { get; set; }
     }
 }
 

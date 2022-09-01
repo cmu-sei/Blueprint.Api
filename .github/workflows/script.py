@@ -18,10 +18,10 @@ for root, dirs, files in os.walk("."):
     # add header to file
     if file.endswith(('.cs', '.ts', '.js', '.css', '.go', '.scss', '.php')):
      # comment type ' /* __ */
-     with open(os.path.join(root,file), 'w') as modified: modified.write('/*\n' + header + '\n*/\n\n' + data)
+     with open(os.path.join(root,file), 'w') as modified: modified.write('/*\n ' + header + '\n*/\n\n' + data)
     elif file.endswith(('.xml', '.html')):
      # comment type ' <!-- __ --> '
-     with open(os.path.join(root,file), 'w') as modified: modified.write('<!--\n' + header + '\n-->\n\n' + data)
+     with open(os.path.join(root,file), 'w') as modified: modified.write('<!--\n ' + header + '\n-->\n\n' + data)
     elif file.endswith('py'):
      # comment type ' """ ___ """ '
-     with open(os.path.join(root,file), 'w') as modified: modified.write('"""\n' + header + '\n"""\n\n' + data)
+     with open(os.path.join(root,file), 'w') as modified: modified.write('"""\n ' + header + '\n"""\n\n' + data)

@@ -15,6 +15,7 @@ namespace Blueprint.Api.ViewModels
         public string Value { get; set; }
         public Guid ScenarioEventId { get; set; }
         public Guid DataFieldId { get; set; }
+        public string CellMetadata { get; set; }
     }
 
 }

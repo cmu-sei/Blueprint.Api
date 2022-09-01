@@ -47,6 +47,13 @@
       "IsTemplate": true
     }
   ],
+  "MselTeams": [
+    {
+      "Id": "3434c38e-58b0-4af1-80d1-1895af913434",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "TeamId": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8"
+    }
+  ],
   "ScenarioEvents": [
     {
       "Id": "45453b75-92f4-4568-8a21-c1adf8a639eb",
@@ -60,6 +67,23 @@
       "Description": "The fun begins",
       "MoveNumber": 1,
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31"
+    }
+  ],
+  "Organizations": [
+    {
+      "Id": "0000beb0-c441-4b54-8e91-3716e3406666",
+      "Name": "FBI",
+      "Summary": "Federal Bureau of Investigation",
+      "Description": "The Federal Bureau of Investigation is the domestic intelligence and security service of the United States and its principal federal law enforcement agency.",
+      "IsTemplate": true
+    }
+  ],
+  "UserMselRoles": [
+    {
+      "Id": "5555beb0-c441-4b54-8e91-3716e3405555",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "UserId": "9fd3c38e-58b0-4af1-80d1-1895af91f1f9",
+      "Role": 10
     }
   ],
   "DataFields": [

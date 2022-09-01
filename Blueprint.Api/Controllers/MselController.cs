@@ -121,6 +121,25 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Creates a new MSEL by copying an existing MSEL
+        /// </summary>
+        /// <remarks>
+        /// Creates a new MSEL from the specified existing MSEL
+        /// <para />
+        /// Accessible only to a ContentDeveloper or an Administrator
+        /// </remarks>
+        /// <param name="id">The ID of the MSEL to be copied</param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{id}/copy")]
+        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "copyMsel")]
+        public async Task<IActionResult> Copy(Guid id, CancellationToken ct)
+        {
+            var createdMsel = await _mselService.CopyAsync(id, ct);
+            return CreatedAtAction(nameof(this.Get), new { id = createdMsel.Id }, createdMsel);
+        }
+
+        /// <summary>
         /// Updates a Msel
         /// </summary>
         /// <remarks>

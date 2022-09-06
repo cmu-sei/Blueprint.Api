@@ -484,9 +484,11 @@ namespace Blueprint.Api.Services
 
                 // add the header row
                 Row headerRow = new Row();
-                if (msel.HeaderRowMetadata != "")
+                if (msel.HeaderRowMetadata != null && msel.HeaderRowMetadata.Length > 0)
                 {
-                    headerRow.Height = double.Parse(msel.HeaderRowMetadata);
+                    Double height;
+                    double.TryParse(msel.HeaderRowMetadata, out height);
+                    headerRow.Height = height;
                     headerRow.CustomHeight = true;
                 }
                 // add the cells to the header row
@@ -496,7 +498,8 @@ namespace Blueprint.Api.Services
                     var dataField = await _context.DataFields
                         .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
                         .FirstOrDefaultAsync();
-                    var width = double.Parse(dataField.ColumnMetadata);
+                    Double width;
+                    double.TryParse("", out width);
                     var cellMetadata = dataField.CellMetadata;
                     columns.Append(new Column() {
                         Min = (UInt32)(column.Ordinal + 1),
@@ -508,7 +511,7 @@ namespace Blueprint.Api.Services
                     Cell cell = new Cell();
                     cell.DataType = CellValues.String;
                     cell.CellValue = new CellValue(column.ColumnName);
-                    cell.StyleIndex = (UInt32)uniqueStyles[cellMetadata];
+                    cell.StyleIndex = cellMetadata != null && cellMetadata.Length > 0 ? (UInt32)uniqueStyles[cellMetadata] : 0;
                     headerRow.AppendChild(cell);
                 }
                 worksheetPart.Worksheet.InsertAt(columns, 0);
@@ -522,7 +525,9 @@ namespace Blueprint.Api.Services
                     Row newRow = new Row();
                     if (!String.IsNullOrEmpty(scenarioEventList[i].RowMetadata))
                     {
-                        newRow.Height = double.Parse(scenarioEventList[i].RowMetadata);
+                        Double height;
+                        double.TryParse(scenarioEventList[i].RowMetadata, out height);
+                        newRow.Height = height;
                         newRow.CustomHeight = true;
                     }
                     // add the cells for this row
@@ -973,7 +978,9 @@ namespace Blueprint.Api.Services
                 Fill newFill = new Fill();
                 PatternFill patternFill = new PatternFill() { PatternType = PatternValues.Solid };
                 var rgb = styleParts[0] == "" ? "FFFFFF" : styleParts[0];
-                ForegroundColor foregroundColor = new ForegroundColor() { Rgb = rgb, Tint = double.Parse(styleParts[1]) };
+                Double tint;
+                double.TryParse(styleParts[1], out tint);
+                ForegroundColor foregroundColor = new ForegroundColor() { Rgb = rgb, Tint = tint };
                 BackgroundColor backgroundColor = new BackgroundColor() { Indexed = (UInt32Value)64U };
                 patternFill.Append(foregroundColor);
                 patternFill.Append(backgroundColor);

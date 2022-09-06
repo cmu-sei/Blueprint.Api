@@ -499,7 +499,7 @@ namespace Blueprint.Api.Services
                         .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
                         .FirstOrDefaultAsync();
                     Double width;
-                    double.TryParse("", out width);
+                    double.TryParse(dataField.ColumnMetadata, out width);
                     var cellMetadata = dataField.CellMetadata;
                     columns.Append(new Column() {
                         Min = (UInt32)(column.Ordinal + 1),

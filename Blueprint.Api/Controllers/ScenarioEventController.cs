@@ -80,13 +80,13 @@ namespace Blueprint.Api.Controllers
         /// <param name="scenarioEvent">The data to create the ScenarioEvent with</param>
         /// <param name="ct"></param>
         [HttpPost("scenarioEvents")]
-        [ProducesResponseType(typeof(ViewModels.ScenarioEvent), (int)HttpStatusCode.Created)]
+        [ProducesResponseType(typeof(IEnumerable<ViewModels.ScenarioEvent>), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createScenarioEvent")]
         public async Task<IActionResult> Create([FromBody] ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
             scenarioEvent.CreatedBy = User.GetId();
-            var createdScenarioEvent = await _scenarioEventService.CreateAsync(scenarioEvent, ct);
-            return CreatedAtAction(nameof(this.Get), new { id = createdScenarioEvent.Id }, createdScenarioEvent);
+            var list = await _scenarioEventService.CreateAsync(scenarioEvent, ct);
+            return Ok(list);
         }
 
         /// <summary>
@@ -101,13 +101,13 @@ namespace Blueprint.Api.Controllers
         /// <param name="scenarioEvent">The updated ScenarioEvent values</param>
         /// <param name="ct"></param>
         [HttpPut("scenarioEvents/{id}")]
-        [ProducesResponseType(typeof(ViewModels.ScenarioEvent), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(IEnumerable<ViewModels.ScenarioEvent>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateScenarioEvent")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
             scenarioEvent.ModifiedBy = User.GetId();
-            var updatedScenarioEvent = await _scenarioEventService.UpdateAsync(id, scenarioEvent, ct);
-            return Ok(updatedScenarioEvent);
+            var list = await _scenarioEventService.UpdateAsync(id, scenarioEvent, ct);
+            return Ok(list);
         }
 
         /// <summary>

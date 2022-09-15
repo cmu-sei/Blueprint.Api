@@ -26,10 +26,8 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.ScenarioEvent>> GetAsync(ScenarioEventGet queryParameters, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct);
-        Task<ViewModels.ScenarioEvent> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
-        Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
-        // Task<Guid> AssignTeamAsync(Guid id, Guid teamId, CancellationToken ct);
-        // Task<bool> UnassignTeamAsync(Guid id, Guid teamId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     }
 
@@ -118,7 +116,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<ViewModels.ScenarioEvent>(item);
         }
 
-        public async Task<ViewModels.ScenarioEvent> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
@@ -155,14 +153,15 @@ namespace Blueprint.Api.Services
                 var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
                 _context.DataValues.Add(dataValueEntity);
             }
-
+            var scenarioEventEnitities = new List<ScenarioEventEntity>();
+            scenarioEventEnitities.Add(scenarioEventEntity);
+            scenarioEventEnitities.AddRange(await RenumberRowIndexes(scenarioEventEntity, ct));
             await _context.SaveChangesAsync(ct);
 
-
-            return _mapper.Map<ViewModels.ScenarioEvent>(scenarioEventEntity);
+            return  _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
 
-        public async Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
             var scenarioEventToUpdate = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
 
@@ -188,9 +187,9 @@ namespace Blueprint.Api.Services
                 }
             }
 
-            // start a transaction, because we may also update DataValues
+            // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
-
+            var updateRowIndexes = scenarioEventToUpdate.RowIndex != scenarioEvent.RowIndex;
             if (scenarioEvent.DataValues.Any())
             {
                 await UpdateDataValues(scenarioEvent, ct);
@@ -202,15 +201,20 @@ namespace Blueprint.Api.Services
             _mapper.Map(scenarioEvent, scenarioEventToUpdate);
 
             _context.ScenarioEvents.Update(scenarioEventToUpdate);
+            var scenarioEventEnitities = new List<ScenarioEventEntity>();
+            scenarioEventEnitities.Add(scenarioEventToUpdate);
+            if (updateRowIndexes)
+            {
+                scenarioEventEnitities.AddRange(await RenumberRowIndexes(scenarioEventToUpdate, ct));
+            }
             await _context.SaveChangesAsync(ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
             scenarioEvent = await GetAsync(id, ct);
 
-            return scenarioEvent;
+            return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
-
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
@@ -241,6 +245,26 @@ namespace Blueprint.Api.Services
                 dataValueToUpdate.Value = dataValue.Value;
                 await _context.SaveChangesAsync(ct);
             }
+        }
+
+        private async Task<List<ScenarioEventEntity>> RenumberRowIndexes(ScenarioEventEntity scenarioEventEntity, CancellationToken ct)
+        {
+            var scenarioEvents = await _context.ScenarioEvents
+                .Where(se => se.MselId == scenarioEventEntity.MselId &&
+                    se.RowIndex >= scenarioEventEntity.RowIndex &&
+                    se.Id != scenarioEventEntity.Id)
+                    .Include(se => se.DataValues)
+                .OrderBy(se => se.RowIndex)
+                .ToListAsync(ct);
+            if (scenarioEvents.Any(se => se.RowIndex == scenarioEventEntity.RowIndex))
+            {
+                for (var i = scenarioEvents.Count; i > 0; i--)
+                {
+                    scenarioEvents[i-1].RowIndex = scenarioEventEntity.RowIndex + i;
+                }
+            }
+
+            return scenarioEvents;
         }
 
     }

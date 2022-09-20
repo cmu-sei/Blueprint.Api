@@ -526,7 +526,7 @@ namespace Blueprint.Api.Services
                     if (!String.IsNullOrEmpty(scenarioEventList[i].RowMetadata))
                     {
                         Double height;
-                        double.TryParse(scenarioEventList[i].RowMetadata, out height);
+                        double.TryParse(scenarioEventList[i].RowMetadata.Split(",")[0], out height);
                         newRow.Height = height;
                         newRow.CustomHeight = true;
                     }

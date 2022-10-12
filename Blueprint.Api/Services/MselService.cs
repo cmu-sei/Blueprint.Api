@@ -853,7 +853,14 @@ namespace Blueprint.Api.Services
                     }
                     if (dataFieldType == DataFieldType.DateTime)
                     {
-                        currentCellValue = DateTime.FromOADate(int.Parse(currentCellValue)).ToString("M/d/yyyy");
+                        try
+                        {
+                            currentCellValue = DateTime.FromOADate(int.Parse(currentCellValue)).ToString("M/d/yyyy");
+                        }
+                        catch (System.Exception)
+                        {
+                            // value is not a valid date, so just use the value
+                        }
                     }
                     Fill fill = (Fill)styles.Stylesheet.Fills.ChildElements[(int)cellFormat.FillId.Value];
                     PatternFill patternFill = fill.PatternFill;

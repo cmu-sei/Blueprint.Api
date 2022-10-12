@@ -12,8 +12,12 @@ namespace Blueprint.Api.ViewModels
         public Guid Id { get; set; }
         public string Description { get; set; }
         public ItemStatus Status { get; set; }
+        public bool UseGallery { get; set; }
+        public Guid? GalleryCollectionId { get; set; }
         public Guid? GalleryExhibitId { get; set; }
+        public bool UseCite { get; set; }
         public Guid? CiteEvaluationId { get; set; }
+        public bool UseSteamfitter { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
         public bool IsTemplate { get; set; }
         public virtual ICollection<Move> Moves { get; set; } = new HashSet<Move>();

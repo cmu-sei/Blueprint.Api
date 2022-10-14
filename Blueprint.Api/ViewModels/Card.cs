@@ -2,16 +2,17 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using System;
-using Blueprint.Api.Data.Enumerations;
 
 namespace Blueprint.Api.ViewModels
 {
-    public class UserMselRole : Base
+    public class Card : Base
     {
         public Guid Id { get; set; }
         public Guid MselId { get; set; }
-        public Guid UserId { get; set; }
-        public MselRole Role { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public int Move { get; set; }
+        public int Inject { get; set; }
     }
 
 }

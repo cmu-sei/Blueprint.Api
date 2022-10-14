@@ -3,22 +3,23 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using Blueprint.Api.Data.Enumerations;
 
-namespace Blueprint.Api.ViewModels
+namespace Blueprint.Api.Data.Models
 {
-    public class DataField : Base
+    public class CardEntity : BaseEntity
     {
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
         public Guid MselId { get; set; }
+        public virtual MselEntity Msel { get; set; }
         public string Name { get; set; }
-        public DataFieldType DataType { get; set; }
-        public int DisplayOrder { get; set; }
-        public bool IsChosenFromList { get; set; }
-        public virtual ICollection<DataOption> DataOptions { get; set; } = new HashSet<DataOption>();
-        public string CellMetadata { get; set; }
-        public string ColumnMetadata { get; set; }
-
+        public string Description { get; set; }
+        public int Move { get; set; }
+        public int Inject { get; set; }
     }
 
 }

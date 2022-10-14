@@ -26,6 +26,7 @@ namespace Blueprint.Api.ViewModels
         public ICollection<Team> Teams { get; set; } = new List<Team>();
         public ICollection<UserMselRole> UserMselRoles { get; set; } = new List<UserMselRole>();
         public string HeaderRowMetadata { get; set; }
+        public ICollection<Card> Cards { get; set; } = new List<Card>();
    }
 }
 

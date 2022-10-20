@@ -20,6 +20,7 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
+using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.ViewModels;
 using DocumentFormat.OpenXml;
@@ -54,15 +55,18 @@ namespace Blueprint.Api.Services
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
         private readonly ILogger<GalleryService> _logger;
+        private readonly ClientOptions _clientOptions;
 
         public MselService(
             BlueprintContext context,
+            ClientOptions clientOptions,
             IAuthorizationService authorizationService,
             IPrincipal user,
             ILogger<GalleryService> logger,
             IMapper mapper)
         {
             _context = context;
+            _clientOptions = clientOptions;
             _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
@@ -155,13 +159,12 @@ namespace Blueprint.Api.Services
                     !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
                )
             {
-                var msel = await _context.Msels.FindAsync(id);
-                if (!msel.IsTemplate)
+                var mselCheck = await _context.Msels.FindAsync(id);
+                if (!mselCheck.IsTemplate)
                     throw new ForbiddenException();
             }
 
-
-            var item = await _context.Msels
+            var mselEntity = await _context.Msels
                 .Include(m => m.DataFields)
                 .ThenInclude(df => df.DataOptions)
                 .Include(m => m.ScenarioEvents)
@@ -173,8 +176,14 @@ namespace Blueprint.Api.Services
                 .Include(m => m.UserMselRoles)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
+            var msel = _mapper.Map<Msel>(mselEntity);
+            // add the needed parameters for Gallery integration
+            if (msel.UseGallery)
+            {
+                msel.GalleryArticleParameters = _clientOptions.GalleryArticleParameters.ToList();
+            }
 
-            return _mapper.Map<Msel>(item);
+            return msel;
         }
 
         public async Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct)

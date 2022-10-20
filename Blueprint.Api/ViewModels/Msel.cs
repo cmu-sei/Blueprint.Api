@@ -27,6 +27,7 @@ namespace Blueprint.Api.ViewModels
         public ICollection<UserMselRole> UserMselRoles { get; set; } = new List<UserMselRole>();
         public string HeaderRowMetadata { get; set; }
         public ICollection<Card> Cards { get; set; } = new List<Card>();
+        public List<string> GalleryArticleParameters { get; set; } = new List<string>(); // the parameters that must be sent to Gallery to define an Article
    }
 }
 

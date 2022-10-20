@@ -11,6 +11,7 @@ namespace Blueprint.Api.Infrastructure.Options
     public class ClientOptions
     {
         public string GalleryApiUrl { get; set; }
+        public string[] GalleryArticleParameters { get; set; }
     }
 }
 

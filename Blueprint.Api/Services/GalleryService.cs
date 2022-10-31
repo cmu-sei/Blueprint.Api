@@ -8,6 +8,8 @@ using Blueprint.Api.Infrastructure.Options;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Security.Claims;
 using System.Security.Principal;
@@ -21,8 +23,8 @@ namespace Blueprint.Api.Services
 {
     public interface IGalleryService
     {
-        Task<GAC.UnreadArticles> GetMyUnreadArticleCountAsync(Guid exhibitId, CancellationToken ct);
-        Task<GAC.UnreadArticles> GetUnreadArticleCountAsync(Guid exhibitId, Guid userId, CancellationToken ct);
+        Task<List<GAC.Collection>> GetCollectionsAsync(CancellationToken ct);
+        Task<List<GAC.Exhibit>> GetExhibitsAsync(Guid collectionId, CancellationToken ct);
     }
 
     public class GalleryService : IGalleryService
@@ -53,42 +55,48 @@ namespace Blueprint.Api.Services
             _logger = logger;
         }
 
-        public async Task<GAC.UnreadArticles> GetMyUnreadArticleCountAsync(Guid mselId, CancellationToken ct)
+        public async Task<List<GAC.Collection>> GetCollectionsAsync(CancellationToken ct)
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
                 throw new ForbiddenException();
 
-            return await GetUnreadArticleCountAsync(mselId, _user.GetId(), ct);
+            // send request for the collections
+            var client = ApiClientsExtensions.GetHttpClient(_httpClientFactory, _clientOptions.GalleryApiUrl);
+            var tokenResponse = await ApiClientsExtensions.RequestTokenAsync(_resourceOwnerAuthorizationOptions, client);
+            client.DefaultRequestHeaders.Add("authorization", $"{tokenResponse.TokenType} {tokenResponse.AccessToken}");
+            var galleryApiClient = new GAC.GalleryApiClient(client);
+            var collections = new List<GAC.Collection>();
+            try
+            {
+                collections = (await galleryApiClient.GetCollectionsAsync(ct)).ToList();
+            }
+            catch (System.Exception ex)
+            {
+                _logger.LogError(ex, "There was an error with the Gallery API (" + _clientOptions.GalleryApiUrl + ") getting collections.");
+            }
+            return collections;
         }
 
-        public async Task<GAC.UnreadArticles> GetUnreadArticleCountAsync(Guid mselId, Guid userId, CancellationToken ct)
+        public async Task<List<GAC.Exhibit>> GetExhibitsAsync(Guid collectionId, CancellationToken ct)
         {
-            // get the msel
-            var msel = await _context.Msels.FindAsync(mselId);
-            if (msel == null)
-                throw new EntityNotFoundException<MselEntity>("Msel not found " + mselId.ToString());
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+                throw new ForbiddenException();
 
-            // get the exhibit ID from the msel
-            var unreadArticles = new GAC.UnreadArticles();
-            var galleryExhibitId = msel.GalleryExhibitId;
-            if (galleryExhibitId != null && _clientOptions.GalleryApiUrl != null && _clientOptions.GalleryApiUrl.Length > 0)
+            // send request for the collection exhibits
+            var client = ApiClientsExtensions.GetHttpClient(_httpClientFactory, _clientOptions.GalleryApiUrl);
+            var tokenResponse = await ApiClientsExtensions.RequestTokenAsync(_resourceOwnerAuthorizationOptions, client);
+            client.DefaultRequestHeaders.Add("authorization", $"{tokenResponse.TokenType} {tokenResponse.AccessToken}");
+            var galleryApiClient = new GAC.GalleryApiClient(client);
+            var exhibits = new List<GAC.Exhibit>();
+            try
             {
-                // send request for the unread article count for the exhibit/user
-                var client = ApiClientsExtensions.GetHttpClient(_httpClientFactory, _clientOptions.GalleryApiUrl);
-                var tokenResponse = await ApiClientsExtensions.RequestTokenAsync(_resourceOwnerAuthorizationOptions, client);
-                client.DefaultRequestHeaders.Add("authorization", $"{tokenResponse.TokenType} {tokenResponse.AccessToken}");
-                var galleryApiClient = new GAC.GalleryApiClient(client);
-                try
-                {
-                    unreadArticles = await galleryApiClient.GetUnreadCountAsync((Guid)galleryExhibitId, userId);
-                }
-                catch (System.Exception ex)
-                {
-                    _logger.LogError(ex, "The Msel (" + msel.Id.ToString() + ") has a Gallery Exhibit ID (" + msel.GalleryExhibitId.ToString() + "), but there was an error with the Gallery API (" + _clientOptions.GalleryApiUrl + ").");
-                }
+                exhibits = (await galleryApiClient.GetCollectionExhibitsAsync(collectionId, ct)).ToList();
             }
-
-            return unreadArticles;
+            catch (System.Exception ex)
+            {
+                _logger.LogError(ex, "There was an error with the Gallery API (" + _clientOptions.GalleryApiUrl + ") getting collections.");
+            }
+            return exhibits;
         }
 
     }

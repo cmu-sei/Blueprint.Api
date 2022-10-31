@@ -330,6 +330,21 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task<Collection> CreateCollectionAsync(Collection body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
+        /// Gets User's Collections
+        /// </summary>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Collection>> GetMyCollectionsAsync();
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Gets User's Collections
+        /// </summary>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Collection>> GetMyCollectionsAsync(System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
         /// Gets a specific Collection by id
         /// </summary>
         /// <param name="id">The id of the Collection</param>
@@ -415,6 +430,21 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task<Exhibit> CreateExhibitAsync(Exhibit body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
+        /// Get User's Exhibits
+        /// </summary>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Exhibit>> GetMyExhibitsAsync();
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Get User's Exhibits
+        /// </summary>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Exhibit>> GetMyExhibitsAsync(System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
         /// Gets Exhibits for a Collection
         /// </summary>
         /// <param name="collectionId">The id of the Collection</param>
@@ -430,6 +460,23 @@ namespace Gallery.Api.Client
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
         System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Exhibit>> GetCollectionExhibitsAsync(System.Guid collectionId, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Gets User's Exhibits for a Collection
+        /// </summary>
+        /// <param name="collectionId">The id of the Collection</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Exhibit>> GetMyCollectionExhibitsAsync(System.Guid collectionId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Gets User's Exhibits for a Collection
+        /// </summary>
+        /// <param name="collectionId">The id of the Collection</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Exhibit>> GetMyCollectionExhibitsAsync(System.Guid collectionId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets a specific Exhibit by id
@@ -485,25 +532,25 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task DeleteExhibitAsync(System.Guid id, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
-        /// Updates an Exhibit's current move and scenarioEvent
+        /// Updates an Exhibit's current move and inject
         /// </summary>
         /// <param name="id">The Id of the Exhibit to update</param>
         /// <param name="move">The move value to set</param>
-        /// <param name="scenarioEvent">The scenarioEvent value to set</param>
+        /// <param name="inject">The inject value to set</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Exhibit> SetExhibitMoveAndScenarioEventAsync(System.Guid id, int move, int scenarioEvent);
+        System.Threading.Tasks.Task<Exhibit> SetExhibitMoveAndInjectAsync(System.Guid id, int move, int inject);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
-        /// Updates an Exhibit's current move and scenarioEvent
+        /// Updates an Exhibit's current move and inject
         /// </summary>
         /// <param name="id">The Id of the Exhibit to update</param>
         /// <param name="move">The move value to set</param>
-        /// <param name="scenarioEvent">The scenarioEvent value to set</param>
+        /// <param name="inject">The inject value to set</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Exhibit> SetExhibitMoveAndScenarioEventAsync(System.Guid id, int move, int scenarioEvent, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<Exhibit> SetExhibitMoveAndInjectAsync(System.Guid id, int move, int inject, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets all ExhibitTeams in the system
@@ -1468,8 +1515,8 @@ namespace Gallery.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("move")]
         public int Move { get; set; }
 
-        [System.Text.Json.Serialization.JsonPropertyName("scenarioEvent")]
-        public int ScenarioEvent { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("inject")]
+        public int Inject { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("status")]
         [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
@@ -1487,6 +1534,9 @@ namespace Gallery.Api.Client
 
         [System.Text.Json.Serialization.JsonPropertyName("datePosted")]
         public System.DateTimeOffset DatePosted { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("openInNewTab")]
+        public bool OpenInNewTab { get; set; }
 
     }
 
@@ -1601,8 +1651,8 @@ namespace Gallery.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("move")]
         public int Move { get; set; }
 
-        [System.Text.Json.Serialization.JsonPropertyName("scenarioEvent")]
-        public int ScenarioEvent { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("inject")]
+        public int Inject { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("collectionId")]
         public System.Guid CollectionId { get; set; }
@@ -1880,8 +1930,8 @@ namespace Gallery.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("currentMove")]
         public int CurrentMove { get; set; }
 
-        [System.Text.Json.Serialization.JsonPropertyName("currentScenarioEvent")]
-        public int CurrentScenarioEvent { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("currentInject")]
+        public int CurrentInject { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("collectionId")]
         public System.Guid CollectionId { get; set; }
@@ -3040,8 +3090,8 @@ namespace Gallery.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("move")]
         public int Move { get; set; }
 
-        [System.Text.Json.Serialization.JsonPropertyName("scenarioEvent")]
-        public int ScenarioEvent { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("inject")]
+        public int Inject { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("isShownOnWall")]
         public bool IsShownOnWall { get; set; }

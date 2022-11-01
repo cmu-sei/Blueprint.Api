@@ -10,6 +10,7 @@ namespace Blueprint.Api.ViewModels
     public class Msel : Base
     {
         public Guid Id { get; set; }
+        public string Name { get; set; }
         public string Description { get; set; }
         public ItemStatus Status { get; set; }
         public bool UseGallery { get; set; }

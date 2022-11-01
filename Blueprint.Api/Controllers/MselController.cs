@@ -21,11 +21,13 @@ namespace Blueprint.Api.Controllers
     public class MselController : BaseController
     {
         private readonly IMselService _mselService;
+        private readonly IGalleryService _galleryService;
         private readonly IAuthorizationService _authorizationService;
 
-        public MselController(IMselService mselService, IAuthorizationService authorizationService)
+        public MselController(IMselService mselService, IGalleryService galleryService, IAuthorizationService authorizationService)
         {
             _mselService = mselService;
+            _galleryService = galleryService;
             _authorizationService = authorizationService;
         }
 
@@ -301,6 +303,53 @@ namespace Blueprint.Api.Controllers
             // If this is wrapped in an Ok, it throws an exception
             return File(stream, "application/octet-stream", fileName);
         }
+
+        //
+        // Gallery Integration Section
+        //
+
+        /// <summary>
+        /// Push to Gallery
+        /// </summary>
+        /// <remarks>
+        /// Pushes all Gallery associated MSEL information to Gallery
+        ///   * Collection, Exhibit, Cards, Articles, and Teams
+        /// for the specified MSEL
+        /// <para />
+        /// Accessible only to a ContentDeveloper or MSEL owner
+        /// </remarks>
+        /// <param name="id"></param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{id}/gallery")]
+        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "pushToGallery")]
+        public async Task<IActionResult> PushToGallery(Guid id, CancellationToken ct)
+        {
+            var msel = await _galleryService.PushToGalleryAsync(id, ct);
+            return Ok(msel);
+        }
+
+        /// <summary>
+        /// Pull from Gallery
+        /// </summary>
+        /// <remarks>
+        /// Pulls the Collection and associated information from Gallery
+        ///   * Collection, Exhibit, Cards, Articles, and Teams
+        /// for the specified MSEL
+        /// <para />
+        /// Accessible only to a ContentDeveloper or an Administrator
+        /// </remarks>
+        /// <param name="id">The id of the Collection to delete</param>
+        /// <param name="ct"></param>
+        [HttpDelete("msels/{id}/gallery")]
+        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.NoContent)]
+        [SwaggerOperation(OperationId = "pullFromGallery")]
+        public async Task<IActionResult> PullFromGallery(Guid id, CancellationToken ct)
+        {
+            var msel = await _galleryService.PullFromGalleryAsync(id, ct);
+            return Ok(msel);
+        }
+
 
     }
 }

@@ -69,6 +69,7 @@ namespace Blueprint.Api.Services
             // get the MSEL and verify data state
             var msel = await _context.Msels
                 .Include(m => m.Cards)
+                .Include(m => m.ScenarioEvents)
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to create a collection.");
@@ -79,12 +80,14 @@ namespace Blueprint.Api.Services
             var tokenResponse = await ApiClientsExtensions.RequestTokenAsync(_resourceOwnerAuthorizationOptions, client);
             client.DefaultRequestHeaders.Add("authorization", $"{tokenResponse.TokenType} {tokenResponse.AccessToken}");
             var galleryApiClient = new GAC.GalleryApiClient(client);
-            // create the Gallery collection
+            // create the Gallery Collection
             await this.CreateCollection(galleryApiClient, msel, ct);
-            // create the Gallery exhibit
-            await this.CreateExhibit(galleryApiClient, msel, ct);
             // create the Gallery Cards
             await this.CreateCards(galleryApiClient, msel, ct);
+            // create the Gallery Articles
+            await this.CreateArticles(galleryApiClient, msel, ct);
+            // create the Gallery Exhibit
+            await this.CreateExhibit(galleryApiClient, msel, ct);
 
             return _mapper.Map<ViewModels.Msel>(msel); 
         }
@@ -133,22 +136,6 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
         }
 
-        // Create a Gallery Exhibit for this MSEL
-        private async Task CreateExhibit(GAC.GalleryApiClient galleryApiClient, MselEntity msel, CancellationToken ct)
-        {
-            GAC.Exhibit newExhibit = new GAC.Exhibit() {
-                CollectionId = (Guid)msel.GalleryCollectionId,
-                ScenarioId = null,
-                CurrentMove = 0,
-                CurrentInject = 0,
-
-            };
-            newExhibit = await galleryApiClient.CreateExhibitAsync(newExhibit, ct);
-            // update the MSEL
-            msel.GalleryExhibitId = newExhibit.Id;
-            await _context.SaveChangesAsync(ct);
-        }
-
         // Create Gallery Cards for this MSEL
         private async Task CreateCards(GAC.GalleryApiClient galleryApiClient, MselEntity msel, CancellationToken ct)
         {
@@ -163,6 +150,39 @@ namespace Blueprint.Api.Services
                 };
                 newCard = await galleryApiClient.CreateCardAsync(newCard, ct);
             }
+        }
+
+        // Create Gallery Articles for this MSEL
+        private async Task CreateArticles(GAC.GalleryApiClient galleryApiClient, MselEntity msel, CancellationToken ct)
+        {
+            // foreach (var scenarioEvent in msel.ScenarioEvents)
+            // {
+            //     GAC.Article newArticle = new GAC.Article() {
+            //         CollectionId = (Guid)msel.GalleryCollectionId,
+            //         CardId = scenarioEvent.CardId
+            //         Name = scenarioEvent.Name,
+            //         Description = scenarioEvent.Description,
+            //         Move = scenarioEvent.Move,
+            //         Inject = scenarioEvent.Inject
+            //     };
+            //     newArticle = await galleryApiClient.CreateCardAsync(newArticle, ct);
+            // }
+        }
+
+        // Create a Gallery Exhibit for this MSEL
+        private async Task CreateExhibit(GAC.GalleryApiClient galleryApiClient, MselEntity msel, CancellationToken ct)
+        {
+            GAC.Exhibit newExhibit = new GAC.Exhibit() {
+                CollectionId = (Guid)msel.GalleryCollectionId,
+                ScenarioId = null,
+                CurrentMove = 0,
+                CurrentInject = 0,
+
+            };
+            newExhibit = await galleryApiClient.CreateExhibitAsync(newExhibit, ct);
+            // update the MSEL
+            msel.GalleryExhibitId = newExhibit.Id;
+            await _context.SaveChangesAsync(ct);
         }
 
     }

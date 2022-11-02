@@ -13,6 +13,7 @@ namespace Blueprint.Api.ViewModels
         public string Description { get; set; }
         public int Move { get; set; }
         public int Inject { get; set; }
+        public Guid? GalleryId { get; set; }
     }
 
 }

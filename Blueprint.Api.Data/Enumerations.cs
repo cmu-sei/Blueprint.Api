@@ -27,5 +27,19 @@ namespace Blueprint.Api.Data.Enumerations
         Approver = 30
     }
 
+    public enum GalleryArticleParameter{
+      Name,
+      Description,
+      Move,
+      Inject,
+      Status,
+      SourceType,
+      SourceName,
+      Url,
+      DatePosted,
+      OpenInNewTab,
+      CardId
+    }
+
 }
 

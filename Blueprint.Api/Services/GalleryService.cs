@@ -69,7 +69,9 @@ namespace Blueprint.Api.Services
             // get the MSEL and verify data state
             var msel = await _context.Msels
                 .Include(m => m.Cards)
+                .Include(m => m.DataFields)
                 .Include(m => m.ScenarioEvents)
+                .ThenInclude(se => se.DataValues)
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to create a collection.");
@@ -80,6 +82,8 @@ namespace Blueprint.Api.Services
             var tokenResponse = await ApiClientsExtensions.RequestTokenAsync(_resourceOwnerAuthorizationOptions, client);
             client.DefaultRequestHeaders.Add("authorization", $"{tokenResponse.TokenType} {tokenResponse.AccessToken}");
             var galleryApiClient = new GAC.GalleryApiClient(client);
+            // start a transaction, because we will modify many database items
+            await _context.Database.BeginTransactionAsync();
             // create the Gallery Collection
             await this.CreateCollection(galleryApiClient, msel, ct);
             // create the Gallery Cards
@@ -88,6 +92,8 @@ namespace Blueprint.Api.Services
             await this.CreateArticles(galleryApiClient, msel, ct);
             // create the Gallery Exhibit
             await this.CreateExhibit(galleryApiClient, msel, ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return _mapper.Map<ViewModels.Msel>(msel); 
         }
@@ -114,6 +120,15 @@ namespace Blueprint.Api.Services
             // update the MSEL
             msel.GalleryCollectionId = null;
             msel.GalleryExhibitId = null;
+            // update the MSEL Cards
+            var cards = await _context.Cards
+                .Where(c => c.MselId == msel.Id)
+                .ToListAsync(ct);
+            foreach (var card in cards)
+            {
+                card.GalleryId = null;
+            }
+            // save the changes
             await _context.SaveChangesAsync(ct);
 
             return _mapper.Map<ViewModels.Msel>(msel); 
@@ -149,24 +164,64 @@ namespace Blueprint.Api.Services
                     Inject = card.Inject
                 };
                 newCard = await galleryApiClient.CreateCardAsync(newCard, ct);
+                card.GalleryId = newCard.Id;
+                await _context.SaveChangesAsync(ct);
             }
         }
 
         // Create Gallery Articles for this MSEL
         private async Task CreateArticles(GAC.GalleryApiClient galleryApiClient, MselEntity msel, CancellationToken ct)
         {
-            // foreach (var scenarioEvent in msel.ScenarioEvents)
-            // {
-            //     GAC.Article newArticle = new GAC.Article() {
-            //         CollectionId = (Guid)msel.GalleryCollectionId,
-            //         CardId = scenarioEvent.CardId
-            //         Name = scenarioEvent.Name,
-            //         Description = scenarioEvent.Description,
-            //         Move = scenarioEvent.Move,
-            //         Inject = scenarioEvent.Inject
-            //     };
-            //     newArticle = await galleryApiClient.CreateCardAsync(newArticle, ct);
-            // }
+            foreach (var scenarioEvent in msel.ScenarioEvents)
+            {
+                Int32 move = 0;
+                Int32 inject = 0;
+                object status = GAC.ItemStatus.Unused;
+                object sourceType = GAC.SourceType.News;
+                DateTime datePosted;
+                bool openInNewTab = false;
+                // get the Gallery Article values from the scenario event data values
+                var cardIdString =GetGalleryArticleValue("CardId", scenarioEvent.DataValues, msel.DataFields);
+                Guid? galleryCardId = null;
+                if (!String.IsNullOrWhiteSpace(cardIdString))
+                {
+                    var card = msel.Cards.FirstOrDefault(c => c.Id == Guid.Parse(cardIdString));
+                    galleryCardId = card.GalleryId;
+                }
+                var name = GetGalleryArticleValue("Name", scenarioEvent.DataValues, msel.DataFields);
+                var description = GetGalleryArticleValue("Description", scenarioEvent.DataValues, msel.DataFields);
+                Int32.TryParse(GetGalleryArticleValue("Move", scenarioEvent.DataValues, msel.DataFields), out move);
+                Int32.TryParse(GetGalleryArticleValue("Inject", scenarioEvent.DataValues, msel.DataFields), out inject);
+                Enum.TryParse(typeof(GAC.ItemStatus), GetGalleryArticleValue("Status", scenarioEvent.DataValues, msel.DataFields), true, out status);
+                Enum.TryParse(typeof(GAC.SourceType), GetGalleryArticleValue("SourceType", scenarioEvent.DataValues, msel.DataFields), true, out sourceType);
+                var sourceName = GetGalleryArticleValue("SourceName", scenarioEvent.DataValues, msel.DataFields);
+                var url = GetGalleryArticleValue("Url", scenarioEvent.DataValues, msel.DataFields);
+                DateTime.TryParse(GetGalleryArticleValue("DatePosted", scenarioEvent.DataValues, msel.DataFields), out datePosted);
+                bool.TryParse(GetGalleryArticleValue("OpenInNewTab", scenarioEvent.DataValues, msel.DataFields), out openInNewTab);
+                // create the article
+                GAC.Article newArticle = new GAC.Article() {
+                    CollectionId = (Guid)msel.GalleryCollectionId,
+                    CardId = galleryCardId,
+                    Name = name,
+                    Description = description,
+                    Move = move,
+                    Inject = inject,
+                    Status = status == null ? GAC.ItemStatus.Unused : (GAC.ItemStatus)status,
+                    SourceType = sourceType == null ? GAC.SourceType.News : (GAC.SourceType)sourceType,
+                    SourceName = sourceName,
+                    Url = url,
+                    DatePosted = datePosted,
+                    OpenInNewTab = openInNewTab
+                };
+                newArticle = await galleryApiClient.CreateArticleAsync(newArticle, ct);
+            }
+        }
+
+        private string GetGalleryArticleValue(string key, ICollection<DataValueEntity> dataValues, ICollection<DataFieldEntity> dataFields)
+        {
+            var dataField = dataFields.SingleOrDefault(df => df.GalleryArticleParameter == key);
+            var dataValue = dataField == null ? null : dataValues.SingleOrDefault(dv => dv.DataFieldId == dataField.Id);
+            return dataValue == null ? "" : dataValue.Value;
         }
 
         // Create a Gallery Exhibit for this MSEL

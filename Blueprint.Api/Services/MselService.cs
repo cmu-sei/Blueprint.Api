@@ -180,7 +180,7 @@ namespace Blueprint.Api.Services
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
             {
-                msel.GalleryArticleParameters = _clientOptions.GalleryArticleParameters.ToList();
+                msel.GalleryArticleParameters = Enum.GetNames(typeof(GalleryArticleParameter)).ToList();
             }
 
             return msel;

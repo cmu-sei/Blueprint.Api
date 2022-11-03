@@ -10,8 +10,9 @@ namespace Blueprint.Api.Infrastructure.Options
 {
     public class ClientOptions
     {
+        public string CiteApiUrl { get; set; }
         public string GalleryApiUrl { get; set; }
-        public string[] GalleryArticleParameters { get; set; }
+        public string SteamfitterApiUrl { get; set; }
     }
 }
 

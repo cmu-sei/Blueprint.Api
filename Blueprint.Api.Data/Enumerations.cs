@@ -19,7 +19,8 @@ namespace Blueprint.Api.Data.Enumerations
         DateTime = 40,
         Organization = 50,
         Html = 60,
-        Card = 70
+        Card = 70,
+        SourceType = 80
     }
 
     public enum MselRole{
@@ -40,6 +41,15 @@ namespace Blueprint.Api.Data.Enumerations
       DatePosted,
       OpenInNewTab,
       CardId
+    }
+
+    public enum GallerySourceType{
+        News,
+        Social,
+        Email,
+        Phone,
+        Intel,
+        Reporting
     }
 
 }

@@ -29,6 +29,7 @@ namespace Blueprint.Api.ViewModels
         public string HeaderRowMetadata { get; set; }
         public ICollection<Card> Cards { get; set; } = new List<Card>();
         public List<string> GalleryArticleParameters { get; set; } = new List<string>(); // the parameters that must be sent to Gallery to define an Article
+        public List<string> GallerySourceTypes { get; set; } = new List<string>(); // the source types that must be sent to Gallery to define an Article
    }
 }
 

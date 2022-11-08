@@ -182,6 +182,7 @@ namespace Blueprint.Api.Services
             if (msel.UseGallery)
             {
                 msel.GalleryArticleParameters = Enum.GetNames(typeof(GalleryArticleParameter)).ToList();
+                msel.GallerySourceTypes = Enum.GetNames(typeof(GallerySourceType)).ToList();
             }
 
             return msel;

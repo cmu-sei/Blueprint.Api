@@ -18,7 +18,8 @@ namespace Blueprint.Api.Data.Enumerations
         Boolean = 30,
         DateTime = 40,
         Organization = 50,
-        Html = 60
+        Html = 60,
+        Card = 70
     }
 
     public enum MselRole{

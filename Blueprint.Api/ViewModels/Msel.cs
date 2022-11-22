@@ -13,6 +13,7 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
         public string Description { get; set; }
         public ItemStatus Status { get; set; }
+        public Guid? PlayerViewId { get; set; }
         public bool UseGallery { get; set; }
         public Guid? GalleryCollectionId { get; set; }
         public Guid? GalleryExhibitId { get; set; }

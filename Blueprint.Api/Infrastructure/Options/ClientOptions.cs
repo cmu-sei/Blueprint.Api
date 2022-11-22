@@ -12,6 +12,7 @@ namespace Blueprint.Api.Infrastructure.Options
     {
         public string CiteApiUrl { get; set; }
         public string GalleryApiUrl { get; set; }
+        public string PlayerApiUrl { get; set; }
         public string SteamfitterApiUrl { get; set; }
     }
 }

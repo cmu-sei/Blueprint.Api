@@ -116,6 +116,11 @@ namespace Blueprint.Api
             });
 
             services.AddSwagger(_authOptions);
+            services.ConfigureSwaggerGen(options => {
+                options.CustomSchemaIds(x => x.FullName);
+            });
+            services.AddPlayerApiClient();
+            services.AddSteamfitterApiClient();
 
             JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
@@ -160,6 +165,7 @@ namespace Blueprint.Api
             services.AddScoped<IMoveService, MoveService>();
             services.AddScoped<IOrganizationService, OrganizationService>();
             services.AddScoped<IPermissionService, PermissionService>();
+            services.AddScoped<IPlayerService, PlayerService>();
             services.AddScoped<ITeamService, TeamService>();
             services.AddScoped<ITeamUserService, TeamUserService>();
             services.AddScoped<IUserService, UserService>();

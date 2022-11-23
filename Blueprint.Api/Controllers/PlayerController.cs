@@ -78,6 +78,24 @@ namespace Blueprint.Api.Controllers
             return Ok(list);
         }
 
+        /// <summary>
+        /// Adds Player View Teams to MSEL
+        /// </summary>
+        /// <remarks>
+        /// Adds the Player View's Teams to the specified MSEL.
+        /// </remarks>
+        /// <param name="id"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpPut("views/teams/msels/{id}")]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "addViewTeamsToMsel")]
+        public async Task<IActionResult> AddViewTeamsToMsel(Guid id, CancellationToken ct)
+        {
+            await _playerService.AddPlayerTeamsToMselAsync(id, ct);
+            return Ok();
+        }
+
     }
 
 }

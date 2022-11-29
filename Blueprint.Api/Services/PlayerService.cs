@@ -89,25 +89,27 @@ namespace Blueprint.Api.Services
             var playerTeams = await GetViewTeamsAsync((Guid)msel.PlayerViewId, ct);
             foreach (var playerTeam in playerTeams)
             {
-                var team = await _context.Teams.FirstOrDefaultAsync(t => t.Id == playerTeam.Id);
+                var team = await _context.Teams.FirstOrDefaultAsync(t => t.Name == playerTeam.Name || t.ShortName == playerTeam.Name);
                 if (team == null)
                 {
                     team = new TeamEntity();
-                    team.Id = playerTeam.Id;
+                    team.PlayerTeamId = playerTeam.Id;
                     team.Name = playerTeam.Name;
                     team.ShortName =playerTeam.Name;
+                    team.IsParticipantTeam = true;
                     _context.Teams.Add(team);
                 }
                 else
                 {
-                    team.Name = playerTeam.Name;
+                    team.PlayerTeamId = playerTeam.Id;
+                    team.IsParticipantTeam = true;
                     _context.Teams.Update(team);
                 }
-                var mselTeam = await _context.MselTeams.FirstOrDefaultAsync(mt => mt.TeamId == playerTeam.Id && mt.MselId == mselId);
+                var mselTeam = await _context.MselTeams.FirstOrDefaultAsync(mt => mt.Team.PlayerTeamId == playerTeam.Id && mt.MselId == mselId);
                 if (mselTeam == null)
                 {
                     mselTeam = new MselTeamEntity();
-                    mselTeam.TeamId = playerTeam.Id;
+                    mselTeam.TeamId = team.Id;
                     mselTeam.MselId = mselId;
                     _context.MselTeams.Add(mselTeam);
                 }

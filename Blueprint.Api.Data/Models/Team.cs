@@ -19,6 +19,7 @@ namespace Blueprint.Api.Data.Models
         public bool IsParticipantTeam { get; set; }
         public ICollection<TeamUserEntity> TeamUsers { get; set; } = new List<TeamUserEntity>();
         public virtual ICollection<MselTeamEntity> MselTeams { get; set; } = new HashSet<MselTeamEntity>();
+        public virtual ICollection<CardTeamEntity> CardTeams { get; set; } = new HashSet<CardTeamEntity>();
     }
 
     public class TeamConfiguration : IEntityTypeConfiguration<TeamEntity>

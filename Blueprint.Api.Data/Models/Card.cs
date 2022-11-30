@@ -21,6 +21,7 @@ namespace Blueprint.Api.Data.Models
         public int Move { get; set; }
         public int Inject { get; set; }
         public Guid? GalleryId { get; set; }
+        public virtual ICollection<CardTeamEntity> CardTeams { get; set; } = new HashSet<CardTeamEntity>();
     }
 
 }

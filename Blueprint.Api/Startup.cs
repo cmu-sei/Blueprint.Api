@@ -156,6 +156,7 @@ namespace Blueprint.Api
             services.AddMemoryCache();
 
             services.AddScoped<ICardService, CardService>();
+            services.AddScoped<ICardTeamService, CardTeamService>();
             services.AddScoped<IDataFieldService, DataFieldService>();
             services.AddScoped<IDataOptionService, DataOptionService>();
             services.AddScoped<IDataValueService, DataValueService>();

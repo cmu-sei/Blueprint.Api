@@ -32,6 +32,7 @@ namespace Blueprint.Api.Data
         public DbSet<DataValueEntity> DataValues { get; set; }
         public DbSet<OrganizationEntity> Organizations { get; set; }
         public DbSet<CardEntity> Cards { get; set; }
+        public DbSet<CardTeamEntity> CardTeams { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

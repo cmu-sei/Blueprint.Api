@@ -121,10 +121,6 @@ namespace Blueprint.Api.Services
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
-            cardTeam.DateCreated = DateTime.UtcNow;
-            cardTeam.CreatedBy = _user.GetId();
-            cardTeam.DateModified = null;
-            cardTeam.ModifiedBy = null;
             var cardTeamEntity = _mapper.Map<CardTeamEntity>(cardTeam);
             cardTeamEntity.Id = cardTeamEntity.Id != Guid.Empty ? cardTeamEntity.Id : Guid.NewGuid();
 

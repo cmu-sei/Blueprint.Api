@@ -117,7 +117,6 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createCardTeam")]
         public async Task<IActionResult> Create([FromBody] CardTeam cardTeam, CancellationToken ct)
         {
-            cardTeam.CreatedBy = User.GetId();
             var createdCardTeam = await _cardTeamService.CreateAsync(cardTeam, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdCardTeam.Id }, createdCardTeam);
         }

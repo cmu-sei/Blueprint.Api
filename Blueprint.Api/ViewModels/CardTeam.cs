@@ -7,7 +7,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Blueprint.Api.ViewModels
 {
-    public class CardTeam : Base
+    public class CardTeam
     {
         public CardTeam() {
         }

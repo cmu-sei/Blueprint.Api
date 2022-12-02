@@ -10,10 +10,16 @@ namespace Blueprint.Api.ViewModels
     public class Msel : Base
     {
         public Guid Id { get; set; }
+        public string Name { get; set; }
         public string Description { get; set; }
         public ItemStatus Status { get; set; }
+        public Guid? PlayerViewId { get; set; }
+        public bool UseGallery { get; set; }
+        public Guid? GalleryCollectionId { get; set; }
         public Guid? GalleryExhibitId { get; set; }
+        public bool UseCite { get; set; }
         public Guid? CiteEvaluationId { get; set; }
+        public bool UseSteamfitter { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
         public bool IsTemplate { get; set; }
         public virtual ICollection<Move> Moves { get; set; } = new HashSet<Move>();
@@ -22,6 +28,9 @@ namespace Blueprint.Api.ViewModels
         public ICollection<Team> Teams { get; set; } = new List<Team>();
         public ICollection<UserMselRole> UserMselRoles { get; set; } = new List<UserMselRole>();
         public string HeaderRowMetadata { get; set; }
+        public ICollection<Card> Cards { get; set; } = new List<Card>();
+        public List<string> GalleryArticleParameters { get; set; } = new List<string>(); // the parameters that must be sent to Gallery to define an Article
+        public List<string> GallerySourceTypes { get; set; } = new List<string>(); // the source types that must be sent to Gallery to define an Article
    }
 }
 

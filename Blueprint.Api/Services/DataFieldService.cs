@@ -73,17 +73,28 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            // must be a content developer or MSEL owner
+            // Content developers and MSEL owners can update anything, others require condition checks
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
                 throw new ForbiddenException();
+
+            // start a transaction, because we may also update other data fields
+            await _context.Database.BeginTransactionAsync();
             dataField.Id = dataField.Id != Guid.Empty ? dataField.Id : Guid.NewGuid();
             dataField.DateCreated = DateTime.UtcNow;
             dataField.CreatedBy = _user.GetId();
             dataField.DateModified = null;
             dataField.ModifiedBy = null;
             var dataFieldEntity = _mapper.Map<DataFieldEntity>(dataField);
-
             _context.DataFields.Add(dataFieldEntity);
             await _context.SaveChangesAsync(ct);
+            // reorder the data fields
+            await Reorder(dataFieldEntity, ct);
+            // add data values for the new data field
+            await AddNewDataValues(dataFieldEntity, ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
             dataField = await GetAsync(dataFieldEntity.Id, ct);
 
             return dataField;
@@ -91,22 +102,34 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            // must be a content developer or MSEL owner
+            // Content developers and MSEL owners can update anything, others require condition checks
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
                 throw new ForbiddenException();
 
             var dataFieldToUpdate = await _context.DataFields.SingleOrDefaultAsync(v => v.Id == id, ct);
-
             if (dataFieldToUpdate == null)
                 throw new EntityNotFoundException<DataField>();
 
+            // start a transaction, because we may also update other data fields
+            await _context.Database.BeginTransactionAsync();
+            var updateDisplayOrder = dataFieldToUpdate.DisplayOrder != dataField.DisplayOrder;
+            // update values
             dataField.CreatedBy = dataFieldToUpdate.CreatedBy;
             dataField.DateCreated = dataFieldToUpdate.DateCreated;
             dataField.ModifiedBy = _user.GetId();
             dataField.DateModified = DateTime.UtcNow;
             _mapper.Map(dataField, dataFieldToUpdate);
-
             _context.DataFields.Update(dataFieldToUpdate);
             await _context.SaveChangesAsync(ct);
+            // reorder the data fields if necessary
+            if (updateDisplayOrder)
+            {
+                await Reorder(dataFieldToUpdate, ct);
+            }
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             dataField = await GetAsync(dataFieldToUpdate.Id, ct);
 
@@ -115,18 +138,59 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var dataFieldToDelete = await _context.DataFields.SingleOrDefaultAsync(v => v.Id == id, ct);
-
             if (dataFieldToDelete == null)
                 throw new EntityNotFoundException<DataField>();
+
+            // must be a content developer or MSEL owner
+            // Content developers and MSEL owners can update anything, others require condition checks
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), dataFieldToDelete.MselId, _context)))
+                throw new ForbiddenException();
 
             _context.DataFields.Remove(dataFieldToDelete);
             await _context.SaveChangesAsync(ct);
 
             return true;
+        }
+
+        //
+        // Helper Methods
+        //
+
+        private async Task Reorder(DataFieldEntity dataFieldEntity, CancellationToken ct)
+        {
+            var dataFields = await _context.DataFields
+                .Where(se => se.MselId == dataFieldEntity.MselId &&
+                    se.DisplayOrder >= dataFieldEntity.DisplayOrder &&
+                    se.Id != dataFieldEntity.Id)
+                .OrderBy(se => se.DisplayOrder)
+                .ToListAsync(ct);
+            if (dataFields.Any(se => se.DisplayOrder == dataFieldEntity.DisplayOrder))
+            {
+                for (var i = dataFields.Count; i > 0; i--)
+                {
+                    dataFields[i-1].DisplayOrder = dataFieldEntity.DisplayOrder + i;
+                }
+            }
+            await _context.SaveChangesAsync(ct);
+        }
+
+        private async Task AddNewDataValues(DataFieldEntity dataFieldEntity, CancellationToken ct)
+        {
+            var scenarioEventIds = await _context.ScenarioEvents
+                .Where(se => se.MselId == dataFieldEntity.MselId)
+                .Select(se => se.Id)
+                .ToListAsync(ct);
+            foreach (var scenarioEventId in scenarioEventIds)
+            {
+                var dataValueEntity = new DataValueEntity() {
+                    ScenarioEventId = scenarioEventId,
+                    DataFieldId = dataFieldEntity.Id
+                };
+                _context.DataValues.Add(dataValueEntity);
+            }
+            await _context.SaveChangesAsync(ct);
         }
 
     }

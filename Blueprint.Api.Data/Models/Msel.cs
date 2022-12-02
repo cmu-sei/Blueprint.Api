@@ -14,10 +14,16 @@ namespace Blueprint.Api.Data.Models
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
+        public string Name { get; set; }
         public string Description { get; set; }
         public ItemStatus Status { get; set; }
+        public Guid? PlayerViewId { get; set; }
+        public bool UseGallery { get; set; }
+        public Guid? GalleryCollectionId { get; set; }
         public Guid? GalleryExhibitId { get; set; }
+        public bool UseCite { get; set; }
         public Guid? CiteEvaluationId { get; set; }
+        public bool UseSteamfitter { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
         public bool IsTemplate { get; set; }
         public virtual ICollection<MoveEntity> Moves { get; set; } = new HashSet<MoveEntity>();
@@ -27,6 +33,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<OrganizationEntity> Organizations { get; set; } = new HashSet<OrganizationEntity>();
         public virtual ICollection<UserMselRoleEntity> UserMselRoles { get; set; } = new HashSet<UserMselRoleEntity>();
         public string HeaderRowMetadata { get; set; }
+        public virtual ICollection<CardEntity> Cards { get; set; } = new HashSet<CardEntity>();
     }
 }
 

@@ -1,6 +1,7 @@
 // Copyright 2022 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.CodeAnalysis;
 using Microsoft.OpenApi.Models;
@@ -11,6 +12,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
+using System.Net.Http;
+using Player.Api.Client;
+using Steamfitter.Api.Client;
 
 namespace Blueprint.Api.Infrastructure.Extensions
 {
@@ -65,6 +69,48 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 c.OperationFilter<DefaultResponseOperationFilter>();
                 c.MapType<Optional<Guid?>>(() => new OpenApiSchema { Type = "string", Format = "uuid", Nullable = true });
                 c.MapType<JsonElement?>(() => new OpenApiSchema { Type = "object", Nullable = true });
+            });
+        }
+
+        public static void AddPlayerApiClient(this IServiceCollection services)
+        {
+            services.AddScoped<IPlayerApiClient, PlayerApiClient>(p =>
+            {
+                var httpContextAccessor = p.GetRequiredService<IHttpContextAccessor>();
+                var httpClientFactory = p.GetRequiredService<IHttpClientFactory>();
+                var clientOptions = p.GetRequiredService<ClientOptions>();
+
+                var playerUri = new Uri(clientOptions.PlayerApiUrl);
+
+                string authHeader = httpContextAccessor.HttpContext.Request.Headers["Authorization"];
+
+                var httpClient = httpClientFactory.CreateClient();
+                httpClient.BaseAddress = playerUri;
+                httpClient.DefaultRequestHeaders.Add("Authorization", authHeader);
+
+                var apiClient = new PlayerApiClient(httpClient);
+                return apiClient;
+            });
+        }
+
+        public static void AddSteamfitterApiClient(this IServiceCollection services)
+        {
+            services.AddScoped<ISteamfitterApiClient, SteamfitterApiClient>(p =>
+            {
+                var httpContextAccessor = p.GetRequiredService<IHttpContextAccessor>();
+                var httpClientFactory = p.GetRequiredService<IHttpClientFactory>();
+                var clientOptions = p.GetRequiredService<ClientOptions>();
+
+                var steamfitterUri = new Uri(clientOptions.SteamfitterApiUrl);
+
+                string authHeader = httpContextAccessor.HttpContext.Request.Headers["Authorization"];
+
+                var httpClient = httpClientFactory.CreateClient();
+                httpClient.BaseAddress = steamfitterUri;
+                httpClient.DefaultRequestHeaders.Add("Authorization", authHeader);
+
+                var apiClient = new SteamfitterApiClient(httpClient);
+                return apiClient;
             });
         }
 

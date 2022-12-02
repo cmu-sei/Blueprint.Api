@@ -8,6 +8,7 @@ using System;
 using Blueprint.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -16,9 +17,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    partial class BlueprintContextModelSnapshot : ModelSnapshot
+    [Migration("20221102202637_gallery-card-id")]
+    partial class gallerycardid
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -81,32 +83,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("MselId");
 
                     b.ToTable("cards");
-                });
-
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CardTeamEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("uuid_generate_v4()");
-
-                    b.Property<Guid>("CardId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("card_id");
-
-                    b.Property<Guid>("TeamId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("team_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CardId");
-
-                    b.HasIndex("TeamId", "CardId")
-                        .IsUnique();
-
-                    b.ToTable("card_teams");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataFieldEntity", b =>
@@ -372,10 +348,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
-                    b.Property<Guid?>("PlayerViewId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("player_view_id");
-
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
@@ -599,10 +571,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("date_modified");
 
-                    b.Property<bool>("IsParticipantTeam")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_participant_team");
-
                     b.Property<Guid?>("ModifiedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("modified_by");
@@ -610,10 +578,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<string>("Name")
                         .HasColumnType("text")
                         .HasColumnName("name");
-
-                    b.Property<Guid?>("PlayerTeamId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("player_team_id");
 
                     b.Property<string>("ShortName")
                         .HasColumnType("text")
@@ -772,25 +736,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Msel");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CardTeamEntity", b =>
-                {
-                    b.HasOne("Blueprint.Api.Data.Models.CardEntity", "Card")
-                        .WithMany("CardTeams")
-                        .HasForeignKey("CardId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Blueprint.Api.Data.Models.TeamEntity", "Team")
-                        .WithMany("CardTeams")
-                        .HasForeignKey("TeamId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Card");
-
-                    b.Navigation("Team");
-                });
-
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataFieldEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
@@ -945,11 +890,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CardEntity", b =>
-                {
-                    b.Navigation("CardTeams");
-                });
-
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataFieldEntity", b =>
                 {
                     b.Navigation("DataOptions");
@@ -984,8 +924,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.TeamEntity", b =>
                 {
-                    b.Navigation("CardTeams");
-
                     b.Navigation("MselTeams");
 
                     b.Navigation("TeamUsers");

@@ -17,13 +17,42 @@ namespace Blueprint.Api.Data.Enumerations
         Double = 20,
         Boolean = 30,
         DateTime = 40,
-        Organization = 50
+        Organization = 50,
+        Html = 60,
+        Card = 70,
+        SourceType = 80
     }
 
     public enum MselRole{
         Owner = 10,
         Editor = 20,
         Approver = 30
+    }
+
+    public enum GalleryArticleParameter{
+      Name,
+      Description,
+      Move,
+      Inject,
+      Status,
+      SourceType,
+      SourceName,
+      Url,
+      DatePosted,
+      OpenInNewTab,
+      CardId,
+      DeliveryMethod,
+      ToOrg,
+      FromOrg
+    }
+
+    public enum GallerySourceType{
+        News,
+        Social,
+        Email,
+        Phone,
+        Intel,
+        Reporting
     }
 
 }

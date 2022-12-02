@@ -2,6 +2,8 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using System;
+using System.Buffers;
+using System.Buffers.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -13,9 +15,18 @@ namespace Blueprint.Api.Infrastructure.JsonConverters
         {
             if (reader.TokenType == JsonTokenType.String)
             {
-                var chkValue = reader.GetString();
-                return int.Parse(chkValue);
+                ReadOnlySpan<byte> span = reader.HasValueSequence ? reader.ValueSequence.ToArray() : reader.ValueSpan;
+                if (Utf8Parser.TryParse(span, out int number, out int bytesConsumed) && span.Length == bytesConsumed)
+                {
+                    return number;
+                }
+
+                if (int.TryParse(reader.GetString(), out number))
+                {
+                    return number;
+                }
             }
+
             return reader.GetInt32();
         }
 

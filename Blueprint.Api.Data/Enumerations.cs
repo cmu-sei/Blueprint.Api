@@ -40,7 +40,10 @@ namespace Blueprint.Api.Data.Enumerations
       Url,
       DatePosted,
       OpenInNewTab,
-      CardId
+      CardId,
+      DeliveryMethod,
+      ToOrg,
+      FromOrg
     }
 
     public enum GallerySourceType{

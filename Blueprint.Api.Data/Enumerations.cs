@@ -20,7 +20,10 @@ namespace Blueprint.Api.Data.Enumerations
         Organization = 50,
         Html = 60,
         Card = 70,
-        SourceType = 80
+        SourceType = 80,
+        Team = 90,
+        TeamsMultiple = 100,
+        Status = 110
     }
 
     public enum MselRole{

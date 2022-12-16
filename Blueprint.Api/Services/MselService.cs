@@ -424,10 +424,9 @@ namespace Blueprint.Api.Services
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
-            var mselId = form.MselId != null ? (Guid)form.MselId : Guid.NewGuid();
-            await createMselFromXlsxFile(form, mselId, ct);
+            var msel = await createMselFromXlsxFile(form, null, ct);
 
-            return mselId;
+            return msel.Id;
         }
 
         public async Task<Guid> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct)
@@ -444,12 +443,12 @@ namespace Blueprint.Api.Services
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>("The MSEL does not exist to be replaced.  " + mselId.ToString());
 
-            // start a transaction, because we need the cascade delete to take affect before adding the new msel data
+            // start a transaction, because we will make changes as we go that may need rolled back
             await _context.Database.BeginTransactionAsync();
             // delete the existing MSEL
             _context.Msels.Remove(msel);
             await _context.SaveChangesAsync(ct);
-            await createMselFromXlsxFile(form, mselId, ct);
+            await createMselFromXlsxFile(form, msel, ct);
             await _context.Database.CommitTransactionAsync(ct);
 
             return mselId;
@@ -612,7 +611,7 @@ namespace Blueprint.Api.Services
             return dataTable;
         }
 
-        private async Task createMselFromXlsxFile(FileForm form, Guid mselId, CancellationToken ct)
+        private async Task<MselEntity> createMselFromXlsxFile(FileForm form, MselEntity msel, CancellationToken ct)
         {
             var uploadItem = form.ToUpload;
             using (SpreadsheetDocument doc = SpreadsheetDocument.Open(uploadItem.OpenReadStream(),false))
@@ -626,30 +625,41 @@ namespace Blueprint.Api.Services
                 SheetData sheetData = (SheetData)worksheet.GetFirstChild<SheetData>();
                 var headerRow = sheetData.GetFirstChild<Row>();
                 var columns = worksheet.GetFirstChild<Columns>();
-                // create the MSEL enitiy
-                var msel = new MselEntity() {
-                    Id = mselId,
-                    Description = uploadItem.FileName,
-                    Status = ItemStatus.Pending,
-                    IsTemplate = false,
-                    HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : "",
-                    CreatedBy = _user.GetId(),
-                    DateCreated = DateTime.UtcNow
-                };
-                await _context.Msels.AddAsync(msel, ct);
+                if (msel == null)
+                {
+                    // create the MSEL entity
+                    msel = new MselEntity() {
+                        Id = Guid.NewGuid(),
+                        Description = uploadItem.FileName,
+                        Status = ItemStatus.Pending,
+                        IsTemplate = false,
+                        HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : "",
+                        CreatedBy = _user.GetId(),
+                        DateCreated = DateTime.UtcNow,
+                        DataFields = new List<DataFieldEntity>()
+                    };
+                    await _context.Msels.AddAsync(msel, ct);
+                }
+                else
+                {
+                    msel.ScenarioEvents.Clear();
+                    await _context.SaveChangesAsync(ct);
+                }
                 // create the data fields
-                var dataFields = CreateDataFields(mselId, headerRow, workbookPart, columns);
+                var dataFields = CreateDataFields(msel, headerRow, workbookPart, columns);
                 await _context.DataFields.AddRangeAsync(dataFields);
-                // create the sceanrio events and data values
+                // remove the header row from the sheet data before creating the scenario events
                 sheetData.RemoveChild<Row>(headerRow);
-                await CreateScenarioEventsAsync(mselId, sheetData, workbookPart, dataFields);
+                // create the sceanrio events and data values
+                await CreateScenarioEventsAsync(msel.Id, sheetData, workbookPart, dataFields);
             }
             await _context.SaveChangesAsync(ct);
+            return msel;
         }
 
-        private List<DataFieldEntity> CreateDataFields(Guid mselId, Row headerRow, WorkbookPart workbookPart, Columns columns)
+        private List<DataFieldEntity> CreateDataFields(MselEntity msel, Row headerRow, WorkbookPart workbookPart, Columns columns)
         {
-            var dataFields = new List<DataFieldEntity>();
+            var dataFields = msel.DataFields.ToList();
             var displayOrder = 1;
             foreach (Cell thecurrentcell in headerRow)
             {
@@ -723,23 +733,39 @@ namespace Blueprint.Api.Services
                         var column = (Column)columns.ChildElements.FirstOrDefault(ce => columnIndex >= ((Column)ce).Min.Value && columnIndex<= ((Column)ce).Max.Value);
                         columnMetadata = column == null || column.Width == null ? "0.0" : column.Width.Value.ToString();
                     }
-                    // store the DataField
-                    var dataField = new DataFieldEntity() {
-                        Id = Guid.NewGuid(),
-                        MselId = mselId,
-                        Name = currentcellvalue,
-                        DataType = cellDataType,
-                        DisplayOrder = displayOrder,
-                        IsChosenFromList = false,
-                        CellMetadata = cellColor + "," + cellTint + ",bold," + (int)cellDataType,
-                        ColumnMetadata = columnMetadata
-                    };
-                    dataFields.Add(dataField);
+                    if (msel.DataFields.Count > 0)
+                    {
+                        var dataField = msel.DataFields.SingleOrDefault(df => df.Name == currentcellvalue);
+                        if (dataField == null)
+                        {
+                            throw new DataException($"The xlxs file column heading '{currentcellvalue}' does not exist in the current Data Fields.");
+                        }
+                        else if (dataField.DisplayOrder != displayOrder)
+                        {
+                            throw new DataException($"The xlxs file column heading '{currentcellvalue}' is not in the same order as in the current Data Fields.");
+                        }
+                        dataFields.Add(dataField);
+                    }
+                    else
+                    {
+                        // create and store the DataField
+                        var dataField = new DataFieldEntity() {
+                            Id = Guid.NewGuid(),
+                            MselId = msel.Id,
+                            Name = currentcellvalue,
+                            DataType = cellDataType,
+                            DisplayOrder = displayOrder,
+                            IsChosenFromList = false,
+                            CellMetadata = cellColor + "," + cellTint + ",bold," + (int)cellDataType,
+                            ColumnMetadata = columnMetadata
+                        };
+                        dataFields.Add(dataField);
+                    }
                 }
                 displayOrder++;
             }
 
-            return dataFields;
+            return dataFields.ToList();
         }
 
         private int GetColumnIndex(string columnRef)

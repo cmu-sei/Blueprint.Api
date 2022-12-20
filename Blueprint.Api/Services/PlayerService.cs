@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Data;
 using System.Security.Claims;
@@ -56,7 +57,14 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<View>> GetViewsAsync(CancellationToken ct)
         {
-            var views = await _playerApiClient.GetUserViewsAsync(_user.GetId(), ct);
+            var views = new List<View>();
+            try
+            {
+                views = (List<View>)await _playerApiClient.GetUserViewsAsync(_user.GetId(), ct);
+            }
+            catch (System.Exception)
+            {
+            }
             return (IEnumerable<View>)views;
         }
 

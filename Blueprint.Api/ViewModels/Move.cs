@@ -7,9 +7,14 @@ namespace Blueprint.Api.ViewModels
 {
     public class Move : Base
     {
-         public Guid Id { get; set; }
-        public int MoveNumber { get; set;}
+        public Guid Id { get; set; }
+        public int MoveNumber { get; set; }
+        public string Title { get; set; }
         public string Description { get; set; }
+        public DateTime? MoveStartTime { get; set; }
+        public DateTime? MoveStopTime { get; set; }
+        public DateTime? SituationTime { get; set; }
+        public string SituationDescription { get; set; }
         public Guid MselId { get; set; }
    }
 }

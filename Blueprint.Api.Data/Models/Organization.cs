@@ -13,8 +13,10 @@ namespace Blueprint.Api.Data.Models
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
         public string Name { get; set; }
+        public string ShortName { get; set; }
         public string Description { get; set; }
         public string Summary { get; set; }
+        public string Email { get; set; }
         public bool IsTemplate { get; set; }
         public Guid? MselId { get; set; }
         public virtual MselEntity Msel { get; set; }

@@ -2,7 +2,6 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
@@ -12,11 +11,11 @@ using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Services
@@ -89,31 +88,43 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValue DataValue, CancellationToken ct)
         {
-            var DataValueToUpdate = await _context.DataValues.SingleOrDefaultAsync(v => v.Id == id, ct);
-            if (DataValueToUpdate == null)
-                throw new EntityNotFoundException<DataValue>();
+            var dataValueToUpdate = await _context.DataValues.SingleOrDefaultAsync(v => v.Id == id, ct);
+            if (dataValueToUpdate == null)
+                throw new EntityNotFoundException<DataValue>($"ID = {id}");
 
-            // user must be a Content Developer or be on the requested team and be able to submit
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            var dataField = await _context.DataFields.SingleOrDefaultAsync(df => df.Id == dataValueToUpdate.DataFieldId);
+            if (dataField == null)
+                throw new EntityNotFoundException<DataField>($"For DataValue ID = {id} DataField ID = {dataValueToUpdate.DataFieldId}");
+
+            // Content Developers and MSEL Owners can change every DataValue
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
             {
-                var mselId = await _context.DataFields
-                    .Where(df => df.Id == DataValueToUpdate.DataFieldId)
-                    .Select(df => df.MselId)
-                    .FirstOrDefaultAsync();
-                if (!( await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context)))
-                    throw new ForbiddenException();
+                // to change the assignedTeam, user must be a Content Developer or a MSEL owner
+                if (dataField.DataType == DataFieldType.Team)
+                    throw new ForbiddenException("Cannot change the Assigned Team.");
+                // MSEL Approvers can change everything else
+                if (!(await MselApproverRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
+                {
+                    // to change the status, user must be a MSEL approver
+                    if (dataField.DataType == DataFieldType.Status)
+                            throw new ForbiddenException("Cannot change the Status.");
+                    // to change anything, user must be a MSEL editor
+                    if (!(await MselEditorRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
+                        throw new ForbiddenException();
+                }
             }
 
-            DataValue.CreatedBy = DataValueToUpdate.CreatedBy;
-            DataValue.DateCreated = DataValueToUpdate.DateCreated;
+            DataValue.CreatedBy = dataValueToUpdate.CreatedBy;
+            DataValue.DateCreated = dataValueToUpdate.DateCreated;
             DataValue.ModifiedBy = _user.GetId();
             DataValue.DateModified = DateTime.UtcNow;
-            _mapper.Map(DataValue, DataValueToUpdate);
+            _mapper.Map(DataValue, dataValueToUpdate);
 
-            _context.DataValues.Update(DataValueToUpdate);
+            _context.DataValues.Update(dataValueToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            DataValue = await GetAsync(DataValueToUpdate.Id, ct);
+            DataValue = await GetAsync(dataValueToUpdate.Id, ct);
 
             return DataValue;
         }

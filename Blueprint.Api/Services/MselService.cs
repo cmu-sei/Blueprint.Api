@@ -738,7 +738,7 @@ namespace Blueprint.Api.Services
                     }
                     if (msel.DataFields.Count > 0)
                     {
-                        var dataField = msel.DataFields.SingleOrDefault(df => df.Name == currentcellvalue);
+                        var dataField = msel.DataFields.SingleOrDefault(df => df.Name.Trim() == currentcellvalue.Trim());
                         if (dataField == null)
                         {
                             throw new DataException($"The xlsx file column heading '{currentcellvalue}' does not exist in the current Data Fields.");
@@ -754,7 +754,7 @@ namespace Blueprint.Api.Services
                         var dataField = new DataFieldEntity() {
                             Id = Guid.NewGuid(),
                             MselId = msel.Id,
-                            Name = currentcellvalue,
+                            Name = currentcellvalue.Trim(),
                             DataType = cellDataType,
                             DisplayOrder = displayOrder,
                             IsChosenFromList = false,

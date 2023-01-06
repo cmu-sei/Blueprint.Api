@@ -12,6 +12,7 @@ using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
@@ -37,7 +38,8 @@ namespace Blueprint.Api.Services
         private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
-         private readonly DatabaseOptions _options;
+        private readonly DatabaseOptions _options;
+        
 
         public ScenarioEventService(
             BlueprintContext context,
@@ -163,44 +165,36 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
+            var canUpdateScenarioEvent = (await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded ||
+                (await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context));
+            // check minimum permission
+            if (!canUpdateScenarioEvent &&
+                !(await MselApproverRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)) &&
+                !(await MselEditorRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
+                throw new ForbiddenException($"No update permissions");
+
+            // make sure entity exists
             var scenarioEventToUpdate = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
-
             if (scenarioEventToUpdate == null)
-                throw new EntityNotFoundException<ScenarioEventEntity>();
-
-            // Content developers and MSEL owners can update anything, others require condition checks
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
-            {
-                // to change the assignedTeam, user must be a Content Developer or a MSEL owner
-                if (scenarioEvent.AssignedTeamId != scenarioEventToUpdate.AssignedTeamId)
-                    throw new ForbiddenException("Cannot change the Assigned Team.");
-                // MSEL Approvers can change everything else
-                if (!(await MselApproverRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
-                {
-                    // to change the status, user must be a MSEL approver
-                    if (scenarioEvent.Status != scenarioEventToUpdate.Status)
-                            throw new ForbiddenException("Cannot change the Status.");
-                    // to change anything, user must be a MSEL editor
-                    if (!(await MselEditorRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
-                        throw new ForbiddenException();
-                }
-            }
+                throw new EntityNotFoundException<ScenarioEventEntity>($"ScenarioEvent not found {id}.");
 
             // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
-            var updateRowIndexes = scenarioEventToUpdate.RowIndex != scenarioEvent.RowIndex;
+            // update the data values for this scenario event
             if (scenarioEvent.DataValues.Any())
             {
                 await UpdateDataValues(scenarioEvent, ct);
             }
+            // determine if row indexes need updated for the other scenario events on this MSEL
+            var updateRowIndexes = canUpdateScenarioEvent && (scenarioEventToUpdate.RowIndex != scenarioEvent.RowIndex);
+            // update this scenario event
             scenarioEvent.CreatedBy = scenarioEventToUpdate.CreatedBy;
             scenarioEvent.DateCreated = scenarioEventToUpdate.DateCreated;
             scenarioEvent.ModifiedBy = _user.GetId();
             scenarioEvent.DateModified = DateTime.UtcNow;
             _mapper.Map(scenarioEvent, scenarioEventToUpdate);
-
             _context.ScenarioEvents.Update(scenarioEventToUpdate);
+            // update other scenario events, if necessary
             var scenarioEventEnitities = new List<ScenarioEventEntity>();
             scenarioEventEnitities.Add(scenarioEventToUpdate);
             if (updateRowIndexes)
@@ -210,8 +204,6 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
-
-            scenarioEvent = await GetAsync(id, ct);
 
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
@@ -242,8 +234,38 @@ namespace Blueprint.Api.Services
                     .FindAsync(dataValue.Id);
                 if (dataValueToUpdate == null)
                     throw new ArgumentException("A DataValue could not be found for ID " + dataValue.Id.ToString());
-                dataValueToUpdate.Value = dataValue.Value;
-                await _context.SaveChangesAsync(ct);
+                if (dataValue.Value != dataValueToUpdate.Value)
+                {
+                    var dataField = await _context.DataFields.SingleOrDefaultAsync(df => df.Id == dataValueToUpdate.DataFieldId);
+                    if (dataField == null)
+                        throw new EntityNotFoundException<DataField>($"For DataValue ID = {dataValue.Id} DataField ID = {dataValueToUpdate.DataFieldId}");
+
+                    // Content Developers and MSEL Owners can change every DataValue
+                    if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                        !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
+                    {
+                        // to change the assignedTeam, user must be a Content Developer or a MSEL owner
+                        if (dataField.DataType == DataFieldType.Team)
+                            throw new ForbiddenException("Cannot change the Assigned Team.");
+                        // MSEL Approvers can change everything else
+                        if (!(await MselApproverRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
+                        {
+                            // to change the status, user must be a MSEL approver
+                            if (dataField.DataType == DataFieldType.Status)
+                                    throw new ForbiddenException("Cannot change the Status.");
+                            // to change anything, user must be a MSEL editor
+                            if (!(await MselEditorRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
+                                throw new ForbiddenException();
+                        }
+                    }
+                    dataValue.CreatedBy = dataValueToUpdate.CreatedBy;
+                    dataValue.DateCreated = dataValueToUpdate.DateCreated;
+                    dataValue.ModifiedBy = _user.GetId();
+                    dataValue.DateModified = DateTime.UtcNow;
+                    _mapper.Map(dataValue, dataValueToUpdate);
+                    _context.DataValues.Update(dataValueToUpdate);
+                    await _context.SaveChangesAsync(ct);
+                }
             }
         }
 

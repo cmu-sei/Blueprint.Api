@@ -24,30 +24,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
             migrationBuilder.DropColumn(
                 name: "status",
                 table: "scenario_events");
-
-            migrationBuilder.AddColumn<string>(
-                name: "email",
-                table: "organizations",
-                type: "text",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "short_name",
-                table: "organizations",
-                type: "text",
-                nullable: true);
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(
-                name: "email",
-                table: "organizations");
-
-            migrationBuilder.DropColumn(
-                name: "short_name",
-                table: "organizations");
-
             migrationBuilder.AddColumn<Guid>(
                 name: "assigned_team_id",
                 table: "scenario_events",

@@ -25,9 +25,9 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.DataField> GetAsync(Guid id, CancellationToken ct);
-        Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, CancellationToken ct);
-        Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct);
-        Task<bool> DeleteAsync(Guid id, CancellationToken ct);
+         Task<IEnumerable<ViewModels.DataField>> CreateAsync(ViewModels.DataField dataField, CancellationToken ct);
+         Task<IEnumerable<ViewModels.DataField>> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct);
+         Task<IEnumerable<ViewModels.DataField>> DeleteAsync(Guid id, CancellationToken ct);
     }
 
     public class DataFieldService : IDataFieldService
@@ -71,7 +71,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<DataField>(item);
         }
 
-        public async Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.DataField>> CreateAsync(ViewModels.DataField dataField, CancellationToken ct)
         {
             // must be a content developer or MSEL owner
             // Content developers and MSEL owners can update anything, others require condition checks
@@ -89,18 +89,17 @@ namespace Blueprint.Api.Services
             var dataFieldEntity = _mapper.Map<DataFieldEntity>(dataField);
             _context.DataFields.Add(dataFieldEntity);
             await _context.SaveChangesAsync(ct);
-            // reorder the data fields
-            await Reorder(dataFieldEntity, ct);
             // add data values for the new data field
             await AddNewDataValues(dataFieldEntity, ct);
+            // reorder the data fields
+            await Reorder(dataFieldEntity, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
-            dataField = await GetAsync(dataFieldEntity.Id, ct);
 
-            return dataField;
+            return await GetByMselAsync(dataField.MselId, ct);
         }
 
-        public async Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.DataField>> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct)
         {
             // must be a content developer or MSEL owner
             // Content developers and MSEL owners can update anything, others require condition checks
@@ -112,6 +111,9 @@ namespace Blueprint.Api.Services
             if (dataFieldToUpdate == null)
                 throw new EntityNotFoundException<DataField>();
 
+            // get the initial and final display order for this data field
+            var first = Math.Min(dataField.DisplayOrder, dataFieldToUpdate.DisplayOrder);
+            var last = Math.Max(dataField.DisplayOrder, dataFieldToUpdate.DisplayOrder);
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync();
             var updateDisplayOrder = dataFieldToUpdate.DisplayOrder != dataField.DisplayOrder;
@@ -131,12 +133,10 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            dataField = await GetAsync(dataFieldToUpdate.Id, ct);
-
-            return dataField;
+            return await GetByMselAsync(dataField.MselId, ct);
         }
 
-        public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.DataField>> DeleteAsync(Guid id, CancellationToken ct)
         {
             var dataFieldToDelete = await _context.DataFields.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (dataFieldToDelete == null)
@@ -148,10 +148,14 @@ namespace Blueprint.Api.Services
                 !(await MselOwnerRequirement.IsMet(_user.GetId(), dataFieldToDelete.MselId, _context)))
                 throw new ForbiddenException();
 
+            // start a transaction, because we may also update other data fields
+            await _context.Database.BeginTransactionAsync(ct);
             _context.DataFields.Remove(dataFieldToDelete);
             await _context.SaveChangesAsync(ct);
+            await Reorder(dataFieldToDelete, ct);
+            await _context.Database.CommitTransactionAsync(ct);
 
-            return true;
+            return await GetByMselAsync(dataFieldToDelete.MselId, ct);
         }
 
         //
@@ -161,16 +165,33 @@ namespace Blueprint.Api.Services
         private async Task Reorder(DataFieldEntity dataFieldEntity, CancellationToken ct)
         {
             var dataFields = await _context.DataFields
-                .Where(se => se.MselId == dataFieldEntity.MselId &&
-                    se.DisplayOrder >= dataFieldEntity.DisplayOrder &&
-                    se.Id != dataFieldEntity.Id)
+                .Where(df => df.MselId == dataFieldEntity.MselId)
                 .OrderBy(se => se.DisplayOrder)
                 .ToListAsync(ct);
-            if (dataFields.Any(se => se.DisplayOrder == dataFieldEntity.DisplayOrder))
+            var isHere = dataFields.Any(df => df.Id == dataFieldEntity.Id);
+            for (var i = 0; i < dataFields.Count; i++)
             {
-                for (var i = dataFields.Count; i > 0; i--)
+                if (dataFields[i].Id != dataFieldEntity.Id)
                 {
-                    dataFields[i-1].DisplayOrder = dataFieldEntity.DisplayOrder + i;
+                    if (isHere && dataFields[i].DisplayOrder == dataFieldEntity.DisplayOrder)
+                    {
+                        if (dataFieldEntity.DisplayOrder == dataFields.Count)
+                        {
+                            dataFields[i].DisplayOrder = dataFieldEntity.DisplayOrder - 1;
+                        }
+                        else
+                        {
+                            dataFields[i].DisplayOrder = dataFieldEntity.DisplayOrder + 1;
+                        }
+                    }
+                    else
+                    {
+                        dataFields[i].DisplayOrder = i + 1;
+                    }
+                }
+                else if (dataFieldEntity.DisplayOrder > dataFields.Count)
+                {
+                    dataFieldEntity.DisplayOrder = dataFields.Count;
                 }
             }
             await _context.SaveChangesAsync(ct);

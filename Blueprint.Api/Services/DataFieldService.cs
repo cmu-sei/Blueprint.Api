@@ -92,7 +92,7 @@ namespace Blueprint.Api.Services
             // add data values for the new data field
             await AddNewDataValues(dataFieldEntity, ct);
             // reorder the data fields
-            await Reorder(dataFieldEntity, ct);
+            await Reorder(dataFieldEntity, false, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
@@ -117,6 +117,7 @@ namespace Blueprint.Api.Services
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync();
             var updateDisplayOrder = dataFieldToUpdate.DisplayOrder != dataField.DisplayOrder;
+            var newIndexIsGreater = dataField.DisplayOrder > dataFieldToUpdate.DisplayOrder;
             // update values
             dataField.CreatedBy = dataFieldToUpdate.CreatedBy;
             dataField.DateCreated = dataFieldToUpdate.DateCreated;
@@ -128,7 +129,7 @@ namespace Blueprint.Api.Services
             // reorder the data fields if necessary
             if (updateDisplayOrder)
             {
-                await Reorder(dataFieldToUpdate, ct);
+                await Reorder(dataFieldToUpdate, newIndexIsGreater, ct);
             }
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
@@ -152,7 +153,7 @@ namespace Blueprint.Api.Services
             await _context.Database.BeginTransactionAsync(ct);
             _context.DataFields.Remove(dataFieldToDelete);
             await _context.SaveChangesAsync(ct);
-            await Reorder(dataFieldToDelete, ct);
+            await Reorder(dataFieldToDelete, false, ct);
             await _context.Database.CommitTransactionAsync(ct);
 
             return await GetByMselAsync(dataFieldToDelete.MselId, ct);
@@ -162,7 +163,7 @@ namespace Blueprint.Api.Services
         // Helper Methods
         //
 
-        private async Task Reorder(DataFieldEntity dataFieldEntity, CancellationToken ct)
+        private async Task Reorder(DataFieldEntity dataFieldEntity, bool newIndexIsGreater, CancellationToken ct)
         {
             var dataFields = await _context.DataFields
                 .Where(df => df.MselId == dataFieldEntity.MselId)
@@ -175,7 +176,7 @@ namespace Blueprint.Api.Services
                 {
                     if (isHere && dataFields[i].DisplayOrder == dataFieldEntity.DisplayOrder)
                     {
-                        if (dataFieldEntity.DisplayOrder == dataFields.Count)
+                        if (newIndexIsGreater)
                         {
                             dataFields[i].DisplayOrder = dataFieldEntity.DisplayOrder - 1;
                         }

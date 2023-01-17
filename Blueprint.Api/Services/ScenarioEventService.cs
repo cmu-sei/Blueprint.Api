@@ -29,7 +29,7 @@ namespace Blueprint.Api.Services
         Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
-        Task<bool> DeleteAsync(Guid id, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> DeleteAsync(Guid id, CancellationToken ct);
     }
 
     public class ScenarioEventService : IScenarioEventService
@@ -133,6 +133,7 @@ namespace Blueprint.Api.Services
             scenarioEvent.ModifiedBy = null;
             var scenarioEventEntity = _mapper.Map<ScenarioEventEntity>(scenarioEvent);
             _context.ScenarioEvents.Add(scenarioEventEntity);
+            await _context.SaveChangesAsync(ct);
             // create the associated data values
             var dataFieldIdList = _context.DataFields
                 .Where(df => df.MselId == scenarioEvent.MselId)
@@ -155,10 +156,12 @@ namespace Blueprint.Api.Services
                 var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
                 _context.DataValues.Add(dataValueEntity);
             }
-            var scenarioEventEnitities = new List<ScenarioEventEntity>();
-            scenarioEventEnitities.Add(scenarioEventEntity);
-            scenarioEventEnitities.AddRange(await RenumberRowIndexes(scenarioEventEntity, ct));
             await _context.SaveChangesAsync(ct);
+            await RenumberRowIndexes(scenarioEventEntity, false, ct);
+            var scenarioEventEnitities = await _context.ScenarioEvents
+                    .Where(i => i.MselId == scenarioEvent.MselId)
+                    .Include(se => se.DataValues)
+                    .ToListAsync(ct);
 
             return  _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
@@ -187,6 +190,7 @@ namespace Blueprint.Api.Services
             }
             // determine if row indexes need updated for the other scenario events on this MSEL
             var updateRowIndexes = canUpdateScenarioEvent && (scenarioEventToUpdate.RowIndex != scenarioEvent.RowIndex);
+            var newIndexIsGreater = scenarioEvent.RowIndex > scenarioEventToUpdate.RowIndex;
             // update this scenario event
             scenarioEvent.CreatedBy = scenarioEventToUpdate.CreatedBy;
             scenarioEvent.DateCreated = scenarioEventToUpdate.DateCreated;
@@ -194,21 +198,22 @@ namespace Blueprint.Api.Services
             scenarioEvent.DateModified = DateTime.UtcNow;
             _mapper.Map(scenarioEvent, scenarioEventToUpdate);
             _context.ScenarioEvents.Update(scenarioEventToUpdate);
-            // update other scenario events, if necessary
-            var scenarioEventEnitities = new List<ScenarioEventEntity>();
-            scenarioEventEnitities.Add(scenarioEventToUpdate);
+            await _context.SaveChangesAsync(ct);
             if (updateRowIndexes)
             {
-                scenarioEventEnitities.AddRange(await RenumberRowIndexes(scenarioEventToUpdate, ct));
+                await RenumberRowIndexes(scenarioEventToUpdate, newIndexIsGreater, ct);
             }
-            await _context.SaveChangesAsync(ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
+            var scenarioEventEnitities = await _context.ScenarioEvents
+                    .Where(i => i.MselId == scenarioEvent.MselId)
+                    .Include(se => se.DataValues)
+                    .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
 
-        public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> DeleteAsync(Guid id, CancellationToken ct)
         {
             var scenarioEventToDelete = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
 
@@ -222,8 +227,14 @@ namespace Blueprint.Api.Services
 
             _context.ScenarioEvents.Remove(scenarioEventToDelete);
             await _context.SaveChangesAsync(ct);
+            // reorder
+            await RenumberRowIndexes(scenarioEventToDelete, false, ct);
+            var scenarioEventEnitities = await _context.ScenarioEvents
+                    .Where(i => i.MselId == scenarioEventToDelete.MselId)
+                    .Include(se => se.DataValues)
+                    .ToListAsync(ct);
 
-            return true;
+            return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
 
         private async Task UpdateDataValues(ScenarioEvent scenarioEvent, CancellationToken ct)
@@ -269,22 +280,41 @@ namespace Blueprint.Api.Services
             }
         }
 
-        private async Task<List<ScenarioEventEntity>> RenumberRowIndexes(ScenarioEventEntity scenarioEventEntity, CancellationToken ct)
+        private async Task<List<ScenarioEventEntity>> RenumberRowIndexes(ScenarioEventEntity scenarioEventEntity, bool newIndexIsGreater, CancellationToken ct)
         {
             var scenarioEvents = await _context.ScenarioEvents
-                .Where(se => se.MselId == scenarioEventEntity.MselId &&
-                    se.RowIndex >= scenarioEventEntity.RowIndex &&
-                    se.Id != scenarioEventEntity.Id)
+                .Where(se => se.MselId == scenarioEventEntity.MselId)
                     .Include(se => se.DataValues)
                 .OrderBy(se => se.RowIndex)
                 .ToListAsync(ct);
-            if (scenarioEvents.Any(se => se.RowIndex == scenarioEventEntity.RowIndex))
+            var isHere = scenarioEvents.Any(df => df.Id == scenarioEventEntity.Id);
+            for (var i = 0; i < scenarioEvents.Count; i++)
             {
-                for (var i = scenarioEvents.Count; i > 0; i--)
+                if (scenarioEvents[i].Id != scenarioEventEntity.Id)
                 {
-                    scenarioEvents[i-1].RowIndex = scenarioEventEntity.RowIndex + i;
+                    // handle the item that has the same row index as the newly assigned row index
+                    if (isHere && scenarioEvents[i].RowIndex == scenarioEventEntity.RowIndex)
+                    {
+                        if (newIndexIsGreater)
+                        {
+                            scenarioEvents[i].RowIndex = scenarioEventEntity.RowIndex - 1;
+                        }
+                        else
+                        {
+                            scenarioEvents[i].RowIndex = scenarioEventEntity.RowIndex + 1;
+                        }
+                    }
+                    else
+                    {
+                        scenarioEvents[i].RowIndex = i + 1;
+                    }
+                }
+                else if (scenarioEventEntity.RowIndex > scenarioEvents.Count)
+                {
+                    scenarioEventEntity.RowIndex = scenarioEvents.Count;
                 }
             }
+            await _context.SaveChangesAsync(ct);
 
             return scenarioEvents;
         }

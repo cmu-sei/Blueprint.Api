@@ -125,8 +125,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteScenarioEvent")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _scenarioEventService.DeleteAsync(id, ct);
-            return NoContent();
+            var list = await _scenarioEventService.DeleteAsync(id, ct);
+            return Ok(list);
         }
 
     }

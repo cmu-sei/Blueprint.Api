@@ -59,34 +59,36 @@ namespace Blueprint.Api.Services
             return _mapper.Map<DataValue>(item);
         }
 
-        public async Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValue DataValue, CancellationToken ct)
+        public async Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValue dataValue, CancellationToken ct)
         {
+            var mselId = await _context.DataFields
+                .Where(df => df.Id == dataValue.DataFieldId)
+                .Select(df => df.MselId)
+                .FirstOrDefaultAsync();
             // user must be a Content Developer or be on the requested team and be able to submit
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
             {
-                var mselId = await _context.DataFields
-                    .Where(df => df.Id == DataValue.DataFieldId)
-                    .Select(df => df.MselId)
-                    .FirstOrDefaultAsync();
                 if (!( await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context)))
                     throw new ForbiddenException();
             }
 
-            DataValue.Id = DataValue.Id != Guid.Empty ? DataValue.Id : Guid.NewGuid();
-            DataValue.DateCreated = DateTime.UtcNow;
-            DataValue.CreatedBy = _user.GetId();
-            DataValue.DateModified = null;
-            DataValue.ModifiedBy = null;
-            var DataValueEntity = _mapper.Map<DataValueEntity>(DataValue);
+            dataValue.Id = dataValue.Id != Guid.Empty ? dataValue.Id : Guid.NewGuid();
+            dataValue.DateCreated = DateTime.UtcNow;
+            dataValue.CreatedBy = _user.GetId();
+            dataValue.DateModified = null;
+            dataValue.ModifiedBy = null;
+            var DataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
 
             _context.DataValues.Add(DataValueEntity);
             await _context.SaveChangesAsync(ct);
-            DataValue = await GetAsync(DataValueEntity.Id, ct);
+            // update the MSEL modified info
+            await ServiceUtilities.SetMselModifiedAsync(mselId, dataValue.CreatedBy, dataValue.DateCreated, _context, ct);
+            dataValue = await GetAsync(DataValueEntity.Id, ct);
 
-            return DataValue;
+            return dataValue;
         }
 
-        public async Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValue DataValue, CancellationToken ct)
+        public async Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValue dataValue, CancellationToken ct)
         {
             var dataValueToUpdate = await _context.DataValues.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (dataValueToUpdate == null)
@@ -115,39 +117,43 @@ namespace Blueprint.Api.Services
                 }
             }
 
-            DataValue.CreatedBy = dataValueToUpdate.CreatedBy;
-            DataValue.DateCreated = dataValueToUpdate.DateCreated;
-            DataValue.ModifiedBy = _user.GetId();
-            DataValue.DateModified = DateTime.UtcNow;
-            _mapper.Map(DataValue, dataValueToUpdate);
+            dataValue.CreatedBy = dataValueToUpdate.CreatedBy;
+            dataValue.DateCreated = dataValueToUpdate.DateCreated;
+            dataValue.ModifiedBy = _user.GetId();
+            dataValue.DateModified = DateTime.UtcNow;
+            _mapper.Map(dataValue, dataValueToUpdate);
 
             _context.DataValues.Update(dataValueToUpdate);
             await _context.SaveChangesAsync(ct);
+            // update the MSEL modified info
+            await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataValue.ModifiedBy, dataValue.DateModified, _context, ct);
 
-            DataValue = await GetAsync(dataValueToUpdate.Id, ct);
+            dataValue = await GetAsync(dataValueToUpdate.Id, ct);
 
-            return DataValue;
+            return dataValue;
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            var DataValueToDelete = await _context.DataValues.SingleOrDefaultAsync(v => v.Id == id, ct);
-            if (DataValueToDelete == null)
+            var dataValueToDelete = await _context.DataValues.SingleOrDefaultAsync(v => v.Id == id, ct);
+            if (dataValueToDelete == null)
                 throw new EntityNotFoundException<DataValue>();
 
+            var mselId = await _context.DataFields
+                .Where(df => df.Id == dataValueToDelete.DataFieldId)
+                .Select(df => df.MselId)
+                .FirstOrDefaultAsync();
             // user must be a Content Developer or be on the requested team and be able to submit
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
             {
-                var mselId = await _context.DataFields
-                    .Where(df => df.Id == DataValueToDelete.DataFieldId)
-                    .Select(df => df.MselId)
-                    .FirstOrDefaultAsync();
                 if (!( await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context)))
                     throw new ForbiddenException();
             }
 
-            _context.DataValues.Remove(DataValueToDelete);
+            _context.DataValues.Remove(dataValueToDelete);
             await _context.SaveChangesAsync(ct);
+            // update the MSEL modified info
+            await ServiceUtilities.SetMselModifiedAsync(mselId, _user.GetId(), DateTime.UtcNow, _context, ct);
 
             return true;
         }

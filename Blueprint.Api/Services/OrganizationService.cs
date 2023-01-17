@@ -113,9 +113,13 @@ namespace Blueprint.Api.Services
             organization.DateModified = null;
             organization.ModifiedBy = null;
             var organizationEntity = _mapper.Map<OrganizationEntity>(organization);
-
             _context.Organizations.Add(organizationEntity);
             await _context.SaveChangesAsync(ct);
+            // update the MSEL modified info
+            if (organization.MselId != null)
+            {
+                await ServiceUtilities.SetMselModifiedAsync((Guid)organization.MselId, organization.CreatedBy, organization.DateCreated, _context, ct);
+            }
             organization = await GetAsync(organizationEntity.Id, ct);
 
             return organization;
@@ -144,10 +148,13 @@ namespace Blueprint.Api.Services
             organization.ModifiedBy = _user.GetId();
             organization.DateModified = DateTime.UtcNow;
             _mapper.Map(organization, organizationToUpdate);
-
             _context.Organizations.Update(organizationToUpdate);
             await _context.SaveChangesAsync(ct);
-
+            // update the MSEL modified info
+            if (organization.MselId != null)
+            {
+                await ServiceUtilities.SetMselModifiedAsync((Guid)organizationToUpdate.MselId, organizationToUpdate.ModifiedBy, organizationToUpdate.DateModified, _context, ct);
+            }
             organization = await GetAsync(organizationToUpdate.Id, ct);
 
             return organization;
@@ -168,6 +175,11 @@ namespace Blueprint.Api.Services
 
             _context.Organizations.Remove(organizationToDelete);
             await _context.SaveChangesAsync(ct);
+            // update the MSEL modified info
+            if (organizationToDelete.MselId != null)
+            {
+                await ServiceUtilities.SetMselModifiedAsync((Guid)organizationToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
+            }
 
             return true;
         }

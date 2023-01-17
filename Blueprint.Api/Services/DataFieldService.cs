@@ -93,6 +93,8 @@ namespace Blueprint.Api.Services
             await AddNewDataValues(dataFieldEntity, ct);
             // reorder the data fields
             await Reorder(dataFieldEntity, false, ct);
+            // update the MSEL modified info
+            await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataField.CreatedBy, dataField.DateCreated, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
@@ -131,6 +133,8 @@ namespace Blueprint.Api.Services
             {
                 await Reorder(dataFieldToUpdate, newIndexIsGreater, ct);
             }
+            // update the MSEL modified info
+            await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataField.ModifiedBy, dataField.DateModified, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
@@ -154,6 +158,8 @@ namespace Blueprint.Api.Services
             _context.DataFields.Remove(dataFieldToDelete);
             await _context.SaveChangesAsync(ct);
             await Reorder(dataFieldToDelete, false, ct);
+            // update the MSEL modified info
+            await ServiceUtilities.SetMselModifiedAsync(dataFieldToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
             await _context.Database.CommitTransactionAsync(ct);
 
             return await GetByMselAsync(dataFieldToDelete.MselId, ct);

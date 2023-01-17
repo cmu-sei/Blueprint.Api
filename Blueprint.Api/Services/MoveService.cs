@@ -16,7 +16,6 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Services
@@ -81,9 +80,10 @@ namespace Blueprint.Api.Services
             move.DateModified = null;
             move.ModifiedBy = null;
             var moveEntity = _mapper.Map<MoveEntity>(move);
-
             _context.Moves.Add(moveEntity);
             await _context.SaveChangesAsync(ct);
+            // update the MSEL modified info
+            await ServiceUtilities.SetMselModifiedAsync(move.MselId, move.CreatedBy, move.DateCreated, _context, ct);
             move = await GetAsync(moveEntity.Id, ct);
 
             return move;
@@ -104,10 +104,10 @@ namespace Blueprint.Api.Services
             move.ModifiedBy = _user.GetId();
             move.DateModified = DateTime.UtcNow;
             _mapper.Map(move, moveToUpdate);
-
             _context.Moves.Update(moveToUpdate);
             await _context.SaveChangesAsync(ct);
-
+            // update the MSEL modified info
+            await ServiceUtilities.SetMselModifiedAsync(moveToUpdate.MselId, moveToUpdate.ModifiedBy, moveToUpdate.DateModified, _context, ct);
             move = await GetAsync(moveToUpdate.Id, ct);
 
             return move;
@@ -125,6 +125,8 @@ namespace Blueprint.Api.Services
 
             _context.Moves.Remove(moveToDelete);
             await _context.SaveChangesAsync(ct);
+            // update the MSEL modified info
+            await ServiceUtilities.SetMselModifiedAsync(moveToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
 
             return true;
         }

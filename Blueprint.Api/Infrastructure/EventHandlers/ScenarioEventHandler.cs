@@ -16,14 +16,14 @@ using Blueprint.Api.Infrastructure.Extensions;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
-    public class BaseScenarioEventHandler
+    public class ScenarioEventHandler
     {
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly IScenarioEventService _scenarioEventService;
         protected readonly IHubContext<MainHub> _mainHub;
 
-        public BaseScenarioEventHandler(
+        public ScenarioEventHandler(
             BlueprintContext db,
             IMapper mapper,
             IScenarioEventService scenarioEventService,
@@ -51,7 +51,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             string[] modifiedProperties,
             CancellationToken cancellationToken)
         {
-            var groupIds = this.GetGroups(scenarioEventEntity);
+            var groupIds = GetGroups(scenarioEventEntity);
             var scenarioEvent = _mapper.Map<ViewModels.ScenarioEvent>(scenarioEventEntity);
             var tasks = new List<Task>();
 
@@ -64,7 +64,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         }
     }
 
-    public class ScenarioEventCreatedSignalRHandler : BaseScenarioEventHandler, INotificationHandler<EntityCreated<ScenarioEventEntity>>
+    public class ScenarioEventCreatedSignalRHandler : ScenarioEventHandler, INotificationHandler<EntityCreated<ScenarioEventEntity>>
     {
         public ScenarioEventCreatedSignalRHandler(
             BlueprintContext db,
@@ -78,7 +78,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         }
     }
 
-    public class ScenarioEventUpdatedSignalRHandler : BaseScenarioEventHandler, INotificationHandler<EntityUpdated<ScenarioEventEntity>>
+    public class ScenarioEventUpdatedSignalRHandler : ScenarioEventHandler, INotificationHandler<EntityUpdated<ScenarioEventEntity>>
     {
         public ScenarioEventUpdatedSignalRHandler(
             BlueprintContext db,
@@ -96,7 +96,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         }
     }
 
-    public class ScenarioEventDeletedSignalRHandler : BaseScenarioEventHandler, INotificationHandler<EntityDeleted<ScenarioEventEntity>>
+    public class ScenarioEventDeletedSignalRHandler : ScenarioEventHandler, INotificationHandler<EntityDeleted<ScenarioEventEntity>>
     {
         public ScenarioEventDeletedSignalRHandler(
             BlueprintContext db,

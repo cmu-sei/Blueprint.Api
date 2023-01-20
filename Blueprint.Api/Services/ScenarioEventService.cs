@@ -125,8 +125,6 @@ namespace Blueprint.Api.Services
                 !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
                 throw new ForbiddenException();
 
-            // start a transaction, because we may also update DataValues and other scenario events
-            await _context.Database.BeginTransactionAsync();
             // create the scenario event
             scenarioEvent.Id = scenarioEvent.Id != Guid.Empty ? scenarioEvent.Id : Guid.NewGuid();
             scenarioEvent.DateCreated = DateTime.UtcNow;
@@ -162,8 +160,6 @@ namespace Blueprint.Api.Services
             await RenumberRowIndexes(scenarioEventEntity, false, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventEntity.MselId, scenarioEventEntity.CreatedBy, scenarioEventEntity.DateCreated, _context, ct);
-            // commit the transaction
-            await _context.Database.CommitTransactionAsync(ct);
             var scenarioEventEnitities = await _context.ScenarioEvents
                     .Where(i => i.MselId == scenarioEvent.MselId)
                     .Include(se => se.DataValues)
@@ -187,8 +183,6 @@ namespace Blueprint.Api.Services
             if (scenarioEventToUpdate == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>($"ScenarioEvent not found {id}.");
 
-            // start a transaction, because we may also update DataValues and other scenario events
-            await _context.Database.BeginTransactionAsync();
             // update the data values for this scenario event
             if (scenarioEvent.DataValues.Any())
             {
@@ -211,8 +205,6 @@ namespace Blueprint.Api.Services
             }
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventToUpdate.MselId, scenarioEventToUpdate.ModifiedBy, scenarioEventToUpdate.DateModified, _context, ct);
-            // commit the transaction
-            await _context.Database.CommitTransactionAsync(ct);
             var scenarioEventEnitities = await _context.ScenarioEvents
                     .Where(i => i.MselId == scenarioEvent.MselId)
                     .Include(se => se.DataValues)
@@ -233,16 +225,12 @@ namespace Blueprint.Api.Services
                 !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEventToDelete.MselId, _context)))
                 throw new ForbiddenException();
 
-            // start a transaction, because we may also update DataValues and other scenario events
-            await _context.Database.BeginTransactionAsync();
             _context.ScenarioEvents.Remove(scenarioEventToDelete);
             await _context.SaveChangesAsync(ct);
             // reorder
             await RenumberRowIndexes(scenarioEventToDelete, false, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
-            // commit the transaction
-            await _context.Database.CommitTransactionAsync(ct);
             var scenarioEventEnitities = await _context.ScenarioEvents
                     .Where(i => i.MselId == scenarioEventToDelete.MselId)
                     .Include(se => se.DataValues)

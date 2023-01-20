@@ -141,7 +141,6 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                             x.State == EntityState.Modified ||
                             x.State == EntityState.Deleted)
                 .ToList();
-
             // Remove children so we don't duplicate events
             foreach (var entry in entries.ToArray())
             {

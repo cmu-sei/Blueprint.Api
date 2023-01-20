@@ -79,8 +79,6 @@ namespace Blueprint.Api.Services
                 !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
                 throw new ForbiddenException();
 
-            // start a transaction, because we may also update other data fields
-            await _context.Database.BeginTransactionAsync();
             dataField.Id = dataField.Id != Guid.Empty ? dataField.Id : Guid.NewGuid();
             dataField.DateCreated = DateTime.UtcNow;
             dataField.CreatedBy = _user.GetId();
@@ -88,15 +86,23 @@ namespace Blueprint.Api.Services
             dataField.ModifiedBy = null;
             var dataFieldEntity = _mapper.Map<DataFieldEntity>(dataField);
             _context.DataFields.Add(dataFieldEntity);
+            var x = _context.ChangeTracker.Entries()
+                .Where(x => x.State == EntityState.Added ||
+                        x.State == EntityState.Modified ||
+                        x.State == EntityState.Deleted)
+                .Count();
             await _context.SaveChangesAsync(ct);
+            var y = _context.ChangeTracker.Entries()
+                .Where(x => x.State == EntityState.Added ||
+                        x.State == EntityState.Modified ||
+                        x.State == EntityState.Deleted)
+                .Count();
             // add data values for the new data field
             await AddNewDataValues(dataFieldEntity, ct);
             // reorder the data fields
             await Reorder(dataFieldEntity, false, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataField.CreatedBy, dataField.DateCreated, _context, ct);
-            // commit the transaction
-            await _context.Database.CommitTransactionAsync(ct);
 
             return await GetByMselAsync(dataField.MselId, ct);
         }
@@ -117,7 +123,6 @@ namespace Blueprint.Api.Services
             var first = Math.Min(dataField.DisplayOrder, dataFieldToUpdate.DisplayOrder);
             var last = Math.Max(dataField.DisplayOrder, dataFieldToUpdate.DisplayOrder);
             // start a transaction, because we may also update other data fields
-            await _context.Database.BeginTransactionAsync();
             var updateDisplayOrder = dataFieldToUpdate.DisplayOrder != dataField.DisplayOrder;
             var newIndexIsGreater = dataField.DisplayOrder > dataFieldToUpdate.DisplayOrder;
             // update values
@@ -135,8 +140,6 @@ namespace Blueprint.Api.Services
             }
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataField.ModifiedBy, dataField.DateModified, _context, ct);
-            // commit the transaction
-            await _context.Database.CommitTransactionAsync(ct);
 
             return await GetByMselAsync(dataField.MselId, ct);
         }
@@ -153,14 +156,11 @@ namespace Blueprint.Api.Services
                 !(await MselOwnerRequirement.IsMet(_user.GetId(), dataFieldToDelete.MselId, _context)))
                 throw new ForbiddenException();
 
-            // start a transaction, because we may also update other data fields
-            await _context.Database.BeginTransactionAsync(ct);
             _context.DataFields.Remove(dataFieldToDelete);
             await _context.SaveChangesAsync(ct);
             await Reorder(dataFieldToDelete, false, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(dataFieldToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
-            await _context.Database.CommitTransactionAsync(ct);
 
             return await GetByMselAsync(dataFieldToDelete.MselId, ct);
         }

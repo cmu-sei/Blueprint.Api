@@ -86,17 +86,7 @@ namespace Blueprint.Api.Services
             dataField.ModifiedBy = null;
             var dataFieldEntity = _mapper.Map<DataFieldEntity>(dataField);
             _context.DataFields.Add(dataFieldEntity);
-            var x = _context.ChangeTracker.Entries()
-                .Where(x => x.State == EntityState.Added ||
-                        x.State == EntityState.Modified ||
-                        x.State == EntityState.Deleted)
-                .Count();
             await _context.SaveChangesAsync(ct);
-            var y = _context.ChangeTracker.Entries()
-                .Where(x => x.State == EntityState.Added ||
-                        x.State == EntityState.Modified ||
-                        x.State == EntityState.Deleted)
-                .Count();
             // add data values for the new data field
             await AddNewDataValues(dataFieldEntity, ct);
             // reorder the data fields

@@ -153,6 +153,8 @@ namespace Blueprint.Api.Hubs
         public const string UserCreated = "UserCreated";
         public const string UserUpdated = "UserUpdated";
         public const string UserDeleted = "UserDeleted";
+        public const string UserMselRoleCreated = "UserMselRoleCreated";
+        public const string UserMselRoleDeleted = "UserMselRoleDeleted";
         public const string UserPermissionCreated = "UserPermissionCreated";
         public const string UserPermissionDeleted = "UserPermissionDeleted";
     }

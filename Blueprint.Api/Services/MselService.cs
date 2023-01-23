@@ -332,6 +332,7 @@ namespace Blueprint.Api.Services
                 throw new ArgumentException("MSEL Team already exists.");
 
             var mselTeam = new MselTeamEntity(teamId, mselId);
+            mselTeam.Id = Guid.NewGuid();
             _context.MselTeams.Add(mselTeam);
             await _context.SaveChangesAsync(ct);
 
@@ -374,6 +375,7 @@ namespace Blueprint.Api.Services
                 throw new ArgumentException("User/MSEL/Role already exists.");
 
             var userMeslRole = new UserMselRoleEntity(userId, mselId, mselRole);
+            userMeslRole.Id = Guid.NewGuid();
             _context.UserMselRoles.Add(userMeslRole);
             await _context.SaveChangesAsync(ct);
 

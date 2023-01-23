@@ -20,14 +20,14 @@ using Blueprint.Api.Infrastructure.Extensions;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
-    public class MselTeamHandler
+    public class UserMselRoleHandler
     {
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly IMselService _mselService;
         protected readonly IHubContext<MainHub> _mainHub;
 
-        public MselTeamHandler(
+        public UserMselRoleHandler(
             BlueprintContext db,
             IMapper mapper,
             IMselService mselService,
@@ -39,10 +39,10 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             _mainHub = mainHub;
         }
 
-        protected string[] GetGroups(MselTeamEntity mselTeamEntity)
+        protected string[] GetGroups(UserMselRoleEntity userMselRoleEntity)
         {
             var groupIds = new List<string>();
-            groupIds.Add(mselTeamEntity.MselId.ToString());
+            groupIds.Add(userMselRoleEntity.MselId.ToString());
             // the admin data group gets everything
             groupIds.Add(MainHub.ADMIN_DATA_GROUP);
 
@@ -50,49 +50,41 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         }
 
         protected async Task HandleCreateOrDelete(
-            MselTeamEntity mselTeamEntity,
+            UserMselRoleEntity userMselRoleEntity,
             string method,
             string[] modifiedProperties,
             CancellationToken cancellationToken)
         {
-            var groupIds = GetGroups(mselTeamEntity);
+            var groupIds = GetGroups(userMselRoleEntity);
             var tasks = new List<Task>();
-            if (method == MainHubMethods.MselTeamCreated)
-            {
-                mselTeamEntity = await _db.MselTeams
-                    .Include(mt => mt.Team)
-                    .ThenInclude(t => t.TeamUsers)
-                    .ThenInclude(tu => tu.User)
-                    .SingleOrDefaultAsync(mt => mt.Id == mselTeamEntity.Id);
-            }
-            var mselTeam = _mapper.Map<ViewModels.MselTeam>(mselTeamEntity);
+            var userMselRole = _mapper.Map<ViewModels.UserMselRole>(userMselRoleEntity);
 
             foreach (var groupId in groupIds)
             {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, mselTeam, modifiedProperties, cancellationToken));
+                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, userMselRole, modifiedProperties, cancellationToken));
             }
 
             await Task.WhenAll(tasks);
         }
     }
 
-    public class MselTeamCreatedSignalRHandler : MselTeamHandler, INotificationHandler<EntityCreated<MselTeamEntity>>
+    public class UserMselRoleCreatedSignalRHandler : UserMselRoleHandler, INotificationHandler<EntityCreated<UserMselRoleEntity>>
     {
-        public MselTeamCreatedSignalRHandler(
+        public UserMselRoleCreatedSignalRHandler(
             BlueprintContext db,
             IMapper mapper,
             IMselService mselService,
             IHubContext<MainHub> mainHub) : base(db, mapper, mselService, mainHub) { }
 
-        public async Task Handle(EntityCreated<MselTeamEntity> notification, CancellationToken cancellationToken)
+        public async Task Handle(EntityCreated<UserMselRoleEntity> notification, CancellationToken cancellationToken)
         {
-            await base.HandleCreateOrDelete(notification.Entity, MainHubMethods.MselTeamCreated, null, cancellationToken);
+            await base.HandleCreateOrDelete(notification.Entity, MainHubMethods.UserMselRoleCreated, null, cancellationToken);
         }
     }
 
-    public class MselTeamDeletedSignalRHandler : MselTeamHandler, INotificationHandler<EntityDeleted<MselTeamEntity>>
+    public class UserMselRoleDeletedSignalRHandler : UserMselRoleHandler, INotificationHandler<EntityDeleted<UserMselRoleEntity>>
     {
-        public MselTeamDeletedSignalRHandler(
+        public UserMselRoleDeletedSignalRHandler(
             BlueprintContext db,
             IMapper mapper,
             IMselService mselService,
@@ -100,9 +92,9 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         {
         }
 
-        public async Task Handle(EntityDeleted<MselTeamEntity> notification, CancellationToken cancellationToken)
+        public async Task Handle(EntityDeleted<UserMselRoleEntity> notification, CancellationToken cancellationToken)
         {
-            await base.HandleCreateOrDelete(notification.Entity, MainHubMethods.MselTeamDeleted, null, cancellationToken);
+            await base.HandleCreateOrDelete(notification.Entity, MainHubMethods.UserMselRoleDeleted, null, cancellationToken);
         }
     }
 }

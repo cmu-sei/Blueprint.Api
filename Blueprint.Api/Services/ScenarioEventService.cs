@@ -125,6 +125,8 @@ namespace Blueprint.Api.Services
                 !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
                 throw new ForbiddenException();
 
+            // start a transaction, because we may also update DataValues and other scenario events
+            await _context.Database.BeginTransactionAsync();
             // create the scenario event
             scenarioEvent.Id = scenarioEvent.Id != Guid.Empty ? scenarioEvent.Id : Guid.NewGuid();
             scenarioEvent.DateCreated = DateTime.UtcNow;
@@ -164,6 +166,8 @@ namespace Blueprint.Api.Services
                     .Where(i => i.MselId == scenarioEvent.MselId)
                     .Include(se => se.DataValues)
                     .ToListAsync(ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return  _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
@@ -183,6 +187,8 @@ namespace Blueprint.Api.Services
             if (scenarioEventToUpdate == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>($"ScenarioEvent not found {id}.");
 
+            // start a transaction, because we may also update DataValues and other scenario events
+            await _context.Database.BeginTransactionAsync();
             // update the data values for this scenario event
             if (scenarioEvent.DataValues.Any())
             {
@@ -209,6 +215,8 @@ namespace Blueprint.Api.Services
                     .Where(i => i.MselId == scenarioEvent.MselId)
                     .Include(se => se.DataValues)
                     .ToListAsync(ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
@@ -225,6 +233,8 @@ namespace Blueprint.Api.Services
                 !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEventToDelete.MselId, _context)))
                 throw new ForbiddenException();
 
+            // start a transaction, because we may also update DataValues and other scenario events
+            await _context.Database.BeginTransactionAsync();
             _context.ScenarioEvents.Remove(scenarioEventToDelete);
             await _context.SaveChangesAsync(ct);
             // reorder
@@ -235,6 +245,8 @@ namespace Blueprint.Api.Services
                     .Where(i => i.MselId == scenarioEventToDelete.MselId)
                     .Include(se => se.DataValues)
                     .ToListAsync(ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }

@@ -174,6 +174,7 @@ namespace Blueprint.Api.Services
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
                 .Include(m => m.UserMselRoles)
+                .Include(m => m.Moves)
                 .Include(m => m.Cards)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
@@ -334,6 +335,9 @@ namespace Blueprint.Api.Services
             var mselTeam = new MselTeamEntity(teamId, mselId);
             mselTeam.Id = Guid.NewGuid();
             _context.MselTeams.Add(mselTeam);
+            // change the MSEL modified info
+            msel.ModifiedBy = _user.GetId();
+            msel.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
 
             return await GetAsync(mselId, ct);
@@ -355,6 +359,9 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselTeamEntity>();
 
             _context.MselTeams.Remove(item);
+            // change the MSEL modified info
+            msel.ModifiedBy = _user.GetId();
+            msel.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
 
             return await GetAsync(mselId, ct);
@@ -377,6 +384,9 @@ namespace Blueprint.Api.Services
             var userMeslRole = new UserMselRoleEntity(userId, mselId, mselRole);
             userMeslRole.Id = Guid.NewGuid();
             _context.UserMselRoles.Add(userMeslRole);
+            // change the MSEL modified info
+            msel.ModifiedBy = _user.GetId();
+            msel.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
 
             return await GetAsync(mselId, ct);
@@ -398,6 +408,9 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<UserMselRoleEntity>();
 
             _context.UserMselRoles.Remove(item);
+            // change the MSEL modified info
+            msel.ModifiedBy = _user.GetId();
+            msel.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
 
             return await GetAsync(mselId, ct);

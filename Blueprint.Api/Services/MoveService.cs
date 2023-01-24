@@ -74,6 +74,9 @@ namespace Blueprint.Api.Services
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
+
+            // start a transaction, because we may also update other data fields
+            await _context.Database.BeginTransactionAsync();
             move.Id = move.Id != Guid.Empty ? move.Id : Guid.NewGuid();
             move.DateCreated = DateTime.UtcNow;
             move.CreatedBy = _user.GetId();
@@ -85,6 +88,8 @@ namespace Blueprint.Api.Services
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(move.MselId, move.CreatedBy, move.DateCreated, _context, ct);
             move = await GetAsync(moveEntity.Id, ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return move;
         }
@@ -99,6 +104,8 @@ namespace Blueprint.Api.Services
             if (moveToUpdate == null)
                 throw new EntityNotFoundException<Move>();
 
+            // start a transaction, because we may also update other data fields
+            await _context.Database.BeginTransactionAsync();
             move.CreatedBy = moveToUpdate.CreatedBy;
             move.DateCreated = moveToUpdate.DateCreated;
             move.ModifiedBy = _user.GetId();
@@ -109,6 +116,8 @@ namespace Blueprint.Api.Services
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(moveToUpdate.MselId, moveToUpdate.ModifiedBy, moveToUpdate.DateModified, _context, ct);
             move = await GetAsync(moveToUpdate.Id, ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return move;
         }
@@ -123,10 +132,14 @@ namespace Blueprint.Api.Services
             if (moveToDelete == null)
                 throw new EntityNotFoundException<Move>();
 
+            // start a transaction, because we may also update other data fields
+            await _context.Database.BeginTransactionAsync();
             _context.Moves.Remove(moveToDelete);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(moveToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return true;
         }

@@ -107,6 +107,8 @@ namespace Blueprint.Api.Services
                    throw new ForbiddenException();
             }
 
+            // start a transaction, because we may also update other data fields
+            await _context.Database.BeginTransactionAsync();
             organization.Id = organization.Id != Guid.Empty ? organization.Id : Guid.NewGuid();
             organization.DateCreated = DateTime.UtcNow;
             organization.CreatedBy = _user.GetId();
@@ -120,6 +122,8 @@ namespace Blueprint.Api.Services
             {
                 await ServiceUtilities.SetMselModifiedAsync((Guid)organization.MselId, organization.CreatedBy, organization.DateCreated, _context, ct);
             }
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
             organization = await GetAsync(organizationEntity.Id, ct);
 
             return organization;
@@ -143,6 +147,8 @@ namespace Blueprint.Api.Services
             if (organizationToUpdate == null)
                 throw new EntityNotFoundException<Organization>();
 
+            // start a transaction, because we may also update other data fields
+            await _context.Database.BeginTransactionAsync();
             organization.CreatedBy = organizationToUpdate.CreatedBy;
             organization.DateCreated = organizationToUpdate.DateCreated;
             organization.ModifiedBy = _user.GetId();
@@ -155,6 +161,8 @@ namespace Blueprint.Api.Services
             {
                 await ServiceUtilities.SetMselModifiedAsync((Guid)organizationToUpdate.MselId, organizationToUpdate.ModifiedBy, organizationToUpdate.DateModified, _context, ct);
             }
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
             organization = await GetAsync(organizationToUpdate.Id, ct);
 
             return organization;
@@ -173,6 +181,8 @@ namespace Blueprint.Api.Services
             if (organizationToDelete == null)
                 throw new EntityNotFoundException<Organization>();
 
+            // start a transaction, because we may also update other data fields
+            await _context.Database.BeginTransactionAsync();
             _context.Organizations.Remove(organizationToDelete);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
@@ -180,6 +190,8 @@ namespace Blueprint.Api.Services
             {
                 await ServiceUtilities.SetMselModifiedAsync((Guid)organizationToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
             }
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return true;
         }

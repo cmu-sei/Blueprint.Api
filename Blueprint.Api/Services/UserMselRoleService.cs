@@ -69,6 +69,8 @@ namespace Blueprint.Api.Services
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
                 throw new ForbiddenException();
 
+            // start a transaction, because we may also update other data fields
+            await _context.Database.BeginTransactionAsync();
             userMselRole.Id = userMselRole.Id != Guid.Empty ? userMselRole.Id : Guid.NewGuid();
             userMselRole.DateCreated = DateTime.UtcNow;
             userMselRole.CreatedBy = _user.GetId();
@@ -78,6 +80,10 @@ namespace Blueprint.Api.Services
 
             _context.UserMselRoles.Add(userMselRoleEntity);
             await _context.SaveChangesAsync(ct);
+            // update the MSEL modified info
+            await ServiceUtilities.SetMselModifiedAsync(userMselRole.MselId, userMselRole.CreatedBy, userMselRole.DateCreated, _context, ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return await GetAsync(userMselRoleEntity.Id, ct);
         }
@@ -92,8 +98,14 @@ namespace Blueprint.Api.Services
             if (userMselRoleToDelete == null)
                 throw new EntityNotFoundException<UserMselRole>();
 
+            // start a transaction, because we may also update other data fields
+            await _context.Database.BeginTransactionAsync();
             _context.UserMselRoles.Remove(userMselRoleToDelete);
             await _context.SaveChangesAsync(ct);
+            // update the MSEL modified info
+            await ServiceUtilities.SetMselModifiedAsync(userMselRoleToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return true;
         }

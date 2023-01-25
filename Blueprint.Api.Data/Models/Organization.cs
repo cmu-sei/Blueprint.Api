@@ -4,6 +4,8 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Blueprint.Api.Data.Models
 {
@@ -20,6 +22,17 @@ namespace Blueprint.Api.Data.Models
         public bool IsTemplate { get; set; }
         public Guid? MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
+    }
+
+    public class OrganizationEntityConfiguration : IEntityTypeConfiguration<OrganizationEntity>
+    {
+        public void Configure(EntityTypeBuilder<OrganizationEntity> builder)
+        {
+            builder
+                .HasOne(d => d.Msel)
+                .WithMany(d => d.Organizations)
+                .OnDelete(DeleteBehavior.Cascade);
+        }
     }
 
 }

@@ -36,6 +36,11 @@ namespace Blueprint.Api.Data.Models
         public void Configure(EntityTypeBuilder<UserMselRoleEntity> builder)
         {
             builder.HasIndex(x => new { x.MselId, x.UserId, x.Role }).IsUnique();
+            builder
+                .HasOne(u => u.Msel)
+                .WithMany(p => p.UserMselRoles)
+                .HasForeignKey(x => x.MselId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

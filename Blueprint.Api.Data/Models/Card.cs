@@ -5,7 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Blueprint.Api.Data.Enumerations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Blueprint.Api.Data.Models
 {
@@ -22,6 +23,17 @@ namespace Blueprint.Api.Data.Models
         public int Inject { get; set; }
         public Guid? GalleryId { get; set; }
         public virtual ICollection<CardTeamEntity> CardTeams { get; set; } = new HashSet<CardTeamEntity>();
+    }
+
+    public class CardEntityConfiguration : IEntityTypeConfiguration<CardEntity>
+    {
+        public void Configure(EntityTypeBuilder<CardEntity> builder)
+        {
+            builder
+                .HasOne(d => d.Msel)
+                .WithMany(d => d.Cards)
+                .OnDelete(DeleteBehavior.Cascade);
+        }
     }
 
 }

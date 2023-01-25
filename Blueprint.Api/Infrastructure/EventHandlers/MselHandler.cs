@@ -64,6 +64,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 .ThenInclude(tu => tu.User)
                 .Include(m => m.UserMselRoles)
                 .Include(m => m.Moves)
+                .Include(m => m.Organizations)
                 .Include(m => m.Cards)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == mselEntity.Id, cancellationToken);

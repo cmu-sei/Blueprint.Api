@@ -175,6 +175,7 @@ namespace Blueprint.Api.Services
                 .ThenInclude(tu => tu.User)
                 .Include(m => m.UserMselRoles)
                 .Include(m => m.Moves)
+                .Include(m => m.Organizations)
                 .Include(m => m.Cards)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
@@ -216,14 +217,18 @@ namespace Blueprint.Api.Services
             var mselEntity = await _context.Msels
                 .AsNoTracking()
                 .Include(m => m.DataFields)
-                .Include(m => m.Moves)
-                .Include(m => m.MselTeams)
-                .Include(m => m.Organizations)
-                .Include(m => m.UserMselRoles)
+                .ThenInclude(df => df.DataOptions)
                 .Include(m => m.ScenarioEvents)
-                .ThenInclude(s => s.DataValues)
+                .ThenInclude(se => se.DataValues)
+                .Include(m => m.MselTeams)
+                .ThenInclude(mt => mt.Team)
+                .ThenInclude(t => t.TeamUsers)
+                .ThenInclude(tu => tu.User)
+                .Include(m => m.UserMselRoles)
+                .Include(m => m.Moves)
+                .Include(m => m.Organizations)
                 .AsSplitQuery()
-                .FirstOrDefaultAsync(m => m.Id == mselId);
+                .SingleOrDefaultAsync(m => m.Id == mselId);
             if (mselEntity == null)
                 throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
 
@@ -241,36 +246,54 @@ namespace Blueprint.Api.Services
                 dataField.Id = newDataFieldId;
                 dataField.MselId = mselEntity.Id;
                 dataField.Msel = null;
+                dataField.DateCreated = mselEntity.DateCreated;
+                dataField.CreatedBy = mselEntity.CreatedBy;
+                foreach (var dataOption in dataField.DataOptions)
+                {
+                    dataOption.Id = Guid.NewGuid();
+                    dataOption.DataFieldId = dataField.Id;
+                    dataOption.DataField = null;
+                    dataOption.DateCreated = mselEntity.DateCreated;
+                    dataOption.CreatedBy = mselEntity.CreatedBy;
+                }
             }
             foreach (var move in mselEntity.Moves)
             {
                 move.Id = Guid.NewGuid();
                 move.MselId = mselEntity.Id;
                 move.Msel = null;
+                move.DateCreated = mselEntity.DateCreated;
+                move.CreatedBy = mselEntity.CreatedBy;
             }
             foreach (var mselTeam in mselEntity.MselTeams)
             {
                 mselTeam.Id = Guid.NewGuid();
                 mselTeam.MselId = mselEntity.Id;
                 mselTeam.Msel = null;
+                mselTeam.Team = null;
             }
             foreach (var organization in mselEntity.Organizations)
             {
                 organization.Id = Guid.NewGuid();
                 organization.MselId = mselEntity.Id;
                 organization.Msel = null;
+                organization.DateCreated = mselEntity.DateCreated;
+                organization.CreatedBy = mselEntity.CreatedBy;
             }
             foreach (var userMselRole in mselEntity.UserMselRoles)
             {
                 userMselRole.Id = Guid.NewGuid();
                 userMselRole.MselId = mselEntity.Id;
                 userMselRole.Msel = null;
+                userMselRole.User = null;
             }
             foreach (var scenarioEvent in mselEntity.ScenarioEvents)
             {
                 scenarioEvent.Id = Guid.NewGuid();
                 scenarioEvent.MselId = mselEntity.Id;
                 scenarioEvent.Msel = null;
+                scenarioEvent.DateCreated = mselEntity.DateCreated;
+                scenarioEvent.CreatedBy = mselEntity.CreatedBy;
                 foreach (var dataValue in scenarioEvent.DataValues)
                 {
                     dataValue.Id = Guid.NewGuid();
@@ -278,6 +301,8 @@ namespace Blueprint.Api.Services
                     dataValue.ScenarioEvent = null;
                     dataValue.DataFieldId = dataFieldIdCrossReference[dataValue.DataFieldId];
                     dataValue.DataField = null;
+                    dataValue.DateCreated = mselEntity.DateCreated;
+                    dataValue.CreatedBy = mselEntity.CreatedBy;
                 }
             }
 

@@ -162,12 +162,12 @@ namespace Blueprint.Api.Services
             await RenumberRowIndexes(scenarioEventEntity, false, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventEntity.MselId, scenarioEventEntity.CreatedBy, scenarioEventEntity.DateCreated, _context, ct);
-            // commit the transaction
-            await _context.Database.CommitTransactionAsync(ct);
             var scenarioEventEnitities = await _context.ScenarioEvents
                     .Where(i => i.MselId == scenarioEvent.MselId)
                     .Include(se => se.DataValues)
                     .ToListAsync(ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return  _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
@@ -211,12 +211,12 @@ namespace Blueprint.Api.Services
             }
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventToUpdate.MselId, scenarioEventToUpdate.ModifiedBy, scenarioEventToUpdate.DateModified, _context, ct);
-            // commit the transaction
-            await _context.Database.CommitTransactionAsync(ct);
             var scenarioEventEnitities = await _context.ScenarioEvents
                     .Where(i => i.MselId == scenarioEvent.MselId)
                     .Include(se => se.DataValues)
                     .ToListAsync(ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
@@ -241,12 +241,12 @@ namespace Blueprint.Api.Services
             await RenumberRowIndexes(scenarioEventToDelete, false, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
-            // commit the transaction
-            await _context.Database.CommitTransactionAsync(ct);
             var scenarioEventEnitities = await _context.ScenarioEvents
                     .Where(i => i.MselId == scenarioEventToDelete.MselId)
                     .Include(se => se.DataValues)
                     .ToListAsync(ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
 
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }

@@ -121,30 +121,12 @@ namespace Blueprint.Api.Hubs
 
     public static class MainHubMethods
     {
-        public const string ScenarioEventCreated = "ScenarioEventCreated";
-        public const string ScenarioEventUpdated = "ScenarioEventUpdated";
-        public const string ScenarioEventDeleted = "ScenarioEventDeleted";
         public const string MselCreated = "MselCreated";
         public const string MselUpdated = "MselUpdated";
         public const string MselDeleted = "MselDeleted";
-        public const string MoveCreated = "MoveCreated";
-        public const string MoveUpdated = "MoveUpdated";
-        public const string MoveDeleted = "MoveDeleted";
-        public const string RoleCreated = "RoleCreated";
-        public const string RoleUpdated = "RoleUpdated";
-        public const string RoleDeleted = "RoleDeleted";
-        public const string ScoringCategoryCreated = "ScoringCategoryCreated";
-        public const string ScoringCategoryUpdated = "ScoringCategoryUpdated";
-        public const string ScoringCategoryDeleted = "ScoringCategoryDeleted";
-        public const string ScoringModelCreated = "ScoringModelCreated";
-        public const string ScoringModelUpdated = "ScoringModelUpdated";
-        public const string ScoringModelDeleted = "ScoringModelDeleted";
-        public const string ScoringOptionCreated = "ScoringOptionCreated";
-        public const string ScoringOptionUpdated = "ScoringOptionUpdated";
-        public const string ScoringOptionDeleted = "ScoringOptionDeleted";
-        public const string SubmissionCreated = "SubmissionCreated";
-        public const string SubmissionUpdated = "SubmissionUpdated";
-        public const string SubmissionDeleted = "SubmissionDeleted";
+        public const string OrganizationCreated = "OrganizationCreated";
+        public const string OrganizationUpdated = "OrganizationUpdated";
+        public const string OrganizationDeleted = "OrganizationDeleted";
         public const string TeamCreated = "TeamCreated";
         public const string TeamUpdated = "TeamUpdated";
         public const string TeamDeleted = "TeamDeleted";
@@ -154,7 +136,5 @@ namespace Blueprint.Api.Hubs
         public const string UserCreated = "UserCreated";
         public const string UserUpdated = "UserUpdated";
         public const string UserDeleted = "UserDeleted";
-        public const string UserPermissionCreated = "UserPermissionCreated";
-        public const string UserPermissionDeleted = "UserPermissionDeleted";
     }
 }

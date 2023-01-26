@@ -154,12 +154,13 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             // start a transaction, because we may also update other data fields
-            await _context.Database.BeginTransactionAsync(ct);
+            await _context.Database.BeginTransactionAsync();
             _context.DataFields.Remove(dataFieldToDelete);
             await _context.SaveChangesAsync(ct);
             await Reorder(dataFieldToDelete, false, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(dataFieldToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
+            // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
             return await GetByMselAsync(dataFieldToDelete.MselId, ct);

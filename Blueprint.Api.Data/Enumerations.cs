@@ -29,7 +29,8 @@ namespace Blueprint.Api.Data.Enumerations
     public enum MselRole{
         Owner = 10,
         Editor = 20,
-        Approver = 30
+        Approver = 30,
+        MoveEditor = 40
     }
 
     public enum GalleryArticleParameter{

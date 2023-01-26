@@ -317,7 +317,7 @@ namespace Blueprint.Api.Services
         {
             // user must be a Content Developer or a MSEL owner
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !( await MselViewRequirement.IsMet(_user.GetId(), id, _context)))
+                !( await MselOwnerRequirement.IsMet(_user.GetId(), id, _context)))
                 throw new ForbiddenException();
 
             var mselToUpdate = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
@@ -445,7 +445,7 @@ namespace Blueprint.Api.Services
         {
             // user must be a Content Developer or a MSEL owner
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !( await MselViewRequirement.IsMet(_user.GetId(), id, _context)))
+                !( await MselOwnerRequirement.IsMet(_user.GetId(), id, _context)))
                 throw new ForbiddenException();
 
             var mselToDelete = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
@@ -473,7 +473,7 @@ namespace Blueprint.Api.Services
         {
             // user must be a Content Developer or a MSEL owner
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !( await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
+                !( await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
 
             if (form.MselId != null && form.MselId != mselId)

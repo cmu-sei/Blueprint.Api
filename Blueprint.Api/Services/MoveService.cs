@@ -72,7 +72,10 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Move> CreateAsync(ViewModels.Move move, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !( await MselOwnerRequirement.IsMet(_user.GetId(), move.MselId, _context)) &&
+                !( await MoveEditorRequirement.IsMet(_user.GetId(), move.MselId, _context)))
                 throw new ForbiddenException();
 
             // start a transaction, because we may also update other data fields
@@ -96,11 +99,13 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Move> UpdateAsync(Guid id, ViewModels.Move move, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !( await MselOwnerRequirement.IsMet(_user.GetId(), move.MselId, _context)) &&
+                !( await MoveEditorRequirement.IsMet(_user.GetId(), move.MselId, _context)))
                 throw new ForbiddenException();
 
             var moveToUpdate = await _context.Moves.SingleOrDefaultAsync(v => v.Id == id, ct);
-
             if (moveToUpdate == null)
                 throw new EntityNotFoundException<Move>();
 
@@ -124,13 +129,15 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var moveToDelete = await _context.Moves.SingleOrDefaultAsync(v => v.Id == id, ct);
-
             if (moveToDelete == null)
                 throw new EntityNotFoundException<Move>();
+
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !( await MselOwnerRequirement.IsMet(_user.GetId(), moveToDelete.MselId, _context)) &&
+                !( await MoveEditorRequirement.IsMet(_user.GetId(), moveToDelete.MselId, _context)))
+                throw new ForbiddenException();
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync();

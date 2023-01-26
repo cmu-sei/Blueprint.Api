@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Blueprint.Api.Data.Enumerations;
 
 namespace Blueprint.Api.Data.Models
@@ -28,6 +30,17 @@ namespace Blueprint.Api.Data.Models
         public bool IsInitiallyHidden { get; set;} // determines if this data field is hidden behind the "More Fields" button or is displayed initially
         public bool IsOnlyShownToOwners { get; set;} // determines if this data field gets displayed for all users or just owners (i.e. spreadsheet metadata)
         public string GalleryArticleParameter { get; set; } // the Gallery Article parameter associated with this DataField
+    }
+
+    public class DataFieldEntityConfiguration : IEntityTypeConfiguration<DataFieldEntity>
+    {
+        public void Configure(EntityTypeBuilder<DataFieldEntity> builder)
+        {
+            builder
+                .HasOne(d => d.Msel)
+                .WithMany(d => d.DataFields)
+                .OnDelete(DeleteBehavior.Cascade);
+        }
     }
 
 }

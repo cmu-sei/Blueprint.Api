@@ -39,11 +39,13 @@ namespace Blueprint.Api.Data.Models
             builder
                 .HasOne(u => u.Team)
                 .WithMany(p => p.MselTeams)
-                .HasForeignKey(x => x.TeamId);
+                .HasForeignKey(x => x.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
             builder
                 .HasOne(u => u.Msel)
                 .WithMany(p => p.MselTeams)
-                .HasForeignKey(x => x.MselId);
+                .HasForeignKey(x => x.MselId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

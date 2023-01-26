@@ -5,7 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Blueprint.Api.Data.Enumerations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Blueprint.Api.Data.Models
 {
@@ -19,6 +20,17 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<DataValueEntity> DataValues { get; set; } = new HashSet<DataValueEntity>();
         public int RowIndex { get; set; }
         public string RowMetadata { get; set; }
+    }
+
+    public class ScenarioEventEntityConfiguration : IEntityTypeConfiguration<ScenarioEventEntity>
+    {
+        public void Configure(EntityTypeBuilder<ScenarioEventEntity> builder)
+        {
+            builder
+                .HasOne(d => d.Msel)
+                .WithMany(d => d.ScenarioEvents)
+                .OnDelete(DeleteBehavior.Cascade);
+        }
     }
 
 }

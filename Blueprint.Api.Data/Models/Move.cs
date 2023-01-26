@@ -30,6 +30,11 @@ namespace Blueprint.Api.Data.Models
         {
             builder
                 .HasIndex(move => new { move.MselId, move.MoveNumber }).IsUnique();
+            builder
+                .HasOne(u => u.Msel)
+                .WithMany(p => p.Moves)
+                .HasForeignKey(x => x.MselId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 

@@ -32,6 +32,8 @@ namespace Blueprint.Api.ViewModels
         public ICollection<Card> Cards { get; set; } = new List<Card>();
         public List<string> GalleryArticleParameters { get; set; } = new List<string>(); // the parameters that must be sent to Gallery to define an Article
         public List<string> GallerySourceTypes { get; set; } = new List<string>(); // the source types that must be sent to Gallery to define an Article
+        public virtual ICollection<CiteRole> CiteRoles { get; set; } = new HashSet<CiteRole>();
+        public virtual ICollection<CiteAction> CiteActions { get; set; } = new HashSet<CiteAction>();
    }
 }
 

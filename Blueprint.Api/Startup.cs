@@ -157,6 +157,8 @@ namespace Blueprint.Api
 
             services.AddScoped<ICardService, CardService>();
             services.AddScoped<ICardTeamService, CardTeamService>();
+            services.AddScoped<ICiteActionService, CiteActionService>();
+            services.AddScoped<ICiteRoleService, CiteRoleService>();
             services.AddScoped<IDataFieldService, DataFieldService>();
             services.AddScoped<IDataOptionService, DataOptionService>();
             services.AddScoped<IDataValueService, DataValueService>();

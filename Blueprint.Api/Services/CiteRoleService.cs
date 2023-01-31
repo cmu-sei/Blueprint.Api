@@ -54,7 +54,8 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var citeRoleEntities = await _context.CiteRoles
-                .Where(citeRole => citeRole.MselId == mselId)
+                .Where(cr => cr.MselId == mselId)
+                .Include(cr => cr.Team)
                 .ToListAsync();
 
             return _mapper.Map<IEnumerable<CiteRole>>(citeRoleEntities).ToList();;
@@ -65,7 +66,9 @@ namespace Blueprint.Api.Services
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
                 throw new ForbiddenException();
 
-            var item = await _context.CiteRoles.SingleAsync(citeRole => citeRole.Id == id, ct);
+            var item = await _context.CiteRoles
+                .Include(cr => cr.Team)
+                .SingleAsync(cr => cr.Id == id, ct);
 
             return _mapper.Map<CiteRole>(item);
         }

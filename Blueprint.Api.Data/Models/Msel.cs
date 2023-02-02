@@ -23,6 +23,7 @@ namespace Blueprint.Api.Data.Models
         public Guid? GalleryExhibitId { get; set; }
         public bool UseCite { get; set; }
         public Guid? CiteEvaluationId { get; set; }
+        public Guid? CiteScoringModelId { get; set; }
         public bool UseSteamfitter { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
         public bool IsTemplate { get; set; }
@@ -34,6 +35,8 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<UserMselRoleEntity> UserMselRoles { get; set; } = new HashSet<UserMselRoleEntity>();
         public string HeaderRowMetadata { get; set; }
         public virtual ICollection<CardEntity> Cards { get; set; } = new HashSet<CardEntity>();
+        public virtual ICollection<CiteRoleEntity> CiteRoles { get; set; } = new HashSet<CiteRoleEntity>();
+        public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();
     }
 }
 

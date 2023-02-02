@@ -18,7 +18,7 @@
   "Users": [
     {
       "Id": "9fd3c38e-58b0-4af1-80d1-1895af91f1f9",
-      "Name": "Admin"
+      "Name": "Admin User"
     }
   ],
   "UserPermissions": [
@@ -30,7 +30,8 @@
   "Teams": [
     {
       "Id": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8",
-      "Name": "Admin"
+      "Name": "Administrators",
+      "ShortName": "Admin"
     }
   ],
   "TeamUsers": [
@@ -73,14 +74,6 @@
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31"
     }
   ],
-  "Organizations": [
-    {
-      "Id": "e0f2e62c-c1b9-454f-a00b-e564100eca60",
-      "Name": "FEMA",
-      "Description": "The Federal Emergency Management Agency (FEMA) supports citizens and emergency personnel to build, sustain, and improve the nation's capability to prepare for, protect against, respond to, recover from, and mitigate all hazards.",
-      "MselId":"aa8dbeb0-c441-4b54-8e91-3716e3404d31"
-    }
-  ],
   "Moves": [
     {
       "Id": "bb6dbeb0-c441-4b54-8e91-3716e3404e42",
@@ -92,9 +85,24 @@
   "Organizations": [
     {
       "Id": "0000beb0-c441-4b54-8e91-3716e3406666",
-      "Name": "FBI",
+      "Name": "Federal Bureau of Investigation",
+      "ShortName": "FBI",
       "Summary": "Federal Bureau of Investigation",
       "Description": "The Federal Bureau of Investigation is the domestic intelligence and security service of the United States and its principal federal law enforcement agency.",
+      "IsTemplate": true
+    },
+    {
+      "Id": "e0f2e62c-c1b9-454f-a00b-e564100eca60",
+      "Name": "Federal Emergency Management Agency",
+      "ShortName": "FEMA",
+      "Description": "The Federal Emergency Management Agency (FEMA) supports citizens and emergency personnel to build, sustain, and improve the nation's capability to prepare for, protect against, respond to, recover from, and mitigate all hazards.",
+      "IsTemplate": true
+    },
+    {
+      "Id": "221c8076-3421-4ee9-ac5a-1a3383e51bd9",
+      "Name": "Cybersecurity and Infrastructure Security Agency",
+      "ShortName": "CISA",
+      "Description": "The Cybersecurity and Infrastructure Security Agency (CISA) is an agency of the United States Department of Homeland Security (DHS) that is responsible for strengthening cybersecurity and infrastructure protection across all levels of government, coordinating cybersecurity programs with U.S. states, and improving the government's cybersecurity protections against private and nation-state hackers.",
       "IsTemplate": true
     }
   ],
@@ -159,7 +167,7 @@
       "Id": "aa8dbeb0-cccc-4b54-0007-3716e3404d31",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "To",
-      "DataType": 0,
+      "DataType": 100,
       "DisplayOrder": 6,
       "IsChosenFromList": false
     },
@@ -167,7 +175,7 @@
       "Id": "aa8dbeb0-cccc-4b54-0008-3716e3404d31",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "From",
-      "DataType": 0,
+      "DataType": 50,
       "DisplayOrder": 7,
       "IsChosenFromList": false
     },
@@ -273,7 +281,9 @@
       "Name": "Notes",
       "DataType": 0,
       "DisplayOrder": 10,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
     },
     {
       "Id": "04e33c3c-a502-4c95-8645-6e3d468cc7ee",
@@ -281,7 +291,9 @@
       "Name": "Exercise Objective",
       "DataType": 0,
       "DisplayOrder": 9,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
     },
     {
       "Id": "d6fcdc1c-1f13-4500-a19d-fd97a44fcc78",
@@ -289,7 +301,9 @@
       "Name": "Expected Participant Response",
       "DataType": 0,
       "DisplayOrder": 8,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
     },
     {
       "Id": "af5b64a2-c003-4547-9019-f9fbf3687e5b",
@@ -297,23 +311,29 @@
       "Name": "Message",
       "DataType": 0,
       "DisplayOrder": 7,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
     },
     {
       "Id": "2993d03c-735b-4075-b781-ff9d2c743116",
       "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
       "Name": "To",
-      "DataType": 0,
+      "DataType": 100,
       "DisplayOrder": 6,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
     },
     {
       "Id": "6da5306f-a32a-414d-bd9c-2872628547ea",
       "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
       "Name": "From",
-      "DataType": 0,
+      "DataType": 50,
       "DisplayOrder": 5,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
     },
     {
       "Id": "4517cb08-2bc1-497b-8fe5-51b7e59ebbaa",
@@ -321,7 +341,9 @@
       "Name": "Inject Mode",
       "DataType": 0,
       "DisplayOrder": 4,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
     },
     {
       "Id": "3ee555ef-181c-45f8-9b07-988a4489a9f3",
@@ -329,23 +351,52 @@
       "Name": "Event Type",
       "DataType": 0,
       "DisplayOrder": 3,
-      "IsChosenFromList": true
+      "IsChosenFromList": true,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
     },
     {
       "Id": "ce4708a5-b403-4c59-a7d1-95757c45ae86",
       "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
-      "Name": "Designated Scenario Time",
+      "Name": "Scenario Time",
       "DataType": 40,
       "DisplayOrder": 2,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
     },
     {
       "Id": "dd2740d6-8586-4c4b-be3b-12cd4088958e",
       "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
-      "Name": "Event Number",
+      "Name": "Control Number",
       "DataType": 0,
       "DisplayOrder": 1,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
+    }
+  ],
+  "DataOptions": [
+    {
+      "Id": "c14dccb2-ec6b-4de2-a1f8-692f64f5fa51",
+      "OptionName": "Email",
+      "OptionValue": "Email",
+      "DisplayOrder": 0,
+      "DataFieldId": "3ee555ef-181c-45f8-9b07-988a4489a9f3"
+    },
+    {
+      "Id": "dcdfa56d-9fe1-4e0f-8458-8cf05e8796f7",
+      "OptionName": "Gallery",
+      "OptionValue": "Gallery",
+      "DisplayOrder": 1,
+      "DataFieldId": "3ee555ef-181c-45f8-9b07-988a4489a9f3"
+    },
+    {
+      "Id": "b3d9f0b9-44c8-4670-973c-9f7f03469b13",
+      "OptionName": "Notification",
+      "OptionValue": "Notification",
+      "DisplayOrder": 3,
+      "DataFieldId": "3ee555ef-181c-45f8-9b07-988a4489a9f3"
     }
   ]
 }

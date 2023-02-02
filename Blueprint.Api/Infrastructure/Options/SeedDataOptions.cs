@@ -19,6 +19,7 @@ namespace Blueprint.Api.Infrastructure.Options
         public List<OrganizationEntity> Organizations { get; set; }
         public List<ScenarioEventEntity> ScenarioEvents { get; set; }
         public List<DataFieldEntity> DataFields { get; set; }
+        public List<DataOptionEntity> DataOptions { get; set; }
         public List<UserMselRoleEntity> UserMselRoles { get; set; }
     }
 }

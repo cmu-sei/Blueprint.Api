@@ -203,6 +203,20 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 }
                 context.SaveChanges();
             }
+            // DATAOPTIONS
+            if (options.DataOptions != null && options.DataOptions.Any())
+            {
+                var dbDataOptions = context.DataOptions.ToList();
+
+                foreach (DataOptionEntity dataOption in options.DataOptions)
+                {
+                    if (!dbDataOptions.Where(x => x.Id == dataOption.Id).Any())
+                    {
+                        context.DataOptions.Add(dataOption);
+                    }
+                }
+                context.SaveChanges();
+            }
             // ORGANIZATIONS
             if (options.Organizations != null && options.Organizations.Any())
             {

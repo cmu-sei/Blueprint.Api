@@ -846,16 +846,56 @@ namespace Blueprint.Api.Services
             return columnIndex;
         }
 
-
         private async Task CreateScenarioEventsAsync(Guid mselId, SheetData dataRows, WorkbookPart workbookPart, ICollection<DataFieldEntity> dataFields)
         {
             foreach (Row dataRow in dataRows)
             {
+                var cellColor = "";
+                var cells = dataRow.Elements<Cell>();
+                var cellReference = GetCellReference(1, (int)dataRow.RowIndex.Value);
+                var cell = cells.FirstOrDefault(c => c.CellReference == cellReference);
+                double cellTint = 0.0;
+                if (cell != null)
+                {
+                    // get the cell format from the style index
+                    int cellStyleIndex;
+                    if (cell.StyleIndex == null)
+                    {
+                        cellStyleIndex = 0;
+                    }
+                    else
+                    {
+                        cellStyleIndex = (int)cell.StyleIndex.Value;
+                    }
+                    WorkbookStylesPart styles = (WorkbookStylesPart)workbookPart.WorkbookStylesPart;
+                    CellFormat cellFormat = (CellFormat)styles.Stylesheet.CellFormats.ChildElements[cellStyleIndex];
+                    Fill fill = (Fill)styles.Stylesheet.Fills.ChildElements[(int)cellFormat.FillId.Value];
+                    PatternFill patternFill = fill.PatternFill;
+                    var pfType = patternFill.PatternType;
+                    var colorType = (ColorType)patternFill.ForegroundColor;
+                    if (colorType != null)
+                    {
+                        if (colorType.Rgb != null)
+                        {
+                            cellColor = colorType.Rgb.Value;
+                        }
+                        else if (colorType.Theme != null)
+                        {
+                            var themeChild = (DocumentFormat.OpenXml.Drawing.Color2Type)workbookPart.ThemePart.Theme.ThemeElements.ColorScheme.ChildElements[(int)colorType.Theme.Value];
+                            cellColor = themeChild.RgbColorModelHex == null ? "" : themeChild.RgbColorModelHex.Val;
+                        }
+                        cellTint = colorType.Tint == null ? 0.0 : colorType.Tint.Value;
+                    }
+                    Font font = (Font)styles.Stylesheet.Fonts.ChildElements[(int)cellFormat.FontId.Value];
+                    var fontWeight = font.Bold == null ? "normal" : "bold";
+                }
+                var rowMetadata = dataRow.Height != null ? dataRow.Height.Value.ToString() : "";
+                rowMetadata = rowMetadata + "," + GetTintedColor(cellColor, cellTint);
                 var scenarioEvent = new ScenarioEventEntity() {
                     Id = Guid.NewGuid(),
                     MselId = mselId,
                     RowIndex = (int)dataRow.RowIndex.Value - 1,
-                    RowMetadata = dataRow.Height != null ? dataRow.Height.Value.ToString() : ""
+                    RowMetadata = rowMetadata 
                 };
                 await _context.ScenarioEvents.AddAsync(scenarioEvent);
                 await CreateDataValuesAsync(scenarioEvent, dataRow, workbookPart, dataFields);
@@ -1310,6 +1350,34 @@ namespace Blueprint.Api.Services
             var secondLetter = char.ConvertFromUtf32(64 + columnIndex % 26);
 
             return firstLetter + secondLetter + rowIndex.ToString();
+        }
+
+        private string GetTintedColor(string hexColor, double tint)
+        {
+            if (hexColor.Length >= 6)
+            {
+                var rhex = hexColor.Substring(0, 2);
+                var ghex = hexColor.Substring(2, 2);
+                var bhex = hexColor.Substring(4, 2);
+                var rint = Convert.ToInt32(rhex, 16);
+                var gint = Convert.ToInt32(ghex, 16);
+                var bint = Convert.ToInt32(bhex, 16);
+                // var r = ((int)(rint + (255 - rint) * tint)).ToString();
+                // var g = ((int)(gint + (255 - gint) * tint)).ToString();
+                // var b = ((int)(bint + (255 - bint) * tint)).ToString();
+                // var r = ((int)(rint / tint)).ToString();
+                // var g = ((int)(gint / tint)).ToString();
+                // var b = ((int)(bint / tint)).ToString();
+                // var r = ((int)(rint * (1 - tint))).ToString();
+                // var g = ((int)(gint * (1 - tint))).ToString();
+                // var b = ((int)(bint * (1 - tint))).ToString();
+                var r = rint.ToString();
+                var g = gint.ToString();
+                var b = bint.ToString();
+                return r + "," + g + "," + b;
+
+            }
+            return "";
         }
 
     }

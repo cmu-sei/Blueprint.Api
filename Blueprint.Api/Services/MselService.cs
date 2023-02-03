@@ -238,6 +238,7 @@ namespace Blueprint.Api.Services
             mselEntity.DateModified = null;
             mselEntity.ModifiedBy = null;
             mselEntity.Name = "Copy of " + mselEntity.Name;
+            mselEntity.IsTemplate = false;
             var dataFieldIdCrossReference = new Dictionary<Guid, Guid>();
             foreach (var dataField in mselEntity.DataFields)
             {

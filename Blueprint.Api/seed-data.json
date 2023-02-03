@@ -43,19 +43,22 @@
   "Msels": [
     {
       "Id": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "Standard MSEL",
       "Description": "Standard MSEL",
       "Status": 20,
       "IsTemplate": true
     },
     {
       "Id": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Description": "MITRE",
+      "Name": "MITRE",
+      "Description": "MITRE Cyber Exercise Playbook",
       "Status": 20,
       "IsTemplate": true
     },
     {
       "Id": "21852591-c4b5-48a0-a9dd-142510abf504",
-      "Description": "HSEEP",
+      "Name": "HSEEP",
+      "Description": "Homeland Security Exercise and Evaluation Program",
       "Status": 20,
       "IsTemplate": true
     }

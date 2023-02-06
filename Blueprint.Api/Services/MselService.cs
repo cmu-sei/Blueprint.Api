@@ -487,7 +487,7 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we will make changes as we go that may need rolled back
             await _context.Database.BeginTransactionAsync();
-            // delete the existing MSEL
+            // update the existing MSEL
             await createMselFromXlsxFile(form, msel, ct);
             await _context.Database.CommitTransactionAsync(ct);
 
@@ -541,6 +541,7 @@ namespace Blueprint.Api.Services
                     headerRow.Height = height;
                     headerRow.CustomHeight = true;
                 }
+                headerRow.RowIndex = 1;
                 // add the cells to the header row
                 Columns columns = new Columns();
                 foreach (System.Data.DataColumn column in dataTable.Columns)
@@ -561,6 +562,7 @@ namespace Blueprint.Api.Services
                     Cell cell = new Cell();
                     cell.DataType = CellValues.String;
                     cell.CellValue = new CellValue(column.ColumnName);
+                    cell.CellReference = GetCellReference(dataField.DisplayOrder, (int)headerRow.RowIndex.Value);
                     cell.StyleIndex = cellMetadata != null && cellMetadata.Length > 0 ? (UInt32)uniqueStyles[cellMetadata] : 0;
                     headerRow.AppendChild(cell);
                 }
@@ -580,6 +582,7 @@ namespace Blueprint.Api.Services
                         newRow.Height = height;
                         newRow.CustomHeight = true;
                     }
+                    newRow.RowIndex = (uint)(i + 2);  // the header row is RowIndex 1
                     // add the cells for this row
                     foreach (System.Data.DataColumn column in dataTable.Columns)
                     {
@@ -603,10 +606,17 @@ namespace Blueprint.Api.Services
                                 case DataFieldType.DateTime:
                                     cell.DataType = CellValues.Date;
                                     var dateParts = stringValue.Split("/");
-                                    cell.CellValue = new CellValue(dateParts[2] + "-" +
-                                        dateParts[0].PadLeft(2, '0') + "-" +
-                                        dateParts[1].PadLeft(2, '0') +
-                                        "T00:00:00");
+                                    if (dateParts.Count() == 1)
+                                    {
+                                        cell.CellValue = new CellValue(stringValue);
+                                    }
+                                    else
+                                    {
+                                        cell.CellValue = new CellValue(dateParts[2] + "-" +
+                                            dateParts[0].PadLeft(2, '0') + "-" +
+                                            dateParts[1].PadLeft(2, '0') +
+                                            "T00:00:00");
+                                    }
                                     break;
                                 case DataFieldType.Boolean:
                                     cell.DataType = CellValues.Boolean;
@@ -622,6 +632,7 @@ namespace Blueprint.Api.Services
                                     break;
                             }
                         }
+                        cell.CellReference = GetCellReference(dataField.DisplayOrder, (int)newRow.RowIndex.Value);
                         newRow.AppendChild(cell);
                     }
                     sheetData.AppendChild(newRow);
@@ -704,6 +715,7 @@ namespace Blueprint.Api.Services
         {
             var dataFields = msel.DataFields.ToList();
             var displayOrder = 1;
+            var verifyDataFields = msel.DataFields.Count > 0;
             foreach (Cell thecurrentcell in headerRow)
             {
                 string currentcellvalue = string.Empty;
@@ -730,6 +742,10 @@ namespace Blueprint.Api.Services
                         {
                             currentcellvalue = item.InnerXml;
                         }
+                    }
+                    else
+                    {
+                        currentcellvalue = thecurrentcell.InnerText;
                     }
                 }
                 else
@@ -776,7 +792,7 @@ namespace Blueprint.Api.Services
                         var column = (Column)columns.ChildElements.FirstOrDefault(ce => columnIndex >= ((Column)ce).Min.Value && columnIndex<= ((Column)ce).Max.Value);
                         columnMetadata = column == null || column.Width == null ? "0.0" : column.Width.Value.ToString();
                     }
-                    if (msel.DataFields.Count > 0)
+                    if (verifyDataFields)
                     {
                         var dataField = msel.DataFields.SingleOrDefault(df => df.Name.Trim() == currentcellvalue.Trim());
                         if (dataField == null)
@@ -798,6 +814,8 @@ namespace Blueprint.Api.Services
                             DataType = cellDataType,
                             DisplayOrder = displayOrder,
                             IsChosenFromList = false,
+                            OnScenarioEventList = true,
+                            OnExerciseView = true,
                             CellMetadata = cellColor + "," + cellTint + ",bold," + (int)cellDataType,
                             ColumnMetadata = columnMetadata
                         };
@@ -828,16 +846,56 @@ namespace Blueprint.Api.Services
             return columnIndex;
         }
 
-
         private async Task CreateScenarioEventsAsync(Guid mselId, SheetData dataRows, WorkbookPart workbookPart, ICollection<DataFieldEntity> dataFields)
         {
             foreach (Row dataRow in dataRows)
             {
+                var cellColor = "";
+                var cells = dataRow.Elements<Cell>();
+                var cellReference = GetCellReference(1, (int)dataRow.RowIndex.Value);
+                var cell = cells.FirstOrDefault(c => c.CellReference == cellReference);
+                double cellTint = 0.0;
+                if (cell != null)
+                {
+                    // get the cell format from the style index
+                    int cellStyleIndex;
+                    if (cell.StyleIndex == null)
+                    {
+                        cellStyleIndex = 0;
+                    }
+                    else
+                    {
+                        cellStyleIndex = (int)cell.StyleIndex.Value;
+                    }
+                    WorkbookStylesPart styles = (WorkbookStylesPart)workbookPart.WorkbookStylesPart;
+                    CellFormat cellFormat = (CellFormat)styles.Stylesheet.CellFormats.ChildElements[cellStyleIndex];
+                    Fill fill = (Fill)styles.Stylesheet.Fills.ChildElements[(int)cellFormat.FillId.Value];
+                    PatternFill patternFill = fill.PatternFill;
+                    var pfType = patternFill.PatternType;
+                    var colorType = (ColorType)patternFill.ForegroundColor;
+                    if (colorType != null)
+                    {
+                        if (colorType.Rgb != null)
+                        {
+                            cellColor = colorType.Rgb.Value;
+                        }
+                        else if (colorType.Theme != null)
+                        {
+                            var themeChild = (DocumentFormat.OpenXml.Drawing.Color2Type)workbookPart.ThemePart.Theme.ThemeElements.ColorScheme.ChildElements[(int)colorType.Theme.Value];
+                            cellColor = themeChild.RgbColorModelHex == null ? "" : themeChild.RgbColorModelHex.Val;
+                        }
+                        cellTint = colorType.Tint == null ? 0.0 : colorType.Tint.Value;
+                    }
+                    Font font = (Font)styles.Stylesheet.Fonts.ChildElements[(int)cellFormat.FontId.Value];
+                    var fontWeight = font.Bold == null ? "normal" : "bold";
+                }
+                var rowMetadata = dataRow.Height != null ? dataRow.Height.Value.ToString() : "";
+                rowMetadata = rowMetadata + "," + GetTintedColor(cellColor, cellTint);
                 var scenarioEvent = new ScenarioEventEntity() {
                     Id = Guid.NewGuid(),
                     MselId = mselId,
-                    RowIndex = (int)dataRow.RowIndex.Value,
-                    RowMetadata = dataRow.Height != null ? dataRow.Height.Value.ToString() : ""
+                    RowIndex = (int)dataRow.RowIndex.Value - 1,
+                    RowMetadata = rowMetadata 
                 };
                 await _context.ScenarioEvents.AddAsync(scenarioEvent);
                 await CreateDataValuesAsync(scenarioEvent, dataRow, workbookPart, dataFields);
@@ -1292,6 +1350,36 @@ namespace Blueprint.Api.Services
             var secondLetter = char.ConvertFromUtf32(64 + columnIndex % 26);
 
             return firstLetter + secondLetter + rowIndex.ToString();
+        }
+
+        private string GetTintedColor(string hexColor, double tint)
+        {
+            var rhex = "";
+            var ghex = "";
+            var bhex = "";
+            if (hexColor.Length == 6)
+            {
+                rhex = hexColor.Substring(0, 2);
+                ghex = hexColor.Substring(2, 2);
+                bhex = hexColor.Substring(4, 2);
+            }
+            else if (hexColor.Length == 8)
+            {
+                rhex = hexColor.Substring(2, 2);
+                ghex = hexColor.Substring(4, 2);
+                bhex = hexColor.Substring(6, 2);
+            }
+            else
+            {
+                return "";
+            }
+            var rint = Convert.ToInt32(rhex, 16);
+            var gint = Convert.ToInt32(ghex, 16);
+            var bint = Convert.ToInt32(bhex, 16);
+            var r = rint.ToString();
+            var g = gint.ToString();
+            var b = bint.ToString();
+            return r + "," + g + "," + b;
         }
 
     }

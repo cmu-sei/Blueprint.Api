@@ -1354,30 +1354,32 @@ namespace Blueprint.Api.Services
 
         private string GetTintedColor(string hexColor, double tint)
         {
-            if (hexColor.Length >= 6)
+            var rhex = "";
+            var ghex = "";
+            var bhex = "";
+            if (hexColor.Length == 6)
             {
-                var rhex = hexColor.Substring(0, 2);
-                var ghex = hexColor.Substring(2, 2);
-                var bhex = hexColor.Substring(4, 2);
-                var rint = Convert.ToInt32(rhex, 16);
-                var gint = Convert.ToInt32(ghex, 16);
-                var bint = Convert.ToInt32(bhex, 16);
-                // var r = ((int)(rint + (255 - rint) * tint)).ToString();
-                // var g = ((int)(gint + (255 - gint) * tint)).ToString();
-                // var b = ((int)(bint + (255 - bint) * tint)).ToString();
-                // var r = ((int)(rint / tint)).ToString();
-                // var g = ((int)(gint / tint)).ToString();
-                // var b = ((int)(bint / tint)).ToString();
-                // var r = ((int)(rint * (1 - tint))).ToString();
-                // var g = ((int)(gint * (1 - tint))).ToString();
-                // var b = ((int)(bint * (1 - tint))).ToString();
-                var r = rint.ToString();
-                var g = gint.ToString();
-                var b = bint.ToString();
-                return r + "," + g + "," + b;
-
+                rhex = hexColor.Substring(0, 2);
+                ghex = hexColor.Substring(2, 2);
+                bhex = hexColor.Substring(4, 2);
             }
-            return "";
+            else if (hexColor.Length == 8)
+            {
+                rhex = hexColor.Substring(2, 2);
+                ghex = hexColor.Substring(4, 2);
+                bhex = hexColor.Substring(6, 2);
+            }
+            else
+            {
+                return "";
+            }
+            var rint = Convert.ToInt32(rhex, 16);
+            var gint = Convert.ToInt32(ghex, 16);
+            var bint = Convert.ToInt32(bhex, 16);
+            var r = rint.ToString();
+            var g = gint.ToString();
+            var b = bint.ToString();
+            return r + "," + g + "," + b;
         }
 
     }

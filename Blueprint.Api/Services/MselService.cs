@@ -502,7 +502,7 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
-            var filename = msel.Description.ToLower().EndsWith(".xlsx") ? msel.Description : msel.Description + ".xlsx";
+            var filename = msel.Name.ToLower().EndsWith(".xlsx") ? msel.Name : msel.Name + ".xlsx";
 
             // get the MSEL data into a DataTable
             var scenarioEventList = await _context.ScenarioEvents

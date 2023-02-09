@@ -227,6 +227,9 @@ namespace Blueprint.Api.Services
                 .Include(m => m.UserMselRoles)
                 .Include(m => m.Moves)
                 .Include(m => m.Organizations)
+                .Include(m => m.Cards)
+                .Include(m => m.CiteActions)
+                .Include(m => m.CiteRoles)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (mselEntity == null)
@@ -239,7 +242,11 @@ namespace Blueprint.Api.Services
             mselEntity.ModifiedBy = null;
             mselEntity.Name = "Copy of " + mselEntity.Name;
             mselEntity.IsTemplate = false;
+            mselEntity.GalleryCollectionId = null;
+            mselEntity.GalleryExhibitId = null;
+            mselEntity.CiteEvaluationId = null;
             var dataFieldIdCrossReference = new Dictionary<Guid, Guid>();
+            // copy DataFields
             foreach (var dataField in mselEntity.DataFields)
             {
                 var newDataFieldId = Guid.NewGuid();
@@ -249,6 +256,7 @@ namespace Blueprint.Api.Services
                 dataField.Msel = null;
                 dataField.DateCreated = mselEntity.DateCreated;
                 dataField.CreatedBy = mselEntity.CreatedBy;
+                // copy DataOptions
                 foreach (var dataOption in dataField.DataOptions)
                 {
                     dataOption.Id = Guid.NewGuid();
@@ -258,6 +266,7 @@ namespace Blueprint.Api.Services
                     dataOption.CreatedBy = mselEntity.CreatedBy;
                 }
             }
+            // copy Moves
             foreach (var move in mselEntity.Moves)
             {
                 move.Id = Guid.NewGuid();
@@ -266,6 +275,7 @@ namespace Blueprint.Api.Services
                 move.DateCreated = mselEntity.DateCreated;
                 move.CreatedBy = mselEntity.CreatedBy;
             }
+            // copy Teams
             foreach (var mselTeam in mselEntity.MselTeams)
             {
                 mselTeam.Id = Guid.NewGuid();
@@ -273,6 +283,7 @@ namespace Blueprint.Api.Services
                 mselTeam.Msel = null;
                 mselTeam.Team = null;
             }
+            // copy Organizations
             foreach (var organization in mselEntity.Organizations)
             {
                 organization.Id = Guid.NewGuid();
@@ -281,6 +292,7 @@ namespace Blueprint.Api.Services
                 organization.DateCreated = mselEntity.DateCreated;
                 organization.CreatedBy = mselEntity.CreatedBy;
             }
+            // copy UserMselRoles
             foreach (var userMselRole in mselEntity.UserMselRoles)
             {
                 userMselRole.Id = Guid.NewGuid();
@@ -288,6 +300,7 @@ namespace Blueprint.Api.Services
                 userMselRole.Msel = null;
                 userMselRole.User = null;
             }
+            // copy ScenarioEvents
             foreach (var scenarioEvent in mselEntity.ScenarioEvents)
             {
                 scenarioEvent.Id = Guid.NewGuid();
@@ -295,6 +308,7 @@ namespace Blueprint.Api.Services
                 scenarioEvent.Msel = null;
                 scenarioEvent.DateCreated = mselEntity.DateCreated;
                 scenarioEvent.CreatedBy = mselEntity.CreatedBy;
+                // copy DataValues
                 foreach (var dataValue in scenarioEvent.DataValues)
                 {
                     dataValue.Id = Guid.NewGuid();
@@ -305,6 +319,34 @@ namespace Blueprint.Api.Services
                     dataValue.DateCreated = mselEntity.DateCreated;
                     dataValue.CreatedBy = mselEntity.CreatedBy;
                 }
+            }
+            // copy Gallery Cards
+            foreach (var card in mselEntity.Cards)
+            {
+                card.Id = Guid.NewGuid();
+                card.MselId = mselEntity.Id;
+                card.Msel = null;
+                card.DateCreated = mselEntity.DateCreated;
+                card.CreatedBy = mselEntity.CreatedBy;
+                card.GalleryId = null;
+            }
+            // copy CITE Roles
+            foreach (var citeRole in mselEntity.CiteRoles)
+            {
+                citeRole.Id = Guid.NewGuid();
+                citeRole.MselId = mselEntity.Id;
+                citeRole.Msel = null;
+                citeRole.DateCreated = mselEntity.DateCreated;
+                citeRole.CreatedBy = mselEntity.CreatedBy;
+            }
+            // copy CITE Actions
+            foreach (var citeAction in mselEntity.CiteActions)
+            {
+                citeAction.Id = Guid.NewGuid();
+                citeAction.MselId = mselEntity.Id;
+                citeAction.Msel = null;
+                citeAction.DateCreated = mselEntity.DateCreated;
+                citeAction.CreatedBy = mselEntity.CreatedBy;
             }
 
             _context.Msels.Add(mselEntity);

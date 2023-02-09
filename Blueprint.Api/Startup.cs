@@ -119,6 +119,8 @@ namespace Blueprint.Api
             services.ConfigureSwaggerGen(options => {
                 options.CustomSchemaIds(x => x.FullName);
             });
+            services.AddCiteApiClient();
+            services.AddGalleryApiClient();
             services.AddPlayerApiClient();
             services.AddSteamfitterApiClient();
 

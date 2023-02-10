@@ -18,6 +18,9 @@ using Cite.Api.Client;
 namespace Cite.Api.Client
 {
     using System = global::System;
+    using System.Text.Json;
+    using System.Text.Json.Serialization;
+    using Blueprint.Api.Infrastructure.JsonConverters;
 
     [System.CodeDom.Compiler.GeneratedCode("NSwag", "13.15.7.0 (NJsonSchema v10.6.7.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class CiteApiClient : ICiteApiClient
@@ -31,11 +34,15 @@ namespace Cite.Api.Client
             _settings = new System.Lazy<System.Text.Json.JsonSerializerOptions>(CreateSerializerSettings);
         }
 
-        private System.Text.Json.JsonSerializerOptions CreateSerializerSettings()
+        private JsonSerializerOptions CreateSerializerSettings()
         {
-            var settings = new System.Text.Json.JsonSerializerOptions();
-            UpdateJsonSerializerSettings(settings);
-            return settings;
+            var options = new System.Text.Json.JsonSerializerOptions();
+            options.Converters.Add(new JsonNullableGuidConverter());
+            options.Converters.Add(new JsonDoubleConverter());
+            options.Converters.Add(new JsonIntegerConverter());
+            options.Converters.Add(new JsonStringEnumConverter());
+            UpdateJsonSerializerSettings(options);
+            return options;
         }
 
         protected System.Text.Json.JsonSerializerOptions JsonSerializerSettings { get { return _settings.Value; } }

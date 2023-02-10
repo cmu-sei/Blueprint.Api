@@ -1,5 +1,5 @@
-// Copyright 2022 Carnegie Mellon University. All Rights Reserved.
-// Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
+// Copyright 2023 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using AutoMapper;
 using Blueprint.Api.Infrastructure.Authorization;
@@ -39,7 +39,6 @@ namespace Blueprint.Api.Services
         private readonly BlueprintContext _context;
         protected readonly IMapper _mapper;
         private readonly ILogger<CiteService> _logger;
-        private readonly string _citeDelivery = "Cite";
 
         public CiteService(
             ICiteApiClient citeApiClient,
@@ -120,14 +119,6 @@ namespace Blueprint.Api.Services
             await _citeApiClient.DeleteEvaluationAsync((Guid)msel.CiteEvaluationId, ct);
             // update the MSEL
             msel.CiteEvaluationId = null;
-            // // update the MSEL Cards
-            // var cards = await _context.Cards
-            //     .Where(c => c.MselId == msel.Id)
-            //     .ToListAsync(ct);
-            // foreach (var card in cards)
-            // {
-            //     card.CiteId = null;
-            // }
             // save the changes
             await _context.SaveChangesAsync(ct);
 
@@ -142,7 +133,10 @@ namespace Blueprint.Api.Services
         private async Task CreateEvaluationAsync(MselEntity msel, CancellationToken ct)
         {
             Evaluation newEvaluation = new Evaluation() {
-                Description = msel.Description
+                Description = msel.Description,
+                Status = ItemStatus.Pending,
+                CurrentMoveNumber = 0,
+                ScoringModelId = (Guid)msel.CiteScoringModelId
             };
             newEvaluation = await _citeApiClient.CreateEvaluationAsync(newEvaluation, ct);
             // update the MSEL
@@ -171,7 +165,8 @@ namespace Blueprint.Api.Services
                     citeTeam = new Team() {
                         Id = team.Id,
                         Name = team.Name,
-                        ShortName = team.ShortName
+                        ShortName = team.ShortName,
+                        TeamTypeId = 
                     };
                     citeTeam = await _citeApiClient.CreateTeamAsync(citeTeam, ct);
                 }

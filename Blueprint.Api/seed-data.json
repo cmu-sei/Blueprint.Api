@@ -442,33 +442,43 @@
     {
       "Id": "ce4708a5-b403-4c59-a7d1-95757c45ae86",
       "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
-      "Name": "Scenario Time",
+      "Name": "Designated Scenario Time",
       "DataType": 40,
       "DisplayOrder": 2,
       "IsChosenFromList": false,
       "OnScenarioEventList": true,
       "OnExerciseView": false
+    },
+    {
+      "Id": "55015359-6f35-4bb8-bde0-cc390101437d",
+      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "Name": "Event Number",
+      "DataType": 10,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
     }
   ],
   "DataOptions": [
     {
       "Id": "c14dccb2-ec6b-4de2-a1f8-692f64f5fa51",
-      "OptionName": "Email",
-      "OptionValue": "Email",
+      "OptionName": "Inject",
+      "OptionValue": "Inject",
       "DisplayOrder": 0,
       "DataFieldId": "3ee555ef-181c-45f8-9b07-988a4489a9f3"
     },
     {
       "Id": "dcdfa56d-9fe1-4e0f-8458-8cf05e8796f7",
-      "OptionName": "Gallery",
-      "OptionValue": "Gallery",
+      "OptionName": "Contingency Inject",
+      "OptionValue": "Contingency Inject",
       "DisplayOrder": 1,
       "DataFieldId": "3ee555ef-181c-45f8-9b07-988a4489a9f3"
     },
     {
       "Id": "b3d9f0b9-44c8-4670-973c-9f7f03469b13",
-      "OptionName": "Notification",
-      "OptionValue": "Notification",
+      "OptionName": "Expected Action",
+      "OptionValue": "Expected Action",
       "DisplayOrder": 2,
       "DataFieldId": "3ee555ef-181c-45f8-9b07-988a4489a9f3"
     }

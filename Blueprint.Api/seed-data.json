@@ -287,68 +287,14 @@
       "OnExerciseView": false
     },
     {
-      "Id": "368ee9bf-4215-4529-b5c4-0a370c63ddf5",
+      "Id": "63935ad4-57dd-4778-aaa8-febef5c57761",
       "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Measure of Performance",
+      "Name": "ID",
       "DataType": 0,
       "DisplayOrder": 1,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "0efe53d5-7796-48b6-8995-648b2b03f3f0",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Expected Actions",
-      "DataType": 0,
-      "DisplayOrder": 9,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "635d1b70-c3f0-4438-8efb-537c055cd92f",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Notes",
-      "DataType": 0,
-      "DisplayOrder": 8,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "0fefb2d3-9ec4-476b-8089-326b44d84be2",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Assumptions",
-      "DataType": 0,
-      "DisplayOrder": 7,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "799fbff6-a282-4edb-9b68-79541f26ab7d",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Description",
-      "DataType": 0,
-      "DisplayOrder": 6,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "b8fd568b-291d-46b3-aa18-8e9628a8b5fc",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Title",
-      "DataType": 0,
-      "DisplayOrder": 5,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "20a5e54c-3631-4d36-96c5-73e7e01528da",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Target",
-      "DataType": 0,
-      "DisplayOrder": 4,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "f4e37018-0501-4ec0-849b-2618bec0c797",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Delivery Method",
-      "DataType": 0,
-      "DisplayOrder": 3,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
     },
     {
       "Id": "971e4e80-94da-4d0a-bb50-24056816e738",
@@ -356,12 +302,14 @@
       "Name": "Local Time",
       "DataType": 40,
       "DisplayOrder": 2,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
     },
     {
-      "Id": "63935ad4-57dd-4778-aaa8-febef5c57761",
+      "Id": "f4e37018-0501-4ec0-849b-2618bec0c797",
       "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "ID",
+      "Name": "Delivery Method",
       "DataType": 0,
       "DisplayOrder": 1,
       "IsChosenFromList": false,

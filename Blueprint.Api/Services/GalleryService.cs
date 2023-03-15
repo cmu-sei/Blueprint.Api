@@ -83,11 +83,11 @@ namespace Blueprint.Api.Services
             // create the Gallery Exhibit
             await CreateExhibitAsync(msel, ct);
             // create the Gallery Teams
-            await CreateTeamsAsync(msel, ct);
+            var galleryTeamDictionary = await CreateTeamsAsync(msel, ct);
             // create the Gallery Cards
-            await CreateCardsAsync(msel, ct);
+            await CreateCardsAsync(msel, galleryTeamDictionary, ct);
             // create the Gallery Articles
-            await CreateArticlesAsync(msel, ct);
+            await CreateArticlesAsync(msel, galleryTeamDictionary, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
@@ -165,13 +165,11 @@ namespace Blueprint.Api.Services
         }
 
         // Create Gallery Teams for this MSEL
-        private async Task CreateTeamsAsync(MselEntity msel, CancellationToken ct)
+        private async Task<Dictionary<Guid, Guid>> CreateTeamsAsync(MselEntity msel, CancellationToken ct)
         {
+            var galleryTeamDictionary = new Dictionary<Guid, Guid>();
             // get the Gallery teams, Gallery Users, and the Gallery TeamUsers
-            var galleryTeams = await _galleryApiClient.GetTeamsAsync(ct);
-            var exhibitTeams = await _galleryApiClient.GetTeamsByExhibitAsync((Guid)msel.GalleryExhibitId, ct);
             var galleryUserIds = (await _galleryApiClient.GetUsersAsync(ct)).Select(u => u.Id);
-            var galleryTeamUsers = await _galleryApiClient.GetTeamUsersAsync(ct);
             // get the teams for this MSEL and loop through them
             var teams = await _context.MselTeams
                 .Where(mt => mt.MselId == msel.Id)
@@ -179,27 +177,16 @@ namespace Blueprint.Api.Services
                 .ToListAsync();
             foreach (var team in teams)
             {
-                // if this team doesn't exist in Gallery, create it
-                var galleryTeam = galleryTeams.FirstOrDefault(t => t.Id == team.Id);
-                if (galleryTeam == null)
-                {
-                    galleryTeam = new Team() {
-                        Id = team.Id,
-                        Name = team.Name,
-                        ShortName = team.ShortName
-                    };
-                    galleryTeam = await _galleryApiClient.CreateTeamAsync(galleryTeam, ct);
-                }
-                // add the gallery team to the gallery exhibit, if necessary
-                var exhibitTeam = exhibitTeams.FirstOrDefault(et => et.Id == team.Id);
-                if (exhibitTeam == null)
-                {
-                    var galleryExhibitTeam = new ExhibitTeam() {
-                        TeamId = team.Id,
-                        ExhibitId = (Guid)msel.GalleryExhibitId
-                    };
-                    await _galleryApiClient.CreateExhibitTeamAsync(galleryExhibitTeam, ct);
-                }
+                var galleryTeamId = Guid.NewGuid();
+                // create team in Gallery
+                var galleryTeam = new Team() {
+                    Id = galleryTeamId,
+                    Name = team.Name,
+                    ShortName = team.ShortName,
+                    ExhibitId = (Guid)msel.GalleryExhibitId
+                };
+                galleryTeam = await _galleryApiClient.CreateTeamAsync(galleryTeam, ct);
+                galleryTeamDictionary.Add(team.Id, galleryTeam.Id);
                 // get all of the users for this team and loop through them
                 var users = await _context.TeamUsers
                     .Where(tu => tu.TeamId == team.Id)
@@ -216,21 +203,20 @@ namespace Blueprint.Api.Services
                         };
                         await _galleryApiClient.CreateUserAsync(newUser, ct);
                     }
-                    // if there is no Gallery TeamUser, create it
-                    if (!galleryTeamUsers.Any(tu => tu.TeamId == galleryTeam.Id && tu.UserId == user.Id))
-                    {
-                        var teamUser = new TeamUser() {
-                            TeamId = galleryTeam.Id,
-                            UserId = user.Id
-                        };
-                        await _galleryApiClient.CreateTeamUserAsync(teamUser, ct);
-                    }
+                    // create Gallery TeamUsers
+                    var teamUser = new TeamUser() {
+                        TeamId = galleryTeam.Id,
+                        UserId = user.Id
+                    };
+                    await _galleryApiClient.CreateTeamUserAsync(teamUser, ct);
                 }
             }
+
+            return galleryTeamDictionary;
         }
 
         // Create Gallery Cards for this MSEL
-        private async Task CreateCardsAsync(MselEntity msel, CancellationToken ct)
+        private async Task CreateCardsAsync(MselEntity msel, Dictionary<Guid, Guid> galleryTeamDictionary, CancellationToken ct)
         {
             foreach (var card in msel.Cards)
             {
@@ -252,7 +238,7 @@ namespace Blueprint.Api.Services
                 foreach (var teamId in teamIds)
                 {
                     var newTeamCard = new TeamCard() {
-                        TeamId = teamId,
+                        TeamId = galleryTeamDictionary[teamId],
                         CardId = (Guid)card.GalleryId
                     };
                     await _galleryApiClient.CreateTeamCardAsync(newTeamCard, ct);
@@ -261,7 +247,7 @@ namespace Blueprint.Api.Services
         }
 
         // Create Gallery Articles for this MSEL
-        private async Task CreateArticlesAsync(MselEntity msel, CancellationToken ct)
+        private async Task CreateArticlesAsync(MselEntity msel, Dictionary<Guid, Guid> galleryTeamDictionary, CancellationToken ct)
         {
             var mselTeams = await _context.MselTeams
                 .Where(mt => mt.MselId == msel.Id)
@@ -321,7 +307,7 @@ namespace Blueprint.Api.Services
                     {
                         var newArticleTeam = new TeamArticle() {
                             ExhibitId = (Guid)msel.GalleryExhibitId,
-                            TeamId = teamId,
+                            TeamId = galleryTeamDictionary[teamId],
                             ArticleId = galleryArticle.Id
                         };
                         await _galleryApiClient.CreateTeamArticleAsync(newArticleTeam, ct);

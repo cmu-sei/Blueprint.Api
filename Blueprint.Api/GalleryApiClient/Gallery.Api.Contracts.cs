@@ -3232,6 +3232,9 @@ namespace Gallery.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("id")]
         public System.Guid Id { get; set; }
 
+        [System.Text.Json.Serialization.JsonPropertyName("exhibitId")]
+        public System.Guid? ExhibitId { get; set; }
+
         [System.Text.Json.Serialization.JsonPropertyName("name")]
         public string Name { get; set; }
 

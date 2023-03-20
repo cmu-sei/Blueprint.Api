@@ -28,6 +28,7 @@ namespace Blueprint.Api.Data.Models
 
         public Guid MselId { get; set; }
         public MselEntity Msel { get; set; }
+        public Guid? CiteTeamTypeId { get; set; }
     }
 
     public class MselTeamConfiguration : IEntityTypeConfiguration<MselTeamEntity>

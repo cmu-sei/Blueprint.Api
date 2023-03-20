@@ -26,6 +26,7 @@ namespace Blueprint.Api.Services
     public interface ICiteService
     {
         Task<IEnumerable<ScoringModel>> GetScoringModelsAsync(CancellationToken ct);
+        Task<IEnumerable<TeamType>> GetTeamTypesAsync(CancellationToken ct);
         Task<ViewModels.Msel> PushToCiteAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Msel> PullFromCiteAsync(Guid mselId, CancellationToken ct);
     }
@@ -72,6 +73,20 @@ namespace Blueprint.Api.Services
 
         }
 
+        public async Task<IEnumerable<TeamType>> GetTeamTypesAsync(CancellationToken ct)
+        {
+            var teamTypes = new List<TeamType>();
+            try
+            {
+                teamTypes = (List<TeamType>)await _citeApiClient.GetTeamTypesAsync(ct);
+            }
+            catch (System.Exception)
+            {
+            }
+            return (IEnumerable<TeamType>)teamTypes;
+
+        }
+
         public async Task<ViewModels.Msel> PushToCiteAsync(Guid mselId, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
@@ -92,11 +107,11 @@ namespace Blueprint.Api.Services
             // create the Cite Evaluation
             await CreateEvaluationAsync(msel, ct);
             // create the Cite Teams
-            await CreateTeamsAsync(msel, ct);
+            var citeTeamDictionary = await CreateTeamsAsync(msel, ct);
             // create the Cite Roles
-            await CreateRolesAsync(msel, ct);
+            await CreateRolesAsync(msel, citeTeamDictionary, ct);
             // create the Cite Actions
-            await CreateActionsAsync(msel, ct);
+            await CreateActionsAsync(msel, citeTeamDictionary, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
@@ -145,12 +160,11 @@ namespace Blueprint.Api.Services
         }
 
         // Create Cite Teams for this MSEL
-        private async Task CreateTeamsAsync(MselEntity msel, CancellationToken ct)
+        private async Task<Dictionary<Guid, Guid>> CreateTeamsAsync(MselEntity msel, CancellationToken ct)
         {
+            var citeTeamDictionary = new Dictionary<Guid, Guid>();
             // get the Cite teams, Cite Users, and the Cite TeamUsers
-            var citeTeams = await _citeApiClient.GetTeamsAsync(ct);
             var citeUserIds = (await _citeApiClient.GetUsersAsync(ct)).Select(u => u.Id);
-            var citeTeamUsers = await _citeApiClient.GetTeamUsersAsync(ct);
             // get the teams for this MSEL and loop through them
             var teams = await _context.MselTeams
                 .Where(mt => mt.MselId == msel.Id)
@@ -158,24 +172,16 @@ namespace Blueprint.Api.Services
                 .ToListAsync();
             foreach (var team in teams)
             {
-                // if this team doesn't exist in Cite, create it
-                var citeTeam = citeTeams.FirstOrDefault(t => t.Id == team.Id);
-                if (citeTeam == null)
-                {
-                    citeTeam = new Team() {
-                        Id = team.Id,
-                        Name = team.Name,
-                        ShortName = team.ShortName,
-                        TeamTypeId = 
-                    };
-                    citeTeam = await _citeApiClient.CreateTeamAsync(citeTeam, ct);
-                }
-                // add the cite team to the cite evaluation, if necessary
-                var citeExhibitTeam = new EvaluationTeam() {
-                    TeamId = team.Id,
+                var citeTeamId = Guid.NewGuid();
+                // create team in Cite
+                var citeTeam = new Team() {
+                    Id = citeTeamId,
+                    Name = team.Name,
+                    ShortName = team.ShortName,
                     EvaluationId = (Guid)msel.CiteEvaluationId
                 };
-                await _citeApiClient.CreateEvaluationTeamAsync(citeExhibitTeam, ct);
+                citeTeam = await _citeApiClient.CreateTeamAsync(citeTeam, ct);
+                citeTeamDictionary.Add(team.Id, citeTeam.Id);
                 // get all of the users for this team and loop through them
                 var users = await _context.TeamUsers
                     .Where(tu => tu.TeamId == team.Id)
@@ -192,28 +198,27 @@ namespace Blueprint.Api.Services
                         };
                         await _citeApiClient.CreateUserAsync(newUser, ct);
                     }
-                    // if there is no Cite TeamUser, create it
-                    if (!citeTeamUsers.Any(tu => tu.TeamId == citeTeam.Id && tu.UserId == user.Id))
-                    {
-                        var teamUser = new TeamUser() {
-                            TeamId = citeTeam.Id,
-                            UserId = user.Id
-                        };
-                        await _citeApiClient.CreateTeamUserAsync(teamUser, ct);
-                    }
+                    // create Cite TeamUsers
+                    var teamUser = new TeamUser() {
+                        TeamId = citeTeam.Id,
+                        UserId = user.Id
+                    };
+                    await _citeApiClient.CreateTeamUserAsync(teamUser, ct);
                 }
             }
+
+            return citeTeamDictionary;
         }
 
         // Create Cite Roles for this MSEL
-        private async Task CreateRolesAsync(MselEntity msel, CancellationToken ct)
+        private async Task CreateRolesAsync(MselEntity msel, Dictionary<Guid, Guid> citeTeamDictionary, CancellationToken ct)
         {
             foreach (var role in msel.CiteRoles)
             {
                 Role citeRole = new Role() {
                     EvaluationId = (Guid)msel.CiteEvaluationId,
                     Name = role.Name,
-                    TeamId = role.TeamId
+                    TeamId = citeTeamDictionary[role.TeamId]
                 };
                 citeRole = await _citeApiClient.CreateRoleAsync(citeRole, ct);
                 await _context.SaveChangesAsync(ct);
@@ -221,14 +226,14 @@ namespace Blueprint.Api.Services
         }
 
         // Create Cite Articles for this MSEL
-        private async Task CreateActionsAsync(MselEntity msel, CancellationToken ct)
+        private async Task CreateActionsAsync(MselEntity msel, Dictionary<Guid, Guid> citeTeamDictionary, CancellationToken ct)
         {
             foreach (var action in msel.CiteActions)
             {
                 // create the action
                 Cite.Api.Client.Action citeAction = new Cite.Api.Client.Action() {
                     EvaluationId = (Guid)msel.CiteEvaluationId,
-                    TeamId = action.TeamId,
+                    TeamId = citeTeamDictionary[action.TeamId],
                     MoveNumber = action.MoveNumber,
                     InjectNumber = action.InjectNumber,
                     Description = action.Description

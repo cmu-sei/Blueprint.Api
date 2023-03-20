@@ -42,6 +42,23 @@ namespace Blueprint.Api.Controllers
             return Ok(list);
         }
 
+        /// <summary>
+        /// Gets all TeamTypes
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of all of the TeamTypes.
+        /// </remarks>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("teamtypes")]
+        [ProducesResponseType(typeof(IEnumerable<TeamType>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getTeamTypes")]
+        public async Task<IActionResult> GetTeamTypes(CancellationToken ct)
+        {
+            var list = await _citeService.GetTeamTypesAsync(ct);
+            return Ok(list);
+        }
+
     }
 
 }

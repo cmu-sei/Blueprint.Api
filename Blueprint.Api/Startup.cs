@@ -113,6 +113,7 @@ namespace Blueprint.Api
                 options.JsonSerializerOptions.Converters.Add(new JsonDoubleConverter());
                 options.JsonSerializerOptions.Converters.Add(new JsonIntegerConverter());
                 options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+                options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
             });
 
             services.AddSwagger(_authOptions);

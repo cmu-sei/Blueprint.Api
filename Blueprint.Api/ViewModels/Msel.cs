@@ -19,6 +19,7 @@ namespace Blueprint.Api.ViewModels
         public Guid? GalleryExhibitId { get; set; }
         public bool UseCite { get; set; }
         public Guid? CiteEvaluationId { get; set; }
+        public Guid? CiteScoringModelId { get; set; }
         public bool UseSteamfitter { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
         public bool IsTemplate { get; set; }

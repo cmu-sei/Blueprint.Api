@@ -113,12 +113,15 @@ namespace Blueprint.Api
                 options.JsonSerializerOptions.Converters.Add(new JsonDoubleConverter());
                 options.JsonSerializerOptions.Converters.Add(new JsonIntegerConverter());
                 options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+                options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
             });
 
             services.AddSwagger(_authOptions);
             services.ConfigureSwaggerGen(options => {
                 options.CustomSchemaIds(x => x.FullName);
             });
+            services.AddCiteApiClient();
+            services.AddGalleryApiClient();
             services.AddPlayerApiClient();
             services.AddSteamfitterApiClient();
 
@@ -157,6 +160,7 @@ namespace Blueprint.Api
 
             services.AddScoped<ICardService, CardService>();
             services.AddScoped<ICardTeamService, CardTeamService>();
+            services.AddScoped<ICiteService, CiteService>();
             services.AddScoped<ICiteActionService, CiteActionService>();
             services.AddScoped<ICiteRoleService, CiteRoleService>();
             services.AddScoped<IDataFieldService, DataFieldService>();
@@ -164,6 +168,7 @@ namespace Blueprint.Api
             services.AddScoped<IDataValueService, DataValueService>();
             services.AddScoped<IScenarioEventService, ScenarioEventService>();
             services.AddScoped<IMselService, MselService>();
+            services.AddScoped<IMselTeamService, MselTeamService>();
             services.AddScoped<IGalleryService, GalleryService>();
             services.AddScoped<IMoveService, MoveService>();
             services.AddScoped<IOrganizationService, OrganizationService>();

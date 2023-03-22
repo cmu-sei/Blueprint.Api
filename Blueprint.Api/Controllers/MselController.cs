@@ -21,12 +21,18 @@ namespace Blueprint.Api.Controllers
     public class MselController : BaseController
     {
         private readonly IMselService _mselService;
+        private readonly ICiteService _citeService;
         private readonly IGalleryService _galleryService;
         private readonly IAuthorizationService _authorizationService;
 
-        public MselController(IMselService mselService, IGalleryService galleryService, IAuthorizationService authorizationService)
+        public MselController(
+            IMselService mselService,
+            ICiteService citeService,
+            IGalleryService galleryService,
+            IAuthorizationService authorizationService)
         {
             _mselService = mselService;
+            _citeService = citeService;
             _galleryService = galleryService;
             _authorizationService = authorizationService;
         }
@@ -305,6 +311,52 @@ namespace Blueprint.Api.Controllers
         }
 
         //
+        // Cite Integration Section
+        //
+
+        /// <summary>
+        /// Push to Cite
+        /// </summary>
+        /// <remarks>
+        /// Pushes all Cite associated MSEL information to Cite
+        ///   * Collection, Exhibit, Cards, Articles, and Teams
+        /// for the specified MSEL
+        /// <para />
+        /// Accessible only to a ContentDeveloper or MSEL owner
+        /// </remarks>
+        /// <param name="id"></param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{id}/cite")]
+        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "pushToCite")]
+        public async Task<IActionResult> PushToCite(Guid id, CancellationToken ct)
+        {
+            var msel = await _citeService.PushToCiteAsync(id, ct);
+            return Ok(msel);
+        }
+
+        /// <summary>
+        /// Pull from Cite
+        /// </summary>
+        /// <remarks>
+        /// Pulls the Collection and associated information from Cite
+        ///   * Collection, Exhibit, Cards, Articles, and Teams
+        /// for the specified MSEL
+        /// <para />
+        /// Accessible only to a ContentDeveloper or an Administrator
+        /// </remarks>
+        /// <param name="id">The id of the Collection to delete</param>
+        /// <param name="ct"></param>
+        [HttpDelete("msels/{id}/cite")]
+        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.NoContent)]
+        [SwaggerOperation(OperationId = "pullFromCite")]
+        public async Task<IActionResult> PullFromCite(Guid id, CancellationToken ct)
+        {
+            var msel = await _citeService.PullFromCiteAsync(id, ct);
+            return Ok(msel);
+        }
+
+        //
         // Gallery Integration Section
         //
 
@@ -349,7 +401,6 @@ namespace Blueprint.Api.Controllers
             var msel = await _galleryService.PullFromGalleryAsync(id, ct);
             return Ok(msel);
         }
-
 
     }
 }

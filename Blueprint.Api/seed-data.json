@@ -4,7 +4,7 @@
       "Id": "2f82cb36-4c0a-4b60-857f-c4f2a9e70817",
       "Key": "SystemAdmin",
       "Value": "true",
-      "Description": "Has Full Rights.  Can access administration pages.",
+      "Description": "Has Full Rights. Can access administration pages.",
       "ReadOnly": true
     },
     {
@@ -32,6 +32,11 @@
       "Id": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8",
       "Name": "Administrators",
       "ShortName": "Admin"
+    },
+    {
+      "Id": "24a88c94-5d9a-4a62-8304-d49f559cace1",
+      "Name": "Exercise Control",
+      "ShortName": "EXERCISE-CONTROL"
     }
   ],
   "TeamUsers": [
@@ -68,6 +73,16 @@
       "Id": "3434c38e-58b0-4af1-80d1-1895af913434",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "TeamId": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8"
+    },
+    {
+      "Id": "2369b966-28f1-40ed-8a34-fb85461cda1e",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "TeamId": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8"
+    },
+    {
+      "Id": "c71ca281-3437-4ac6-93d2-0127be1e306d",
+      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
+      "TeamId": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8"
     }
   ],
   "ScenarioEvents": [
@@ -79,10 +94,26 @@
   ],
   "Moves": [
     {
+      "Id": "7eae18bb-8259-407d-9df5-f6fc82503c8a",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Title": "Phase 0",
+      "Description": "Pre-Exercise",
+      "MoveNumber": 0,
+      "MoveStartTime": "2023-02-02T00:00:00Z",
+      "MoveStopTime": "2023-02-02T08:00:00Z",
+      "SituationTime": "2022-07-04T00:00:00Z",
+      "SituationDescription": "Please enough you have access to all systems."
+    },
+    {
       "Id": "bb6dbeb0-c441-4b54-8e91-3716e3404e42",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Title": "Phase 1",
       "Description": "The fun begins",
       "MoveNumber": 1,
-      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31"
+      "MoveStartTime": "2023-02-02T08:00:00Z",
+      "MoveStopTime": "2023-02-02T10:00:00Z",
+      "SituationTime": "2022-07-04T12:00:00Z",
+      "SituationDescription": "The first period of the exercise."
     }
   ],
   "Organizations": [
@@ -119,12 +150,14 @@
   ],
   "DataFields": [
     {
-      "Id": "aa8dbeb0-cccc-4b54-0001-3716e3404d31",
+      "Id": "dd2740d6-8586-4c4b-be3b-12cd4088958e",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
-      "Name": "ScenarioEvent",
-      "DataType": 10,
+      "Name": "Control Number",
+      "DataType": 0,
       "DisplayOrder": 1,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
     },
     {
       "Id": "aa8dbeb0-cccc-4b54-0002-3716e3404d31",
@@ -132,143 +165,119 @@
       "Name": "Move",
       "DataType": 10,
       "DisplayOrder": 2,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
+    },
+    {
+      "Id": "7932abe3-2eb6-4a34-a85f-16e979aee805",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "Group",
+      "DataType": 10,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
     },
     {
       "Id": "aa8dbeb0-cccc-4b54-0005-3716e3404d31",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
-      "Name": "Real Time",
+      "Name": "Delivery Time",
       "DataType": 40,
-      "DisplayOrder": 3,
-      "IsChosenFromList": false
+      "DisplayOrder": 4,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
     },
     {
       "Id": "aa8dbeb0-cccc-4b54-0006-3716e3404d31",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Simulated Time",
       "DataType": 40,
-      "DisplayOrder": 4,
-      "IsChosenFromList": false
+      "DisplayOrder": 5,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
+    },
+    {
+      "Id": "84fcff11-eab0-4450-a74f-0e4adf0b5878",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "Assigned To",
+      "DataType": 50,
+      "DisplayOrder": 6,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
+    },
+    {
+      "Id": "6fb49ebd-3c4f-45ce-8442-a7b9ece7af60",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "Status",
+      "DataType": 110,
+      "DisplayOrder": 7,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
     },
     {
       "Id": "aa8dbeb0-cccc-4b54-0003-3716e3404d31",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Title",
       "DataType": 0,
-      "DisplayOrder": 4,
-      "IsChosenFromList": false
+      "DisplayOrder": 8,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
     },
     {
       "Id": "aa8dbeb0-cccc-4b54-0004-3716e3404d31",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Description",
       "DataType": 0,
-      "DisplayOrder": 5,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "aa8dbeb0-cccc-4b54-0007-3716e3404d31",
-      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
-      "Name": "To",
-      "DataType": 100,
-      "DisplayOrder": 6,
-      "IsChosenFromList": false
+      "DisplayOrder": 9,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false
     },
     {
       "Id": "aa8dbeb0-cccc-4b54-0008-3716e3404d31",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
-      "Name": "From",
+      "Name": "From Org",
       "DataType": 50,
-      "DisplayOrder": 7,
-      "IsChosenFromList": false
+      "DisplayOrder": 10,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
+    },
+    {
+      "Id": "aa8dbeb0-cccc-4b54-0007-3716e3404d31",
+      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
+      "Name": "To Org",
+      "DataType": 100,
+      "DisplayOrder": 11,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
     },
     {
       "Id": "aa8dbeb0-cccc-4b54-0009-3716e3404d31",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Details",
       "DataType": 0,
-      "DisplayOrder": 8,
-      "IsChosenFromList": false
+      "DisplayOrder": 12,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false
     },
     {
       "Id": "aa8dbeb0-cccc-4b54-0010-3716e3404d31",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Expected Actions",
       "DataType": 0,
-      "DisplayOrder": 9,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "368ee9bf-4215-4529-b5c4-0a370c63ddf5",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Measure of Performance",
-      "DataType": 0,
-      "DisplayOrder": 10,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "0efe53d5-7796-48b6-8995-648b2b03f3f0",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Expected Actions",
-      "DataType": 0,
-      "DisplayOrder": 9,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "635d1b70-c3f0-4438-8efb-537c055cd92f",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Notes",
-      "DataType": 0,
-      "DisplayOrder": 8,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "0fefb2d3-9ec4-476b-8089-326b44d84be2",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Assumptions",
-      "DataType": 0,
-      "DisplayOrder": 7,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "799fbff6-a282-4edb-9b68-79541f26ab7d",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Description",
-      "DataType": 0,
-      "DisplayOrder": 6,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "b8fd568b-291d-46b3-aa18-8e9628a8b5fc",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Title",
-      "DataType": 0,
-      "DisplayOrder": 5,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "20a5e54c-3631-4d36-96c5-73e7e01528da",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Target",
-      "DataType": 0,
-      "DisplayOrder": 4,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "f4e37018-0501-4ec0-849b-2618bec0c797",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Delivery Method",
-      "DataType": 0,
-      "DisplayOrder": 3,
-      "IsChosenFromList": false
-    },
-    {
-      "Id": "971e4e80-94da-4d0a-bb50-24056816e738",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "Name": "Local Time",
-      "DataType": 40,
-      "DisplayOrder": 2,
-      "IsChosenFromList": false
+      "DisplayOrder": 13,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false
     },
     {
       "Id": "63935ad4-57dd-4778-aaa8-febef5c57761",
@@ -276,7 +285,99 @@
       "Name": "ID",
       "DataType": 0,
       "DisplayOrder": 1,
-      "IsChosenFromList": false
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
+    },
+    {
+      "Id": "971e4e80-94da-4d0a-bb50-24056816e738",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Local Time",
+      "DataType": 40,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
+    },
+    {
+      "Id": "f4e37018-0501-4ec0-849b-2618bec0c797",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Delivery Method",
+      "DataType": 0,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
+    },
+    {
+      "Id": "20a5e54c-3631-4d36-96c5-73e7e01528da",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Target",
+      "DataType": 0,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
+    },
+    {
+      "Id": "b8fd568b-291d-46b3-aa18-8e9628a8b5fc",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Title",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
+    },
+    {
+      "Id": "799fbff6-a282-4edb-9b68-79541f26ab7d",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Description",
+      "DataType": 0,
+      "DisplayOrder": 6,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
+    },
+    {
+      "Id": "0fefb2d3-9ec4-476b-8089-326b44d84be2",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Assumptions",
+      "DataType": 0,
+      "DisplayOrder": 7,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
+    },
+    {
+      "Id": "635d1b70-c3f0-4438-8efb-537c055cd92f",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Notes",
+      "DataType": 0,
+      "DisplayOrder": 8,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
+    },
+    {
+      "Id": "0efe53d5-7796-48b6-8995-648b2b03f3f0",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Expected Actions",
+      "DataType": 0,
+      "DisplayOrder": 9,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
+    },
+    {
+      "Id": "368ee9bf-4215-4529-b5c4-0a370c63ddf5",
+      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
+      "Name": "Measure of Performance",
+      "DataType": 0,
+      "DisplayOrder": 10,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true
     },
     {
       "Id": "c6413885-67fc-40bc-8e07-876d8ac4f021",
@@ -361,7 +462,7 @@
     {
       "Id": "ce4708a5-b403-4c59-a7d1-95757c45ae86",
       "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
-      "Name": "Scenario Time",
+      "Name": "Designated Scenario Time",
       "DataType": 40,
       "DisplayOrder": 2,
       "IsChosenFromList": false,
@@ -369,35 +470,35 @@
       "OnExerciseView": false
     },
     {
-      "Id": "dd2740d6-8586-4c4b-be3b-12cd4088958e",
+      "Id": "55015359-6f35-4bb8-bde0-cc390101437d",
       "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
-      "Name": "Control Number",
-      "DataType": 0,
+      "Name": "Event Number",
+      "DataType": 10,
       "DisplayOrder": 1,
       "IsChosenFromList": false,
       "OnScenarioEventList": true,
-      "OnExerciseView": false
+      "OnExerciseView": true
     }
   ],
   "DataOptions": [
     {
       "Id": "c14dccb2-ec6b-4de2-a1f8-692f64f5fa51",
-      "OptionName": "Email",
-      "OptionValue": "Email",
+      "OptionName": "Inject",
+      "OptionValue": "Inject",
       "DisplayOrder": 0,
       "DataFieldId": "3ee555ef-181c-45f8-9b07-988a4489a9f3"
     },
     {
       "Id": "dcdfa56d-9fe1-4e0f-8458-8cf05e8796f7",
-      "OptionName": "Gallery",
-      "OptionValue": "Gallery",
+      "OptionName": "Contingency Inject",
+      "OptionValue": "Contingency Inject",
       "DisplayOrder": 1,
       "DataFieldId": "3ee555ef-181c-45f8-9b07-988a4489a9f3"
     },
     {
       "Id": "b3d9f0b9-44c8-4670-973c-9f7f03469b13",
-      "OptionName": "Notification",
-      "OptionValue": "Notification",
+      "OptionName": "Expected Action",
+      "OptionValue": "Expected Action",
       "DisplayOrder": 2,
       "DataFieldId": "3ee555ef-181c-45f8-9b07-988a4489a9f3"
     }

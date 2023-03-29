@@ -175,6 +175,9 @@ namespace Blueprint.Api.Services
             // update the MSEL
             msel.CiteEvaluationId = newEvaluation.Id;
             await _context.SaveChangesAsync(ct);
+            // delete the default move 0 that was created when the evaluation was created
+            var defaultMoveId = newEvaluation.Moves.Single().Id;
+            await _citeApiClient.DeleteMoveAsync(defaultMoveId);
         }
 
         // Create Cite Moves for this MSEL

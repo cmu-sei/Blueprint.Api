@@ -7,11 +7,8 @@ namespace Blueprint.Api.Infrastructure.Authorization
     {
         SystemAdmin,
         ContentDeveloper,
-        Operator,
+        Facilitator,
         BaseUser,
-        CanIncrementMove,
-        CanModify,
-        CanSubmit,
         MselUser,
         TeamUser
     }

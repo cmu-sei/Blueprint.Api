@@ -17,13 +17,16 @@ namespace Blueprint.Api.Data.Enumerations
         Double = 20,
         Boolean = 30,
         DateTime = 40,
-        Organization = 50,
+        Organization = 50,    // includes teams and organizations, currently used for the from
         Html = 60,
         Card = 70,
         SourceType = 80,
-        Team = 90,
-        TeamsMultiple = 100,
-        Status = 110
+        Team = 90,    // a single team, currently used for the team assigned to an inject
+        TeamsMultiple = 100,    // currently used for the to of an inject
+        Status = 110,    // used for the status of the inject as it is being created and approved
+        User = 120,    // user assigned to the inject.  For execution, etc.
+        Checkbox = 130,    // used to track statuses about the inject.
+        Url = 140    // link to other information
     }
 
     public enum MselRole{

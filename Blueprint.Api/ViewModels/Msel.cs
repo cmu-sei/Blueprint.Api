@@ -35,6 +35,7 @@ namespace Blueprint.Api.ViewModels
         public List<string> GallerySourceTypes { get; set; } = new List<string>(); // the source types that must be sent to Gallery to define an Article
         public virtual ICollection<CiteRole> CiteRoles { get; set; } = new HashSet<CiteRole>();
         public virtual ICollection<CiteAction> CiteActions { get; set; } = new HashSet<CiteAction>();
+        public ICollection<MselPage> Pages { get; set; } = new List<MselPage>();
    }
 }
 

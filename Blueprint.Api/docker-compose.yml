@@ -11,7 +11,7 @@ services:
     environment:
       POSTGRES_DB: msel_api
       POSTGRES_USER: msel
-      POSTGRES_PASSWORD: Tartans@@1
+      POSTGRES_PASSWORD: blueprint
     volumes:
       - ./_data:/var/lib/postgresql/data
     logging:

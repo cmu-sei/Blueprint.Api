@@ -26,7 +26,7 @@ namespace Blueprint.Api.Data.Models
     {
         public void Configure(EntityTypeBuilder<MselPageEntity> builder)
         {
-            builder.HasIndex(x => x.MselId).IsUnique();
+            builder.HasIndex(x => x.Id).IsUnique();
 
             builder
                 .HasOne(u => u.Msel)

@@ -535,6 +535,36 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.ToTable("msels");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselPageEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<string>("Content")
+                        .HasColumnType("text")
+                        .HasColumnName("content");
+
+                    b.Property<Guid>("MselId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("msel_id");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Id")
+                        .IsUnique();
+
+                    b.HasIndex("MselId");
+
+                    b.ToTable("msel_pages");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselTeamEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1017,6 +1047,17 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Msel");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselPageEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
+                        .WithMany("Pages")
+                        .HasForeignKey("MselId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Msel");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselTeamEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
@@ -1139,6 +1180,8 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("MselTeams");
 
                     b.Navigation("Organizations");
+
+                    b.Navigation("Pages");
 
                     b.Navigation("ScenarioEvents");
 

@@ -168,6 +168,7 @@ namespace Blueprint.Api
             services.AddScoped<IDataValueService, DataValueService>();
             services.AddScoped<IScenarioEventService, ScenarioEventService>();
             services.AddScoped<IMselService, MselService>();
+            services.AddScoped<IMselPageService, MselPageService>();
             services.AddScoped<IMselTeamService, MselTeamService>();
             services.AddScoped<IGalleryService, GalleryService>();
             services.AddScoped<IMoveService, MoveService>();

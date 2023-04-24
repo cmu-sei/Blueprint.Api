@@ -36,11 +36,13 @@ namespace Blueprint.Api
     {
         public Infrastructure.Options.AuthorizationOptions _authOptions = new Infrastructure.Options.AuthorizationOptions();
         public IConfiguration Configuration { get; }
+        private string _pathbase;
 
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration;
             Configuration.GetSection("Authorization").Bind(_authOptions);
+            _pathbase = Configuration["PathBase"];
         }
 
         // This method gets called by the runtime. Use this method to add services to the container.
@@ -207,6 +209,7 @@ namespace Blueprint.Api
             {
                 app.UseDeveloperExceptionPage();
             }
+            app.UsePathBase(_pathbase);
             app.UseRouting();
             app.UseCors("default");
 
@@ -233,7 +236,7 @@ namespace Blueprint.Api
             app.UseSwaggerUI(c =>
             {
                 c.RoutePrefix = "api";
-                c.SwaggerEndpoint("/swagger/v1/swagger.json", "Blueprint v1");
+                c.SwaggerEndpoint($"{_pathbase}/swagger/v1/swagger.json", "Blueprint v1");
                 c.OAuthClientId(_authOptions.ClientId);
                 c.OAuthClientSecret(_authOptions.ClientSecret);
                 c.OAuthAppName(_authOptions.ClientName);

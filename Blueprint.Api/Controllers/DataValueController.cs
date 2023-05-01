@@ -10,7 +10,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -26,6 +25,24 @@ namespace Blueprint.Api.Controllers
         {
             _dataValueService = dataValueService;
             _authorizationService = authorizationService;
+        }
+
+        /// <summary>
+        /// Gets DataValues by msel
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of DataValues for the msel.
+        /// </remarks>
+        /// <param name="mselId"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("msels/{mselId}/dataValues")]
+        [ProducesResponseType(typeof(IEnumerable<DataValue>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getByMsel")]
+        public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
+        {
+            var list = await _dataValueService.GetByMselAsync(mselId, ct);
+            return Ok(list);
         }
 
         /// <summary>

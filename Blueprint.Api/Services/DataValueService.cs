@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
@@ -22,6 +23,7 @@ namespace Blueprint.Api.Services
 {
     public interface IDataValueService
     {
+        Task<IEnumerable<ViewModels.DataValue>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.DataValue> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValue DataValue, CancellationToken ct);
         Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValue DataValue, CancellationToken ct);
@@ -45,6 +47,22 @@ namespace Blueprint.Api.Services
             _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
+        }
+
+        public async Task<IEnumerable<ViewModels.DataValue>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        {
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var scenarioEventIdList = await _context.ScenarioEvents
+                .Where(se => se.MselId == mselId)
+                .Select(se => se.Id)
+                .ToListAsync(ct);
+            var dataValueEntities = await _context.DataValues
+                .Where(dv => scenarioEventIdList.Contains(dv.ScenarioEventId))
+                .ToListAsync();
+
+            return _mapper.Map<IEnumerable<DataValue>>(dataValueEntities).ToList();;
         }
 
         public async Task<ViewModels.DataValue> GetAsync(Guid id, CancellationToken ct)

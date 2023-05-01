@@ -84,8 +84,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> Create([FromBody] DataField dataField, CancellationToken ct)
         {
             dataField.CreatedBy = User.GetId();
-            var dataFields = await _dataFieldService.CreateAsync(dataField, ct);
-            return Ok(dataFields);
+            var result = await _dataFieldService.CreateAsync(dataField, ct);
+            return Ok(result);
         }
 
         /// <summary>
@@ -106,8 +106,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] DataField dataField, CancellationToken ct)
         {
             dataField.ModifiedBy = User.GetId();
-            var dataFields = await _dataFieldService.UpdateAsync(id, dataField, ct);
-            return Ok(dataFields);
+            var result = await _dataFieldService.UpdateAsync(id, dataField, ct);
+            return Ok(result);
         }
 
         /// <summary>
@@ -121,12 +121,12 @@ namespace Blueprint.Api.Controllers
         /// <param name="id">The id of the DataField to delete</param>
         /// <param name="ct"></param>
         [HttpDelete("dataFields/{id}")]
-        [ProducesResponseType((int)HttpStatusCode.NoContent)]
+        [ProducesResponseType(typeof(Guid), (int)HttpStatusCode.NoContent)]
         [SwaggerOperation(OperationId = "deleteDataField")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            var dataFields = await _dataFieldService.DeleteAsync(id, ct);
-            return Ok(dataFields);
+            var result = await _dataFieldService.DeleteAsync(id, ct);
+            return Ok(result);
         }
 
     }

@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
@@ -21,7 +22,7 @@ namespace Blueprint.Api.Services
 {
     public interface IUserMselRoleService
     {
-        Task<IEnumerable<ViewModels.UserMselRole>> GetAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.UserMselRole>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.UserMselRole> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.UserMselRole> CreateAsync(ViewModels.UserMselRole userMselRole, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
@@ -42,12 +43,15 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
         }
 
-        public async Task<IEnumerable<ViewModels.UserMselRole>> GetAsync(CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.UserMselRole>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            // must be a MSEL viewer
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
 
             var items = await _context.UserMselRoles
+                .Where(umr => umr.MselId == mselId)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<UserMselRole>>(items);
@@ -55,18 +59,22 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.UserMselRole> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var item = await _context.UserMselRoles
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
+
+            // must be a MSEL viewer
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, _context)))
+                throw new ForbiddenException();
 
             return _mapper.Map<UserMselRole>(item);
         }
 
         public async Task<ViewModels.UserMselRole> CreateAsync(ViewModels.UserMselRole userMselRole, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            // must be a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), userMselRole.MselId, _context)))
                 throw new ForbiddenException();
 
             // start a transaction, because we may also update other data fields
@@ -90,13 +98,15 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var userMselRoleToDelete = await _context.UserMselRoles.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (userMselRoleToDelete == null)
                 throw new EntityNotFoundException<UserMselRole>();
+
+            // must be a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), userMselRoleToDelete.MselId, _context)))
+                throw new ForbiddenException();
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync();

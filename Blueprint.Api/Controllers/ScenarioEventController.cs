@@ -28,20 +28,20 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets ScenarioEvents
+        /// Gets ScenarioEvents for a MSEL
         /// </summary>
         /// <remarks>
-        /// Returns a list of ScenarioEvents.
+        /// Returns a list of ScenarioEvents for the MSEL.
         /// </remarks>
-        /// <param name="queryParameters">Result filtering criteria</param>
+        /// <param name="mselId">The ID of the MSEL</param>
         /// <param name="ct"></param>
         /// <returns></returns>
-        [HttpGet("scenarioEvents")]
+        [HttpGet("msels/{mselId}/scenarioEvents")]
         [ProducesResponseType(typeof(IEnumerable<ViewModels.ScenarioEvent>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getScenarioEvents")]
-        public async Task<IActionResult> Get([FromQuery] ScenarioEventGet queryParameters, CancellationToken ct)
+        [SwaggerOperation(OperationId = "getScenarioEventsByMsel")]
+        public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _scenarioEventService.GetAsync(queryParameters, ct);
+            var list = await _scenarioEventService.GetByMselAsync(mselId, ct);
             return Ok(list);
         }
 
@@ -80,7 +80,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="scenarioEvent">The data to create the ScenarioEvent with</param>
         /// <param name="ct"></param>
         [HttpPost("scenarioEvents")]
-        [ProducesResponseType(typeof(IEnumerable<ViewModels.ScenarioEvent>), (int)HttpStatusCode.Created)]
+        [ProducesResponseType(typeof(ViewModels.ScenarioEvent), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createScenarioEvent")]
         public async Task<IActionResult> Create([FromBody] ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
@@ -101,7 +101,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="scenarioEvent">The updated ScenarioEvent values</param>
         /// <param name="ct"></param>
         [HttpPut("scenarioEvents/{id}")]
-        [ProducesResponseType(typeof(IEnumerable<ViewModels.ScenarioEvent>), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(ViewModels.ScenarioEvent), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateScenarioEvent")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {

@@ -25,9 +25,9 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.DataField> GetAsync(Guid id, CancellationToken ct);
-         Task<IEnumerable<ViewModels.DataField>> CreateAsync(ViewModels.DataField dataField, CancellationToken ct);
-         Task<IEnumerable<ViewModels.DataField>> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct);
-         Task<IEnumerable<ViewModels.DataField>> DeleteAsync(Guid id, CancellationToken ct);
+         Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, CancellationToken ct);
+         Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct);
+         Task<Guid> DeleteAsync(Guid id, CancellationToken ct);
     }
 
     public class DataFieldService : IDataFieldService
@@ -71,7 +71,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<DataField>(item);
         }
 
-        public async Task<IEnumerable<ViewModels.DataField>> CreateAsync(ViewModels.DataField dataField, CancellationToken ct)
+        public async Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, CancellationToken ct)
         {
             // must be a content developer or MSEL owner
             // Content developers and MSEL owners can update anything, others require condition checks
@@ -98,10 +98,10 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return await GetByMselAsync(dataField.MselId, ct);
+            return _mapper.Map<DataField>(dataFieldEntity);
         }
 
-        public async Task<IEnumerable<ViewModels.DataField>> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct)
+        public async Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct)
         {
             // must be a content developer or MSEL owner
             // Content developers and MSEL owners can update anything, others require condition checks
@@ -138,10 +138,10 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return await GetByMselAsync(dataField.MselId, ct);
+            return _mapper.Map<DataField>(dataFieldToUpdate);;
         }
 
-        public async Task<IEnumerable<ViewModels.DataField>> DeleteAsync(Guid id, CancellationToken ct)
+        public async Task<Guid> DeleteAsync(Guid id, CancellationToken ct)
         {
             var dataFieldToDelete = await _context.DataFields.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (dataFieldToDelete == null)
@@ -163,7 +163,7 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return await GetByMselAsync(dataFieldToDelete.MselId, ct);
+            return id;
         }
 
         //

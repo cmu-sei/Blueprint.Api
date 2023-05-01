@@ -121,12 +121,27 @@ namespace Blueprint.Api.Hubs
 
     public static class MainHubMethods
     {
+        public const string DataFieldCreated = "DataFieldCreated";
+        public const string DataFieldUpdated = "DataFieldUpdated";
+        public const string DataFieldDeleted = "DataFieldDeleted";
+        public const string DataValueCreated = "DataValueCreated";
+        public const string DataValueUpdated = "DataValueUpdated";
+        public const string DataValueDeleted = "DataValueDeleted";
         public const string MselCreated = "MselCreated";
         public const string MselUpdated = "MselUpdated";
         public const string MselDeleted = "MselDeleted";
+        public const string MoveCreated = "MoveCreated";
+        public const string MoveUpdated = "MoveUpdated";
+        public const string MoveDeleted = "MoveDeleted";
+        public const string MselTeamCreated = "MselTeamCreated";
+        public const string MselTeamUpdated = "MselTeamUpdated";
+        public const string MselTeamDeleted = "MselTeamDeleted";
         public const string OrganizationCreated = "OrganizationCreated";
         public const string OrganizationUpdated = "OrganizationUpdated";
         public const string OrganizationDeleted = "OrganizationDeleted";
+        public const string ScenarioEventCreated = "ScenarioEventCreated";
+        public const string ScenarioEventUpdated = "ScenarioEventUpdated";
+        public const string ScenarioEventDeleted = "ScenarioEventDeleted";
         public const string TeamCreated = "TeamCreated";
         public const string TeamUpdated = "TeamUpdated";
         public const string TeamDeleted = "TeamDeleted";
@@ -136,5 +151,8 @@ namespace Blueprint.Api.Hubs
         public const string UserCreated = "UserCreated";
         public const string UserUpdated = "UserUpdated";
         public const string UserDeleted = "UserDeleted";
+        public const string UserMselRoleCreated = "UserMselRoleCreated";
+        public const string UserMselRoleUpdated = "UserMselRoleUpdated";
+        public const string UserMselRoleDeleted = "UserMselRoleDeleted";
     }
 }

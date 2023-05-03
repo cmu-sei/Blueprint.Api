@@ -34,10 +34,28 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Returns a list of DataOptions for the msel.
         /// </remarks>
+        /// <param name="mselId"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("msels/{mselId}/dataOptions")]
+        [ProducesResponseType(typeof(IEnumerable<DataOption>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getByMsel")]
+        public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
+        {
+            var list = await _dataOptionService.GetByMselAsync(mselId, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
+        /// Gets DataOptions by DataField
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of DataOptions for the DataField.
+        /// </remarks>
         /// <param name="dataFieldId"></param>
         /// <param name="ct"></param>
         /// <returns></returns>
-        [HttpGet("msels/{dataFieldId}/dataOptions")]
+        [HttpGet("datafields/{dataFieldId}/dataOptions")]
         [ProducesResponseType(typeof(IEnumerable<DataOption>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getByDataField")]
         public async Task<IActionResult> GetByDataField(Guid dataFieldId, CancellationToken ct)

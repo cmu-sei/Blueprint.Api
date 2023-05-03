@@ -165,19 +165,10 @@ namespace Blueprint.Api.Services
             }
 
             var mselEntity = await _context.Msels
-                .Include(m => m.DataFields)
-                .ThenInclude(df => df.DataOptions)
-                .Include(m => m.ScenarioEvents)
-                .ThenInclude(se => se.DataValues)
                 .Include(m => m.MselTeams)
                 .ThenInclude(mt => mt.Team)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
-                .Include(m => m.UserMselRoles)
-                .Include(m => m.Moves)
-                .Include(m => m.Organizations)
-                .Include(m => m.Cards)
-                .Include(m => m.Pages)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
             var msel = _mapper.Map<Msel>(mselEntity);

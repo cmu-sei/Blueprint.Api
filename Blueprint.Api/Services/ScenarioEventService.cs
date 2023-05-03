@@ -25,10 +25,10 @@ namespace Blueprint.Api.Services
 {
     public interface IScenarioEventService
     {
-        Task<IEnumerable<ViewModels.ScenarioEvent>> GetAsync(ScenarioEventGet queryParameters, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct);
-        Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
-        Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
+        Task<ViewModels.ScenarioEvent> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
+        Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> DeleteAsync(Guid id, CancellationToken ct);
     }
 
@@ -55,47 +55,15 @@ namespace Blueprint.Api.Services
             _options = options;
         }
 
-        public async Task<IEnumerable<ViewModels.ScenarioEvent>> GetAsync(ScenarioEventGet queryParameters, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            IQueryable<ScenarioEventEntity> scenarioEvents = null;
+            // user must be a Content Developer or a MSEL viewer
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
+                throw new ForbiddenException();
 
-            // filter based on MSEL
-            if (!String.IsNullOrEmpty(queryParameters.MselId))
-            {
-                Guid mselId;
-                Guid.TryParse(queryParameters.MselId, out mselId);
-
-                if (
-                        !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
-                        !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
-                )
-                {
-                    var msel = await _context.Msels.FindAsync(mselId);
-                    if (!msel.IsTemplate)
-                        throw new ForbiddenException();
-                }
-
-                scenarioEvents = _context.ScenarioEvents
-                    .Where(i => i.MselId == mselId)
-                    .Include(se => se.DataValues);
-            }
-            if (scenarioEvents == null)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-                scenarioEvents = _context.ScenarioEvents;
-            }
-            else
-            {
-                // filter based on team
-                if (!String.IsNullOrEmpty(queryParameters.TeamId) && scenarioEvents != null)
-                {
-                    Guid teamId;
-                    Guid.TryParse(queryParameters.TeamId, out teamId);
-                    var mselIdList = await _context.MselTeams.Where(mt => mt.TeamId == teamId).Select(m => m.Id).ToListAsync();
-                    scenarioEvents = scenarioEvents.Where(i => mselIdList.Contains(i.MselId));
-                }
-            }
+            var scenarioEvents = _context.ScenarioEvents
+                .Where(i => i.MselId == mselId);
             // order the results
             scenarioEvents = scenarioEvents.OrderBy(n => n.RowIndex);
 
@@ -118,7 +86,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<ViewModels.ScenarioEvent>(item);
         }
 
-        public async Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
+        public async Task<ViewModels.ScenarioEvent> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
@@ -162,17 +130,13 @@ namespace Blueprint.Api.Services
             await RenumberRowIndexes(scenarioEventEntity, false, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventEntity.MselId, scenarioEventEntity.CreatedBy, scenarioEventEntity.DateCreated, _context, ct);
-            var scenarioEventEnitities = await _context.ScenarioEvents
-                    .Where(i => i.MselId == scenarioEvent.MselId)
-                    .Include(se => se.DataValues)
-                    .ToListAsync(ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return  _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
+            return  _mapper.Map<ViewModels.ScenarioEvent>(scenarioEventEntity);
         }
 
-        public async Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
+        public async Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
             var canUpdateScenarioEvent = (await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded ||
                 (await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context));
@@ -189,11 +153,6 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
-            // update the data values for this scenario event
-            if (scenarioEvent.DataValues.Any())
-            {
-                await UpdateDataValues(scenarioEvent, ct);
-            }
             // determine if row indexes need updated for the other scenario events on this MSEL
             var updateRowIndexes = canUpdateScenarioEvent && (scenarioEventToUpdate.RowIndex != scenarioEvent.RowIndex);
             var newIndexIsGreater = scenarioEvent.RowIndex > scenarioEventToUpdate.RowIndex;
@@ -211,14 +170,10 @@ namespace Blueprint.Api.Services
             }
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventToUpdate.MselId, scenarioEventToUpdate.ModifiedBy, scenarioEventToUpdate.DateModified, _context, ct);
-            var scenarioEventEnitities = await _context.ScenarioEvents
-                    .Where(i => i.MselId == scenarioEvent.MselId)
-                    .Include(se => se.DataValues)
-                    .ToListAsync(ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
+            return _mapper.Map<ViewModels.ScenarioEvent>(scenarioEventToUpdate);
         }
 
         public async Task<IEnumerable<ViewModels.ScenarioEvent>> DeleteAsync(Guid id, CancellationToken ct)
@@ -249,49 +204,6 @@ namespace Blueprint.Api.Services
             await _context.Database.CommitTransactionAsync(ct);
 
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
-        }
-
-        private async Task UpdateDataValues(ScenarioEvent scenarioEvent, CancellationToken ct)
-        {
-            foreach (var dataValue in scenarioEvent.DataValues)
-            {
-                var dataValueToUpdate = await _context.DataValues
-                    .FindAsync(dataValue.Id);
-                if (dataValueToUpdate == null)
-                    throw new ArgumentException("A DataValue could not be found for ID " + dataValue.Id.ToString());
-                if (dataValue.Value != dataValueToUpdate.Value)
-                {
-                    var dataField = await _context.DataFields.SingleOrDefaultAsync(df => df.Id == dataValueToUpdate.DataFieldId);
-                    if (dataField == null)
-                        throw new EntityNotFoundException<DataField>($"For DataValue ID = {dataValue.Id} DataField ID = {dataValueToUpdate.DataFieldId}");
-
-                    // Content Developers and MSEL Owners can change every DataValue
-                    if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                        !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
-                    {
-                        // to change the assignedTeam, user must be a Content Developer or a MSEL owner
-                        if (dataField.DataType == DataFieldType.Team)
-                            throw new ForbiddenException("Cannot change the Assigned Team.");
-                        // MSEL Approvers can change everything else
-                        if (!(await MselApproverRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
-                        {
-                            // to change the status, user must be a MSEL approver
-                            if (dataField.DataType == DataFieldType.Status)
-                                    throw new ForbiddenException("Cannot change the Status.");
-                            // to change anything, user must be a MSEL editor
-                            if (!(await MselEditorRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
-                                throw new ForbiddenException();
-                        }
-                    }
-                    dataValue.CreatedBy = dataValueToUpdate.CreatedBy;
-                    dataValue.DateCreated = dataValueToUpdate.DateCreated;
-                    dataValue.ModifiedBy = _user.GetId();
-                    dataValue.DateModified = DateTime.UtcNow;
-                    _mapper.Map(dataValue, dataValueToUpdate);
-                    _context.DataValues.Update(dataValueToUpdate);
-                    await _context.SaveChangesAsync(ct);
-                }
-            }
         }
 
         private async Task<List<ScenarioEventEntity>> RenumberRowIndexes(ScenarioEventEntity scenarioEventEntity, bool newIndexIsGreater, CancellationToken ct)

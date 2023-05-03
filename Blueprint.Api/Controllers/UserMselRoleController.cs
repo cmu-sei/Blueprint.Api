@@ -28,20 +28,18 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets all UserMselRoles in the system
+        /// Gets all UserMselRoles for the msel
         /// </summary>
         /// <remarks>
-        /// Returns a list of all of the UserMselRoles in the system.
-        /// <para />
-        /// Only accessible to a SuperUser
+        /// Returns a list of all of the UserMselRoles for the msel.
         /// </remarks>
         /// <returns></returns>
-        [HttpGet("usermselroles")]
+        [HttpGet("msels/{mselId}/usermselroles")]
         [ProducesResponseType(typeof(IEnumerable<UserMselRole>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getUserMselRoles")]
-        public async Task<IActionResult> Get(CancellationToken ct)
+        [SwaggerOperation(OperationId = "getUserMselRolesByMsel")]
+        public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _userUserMselRoleService.GetAsync(ct);
+            var list = await _userUserMselRoleService.GetByMselAsync(mselId, ct);
             return Ok(list);
         }
 
@@ -50,8 +48,6 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Returns the UserMselRole with the id specified
-        /// <para />
-        /// Only accessible to a SuperUser
         /// </remarks>
         /// <param name="id">The id of the UserMselRole</param>
         /// <param name="ct"></param>

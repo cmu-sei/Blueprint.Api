@@ -58,6 +58,9 @@ namespace Blueprint.Api.Services
 
             var items = await _context.MselTeams
                 .Where(tc => tc.MselId == mselId)
+                .Include(mt => mt.Team)
+                .ThenInclude(t => t.TeamUsers)
+                .ThenInclude(tu => tu.User)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<MselTeam>>(items);
@@ -75,6 +78,9 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var item = await _context.MselTeams
+                .Include(mt => mt.Team)
+                .ThenInclude(t => t.TeamUsers)
+                .ThenInclude(tu => tu.User)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
             return _mapper.Map<MselTeam>(item);

@@ -16,14 +16,14 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Services
 {
     public interface IDataOptionService
     {
-        Task<IEnumerable<ViewModels.DataOption>> GetByDataFieldAsync(Guid mselId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.DataOption>> GetByMselAsync(Guid mselId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.DataOption>> GetByDataFieldAsync(Guid dataFieldId, CancellationToken ct);
         Task<ViewModels.DataOption> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.DataOption> CreateAsync(ViewModels.DataOption dataOption, CancellationToken ct);
         Task<ViewModels.DataOption> UpdateAsync(Guid id, ViewModels.DataOption dataOption, CancellationToken ct);
@@ -49,13 +49,29 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
         }
 
-        public async Task<IEnumerable<ViewModels.DataOption>> GetByDataFieldAsync(Guid mselId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.DataOption>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        {
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var dataFieldIdList = await _context.DataFields
+                .Where(df => df.MselId == mselId)
+                .Select(se => se.Id)
+                .ToListAsync(ct);
+            var dataOptionEntities = await _context.DataOptions
+                .Where(op => dataFieldIdList.Contains(op.DataFieldId))
+                .ToListAsync();
+
+            return _mapper.Map<IEnumerable<DataOption>>(dataOptionEntities).ToList();;
+        }
+
+        public async Task<IEnumerable<ViewModels.DataOption>> GetByDataFieldAsync(Guid dataFieldId, CancellationToken ct)
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
                 throw new ForbiddenException();
 
             var dataOptionEntities = await _context.DataOptions
-                .Where(dataOption => dataOption.DataFieldId == mselId)
+                .Where(dataOption => dataOption.DataFieldId == dataFieldId)
                 .ToListAsync();
 
             return _mapper.Map<IEnumerable<DataOption>>(dataOptionEntities).ToList();;

@@ -29,6 +29,7 @@ using System.Linq;
 using System.Security.Principal;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 namespace Blueprint.Api
 {
@@ -37,6 +38,7 @@ namespace Blueprint.Api
         public Infrastructure.Options.AuthorizationOptions _authOptions = new Infrastructure.Options.AuthorizationOptions();
         public IConfiguration Configuration { get; }
         private string _pathbase;
+        private const string _routePrefix = "api";
 
         public Startup(IConfiguration configuration)
         {
@@ -56,6 +58,7 @@ namespace Blueprint.Api
             }
 
             var provider = Configuration["Database:Provider"];
+             var connectionString = Configuration.GetConnectionString(provider);
             switch (provider)
             {
                 case "InMemory":
@@ -64,11 +67,22 @@ namespace Blueprint.Api
                         .UseInMemoryDatabase("api"));
                     break;
                 case "Sqlite":
+                    services.AddDbContextPool<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
+                        .AddInterceptors(serviceProvider.GetRequiredService<EntityTransactionInterceptor>())
+                        .UseConfiguredDatabase(Configuration))
+                        .AddHealthChecks().AddSqlite(connectionString, tags: new[] { "ready", "live"});
+                    break;
                 case "SqlServer":
+                    services.AddDbContextPool<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
+                        .AddInterceptors(serviceProvider.GetRequiredService<EntityTransactionInterceptor>())
+                        .UseConfiguredDatabase(Configuration))
+                        .AddHealthChecks().AddSqlServer(connectionString, tags: new[] { "ready", "live"});
+                    break;
                 case "PostgreSQL":
                     services.AddDbContextPool<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
                         .AddInterceptors(serviceProvider.GetRequiredService<EntityTransactionInterceptor>())
-                        .UseConfiguredDatabase(Configuration));
+                        .UseConfiguredDatabase(Configuration))
+                        .AddHealthChecks().AddNpgSql(connectionString, tags: new[] { "ready", "live"});
                     break;
             }
 
@@ -235,7 +249,7 @@ namespace Blueprint.Api
             app.UseSwagger();
             app.UseSwaggerUI(c =>
             {
-                c.RoutePrefix = "api";
+                c.RoutePrefix = _routePrefix;
                 c.SwaggerEndpoint($"{_pathbase}/swagger/v1/swagger.json", "Blueprint v1");
                 c.OAuthClientId(_authOptions.ClientId);
                 c.OAuthClientSecret(_authOptions.ClientSecret);
@@ -250,6 +264,14 @@ namespace Blueprint.Api
                 {
                     endpoints.MapControllers();
                     endpoints.MapHub<Hubs.MainHub>("/hubs/main");
+                    endpoints.MapHealthChecks($"/{_routePrefix}/health/ready", new HealthCheckOptions()
+                    {
+                        Predicate = (check) => check.Tags.Contains("ready"),
+                    });
+                    endpoints.MapHealthChecks($"/{_routePrefix}/health/live", new HealthCheckOptions()
+                    {
+                        Predicate = (check) => check.Tags.Contains("live"),
+                    });
                 }
             );
 

@@ -56,6 +56,7 @@ namespace Blueprint.Api.Services
 
             var dataFieldEntities = await _context.DataFields
                 .Where(dataField => dataField.MselId == mselId)
+                .Include(df => df.DataOptions)
                 .ToListAsync();
 
             return _mapper.Map<IEnumerable<DataField>>(dataFieldEntities).ToList();;

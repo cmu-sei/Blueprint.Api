@@ -16,8 +16,14 @@ namespace Blueprint.Api.Infrastructure.Mappings
                 .ForMember(m => m.Pages, opt => opt.ExplicitExpansion());
 
             CreateMap<Msel, MselEntity>()
+                .ForMember(m => m.Cards, opt => opt.Ignore())
+                .ForMember(m => m.DataFields, opt => opt.Ignore())
+                .ForMember(m => m.Moves, opt => opt.Ignore())
+                .ForMember(m => m.Organizations, opt => opt.Ignore())
+                .ForMember(m => m.Pages, opt => opt.Ignore())
+                .ForMember(m => m.ScenarioEvents, opt => opt.Ignore())
                 .ForMember(m => m.MselTeams, opt => opt.Ignore())
-                .ForMember(m => m.Moves, opt => opt.Ignore());
+                .ForMember(m => m.UserMselRoles, opt => opt.Ignore());
 
             CreateMap<MselEntity, MselEntity>()
                 .ForMember(e => e.Id, opt => opt.Ignore());

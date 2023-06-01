@@ -46,7 +46,9 @@ namespace Blueprint.Api.Hubs
 
         public async Task Join()
         {
-            var idList = await GetIdList();
+            var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
+            var idList = await GetMselIdList(userId);
+            idList.Add(userId);
             foreach (var id in idList)
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, id.ToString());
@@ -55,10 +57,32 @@ namespace Blueprint.Api.Hubs
 
         public async Task Leave()
         {
-            var idList = await GetIdList();
+            var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
+            var idList = await GetMselIdList(userId);
+            idList.Add(userId);
             foreach (var id in idList)
             {
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, id.ToString());
+            }
+        }
+
+        public async Task SelectMsel(Guid[] args)
+        {
+            // leave all other MSELs
+            var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
+            var idList = await GetMselIdList(userId);
+            foreach (var id in idList)
+            {
+                await Groups.RemoveFromGroupAsync(Context.ConnectionId, id.ToString());
+            }
+            // join the selected MSEL
+            if (args.Count() == 1)
+            {
+                var mselId = args[0].ToString();
+                if (idList.Contains(mselId))
+                {
+                    await Groups.AddToGroupAsync(Context.ConnectionId, mselId);
+                }
             }
         }
 
@@ -80,24 +104,26 @@ namespace Blueprint.Api.Hubs
             }
         }
 
-        private async Task<List<string>> GetIdList()
+        private async Task<List<string>> GetMselIdList(string userId)
         {
+            var userGuid = Guid.Parse(userId);
             var idList = new List<string>();
-            var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
-            idList.Add(userId);
-            // user's teams
-            var teamList = await  _context.TeamUsers
-                .Where(tu => tu.UserId == Guid.Parse(userId))
-                .Include(tu => tu.Team)
-                .Select(tu => tu.Team)
+            var teamIdList = await _context.TeamUsers
+                .Where(tu => tu.UserId == userGuid)
+                .Select(tu => tu.TeamId)
                 .ToListAsync();
-            var teamIdList = teamList.Select(t => t.Id.ToString()).ToList();
-            idList.AddRange(teamIdList);
-            // user's msels
-            var mselIdList = await _context.MselTeams
-                .Where(m => teamIdList.Contains(m.TeamId.ToString()))
-                .Select(m => m.MselId.ToString())
+            // get my teams' msels
+            var teamMselIdList = await _context.MselTeams
+                .Where(mt => teamIdList.Contains(mt.TeamId))
+                .Select(mt => mt.Msel.Id.ToString())
                 .ToListAsync();
+            // get msels I created and all templates
+            var myMselIdList = await _context.Msels
+                .Where(m => m.CreatedBy == userGuid || m.IsTemplate)
+                .Select(m => m.Id.ToString())
+                .ToListAsync();
+            // combine lists
+            var mselIdList = teamMselIdList.Union(myMselIdList);
             idList.AddRange(mselIdList);
 
             return idList;

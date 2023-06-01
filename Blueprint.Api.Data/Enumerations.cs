@@ -26,7 +26,8 @@ namespace Blueprint.Api.Data.Enumerations
         Status = 110,    // used for the status of the inject as it is being created and approved
         User = 120,    // user assigned to the inject.  For execution, etc.
         Checkbox = 130,    // used to track statuses about the inject.
-        Url = 140    // link to other information
+        Url = 140,    // link to other information
+        Move = 150
     }
 
     public enum MselRole{

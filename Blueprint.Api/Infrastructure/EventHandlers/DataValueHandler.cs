@@ -96,7 +96,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             await base.HandleCreateOrUpdate(
                 notification.Entity,
                 MainHubMethods.DataValueUpdated,
-                notification.ModifiedProperties.Select(x => x.TitleCaseToCamelCase()).ToArray(),
+                null,
                 cancellationToken);
         }
     }

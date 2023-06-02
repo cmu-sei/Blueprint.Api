@@ -12,7 +12,8 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<ScenarioEventEntity, ScenarioEvent>();
 
-            CreateMap<ScenarioEvent, ScenarioEventEntity>();
+            CreateMap<ScenarioEvent, ScenarioEventEntity>()
+                .ForMember(e => e.DataValues, opt => opt.Ignore());
 
             CreateMap<ScenarioEventEntity, ScenarioEventEntity>()
                 .ForMember(e => e.Id, opt => opt.Ignore());

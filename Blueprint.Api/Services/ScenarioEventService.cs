@@ -168,6 +168,40 @@ namespace Blueprint.Api.Services
             {
                 await RenumberRowIndexes(scenarioEventToUpdate, newIndexIsGreater, ct);
             }
+            // get the DataField IDs for this MSEL
+            var dataFieldIdList = _context.DataFields
+                .Where(df => df.MselId == scenarioEvent.MselId)
+                .Select(df => df.Id);
+            // update the data values
+            foreach (var dataValue in scenarioEvent.DataValues)
+            {
+                var dataValueToUpdate = await _context.DataValues.SingleOrDefaultAsync(dv => dv.Id == dataValue.Id, ct);
+                if (dataValueToUpdate == null)
+                {
+                    if (dataValue.ScenarioEventId != scenarioEvent.Id || !dataFieldIdList.Contains(dataValue.DataFieldId))
+                    {
+                        throw new InvalidOperationException("The submitted DataValue had a mismatched ScenarioEventId or DataFieldId for the ScenarioEvent.");
+                    }
+                    dataValue.Id = Guid.NewGuid();
+                    dataValue.CreatedBy = (Guid)scenarioEvent.ModifiedBy;
+                    dataValue.DateCreated = (DateTime)scenarioEvent.DateModified;
+                    dataValue.DateModified = dataValue.DateCreated;
+                    dataValue.ModifiedBy = dataValue.CreatedBy;
+                    var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
+                    _context.DataValues.Add(dataValueEntity);
+                }
+                else if (dataValue.Value != dataValueToUpdate.Value)
+                {
+                    // update the DataValue
+                    dataValue.CreatedBy = dataValueToUpdate.CreatedBy;
+                    dataValue.DateCreated = dataValueToUpdate.DateCreated;
+                    dataValue.ModifiedBy = scenarioEventToUpdate.ModifiedBy;
+                    dataValue.DateModified = scenarioEventToUpdate.DateModified;
+                    _mapper.Map(dataValue, dataValueToUpdate);
+                    _context.DataValues.Update(dataValueToUpdate);
+                }
+            }
+            await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventToUpdate.MselId, scenarioEventToUpdate.ModifiedBy, scenarioEventToUpdate.DateModified, _context, ct);
             // commit the transaction

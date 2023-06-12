@@ -51,12 +51,12 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.DataOption>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+            if (!(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
 
             var dataFieldIdList = await _context.DataFields
                 .Where(df => df.MselId == mselId)
-                .Select(se => se.Id)
+                .Select(df => df.Id)
                 .ToListAsync(ct);
             var dataOptionEntities = await _context.DataOptions
                 .Where(op => dataFieldIdList.Contains(op.DataFieldId))
@@ -67,7 +67,11 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.DataOption>> GetByDataFieldAsync(Guid dataFieldId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+            var dataField = await _context.DataFields.SingleOrDefaultAsync(df => df.Id == dataFieldId, ct);
+            if (dataField == null)
+                throw new EntityNotFoundException<DataField>(dataFieldId.ToString());
+
+            if (!(await MselViewRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
                 throw new ForbiddenException();
 
             var dataOptionEntities = await _context.DataOptions
@@ -79,12 +83,15 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.DataOption> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+            var dataOption = await _context.DataOptions.SingleOrDefaultAsync(dopt => dopt.Id == id, ct);
+            if (dataOption == null)
+                throw new EntityNotFoundException<DataOption>(id.ToString());
+
+            var mselId = (await _context.DataFields.SingleOrDefaultAsync(df => df.Id == dataOption.DataFieldId, ct)).MselId;
+            if (!(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
 
-            var item = await _context.DataOptions.SingleAsync(dataOption => dataOption.Id == id, ct);
-
-            return _mapper.Map<DataOption>(item);
+            return _mapper.Map<DataOption>(dataOption);
         }
 
         public async Task<ViewModels.DataOption> CreateAsync(ViewModels.DataOption dataOption, CancellationToken ct)

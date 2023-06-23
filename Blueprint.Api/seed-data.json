@@ -187,7 +187,7 @@
       "OnExerciseView": false
     },
     {
-      "Id": "aa8dbeb0-cccc-4b54-0005-3716e3404d31",
+      "Id": "aa8dbeb0-cccc-4b54-0005-3716e3404d32",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Delivery Time",
       "DataType": 40,
@@ -197,7 +197,7 @@
       "OnExerciseView": true
     },
     {
-      "Id": "aa8dbeb0-cccc-4b54-0006-3716e3404d31",
+      "Id": "b949e2c7-1c06-45f9-8b2d-a15b858bcbe7",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Simulated Time",
       "DataType": 40,
@@ -227,7 +227,7 @@
       "OnExerciseView": true
     },
     {
-      "Id": "aa8dbeb0-cccc-4b54-0003-3716e3404d31",
+      "Id": "aa8dbeb0-cccc-4b54-0003-3716e3404d33",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Title",
       "DataType": 0,
@@ -237,7 +237,7 @@
       "OnExerciseView": true
     },
     {
-      "Id": "aa8dbeb0-cccc-4b54-0004-3716e3404d31",
+      "Id": "a9a6a561-c00a-4666-90b8-31a35fe13bab",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Description",
       "DataType": 0,
@@ -247,7 +247,7 @@
       "OnExerciseView": false
     },
     {
-      "Id": "aa8dbeb0-cccc-4b54-0008-3716e3404d31",
+      "Id": "3eafae7a-d423-4564-9e27-399cd1e448f5",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "From Org",
       "DataType": 50,
@@ -257,7 +257,7 @@
       "OnExerciseView": true
     },
     {
-      "Id": "aa8dbeb0-cccc-4b54-0007-3716e3404d31",
+      "Id": "c4fe2004-2ef5-4f0c-ae2d-6a90a510ffa2",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "To Org",
       "DataType": 100,
@@ -267,7 +267,7 @@
       "OnExerciseView": true
     },
     {
-      "Id": "aa8dbeb0-cccc-4b54-0009-3716e3404d31",
+      "Id": "2a127e52-cab0-4aa6-b01e-76c60217aae5",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Details",
       "DataType": 0,
@@ -277,7 +277,7 @@
       "OnExerciseView": false
     },
     {
-      "Id": "aa8dbeb0-cccc-4b54-0010-3716e3404d31",
+      "Id": "27d9f87d-bf44-4404-b3ce-ad9611f78f45",
       "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
       "Name": "Expected Actions",
       "DataType": 0,
@@ -317,7 +317,7 @@
       "OnExerciseView": true
     },
     {
-      "Id": "971e4e80-94da-4d0a-bb50-24056816e738",
+      "Id": "6881ee63-e8d7-439c-8b65-ff9a11ba657a",
       "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
       "Name": "Local Time",
       "DataType": 40,
@@ -327,7 +327,7 @@
       "OnExerciseView": true
     },
     {
-      "Id": "f4e37018-0501-4ec0-849b-2618bec0c797",
+      "Id": "7b4e38eb-a273-4930-b4a4-d9dfbf1a9873",
       "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
       "Name": "Delivery Method",
       "DataType": 0,
@@ -337,7 +337,7 @@
       "OnExerciseView": true
     },
     {
-      "Id": "971e4e80-94da-4d0a-bb50-24056816e738",
+      "Id": "971e4e80-94da-4d0a-bb50-24056816e739",
       "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
       "Name": "Local Time",
       "DataType": 40,
@@ -347,7 +347,7 @@
       "OnExerciseView": true
     },
     {
-      "Id": "f4e37018-0501-4ec0-849b-2618bec0c797",
+      "Id": "f4e37018-0501-4ec0-849b-2618bec0c798",
       "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
       "Name": "Delivery Method",
       "DataType": 0,

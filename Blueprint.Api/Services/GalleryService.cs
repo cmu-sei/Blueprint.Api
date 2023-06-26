@@ -71,6 +71,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.DataFields)
                 .Include(m => m.ScenarioEvents)
                 .ThenInclude(se => se.DataValues)
+                .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to create a collection.");
@@ -270,7 +271,7 @@ namespace Blueprint.Api.Services
                     if (!String.IsNullOrWhiteSpace(cardIdString))
                     {
                         var card = msel.Cards.FirstOrDefault(c => c.Id == Guid.Parse(cardIdString));
-                        galleryCardId = card.GalleryId;
+                        galleryCardId = card != null ? card.GalleryId : null;
                     }
                     var name = GetArticleValue(GalleryArticleParameter.Name.ToString(), scenarioEvent.DataValues, msel.DataFields);
                     var description = GetArticleValue(GalleryArticleParameter.Description.ToString(), scenarioEvent.DataValues, msel.DataFields);

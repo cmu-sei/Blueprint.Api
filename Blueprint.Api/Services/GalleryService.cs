@@ -267,10 +267,12 @@ namespace Blueprint.Api.Services
                     bool openInNewTab = false;
                     // get the Gallery Article values from the scenario event data values
                     var cardIdString = GetArticleValue(GalleryArticleParameter.CardId.ToString(), scenarioEvent.DataValues, msel.DataFields);
+                    Guid cardId;
+                    var hasACard = Guid.TryParse(cardIdString, out cardId);
                     Guid? galleryCardId = null;
-                    if (!String.IsNullOrWhiteSpace(cardIdString))
+                    if (hasACard)
                     {
-                        var card = msel.Cards.FirstOrDefault(c => c.Id == Guid.Parse(cardIdString));
+                        var card = msel.Cards.FirstOrDefault(c => c.Id == cardId);
                         galleryCardId = card != null ? card.GalleryId : null;
                     }
                     var name = GetArticleValue(GalleryArticleParameter.Name.ToString(), scenarioEvent.DataValues, msel.DataFields);

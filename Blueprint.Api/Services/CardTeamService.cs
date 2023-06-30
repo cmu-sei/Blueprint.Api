@@ -27,6 +27,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.CardTeam>> GetByCardAsync(Guid cardId, CancellationToken ct);
         Task<IEnumerable<ViewModels.CardTeam>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.CardTeam> CreateAsync(ViewModels.CardTeam cardTeam, CancellationToken ct);
+        Task<ViewModels.CardTeam> UpdateAsync(Guid id, ViewModels.CardTeam cardTeam, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<bool> DeleteByIdsAsync(Guid cardId, Guid teamId, CancellationToken ct);
     }
@@ -128,6 +129,26 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
 
             return await GetAsync(cardTeamEntity.Id, ct);
+        }
+
+        public async Task<ViewModels.CardTeam> UpdateAsync(Guid id, ViewModels.CardTeam cardTeam, CancellationToken ct)
+        {
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var cardTeamToUpdate = await _context.CardTeams.SingleOrDefaultAsync(v => v.Id == id, ct);
+
+            if (cardTeamToUpdate == null)
+                throw new EntityNotFoundException<CardTeam>();
+
+            _mapper.Map(cardTeam, cardTeamToUpdate);
+
+            _context.CardTeams.Update(cardTeamToUpdate);
+            await _context.SaveChangesAsync(ct);
+
+            cardTeam = await GetAsync(cardTeamToUpdate.Id, ct);
+
+            return cardTeam;
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

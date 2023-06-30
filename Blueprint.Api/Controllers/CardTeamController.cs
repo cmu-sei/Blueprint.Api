@@ -122,6 +122,27 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Updates a  CardTeam
+        /// </summary>
+        /// <remarks>
+        /// Updates a CardTeam with the attributes specified.
+        /// The ID from the route MUST MATCH the ID contained in the cardTeam parameter
+        /// <para />
+        /// Accessible only to a ContentDeveloper or an Administrator
+        /// </remarks>
+        /// <param name="id">The Id of the CardTeam to update</param>
+        /// <param name="cardTeam">The updated CardTeam values</param>
+        /// <param name="ct"></param>
+        [HttpPut("cardteams/{id}")]
+        [ProducesResponseType(typeof(CardTeam), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "updateCardTeam")]
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CardTeam cardTeam, CancellationToken ct)
+        {
+            var updatedCardTeam = await _cardTeamService.UpdateAsync(id, cardTeam, ct);
+            return Ok(updatedCardTeam);
+        }
+
+        /// <summary>
         /// Deletes a CardTeam
         /// </summary>
         /// <remarks>

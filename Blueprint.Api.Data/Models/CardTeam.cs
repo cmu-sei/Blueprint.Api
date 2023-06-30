@@ -28,6 +28,8 @@ namespace Blueprint.Api.Data.Models
 
         public Guid CardId { get; set; }
         public CardEntity Card { get; set; }
+        public bool IsShownOnWall { get; set; }
+        public bool CanPostArticles { get; set; }
     }
 
     public class CardTeamConfiguration : IEntityTypeConfiguration<CardTeamEntity>

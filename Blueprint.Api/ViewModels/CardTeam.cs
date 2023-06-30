@@ -16,6 +16,8 @@ namespace Blueprint.Api.ViewModels
         {
             CardId = cardId;
             TeamId = teamId;
+            IsShownOnWall = true;
+            CanPostArticles = false;
         }
 
         [Key]
@@ -23,6 +25,8 @@ namespace Blueprint.Api.ViewModels
         public Guid Id { get; set; }
         public Guid CardId { get; set; }
         public Guid TeamId { get; set; }
+        public bool IsShownOnWall { get; set; }
+        public bool CanPostArticles { get; set; }
     }
 
 }

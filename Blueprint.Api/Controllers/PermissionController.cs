@@ -52,7 +52,7 @@ namespace Blueprint.Api.Controllers
         /// Returns a list of the current user's Permissions.
         /// </remarks>
         /// <returns></returns>
-        [HttpGet("permissions/mine")]
+        [HttpGet("my-permissions")]
         [ProducesResponseType(typeof(IEnumerable<Permission>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getMyPermissions")]
         public async Task<IActionResult> GetMine(CancellationToken ct)

@@ -63,7 +63,7 @@ namespace Blueprint.Api.Controllers
         /// </remarks>
         /// <param name="ct"></param>
         /// <returns></returns>
-        [HttpGet("msels/mine")]
+        [HttpGet("my-msels")]
         [ProducesResponseType(typeof(IEnumerable<Msel>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getMyMsels")]
         public async Task<IActionResult> GetMine(CancellationToken ct)

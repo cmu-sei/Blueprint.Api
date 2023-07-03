@@ -107,6 +107,10 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to create a collection.");
             if (msel.CiteEvaluationId != null)
                 throw new InvalidOperationException($"MSEL {mselId} is already associated to a Cite Evaluation.");
+            // verify that no users are on more than one team
+            var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
+            if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
+                throw new InvalidOperationException(userVerificationErrorMessage);
             // start a transaction, because we will modify many database items
             await _context.Database.BeginTransactionAsync();
             // create the Cite Evaluation
@@ -294,6 +298,42 @@ namespace Blueprint.Api.Services
                     await _citeApiClient.CreateActionAsync(citeAction, ct);
                 }
             }
+        }
+
+        private async Task<string> FindDuplicateMselUsersAsync(Guid mselId, CancellationToken ct)
+        {
+            var duplicateResultList = await _context.MselTeams
+                .AsNoTracking()
+                .Where(mt => mt.MselId == mselId && mt.CiteTeamTypeId != null)
+                .SelectMany(mt => mt.Team.TeamUsers)
+                .Select(tu => new DuplicateResult {
+                    TeamId = tu.TeamId,
+                    UserId = tu.UserId,
+                    TeamName = tu.Team.ShortName,
+                    UserName = tu.User.Name
+                })
+                .ToListAsync(ct);
+            var duplicates = duplicateResultList
+                .GroupBy(tu => tu.UserId)
+                .Where(x => x.Count() > 1)
+                .ToList();
+            var explanation = "";
+            if (duplicates.Any())
+            {
+                explanation = "Users can only be on one team.  The following users are on more than one team.  ";
+                foreach (var dup in duplicates)
+                {
+                    var dupTeamUsers = dup.ToList();
+                    explanation = explanation + "[" + dupTeamUsers[0].UserName + " is on teams ";
+                    foreach (var teamUser in dupTeamUsers)
+                    {
+                        explanation = explanation + teamUser.TeamName + ", ";
+                    }
+                    explanation = explanation + "],   ";
+                }
+            }
+
+            return explanation;
         }
 
     }

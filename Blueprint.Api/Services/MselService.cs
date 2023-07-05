@@ -169,6 +169,7 @@ namespace Blueprint.Api.Services
                 .ThenInclude(mt => mt.Team)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
+                .Include(m => m.UserMselRoles)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
             var msel = _mapper.Map<Msel>(mselEntity);

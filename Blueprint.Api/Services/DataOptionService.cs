@@ -97,8 +97,15 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.DataOption> CreateAsync(ViewModels.DataOption dataOption, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            var dataField = await _context.DataFields
+                .FindAsync(dataOption.DataFieldId);
+            if (dataField == null)
+                throw new EntityNotFoundException<DataField>("DataField not found when creating a DataOption.  " + dataOption.DataFieldId.ToString());
+
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
                 throw new ForbiddenException();
+
             dataOption.Id = dataOption.Id != Guid.Empty ? dataOption.Id : Guid.NewGuid();
             dataOption.DateCreated = DateTime.UtcNow;
             dataOption.CreatedBy = _user.GetId();
@@ -115,7 +122,13 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.DataOption> UpdateAsync(Guid id, ViewModels.DataOption dataOption, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            var dataField = await _context.DataFields
+                .FindAsync(dataOption.DataFieldId);
+            if (dataField == null)
+                throw new EntityNotFoundException<DataField>("DataField not found when updating a DataOption.  " + dataOption.DataFieldId.ToString());
+
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
                 throw new ForbiddenException();
 
             var dataOptionToUpdate = await _context.DataOptions.SingleOrDefaultAsync(v => v.Id == id, ct);
@@ -139,10 +152,15 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var dataOptionToDelete = await _context.DataOptions.SingleOrDefaultAsync(v => v.Id == id, ct);
+            var dataField = await _context.DataFields
+                .SingleOrDefaultAsync(df => df.Id == dataOptionToDelete.DataFieldId, ct);
+            if (dataField == null)
+                throw new EntityNotFoundException<DataField>("DataField not found when deleting a DataOption.  " + dataOptionToDelete.DataFieldId.ToString());
+
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
+                throw new ForbiddenException();
 
             if (dataOptionToDelete == null)
                 throw new EntityNotFoundException<DataOption>();

@@ -13,6 +13,7 @@ namespace Blueprint.Api.Infrastructure.Mappings
             CreateMap<DataFieldEntity, DataField>();
 
             CreateMap<DataField, DataFieldEntity>()
+                .ForMember(df => df.DataOptions, opt => opt.Ignore())
                 .ForMember(df => df.Msel, opt => opt.Ignore());
 
         }

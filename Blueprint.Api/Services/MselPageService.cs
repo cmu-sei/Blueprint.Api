@@ -68,10 +68,18 @@ namespace Blueprint.Api.Services
             if (mselPage == null)
                 throw new EntityNotFoundException<MselEntity>();
 
-            // user must be a Content Developer or a MSEL Viewer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+            // if AllCanView is set, user must be on a MSEL team,
+            // otherwise, the user must be a Content Developer or a MSEL Viewer
+            if (mselPage.AllCanView)
+            {
+                if (!(await MselUserRequirement.IsMet(_user.GetId(), mselPage.MselId, _context)))
+                    throw new ForbiddenException();
+            }
+            else if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
                 !(await MselViewRequirement.IsMet(_user.GetId(), mselPage.MselId, _context)))
+            {
                 throw new ForbiddenException();
+            }
 
             var item = await _context.MselPages
                 .SingleOrDefaultAsync(o => o.Id == id, ct);

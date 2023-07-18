@@ -20,6 +20,7 @@ namespace Blueprint.Api.Data.Models
         public MselEntity Msel { get; set; }
         public string Name { get; set; }
         public string Content { get; set; }
+        public bool AllCanView { get; set; }
     }
 
     public class MselPageConfiguration : IEntityTypeConfiguration<MselPageEntity>

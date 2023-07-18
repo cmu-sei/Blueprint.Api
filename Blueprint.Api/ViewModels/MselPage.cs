@@ -14,6 +14,7 @@ namespace Blueprint.Api.ViewModels
         public Guid MselId { get; set; }
         public string Name { get; set; }
         public string Content { get; set; }
+        public bool AllCanView { get; set; }
     }
 
 }

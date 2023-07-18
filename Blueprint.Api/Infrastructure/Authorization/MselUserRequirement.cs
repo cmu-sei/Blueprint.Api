@@ -10,7 +10,7 @@ using Blueprint.Api.Data;
 
 namespace Blueprint.Api.Infrastructure.Authorization
 {
-    public static class MselViewRequirement
+    public static class MselUserRequirement
     {
         public static async Task<Boolean> IsMet(Guid userId, Guid mselId, BlueprintContext blueprintContext)
         {
@@ -21,21 +21,6 @@ namespace Blueprint.Api.Infrastructure.Authorization
             var isSuccess = await blueprintContext.TeamUsers
                 .Where(tu => tu.UserId == userId && mselTeamIdList.Contains(tu.TeamId))
                 .AnyAsync();
-            if (isSuccess)
-            {
-                isSuccess = await blueprintContext.UserMselRoles
-                    .Where(umr => umr.UserId == userId &&
-                        umr.MselId == mselId &&
-                        (
-                            umr.Role == Data.Enumerations.MselRole.Viewer ||
-                            umr.Role == Data.Enumerations.MselRole.Editor ||
-                            umr.Role == Data.Enumerations.MselRole.Approver ||
-                            umr.Role == Data.Enumerations.MselRole.MoveEditor ||
-                            umr.Role == Data.Enumerations.MselRole.Owner
-                        )
-                    )
-                    .AnyAsync();
-            }
             return isSuccess;
         }
     }

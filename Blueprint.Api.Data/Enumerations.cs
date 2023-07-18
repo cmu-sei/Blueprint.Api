@@ -35,7 +35,8 @@ namespace Blueprint.Api.Data.Enumerations
         Owner = 10,
         Editor = 20,
         Approver = 30,
-        MoveEditor = 40
+        MoveEditor = 40,
+        Viewer = 50
     }
 
     public enum GalleryArticleParameter{

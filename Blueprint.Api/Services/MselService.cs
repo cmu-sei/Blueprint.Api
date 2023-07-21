@@ -191,8 +191,8 @@ namespace Blueprint.Api.Services
             msel.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
             msel.DateCreated = DateTime.UtcNow;
             msel.CreatedBy = _user.GetId();
-            msel.DateModified = null;
-            msel.ModifiedBy = null;
+            msel.DateModified = msel.DateCreated;
+            msel.ModifiedBy = msel.CreatedBy;
             var mselEntity = _mapper.Map<MselEntity>(msel);
 
             _context.Msels.Add(mselEntity);
@@ -231,8 +231,8 @@ namespace Blueprint.Api.Services
             mselEntity.Id = Guid.NewGuid();
             mselEntity.DateCreated = DateTime.UtcNow;
             mselEntity.CreatedBy = _user.GetId();
-            mselEntity.DateModified = null;
-            mselEntity.ModifiedBy = null;
+            mselEntity.DateModified = mselEntity.DateCreated;
+            mselEntity.ModifiedBy = mselEntity.CreatedBy;
             mselEntity.Name = "Copy of " + mselEntity.Name;
             mselEntity.IsTemplate = false;
             mselEntity.GalleryCollectionId = null;
@@ -714,6 +714,8 @@ namespace Blueprint.Api.Services
                 var columns = worksheet.GetFirstChild<Columns>();
                 if (msel == null)
                 {
+                    var userId = _user.GetId();
+                    var utcDatTimeNow = DateTime.UtcNow;
                     // create the MSEL entity
                     msel = new MselEntity() {
                         Id = Guid.NewGuid(),
@@ -722,8 +724,10 @@ namespace Blueprint.Api.Services
                         Status = ItemStatus.Pending,
                         IsTemplate = false,
                         HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : "",
-                        CreatedBy = _user.GetId(),
-                        DateCreated = DateTime.UtcNow,
+                        CreatedBy = userId,
+                        DateCreated = utcDatTimeNow,
+                        ModifiedBy = userId,
+                        DateModified = utcDatTimeNow,
                         DataFields = new List<DataFieldEntity>()
                     };
                     await _context.Msels.AddAsync(msel, ct);

@@ -125,7 +125,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException("Cannot change the Assigned Team.");
                 // Facilitators can update checkboxes
                 if (dataField.DataType == DataFieldType.Checkbox &&
-                    !(await _authorizationService.AuthorizeAsync(_user, null, new FacilitatorRequirement())).Succeeded)
+                    !(await FacilitatorRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
                     throw new ForbiddenException("Cannot change this value.");
                 // MSEL Approvers can change everything else
                 if (!(await MselApproverRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))

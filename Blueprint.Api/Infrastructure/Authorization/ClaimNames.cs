@@ -7,7 +7,6 @@ namespace Blueprint.Api.Infrastructure.Authorization
     {
         SystemAdmin,
         ContentDeveloper,
-        Facilitator,
         BaseUser,
         MselUser,
         TeamUser

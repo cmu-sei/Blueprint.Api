@@ -72,7 +72,8 @@ namespace Blueprint.Api.Services
             if (dataField == null)
                 throw new EntityNotFoundException<DataField>(dataFieldId.ToString());
 
-            if (!(await MselViewRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
+            if (!(await MselViewRequirement.IsMet(_user.GetId(), dataField.MselId, _context)) &&
+                !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
             var dataOptionEntities = await _context.DataOptions
@@ -88,9 +89,12 @@ namespace Blueprint.Api.Services
             if (dataOption == null)
                 throw new EntityNotFoundException<DataOption>(id.ToString());
 
-            var mselId = (await _context.DataFields.SingleOrDefaultAsync(df => df.Id == dataOption.DataFieldId, ct)).MselId;
-            if (!(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
-                throw new ForbiddenException();
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                var mselId = (await _context.DataFields.SingleOrDefaultAsync(df => df.Id == dataOption.DataFieldId, ct)).MselId;
+                if (!(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
+                    throw new ForbiddenException();
+            }
 
             return _mapper.Map<DataOption>(dataOption);
         }

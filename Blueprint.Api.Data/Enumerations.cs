@@ -54,7 +54,8 @@ namespace Blueprint.Api.Data.Enumerations
       CardId,
       DeliveryMethod,
       ToOrg,
-      FromOrg
+      FromOrg,
+      Summary
     }
 
     public enum GallerySourceType{

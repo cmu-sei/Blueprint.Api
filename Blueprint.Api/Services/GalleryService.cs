@@ -160,8 +160,7 @@ namespace Blueprint.Api.Services
                 CollectionId = (Guid)msel.GalleryCollectionId,
                 ScenarioId = null,
                 CurrentMove = 0,
-                CurrentInject = 0,
-
+                CurrentInject = 0
             };
             newExhibit = await _galleryApiClient.CreateExhibitAsync(newExhibit, ct);
             // update the MSEL
@@ -236,15 +235,16 @@ namespace Blueprint.Api.Services
                 card.GalleryId = galleryCard.Id;
                 await _context.SaveChangesAsync(ct);
                 // create the Gallery Team Cards
-                var teamIds = await _context.CardTeams
+                var cardTeams = await _context.CardTeams
                     .Where(ct => ct.CardId == card.Id)
-                    .Select(ct => ct.TeamId)
                     .ToListAsync(ct);
-                foreach (var teamId in teamIds)
+                foreach (var cardTeam in cardTeams)
                 {
                     var newTeamCard = new TeamCard() {
-                        TeamId = galleryTeamDictionary[teamId],
-                        CardId = (Guid)card.GalleryId
+                        TeamId = galleryTeamDictionary[cardTeam.TeamId],
+                        CardId = (Guid)card.GalleryId,
+                        IsShownOnWall = cardTeam.IsShownOnWall,
+                        CanPostArticles = cardTeam.CanPostArticles
                     };
                     await _galleryApiClient.CreateTeamCardAsync(newTeamCard, ct);
                 }
@@ -280,6 +280,7 @@ namespace Blueprint.Api.Services
                         galleryCardId = card != null ? card.GalleryId : null;
                     }
                     var name = GetArticleValue(GalleryArticleParameter.Name.ToString(), scenarioEvent.DataValues, msel.DataFields);
+                    var summary = GetArticleValue(GalleryArticleParameter.Summary.ToString(), scenarioEvent.DataValues, msel.DataFields);
                     var description = GetArticleValue(GalleryArticleParameter.Description.ToString(), scenarioEvent.DataValues, msel.DataFields);
                     Int32.TryParse(GetArticleValue(GalleryArticleParameter.Move.ToString(), scenarioEvent.DataValues, msel.DataFields), out move);
                     Int32.TryParse(GetArticleValue(GalleryArticleParameter.Inject.ToString(), scenarioEvent.DataValues, msel.DataFields), out inject);
@@ -294,6 +295,7 @@ namespace Blueprint.Api.Services
                         CollectionId = (Guid)msel.GalleryCollectionId,
                         CardId = galleryCardId,
                         Name = name,
+                        Summary = summary,
                         Description = description,
                         Move = move,
                         Inject = inject,

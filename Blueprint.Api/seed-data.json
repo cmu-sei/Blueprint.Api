@@ -13,13 +13,6 @@
       "Value": "true",
       "Description": "Can create/edit/delete MSELs",
       "ReadOnly": true
-    },
-    {
-      "Id": "0ddba26b-453f-421c-a3e1-4031d05b0c68",
-      "Key": "Facilitator",
-      "Value": "true",
-      "Description": "Can check checkboxes",
-      "ReadOnly": true
     }
   ],
   "Users": [

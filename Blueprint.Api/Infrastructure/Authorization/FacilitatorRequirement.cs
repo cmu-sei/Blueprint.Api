@@ -1,30 +1,36 @@
 // Copyright 2022 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
-using Microsoft.AspNetCore.Authorization;
+using System;
+using System.Data;
+using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Blueprint.Api.Data;
 
 namespace Blueprint.Api.Infrastructure.Authorization
 {
-    public class FacilitatorRequirement : IAuthorizationRequirement
+    public static class FacilitatorRequirement
     {
-        public FacilitatorRequirement()
+        public static async Task<Boolean> IsMet(Guid userId, Guid mselId, BlueprintContext blueprintContext)
         {
-        }
-    }
-
-    public class FacilitatorHandler : AuthorizationHandler<FacilitatorRequirement>, IAuthorizationHandler
-    {
-        protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, FacilitatorRequirement requirement)
-        {
-            if (context.User.HasClaim(c => c.Type == BlueprintClaimTypes.SystemAdmin.ToString()) ||
-                context.User.HasClaim(c => c.Type == BlueprintClaimTypes.ContentDeveloper.ToString()) ||
-                context.User.HasClaim(c => c.Type == BlueprintClaimTypes.Facilitator.ToString()))
+            var mselTeamIdList = await blueprintContext.MselTeams
+                .Where(mt => mt.MselId == mselId)
+                .Select(mt => mt.TeamId)
+                .ToListAsync();
+            var isSuccess = await blueprintContext.TeamUsers
+                .Where(tu => tu.UserId == userId && mselTeamIdList.Contains(tu.TeamId))
+                .AnyAsync();
+            if (isSuccess)
             {
-                context.Succeed(requirement);
+                isSuccess = await blueprintContext.UserMselRoles
+                    .Where(umr => umr.UserId == userId &&
+                        umr.MselId == mselId &&
+                        umr.Role == Data.Enumerations.MselRole.Facilitator)
+                    .AnyAsync();
             }
 
-            return Task.CompletedTask;
+            return isSuccess;
         }
     }
 }

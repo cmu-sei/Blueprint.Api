@@ -26,38 +26,6 @@ namespace Gallery.Api.Client
     public partial interface IGalleryApiClient
     {
         /// <summary>
-        /// Gets Articles
-        /// </summary>
-        /// <returns>Success</returns>
-        /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Article>> GetArticlesAsync();
-
-        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
-        /// <summary>
-        /// Gets Articles
-        /// </summary>
-        /// <returns>Success</returns>
-        /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Article>> GetArticlesAsync(System.Threading.CancellationToken cancellationToken);
-
-        /// <summary>
-        /// Creates a new Article
-        /// </summary>
-        /// <param name="body">The data used to create the Article</param>
-        /// <returns>Success</returns>
-        /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Article> CreateArticleAsync(Article body);
-
-        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
-        /// <summary>
-        /// Creates a new Article
-        /// </summary>
-        /// <param name="body">The data used to create the Article</param>
-        /// <returns>Success</returns>
-        /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Article> CreateArticleAsync(Article body, System.Threading.CancellationToken cancellationToken);
-
-        /// <summary>
         /// Gets Articles for a Card
         /// </summary>
         /// <param name="cardId">The id of the Card</param>
@@ -162,6 +130,23 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task DeleteArticleAsync(System.Guid id, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
+        /// Creates a new Article
+        /// </summary>
+        /// <param name="body">The data used to create the Article</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<Article> CreateArticleAsync(Article body);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Creates a new Article
+        /// </summary>
+        /// <param name="body">The data used to create the Article</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<Article> CreateArticleAsync(Article body, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
         /// Gets Cards
         /// </summary>
         /// <returns>Success</returns>
@@ -231,18 +216,20 @@ namespace Gallery.Api.Client
         /// Gets Cards for an exhibit for the user
         /// </summary>
         /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="teamId">The id of the Team</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Card>> GetExhibitCardsMineAsync(System.Guid exhibitId);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Card>> GetExhibitCardsByTeamAsync(System.Guid exhibitId, System.Guid teamId);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
         /// Gets Cards for an exhibit for the user
         /// </summary>
         /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="teamId">The id of the Team</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Card>> GetExhibitCardsMineAsync(System.Guid exhibitId, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Card>> GetExhibitCardsByTeamAsync(System.Guid exhibitId, System.Guid teamId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets a specific Card by id
@@ -659,7 +646,7 @@ namespace Gallery.Api.Client
         /// </summary>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<HealthReport> Health_GetLivelinessAsync();
+        System.Threading.Tasks.Task<HealthReport> GetLivelinessAsync();
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -667,14 +654,14 @@ namespace Gallery.Api.Client
         /// </summary>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<HealthReport> Health_GetLivelinessAsync(System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<HealthReport> GetLivelinessAsync(System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Checks the readiness health endpoint
         /// </summary>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<HealthReport> Health_GetReadinessAsync();
+        System.Threading.Tasks.Task<HealthReport> GetReadinessAsync();
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -682,7 +669,22 @@ namespace Gallery.Api.Client
         /// </summary>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<HealthReport> Health_GetReadinessAsync(System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<HealthReport> GetReadinessAsync(System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Returns the current version of the API
+        /// </summary>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<string> GetVersionAsync();
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Returns the current version of the API
+        /// </summary>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<string> GetVersionAsync(System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets all Permission in the system
@@ -832,19 +834,19 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task<Team> CreateTeamAsync(Team body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
-        /// Gets Teams for the current user
+        /// Gets Exhibit Teams for the current user
         /// </summary>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Team>> GetMyTeamsAsync();
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Team>> GetMyExhibitTeamsAsync(System.Guid exhibitId);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
-        /// Gets Teams for the current user
+        /// Gets Exhibit Teams for the current user
         /// </summary>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Team>> GetMyTeamsAsync(System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<Team>> GetMyExhibitTeamsAsync(System.Guid exhibitId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets Teams for the specified user
@@ -945,38 +947,6 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task DeleteTeamAsync(System.Guid id, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
-        /// Gets all TeamArticles in the system
-        /// </summary>
-        /// <returns>Success</returns>
-        /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamArticle>> GetTeamArticlesAsync();
-
-        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
-        /// <summary>
-        /// Gets all TeamArticles in the system
-        /// </summary>
-        /// <returns>Success</returns>
-        /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamArticle>> GetTeamArticlesAsync(System.Threading.CancellationToken cancellationToken);
-
-        /// <summary>
-        /// Creates a new TeamArticle
-        /// </summary>
-        /// <param name="body">The data to create the TeamArticle with</param>
-        /// <returns>Success</returns>
-        /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<TeamArticle> CreateTeamArticleAsync(TeamArticle body);
-
-        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
-        /// <summary>
-        /// Creates a new TeamArticle
-        /// </summary>
-        /// <param name="body">The data to create the TeamArticle with</param>
-        /// <returns>Success</returns>
-        /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<TeamArticle> CreateTeamArticleAsync(TeamArticle body, System.Threading.CancellationToken cancellationToken);
-
-        /// <summary>
         /// Gets all TeamArticles for a exhibit
         /// </summary>
         /// <param name="exhibitId">The id of the Exhibit</param>
@@ -994,24 +964,7 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamArticle>> GetExhibitTeamArticlesAsync(System.Guid exhibitId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
-        /// Gets all TeamArticles for an article
-        /// </summary>
-        /// <param name="articleId">The id of the TeamArticle</param>
-        /// <returns>Success</returns>
-        /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamArticle>> GetArticleTeamArticlesAsync(System.Guid articleId);
-
-        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
-        /// <summary>
-        /// Gets all TeamArticles for an article
-        /// </summary>
-        /// <param name="articleId">The id of the TeamArticle</param>
-        /// <returns>Success</returns>
-        /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamArticle>> GetArticleTeamArticlesAsync(System.Guid articleId, System.Threading.CancellationToken cancellationToken);
-
-        /// <summary>
-        /// Gets all TeamArticles for an team
+        /// Gets all TeamArticles for a team
         /// </summary>
         /// <param name="teamId">The id of the TeamArticle</param>
         /// <returns>Success</returns>
@@ -1020,7 +973,7 @@ namespace Gallery.Api.Client
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
-        /// Gets all TeamArticles for an team
+        /// Gets all TeamArticles for a team
         /// </summary>
         /// <param name="teamId">The id of the TeamArticle</param>
         /// <returns>Success</returns>
@@ -1081,6 +1034,23 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task DeleteTeamArticleAsync(System.Guid id, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
+        /// Creates a new TeamArticle
+        /// </summary>
+        /// <param name="body">The data to create the TeamArticle with</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<TeamArticle> CreateTeamArticleAsync(TeamArticle body);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Creates a new TeamArticle
+        /// </summary>
+        /// <param name="body">The data to create the TeamArticle with</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<TeamArticle> CreateTeamArticleAsync(TeamArticle body, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
         /// Deletes a TeamArticle by article ID and team ID
         /// </summary>
         /// <param name="teamId">ID of a team.</param>
@@ -1132,24 +1102,24 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task<TeamCard> CreateTeamCardAsync(TeamCard body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
-        /// Gets all TeamCards for a collection
+        /// Gets all TeamCards for an exhibit
         /// </summary>
-        /// <param name="collectionId">The id of the Collection</param>
+        /// <param name="exhibitId">The id of the Exhibit</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamCard>> GetCollectionTeamCardsAsync(System.Guid collectionId);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamCard>> GetExhibitTeamCardsAsync(System.Guid exhibitId);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
-        /// Gets all TeamCards for a collection
+        /// Gets all TeamCards for an exhibit
         /// </summary>
-        /// <param name="collectionId">The id of the Collection</param>
+        /// <param name="exhibitId">The id of the Exhibit</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamCard>> GetCollectionTeamCardsAsync(System.Guid collectionId, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamCard>> GetExhibitTeamCardsAsync(System.Guid exhibitId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
-        /// Gets all TeamCards for an card
+        /// Gets all TeamCards for a card
         /// </summary>
         /// <param name="cardId">The id of the TeamCard</param>
         /// <returns>Success</returns>
@@ -1158,7 +1128,7 @@ namespace Gallery.Api.Client
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
-        /// Gets all TeamCards for an card
+        /// Gets all TeamCards for a card
         /// </summary>
         /// <param name="cardId">The id of the TeamCard</param>
         /// <returns>Success</returns>
@@ -1166,21 +1136,23 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamCard>> GetCardTeamCardsAsync(System.Guid cardId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
-        /// Gets all TeamCards for an team
+        /// Gets all TeamCards for an exhibit team
         /// </summary>
-        /// <param name="teamId">The id of the TeamCard</param>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="teamId">The id of the Team</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamCard>> GetTeamTeamCardsAsync(System.Guid teamId);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamCard>> GetByExhibitTeamAsync(System.Guid exhibitId, System.Guid teamId);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
-        /// Gets all TeamCards for an team
+        /// Gets all TeamCards for an exhibit team
         /// </summary>
-        /// <param name="teamId">The id of the TeamCard</param>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="teamId">The id of the Team</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamCard>> GetTeamTeamCardsAsync(System.Guid teamId, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamCard>> GetByExhibitTeamAsync(System.Guid exhibitId, System.Guid teamId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets a specific TeamCard by id
@@ -1255,36 +1227,34 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task DeleteTeamCardByIdsAsync(System.Guid teamId, System.Guid cardId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
-        /// Gets all TeamUsers in the system
+        /// Gets TeamUsers for the specified exhibit
         /// </summary>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamUser>> GetTeamUsersAsync();
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamUser>> GetExhibitTeamUsersAsync(System.Guid exhibitId);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
-        /// Gets all TeamUsers in the system
+        /// Gets TeamUsers for the specified exhibit
         /// </summary>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamUser>> GetTeamUsersAsync(System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamUser>> GetExhibitTeamUsersAsync(System.Guid exhibitId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
-        /// Creates a new TeamUser
+        /// Gets TeamUsers for the specified team
         /// </summary>
-        /// <param name="body">The data to create the TeamUser with</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<TeamUser> CreateTeamUserAsync(TeamUser body);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamUser>> GetTeamTeamUsersAsync(System.Guid teamId);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
-        /// Creates a new TeamUser
+        /// Gets TeamUsers for the specified team
         /// </summary>
-        /// <param name="body">The data to create the TeamUser with</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<TeamUser> CreateTeamUserAsync(TeamUser body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<TeamUser>> GetTeamTeamUsersAsync(System.Guid teamId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets a specific TeamUser by id
@@ -1319,6 +1289,57 @@ namespace Gallery.Api.Client
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
         System.Threading.Tasks.Task DeleteTeamUserAsync(System.Guid id, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Creates a new TeamUser
+        /// </summary>
+        /// <param name="body">The data to create the TeamUser with</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<TeamUser> CreateTeamUserAsync(TeamUser body);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Creates a new TeamUser
+        /// </summary>
+        /// <param name="body">The data to create the TeamUser with</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<TeamUser> CreateTeamUserAsync(TeamUser body, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Sets the selected TeamUser observer flag
+        /// </summary>
+        /// <param name="id">The Id of the TeamUser to update</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<TeamUser> SetObserverAsync(System.Guid id);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Sets the selected TeamUser observer flag
+        /// </summary>
+        /// <param name="id">The Id of the TeamUser to update</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<TeamUser> SetObserverAsync(System.Guid id, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Clears the selected TeamUser observer flag
+        /// </summary>
+        /// <param name="id">The Id of the TeamUser to update</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<TeamUser> ClearObserverAsync(System.Guid id);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Clears the selected TeamUser observer flag
+        /// </summary>
+        /// <param name="id">The Id of the TeamUser to update</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<TeamUser> ClearObserverAsync(System.Guid id, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes a TeamUser by user ID and team ID
@@ -1430,7 +1451,7 @@ namespace Gallery.Api.Client
         /// <param name="teamId">The id of the Team</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<User>> GetTeamUsers2Async(System.Guid teamId);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<User>> GetTeamUsersAsync(System.Guid teamId);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -1439,7 +1460,7 @@ namespace Gallery.Api.Client
         /// <param name="teamId">The id of the Team</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<User>> GetTeamUsers2Async(System.Guid teamId, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<User>> GetTeamUsersAsync(System.Guid teamId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets UserArticles for an Exhibit
@@ -1459,21 +1480,23 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task<System.Collections.Generic.ICollection<UserArticle>> GetExhibitUserArticlesAsync(System.Guid exhibitId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
-        /// Gets UserArticles for an exhibit for the user
+        /// Gets UserArticles for an exhibit team
         /// </summary>
         /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="teamId">The id of the Team</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<UserArticle>> GetExhibitUserArticlesMineAsync(System.Guid exhibitId);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<UserArticle>> GetExhibitTeamUserArticlesAsync(System.Guid exhibitId, System.Guid teamId);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
-        /// Gets UserArticles for an exhibit for the user
+        /// Gets UserArticles for an exhibit team
         /// </summary>
         /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="teamId">The id of the Team</param>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<UserArticle>> GetExhibitUserArticlesMineAsync(System.Guid exhibitId, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<UserArticle>> GetExhibitTeamUserArticlesAsync(System.Guid exhibitId, System.Guid teamId, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets the count of unread UserArticles for an exhibit for the user
@@ -1651,6 +1674,135 @@ namespace Gallery.Api.Client
         /// <exception cref="ApiException">A server side error occurred.</exception>
         System.Threading.Tasks.Task DeleteUserPermissionByIdsAsync(System.Guid userId, System.Guid permissionId, System.Threading.CancellationToken cancellationToken);
 
+        /// <summary>
+        /// Logs xAPI viewed statement for Card by id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="cardId">The id of the Card</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ViewedCardAsync(System.Guid exhibitId, System.Guid cardId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI viewed statement for Card by id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="cardId">The id of the Card</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ViewedCardAsync(System.Guid exhibitId, System.Guid cardId, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Logs xAPI viewed statement for Wall by Exhibit id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ViewedExhibitWallAsync(System.Guid exhibitId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI viewed statement for Wall by Exhibit id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ViewedExhibitWallAsync(System.Guid exhibitId, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Logs xAPI viewed statement for Archive by Exhibit id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ViewedExhibitArchiveAsync(System.Guid exhibitId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI viewed statement for Archive by Exhibit id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ViewedExhibitArchiveAsync(System.Guid exhibitId, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Logs xAPI viewed statement for Article by id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="articleId">The id of the Article</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ViewedArticleAsync(System.Guid exhibitId, System.Guid articleId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI viewed statement for Article by id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="articleId">The id of the Article</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ViewedArticleAsync(System.Guid exhibitId, System.Guid articleId, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Logs xAPI previewed statement for Article by id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="articleId">The id of the Article</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task PreviewedArticleAsync(System.Guid exhibitId, System.Guid articleId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI previewed statement for Article by id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="articleId">The id of the Article</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task PreviewedArticleAsync(System.Guid exhibitId, System.Guid articleId, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Logs xAPI observed statement for Wall by Exhibit id and Team  id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ObservedExhibitWallAsync(System.Guid exhibitId, System.Guid teamId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI observed statement for Wall by Exhibit id and Team  id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ObservedExhibitWallAsync(System.Guid exhibitId, System.Guid teamId, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Logs xAPI observed statement for Archive by Exhibit id and Team id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ObservedExhibitArchiveAsync(System.Guid exhibitId, System.Guid teamId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI observed statement for Archive by Exhibit id and Team id
+        /// </summary>
+        /// <param name="exhibitId">The id of the Exhibit</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>Success</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ObservedExhibitArchiveAsync(System.Guid exhibitId, System.Guid teamId, System.Threading.CancellationToken cancellationToken);
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "13.15.7.0 (NJsonSchema v10.6.7.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -1675,11 +1827,17 @@ namespace Gallery.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("name")]
         public string Name { get; set; }
 
+        [System.Text.Json.Serialization.JsonPropertyName("summary")]
+        public string Summary { get; set; }
+
         [System.Text.Json.Serialization.JsonPropertyName("description")]
         public string Description { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("collectionId")]
         public System.Guid CollectionId { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("exhibitId")]
+        public System.Guid? ExhibitId { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("cardId")]
         public System.Guid? CardId { get; set; }
@@ -3198,6 +3356,9 @@ namespace Gallery.Api.Client
         [System.Runtime.Serialization.EnumMember(Value = @"Reporting")]
         Reporting = 5,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"Orders")]
+        Orders = 6,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "13.15.7.0 (NJsonSchema v10.6.7.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -3232,14 +3393,20 @@ namespace Gallery.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("id")]
         public System.Guid Id { get; set; }
 
-        [System.Text.Json.Serialization.JsonPropertyName("exhibitId")]
-        public System.Guid? ExhibitId { get; set; }
-
         [System.Text.Json.Serialization.JsonPropertyName("name")]
         public string Name { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("shortName")]
         public string ShortName { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("email")]
+        public string Email { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("exhibitId")]
+        public System.Guid? ExhibitId { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("exhibit")]
+        public Exhibit Exhibit { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("users")]
         public System.Collections.Generic.ICollection<User> Users { get; set; }
@@ -3307,6 +3474,9 @@ namespace Gallery.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("isShownOnWall")]
         public bool IsShownOnWall { get; set; }
 
+        [System.Text.Json.Serialization.JsonPropertyName("canPostArticles")]
+        public bool CanPostArticles { get; set; }
+
         [System.Text.Json.Serialization.JsonPropertyName("teamId")]
         public System.Guid TeamId { get; set; }
 
@@ -3345,6 +3515,9 @@ namespace Gallery.Api.Client
 
         [System.Text.Json.Serialization.JsonPropertyName("team")]
         public Team Team { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("isObserver")]
+        public bool IsObserver { get; set; }
 
     }
 

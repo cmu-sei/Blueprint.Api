@@ -1,6 +1,7 @@
 // Copyright 2022 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -10,6 +11,7 @@ using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
@@ -53,7 +55,20 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(mselEntity);
+            mselEntity = await _db.Msels
+                .Include(m => m.MselTeams)
+                .ThenInclude(mt => mt.Team)
+                .ThenInclude(t => t.TeamUsers)
+                .ThenInclude(tu => tu.User)
+                .Include(m => m.UserMselRoles)
+                .AsSplitQuery()
+                .SingleOrDefaultAsync(sm => sm.Id == mselEntity.Id, cancellationToken);
             var msel = _mapper.Map<ViewModels.Msel>(mselEntity);
+            if (msel.UseGallery)
+            {
+                msel.GalleryArticleParameters = Enum.GetNames(typeof(GalleryArticleParameter)).ToList();
+                msel.GallerySourceTypes = Enum.GetNames(typeof(GallerySourceType)).ToList();
+            }
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)

@@ -169,12 +169,19 @@ namespace Blueprint.Api.Services
         // Create a Cite Evaluation for this MSEL
         private async Task CreateEvaluationAsync(MselEntity msel, CancellationToken ct)
         {
+            var move0 = msel.Moves.SingleOrDefault(m => m.MoveNumber == 0);
             Evaluation newEvaluation = new Evaluation() {
-                Description = msel.Description,
+                Description = msel.Name,
                 Status = ItemStatus.Pending,
                 CurrentMoveNumber = 0,
-                ScoringModelId = (Guid)msel.CiteScoringModelId
+                ScoringModelId = (Guid)msel.CiteScoringModelId,
+                SituationDescription = "Preparing for the start of the exercise."
             };
+            if (move0 != null)
+            {
+                newEvaluation.SituationDescription = move0.SituationDescription;
+                newEvaluation.SituationTime = (DateTimeOffset)move0.SituationTime;
+            }
             newEvaluation = await _citeApiClient.CreateEvaluationAsync(newEvaluation, ct);
             // update the MSEL
             msel.CiteEvaluationId = newEvaluation.Id;
@@ -191,7 +198,7 @@ namespace Blueprint.Api.Services
             {
                 Move citeMove = new Move() {
                     EvaluationId = (Guid)msel.CiteEvaluationId,
-                    Description = move.Description,
+                    Description = move.Title,
                     MoveNumber = move.MoveNumber,
                     SituationTime = (DateTimeOffset)move.SituationTime,
                     SituationDescription = move.SituationDescription

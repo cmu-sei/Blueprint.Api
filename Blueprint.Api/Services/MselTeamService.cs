@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
@@ -36,13 +37,15 @@ namespace Blueprint.Api.Services
         private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
+        private readonly ILogger<IMselTeamService> _logger;
 
-        public MselTeamService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal user, IMapper mapper)
+        public MselTeamService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal user, ILogger<IMselTeamService> logger, IMapper mapper)
         {
             _context = context;
             _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
+            _logger = logger;
         }
 
         public async Task<IEnumerable<ViewModels.MselTeam>> GetByMselAsync(Guid mselId, CancellationToken ct)
@@ -109,7 +112,7 @@ namespace Blueprint.Api.Services
 
             _context.MselTeams.Add(mselTeamEntity);
             await _context.SaveChangesAsync(ct);
-
+            _logger.LogWarning($"Team {mselTeam.TeamId} added to MSEL {mselTeam.MselId} by {_user.GetId()}");
             return await GetAsync(mselTeamEntity.Id, ct);
         }
 
@@ -130,7 +133,7 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
 
             mselTeam = await GetAsync(mselTeamToUpdate.Id, ct);
-
+            _logger.LogWarning($"Team {mselTeam.TeamId} updated to CiteTeamType {mselTeam.CiteTeamTypeId} on MSEL {mselTeam.MselId} by {_user.GetId()}");
             return mselTeam;
         }
 
@@ -147,7 +150,7 @@ namespace Blueprint.Api.Services
 
             _context.MselTeams.Remove(mselTeamToDelete);
             await _context.SaveChangesAsync(ct);
-
+            _logger.LogWarning($"Team {mselTeamToDelete.TeamId} removed from MSEL {mselTeamToDelete.MselId} by {_user.GetId()}");
             return true;
         }
 
@@ -164,7 +167,7 @@ namespace Blueprint.Api.Services
 
             _context.MselTeams.Remove(mselTeamToDelete);
             await _context.SaveChangesAsync(ct);
-
+            _logger.LogWarning($"Team {mselTeamToDelete.TeamId} removed from MSEL {mselTeamToDelete.MselId} by {_user.GetId()}");
             return true;
         }
 

@@ -12,6 +12,7 @@ using AutoMapper;
 using AutoMapper.QueryableExtensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
@@ -38,14 +39,16 @@ namespace Blueprint.Api.Services
         private readonly IAuthorizationService _authorizationService;
         private readonly IUserClaimsService _userClaimsService;
         private readonly IMapper _mapper;
+        private readonly ILogger<IUserService> _logger;
 
-        public UserService(BlueprintContext context, IPrincipal user, IAuthorizationService authorizationService, IUserClaimsService userClaimsService, IMapper mapper)
+        public UserService(BlueprintContext context, IPrincipal user, IAuthorizationService authorizationService, IUserClaimsService userClaimsService, ILogger<IUserService> logger, IMapper mapper)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
             _authorizationService = authorizationService;
             _userClaimsService = userClaimsService;
             _mapper = mapper;
+            _logger = logger;
         }
 
         public async Task<IEnumerable<ViewModels.User>> GetAsync(CancellationToken ct)
@@ -99,7 +102,7 @@ namespace Blueprint.Api.Services
 
             _context.Users.Add(userEntity);
             await _context.SaveChangesAsync(ct);
-
+            _logger.LogWarning($"User {user.Name} ({userEntity.Id}) created by {_user.GetId()}");
             return await GetAsync(user.Id, ct);
         }
 
@@ -127,7 +130,7 @@ namespace Blueprint.Api.Services
 
             _context.Users.Update(userToUpdate);
             await _context.SaveChangesAsync(ct);
-
+            _logger.LogWarning($"User {user.Name} ({userToUpdate.Id}) updated by {_user.GetId()}");
             return await GetAsync(id, ct);
         }
 
@@ -148,7 +151,7 @@ namespace Blueprint.Api.Services
 
             _context.Users.Remove(userToDelete);
             await _context.SaveChangesAsync(ct);
-
+            _logger.LogWarning($"User {userToDelete.Name} ({userToDelete.Id}) deleted by {_user.GetId()}");
             return true;
         }
 

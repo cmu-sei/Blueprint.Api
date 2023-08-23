@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
@@ -34,13 +35,15 @@ namespace Blueprint.Api.Services
         private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
+        private readonly ILogger<IUserMselRoleService> _logger;
 
-        public UserMselRoleService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal user, IMapper mapper)
+        public UserMselRoleService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal user, ILogger<IUserMselRoleService> logger, IMapper mapper)
         {
             _context = context;
             _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
+            _logger = logger;
         }
 
         public async Task<IEnumerable<ViewModels.UserMselRole>> GetByMselAsync(Guid mselId, CancellationToken ct)
@@ -92,7 +95,7 @@ namespace Blueprint.Api.Services
             await ServiceUtilities.SetMselModifiedAsync(userMselRole.MselId, userMselRole.CreatedBy, userMselRole.DateCreated, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
-
+            _logger.LogWarning($"UserMselRole created by {_user.GetId()} = User: {userMselRole.UserId}, Role: {userMselRole.Role} on MSEL: {userMselRole.MselId}");
             return await GetAsync(userMselRoleEntity.Id, ct);
         }
 
@@ -116,7 +119,7 @@ namespace Blueprint.Api.Services
             await ServiceUtilities.SetMselModifiedAsync(userMselRoleToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
-
+            _logger.LogWarning($"UserMselRole deleted by {_user.GetId()} = User: {userMselRoleToDelete.UserId}, Role: {userMselRoleToDelete.Role} on MSEL: {userMselRoleToDelete.MselId}");
             return true;
         }
 

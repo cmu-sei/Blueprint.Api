@@ -12,6 +12,7 @@ using AutoMapper;
 using AutoMapper.QueryableExtensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
@@ -38,13 +39,15 @@ namespace Blueprint.Api.Services
         private readonly ClaimsPrincipal _user;
         private readonly IAuthorizationService _authorizationService;
         private readonly IMapper _mapper;
+        private readonly ILogger<ITeamService> _logger;
 
-        public TeamService(BlueprintContext context, IPrincipal team, IAuthorizationService authorizationService, IMapper mapper)
+        public TeamService(BlueprintContext context, IPrincipal team, IAuthorizationService authorizationService, ILogger<ITeamService> logger, IMapper mapper)
         {
             _context = context;
             _user = team as ClaimsPrincipal;
             _authorizationService = authorizationService;
             _mapper = mapper;
+            _logger = logger;
         }
 
         public async Task<IEnumerable<ViewModels.Team>> GetAsync(CancellationToken ct)
@@ -110,7 +113,7 @@ namespace Blueprint.Api.Services
 
             _context.Teams.Add(teamEntity);
             await _context.SaveChangesAsync(ct);
-
+            _logger.LogWarning($"Team {team.Name} ({teamEntity.Id}) created by {_user.GetId()}");
             return await GetAsync(teamEntity.Id, ct);
         }
 
@@ -138,7 +141,7 @@ namespace Blueprint.Api.Services
 
             _context.Teams.Update(teamToUpdate);
             await _context.SaveChangesAsync(ct);
-
+            _logger.LogWarning($"Team {teamToUpdate.Name} ({teamToUpdate.Id}) updated by {_user.GetId()}");
             return await GetAsync(id, ct);
         }
 
@@ -159,7 +162,7 @@ namespace Blueprint.Api.Services
 
             _context.Teams.Remove(teamToDelete);
             await _context.SaveChangesAsync(ct);
-
+            _logger.LogWarning($"Team {teamToDelete.Name} ({teamToDelete.Id}) deleted by {_user.GetId()}");
             return true;
         }
 

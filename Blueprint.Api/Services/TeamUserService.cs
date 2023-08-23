@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
@@ -35,13 +36,15 @@ namespace Blueprint.Api.Services
         private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
+        private readonly ILogger<ITeamUserService> _logger;
 
-        public TeamUserService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal user, IMapper mapper)
+        public TeamUserService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal user, ILogger<ITeamUserService> logger, IMapper mapper)
         {
             _context = context;
             _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
+            _logger = logger;
         }
 
         public async Task<IEnumerable<ViewModels.TeamUser>> GetAsync(CancellationToken ct)
@@ -85,7 +88,7 @@ namespace Blueprint.Api.Services
 
             _context.TeamUsers.Add(teamUserEntity);
             await _context.SaveChangesAsync(ct);
-
+            _logger.LogWarning($"User {teamUser.UserId} added to team {teamUser.TeamId} by {_user.GetId()}");
             return await GetAsync(teamUserEntity.Id, ct);
         }
 
@@ -101,7 +104,7 @@ namespace Blueprint.Api.Services
 
             _context.TeamUsers.Remove(teamUserToDelete);
             await _context.SaveChangesAsync(ct);
-
+            _logger.LogWarning($"User {teamUserToDelete.UserId} removed from team {teamUserToDelete.TeamId} by {_user.GetId()}");
             return true;
         }
 
@@ -117,7 +120,7 @@ namespace Blueprint.Api.Services
 
             _context.TeamUsers.Remove(teamUserToDelete);
             await _context.SaveChangesAsync(ct);
-
+            _logger.LogWarning($"User {teamUserToDelete.UserId} removed from team {teamUserToDelete.TeamId} by {_user.GetId()}");
             return true;
         }
 

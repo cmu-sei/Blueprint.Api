@@ -51,7 +51,8 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.DataValue>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
                 throw new ForbiddenException();
 
             var scenarioEventIdList = await _context.ScenarioEvents
@@ -60,19 +61,22 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             var dataValueEntities = await _context.DataValues
                 .Where(dv => scenarioEventIdList.Contains(dv.ScenarioEventId))
-                .ToListAsync();
+                .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<DataValue>>(dataValueEntities).ToList();;
         }
 
         public async Task<ViewModels.DataValue> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var item = await _context.DataValues.FindAsync(id);
+            var item = await _context.DataValues
+                .Include(dv => dv.DataField)
+                .FirstOrDefaultAsync(dv => dv.Id ==id, ct);
             if (item == null)
                 throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
+
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselUserRequirement.IsMet(_user.GetId(), item.DataField.MselId, _context))
+                throw new ForbiddenException();
 
             return _mapper.Map<DataValue>(item);
         }
@@ -82,11 +86,11 @@ namespace Blueprint.Api.Services
             var mselId = await _context.DataFields
                 .Where(df => df.Id == dataValue.DataFieldId)
                 .Select(df => df.MselId)
-                .FirstOrDefaultAsync();
-            // user must be a Content Developer or be on the requested team and be able to submit
+                .FirstOrDefaultAsync(ct);
+            // user must be a Content Developer or be a MSEL editor
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
             {
-                if (!( await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context)))
+                if (!await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context))
                     throw new ForbiddenException();
             }
 

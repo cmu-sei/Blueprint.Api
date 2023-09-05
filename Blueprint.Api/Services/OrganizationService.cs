@@ -56,7 +56,7 @@ namespace Blueprint.Api.Services
 
             var organizationEntities = await _context.Organizations
                 .Where(organization => organization.IsTemplate)
-                .ToListAsync();
+                .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<Organization>>(organizationEntities).ToList();;
         }
@@ -75,17 +75,17 @@ namespace Blueprint.Api.Services
 
             var organizationEntities = await _context.Organizations
                 .Where(organization => organization.MselId == mselId)
-                .ToListAsync();
+                .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<Organization>>(organizationEntities).ToList();;
         }
 
         public async Task<ViewModels.Organization> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var item = await _context.Organizations.SingleAsync(organization => organization.Id == id, ct);
+            if (item == null)
+                throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
+
             if (!item.IsTemplate &&
                 !(await MselViewRequirement.IsMet(_user.GetId(), (Guid)item.MselId, _context)) &&
                 !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
@@ -108,7 +108,7 @@ namespace Blueprint.Api.Services
             }
 
             // start a transaction, because we may also update other data fields
-            await _context.Database.BeginTransactionAsync();
+            await _context.Database.BeginTransactionAsync(ct);
             organization.Id = organization.Id != Guid.Empty ? organization.Id : Guid.NewGuid();
             organization.DateCreated = DateTime.UtcNow;
             organization.CreatedBy = _user.GetId();
@@ -148,7 +148,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<Organization>();
 
             // start a transaction, because we may also update other data fields
-            await _context.Database.BeginTransactionAsync();
+            await _context.Database.BeginTransactionAsync(ct);
             organization.CreatedBy = organizationToUpdate.CreatedBy;
             organization.DateCreated = organizationToUpdate.DateCreated;
             organization.ModifiedBy = _user.GetId();
@@ -182,7 +182,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<Organization>();
 
             // start a transaction, because we may also update other data fields
-            await _context.Database.BeginTransactionAsync();
+            await _context.Database.BeginTransactionAsync(ct);
             _context.Organizations.Remove(organizationToDelete);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info

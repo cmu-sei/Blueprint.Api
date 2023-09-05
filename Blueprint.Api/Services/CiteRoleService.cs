@@ -50,32 +50,38 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.CiteRole>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
                 throw new ForbiddenException();
 
             var citeRoleEntities = await _context.CiteRoles
                 .Where(cr => cr.MselId == mselId)
                 .Include(cr => cr.Team)
-                .ToListAsync();
+                .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<CiteRole>>(citeRoleEntities).ToList();;
         }
 
         public async Task<ViewModels.CiteRole> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var item = await _context.CiteRoles
                 .Include(cr => cr.Team)
                 .SingleAsync(cr => cr.Id == id, ct);
+
+            if (item == null)
+                throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
+
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
+                throw new ForbiddenException();
 
             return _mapper.Map<CiteRole>(item);
         }
 
         public async Task<ViewModels.CiteRole> CreateAsync(ViewModels.CiteRole citeRole, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselOwnerRequirement.IsMet(_user.GetId(), citeRole.MselId, _context))
                 throw new ForbiddenException();
             citeRole.Id = citeRole.Id != Guid.Empty ? citeRole.Id : Guid.NewGuid();
             citeRole.DateCreated = DateTime.UtcNow;
@@ -93,7 +99,8 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.CiteRole> UpdateAsync(Guid id, ViewModels.CiteRole citeRole, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselOwnerRequirement.IsMet(_user.GetId(), citeRole.MselId, _context))
                 throw new ForbiddenException();
 
             var citeRoleToUpdate = await _context.CiteRoles.SingleOrDefaultAsync(v => v.Id == id, ct);
@@ -117,10 +124,11 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var citeRoleToDelete = await _context.CiteRoles.SingleOrDefaultAsync(v => v.Id == id, ct);
+
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselOwnerRequirement.IsMet(_user.GetId(), citeRoleToDelete.MselId, _context))
+                throw new ForbiddenException();
 
             if (citeRoleToDelete == null)
                 throw new EntityNotFoundException<CiteRole>();

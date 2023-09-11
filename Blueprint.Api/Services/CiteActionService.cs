@@ -50,32 +50,38 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.CiteAction>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
                 throw new ForbiddenException();
 
             var citeActionEntities = await _context.CiteActions
                 .Where(ca => ca.MselId == mselId)
                 .Include(ca => ca.Team)
-                .ToListAsync();
+                .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<CiteAction>>(citeActionEntities).ToList();;
         }
 
         public async Task<ViewModels.CiteAction> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var item = await _context.CiteActions
                 .Include(ca => ca.Team)
                 .SingleAsync(ca => ca.Id == id, ct);
+
+            if (item == null)
+                throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
+
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
+                throw new ForbiddenException();
 
             return _mapper.Map<CiteAction>(item);
         }
 
         public async Task<ViewModels.CiteAction> CreateAsync(ViewModels.CiteAction citeAction, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselOwnerRequirement.IsMet(_user.GetId(), citeAction.MselId, _context))
                 throw new ForbiddenException();
             citeAction.Id = citeAction.Id != Guid.Empty ? citeAction.Id : Guid.NewGuid();
             citeAction.DateCreated = DateTime.UtcNow;
@@ -93,7 +99,8 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.CiteAction> UpdateAsync(Guid id, ViewModels.CiteAction citeAction, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselOwnerRequirement.IsMet(_user.GetId(), citeAction.MselId, _context))
                 throw new ForbiddenException();
 
             var citeActionToUpdate = await _context.CiteActions.SingleOrDefaultAsync(v => v.Id == id, ct);
@@ -117,10 +124,11 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var citeActionToDelete = await _context.CiteActions.SingleOrDefaultAsync(v => v.Id == id, ct);
+
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselOwnerRequirement.IsMet(_user.GetId(), citeActionToDelete.MselId, _context))
+                throw new ForbiddenException();
 
             if (citeActionToDelete == null)
                 throw new EntityNotFoundException<CiteAction>();

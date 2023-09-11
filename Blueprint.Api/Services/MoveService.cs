@@ -50,22 +50,26 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Move>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
                 throw new ForbiddenException();
 
             var moveEntities = await _context.Moves
                 .Where(move => move.MselId == mselId)
-                .ToListAsync();
+                .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<Move>>(moveEntities).ToList();;
         }
 
         public async Task<ViewModels.Move> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var item = await _context.Moves.SingleAsync(move => move.Id == id, ct);
+            if (item == null)
+                throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
+
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
+                throw new ForbiddenException();
 
             return _mapper.Map<Move>(item);
         }
@@ -74,12 +78,12 @@ namespace Blueprint.Api.Services
         {
             // user must be a Content Developer or a MSEL owner
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !( await MselOwnerRequirement.IsMet(_user.GetId(), move.MselId, _context)) &&
-                !( await MoveEditorRequirement.IsMet(_user.GetId(), move.MselId, _context)))
+                ! await MselOwnerRequirement.IsMet(_user.GetId(), move.MselId, _context) &&
+                ! await MoveEditorRequirement.IsMet(_user.GetId(), move.MselId, _context))
                 throw new ForbiddenException();
 
             // start a transaction, because we may also update other data fields
-            await _context.Database.BeginTransactionAsync();
+            await _context.Database.BeginTransactionAsync(ct);
             move.Id = move.Id != Guid.Empty ? move.Id : Guid.NewGuid();
             move.DateCreated = DateTime.UtcNow;
             move.CreatedBy = _user.GetId();
@@ -110,7 +114,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<Move>();
 
             // start a transaction, because we may also update other data fields
-            await _context.Database.BeginTransactionAsync();
+            await _context.Database.BeginTransactionAsync(ct);
             move.CreatedBy = moveToUpdate.CreatedBy;
             move.DateCreated = moveToUpdate.DateCreated;
             move.ModifiedBy = _user.GetId();

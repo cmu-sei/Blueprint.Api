@@ -50,23 +50,28 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
                 throw new ForbiddenException();
 
             var dataFieldEntities = await _context.DataFields
                 .Where(dataField => dataField.MselId == mselId)
                 .Include(df => df.DataOptions)
-                .ToListAsync();
+                .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<DataField>>(dataFieldEntities).ToList();;
         }
 
         public async Task<ViewModels.DataField> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var item = await _context.DataFields.SingleAsync(dataField => dataField.Id == id, ct);
+
+            if (item == null)
+                throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
+
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
+                throw new ForbiddenException();
 
             return _mapper.Map<DataField>(item);
         }
@@ -76,7 +81,7 @@ namespace Blueprint.Api.Services
             // must be a content developer or MSEL owner
             // Content developers and MSEL owners can update anything, others require condition checks
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
+                !await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context))
                 throw new ForbiddenException();
 
             // start a transaction, because we may also update other data fields

@@ -12,13 +12,11 @@ using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
-using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Services
@@ -29,7 +27,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
-        Task<IEnumerable<ViewModels.ScenarioEvent>> DeleteAsync(Guid id, CancellationToken ct);
+        Task<bool> DeleteAsync(Guid id, CancellationToken ct);
+        Task<bool> BatchDeleteAsync(Guid[] idList, CancellationToken ct);
     }
 
     public class ScenarioEventService : IScenarioEventService
@@ -210,7 +209,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<ViewModels.ScenarioEvent>(scenarioEventToUpdate);
         }
 
-        public async Task<IEnumerable<ViewModels.ScenarioEvent>> DeleteAsync(Guid id, CancellationToken ct)
+        public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
             var scenarioEventToDelete = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
 
@@ -230,14 +229,55 @@ namespace Blueprint.Api.Services
             await RenumberRowIndexes(scenarioEventToDelete, false, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
-            var scenarioEventEnitities = await _context.ScenarioEvents
-                    .Where(i => i.MselId == scenarioEventToDelete.MselId)
-                    .Include(se => se.DataValues)
-                    .ToListAsync(ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
+            return true;
+        }
+
+        public async Task<bool> BatchDeleteAsync(Guid[] idList, CancellationToken ct)
+        {
+            var mselId = Guid.Empty;
+            var scenarioEventList = new List<ScenarioEventEntity>();
+            foreach (var id in idList)
+            {
+                var scenarioEventToDelete = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
+
+                if (scenarioEventToDelete == null)
+                    throw new EntityNotFoundException<ScenarioEventEntity>();
+
+                if (mselId == Guid.Empty)
+                {
+                    mselId = scenarioEventToDelete.MselId;
+                }
+                else if (mselId != scenarioEventToDelete.MselId)
+                {
+                    throw new ArgumentException("Scenario events can only be from one MSEL for batch delete!");
+                }
+
+                // user must be a Content Developer or a MSEL owner
+                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                    !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+                    throw new ForbiddenException();
+
+                scenarioEventList.Add(scenarioEventToDelete);
+            }
+
+            await _context.Database.BeginTransactionAsync();
+            foreach (var scenarioEventToDelete in scenarioEventList)
+            {
+                // start a transaction, because we may also update DataValues and other scenario events
+                _context.ScenarioEvents.Remove(scenarioEventToDelete);
+            }
+            await _context.SaveChangesAsync(ct);
+            // reorder
+            await RenumberRowIndexes(mselId, ct);
+            // update the MSEL modified info
+            await ServiceUtilities.SetMselModifiedAsync(mselId, _user.GetId(), DateTime.UtcNow, _context, ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
+
+            return true;
         }
 
         private async Task<List<ScenarioEventEntity>> RenumberRowIndexes(ScenarioEventEntity scenarioEventEntity, bool newIndexIsGreater, CancellationToken ct)
@@ -272,6 +312,25 @@ namespace Blueprint.Api.Services
                 else if (scenarioEventEntity.RowIndex > scenarioEvents.Count)
                 {
                     scenarioEventEntity.RowIndex = scenarioEvents.Count;
+                }
+            }
+            await _context.SaveChangesAsync(ct);
+
+            return scenarioEvents;
+        }
+
+        private async Task<List<ScenarioEventEntity>> RenumberRowIndexes(Guid mselId, CancellationToken ct)
+        {
+            var scenarioEvents = await _context.ScenarioEvents
+                .Where(se => se.MselId == mselId)
+                    .Include(se => se.DataValues)
+                .OrderBy(se => se.RowIndex)
+                .ToListAsync(ct);
+            for (var i = 0; i < scenarioEvents.Count; i++)
+            {
+                if (scenarioEvents[i].RowIndex != i)
+                {
+                    scenarioEvents[i].RowIndex = i + 1;
                 }
             }
             await _context.SaveChangesAsync(ct);

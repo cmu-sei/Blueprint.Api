@@ -328,9 +328,10 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             for (var i = 0; i < scenarioEvents.Count; i++)
             {
-                if (scenarioEvents[i].RowIndex != i)
+                var newIndex = i + 1;
+                if (scenarioEvents[i].RowIndex != newIndex)
                 {
-                    scenarioEvents[i].RowIndex = i + 1;
+                    scenarioEvents[i].RowIndex = newIndex;
                 }
             }
             await _context.SaveChangesAsync(ct);

@@ -125,8 +125,25 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteScenarioEvent")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            var list = await _scenarioEventService.DeleteAsync(id, ct);
-            return Ok(list);
+            var returnVal = await _scenarioEventService.DeleteAsync(id, ct);
+            return Ok(returnVal);
+        }
+
+        /// <summary>
+        /// Deletes multiple ScenarioEvents
+        /// </summary>
+        /// <remarks>
+        /// Deletes the ScenarioEvents specified
+        /// </remarks>
+        /// <param name="scenarioEventIdList">The list of ScenarioEvent IDs to delete</param>
+        /// <param name="ct"></param>
+        [HttpPost("scenarioEvents/batchDelete")]
+        [ProducesResponseType((int)HttpStatusCode.NoContent)]
+        [SwaggerOperation(OperationId = "batchDeleteScenarioEvents")]
+        public async Task<IActionResult> BatchDelete([FromBody] Guid[] scenarioEventIdList, CancellationToken ct)
+        {
+            var returnVal = await _scenarioEventService.BatchDeleteAsync(scenarioEventIdList, ct);
+            return Ok(returnVal);
         }
 
     }

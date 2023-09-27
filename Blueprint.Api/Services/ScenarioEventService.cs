@@ -18,6 +18,7 @@ using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
+using System.Security.Cryptography.X509Certificates;
 
 namespace Blueprint.Api.Services
 {
@@ -168,35 +169,47 @@ namespace Blueprint.Api.Services
                 await RenumberRowIndexes(scenarioEventToUpdate, newIndexIsGreater, ct);
             }
             // get the DataField IDs for this MSEL
-            var dataFieldIdList = _context.DataFields
+            var dataFieldIdList = await _context.DataFields
                 .Where(df => df.MselId == scenarioEvent.MselId)
-                .Select(df => df.Id);
+                .Select(df => df.Id)
+                .ToListAsync(ct);
+            var cellMetadata = GetCellMetaDataForRow(scenarioEvent.RowMetadata);
             // update the data values
-            foreach (var dataValue in scenarioEvent.DataValues)
+            foreach (var dataFieldId in dataFieldIdList)
             {
-                var dataValueToUpdate = await _context.DataValues.SingleOrDefaultAsync(dv => dv.Id == dataValue.Id, ct);
+                var dataValueToUpdate = await _context.DataValues
+                    .SingleOrDefaultAsync(dv => dv.ScenarioEventId == scenarioEvent.Id && dv.DataFieldId == dataFieldId, ct);
+                var dataValue = scenarioEvent.DataValues
+                    .SingleOrDefault(dv => dv.ScenarioEventId == scenarioEvent.Id && dv.DataFieldId == dataFieldId);
                 if (dataValueToUpdate == null)
                 {
-                    if (dataValue.ScenarioEventId != scenarioEvent.Id || !dataFieldIdList.Contains(dataValue.DataFieldId))
-                    {
-                        throw new InvalidOperationException("The submitted DataValue had a mismatched ScenarioEventId or DataFieldId for the ScenarioEvent.");
-                    }
                     dataValue.Id = Guid.NewGuid();
                     dataValue.CreatedBy = (Guid)scenarioEvent.ModifiedBy;
                     dataValue.DateCreated = (DateTime)scenarioEvent.DateModified;
                     dataValue.DateModified = dataValue.DateCreated;
                     dataValue.ModifiedBy = dataValue.CreatedBy;
+                    dataValue.CellMetadata = cellMetadata;
                     var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
                     _context.DataValues.Add(dataValueEntity);
                 }
-                else if (dataValue.Value != dataValueToUpdate.Value)
+                else if (dataValue == null)
+                {
+                    if (dataValueToUpdate.CellMetadata != cellMetadata)
+                    {
+                        // update the DataValue
+                        dataValueToUpdate.ModifiedBy = scenarioEventToUpdate.ModifiedBy;
+                        dataValueToUpdate.DateModified = scenarioEventToUpdate.DateModified;
+                        dataValueToUpdate.CellMetadata = cellMetadata;
+                        _context.DataValues.Update(dataValueToUpdate);
+                    }
+                }
+                else if (dataValue.Value != dataValueToUpdate.Value || dataValueToUpdate.CellMetadata != cellMetadata)
                 {
                     // update the DataValue
-                    dataValue.CreatedBy = dataValueToUpdate.CreatedBy;
-                    dataValue.DateCreated = dataValueToUpdate.DateCreated;
-                    dataValue.ModifiedBy = scenarioEventToUpdate.ModifiedBy;
-                    dataValue.DateModified = scenarioEventToUpdate.DateModified;
-                    _mapper.Map(dataValue, dataValueToUpdate);
+                    dataValueToUpdate.ModifiedBy = scenarioEventToUpdate.ModifiedBy;
+                    dataValueToUpdate.DateModified = scenarioEventToUpdate.DateModified;
+                    dataValueToUpdate.Value = dataValue.Value;
+                    dataValueToUpdate.CellMetadata = cellMetadata;
                     _context.DataValues.Update(dataValueToUpdate);
                 }
             }
@@ -337,6 +350,18 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
 
             return scenarioEvents;
+        }
+
+        private string GetCellMetaDataForRow(string rowMetaData)
+        {
+            var rowParts = rowMetaData.Split(",");
+            var cellMetaData = "";
+            for (var i = 1; i < 4; i++)
+            {
+                cellMetaData = cellMetaData + int.Parse(rowParts[i]).ToString("X");
+            }
+
+            return cellMetaData + ",0.7,normal,0";
         }
 
     }

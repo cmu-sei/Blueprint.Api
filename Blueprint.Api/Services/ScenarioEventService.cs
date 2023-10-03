@@ -354,14 +354,24 @@ namespace Blueprint.Api.Services
 
         private string GetCellMetaDataForRow(string rowMetaData)
         {
-            var rowParts = rowMetaData.Split(",");
+          if (rowMetaData != null && rowMetaData.Count() > 0)
+          {
             var cellMetaData = "";
-            for (var i = 1; i < 4; i++)
+            var rowParts = rowMetaData.Split(",");
+            if (rowParts.Count() == 4)
             {
-                cellMetaData = cellMetaData + int.Parse(rowParts[i]).ToString("X");
+              for (var i = 1; i < 4; i++)
+              {
+                  cellMetaData = cellMetaData + int.Parse(rowParts[i]).ToString("X");
+              }
             }
-
+            else
+            {
+              cellMetaData = "FFFFFF";
+            }
             return cellMetaData + ",0.7,normal,0";
+          }
+          return "FFFFFF,0,normal,0";
         }
 
     }

@@ -12,12 +12,12 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http;
 using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Cite.Api.Client;
 
@@ -172,7 +172,7 @@ namespace Blueprint.Api.Services
             var move0 = msel.Moves.SingleOrDefault(m => m.MoveNumber == 0);
             Evaluation newEvaluation = new Evaluation() {
                 Description = msel.Name,
-                Status = ItemStatus.Pending,
+                Status = Cite.Api.Client.ItemStatus.Pending,
                 CurrentMoveNumber = 0,
                 ScoringModelId = (Guid)msel.CiteScoringModelId,
                 SituationDescription = "Preparing for the start of the exercise."
@@ -251,9 +251,12 @@ namespace Blueprint.Api.Services
                             await _citeApiClient.CreateUserAsync(newUser, ct);
                         }
                         // create Cite TeamUsers
+                        var isObserver = await _context.UserMselRoles
+                            .AnyAsync(umr => umr.UserId == user.Id && umr.MselId == msel.Id && umr.Role == MselRole.CiteObserver);
                         var teamUser = new TeamUser() {
                             TeamId = citeTeam.Id,
-                            UserId = user.Id
+                            UserId = user.Id,
+                            IsObserver = isObserver
                         };
                         await _citeApiClient.CreateTeamUserAsync(teamUser, ct);
                     }

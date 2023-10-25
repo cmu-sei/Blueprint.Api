@@ -12,7 +12,6 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http;
 using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
@@ -208,9 +207,12 @@ namespace Blueprint.Api.Services
                         await _galleryApiClient.CreateUserAsync(newUser, ct);
                     }
                     // create Gallery TeamUsers
+                    var isObserverRole = await _context.UserMselRoles
+                        .AnyAsync(umr => umr.UserId == user.Id && umr.MselId == msel.Id && umr.Role == MselRole.GalleryObserver);
                     var teamUser = new TeamUser() {
                         TeamId = galleryTeam.Id,
-                        UserId = user.Id
+                        UserId = user.Id,
+                        IsObserver = isObserverRole
                     };
                     await _galleryApiClient.CreateTeamUserAsync(teamUser, ct);
                 }

@@ -175,6 +175,7 @@ namespace Blueprint.Api.Services
                 Status = Cite.Api.Client.ItemStatus.Pending,
                 CurrentMoveNumber = 0,
                 ScoringModelId = (Guid)msel.CiteScoringModelId,
+                GalleryExhibitId = msel.GalleryExhibitId,
                 SituationDescription = "Preparing for the start of the exercise."
             };
             if (move0 != null)

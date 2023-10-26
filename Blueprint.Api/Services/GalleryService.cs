@@ -157,7 +157,7 @@ namespace Blueprint.Api.Services
         {
             Exhibit newExhibit = new Exhibit() {
                 CollectionId = (Guid)msel.GalleryCollectionId,
-                ScenarioId = null,
+                ScenarioId = msel.SteamfitterScenarioId,
                 CurrentMove = 0,
                 CurrentInject = 0
             };

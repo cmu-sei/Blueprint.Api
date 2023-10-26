@@ -174,25 +174,26 @@ namespace Blueprint.Api.Services
             // get the Gallery teams, Gallery Users, and the Gallery TeamUsers
             var galleryUserIds = (await _galleryApiClient.GetUsersAsync(ct)).Select(u => u.Id);
             // get the teams for this MSEL and loop through them
-            var teams = await _context.MselTeams
+            var mselTeams = await _context.MselTeams
                 .Where(mt => mt.MselId == msel.Id)
-                .Select(mt => mt.Team)
+                .Include(mt => mt.Team)
                 .ToListAsync();
-            foreach (var team in teams)
+            foreach (var mselTeam in mselTeams)
             {
                 var galleryTeamId = Guid.NewGuid();
                 // create team in Gallery
                 var galleryTeam = new Team() {
                     Id = galleryTeamId,
-                    Name = team.Name,
-                    ShortName = team.ShortName,
-                    ExhibitId = (Guid)msel.GalleryExhibitId
+                    Name = mselTeam.Team.Name,
+                    ShortName = mselTeam.Team.ShortName,
+                    ExhibitId = (Guid)msel.GalleryExhibitId,
+                    Email = mselTeam.Email
                 };
                 galleryTeam = await _galleryApiClient.CreateTeamAsync(galleryTeam, ct);
-                galleryTeamDictionary.Add(team.Id, galleryTeam.Id);
+                galleryTeamDictionary.Add(mselTeam.Team.Id, galleryTeam.Id);
                 // get all of the users for this team and loop through them
                 var users = await _context.TeamUsers
-                    .Where(tu => tu.TeamId == team.Id)
+                    .Where(tu => tu.TeamId == mselTeam.Team.Id)
                     .Select(tu => tu.User)
                     .ToListAsync(ct);
                 foreach (var user in users)

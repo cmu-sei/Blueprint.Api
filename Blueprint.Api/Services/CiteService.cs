@@ -6,6 +6,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
+using Blueprint.Api.Hubs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,7 @@ using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Cite.Api.Client;
+using Microsoft.AspNetCore.SignalR;
 
 namespace Blueprint.Api.Services
 {
@@ -41,6 +43,7 @@ namespace Blueprint.Api.Services
         protected readonly IMapper _mapper;
         private readonly ILogger<CiteService> _logger;
         private readonly IMselService _mselService;
+        private readonly IHubContext<MainHub> _hubContext;
 
         public CiteService(
             ICiteApiClient citeApiClient,
@@ -50,7 +53,8 @@ namespace Blueprint.Api.Services
             IAuthorizationService authorizationService,
             ILogger<CiteService> logger,
             ResourceOwnerAuthorizationOptions resourceOwnerAuthorizationOptions,
-            IMselService mselService)
+            IMselService mselService,
+            IHubContext<MainHub> hubContext)
         {
             _citeApiClient = citeApiClient;
             _resourceOwnerAuthorizationOptions = resourceOwnerAuthorizationOptions;
@@ -60,6 +64,7 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
             _logger = logger;
             _mselService = mselService;
+            _hubContext = hubContext;
         }
 
         public async Task<IEnumerable<ScoringModel>> GetScoringModelsAsync(CancellationToken ct)
@@ -114,16 +119,22 @@ namespace Blueprint.Api.Services
             // start a transaction, because we will modify many database items
             await _context.Database.BeginTransactionAsync();
             // create the Cite Evaluation
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Evaluation to CITE", null, ct);
             await CreateEvaluationAsync(msel, ct);
             // create the Cite Moves
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Moves to CITE", null, ct);
             await CreateMovesAsync(msel, ct);
             // create the Cite Teams
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to CITE", null, ct);
             var citeTeamDictionary = await CreateTeamsAsync(msel, ct);
             // create the Cite Roles
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Roles to CITE", null, ct);
             await CreateRolesAsync(msel, citeTeamDictionary, ct);
             // create the Cite Actions
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Actions to CITE", null, ct);
             await CreateActionsAsync(msel, citeTeamDictionary, ct);
             // commit the transaction
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to CITE", null, ct);
             await _context.Database.CommitTransactionAsync(ct);
 
             return await _mselService.GetAsync(msel.Id, ct); 

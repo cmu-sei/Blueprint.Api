@@ -20,6 +20,8 @@ using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Gallery.Api.Client;
+using Microsoft.AspNetCore.SignalR;
+using Blueprint.Api.Hubs;
 
 namespace Blueprint.Api.Services
 {
@@ -39,6 +41,7 @@ namespace Blueprint.Api.Services
         protected readonly IMapper _mapper;
         private readonly ILogger<GalleryService> _logger;
         private readonly string _galleryDelivery = "Gallery";
+        private readonly IHubContext<MainHub> _hubContext;
 
         public GalleryService(
             IGalleryApiClient galleryApiClient,
@@ -47,7 +50,8 @@ namespace Blueprint.Api.Services
             IMapper mapper,
             IAuthorizationService authorizationService,
             ILogger<GalleryService> logger,
-            ResourceOwnerAuthorizationOptions resourceOwnerAuthorizationOptions)
+            ResourceOwnerAuthorizationOptions resourceOwnerAuthorizationOptions,
+            IHubContext<MainHub> hubContext)
         {
             _galleryApiClient = galleryApiClient;
             _resourceOwnerAuthorizationOptions = resourceOwnerAuthorizationOptions;
@@ -56,6 +60,7 @@ namespace Blueprint.Api.Services
             _context = mselContext;
             _mapper = mapper;
             _logger = logger;
+            _hubContext = hubContext;
         }
 
         public async Task<ViewModels.Msel> PushToGalleryAsync(Guid mselId, CancellationToken ct)
@@ -83,17 +88,24 @@ namespace Blueprint.Api.Services
             // start a transaction, because we will modify many database items
             await _context.Database.BeginTransactionAsync();
             // create the Gallery Collection
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Collection to Gallery", null, ct);
             await CreateCollectionAsync(msel, ct);
             // create the Gallery Exhibit
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Exhibit to Gallery", null, ct);
             await CreateExhibitAsync(msel, ct);
             // create the Gallery Teams
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to Gallery", null, ct);
             var galleryTeamDictionary = await CreateTeamsAsync(msel, ct);
             // create the Gallery Cards
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Cards to Gallery", null, ct);
             await CreateCardsAsync(msel, galleryTeamDictionary, ct);
             // create the Gallery Articles
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Articles to Gallery", null, ct);
             await CreateArticlesAsync(msel, galleryTeamDictionary, ct);
             // commit the transaction
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to Gallery", null, ct);
             await _context.Database.CommitTransactionAsync(ct);
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ", ", null, ct);
 
             return _mapper.Map<ViewModels.Msel>(msel); 
         }

@@ -6,20 +6,22 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
+using Blueprint.Api.Hubs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http;
 using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Cite.Api.Client;
+using Microsoft.AspNetCore.SignalR;
 
 namespace Blueprint.Api.Services
 {
@@ -41,6 +43,7 @@ namespace Blueprint.Api.Services
         protected readonly IMapper _mapper;
         private readonly ILogger<CiteService> _logger;
         private readonly IMselService _mselService;
+        private readonly IHubContext<MainHub> _hubContext;
 
         public CiteService(
             ICiteApiClient citeApiClient,
@@ -50,7 +53,8 @@ namespace Blueprint.Api.Services
             IAuthorizationService authorizationService,
             ILogger<CiteService> logger,
             ResourceOwnerAuthorizationOptions resourceOwnerAuthorizationOptions,
-            IMselService mselService)
+            IMselService mselService,
+            IHubContext<MainHub> hubContext)
         {
             _citeApiClient = citeApiClient;
             _resourceOwnerAuthorizationOptions = resourceOwnerAuthorizationOptions;
@@ -60,6 +64,7 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
             _logger = logger;
             _mselService = mselService;
+            _hubContext = hubContext;
         }
 
         public async Task<IEnumerable<ScoringModel>> GetScoringModelsAsync(CancellationToken ct)
@@ -114,16 +119,22 @@ namespace Blueprint.Api.Services
             // start a transaction, because we will modify many database items
             await _context.Database.BeginTransactionAsync();
             // create the Cite Evaluation
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Evaluation to CITE", null, ct);
             await CreateEvaluationAsync(msel, ct);
             // create the Cite Moves
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Moves to CITE", null, ct);
             await CreateMovesAsync(msel, ct);
             // create the Cite Teams
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to CITE", null, ct);
             var citeTeamDictionary = await CreateTeamsAsync(msel, ct);
             // create the Cite Roles
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Roles to CITE", null, ct);
             await CreateRolesAsync(msel, citeTeamDictionary, ct);
             // create the Cite Actions
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Actions to CITE", null, ct);
             await CreateActionsAsync(msel, citeTeamDictionary, ct);
             // commit the transaction
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to CITE", null, ct);
             await _context.Database.CommitTransactionAsync(ct);
 
             return await _mselService.GetAsync(msel.Id, ct); 
@@ -172,9 +183,10 @@ namespace Blueprint.Api.Services
             var move0 = msel.Moves.SingleOrDefault(m => m.MoveNumber == 0);
             Evaluation newEvaluation = new Evaluation() {
                 Description = msel.Name,
-                Status = ItemStatus.Pending,
+                Status = Cite.Api.Client.ItemStatus.Pending,
                 CurrentMoveNumber = 0,
                 ScoringModelId = (Guid)msel.CiteScoringModelId,
+                GalleryExhibitId = msel.GalleryExhibitId,
                 SituationDescription = "Preparing for the start of the exercise."
             };
             if (move0 != null)
@@ -251,9 +263,12 @@ namespace Blueprint.Api.Services
                             await _citeApiClient.CreateUserAsync(newUser, ct);
                         }
                         // create Cite TeamUsers
+                        var isObserver = await _context.UserMselRoles
+                            .AnyAsync(umr => umr.UserId == user.Id && umr.MselId == msel.Id && umr.Role == MselRole.CiteObserver);
                         var teamUser = new TeamUser() {
                             TeamId = citeTeam.Id,
-                            UserId = user.Id
+                            UserId = user.Id,
+                            IsObserver = isObserver
                         };
                         await _citeApiClient.CreateTeamUserAsync(teamUser, ct);
                     }

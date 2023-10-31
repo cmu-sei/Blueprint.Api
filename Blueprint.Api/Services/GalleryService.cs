@@ -12,7 +12,6 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http;
 using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
@@ -21,6 +20,8 @@ using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Gallery.Api.Client;
+using Microsoft.AspNetCore.SignalR;
+using Blueprint.Api.Hubs;
 
 namespace Blueprint.Api.Services
 {
@@ -40,6 +41,7 @@ namespace Blueprint.Api.Services
         protected readonly IMapper _mapper;
         private readonly ILogger<GalleryService> _logger;
         private readonly string _galleryDelivery = "Gallery";
+        private readonly IHubContext<MainHub> _hubContext;
 
         public GalleryService(
             IGalleryApiClient galleryApiClient,
@@ -48,7 +50,8 @@ namespace Blueprint.Api.Services
             IMapper mapper,
             IAuthorizationService authorizationService,
             ILogger<GalleryService> logger,
-            ResourceOwnerAuthorizationOptions resourceOwnerAuthorizationOptions)
+            ResourceOwnerAuthorizationOptions resourceOwnerAuthorizationOptions,
+            IHubContext<MainHub> hubContext)
         {
             _galleryApiClient = galleryApiClient;
             _resourceOwnerAuthorizationOptions = resourceOwnerAuthorizationOptions;
@@ -57,6 +60,7 @@ namespace Blueprint.Api.Services
             _context = mselContext;
             _mapper = mapper;
             _logger = logger;
+            _hubContext = hubContext;
         }
 
         public async Task<ViewModels.Msel> PushToGalleryAsync(Guid mselId, CancellationToken ct)
@@ -84,17 +88,24 @@ namespace Blueprint.Api.Services
             // start a transaction, because we will modify many database items
             await _context.Database.BeginTransactionAsync();
             // create the Gallery Collection
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Collection to Gallery", null, ct);
             await CreateCollectionAsync(msel, ct);
             // create the Gallery Exhibit
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Exhibit to Gallery", null, ct);
             await CreateExhibitAsync(msel, ct);
             // create the Gallery Teams
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to Gallery", null, ct);
             var galleryTeamDictionary = await CreateTeamsAsync(msel, ct);
             // create the Gallery Cards
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Cards to Gallery", null, ct);
             await CreateCardsAsync(msel, galleryTeamDictionary, ct);
             // create the Gallery Articles
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Articles to Gallery", null, ct);
             await CreateArticlesAsync(msel, galleryTeamDictionary, ct);
             // commit the transaction
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to Gallery", null, ct);
             await _context.Database.CommitTransactionAsync(ct);
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ", ", null, ct);
 
             return _mapper.Map<ViewModels.Msel>(msel); 
         }
@@ -158,7 +169,7 @@ namespace Blueprint.Api.Services
         {
             Exhibit newExhibit = new Exhibit() {
                 CollectionId = (Guid)msel.GalleryCollectionId,
-                ScenarioId = null,
+                ScenarioId = msel.SteamfitterScenarioId,
                 CurrentMove = 0,
                 CurrentInject = 0
             };
@@ -175,25 +186,26 @@ namespace Blueprint.Api.Services
             // get the Gallery teams, Gallery Users, and the Gallery TeamUsers
             var galleryUserIds = (await _galleryApiClient.GetUsersAsync(ct)).Select(u => u.Id);
             // get the teams for this MSEL and loop through them
-            var teams = await _context.MselTeams
+            var mselTeams = await _context.MselTeams
                 .Where(mt => mt.MselId == msel.Id)
-                .Select(mt => mt.Team)
+                .Include(mt => mt.Team)
                 .ToListAsync();
-            foreach (var team in teams)
+            foreach (var mselTeam in mselTeams)
             {
                 var galleryTeamId = Guid.NewGuid();
                 // create team in Gallery
                 var galleryTeam = new Team() {
                     Id = galleryTeamId,
-                    Name = team.Name,
-                    ShortName = team.ShortName,
-                    ExhibitId = (Guid)msel.GalleryExhibitId
+                    Name = mselTeam.Team.Name,
+                    ShortName = mselTeam.Team.ShortName,
+                    ExhibitId = (Guid)msel.GalleryExhibitId,
+                    Email = mselTeam.Email
                 };
                 galleryTeam = await _galleryApiClient.CreateTeamAsync(galleryTeam, ct);
-                galleryTeamDictionary.Add(team.Id, galleryTeam.Id);
+                galleryTeamDictionary.Add(mselTeam.Team.Id, galleryTeam.Id);
                 // get all of the users for this team and loop through them
                 var users = await _context.TeamUsers
-                    .Where(tu => tu.TeamId == team.Id)
+                    .Where(tu => tu.TeamId == mselTeam.Team.Id)
                     .Select(tu => tu.User)
                     .ToListAsync(ct);
                 foreach (var user in users)
@@ -208,9 +220,12 @@ namespace Blueprint.Api.Services
                         await _galleryApiClient.CreateUserAsync(newUser, ct);
                     }
                     // create Gallery TeamUsers
+                    var isObserverRole = await _context.UserMselRoles
+                        .AnyAsync(umr => umr.UserId == user.Id && umr.MselId == msel.Id && umr.Role == MselRole.GalleryObserver);
                     var teamUser = new TeamUser() {
                         TeamId = galleryTeam.Id,
-                        UserId = user.Id
+                        UserId = user.Id,
+                        IsObserver = isObserverRole
                     };
                     await _galleryApiClient.CreateTeamUserAsync(teamUser, ct);
                 }

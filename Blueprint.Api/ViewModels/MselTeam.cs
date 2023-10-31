@@ -21,6 +21,7 @@ namespace Blueprint.Api.ViewModels
         public Guid TeamId { get; set; }
         public virtual Team Team { get; set; }
         public Guid? CiteTeamTypeId { get; set; }
+        public string Email { get; set; }
     }
 
 }

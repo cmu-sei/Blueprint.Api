@@ -27,8 +27,8 @@ namespace Blueprint.Api.Data.Enumerations
         User = 120,    // user assigned to the inject.  For execution, etc.
         Checkbox = 130,    // used to track statuses about the inject.
         Url = 140,    // link to other information
-        Move = 150,
-        DeliveryMethod = 160
+        Move = 150,     // values will be filled from the MSEL moves
+        DeliveryMethod = 160     // values will currently be filled from Notification, Email, and Gallery
     }
 
     public enum MselRole{

@@ -12,6 +12,7 @@ namespace Blueprint.Api.ViewModels
         public Guid MselId { get; set; }
         public virtual ICollection<DataValue> DataValues { get; set; } = new HashSet<DataValue>();
         public int RowIndex { get; set; }
+        public bool IsHidden { get; set; }
         public string RowMetadata { get; set; }
    }
 }

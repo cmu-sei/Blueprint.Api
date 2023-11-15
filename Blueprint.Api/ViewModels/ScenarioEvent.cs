@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using Blueprint.Api.Data.Enumerations;
 
 namespace Blueprint.Api.ViewModels
 {
@@ -14,6 +15,11 @@ namespace Blueprint.Api.ViewModels
         public int RowIndex { get; set; }
         public bool IsHidden { get; set; }
         public string RowMetadata { get; set; }
+        public int DeltaSeconds { get; set; }     // time from the start of the MSEL when this event should be executed
+        public Guid? ParentEventId { get; set; }
+        public ScenarioEvent ParentEvent { get; set; }
+        public EventExecutionStatus ParentEventStatusTrigger { get; set; }     // allows branching from the parent event.  Determines the parent execution status that will trigger this event to be executed.
+        public int DelaySeconds { get; set; }     // time to wait after completion of the parent event before executing this event
    }
 }
 

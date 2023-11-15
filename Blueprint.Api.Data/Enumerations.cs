@@ -11,6 +11,15 @@ namespace Blueprint.Api.Data.Enumerations
         Complete = 30
     }
 
+    public enum EventExecutionStatus
+    {
+        Executed = 10,
+        Completed = 20,
+        Succeeded = 30,
+        Failed = 40,
+        Expired = 50
+    }
+
     public enum DataFieldType{
         String = 0,
         Integer = 10,

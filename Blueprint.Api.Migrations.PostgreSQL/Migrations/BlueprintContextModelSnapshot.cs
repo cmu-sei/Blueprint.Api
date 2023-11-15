@@ -1133,8 +1133,9 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .IsRequired();
 
                     b.HasOne("Blueprint.Api.Data.Models.ScenarioEventEntity", "ParentEvent")
-                        .WithMany()
-                        .HasForeignKey("ParentEventId");
+                        .WithMany("Children")
+                        .HasForeignKey("ParentEventId")
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("Msel");
 
@@ -1238,6 +1239,8 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventEntity", b =>
                 {
+                    b.Navigation("Children");
+
                     b.Navigation("DataValues");
                 });
 

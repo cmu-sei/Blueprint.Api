@@ -27,6 +27,7 @@ namespace Blueprint.Api.Data.Models
         public ScenarioEventEntity ParentEvent { get; set; }
         public EventExecutionStatus ParentEventStatusTrigger { get; set; }     // allows branching from the parent event.  Determines the parent execution status that will trigger this event to be executed.
         public int DelaySeconds { get; set; }     // time to wait after completion of the parent event before executing this event
+        public virtual ICollection<ScenarioEventEntity> Children { get; set; } = new HashSet<ScenarioEventEntity>(); // Only immediate children
     }
 
     public class ScenarioEventEntityConfiguration : IEntityTypeConfiguration<ScenarioEventEntity>
@@ -36,6 +37,10 @@ namespace Blueprint.Api.Data.Models
             builder
                 .HasOne(d => d.Msel)
                 .WithMany(d => d.ScenarioEvents)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder
+                .HasOne(d => d.ParentEvent)
+                .WithMany(d => d.Children)
                 .OnDelete(DeleteBehavior.Cascade);
         }
     }

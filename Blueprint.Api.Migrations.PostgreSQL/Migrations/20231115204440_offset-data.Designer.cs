@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    [Migration("20231114214106_offset_data")]
-    partial class offset_data
+    [Migration("20231115204440_offset-data")]
+    partial class offsetdata
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
@@ -1135,8 +1135,9 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .IsRequired();
 
                     b.HasOne("Blueprint.Api.Data.Models.ScenarioEventEntity", "ParentEvent")
-                        .WithMany()
-                        .HasForeignKey("ParentEventId");
+                        .WithMany("Children")
+                        .HasForeignKey("ParentEventId")
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("Msel");
 
@@ -1240,6 +1241,8 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventEntity", b =>
                 {
+                    b.Navigation("Children");
+
                     b.Navigation("DataValues");
                 });
 

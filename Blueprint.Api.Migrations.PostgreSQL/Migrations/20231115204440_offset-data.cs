@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
-    public partial class offset_data : Migration
+    public partial class offsetdata : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
@@ -46,8 +46,9 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                 table: "scenario_events",
                 column: "parent_event_id",
                 principalTable: "scenario_events",
-                principalColumn: "id");
-            // initialize delay_seconds from the existing row_index
+                principalColumn: "id",
+                onDelete: ReferentialAction.Cascade);
+            // set initial delta_seconds values, because row_index will no longer be used to order scenario_events
             migrationBuilder.Sql("UPDATE scenario_events SET delta_seconds = row_index * 100");
         }
 

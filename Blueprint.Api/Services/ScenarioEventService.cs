@@ -30,7 +30,6 @@ namespace Blueprint.Api.Services
         Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<bool> BatchDeleteAsync(Guid[] idList, CancellationToken ct);
-        List<ScenarioEventEntity> OrderScenarioEvents(List<ScenarioEventEntity> rawScenarioEventList);
     }
 
     public class ScenarioEventService : IScenarioEventService
@@ -63,12 +62,11 @@ namespace Blueprint.Api.Services
                 !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
 
-            var rawScenarioEvents = await _context.ScenarioEvents
+            var scenarioEvents = await _context.ScenarioEvents
                 .Where(i => i.MselId == mselId)
+                .OrderBy(se => se.DeltaSeconds)
                 .ToListAsync(ct);
-            // order the results
-            var orderedScenarioEvents = OrderScenarioEvents(rawScenarioEvents);
-            return _mapper.Map<IEnumerable<ScenarioEvent>>(orderedScenarioEvents);
+            return _mapper.Map<IEnumerable<ScenarioEvent>>(scenarioEvents);
         }
 
         public async Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct)
@@ -281,30 +279,6 @@ namespace Blueprint.Api.Services
             await _context.Database.CommitTransactionAsync(ct);
 
             return true;
-        }
-
-        public List<ScenarioEventEntity> OrderScenarioEvents(List<ScenarioEventEntity> rawScenarioEventList)
-        {
-            var topLevelScenarioEvents = rawScenarioEventList.Where(rse => rse.DeltaSeconds > 0).OrderBy(rse => rse.DeltaSeconds);
-            var orderedScenarioEventList = new List<ScenarioEventEntity>();
-            foreach (var item in topLevelScenarioEvents)
-            {
-                orderedScenarioEventList.Add(item);
-                orderedScenarioEventList.AddRange(GetDescendentScenarioEvents(rawScenarioEventList, item.Id));
-            }
-            return orderedScenarioEventList;
-        }
-
-        private List<ScenarioEventEntity> GetDescendentScenarioEvents(List<ScenarioEventEntity> rawScenarioEventList, Guid parentEventId)
-        {
-            var childScenarioEvents = rawScenarioEventList.Where(rse => rse.ParentEventId == parentEventId).OrderBy(rse => rse.DelaySeconds);
-            var orderedScenarioEventList = new List<ScenarioEventEntity>();
-            foreach (var item in childScenarioEvents)
-            {
-                orderedScenarioEventList.Add(item);
-                orderedScenarioEventList.AddRange(GetDescendentScenarioEvents(rawScenarioEventList, item.Id));
-            }
-            return orderedScenarioEventList;
         }
 
         private string GetCellMetaDataForRow(string rowMetaData)

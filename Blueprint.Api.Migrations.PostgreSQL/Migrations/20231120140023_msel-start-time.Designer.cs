@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    [Migration("20231115204440_offset-data")]
-    partial class offsetdata
+    [Migration("20231120140023_msel-start-time")]
+    partial class mselstarttime
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
@@ -519,6 +519,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("player_view_id");
 
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("start_time");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
@@ -739,10 +743,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("date_modified");
 
-                    b.Property<int>("DelaySeconds")
-                        .HasColumnType("integer")
-                        .HasColumnName("delay_seconds");
-
                     b.Property<int>("DeltaSeconds")
                         .HasColumnType("integer")
                         .HasColumnName("delta_seconds");
@@ -759,14 +759,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("msel_id");
 
-                    b.Property<Guid?>("ParentEventId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("parent_event_id");
-
-                    b.Property<int>("ParentEventStatusTrigger")
-                        .HasColumnType("integer")
-                        .HasColumnName("parent_event_status_trigger");
-
                     b.Property<int>("RowIndex")
                         .HasColumnType("integer")
                         .HasColumnName("row_index");
@@ -778,8 +770,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("MselId");
-
-                    b.HasIndex("ParentEventId");
 
                     b.ToTable("scenario_events");
                 });
@@ -1134,14 +1124,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Blueprint.Api.Data.Models.ScenarioEventEntity", "ParentEvent")
-                        .WithMany("Children")
-                        .HasForeignKey("ParentEventId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
                     b.Navigation("Msel");
-
-                    b.Navigation("ParentEvent");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.TeamUserEntity", b =>
@@ -1241,8 +1224,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventEntity", b =>
                 {
-                    b.Navigation("Children");
-
                     b.Navigation("DataValues");
                 });
 

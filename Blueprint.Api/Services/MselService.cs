@@ -545,8 +545,8 @@ namespace Blueprint.Api.Services
             // get the MSEL data into a DataTable
             var scenarioEventList = await _context.ScenarioEvents
                 .Where(n => n.MselId == mselId)
+                .OrderBy(se => se.DeltaSeconds)
                 .ToListAsync(ct);
-            scenarioEventList = _scenarioEventService.OrderScenarioEvents(scenarioEventList);
             var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
 
             // create the xlsx file in memory
@@ -693,8 +693,8 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselEntity>();
             var scenarioEventList = await _context.ScenarioEvents
                 .Where(n => n.MselId == mselId)
+                .OrderBy(se => se.DeltaSeconds)
                 .ToListAsync(ct);
-            scenarioEventList = _scenarioEventService.OrderScenarioEvents(scenarioEventList);
             // get the MSEL data into a DataTable
             var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
 

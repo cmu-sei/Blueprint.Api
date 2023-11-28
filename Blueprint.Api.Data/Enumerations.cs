@@ -54,8 +54,6 @@ namespace Blueprint.Api.Data.Enumerations
     public enum GalleryArticleParameter{
       Name,
       Description,
-      Move,
-      Inject,
       Status,
       SourceType,
       SourceName,

@@ -29,6 +29,12 @@ namespace Blueprint.Api.Data.Models
         public bool IsTemplate { get; set; }
         public DateTime StartTime { get; set; }
         public int DurationSeconds { get; set; }
+        public bool ShowTimeOnScenarioEventList { get; set; }
+        public bool ShowTimeOnExerciseView { get; set; }
+        public bool ShowMoveOnScenarioEventList { get; set; }
+        public bool ShowMoveOnExerciseView { get; set; }
+        public bool ShowGroupOnScenarioEventList { get; set; }
+        public bool ShowGroupOnExerciseView { get; set; }
         public virtual ICollection<MoveEntity> Moves { get; set; } = new HashSet<MoveEntity>();
         public virtual ICollection<DataFieldEntity> DataFields { get; set; } = new HashSet<DataFieldEntity>();
         public virtual ICollection<ScenarioEventEntity> ScenarioEvents { get; set; } = new HashSet<ScenarioEventEntity>();

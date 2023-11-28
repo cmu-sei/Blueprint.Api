@@ -273,13 +273,13 @@ namespace Blueprint.Api.Services
                 .Where(mt => mt.MselId == msel.Id)
                 .Select(mt => mt.Team)
                 .ToListAsync(ct);
+            var movesAndInjects = GetMovesAndInjects(msel);
+
             foreach (var scenarioEvent in msel.ScenarioEvents)
             {
                 var deliveryMethod = GetArticleValue(GalleryArticleParameter.DeliveryMethod.ToString(), scenarioEvent.DataValues, msel.DataFields);
                 if (deliveryMethod.Contains(_galleryDelivery))
                 {
-                    Int32 move = 0;
-                    Int32 inject = 0;
                     object status = Gallery.Api.Client.ItemStatus.Unused;
                     object sourceType = SourceType.News;
                     DateTime datePosted;
@@ -297,8 +297,8 @@ namespace Blueprint.Api.Services
                     var name = GetArticleValue(GalleryArticleParameter.Name.ToString(), scenarioEvent.DataValues, msel.DataFields);
                     var summary = GetArticleValue(GalleryArticleParameter.Summary.ToString(), scenarioEvent.DataValues, msel.DataFields);
                     var description = GetArticleValue(GalleryArticleParameter.Description.ToString(), scenarioEvent.DataValues, msel.DataFields);
-                    Int32.TryParse(GetArticleValue(GalleryArticleParameter.Move.ToString(), scenarioEvent.DataValues, msel.DataFields), out move);
-                    Int32.TryParse(GetArticleValue(GalleryArticleParameter.Inject.ToString(), scenarioEvent.DataValues, msel.DataFields), out inject);
+                    var move = movesAndInjects[scenarioEvent.Id][0];
+                    var inject = movesAndInjects[scenarioEvent.Id][1];
                     Enum.TryParse(typeof(Gallery.Api.Client.ItemStatus), GetArticleValue(GalleryArticleParameter.Status.ToString(), scenarioEvent.DataValues, msel.DataFields), true, out status);
                     Enum.TryParse(typeof(SourceType), GetArticleValue(GalleryArticleParameter.SourceType.ToString(), scenarioEvent.DataValues, msel.DataFields), true, out sourceType);
                     var sourceName = GetArticleValue(GalleryArticleParameter.SourceName.ToString(), scenarioEvent.DataValues, msel.DataFields);
@@ -345,6 +345,39 @@ namespace Blueprint.Api.Services
             var dataField = dataFields.SingleOrDefault(df => df.GalleryArticleParameter == key);
             var dataValue = dataField == null ? null : dataValues.SingleOrDefault(dv => dv.DataFieldId == dataField.Id);
             return dataValue == null ? "" : dataValue.Value;
+        }
+
+        private Dictionary<Guid, int[]> GetMovesAndInjects(MselEntity msel)
+        {
+            var movesAndInjects= new Dictionary<Guid, int[]>();
+            // order scenario events and moves by DeltaSeconds
+            var scenarioEvents = msel.ScenarioEvents.OrderBy(se => se.DeltaSeconds).ToArray();
+            var moves = msel.Moves.OrderBy(m => m.DeltaSeconds).ToArray();
+            var m = 0;  // move index
+            var inject = 0;  // inject value
+            var deltaSeconds = scenarioEvents[0].DeltaSeconds;  // value of the previous scenario event.  Used to determine the inject number.
+            // loop through the chronological scenario events
+            for (int s = 0; s < scenarioEvents.Count(); s++)
+            {
+                // if not on the last move, check this scenario event time to determine if it is in the current move
+                if ((m == moves.Count() - 1) && (scenarioEvents[s].DeltaSeconds < moves[m+1].DeltaSeconds))
+                {
+                    if (scenarioEvents[s].DeltaSeconds != deltaSeconds)
+                    {
+                        inject++;
+                    }
+                }
+                else
+                {
+                    // this scenario event is the first in the next move
+                    m++;  // increment the move
+                    inject = 0;  // start with inject 0 for this new move
+                }
+                deltaSeconds = scenarioEvents[s].DeltaSeconds;
+                movesAndInjects.Add(scenarioEvents[s].Id, new int[] {moves[m].MoveNumber, inject});
+            }
+
+            return movesAndInjects;
         }
 
         private async Task<string> FindDuplicateMselUsersAsync(Guid mselId, CancellationToken ct)

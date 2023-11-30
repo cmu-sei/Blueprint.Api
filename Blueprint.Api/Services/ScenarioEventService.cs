@@ -30,6 +30,7 @@ namespace Blueprint.Api.Services
         Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<bool> BatchDeleteAsync(Guid[] idList, CancellationToken ct);
+        Dictionary<Guid, int[]> GetMovesAndInjects(MselEntity msel);
     }
 
     public class ScenarioEventService : IScenarioEventService
@@ -301,6 +302,43 @@ namespace Blueprint.Api.Services
             return cellMetaData + ",0.7,normal,0";
           }
           return "FFFFFF,0,normal,0";
+        }
+
+        public Dictionary<Guid, int[]> GetMovesAndInjects(MselEntity msel)
+        {
+            var movesAndInjects= new Dictionary<Guid, int[]>();
+            // order scenario events and moves by DeltaSeconds
+            var scenarioEvents = msel.ScenarioEvents.OrderBy(se => se.DeltaSeconds).ToArray();
+            var moves = msel.Moves.OrderBy(m => m.DeltaSeconds).ToArray();
+            var m = 0;  // move index
+            var inject = 0;  // inject value
+            var deltaSeconds = scenarioEvents.Length > 0 ? scenarioEvents[0].DeltaSeconds : 0;  // value of the previous scenario event.  Used to determine the inject number.
+            // loop through the chronological scenario events
+            for (int s = 0; s < scenarioEvents.Length; s++)
+            {
+                // if not on the last move, check this scenario event time to determine if it is in the current move
+                if (moves.Length == 0 || m == +moves.Length - 1 || +scenarioEvents[s].DeltaSeconds < +moves[m + 1].DeltaSeconds)
+                {
+                    if (scenarioEvents[s].DeltaSeconds != deltaSeconds)
+                    {
+                        inject++;
+                    }
+                }
+                else
+                {
+                    // the move must be incremented
+                    while (m < +moves.Length - 1 && +scenarioEvents[s].DeltaSeconds >= +moves[m + 1].DeltaSeconds)
+                    {
+                        m++;  // increment the move
+                    }
+                    inject = 0;  // start with inject 0 for this new move
+                }
+                var moveNumber = moves.Length > m ? moves[m].MoveNumber : 0;
+                deltaSeconds = scenarioEvents[s].DeltaSeconds;
+                movesAndInjects.Add(scenarioEvents[s].Id, new int[] {moves[m].MoveNumber, inject});
+            }
+
+            return movesAndInjects;
         }
 
     }

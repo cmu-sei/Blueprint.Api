@@ -42,6 +42,7 @@ namespace Blueprint.Api.Services
         private readonly ILogger<GalleryService> _logger;
         private readonly string _galleryDelivery = "Gallery";
         private readonly IHubContext<MainHub> _hubContext;
+        private readonly IScenarioEventService _scenarioEventService;
 
         public GalleryService(
             IGalleryApiClient galleryApiClient,
@@ -51,7 +52,8 @@ namespace Blueprint.Api.Services
             IAuthorizationService authorizationService,
             ILogger<GalleryService> logger,
             ResourceOwnerAuthorizationOptions resourceOwnerAuthorizationOptions,
-            IHubContext<MainHub> hubContext)
+            IHubContext<MainHub> hubContext,
+            IScenarioEventService scenarioEventService)
         {
             _galleryApiClient = galleryApiClient;
             _resourceOwnerAuthorizationOptions = resourceOwnerAuthorizationOptions;
@@ -61,6 +63,7 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
             _logger = logger;
             _hubContext = hubContext;
+            _scenarioEventService = scenarioEventService;
         }
 
         public async Task<ViewModels.Msel> PushToGalleryAsync(Guid mselId, CancellationToken ct)
@@ -273,7 +276,7 @@ namespace Blueprint.Api.Services
                 .Where(mt => mt.MselId == msel.Id)
                 .Select(mt => mt.Team)
                 .ToListAsync(ct);
-            var movesAndInjects = GetMovesAndInjects(msel);
+            var movesAndInjects = _scenarioEventService.GetMovesAndInjects(msel);
 
             foreach (var scenarioEvent in msel.ScenarioEvents)
             {
@@ -345,39 +348,6 @@ namespace Blueprint.Api.Services
             var dataField = dataFields.SingleOrDefault(df => df.GalleryArticleParameter == key);
             var dataValue = dataField == null ? null : dataValues.SingleOrDefault(dv => dv.DataFieldId == dataField.Id);
             return dataValue == null ? "" : dataValue.Value;
-        }
-
-        private Dictionary<Guid, int[]> GetMovesAndInjects(MselEntity msel)
-        {
-            var movesAndInjects= new Dictionary<Guid, int[]>();
-            // order scenario events and moves by DeltaSeconds
-            var scenarioEvents = msel.ScenarioEvents.OrderBy(se => se.DeltaSeconds).ToArray();
-            var moves = msel.Moves.OrderBy(m => m.DeltaSeconds).ToArray();
-            var m = 0;  // move index
-            var inject = 0;  // inject value
-            var deltaSeconds = scenarioEvents[0].DeltaSeconds;  // value of the previous scenario event.  Used to determine the inject number.
-            // loop through the chronological scenario events
-            for (int s = 0; s < scenarioEvents.Count(); s++)
-            {
-                // if not on the last move, check this scenario event time to determine if it is in the current move
-                if ((m == moves.Count() - 1) && (scenarioEvents[s].DeltaSeconds < moves[m+1].DeltaSeconds))
-                {
-                    if (scenarioEvents[s].DeltaSeconds != deltaSeconds)
-                    {
-                        inject++;
-                    }
-                }
-                else
-                {
-                    // this scenario event is the first in the next move
-                    m++;  // increment the move
-                    inject = 0;  // start with inject 0 for this new move
-                }
-                deltaSeconds = scenarioEvents[s].DeltaSeconds;
-                movesAndInjects.Add(scenarioEvents[s].Id, new int[] {moves[m].MoveNumber, inject});
-            }
-
-            return movesAndInjects;
         }
 
         private async Task<string> FindDuplicateMselUsersAsync(Guid mselId, CancellationToken ct)

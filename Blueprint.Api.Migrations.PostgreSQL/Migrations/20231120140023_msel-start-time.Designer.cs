@@ -8,6 +8,7 @@ using System;
 using Blueprint.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -16,9 +17,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    partial class BlueprintContextModelSnapshot : ModelSnapshot
+    [Migration("20231120140023_msel-start-time")]
+    partial class mselstarttime
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -418,10 +420,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("date_modified");
 
-                    b.Property<int>("DeltaSeconds")
-                        .HasColumnType("integer")
-                        .HasColumnName("delta_seconds");
-
                     b.Property<string>("Description")
                         .HasColumnType("text")
                         .HasColumnName("description");
@@ -438,6 +436,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("move_start_time");
 
+                    b.Property<DateTime?>("MoveStopTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("move_stop_time");
+
                     b.Property<Guid>("MselId")
                         .HasColumnType("uuid")
                         .HasColumnName("msel_id");
@@ -449,6 +451,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<DateTime?>("SituationTime")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("situation_time");
+
+                    b.Property<string>("Title")
+                        .HasColumnType("text")
+                        .HasColumnName("title");
 
                     b.HasKey("Id");
 
@@ -490,10 +496,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("description");
 
-                    b.Property<int>("DurationSeconds")
-                        .HasColumnType("integer")
-                        .HasColumnName("duration_seconds");
-
                     b.Property<Guid?>("GalleryCollectionId")
                         .HasColumnType("uuid")
                         .HasColumnName("gallery_collection_id");
@@ -521,30 +523,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<Guid?>("PlayerViewId")
                         .HasColumnType("uuid")
                         .HasColumnName("player_view_id");
-
-                    b.Property<bool>("ShowGroupOnExerciseView")
-                        .HasColumnType("boolean")
-                        .HasColumnName("show_group_on_exercise_view");
-
-                    b.Property<bool>("ShowGroupOnScenarioEventList")
-                        .HasColumnType("boolean")
-                        .HasColumnName("show_group_on_scenario_event_list");
-
-                    b.Property<bool>("ShowMoveOnExerciseView")
-                        .HasColumnType("boolean")
-                        .HasColumnName("show_move_on_exercise_view");
-
-                    b.Property<bool>("ShowMoveOnScenarioEventList")
-                        .HasColumnType("boolean")
-                        .HasColumnName("show_move_on_scenario_event_list");
-
-                    b.Property<bool>("ShowTimeOnExerciseView")
-                        .HasColumnType("boolean")
-                        .HasColumnName("show_time_on_exercise_view");
-
-                    b.Property<bool>("ShowTimeOnScenarioEventList")
-                        .HasColumnType("boolean")
-                        .HasColumnName("show_time_on_scenario_event_list");
 
                     b.Property<DateTime>("StartTime")
                         .HasColumnType("timestamp with time zone")

@@ -210,7 +210,7 @@ namespace Blueprint.Api.Services
             {
                 Move citeMove = new Move() {
                     EvaluationId = (Guid)msel.CiteEvaluationId,
-                    Description = move.Title,
+                    Description = move.Description,
                     MoveNumber = move.MoveNumber,
                     SituationTime = (DateTimeOffset)move.SituationTime,
                     SituationDescription = move.SituationDescription

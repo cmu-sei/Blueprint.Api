@@ -23,6 +23,14 @@ namespace Blueprint.Api.ViewModels
         public bool UseSteamfitter { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
         public bool IsTemplate { get; set; }
+        public DateTime StartTime { get; set; }
+        public int DurationSeconds { get; set; }
+        public bool ShowTimeOnScenarioEventList { get; set; }
+        public bool ShowTimeOnExerciseView { get; set; }
+        public bool ShowMoveOnScenarioEventList { get; set; }
+        public bool ShowMoveOnExerciseView { get; set; }
+        public bool ShowGroupOnScenarioEventList { get; set; }
+        public bool ShowGroupOnExerciseView { get; set; }
         public virtual ICollection<Move> Moves { get; set; } = new HashSet<Move>();
         public virtual ICollection<DataField> DataFields { get; set; } = new HashSet<DataField>();
         public virtual ICollection<ScenarioEvent> ScenarioEvents { get; set; } = new HashSet<ScenarioEvent>();

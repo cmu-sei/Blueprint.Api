@@ -42,6 +42,7 @@ namespace Blueprint.Api.Services
         private readonly ILogger<GalleryService> _logger;
         private readonly string _galleryDelivery = "Gallery";
         private readonly IHubContext<MainHub> _hubContext;
+        private readonly IScenarioEventService _scenarioEventService;
 
         public GalleryService(
             IGalleryApiClient galleryApiClient,
@@ -51,7 +52,8 @@ namespace Blueprint.Api.Services
             IAuthorizationService authorizationService,
             ILogger<GalleryService> logger,
             ResourceOwnerAuthorizationOptions resourceOwnerAuthorizationOptions,
-            IHubContext<MainHub> hubContext)
+            IHubContext<MainHub> hubContext,
+            IScenarioEventService scenarioEventService)
         {
             _galleryApiClient = galleryApiClient;
             _resourceOwnerAuthorizationOptions = resourceOwnerAuthorizationOptions;
@@ -61,6 +63,7 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
             _logger = logger;
             _hubContext = hubContext;
+            _scenarioEventService = scenarioEventService;
         }
 
         public async Task<ViewModels.Msel> PushToGalleryAsync(Guid mselId, CancellationToken ct)
@@ -273,13 +276,13 @@ namespace Blueprint.Api.Services
                 .Where(mt => mt.MselId == msel.Id)
                 .Select(mt => mt.Team)
                 .ToListAsync(ct);
+            var movesAndInjects = _scenarioEventService.GetMovesAndInjects(msel);
+
             foreach (var scenarioEvent in msel.ScenarioEvents)
             {
                 var deliveryMethod = GetArticleValue(GalleryArticleParameter.DeliveryMethod.ToString(), scenarioEvent.DataValues, msel.DataFields);
                 if (deliveryMethod.Contains(_galleryDelivery))
                 {
-                    Int32 move = 0;
-                    Int32 inject = 0;
                     object status = Gallery.Api.Client.ItemStatus.Unused;
                     object sourceType = SourceType.News;
                     DateTime datePosted;
@@ -297,8 +300,8 @@ namespace Blueprint.Api.Services
                     var name = GetArticleValue(GalleryArticleParameter.Name.ToString(), scenarioEvent.DataValues, msel.DataFields);
                     var summary = GetArticleValue(GalleryArticleParameter.Summary.ToString(), scenarioEvent.DataValues, msel.DataFields);
                     var description = GetArticleValue(GalleryArticleParameter.Description.ToString(), scenarioEvent.DataValues, msel.DataFields);
-                    Int32.TryParse(GetArticleValue(GalleryArticleParameter.Move.ToString(), scenarioEvent.DataValues, msel.DataFields), out move);
-                    Int32.TryParse(GetArticleValue(GalleryArticleParameter.Inject.ToString(), scenarioEvent.DataValues, msel.DataFields), out inject);
+                    var move = movesAndInjects[scenarioEvent.Id][0];
+                    var inject = movesAndInjects[scenarioEvent.Id][1];
                     Enum.TryParse(typeof(Gallery.Api.Client.ItemStatus), GetArticleValue(GalleryArticleParameter.Status.ToString(), scenarioEvent.DataValues, msel.DataFields), true, out status);
                     Enum.TryParse(typeof(SourceType), GetArticleValue(GalleryArticleParameter.SourceType.ToString(), scenarioEvent.DataValues, msel.DataFields), true, out sourceType);
                     var sourceName = GetArticleValue(GalleryArticleParameter.SourceName.ToString(), scenarioEvent.DataValues, msel.DataFields);

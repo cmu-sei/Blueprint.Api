@@ -56,11 +56,13 @@ namespace Blueprint.Api.Services
         private readonly IMapper _mapper;
         private readonly ILogger<GalleryService> _logger;
         private readonly ClientOptions _clientOptions;
+        private readonly IScenarioEventService _scenarioEventService;
 
         public MselService(
             BlueprintContext context,
             ClientOptions clientOptions,
             IAuthorizationService authorizationService,
+            IScenarioEventService scenarioEventService,
             IPrincipal user,
             ILogger<GalleryService> logger,
             IMapper mapper)
@@ -68,6 +70,7 @@ namespace Blueprint.Api.Services
             _context = context;
             _clientOptions = clientOptions;
             _authorizationService = authorizationService;
+            _scenarioEventService = scenarioEventService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
             _logger = logger;
@@ -542,7 +545,7 @@ namespace Blueprint.Api.Services
             // get the MSEL data into a DataTable
             var scenarioEventList = await _context.ScenarioEvents
                 .Where(n => n.MselId == mselId)
-                .OrderBy(n => n.RowIndex)
+                .OrderBy(se => se.DeltaSeconds)
                 .ToListAsync(ct);
             var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
 
@@ -690,7 +693,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselEntity>();
             var scenarioEventList = await _context.ScenarioEvents
                 .Where(n => n.MselId == mselId)
-                .OrderBy(n => n.RowIndex)
+                .OrderBy(se => se.DeltaSeconds)
                 .ToListAsync(ct);
             // get the MSEL data into a DataTable
             var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
@@ -931,10 +934,12 @@ namespace Blueprint.Api.Services
                 }
                 var rowMetadata = dataRow.Height != null ? dataRow.Height.Value.ToString() : "";
                 rowMetadata = rowMetadata + "," + GetTintedColor(cellColor, cellTint);
+                var rowIndex = (int)dataRow.RowIndex.Value - 1;     // header row was index 1
                 var scenarioEvent = new ScenarioEventEntity() {
                     Id = Guid.NewGuid(),
                     MselId = mselId,
-                    RowIndex = (int)dataRow.RowIndex.Value - 1,
+                    RowIndex = rowIndex,    // rowIndex is no longer used to order the rows, because of parent/child relationships
+                    DeltaSeconds = rowIndex * 60,    // value of seconds (1 minute) used to maintain the row order
                     RowMetadata = rowMetadata 
                 };
                 await _context.ScenarioEvents.AddAsync(scenarioEvent);

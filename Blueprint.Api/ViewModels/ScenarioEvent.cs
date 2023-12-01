@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using Blueprint.Api.Data.Enumerations;
 
 namespace Blueprint.Api.ViewModels
 {
@@ -14,6 +15,7 @@ namespace Blueprint.Api.ViewModels
         public int RowIndex { get; set; }
         public bool IsHidden { get; set; }
         public string RowMetadata { get; set; }
+        public int DeltaSeconds { get; set; }     // time from the start of the MSEL when this event should be executed
    }
 }
 

@@ -30,6 +30,7 @@ namespace Blueprint.Api.Services
         Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<bool> BatchDeleteAsync(Guid[] idList, CancellationToken ct);
+        Dictionary<Guid, int[]> GetMovesAndInjects(MselEntity msel);
     }
 
     public class ScenarioEventService : IScenarioEventService
@@ -62,12 +63,11 @@ namespace Blueprint.Api.Services
                 !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
 
-            var scenarioEvents = _context.ScenarioEvents
-                .Where(i => i.MselId == mselId);
-            // order the results
-            scenarioEvents = scenarioEvents.OrderBy(n => n.RowIndex);
-
-            return _mapper.Map<IEnumerable<ScenarioEvent>>(await scenarioEvents.ToListAsync());
+            var scenarioEvents = await _context.ScenarioEvents
+                .Where(i => i.MselId == mselId)
+                .OrderBy(se => se.DeltaSeconds)
+                .ToListAsync(ct);
+            return _mapper.Map<IEnumerable<ScenarioEvent>>(scenarioEvents);
         }
 
         public async Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct)
@@ -127,7 +127,6 @@ namespace Blueprint.Api.Services
                 _context.DataValues.Add(dataValueEntity);
             }
             await _context.SaveChangesAsync(ct);
-            await RenumberRowIndexes(scenarioEventEntity, false, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventEntity.MselId, scenarioEventEntity.CreatedBy, scenarioEventEntity.DateCreated, _context, ct);
             // commit the transaction
@@ -154,8 +153,6 @@ namespace Blueprint.Api.Services
             // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
             // determine if row indexes need updated for the other scenario events on this MSEL
-            var updateRowIndexes = canUpdateScenarioEvent && (scenarioEventToUpdate.RowIndex != scenarioEvent.RowIndex);
-            var newIndexIsGreater = scenarioEvent.RowIndex > scenarioEventToUpdate.RowIndex;
             // update this scenario event
             scenarioEvent.CreatedBy = scenarioEventToUpdate.CreatedBy;
             scenarioEvent.DateCreated = scenarioEventToUpdate.DateCreated;
@@ -164,10 +161,6 @@ namespace Blueprint.Api.Services
             _mapper.Map(scenarioEvent, scenarioEventToUpdate);
             _context.ScenarioEvents.Update(scenarioEventToUpdate);
             await _context.SaveChangesAsync(ct);
-            if (updateRowIndexes)
-            {
-                await RenumberRowIndexes(scenarioEventToUpdate, newIndexIsGreater, ct);
-            }
             // get the DataField IDs for this MSEL
             var dataFieldIdList = await _context.DataFields
                 .Where(df => df.MselId == scenarioEvent.MselId)
@@ -238,8 +231,6 @@ namespace Blueprint.Api.Services
             await _context.Database.BeginTransactionAsync();
             _context.ScenarioEvents.Remove(scenarioEventToDelete);
             await _context.SaveChangesAsync(ct);
-            // reorder
-            await RenumberRowIndexes(scenarioEventToDelete, false, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
             // commit the transaction
@@ -283,73 +274,12 @@ namespace Blueprint.Api.Services
                 _context.ScenarioEvents.Remove(scenarioEventToDelete);
             }
             await _context.SaveChangesAsync(ct);
-            // reorder
-            await RenumberRowIndexes(mselId, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(mselId, _user.GetId(), DateTime.UtcNow, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
             return true;
-        }
-
-        private async Task<List<ScenarioEventEntity>> RenumberRowIndexes(ScenarioEventEntity scenarioEventEntity, bool newIndexIsGreater, CancellationToken ct)
-        {
-            var scenarioEvents = await _context.ScenarioEvents
-                .Where(se => se.MselId == scenarioEventEntity.MselId)
-                    .Include(se => se.DataValues)
-                .OrderBy(se => se.RowIndex)
-                .ToListAsync(ct);
-            var isHere = scenarioEvents.Any(df => df.Id == scenarioEventEntity.Id);
-            for (var i = 0; i < scenarioEvents.Count; i++)
-            {
-                if (scenarioEvents[i].Id != scenarioEventEntity.Id)
-                {
-                    // handle the item that has the same row index as the newly assigned row index
-                    if (isHere && scenarioEvents[i].RowIndex == scenarioEventEntity.RowIndex)
-                    {
-                        if (newIndexIsGreater)
-                        {
-                            scenarioEvents[i].RowIndex = scenarioEventEntity.RowIndex - 1;
-                        }
-                        else
-                        {
-                            scenarioEvents[i].RowIndex = scenarioEventEntity.RowIndex + 1;
-                        }
-                    }
-                    else
-                    {
-                        scenarioEvents[i].RowIndex = i + 1;
-                    }
-                }
-                else if (scenarioEventEntity.RowIndex > scenarioEvents.Count)
-                {
-                    scenarioEventEntity.RowIndex = scenarioEvents.Count;
-                }
-            }
-            await _context.SaveChangesAsync(ct);
-
-            return scenarioEvents;
-        }
-
-        private async Task<List<ScenarioEventEntity>> RenumberRowIndexes(Guid mselId, CancellationToken ct)
-        {
-            var scenarioEvents = await _context.ScenarioEvents
-                .Where(se => se.MselId == mselId)
-                    .Include(se => se.DataValues)
-                .OrderBy(se => se.RowIndex)
-                .ToListAsync(ct);
-            for (var i = 0; i < scenarioEvents.Count; i++)
-            {
-                var newIndex = i + 1;
-                if (scenarioEvents[i].RowIndex != newIndex)
-                {
-                    scenarioEvents[i].RowIndex = newIndex;
-                }
-            }
-            await _context.SaveChangesAsync(ct);
-
-            return scenarioEvents;
         }
 
         private string GetCellMetaDataForRow(string rowMetaData)
@@ -372,6 +302,43 @@ namespace Blueprint.Api.Services
             return cellMetaData + ",0.7,normal,0";
           }
           return "FFFFFF,0,normal,0";
+        }
+
+        public Dictionary<Guid, int[]> GetMovesAndInjects(MselEntity msel)
+        {
+            var movesAndInjects= new Dictionary<Guid, int[]>();
+            // order scenario events and moves by DeltaSeconds
+            var scenarioEvents = msel.ScenarioEvents.OrderBy(se => se.DeltaSeconds).ToArray();
+            var moves = msel.Moves.OrderBy(m => m.DeltaSeconds).ToArray();
+            var m = 0;  // move index
+            var inject = 0;  // inject value
+            var deltaSeconds = scenarioEvents.Length > 0 ? scenarioEvents[0].DeltaSeconds : 0;  // value of the previous scenario event.  Used to determine the inject number.
+            // loop through the chronological scenario events
+            for (int s = 0; s < scenarioEvents.Length; s++)
+            {
+                // if not on the last move, check this scenario event time to determine if it is in the current move
+                if (moves.Length == 0 || m == +moves.Length - 1 || +scenarioEvents[s].DeltaSeconds < +moves[m + 1].DeltaSeconds)
+                {
+                    if (scenarioEvents[s].DeltaSeconds != deltaSeconds)
+                    {
+                        inject++;
+                    }
+                }
+                else
+                {
+                    // the move must be incremented
+                    while (m < +moves.Length - 1 && +scenarioEvents[s].DeltaSeconds >= +moves[m + 1].DeltaSeconds)
+                    {
+                        m++;  // increment the move
+                    }
+                    inject = 0;  // start with inject 0 for this new move
+                }
+                var moveNumber = moves.Length > m ? moves[m].MoveNumber : 0;
+                deltaSeconds = scenarioEvents[s].DeltaSeconds;
+                movesAndInjects.Add(scenarioEvents[s].Id, new int[] {moves[m].MoveNumber, inject});
+            }
+
+            return movesAndInjects;
         }
 
     }

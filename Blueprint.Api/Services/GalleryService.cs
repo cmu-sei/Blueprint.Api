@@ -276,7 +276,7 @@ namespace Blueprint.Api.Services
                 .Where(mt => mt.MselId == msel.Id)
                 .Select(mt => mt.Team)
                 .ToListAsync(ct);
-            var movesAndInjects = _scenarioEventService.GetMovesAndInjects(msel);
+            var movesAndInjects = await _scenarioEventService.GetMovesAndInjects(msel.Id, ct);
 
             foreach (var scenarioEvent in msel.ScenarioEvents)
             {

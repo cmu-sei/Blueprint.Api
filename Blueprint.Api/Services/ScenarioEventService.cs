@@ -30,7 +30,7 @@ namespace Blueprint.Api.Services
         Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<bool> BatchDeleteAsync(Guid[] idList, CancellationToken ct);
-        Dictionary<Guid, int[]> GetMovesAndInjects(MselEntity msel);
+        Task<Dictionary<Guid, int[]>> GetMovesAndInjects(Guid mselId, CancellationToken ct);
     }
 
     public class ScenarioEventService : IScenarioEventService
@@ -304,12 +304,12 @@ namespace Blueprint.Api.Services
           return "FFFFFF,0,normal,0";
         }
 
-        public Dictionary<Guid, int[]> GetMovesAndInjects(MselEntity msel)
+        public async Task<Dictionary<Guid, int[]>> GetMovesAndInjects(Guid mselId, CancellationToken ct)
         {
             var movesAndInjects= new Dictionary<Guid, int[]>();
             // order scenario events and moves by DeltaSeconds
-            var scenarioEvents = msel.ScenarioEvents.OrderBy(se => se.DeltaSeconds).ToArray();
-            var moves = msel.Moves.OrderBy(m => m.DeltaSeconds).ToArray();
+            var scenarioEvents = await _context.ScenarioEvents.Where(se => se.MselId == mselId).OrderBy(se => se.DeltaSeconds).ToArrayAsync(ct);
+            var moves = await _context.Moves.Where(se => se.MselId == mselId).OrderBy(m => m.DeltaSeconds).ToArrayAsync(ct);
             var m = 0;  // move index
             var inject = 0;  // inject value
             var deltaSeconds = scenarioEvents.Length > 0 ? scenarioEvents[0].DeltaSeconds : 0;  // value of the previous scenario event.  Used to determine the inject number.

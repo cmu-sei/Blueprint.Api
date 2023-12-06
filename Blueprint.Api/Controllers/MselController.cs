@@ -310,6 +310,41 @@ namespace Blueprint.Api.Controllers
             return File(stream, "application/octet-stream", fileName);
         }
 
+
+
+
+        /// <summary> Upload a json MSEL file </summary>
+        /// <param name="form"> The files to upload and their settings </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/json")]
+        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "uploadJsonFiles")]
+        public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
+        {
+            var result = await _mselService.UploadJsonAsync(form, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Download a msel by id as json file </summary>
+        /// <param name="id"> The id of the msel </param>
+        /// <param name="ct"></param>
+        [HttpGet("msels/{id}/json")]
+        [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "downloadJson")]
+        public async Task<IActionResult> DownloadJsonAsync(Guid id, CancellationToken ct)
+        {
+            (var stream, var fileName) = await _mselService.DownloadJsonAsync(id, ct);
+
+            // If this is wrapped in an Ok, it throws an exception
+            return File(stream, "application/octet-stream", fileName);
+        }
+
+
+
+
+
+
+
         //
         // Cite Integration Section
         //

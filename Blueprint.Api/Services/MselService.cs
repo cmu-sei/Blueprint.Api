@@ -5,6 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
@@ -26,6 +29,7 @@ using Blueprint.Api.ViewModels;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Packaging;
+using System.IO.Pipelines;
 
 namespace Blueprint.Api.Services
 {
@@ -45,6 +49,8 @@ namespace Blueprint.Api.Services
         Task<Guid> UploadAsync(FileForm form, CancellationToken ct);
         Task<Guid> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadAsync(Guid mselId, CancellationToken ct);
+        Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
+        Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
         Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
     }
 
@@ -1425,6 +1431,129 @@ namespace Blueprint.Api.Services
             var g = gint.ToString();
             var b = bint.ToString();
             return r + "," + g + "," + b;
+        }
+
+        public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct)
+        {
+            // user must be a Content Developer
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var msel = await _context.Msels
+                .Include(m => m.Cards)
+                .Include(m => m.CiteActions)
+                .Include(m => m.CiteRoles)
+                .Include(m => m.DataFields)
+                .Include(m => m.Moves)
+                .Include(m => m.MselTeams)
+                .ThenInclude(mt => mt.Team)
+                .Include(m => m.Organizations)
+                .Include(m => m.Pages)
+                .Include(m => m.ScenarioEvents)
+                .ThenInclude(s => s.DataValues)
+                .AsSplitQuery()
+                .SingleOrDefaultAsync(m => m.Id == mselId);
+            if (msel == null)
+            {
+                throw new EntityNotFoundException<MselEntity>("MSEL not found " + mselId);
+            }
+
+            var mselJson = "";
+            var options = new JsonSerializerOptions()
+            {
+                ReferenceHandler = ReferenceHandler.Preserve
+            };
+            mselJson = JsonSerializer.Serialize(msel, options);
+            // convert string to stream
+            byte[] byteArray = Encoding.ASCII.GetBytes(mselJson);
+            MemoryStream memoryStream = new MemoryStream(byteArray);
+            var filename = msel.Name.ToLower().EndsWith(".json") ? msel.Name : msel.Name + ".json";
+
+            return System.Tuple.Create(memoryStream, filename);
+        }
+
+        public async Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct)
+        {
+            // user must be a Content Developer
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var uploadItem = form.ToUpload;
+            var mselJson = "";
+            using (StreamReader reader = new StreamReader(uploadItem.OpenReadStream()))
+            {
+                // convert stream to string
+                mselJson = reader.ReadToEnd();
+            }
+            var options = new JsonSerializerOptions()
+            {
+                ReferenceHandler = ReferenceHandler.Preserve
+            };
+            var mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
+            var teamsToAdd = new List<Guid>();
+            // remove existing teams to prevent duplicate key errors
+            foreach (var mselTeam in mselEntity.MselTeams)
+            {
+                var exists = await _context.Teams.AnyAsync(t => t.Id == mselTeam.TeamId, ct);
+                if (exists)
+                {
+                    mselTeam.Team = null;
+                }
+                else
+                {
+                    if (teamsToAdd.Contains(mselTeam.TeamId))
+                    {
+                        mselTeam.Team = null;
+                    }
+                    else
+                    {
+                        teamsToAdd.Add(mselTeam.TeamId);
+                    }
+                }
+            }
+            foreach (var citeRole in mselEntity.CiteRoles)
+            {
+                var exists = await _context.Teams.AnyAsync(t => t.Id == citeRole.TeamId, ct);
+                if (exists)
+                {
+                    citeRole.Team = null;
+                }
+                else
+                {
+                    if (teamsToAdd.Contains(citeRole.TeamId))
+                    {
+                        citeRole.Team = null;
+                    }
+                    else
+                    {
+                        teamsToAdd.Add(citeRole.TeamId);
+                    }
+                }
+            }
+            foreach (var citeAction in mselEntity.CiteActions)
+            {
+                var exists = await _context.Teams.AnyAsync(t => t.Id == citeAction.TeamId, ct);
+                if (exists)
+                {
+                    citeAction.Team = null;
+                }
+                else
+                {
+                    if (teamsToAdd.Contains(citeAction.TeamId))
+                    {
+                        citeAction.Team = null;
+                    }
+                    else
+                    {
+                        teamsToAdd.Add(citeAction.TeamId);
+                    }
+                }
+            }
+            // add this msel to the database
+            await _context.Msels.AddAsync(mselEntity);
+            await _context.SaveChangesAsync(ct);
+
+            return _mapper.Map<Msel>(mselEntity);
         }
 
     }

@@ -46,9 +46,9 @@ namespace Blueprint.Api.Services
         Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, CancellationToken ct);
         Task<ViewModels.Msel> RemoveUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
-        Task<Guid> UploadAsync(FileForm form, CancellationToken ct);
+        Task<Msel> UploadXlsxAsync(FileForm form, CancellationToken ct);
         Task<Guid> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct);
-        Task<Tuple<MemoryStream, string>> DownloadAsync(Guid mselId, CancellationToken ct);
+        Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, CancellationToken ct);
         Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
         Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
@@ -503,15 +503,15 @@ namespace Blueprint.Api.Services
             return true;
         }
 
-        public async Task<Guid> UploadAsync(FileForm form, CancellationToken ct)
+        public async Task<Msel> UploadXlsxAsync(FileForm form, CancellationToken ct)
         {
             // user must be a Content Developer
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
-            var msel = await createMselFromXlsxFile(form, null, ct);
+            var mselEntity = await createMselFromXlsxFile(form, null, ct);
 
-            return msel.Id;
+            return _mapper.Map<Msel>(mselEntity);
         }
 
         public async Task<Guid> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct)
@@ -539,7 +539,7 @@ namespace Blueprint.Api.Services
             return mselId;
         }
 
-        public async Task<Tuple<MemoryStream, string>> DownloadAsync(Guid mselId, CancellationToken ct)
+        public async Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, CancellationToken ct)
         {
             var msel = await _context.Msels
                 .Where(f => f.Id == mselId)

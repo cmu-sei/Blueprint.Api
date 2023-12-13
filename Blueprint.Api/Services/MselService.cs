@@ -47,7 +47,7 @@ namespace Blueprint.Api.Services
         Task<ViewModels.Msel> RemoveUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<Msel> UploadXlsxAsync(FileForm form, CancellationToken ct);
-        Task<Guid> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct);
+        Task<Msel> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, CancellationToken ct);
         Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
@@ -514,7 +514,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<Msel>(mselEntity);
         }
 
-        public async Task<Guid> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct)
+        public async Task<Msel> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
@@ -524,19 +524,19 @@ namespace Blueprint.Api.Services
             if (form.MselId != null && form.MselId != mselId)
                 throw new ArgumentException("The mselId from the URL (" + mselId.ToString() + ") does not match the mselId supplied with the form (" + form.MselId.ToString() + ").");
 
-            var msel = await _context.Msels
+            var mselEntity = await _context.Msels
                 .Include(m => m.DataFields)
                 .SingleOrDefaultAsync(m => m.Id == mselId);
-            if (msel == null)
+            if (mselEntity == null)
                 throw new EntityNotFoundException<MselEntity>("The MSEL does not exist to be replaced.  " + mselId.ToString());
 
             // start a transaction, because we will make changes as we go that may need rolled back
             await _context.Database.BeginTransactionAsync();
             // update the existing MSEL
-            await createMselFromXlsxFile(form, msel, ct);
+            mselEntity = await createMselFromXlsxFile(form, mselEntity, ct);
             await _context.Database.CommitTransactionAsync(ct);
 
-            return mselId;
+            return _mapper.Map<Msel>(mselEntity);
         }
 
         public async Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, CancellationToken ct)
@@ -1451,6 +1451,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.Pages)
                 .Include(m => m.ScenarioEvents)
                 .ThenInclude(s => s.DataValues)
+                .Include(m => m.UserMselRoles)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)

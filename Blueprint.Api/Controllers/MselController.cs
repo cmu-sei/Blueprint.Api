@@ -270,16 +270,16 @@ namespace Blueprint.Api.Controllers
             return NoContent();
         }
 
-        /// <summary> Upload file(s) </summary>
+        /// <summary> Upload file </summary>
         /// <remarks> File objects will be returned in the same order as their respective files within the form. </remarks>
         /// <param name="form"> The files to upload and their settings </param>
         /// <param name="ct"></param>
         [HttpPost("msels/xlsx")]
         [ProducesResponseType((int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "uploadXlsxFiles")]
-        public async Task<IActionResult> UploadAsync([FromForm] FileForm form, CancellationToken ct)
+        [SwaggerOperation(OperationId = "uploadXlsx")]
+        public async Task<IActionResult> UploadXlsxAsync([FromForm] FileForm form, CancellationToken ct)
         {
-            var result = await _mselService.UploadAsync(form, ct);
+            var result = await _mselService.UploadXlsxAsync(form, ct);
             return Ok(result);
         }
 
@@ -301,10 +301,36 @@ namespace Blueprint.Api.Controllers
         /// <param name="ct"></param>
         [HttpGet("msels/{id}/xlsx")]
         [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "download")]
-        public async Task<IActionResult> DownloadAsync(Guid id, CancellationToken ct)
+        [SwaggerOperation(OperationId = "downloadXlsx")]
+        public async Task<IActionResult> DownloadXlsxAsync(Guid id, CancellationToken ct)
         {
-            (var stream, var fileName) = await _mselService.DownloadAsync(id, ct);
+            (var stream, var fileName) = await _mselService.DownloadXlsxAsync(id, ct);
+
+            // If this is wrapped in an Ok, it throws an exception
+            return File(stream, "application/octet-stream", fileName);
+        }
+
+        /// <summary> Upload a json MSEL file </summary>
+        /// <param name="form"> The files to upload and their settings </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/json")]
+        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "uploadJsonFiles")]
+        public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
+        {
+            var result = await _mselService.UploadJsonAsync(form, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Download a msel by id as json file </summary>
+        /// <param name="id"> The id of the msel </param>
+        /// <param name="ct"></param>
+        [HttpGet("msels/{id}/json")]
+        [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "downloadJson")]
+        public async Task<IActionResult> DownloadJsonAsync(Guid id, CancellationToken ct)
+        {
+            (var stream, var fileName) = await _mselService.DownloadJsonAsync(id, ct);
 
             // If this is wrapped in an Ok, it throws an exception
             return File(stream, "application/octet-stream", fileName);

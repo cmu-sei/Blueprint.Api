@@ -37,6 +37,7 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMineAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, CancellationToken ct);
         Task<ViewModels.Msel> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct);
         Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct);
@@ -138,20 +139,34 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-            // get my teams
             var userId = _user.GetId();
+            return await GetUserMselsAsync(userId, ct);
+        }
+
+        public async Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, CancellationToken ct)
+        {
+            var currentUserId = _user.GetId();
+            if (currentUserId == userId)
+            {
+                if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+                    throw new ForbiddenException();
+            }
+            else
+            {
+                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+                    throw new ForbiddenException();
+            }
+            // get the user's teams
             var teamIdList = await _context.TeamUsers
                 .Where(tu => tu.UserId == userId)
                 .Select(tu => tu.TeamId)
                 .ToListAsync(ct);
-            // get my teams' msels
+            // get the teams' msels
             var teamMselList = await _context.MselTeams
                 .Where(mt => teamIdList.Contains(mt.TeamId))
                 .Select(mt => mt.Msel)
                 .ToListAsync(ct);
-            // get msels I created and all templates
+            // get msels created by user and all templates
             var myMselList = await _context.Msels
                 .Where(m => m.CreatedBy == userId || m.IsTemplate)
                 .ToListAsync(ct);

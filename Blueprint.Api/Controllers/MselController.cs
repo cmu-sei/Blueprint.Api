@@ -73,6 +73,24 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets Msels for requested user
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of the requested user's active Msels.
+        /// </remarks>
+        /// <param name="userId"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("users/{userId}/msels")]
+        [ProducesResponseType(typeof(IEnumerable<Msel>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getUserMsels")]
+        public async Task<IActionResult> GetUserMsels(Guid userId, CancellationToken ct)
+        {
+            var list = await _mselService.GetUserMselsAsync(userId, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Gets a specific Msel by id
         /// </summary>
         /// <remarks>

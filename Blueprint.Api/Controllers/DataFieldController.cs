@@ -29,6 +29,23 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets DataField Templates
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of DataField Templates
+        /// </remarks>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("dataFields/templates")]
+        [ProducesResponseType(typeof(IEnumerable<DataField>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getDataFieldTemplates")]
+        public async Task<IActionResult> GetDataFieldTemplates(CancellationToken ct)
+        {
+            var list = await _dataFieldService.GetTemplatesAsync(ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Gets DataFields by msel
         /// </summary>
         /// <remarks>

@@ -29,6 +29,23 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets Card Templates
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of Card Templates
+        /// </remarks>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("cards/templates")]
+        [ProducesResponseType(typeof(IEnumerable<Card>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getCardTemplates")]
+        public async Task<IActionResult> GetCardTemplates(CancellationToken ct)
+        {
+            var list = await _cardService.GetTemplatesAsync(ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Gets Cards by msel
         /// </summary>
         /// <remarks>

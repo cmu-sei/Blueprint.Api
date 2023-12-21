@@ -8,12 +8,13 @@ namespace Blueprint.Api.ViewModels
     public class Card : Base
     {
         public Guid Id { get; set; }
-        public Guid MselId { get; set; }
+        public Guid? MselId { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
         public int Move { get; set; }
         public int Inject { get; set; }
         public Guid? GalleryId { get; set; }
+        public bool IsTemplate { get; set; }
     }
 
 }

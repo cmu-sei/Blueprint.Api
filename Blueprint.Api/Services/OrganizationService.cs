@@ -55,7 +55,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var organizationEntities = await _context.Organizations
-                .Where(organization => organization.IsTemplate)
+                .Where(organization => organization.Msel == null)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<Organization>>(organizationEntities).ToList();;

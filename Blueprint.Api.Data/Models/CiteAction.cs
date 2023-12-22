@@ -16,7 +16,7 @@ namespace Blueprint.Api.Data.Models
         public Guid Id { get; set; }
         public Guid? MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
-        public Guid TeamId { get; set; }
+        public Guid? TeamId { get; set; }
         public virtual TeamEntity Team { get; set; }
         public int MoveNumber { get; set; }
         public int InjectNumber { get; set; }

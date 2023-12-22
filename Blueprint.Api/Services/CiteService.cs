@@ -287,7 +287,7 @@ namespace Blueprint.Api.Services
         {
             foreach (var role in msel.CiteRoles)
             {
-                var citeTeamId = citeTeamDictionary[role.TeamId];
+                var citeTeamId = citeTeamDictionary[(Guid)role.TeamId];
                 if (citeTeamId != Guid.Empty)
                 {
                     Role citeRole = new Role() {
@@ -306,7 +306,7 @@ namespace Blueprint.Api.Services
         {
             foreach (var action in msel.CiteActions)
             {
-                var citeTeamId = citeTeamDictionary[action.TeamId];
+                var citeTeamId = citeTeamDictionary[(Guid)action.TeamId];
                 if (citeTeamId != Guid.Empty)
                 {
                     // create the action

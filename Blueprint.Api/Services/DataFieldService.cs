@@ -22,6 +22,7 @@ namespace Blueprint.Api.Services
 {
     public interface IDataFieldService
     {
+        Task<IEnumerable<ViewModels.DataField>> GetTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.DataField> GetAsync(Guid id, CancellationToken ct);
          Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, CancellationToken ct);
@@ -48,11 +49,29 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
         }
 
+        public async Task<IEnumerable<ViewModels.DataField>> GetTemplatesAsync(CancellationToken ct)
+        {
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var dataFieldEntities = await _context.DataFields
+                .Where(dataField => dataField.IsTemplate)
+                .ToListAsync(ct);
+
+            return _mapper.Map<IEnumerable<DataField>>(dataFieldEntities).ToList();;
+        }
+
         public async Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
-                throw new ForbiddenException();
+            if (
+                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
+                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+               )
+            {
+                var msel = await _context.Msels.FindAsync(mselId);
+                if (!msel.IsTemplate)
+                    throw new ForbiddenException();
+            }
 
             var dataFieldEntities = await _context.DataFields
                 .Where(dataField => dataField.MselId == mselId)

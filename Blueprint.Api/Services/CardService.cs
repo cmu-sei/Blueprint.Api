@@ -22,6 +22,7 @@ namespace Blueprint.Api.Services
 {
     public interface ICardService
     {
+        Task<IEnumerable<ViewModels.Card>> GetTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Card>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Card> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.Card> CreateAsync(ViewModels.Card card, CancellationToken ct);
@@ -48,11 +49,29 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
         }
 
+        public async Task<IEnumerable<ViewModels.Card>> GetTemplatesAsync(CancellationToken ct)
+        {
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var cardEntities = await _context.Cards
+                .Where(card => card.IsTemplate)
+                .ToListAsync(ct);
+
+            return _mapper.Map<IEnumerable<Card>>(cardEntities).ToList();;
+        }
+
         public async Task<IEnumerable<ViewModels.Card>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
-                throw new ForbiddenException();
+            if (
+                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
+                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+               )
+            {
+                var msel = await _context.Msels.FindAsync(mselId);
+                if (!msel.IsTemplate)
+                    throw new ForbiddenException();
+            }
 
             var cardEntities = await _context.Cards
                 .Where(card => card.MselId == mselId)

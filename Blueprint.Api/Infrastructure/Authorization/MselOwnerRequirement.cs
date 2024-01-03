@@ -12,7 +12,7 @@ namespace Blueprint.Api.Infrastructure.Authorization
 {
     public static class MselOwnerRequirement
     {
-        public static async Task<Boolean> IsMet(Guid userId, Guid mselId, BlueprintContext blueprintContext)
+        public static async Task<Boolean> IsMet(Guid userId, Guid? mselId, BlueprintContext blueprintContext)
         {
             var mselTeamIdList = await blueprintContext.MselTeams
                 .Where(mt => mt.MselId == mselId)

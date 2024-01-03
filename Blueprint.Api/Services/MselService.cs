@@ -1536,13 +1536,13 @@ namespace Blueprint.Api.Services
                 }
                 else
                 {
-                    if (teamsToAdd.Contains(citeRole.TeamId))
+                    if (teamsToAdd.Contains((Guid)citeRole.TeamId))
                     {
                         citeRole.Team = null;
                     }
                     else
                     {
-                        teamsToAdd.Add(citeRole.TeamId);
+                        teamsToAdd.Add((Guid)citeRole.TeamId);
                     }
                 }
             }
@@ -1555,13 +1555,13 @@ namespace Blueprint.Api.Services
                 }
                 else
                 {
-                    if (teamsToAdd.Contains(citeAction.TeamId))
+                    if (teamsToAdd.Contains((Guid)citeAction.TeamId))
                     {
                         citeAction.Team = null;
                     }
                     else
                     {
-                        teamsToAdd.Add(citeAction.TeamId);
+                        teamsToAdd.Add((Guid)citeAction.TeamId);
                     }
                 }
             }

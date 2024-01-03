@@ -16,7 +16,7 @@ namespace Blueprint.Api.Data.Models
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
-        public Guid MselId { get; set; }
+        public Guid? MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
         public string Name { get; set; }
         public DataFieldType DataType { get; set; }
@@ -30,6 +30,7 @@ namespace Blueprint.Api.Data.Models
         public bool IsInitiallyHidden { get; set;} // determines if this data field is hidden behind the "More Fields" button or is displayed initially
         public bool IsOnlyShownToOwners { get; set;} // determines if this data field gets displayed for all users or just owners (i.e. spreadsheet metadata)
         public string GalleryArticleParameter { get; set; } // the Gallery Article parameter associated with this DataField
+        public bool IsTemplate { get; set; }
     }
 
     public class DataFieldEntityConfiguration : IEntityTypeConfiguration<DataFieldEntity>

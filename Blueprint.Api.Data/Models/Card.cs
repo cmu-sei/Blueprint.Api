@@ -15,7 +15,7 @@ namespace Blueprint.Api.Data.Models
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
-        public Guid MselId { get; set; }
+        public Guid? MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
@@ -23,6 +23,7 @@ namespace Blueprint.Api.Data.Models
         public int Inject { get; set; }
         public Guid? GalleryId { get; set; }
         public virtual ICollection<CardTeamEntity> CardTeams { get; set; } = new HashSet<CardTeamEntity>();
+        public bool IsTemplate { get; set; }
     }
 
     public class CardEntityConfiguration : IEntityTypeConfiguration<CardEntity>

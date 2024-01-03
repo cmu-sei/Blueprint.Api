@@ -8,14 +8,15 @@ namespace Blueprint.Api.ViewModels
     public class CiteAction : Base
     {
         public Guid Id { get; set; }
-        public Guid MselId { get; set; }
+        public Guid? MselId { get; set; }
         public virtual Msel Msel { get; set; }
-        public Guid TeamId { get; set; }
+        public Guid? TeamId { get; set; }
         public virtual Team Team { get; set; }
         public int MoveNumber { get; set; }
         public int InjectNumber { get; set; }
         public int ActionNumber { get; set; }
         public string Description { get; set; }
+        public bool IsTemplate { get; set; }
     }
 
 }

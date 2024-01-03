@@ -13,17 +13,20 @@ namespace Blueprint.Api.Services
 {
     public static class ServiceUtilities
     {
-        public static async Task SetMselModifiedAsync(Guid id, Guid? modifiedBy, DateTime? dateModified, BlueprintContext context, CancellationToken ct)
+        public static async Task SetMselModifiedAsync(Guid? id, Guid? modifiedBy, DateTime? dateModified, BlueprintContext context, CancellationToken ct)
         {
-            var mselToUpdate = await context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
-            if (mselToUpdate == null)
-                throw new EntityNotFoundException<Msel>();
+            if (id != null)
+            {
+                var mselToUpdate = await context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
+                if (mselToUpdate == null)
+                    throw new EntityNotFoundException<Msel>();
 
-            // okay to update this msel
-            mselToUpdate.ModifiedBy = modifiedBy;
-            mselToUpdate.DateModified = dateModified;
-            context.Msels.Update(mselToUpdate);
-            await context.SaveChangesAsync(ct);
+                // okay to update this msel
+                mselToUpdate.ModifiedBy = modifiedBy;
+                mselToUpdate.DateModified = dateModified;
+                context.Msels.Update(mselToUpdate);
+                await context.SaveChangesAsync(ct);
+            }
         }
 
     }

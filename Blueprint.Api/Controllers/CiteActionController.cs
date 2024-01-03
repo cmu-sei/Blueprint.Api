@@ -28,6 +28,23 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets CiteAction Templates
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of CiteAction Templates
+        /// </remarks>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("citeActions/templates")]
+        [ProducesResponseType(typeof(IEnumerable<CiteAction>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getCiteActionTemplates")]
+        public async Task<IActionResult> GetCiteActionTemplates(CancellationToken ct)
+        {
+            var list = await _citeActionService.GetTemplatesAsync(ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Gets CiteActions by msel
         /// </summary>
         /// <remarks>

@@ -22,6 +22,7 @@ namespace Blueprint.Api.Services
 {
     public interface ICiteActionService
     {
+        Task<IEnumerable<ViewModels.CiteAction>> GetTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.CiteAction>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.CiteAction> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.CiteAction> CreateAsync(ViewModels.CiteAction citeAction, CancellationToken ct);
@@ -48,11 +49,29 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
         }
 
+        public async Task<IEnumerable<ViewModels.CiteAction>> GetTemplatesAsync(CancellationToken ct)
+        {
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var citeActionEntities = await _context.CiteActions
+                .Where(citeAction => citeAction.IsTemplate)
+                .ToListAsync(ct);
+
+            return _mapper.Map<IEnumerable<CiteAction>>(citeActionEntities).ToList();;
+        }
+
         public async Task<IEnumerable<ViewModels.CiteAction>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
-                throw new ForbiddenException();
+            if (
+                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
+                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+               )
+            {
+                var msel = await _context.Msels.FindAsync(mselId);
+                if (!msel.IsTemplate)
+                    throw new ForbiddenException();
+            }
 
             var citeActionEntities = await _context.CiteActions
                 .Where(ca => ca.MselId == mselId)

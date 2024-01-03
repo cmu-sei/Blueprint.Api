@@ -28,6 +28,23 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets CiteRole Templates
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of CiteRole Templates
+        /// </remarks>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("citeRoles/templates")]
+        [ProducesResponseType(typeof(IEnumerable<CiteRole>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getCiteRoleTemplates")]
+        public async Task<IActionResult> GetCiteRoleTemplates(CancellationToken ct)
+        {
+            var list = await _citeRoleService.GetTemplatesAsync(ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Gets CiteRoles by msel
         /// </summary>
         /// <remarks>

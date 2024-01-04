@@ -23,17 +23,20 @@ namespace Blueprint.Api.Controllers
         private readonly IMselService _mselService;
         private readonly ICiteService _citeService;
         private readonly IGalleryService _galleryService;
+        private readonly IPlayerService _playerService;
         private readonly IAuthorizationService _authorizationService;
 
         public MselController(
             IMselService mselService,
             ICiteService citeService,
             IGalleryService galleryService,
+            IPlayerService playerService,
             IAuthorizationService authorizationService)
         {
             _mselService = mselService;
             _citeService = citeService;
             _galleryService = galleryService;
+            _playerService = playerService;
             _authorizationService = authorizationService;
         }
 
@@ -443,6 +446,52 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> PullFromGallery(Guid id, CancellationToken ct)
         {
             var msel = await _galleryService.PullFromGalleryAsync(id, ct);
+            return Ok(msel);
+        }
+
+        //
+        // Player Integration Section
+        //
+
+        /// <summary>
+        /// Push to Player
+        /// </summary>
+        /// <remarks>
+        /// Pushes all Player associated MSEL information to Player
+        ///   * View and Teams
+        /// for the specified MSEL
+        /// <para />
+        /// Accessible only to a ContentDeveloper or MSEL owner
+        /// </remarks>
+        /// <param name="id"></param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{id}/player")]
+        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "pushToPlayer")]
+        public async Task<IActionResult> PushToPlayer(Guid id, CancellationToken ct)
+        {
+            var msel = await _playerService.PushToPlayerAsync(id, ct);
+            return Ok(msel);
+        }
+
+        /// <summary>
+        /// Pull from Player
+        /// </summary>
+        /// <remarks>
+        /// Pulls the View and associated information from Player
+        ///   * View and Teams
+        /// for the specified MSEL
+        /// <para />
+        /// Accessible only to a ContentDeveloper or an Administrator
+        /// </remarks>
+        /// <param name="id">The id of the Collection to delete</param>
+        /// <param name="ct"></param>
+        [HttpDelete("msels/{id}/player")]
+        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.NoContent)]
+        [SwaggerOperation(OperationId = "pullFromPlayer")]
+        public async Task<IActionResult> PullFromPlayer(Guid id, CancellationToken ct)
+        {
+            var msel = await _playerService.PullFromPlayerAsync(id, ct);
             return Ok(msel);
         }
 

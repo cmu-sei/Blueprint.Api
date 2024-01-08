@@ -32,6 +32,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<View>> GetViewsAsync(CancellationToken ct);
         Task<IEnumerable<Team>> GetViewTeamsAsync(Guid viewId, CancellationToken ct);
         Task<IEnumerable<User>> GetViewTeamUsersAsync(Guid teamId, CancellationToken ct);
+        Task<IEnumerable<ApplicationTemplate>> GetApplicationTemplatesAsync(CancellationToken ct);
         Task AddPlayerTeamsToMselAsync(Guid mselId, CancellationToken ct);
     }
 
@@ -71,6 +72,9 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
             // get the MSEL and verify data state
             var msel = await _context.Msels
+                .Include(m => m.PlayerApplications)
+                .ThenInclude(pa => pa.PlayerApplicationTeams)
+                .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to create a Player View.");
@@ -84,6 +88,9 @@ namespace Blueprint.Api.Services
             // create the Player Teams
             await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to Player", null, ct);
             var playerTeamDictionary = await CreateTeamsAsync(msel, ct);
+            // create the Player Applications
+            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Applications to Player", null, ct);
+            await CreateApplicationsAsync(msel, playerTeamDictionary, ct);
             // commit the transaction
             await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to Player", null, ct);
             await _context.Database.CommitTransactionAsync(ct);
@@ -190,6 +197,19 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
         }
 
+        public async Task<IEnumerable<ApplicationTemplate>> GetApplicationTemplatesAsync(CancellationToken ct)
+        {
+            var applicationTemplates = new List<ApplicationTemplate>();
+            try
+            {
+                applicationTemplates = (List<ApplicationTemplate>)await _playerApiClient.GetApplicationTemplatesAsync(ct);
+            }
+            catch (System.Exception)
+            {
+            }
+            return (IEnumerable<ApplicationTemplate>)applicationTemplates;
+        }
+
         //
         // Helper methods
         //
@@ -250,6 +270,35 @@ namespace Blueprint.Api.Services
             }
 
             return playerTeamDictionary;
+        }
+
+        // Create Player Applications for this MSEL
+        private async Task CreateApplicationsAsync(MselEntity msel, Dictionary<Guid, Guid> playerTeamDictionary, CancellationToken ct)
+        {
+            foreach (var application in msel.PlayerApplications)
+            {
+                var playerApplication = new Application() {
+                    Name = application.Name,
+                    Embeddable = application.Embeddable,
+                    ViewId = (Guid)msel.PlayerViewId,
+                    Url = new Uri(application.Url),
+                    Icon = application.Icon,
+                    LoadInBackground = application.LoadInBackground
+                };
+                playerApplication = await _playerApiClient.CreateApplicationAsync((Guid)msel.PlayerViewId, playerApplication, ct);
+                // create the Player Team Applications
+                var applicationTeams = await _context.PlayerApplicationTeams
+                    .Where(ct => ct.PlayerApplicationId == application.Id)
+                    .ToListAsync(ct);
+                foreach (var applicationTeam in applicationTeams)
+                {
+                    var applicationInstanceForm = new ApplicationInstanceForm() {
+                        TeamId = playerTeamDictionary[applicationTeam.TeamId],
+                        ApplicationId = (Guid)playerApplication.Id
+                    };
+                    await _playerApiClient.CreateApplicationInstanceAsync(applicationInstanceForm.TeamId, applicationInstanceForm, ct);
+                }
+            }
         }
 
     }

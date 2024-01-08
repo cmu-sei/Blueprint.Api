@@ -96,6 +96,23 @@ namespace Blueprint.Api.Controllers
             return Ok();
         }
 
+        /// <summary>
+        /// Gets all ApplicationTemplates
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of all of the ApplicationTemplates.
+        /// </remarks>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("applicationTemplates")]
+        [ProducesResponseType(typeof(IEnumerable<ApplicationTemplate>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getApplicationTemplates")]
+        public async Task<IActionResult> GetApplicationTemplates(CancellationToken ct)
+        {
+            var list = await _playerService.GetApplicationTemplatesAsync(ct);
+            return Ok(list);
+        }
+
     }
 
 }

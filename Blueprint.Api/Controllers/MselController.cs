@@ -392,7 +392,7 @@ namespace Blueprint.Api.Controllers
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
-        /// <param name="id">The id of the Collection to delete</param>
+        /// <param name="id">The id of the MSEL</param>
         /// <param name="ct"></param>
         [HttpDelete("msels/{id}/cite")]
         [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.NoContent)]
@@ -438,7 +438,7 @@ namespace Blueprint.Api.Controllers
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
-        /// <param name="id">The id of the Collection to delete</param>
+        /// <param name="id">The id of the MSEL</param>
         /// <param name="ct"></param>
         [HttpDelete("msels/{id}/gallery")]
         [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.NoContent)]
@@ -484,7 +484,7 @@ namespace Blueprint.Api.Controllers
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
-        /// <param name="id">The id of the Collection to delete</param>
+        /// <param name="id">The id of the MSEL</param>
         /// <param name="ct"></param>
         [HttpDelete("msels/{id}/player")]
         [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.NoContent)]

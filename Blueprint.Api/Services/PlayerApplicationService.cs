@@ -24,8 +24,8 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.PlayerApplication>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.PlayerApplication> GetAsync(Guid id, CancellationToken ct);
-        Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplication card, CancellationToken ct);
-        Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplication card, CancellationToken ct);
+        Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplication playerApplication, CancellationToken ct);
+        Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplication playerApplication, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     }
 
@@ -60,16 +60,16 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            var cardEntities = await _context.PlayerApplications
-                .Where(card => card.MselId == mselId)
+            var playerApplicationEntities = await _context.PlayerApplications
+                .Where(playerApplication => playerApplication.MselId == mselId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<PlayerApplication>>(cardEntities).ToList();;
+            return _mapper.Map<IEnumerable<PlayerApplication>>(playerApplicationEntities).ToList();;
         }
 
         public async Task<ViewModels.PlayerApplication> GetAsync(Guid id, CancellationToken ct)
         {
-            var item = await _context.PlayerApplications.SingleAsync(card => card.Id == id, ct);
+            var item = await _context.PlayerApplications.SingleAsync(playerApplication => playerApplication.Id == id, ct);
 
             if (item == null)
                 throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
@@ -81,62 +81,62 @@ namespace Blueprint.Api.Services
             return _mapper.Map<PlayerApplication>(item);
         }
 
-        public async Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplication card, CancellationToken ct)
+        public async Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplication playerApplication, CancellationToken ct)
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselOwnerRequirement.IsMet(_user.GetId(), card.MselId, _context))
+                !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context))
                 throw new ForbiddenException();
-            card.Id = card.Id != Guid.Empty ? card.Id : Guid.NewGuid();
-            card.DateCreated = DateTime.UtcNow;
-            card.CreatedBy = _user.GetId();
-            card.DateModified = null;
-            card.ModifiedBy = null;
-            var cardEntity = _mapper.Map<PlayerApplicationEntity>(card);
+            playerApplication.Id = playerApplication.Id != Guid.Empty ? playerApplication.Id : Guid.NewGuid();
+            playerApplication.DateCreated = DateTime.UtcNow;
+            playerApplication.CreatedBy = _user.GetId();
+            playerApplication.DateModified = null;
+            playerApplication.ModifiedBy = null;
+            var playerApplicationEntity = _mapper.Map<PlayerApplicationEntity>(playerApplication);
 
-            _context.PlayerApplications.Add(cardEntity);
+            _context.PlayerApplications.Add(playerApplicationEntity);
             await _context.SaveChangesAsync(ct);
-            card = await GetAsync(cardEntity.Id, ct);
+            playerApplication = await GetAsync(playerApplicationEntity.Id, ct);
 
-            return card;
+            return playerApplication;
         }
 
-        public async Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplication card, CancellationToken ct)
+        public async Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplication playerApplication, CancellationToken ct)
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselOwnerRequirement.IsMet(_user.GetId(), card.MselId, _context))
+                !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context))
                 throw new ForbiddenException();
 
-            var cardToUpdate = await _context.PlayerApplications.SingleOrDefaultAsync(v => v.Id == id, ct);
+            var playerApplicationToUpdate = await _context.PlayerApplications.SingleOrDefaultAsync(v => v.Id == id, ct);
 
-            if (cardToUpdate == null)
+            if (playerApplicationToUpdate == null)
                 throw new EntityNotFoundException<PlayerApplication>();
 
-            card.CreatedBy = cardToUpdate.CreatedBy;
-            card.DateCreated = cardToUpdate.DateCreated;
-            card.ModifiedBy = _user.GetId();
-            card.DateModified = DateTime.UtcNow;
-            _mapper.Map(card, cardToUpdate);
+            playerApplication.CreatedBy = playerApplicationToUpdate.CreatedBy;
+            playerApplication.DateCreated = playerApplicationToUpdate.DateCreated;
+            playerApplication.ModifiedBy = _user.GetId();
+            playerApplication.DateModified = DateTime.UtcNow;
+            _mapper.Map(playerApplication, playerApplicationToUpdate);
 
-            _context.PlayerApplications.Update(cardToUpdate);
+            _context.PlayerApplications.Update(playerApplicationToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            card = await GetAsync(cardToUpdate.Id, ct);
+            playerApplication = await GetAsync(playerApplicationToUpdate.Id, ct);
 
-            return card;
+            return playerApplication;
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            var cardToDelete = await _context.PlayerApplications.SingleOrDefaultAsync(v => v.Id == id, ct);
+            var playerApplicationToDelete = await _context.PlayerApplications.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselOwnerRequirement.IsMet(_user.GetId(), cardToDelete.MselId, _context))
+                !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplicationToDelete.MselId, _context))
                 throw new ForbiddenException();
 
-            if (cardToDelete == null)
+            if (playerApplicationToDelete == null)
                 throw new EntityNotFoundException<PlayerApplication>();
 
-            _context.PlayerApplications.Remove(cardToDelete);
+            _context.PlayerApplications.Remove(playerApplicationToDelete);
             await _context.SaveChangesAsync(ct);
 
             return true;

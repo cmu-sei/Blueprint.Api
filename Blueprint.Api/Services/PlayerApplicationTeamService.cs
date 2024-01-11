@@ -24,12 +24,12 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetAsync(CancellationToken ct);
         Task<ViewModels.PlayerApplicationTeam> GetAsync(Guid id, CancellationToken ct);
-        Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByPlayerApplicationAsync(Guid cardId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByPlayerApplicationAsync(Guid playerApplicationId, CancellationToken ct);
         Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByMselAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.PlayerApplicationTeam> CreateAsync(ViewModels.PlayerApplicationTeam cardTeam, CancellationToken ct);
-        Task<ViewModels.PlayerApplicationTeam> UpdateAsync(Guid id, ViewModels.PlayerApplicationTeam cardTeam, CancellationToken ct);
+        Task<ViewModels.PlayerApplicationTeam> CreateAsync(ViewModels.PlayerApplicationTeam playerApplicationTeam, CancellationToken ct);
+        Task<ViewModels.PlayerApplicationTeam> UpdateAsync(Guid id, ViewModels.PlayerApplicationTeam playerApplicationTeam, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
-        Task<bool> DeleteByIdsAsync(Guid cardId, Guid teamId, CancellationToken ct);
+        Task<bool> DeleteByIdsAsync(Guid playerApplicationId, Guid teamId, CancellationToken ct);
     }
 
     public class PlayerApplicationTeamService : IPlayerApplicationTeamService
@@ -76,20 +76,20 @@ namespace Blueprint.Api.Services
             return _mapper.Map<PlayerApplicationTeam>(item);
         }
 
-        public async Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByPlayerApplicationAsync(Guid cardId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByPlayerApplicationAsync(Guid playerApplicationId, CancellationToken ct)
         {
-            var card = await _context.PlayerApplications.FirstOrDefaultAsync(c => c.Id == cardId, ct);
+            var playerApplication = await _context.PlayerApplications.FirstOrDefaultAsync(c => c.Id == playerApplicationId, ct);
             if (
-                    !(await MselViewRequirement.IsMet(_user.GetId(), card.MselId, _context)) &&
+                    !(await MselViewRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context)) &&
                     !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
                )
             {
-                var mselCheck = await _context.Msels.FindAsync(card.MselId);
+                var mselCheck = await _context.Msels.FindAsync(playerApplication.MselId);
                 if (!mselCheck.IsTemplate)
                     throw new ForbiddenException();
             }
             var items = await _context.PlayerApplicationTeams
-                .Where(et => et.PlayerApplicationId == cardId)
+                .Where(et => et.PlayerApplicationId == playerApplicationId)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<PlayerApplicationTeam>>(items);
@@ -106,49 +106,49 @@ namespace Blueprint.Api.Services
                 if (!mselCheck.IsTemplate)
                     throw new ForbiddenException();
             }
-            var cardIds = await _context.PlayerApplications
+            var playerApplicationIds = await _context.PlayerApplications
                 .Where(c => c.MselId == mselId)
                 .Select(c => c.Id)
                 .ToListAsync(ct);
             var items = await _context.PlayerApplicationTeams
-                .Where(et => cardIds.Contains(et.PlayerApplicationId))
+                .Where(et => playerApplicationIds.Contains(et.PlayerApplicationId))
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<PlayerApplicationTeam>>(items);
         }
 
-        public async Task<ViewModels.PlayerApplicationTeam> CreateAsync(ViewModels.PlayerApplicationTeam cardTeam, CancellationToken ct)
+        public async Task<ViewModels.PlayerApplicationTeam> CreateAsync(ViewModels.PlayerApplicationTeam playerApplicationTeam, CancellationToken ct)
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
-            var cardTeamEntity = _mapper.Map<PlayerApplicationTeamEntity>(cardTeam);
-            cardTeamEntity.Id = cardTeamEntity.Id != Guid.Empty ? cardTeamEntity.Id : Guid.NewGuid();
+            var playerApplicationTeamEntity = _mapper.Map<PlayerApplicationTeamEntity>(playerApplicationTeam);
+            playerApplicationTeamEntity.Id = playerApplicationTeamEntity.Id != Guid.Empty ? playerApplicationTeamEntity.Id : Guid.NewGuid();
 
-            _context.PlayerApplicationTeams.Add(cardTeamEntity);
+            _context.PlayerApplicationTeams.Add(playerApplicationTeamEntity);
             await _context.SaveChangesAsync(ct);
 
-            return await GetAsync(cardTeamEntity.Id, ct);
+            return await GetAsync(playerApplicationTeamEntity.Id, ct);
         }
 
-        public async Task<ViewModels.PlayerApplicationTeam> UpdateAsync(Guid id, ViewModels.PlayerApplicationTeam cardTeam, CancellationToken ct)
+        public async Task<ViewModels.PlayerApplicationTeam> UpdateAsync(Guid id, ViewModels.PlayerApplicationTeam playerApplicationTeam, CancellationToken ct)
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
-            var cardTeamToUpdate = await _context.PlayerApplicationTeams.SingleOrDefaultAsync(v => v.Id == id, ct);
+            var playerApplicationTeamToUpdate = await _context.PlayerApplicationTeams.SingleOrDefaultAsync(v => v.Id == id, ct);
 
-            if (cardTeamToUpdate == null)
+            if (playerApplicationTeamToUpdate == null)
                 throw new EntityNotFoundException<PlayerApplicationTeam>();
 
-            _mapper.Map(cardTeam, cardTeamToUpdate);
+            _mapper.Map(playerApplicationTeam, playerApplicationTeamToUpdate);
 
-            _context.PlayerApplicationTeams.Update(cardTeamToUpdate);
+            _context.PlayerApplicationTeams.Update(playerApplicationTeamToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            cardTeam = await GetAsync(cardTeamToUpdate.Id, ct);
+            playerApplicationTeam = await GetAsync(playerApplicationTeamToUpdate.Id, ct);
 
-            return cardTeam;
+            return playerApplicationTeam;
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
@@ -156,28 +156,28 @@ namespace Blueprint.Api.Services
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
-            var cardTeamToDelete = await _context.PlayerApplicationTeams.SingleOrDefaultAsync(v => v.Id == id, ct);
+            var playerApplicationTeamToDelete = await _context.PlayerApplicationTeams.SingleOrDefaultAsync(v => v.Id == id, ct);
 
-            if (cardTeamToDelete == null)
+            if (playerApplicationTeamToDelete == null)
                 throw new EntityNotFoundException<PlayerApplicationTeam>();
 
-            _context.PlayerApplicationTeams.Remove(cardTeamToDelete);
+            _context.PlayerApplicationTeams.Remove(playerApplicationTeamToDelete);
             await _context.SaveChangesAsync(ct);
 
             return true;
         }
 
-        public async Task<bool> DeleteByIdsAsync(Guid cardId, Guid teamId, CancellationToken ct)
+        public async Task<bool> DeleteByIdsAsync(Guid playerApplicationId, Guid teamId, CancellationToken ct)
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
-            var cardTeamToDelete = await _context.PlayerApplicationTeams.SingleOrDefaultAsync(v => (v.TeamId == teamId) && (v.PlayerApplicationId == cardId), ct);
+            var playerApplicationTeamToDelete = await _context.PlayerApplicationTeams.SingleOrDefaultAsync(v => (v.TeamId == teamId) && (v.PlayerApplicationId == playerApplicationId), ct);
 
-            if (cardTeamToDelete == null)
+            if (playerApplicationTeamToDelete == null)
                 throw new EntityNotFoundException<PlayerApplicationTeam>();
 
-            _context.PlayerApplicationTeams.Remove(cardTeamToDelete);
+            _context.PlayerApplicationTeams.Remove(playerApplicationTeamToDelete);
             await _context.SaveChangesAsync(ct);
 
             return true;

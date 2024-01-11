@@ -18,12 +18,12 @@ namespace Blueprint.Api.Controllers
 {
     public class PlayerApplicationTeamController : BaseController
     {
-        private readonly IPlayerApplicationTeamService _cardTeamService;
+        private readonly IPlayerApplicationTeamService _playerApplicationTeamService;
         private readonly IAuthorizationService _authorizationService;
 
-        public PlayerApplicationTeamController(IPlayerApplicationTeamService cardTeamService, IAuthorizationService authorizationService)
+        public PlayerApplicationTeamController(IPlayerApplicationTeamService playerApplicationTeamService, IAuthorizationService authorizationService)
         {
-            _cardTeamService = cardTeamService;
+            _playerApplicationTeamService = playerApplicationTeamService;
             _authorizationService = authorizationService;
         }
 
@@ -35,12 +35,12 @@ namespace Blueprint.Api.Controllers
         /// <para />
         /// </remarks>
         /// <returns></returns>
-        [HttpGet("teamcards")]
+        [HttpGet("teamplayerApplications")]
         [ProducesResponseType(typeof(IEnumerable<PlayerApplicationTeam>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getPlayerApplicationTeams")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
-            var list = await _cardTeamService.GetAsync(ct);
+            var list = await _playerApplicationTeamService.GetAsync(ct);
             return Ok(list);
         }
 
@@ -53,30 +53,30 @@ namespace Blueprint.Api.Controllers
         /// <param name="mselId">The id of the Msel</param>
         /// <param name="ct"></param>
         /// <returns></returns>
-        [HttpGet("msels/{mselId}/teamcards")]
+        [HttpGet("msels/{mselId}/teamplayerApplications")]
         [ProducesResponseType(typeof(IEnumerable<PlayerApplicationTeam>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getMselPlayerApplicationTeams")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _cardTeamService.GetByMselAsync(mselId, ct);
+            var list = await _playerApplicationTeamService.GetByMselAsync(mselId, ct);
             return Ok(list);
         }
 
         /// <summary>
-        /// Gets all PlayerApplicationTeams for a card
+        /// Gets all PlayerApplicationTeams for a playerApplication
         /// </summary>
         /// <remarks>
-        /// Returns a list of all of the PlayerApplicationTeams for the card.
+        /// Returns a list of all of the PlayerApplicationTeams for the playerApplication.
         /// </remarks>
-        /// <param name="cardId">The id of the PlayerApplicationTeam</param>
+        /// <param name="playerApplicationId">The id of the PlayerApplicationTeam</param>
         /// <param name="ct"></param>
         /// <returns></returns>
-        [HttpGet("cards/{cardId}/teamcards")]
+        [HttpGet("playerApplications/{playerApplicationId}/teamplayerApplications")]
         [ProducesResponseType(typeof(IEnumerable<PlayerApplicationTeam>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getPlayerApplicationPlayerApplicationTeams")]
-        public async Task<IActionResult> GetByPlayerApplication(Guid cardId, CancellationToken ct)
+        public async Task<IActionResult> GetByPlayerApplication(Guid playerApplicationId, CancellationToken ct)
         {
-            var list = await _cardTeamService.GetByPlayerApplicationAsync(cardId, ct);
+            var list = await _playerApplicationTeamService.GetByPlayerApplicationAsync(playerApplicationId, ct);
             return Ok(list);
         }
 
@@ -90,12 +90,12 @@ namespace Blueprint.Api.Controllers
         /// <param name="id">The id of the PlayerApplicationTeam</param>
         /// <param name="ct"></param>
         /// <returns></returns>
-        [HttpGet("teamcards/{id}")]
+        [HttpGet("teamplayerApplications/{id}")]
         [ProducesResponseType(typeof(PlayerApplicationTeam), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getPlayerApplicationTeam")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var team = await _cardTeamService.GetAsync(id, ct);
+            var team = await _playerApplicationTeamService.GetAsync(id, ct);
 
             if (team == null)
                 throw new EntityNotFoundException<PlayerApplicationTeam>();
@@ -110,14 +110,14 @@ namespace Blueprint.Api.Controllers
         /// Creates a new PlayerApplicationTeam with the attributes specified
         /// <para />
         /// </remarks>
-        /// <param name="cardTeam">The data to create the PlayerApplicationTeam with</param>
+        /// <param name="playerApplicationTeam">The data to create the PlayerApplicationTeam with</param>
         /// <param name="ct"></param>
-        [HttpPost("teamcards")]
+        [HttpPost("teamplayerApplications")]
         [ProducesResponseType(typeof(PlayerApplicationTeam), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createPlayerApplicationTeam")]
-        public async Task<IActionResult> Create([FromBody] PlayerApplicationTeam cardTeam, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] PlayerApplicationTeam playerApplicationTeam, CancellationToken ct)
         {
-            var createdPlayerApplicationTeam = await _cardTeamService.CreateAsync(cardTeam, ct);
+            var createdPlayerApplicationTeam = await _playerApplicationTeamService.CreateAsync(playerApplicationTeam, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdPlayerApplicationTeam.Id }, createdPlayerApplicationTeam);
         }
 
@@ -126,19 +126,19 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a PlayerApplicationTeam with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the cardTeam parameter
+        /// The ID from the route MUST MATCH the ID contained in the playerApplicationTeam parameter
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
         /// <param name="id">The Id of the PlayerApplicationTeam to update</param>
-        /// <param name="cardTeam">The updated PlayerApplicationTeam values</param>
+        /// <param name="playerApplicationTeam">The updated PlayerApplicationTeam values</param>
         /// <param name="ct"></param>
-        [HttpPut("cardteams/{id}")]
+        [HttpPut("playerApplicationteams/{id}")]
         [ProducesResponseType(typeof(PlayerApplicationTeam), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updatePlayerApplicationTeam")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] PlayerApplicationTeam cardTeam, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] PlayerApplicationTeam playerApplicationTeam, CancellationToken ct)
         {
-            var updatedPlayerApplicationTeam = await _cardTeamService.UpdateAsync(id, cardTeam, ct);
+            var updatedPlayerApplicationTeam = await _playerApplicationTeamService.UpdateAsync(id, playerApplicationTeam, ct);
             return Ok(updatedPlayerApplicationTeam);
         }
 
@@ -151,31 +151,31 @@ namespace Blueprint.Api.Controllers
         /// </remarks>
         /// <param name="id">The id of the PlayerApplicationTeam to delete</param>
         /// <param name="ct"></param>
-        [HttpDelete("teamcards/{id}")]
+        [HttpDelete("teamplayerApplications/{id}")]
         [ProducesResponseType((int)HttpStatusCode.NoContent)]
         [SwaggerOperation(OperationId = "deletePlayerApplicationTeam")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _cardTeamService.DeleteAsync(id, ct);
+            await _playerApplicationTeamService.DeleteAsync(id, ct);
             return NoContent();
         }
 
         /// <summary>
-        /// Deletes a PlayerApplicationTeam by card ID and team ID
+        /// Deletes a PlayerApplicationTeam by playerApplication ID and team ID
         /// </summary>
         /// <remarks>
-        /// Deletes a PlayerApplicationTeam with the specified card ID and team ID
+        /// Deletes a PlayerApplicationTeam with the specified playerApplication ID and team ID
         /// <para />
         /// </remarks>
-        /// <param name="cardId">ID of a card.</param>
+        /// <param name="playerApplicationId">ID of a playerApplication.</param>
         /// <param name="teamId">ID of a team.</param>
         /// <param name="ct"></param>
-        [HttpDelete("teams/{teamId}/cards/{cardId}")]
+        [HttpDelete("teams/{teamId}/playerApplications/{playerApplicationId}")]
         [ProducesResponseType((int)HttpStatusCode.NoContent)]
         [SwaggerOperation(OperationId = "deletePlayerApplicationTeamByIds")]
-        public async Task<IActionResult> Delete(Guid teamId, Guid cardId, CancellationToken ct)
+        public async Task<IActionResult> Delete(Guid teamId, Guid playerApplicationId, CancellationToken ct)
         {
-            await _cardTeamService.DeleteByIdsAsync(teamId, cardId, ct);
+            await _playerApplicationTeamService.DeleteByIdsAsync(teamId, playerApplicationId, ct);
             return NoContent();
         }
 

@@ -147,6 +147,18 @@ namespace Blueprint.Api.Hubs
 
     public static class MainHubMethods
     {
+        public const string CardCreated = "CardCreated";
+        public const string CardUpdated = "CardUpdated";
+        public const string CardDeleted = "CardDeleted";
+        public const string CardTeamCreated = "CardTeamCreated";
+        public const string CardTeamUpdated = "CardTeamUpdated";
+        public const string CardTeamDeleted = "CardTeamDeleted";
+        public const string CiteActionCreated = "CiteActionCreated";
+        public const string CiteActionUpdated = "CiteActionUpdated";
+        public const string CiteActionDeleted = "CiteActionDeleted";
+        public const string CiteRoleCreated = "CiteRoleCreated";
+        public const string CiteRoleUpdated = "CiteRoleUpdated";
+        public const string CiteRoleDeleted = "CiteRoleDeleted";
         public const string DataFieldCreated = "DataFieldCreated";
         public const string DataFieldUpdated = "DataFieldUpdated";
         public const string DataFieldDeleted = "DataFieldDeleted";
@@ -166,6 +178,12 @@ namespace Blueprint.Api.Hubs
         public const string OrganizationCreated = "OrganizationCreated";
         public const string OrganizationUpdated = "OrganizationUpdated";
         public const string OrganizationDeleted = "OrganizationDeleted";
+        public const string PlayerApplicationCreated = "PlayerApplicationCreated";
+        public const string PlayerApplicationUpdated = "PlayerApplicationUpdated";
+        public const string PlayerApplicationDeleted = "PlayerApplicationDeleted";
+        public const string PlayerApplicationTeamCreated = "PlayerApplicationTeamCreated";
+        public const string PlayerApplicationTeamUpdated = "PlayerApplicationTeamUpdated";
+        public const string PlayerApplicationTeamDeleted = "PlayerApplicationTeamDeleted";
         public const string ScenarioEventCreated = "ScenarioEventCreated";
         public const string ScenarioEventUpdated = "ScenarioEventUpdated";
         public const string ScenarioEventDeleted = "ScenarioEventDeleted";

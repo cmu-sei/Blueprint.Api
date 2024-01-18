@@ -190,6 +190,8 @@ namespace Blueprint.Api
             services.AddScoped<IMoveService, MoveService>();
             services.AddScoped<IOrganizationService, OrganizationService>();
             services.AddScoped<IPermissionService, PermissionService>();
+            services.AddScoped<IPlayerApplicationService, PlayerApplicationService>();
+            services.AddScoped<IPlayerApplicationTeamService, PlayerApplicationTeamService>();
             services.AddScoped<IPlayerService, PlayerService>();
             services.AddScoped<ITeamService, TeamService>();
             services.AddScoped<ITeamUserService, TeamUserService>();

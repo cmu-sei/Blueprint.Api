@@ -41,6 +41,8 @@ namespace Blueprint.Api.Data
         public DbSet<CardTeamEntity> CardTeams { get; set; }
         public DbSet<CiteActionEntity> CiteActions { get; set; }
         public DbSet<CiteRoleEntity> CiteRoles { get; set; }
+        public DbSet<PlayerApplicationEntity> PlayerApplications { get; set; }
+        public DbSet<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; }
         public DbSet<MselPageEntity> MselPages { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)

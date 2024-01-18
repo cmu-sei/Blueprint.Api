@@ -13,6 +13,7 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
         public string Description { get; set; }
         public ItemStatus Status { get; set; }
+        public bool UsePlayer { get; set; }
         public Guid? PlayerViewId { get; set; }
         public bool UseGallery { get; set; }
         public Guid? GalleryCollectionId { get; set; }
@@ -43,6 +44,7 @@ namespace Blueprint.Api.ViewModels
         public List<string> GallerySourceTypes { get; set; } = new List<string>(); // the source types that must be sent to Gallery to define an Article
         public virtual ICollection<CiteRole> CiteRoles { get; set; } = new HashSet<CiteRole>();
         public virtual ICollection<CiteAction> CiteActions { get; set; } = new HashSet<CiteAction>();
+        public virtual ICollection<PlayerApplication> PlayerApplications { get; set; } = new HashSet<PlayerApplication>();
         public ICollection<MselPage> Pages { get; set; } = new List<MselPage>();
    }
 }

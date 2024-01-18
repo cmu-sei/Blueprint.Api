@@ -17,6 +17,7 @@ namespace Blueprint.Api.Data.Models
         public string Name { get; set; }
         public string Description { get; set; }
         public ItemStatus Status { get; set; }
+        public bool UsePlayer { get; set; }
         public Guid? PlayerViewId { get; set; }
         public bool UseGallery { get; set; }
         public Guid? GalleryCollectionId { get; set; }
@@ -45,6 +46,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<CardEntity> Cards { get; set; } = new HashSet<CardEntity>();
         public virtual ICollection<CiteRoleEntity> CiteRoles { get; set; } = new HashSet<CiteRoleEntity>();
         public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();
+        public virtual ICollection<PlayerApplicationEntity> PlayerApplications { get; set; } = new HashSet<PlayerApplicationEntity>();
         public virtual ICollection<MselPageEntity> Pages { get; set; } = new HashSet<MselPageEntity>();
     }
 }

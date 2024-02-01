@@ -10,7 +10,7 @@ using Blueprint.Api.Data;
 
 namespace Blueprint.Api.Infrastructure.Authorization
 {
-    public static class FacilitatorRequirement
+    public static class EvaluatorRequirement
     {
         public static async Task<Boolean> IsMet(Guid userId, Guid? mselId, BlueprintContext blueprintContext)
         {
@@ -26,7 +26,7 @@ namespace Blueprint.Api.Infrastructure.Authorization
                 isSuccess = await blueprintContext.UserMselRoles
                     .Where(umr => umr.UserId == userId &&
                         umr.MselId == mselId &&
-                        umr.Role == Data.Enumerations.MselRole.Facilitator)
+                        umr.Role == Data.Enumerations.MselRole.Evaluator)
                     .AnyAsync();
             }
 

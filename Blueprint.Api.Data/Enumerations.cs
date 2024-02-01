@@ -46,7 +46,7 @@ namespace Blueprint.Api.Data.Enumerations
         Approver = 30,
         MoveEditor = 40,
         Viewer = 50,
-        Facilitator = 60,
+        Evaluator = 60,
         GalleryObserver = 70,
         CiteObserver = 80
     }

@@ -199,8 +199,10 @@ namespace Blueprint.Api
             services.AddScoped<IUserPermissionService, UserPermissionService>();
             services.AddScoped<IUserMselRoleService, UserMselRoleService>();
             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
-            services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>().HttpContext.User);
+            services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>().HttpContext?.User);
             services.AddHttpClient();
+            services.AddSingleton<IIntegrationQueue, IntegrationQueue>();
+            services.AddHostedService<IntegrationService>();
 
             ApplyPolicies(services);
 

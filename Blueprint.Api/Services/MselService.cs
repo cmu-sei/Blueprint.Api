@@ -53,6 +53,8 @@ namespace Blueprint.Api.Services
         Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
         Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
+        Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, CancellationToken ct);
+        Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, CancellationToken ct);
     }
 
     public class MselService : IMselService
@@ -61,17 +63,19 @@ namespace Blueprint.Api.Services
         private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
-        private readonly ILogger<GalleryService> _logger;
+        private readonly ILogger<MselService> _logger;
         private readonly ClientOptions _clientOptions;
         private readonly IScenarioEventService _scenarioEventService;
+        private readonly IIntegrationQueue _integrationQueue;
 
         public MselService(
             BlueprintContext context,
             ClientOptions clientOptions,
             IAuthorizationService authorizationService,
             IScenarioEventService scenarioEventService,
+            IIntegrationQueue integrationQueue,
             IPrincipal user,
-            ILogger<GalleryService> logger,
+            ILogger<MselService> logger,
             IMapper mapper)
         {
             _context = context;
@@ -81,6 +85,7 @@ namespace Blueprint.Api.Services
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
             _logger = logger;
+            _integrationQueue = integrationQueue;
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct)
@@ -1572,6 +1577,93 @@ namespace Blueprint.Api.Services
             return _mapper.Map<Msel>(mselEntity);
         }
 
+        public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, CancellationToken ct)
+        {
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+                throw new ForbiddenException();
+            // get the MSEL and verify data state
+            var msel = await _context.Msels
+                .Include(m => m.PlayerApplications)
+                .ThenInclude(pa => pa.PlayerApplicationTeams)
+                .AsSplitQuery()
+                .SingleOrDefaultAsync(m => m.Id == mselId);
+            if (msel == null)
+                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to create a Player View.");
+            if (msel.PlayerViewId != null)
+                throw new InvalidOperationException($"MSEL {mselId} is already associated to a Player View.");
+            // verify that no users are on more than one team
+            var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
+            if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
+                throw new InvalidOperationException(userVerificationErrorMessage);
+            _integrationQueue.Add(mselId);
+            
+            return _mapper.Map<ViewModels.Msel>(msel); 
+        }
+
+        public async Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, CancellationToken ct)
+        {
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+                throw new ForbiddenException();
+            // get the MSEL and verify data state
+            var msel = await _context.Msels.FindAsync(mselId);
+            if (msel == null)
+                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to remove from Player.");
+            if (msel.PlayerViewId == null)
+                throw new InvalidOperationException($"MSEL {mselId} is not associated to a Player View.");
+            // add msel to process queue
+            _integrationQueue.Add(mselId);
+
+            return _mapper.Map<ViewModels.Msel>(msel); 
+        }
+
+        private async Task<string> FindDuplicateMselUsersAsync(Guid mselId, CancellationToken ct)
+        {
+            var duplicateResultList = await _context.MselTeams
+                .AsNoTracking()
+                .Where(mt => mt.MselId == mselId && mt.CiteTeamTypeId != null)
+                .SelectMany(mt => mt.Team.TeamUsers)
+                .Select(tu => new DuplicateResult {
+                    TeamId = tu.TeamId,
+                    UserId = tu.UserId,
+                    TeamName = tu.Team.ShortName,
+                    UserName = tu.User.Name
+                })
+                .ToListAsync(ct);
+            var duplicates = duplicateResultList
+                .GroupBy(tu => tu.UserId)
+                .Where(x => x.Count() > 1)
+                .ToList();
+            var explanation = "";
+            if (duplicates.Any())
+            {
+                explanation = "Users can only be on one team.  The following users are on more than one team.  ";
+                foreach (var dup in duplicates)
+                {
+                    var dupTeamUsers = dup.ToList();
+                    explanation = explanation + "[" + dupTeamUsers[0].UserName + " is on teams ";
+                    foreach (var teamUser in dupTeamUsers)
+                    {
+                        explanation = explanation + teamUser.TeamName + ", ";
+                    }
+                    explanation = explanation + "],   ";
+                }
+            }
+
+            return explanation;
+        }
+
+    }
+
+    public class DuplicateResult
+    {
+        public Guid TeamId { get; set; }
+        public Guid UserId { get; set; }
+        public string TeamName { get; set; }
+        public string UserName { get; set; }
     }
 }
 

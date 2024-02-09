@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using Blueprint.Api.Infrastructure.Options;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -11,11 +12,33 @@ namespace Blueprint.Api.Infrastructure.Extensions
 {
     public static class ApiClientsExtensions
     {
+        public static HttpClient GetHttpClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse)
+        {
+            var client = httpClientFactory.CreateClient();
+            client.BaseAddress = new Uri(apiUrl);
+            // Only add the header if the token was passed
+            if (tokenResponse != null)
+            {
+                client.DefaultRequestHeaders.Add("authorization", $"{tokenResponse.TokenType} {tokenResponse.AccessToken}");
+            }
+            return client;
+        }
+
         public static HttpClient GetHttpClient(IHttpClientFactory httpClientFactory, string apiUrl)
         {
             var client = httpClientFactory.CreateClient();
             client.BaseAddress = new Uri(apiUrl);
             return client;
+        }
+
+        public static async Task<TokenResponse> GetToken(IServiceScope scope)
+        {
+            var resourceOwnerAuthorizationOptions = scope.ServiceProvider.GetRequiredService<ResourceOwnerAuthorizationOptions>();
+            using (var httpClient = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>().CreateClient())
+            {
+                var tokenResponse = await RequestTokenAsync(resourceOwnerAuthorizationOptions, httpClient);
+                return tokenResponse;
+            }
         }
 
         public static async Task<TokenResponse> RequestTokenAsync(ResourceOwnerAuthorizationOptions authorizationOptions, HttpClient httpClient)

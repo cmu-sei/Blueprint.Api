@@ -21,22 +21,15 @@ namespace Blueprint.Api.Controllers
     public class MselController : BaseController
     {
         private readonly IMselService _mselService;
-        private readonly ICiteService _citeService;
-        private readonly IGalleryService _galleryService;
-        private readonly IPlayerService _playerService;
         private readonly IAuthorizationService _authorizationService;
 
         public MselController(
             IMselService mselService,
             ICiteService citeService,
-            IGalleryService galleryService,
             IPlayerService playerService,
             IAuthorizationService authorizationService)
         {
             _mselService = mselService;
-            _citeService = citeService;
-            _galleryService = galleryService;
-            _playerService = playerService;
             _authorizationService = authorizationService;
         }
 
@@ -358,140 +351,44 @@ namespace Blueprint.Api.Controllers
         }
 
         //
-        // Cite Integration Section
+        // Integration Section
         //
 
         /// <summary>
-        /// Push to Cite
+        /// Push Integrations
         /// </summary>
         /// <remarks>
-        /// Pushes all Cite associated MSEL information to Cite
-        ///   * Collection, Exhibit, Cards, Articles, and Teams
-        /// for the specified MSEL
+        /// Pushes all MSEL Integrations to the associated applications
         /// <para />
         /// Accessible only to a ContentDeveloper or MSEL owner
         /// </remarks>
         /// <param name="id"></param>
         /// <param name="ct"></param>
-        [HttpPost("msels/{id}/cite")]
+        [HttpPost("msels/{id}/integrations")]
         [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.Created)]
-        [SwaggerOperation(OperationId = "pushToCite")]
-        public async Task<IActionResult> PushToCite(Guid id, CancellationToken ct)
+        [SwaggerOperation(OperationId = "pushIntegrations")]
+        public async Task<IActionResult> PushIntegrations(Guid id, CancellationToken ct)
         {
-            var msel = await _citeService.PushToCiteAsync(id, ct);
+            var msel = await _mselService.PushIntegrationsAsync(id, ct);
             return Ok(msel);
         }
 
         /// <summary>
-        /// Pull from Cite
+        /// Pull Integrations
         /// </summary>
         /// <remarks>
-        /// Pulls the Collection and associated information from Cite
-        ///   * Collection, Exhibit, Cards, Articles, and Teams
-        /// for the specified MSEL
+        /// Pulls all Integrations from the associated applications
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
         /// <param name="id">The id of the MSEL</param>
         /// <param name="ct"></param>
-        [HttpDelete("msels/{id}/cite")]
+        [HttpDelete("msels/{id}/integrations")]
         [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.NoContent)]
-        [SwaggerOperation(OperationId = "pullFromCite")]
-        public async Task<IActionResult> PullFromCite(Guid id, CancellationToken ct)
+        [SwaggerOperation(OperationId = "pullIntegrations")]
+        public async Task<IActionResult> PullIntegrations(Guid id, CancellationToken ct)
         {
-            var msel = await _citeService.PullFromCiteAsync(id, ct);
-            return Ok(msel);
-        }
-
-        //
-        // Gallery Integration Section
-        //
-
-        /// <summary>
-        /// Push to Gallery
-        /// </summary>
-        /// <remarks>
-        /// Pushes all Gallery associated MSEL information to Gallery
-        ///   * Collection, Exhibit, Cards, Articles, and Teams
-        /// for the specified MSEL
-        /// <para />
-        /// Accessible only to a ContentDeveloper or MSEL owner
-        /// </remarks>
-        /// <param name="id"></param>
-        /// <param name="ct"></param>
-        [HttpPost("msels/{id}/gallery")]
-        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.Created)]
-        [SwaggerOperation(OperationId = "pushToGallery")]
-        public async Task<IActionResult> PushToGallery(Guid id, CancellationToken ct)
-        {
-            var msel = await _galleryService.PushToGalleryAsync(id, ct);
-            return Ok(msel);
-        }
-
-        /// <summary>
-        /// Pull from Gallery
-        /// </summary>
-        /// <remarks>
-        /// Pulls the Collection and associated information from Gallery
-        ///   * Collection, Exhibit, Cards, Articles, and Teams
-        /// for the specified MSEL
-        /// <para />
-        /// Accessible only to a ContentDeveloper or an Administrator
-        /// </remarks>
-        /// <param name="id">The id of the MSEL</param>
-        /// <param name="ct"></param>
-        [HttpDelete("msels/{id}/gallery")]
-        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.NoContent)]
-        [SwaggerOperation(OperationId = "pullFromGallery")]
-        public async Task<IActionResult> PullFromGallery(Guid id, CancellationToken ct)
-        {
-            var msel = await _galleryService.PullFromGalleryAsync(id, ct);
-            return Ok(msel);
-        }
-
-        //
-        // Player Integration Section
-        //
-
-        /// <summary>
-        /// Push to Player
-        /// </summary>
-        /// <remarks>
-        /// Pushes all Player associated MSEL information to Player
-        ///   * View and Teams
-        /// for the specified MSEL
-        /// <para />
-        /// Accessible only to a ContentDeveloper or MSEL owner
-        /// </remarks>
-        /// <param name="id"></param>
-        /// <param name="ct"></param>
-        [HttpPost("msels/{id}/player")]
-        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.Created)]
-        [SwaggerOperation(OperationId = "pushToPlayer")]
-        public async Task<IActionResult> PushToPlayer(Guid id, CancellationToken ct)
-        {
-            var msel = await _playerService.PushToPlayerAsync(id, ct);
-            return Ok(msel);
-        }
-
-        /// <summary>
-        /// Pull from Player
-        /// </summary>
-        /// <remarks>
-        /// Pulls the View and associated information from Player
-        ///   * View and Teams
-        /// for the specified MSEL
-        /// <para />
-        /// Accessible only to a ContentDeveloper or an Administrator
-        /// </remarks>
-        /// <param name="id">The id of the MSEL</param>
-        /// <param name="ct"></param>
-        [HttpDelete("msels/{id}/player")]
-        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.NoContent)]
-        [SwaggerOperation(OperationId = "pullFromPlayer")]
-        public async Task<IActionResult> PullFromPlayer(Guid id, CancellationToken ct)
-        {
-            var msel = await _playerService.PullFromPlayerAsync(id, ct);
+            var msel = await _mselService.PullIntegrationsAsync(id, ct);
             return Ok(msel);
         }
 

@@ -186,7 +186,6 @@ namespace Blueprint.Api
             services.AddScoped<IMselService, MselService>();
             services.AddScoped<IMselPageService, MselPageService>();
             services.AddScoped<IMselTeamService, MselTeamService>();
-            services.AddScoped<IGalleryService, GalleryService>();
             services.AddScoped<IMoveService, MoveService>();
             services.AddScoped<IOrganizationService, OrganizationService>();
             services.AddScoped<IPermissionService, PermissionService>();
@@ -199,8 +198,10 @@ namespace Blueprint.Api
             services.AddScoped<IUserPermissionService, UserPermissionService>();
             services.AddScoped<IUserMselRoleService, UserMselRoleService>();
             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
-            services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>().HttpContext.User);
+            services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>().HttpContext?.User);
             services.AddHttpClient();
+            services.AddSingleton<IIntegrationQueue, IntegrationQueue>();
+            services.AddHostedService<IntegrationService>();
 
             ApplyPolicies(services);
 

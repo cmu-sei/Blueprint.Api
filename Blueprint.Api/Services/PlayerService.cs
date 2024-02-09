@@ -3,29 +3,28 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
-using Blueprint.Api.Data;
-using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
-using Player.Api.Client;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using AutoMapper;
+using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
-using Microsoft.AspNetCore.SignalR;
+using Blueprint.Api.Infrastructure.Extensions;
+using Player.Api.Client;
 
 namespace Blueprint.Api.Services
 {
     public interface IPlayerService
     {
-        Task<ViewModels.Msel> PushToPlayerAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.Msel> PullFromPlayerAsync(Guid mselId, CancellationToken ct);
         Task<IEnumerable<ApplicationTemplate>> GetApplicationTemplatesAsync(CancellationToken ct);
     }
 
@@ -37,7 +36,6 @@ namespace Blueprint.Api.Services
         private readonly IMapper _mapper;
         private readonly ClaimsPrincipal _user;
         private readonly IHubContext<MainHub> _hubContext;
-        private readonly IIntegrationQueue _integrationQueue;
 
         public PlayerService(
             IHttpContextAccessor httpContextAccessor,
@@ -47,7 +45,6 @@ namespace Blueprint.Api.Services
             IUserClaimsService claimsService,
             BlueprintContext context,
             IHubContext<MainHub> hubContext,
-            IIntegrationQueue integrationQueue,
             IMapper mapper)
 
         {
@@ -57,45 +54,6 @@ namespace Blueprint.Api.Services
             _hubContext = hubContext;
             _authorizationService = authorizationService;
             _mapper = mapper;
-            _integrationQueue = integrationQueue;
-        }
-
-        public async Task<ViewModels.Msel> PushToPlayerAsync(Guid mselId, CancellationToken ct)
-        {
-            // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
-                throw new ForbiddenException();
-            // get the MSEL and verify data state
-            var msel = await _context.Msels
-                .Include(m => m.PlayerApplications)
-                .ThenInclude(pa => pa.PlayerApplicationTeams)
-                .AsSplitQuery()
-                .SingleOrDefaultAsync(m => m.Id == mselId);
-            if (msel == null)
-                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to create a Player View.");
-            if (msel.PlayerViewId != null)
-                throw new InvalidOperationException($"MSEL {mselId} is already associated to a Player View.");
-            _integrationQueue.Add(mselId);
-            return _mapper.Map<ViewModels.Msel>(msel); 
-        }
-
-        public async Task<ViewModels.Msel> PullFromPlayerAsync(Guid mselId, CancellationToken ct)
-        {
-            // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
-                throw new ForbiddenException();
-            // get the MSEL and verify data state
-            var msel = await _context.Msels.FindAsync(mselId);
-            if (msel == null)
-                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to remove from Player.");
-            if (msel.PlayerViewId == null)
-                throw new InvalidOperationException($"MSEL {mselId} is not associated to a Player View.");
-            // add msel to process queue
-            _integrationQueue.Add(mselId);
-
-            return _mapper.Map<ViewModels.Msel>(msel); 
         }
 
         public async Task<IEnumerable<ApplicationTemplate>> GetApplicationTemplatesAsync(CancellationToken ct)
@@ -112,4 +70,5 @@ namespace Blueprint.Api.Services
         }
 
     }
+
 }

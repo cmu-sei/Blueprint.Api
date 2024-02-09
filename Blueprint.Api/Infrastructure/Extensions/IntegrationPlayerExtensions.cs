@@ -26,9 +26,9 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
         public static async Task PullFromPlayerAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            // delete
             try
             {
+                // delete
                 await playerApiClient.DeleteViewAsync((Guid)msel.PlayerViewId, ct);
             }
             catch (System.Exception)

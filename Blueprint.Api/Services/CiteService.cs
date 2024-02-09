@@ -2,24 +2,16 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using AutoMapper;
-using Blueprint.Api.Infrastructure.Authorization;
-using Blueprint.Api.Infrastructure.Exceptions;
-using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Hubs;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data;
-using Blueprint.Api.Data.Enumerations;
-using Blueprint.Api.Data.Models;
 using Cite.Api.Client;
 using Microsoft.AspNetCore.SignalR;
 
@@ -29,8 +21,6 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ScoringModel>> GetScoringModelsAsync(CancellationToken ct);
         Task<IEnumerable<TeamType>> GetTeamTypesAsync(CancellationToken ct);
-        Task<ViewModels.Msel> PushToCiteAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.Msel> PullFromCiteAsync(Guid mselId, CancellationToken ct);
     }
 
     public class CiteService : ICiteService
@@ -93,269 +83,6 @@ namespace Blueprint.Api.Services
             }
             return (IEnumerable<TeamType>)teamTypes;
 
-        }
-
-        public async Task<ViewModels.Msel> PushToCiteAsync(Guid mselId, CancellationToken ct)
-        {
-            // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
-                throw new ForbiddenException();
-            // get the MSEL and verify data state
-            var msel = await _context.Msels
-                .Include(m => m.CiteActions)
-                .Include(m => m.CiteRoles)
-                .Include(m => m.Moves)
-                .AsSplitQuery()
-                .SingleOrDefaultAsync(m => m.Id == mselId);
-            if (msel == null)
-                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to create a collection.");
-            if (msel.CiteEvaluationId != null)
-                throw new InvalidOperationException($"MSEL {mselId} is already associated to a Cite Evaluation.");
-            // verify that no users are on more than one team
-            var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
-            if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
-                throw new InvalidOperationException(userVerificationErrorMessage);
-            // start a transaction, because we will modify many database items
-            await _context.Database.BeginTransactionAsync();
-            // create the Cite Evaluation
-            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Evaluation to CITE", null, ct);
-            await CreateEvaluationAsync(msel, ct);
-            // create the Cite Moves
-            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Moves to CITE", null, ct);
-            await CreateMovesAsync(msel, ct);
-            // create the Cite Teams
-            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to CITE", null, ct);
-            var citeTeamDictionary = await CreateTeamsAsync(msel, ct);
-            // create the Cite Roles
-            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Roles to CITE", null, ct);
-            await CreateRolesAsync(msel, citeTeamDictionary, ct);
-            // create the Cite Actions
-            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Actions to CITE", null, ct);
-            await CreateActionsAsync(msel, citeTeamDictionary, ct);
-            // commit the transaction
-            await _hubContext.Clients.Group(mselId.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to CITE", null, ct);
-            await _context.Database.CommitTransactionAsync(ct);
-
-            return await _mselService.GetAsync(msel.Id, ct); 
-        }
-
-        public async Task<ViewModels.Msel> PullFromCiteAsync(Guid mselId, CancellationToken ct)
-        {
-            // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
-                throw new ForbiddenException();
-            // get the MSEL and verify data state
-            var msel = await _context.Msels.FindAsync(mselId);
-            if (msel == null)
-                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to create a collection.");
-            if (msel.CiteEvaluationId == null)
-                throw new InvalidOperationException($"MSEL {mselId} is not associated to a Cite Evaluation.");
-            // delete the CITE evaluation
-            try
-            {
-                await _citeApiClient.DeleteEvaluationAsync((Guid)msel.CiteEvaluationId, ct);
-            }
-            catch (Exception ex)
-            {
-                // throw an exception if the error isn't "Evaluation not found"
-                if (!ex.Message.Contains("404"))
-                {
-                    throw new InvalidOperationException($"CITE Evaluation {msel.CiteEvaluationId} could not be removed from CITE.");
-                }
-            }
-            // update the MSEL
-            msel.CiteEvaluationId = null;
-            // save the changes
-            await _context.SaveChangesAsync(ct);
-
-            return await _mselService.GetAsync(msel.Id, ct); 
-        }
-
-        //
-        // Helper methods
-        //
-
-        // Create a Cite Evaluation for this MSEL
-        private async Task CreateEvaluationAsync(MselEntity msel, CancellationToken ct)
-        {
-            var move0 = msel.Moves.SingleOrDefault(m => m.MoveNumber == 0);
-            Evaluation newEvaluation = new Evaluation() {
-                Description = msel.Name,
-                Status = Cite.Api.Client.ItemStatus.Pending,
-                CurrentMoveNumber = 0,
-                ScoringModelId = (Guid)msel.CiteScoringModelId,
-                GalleryExhibitId = msel.GalleryExhibitId,
-                SituationDescription = "Preparing for the start of the exercise."
-            };
-            if (move0 != null)
-            {
-                newEvaluation.SituationDescription = move0.SituationDescription;
-                newEvaluation.SituationTime = (DateTimeOffset)move0.SituationTime;
-            }
-            newEvaluation = await _citeApiClient.CreateEvaluationAsync(newEvaluation, ct);
-            // update the MSEL
-            msel.CiteEvaluationId = newEvaluation.Id;
-            await _context.SaveChangesAsync(ct);
-            // delete the default move 0 that was created when the evaluation was created
-            var defaultMoveId = newEvaluation.Moves.Single().Id;
-            await _citeApiClient.DeleteMoveAsync(defaultMoveId);
-        }
-
-        // Create Cite Moves for this MSEL
-        private async Task CreateMovesAsync(MselEntity msel, CancellationToken ct)
-        {
-            foreach (var move in msel.Moves)
-            {
-                Move citeMove = new Move() {
-                    EvaluationId = (Guid)msel.CiteEvaluationId,
-                    Description = move.Description,
-                    MoveNumber = move.MoveNumber,
-                    SituationTime = (DateTimeOffset)move.SituationTime,
-                    SituationDescription = move.SituationDescription
-                };
-                await _citeApiClient.CreateMoveAsync(citeMove, ct);
-                await _context.SaveChangesAsync(ct);
-            }
-        }
-
-        // Create Cite Teams for this MSEL
-        private async Task<Dictionary<Guid, Guid>> CreateTeamsAsync(MselEntity msel, CancellationToken ct)
-        {
-            var citeTeamDictionary = new Dictionary<Guid, Guid>();
-            // get the Cite teams, Cite Users, and the Cite TeamUsers
-            var citeUserIds = (await _citeApiClient.GetUsersAsync(ct)).Select(u => u.Id);
-            // get the teams for this MSEL and loop through them
-            var mselTeams = await _context.MselTeams
-                .Where(mt => mt.MselId == msel.Id)
-                .Include(mt => mt.Team)
-                .ToListAsync();
-            foreach (var mselTeam in mselTeams)
-            {
-                if (mselTeam.CiteTeamTypeId != null)
-                {
-                    var citeTeamId = Guid.NewGuid();
-                    // create team in Cite
-                    var citeTeam = new Team() {
-                        Id = citeTeamId,
-                        Name = mselTeam.Team.Name,
-                        ShortName = mselTeam.Team.ShortName,
-                        EvaluationId = (Guid)msel.CiteEvaluationId,
-                        TeamTypeId = (Guid)mselTeam.CiteTeamTypeId
-                    };
-                    citeTeam = await _citeApiClient.CreateTeamAsync(citeTeam, ct);
-                    citeTeamDictionary.Add(mselTeam.TeamId, citeTeam.Id);
-                    // get all of the users for this team and loop through them
-                    var users = await _context.TeamUsers
-                        .Where(tu => tu.TeamId == mselTeam.Team.Id)
-                        .Select(tu => tu.User)
-                        .ToListAsync(ct);
-                    foreach (var user in users)
-                    {
-                        // if this user is not in Cite, add it
-                        if (!citeUserIds.Contains(user.Id))
-                        {
-                            var newUser = new User() {
-                                Id = user.Id,
-                                Name = user.Name
-                            };
-                            await _citeApiClient.CreateUserAsync(newUser, ct);
-                        }
-                        // create Cite TeamUsers
-                        var isObserver = await _context.UserMselRoles
-                            .AnyAsync(umr => umr.UserId == user.Id && umr.MselId == msel.Id && umr.Role == MselRole.CiteObserver);
-                        var teamUser = new TeamUser() {
-                            TeamId = citeTeam.Id,
-                            UserId = user.Id,
-                            IsObserver = isObserver
-                        };
-                        await _citeApiClient.CreateTeamUserAsync(teamUser, ct);
-                    }
-                }
-                else
-                {
-                    citeTeamDictionary.Add(mselTeam.TeamId, Guid.Empty);
-                }
-            }
-
-            return citeTeamDictionary;
-        }
-
-        // Create Cite Roles for this MSEL
-        private async Task CreateRolesAsync(MselEntity msel, Dictionary<Guid, Guid> citeTeamDictionary, CancellationToken ct)
-        {
-            foreach (var role in msel.CiteRoles)
-            {
-                var citeTeamId = citeTeamDictionary[(Guid)role.TeamId];
-                if (citeTeamId != Guid.Empty)
-                {
-                    Role citeRole = new Role() {
-                        EvaluationId = (Guid)msel.CiteEvaluationId,
-                        Name = role.Name,
-                        TeamId = citeTeamId
-                    };
-                    await _citeApiClient.CreateRoleAsync(citeRole, ct);
-                    await _context.SaveChangesAsync(ct);
-                }
-            }
-        }
-
-        // Create Cite Articles for this MSEL
-        private async Task CreateActionsAsync(MselEntity msel, Dictionary<Guid, Guid> citeTeamDictionary, CancellationToken ct)
-        {
-            foreach (var action in msel.CiteActions)
-            {
-                var citeTeamId = citeTeamDictionary[(Guid)action.TeamId];
-                if (citeTeamId != Guid.Empty)
-                {
-                    // create the action
-                    Cite.Api.Client.Action citeAction = new Cite.Api.Client.Action() {
-                        EvaluationId = (Guid)msel.CiteEvaluationId,
-                        TeamId = citeTeamId,
-                        MoveNumber = action.MoveNumber,
-                        InjectNumber = action.InjectNumber,
-                        Description = action.Description
-                    };
-                    await _citeApiClient.CreateActionAsync(citeAction, ct);
-                }
-            }
-        }
-
-        private async Task<string> FindDuplicateMselUsersAsync(Guid mselId, CancellationToken ct)
-        {
-            var duplicateResultList = await _context.MselTeams
-                .AsNoTracking()
-                .Where(mt => mt.MselId == mselId && mt.CiteTeamTypeId != null)
-                .SelectMany(mt => mt.Team.TeamUsers)
-                .Select(tu => new DuplicateResult {
-                    TeamId = tu.TeamId,
-                    UserId = tu.UserId,
-                    TeamName = tu.Team.ShortName,
-                    UserName = tu.User.Name
-                })
-                .ToListAsync(ct);
-            var duplicates = duplicateResultList
-                .GroupBy(tu => tu.UserId)
-                .Where(x => x.Count() > 1)
-                .ToList();
-            var explanation = "";
-            if (duplicates.Any())
-            {
-                explanation = "Users can only be on one team.  The following users are on more than one team.  ";
-                foreach (var dup in duplicates)
-                {
-                    var dupTeamUsers = dup.ToList();
-                    explanation = explanation + "[" + dupTeamUsers[0].UserName + " is on teams ";
-                    foreach (var teamUser in dupTeamUsers)
-                    {
-                        explanation = explanation + teamUser.TeamName + ", ";
-                    }
-                    explanation = explanation + "],   ";
-                }
-            }
-
-            return explanation;
         }
 
     }

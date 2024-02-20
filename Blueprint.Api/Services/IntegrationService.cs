@@ -132,16 +132,6 @@ namespace Blueprint.Api.Services
                             currentProcessStep = "Player - begin processing part 1";
                             playerTeamDictionary = await PlayerProcessPart1(msel, playerApiClient, blueprintContext, ct);
 
-                            // CITE processing
-                            msel = await blueprintContext.Msels
-                                .Include(m => m.CiteActions)
-                                .Include(m => m.CiteRoles)
-                                .Include(m => m.Moves)
-                                .AsSplitQuery()
-                                .SingleOrDefaultAsync(m => m.Id == mselId);
-                            currentProcessStep = "CITE - begin processing";
-                            await CiteProcess(msel, citeApiClient, blueprintContext, ct);
-
                             // Gallery processing
                             msel = await blueprintContext.Msels
                                 .Include(m => m.Cards)
@@ -153,6 +143,16 @@ namespace Blueprint.Api.Services
                             currentProcessStep = "Gallery - begin processing";
                             var scenarioEventService = scope.ServiceProvider.GetRequiredService<IScenarioEventService>();
                             await GalleryProcess(msel, scenarioEventService, galleryApiClient, blueprintContext, ct);
+
+                            // CITE processing
+                            msel = await blueprintContext.Msels
+                                .Include(m => m.CiteActions)
+                                .Include(m => m.CiteRoles)
+                                .Include(m => m.Moves)
+                                .AsSplitQuery()
+                                .SingleOrDefaultAsync(m => m.Id == mselId);
+                            currentProcessStep = "CITE - begin processing";
+                            await CiteProcess(msel, citeApiClient, blueprintContext, ct);
 
                             // Player processing part 2
                             currentProcessStep = "Player - push applications";

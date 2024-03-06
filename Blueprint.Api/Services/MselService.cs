@@ -55,6 +55,10 @@ namespace Blueprint.Api.Services
         Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
+        Task<string> JoinByInvitationAsync(Guid invitationId, CancellationToken ct);
+        Task<string> LaunchByInvitationAsync(Guid invitationId, CancellationToken ct);
     }
 
     public class MselService : IMselService
@@ -1654,6 +1658,45 @@ namespace Blueprint.Api.Services
             }
 
             return explanation;
+        }
+
+        public async Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct)
+        {
+            var myMsels = (IQueryable<MselEntity>)_context.Msels;
+            var currentDateTime = DateTime.UtcNow;
+            var userEmail = _user.Claims.SingleOrDefault(c => c.Type == "Email").Value;
+            var myActiveMselIds = await _context.Teams
+                .Where()
+            var inviteMselIds = await _context.Invitations
+                .Where(i =>
+                    !i.WasDeactivated &&
+                    i.ExpirationDateTime < currentDateTime &&
+                    userEmail.EndsWith(i.EmailDomain)
+                )
+                .Select(i => i.MselId)
+                .ToListAsync(ct);
+            myMsels = myMsels
+                .Where(m =>
+                    m.Status == ItemStatus.Deployed &&
+                    m.Teams
+                    inviteMselIds.Contains(m.Id)
+                );
+            return _mapper.Map<IEnumerable<Msel>>(await myMsels.ToListAsync(ct));;
+        }
+
+        public async Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct)
+        {
+
+        }
+
+        public async Task<string> JoinByInvitationAsync(Guid invitationId, CancellationToken ct)
+        {
+
+        }
+
+        public async Task<string> LaunchByInvitationAsync(Guid invitationId, CancellationToken ct)
+        {
+
         }
 
     }

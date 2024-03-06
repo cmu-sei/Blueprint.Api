@@ -44,6 +44,7 @@ namespace Blueprint.Api.Data
         public DbSet<PlayerApplicationEntity> PlayerApplications { get; set; }
         public DbSet<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; }
         public DbSet<MselPageEntity> MselPages { get; set; }
+        public DbSet<InvitationEntity> Invitations { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

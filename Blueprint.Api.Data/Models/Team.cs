@@ -21,6 +21,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<MselTeamEntity> MselTeams { get; set; } = new HashSet<MselTeamEntity>();
         public virtual ICollection<CardTeamEntity> CardTeams { get; set; } = new HashSet<CardTeamEntity>();
         public virtual ICollection<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; } = new HashSet<PlayerApplicationTeamEntity>();
+        public virtual ICollection<InvitationEntity> Invitations { get; set; } = new HashSet<InvitationEntity>();
     }
 
     public class TeamConfiguration : IEntityTypeConfiguration<TeamEntity>

@@ -8,7 +8,15 @@ namespace Blueprint.Api.Data.Enumerations
         Pending = 0,
         Entered = 10,
         Approved = 20,
-        Complete = 30
+        Complete = 30,
+        Deployed = 40,
+        Archived = 50
+    }
+
+    public enum IntegrationType {
+        Deploy = 10,
+        // Clone = 20,  add this when cloning is implemented
+        Connect = 30
     }
 
     public enum EventExecutionStatus
@@ -48,7 +56,9 @@ namespace Blueprint.Api.Data.Enumerations
         Viewer = 50,
         Evaluator = 60,
         GalleryObserver = 70,
-        CiteObserver = 80
+        CiteObserver = 80,
+        Participant = 90,
+        Inviter = 100
     }
 
     public enum GalleryArticleParameter{

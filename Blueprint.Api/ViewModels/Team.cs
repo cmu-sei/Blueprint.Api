@@ -15,6 +15,7 @@ namespace Blueprint.Api.ViewModels
         public bool IsParticipantTeam { get; set; }
         public ICollection<User> Users { get; set; } = new List<User>();
         public ICollection<Msel> Msels { get; set; } = new List<Msel>();
+        public virtual ICollection<Invitation> Invitations { get; set; } = new List<Invitation>();
     }
 
 }

@@ -427,38 +427,38 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Join a MSEL by invitation
+        /// Join a MSEL
         /// </summary>
         /// <remarks>
-        /// Joins the user to the msel and team indicated by the invitation
+        /// Joins the user to the msel
         /// <para />
         /// </remarks>
         /// <param name="id"></param>
         /// <param name="ct"></param>
-        [HttpPost("invitations/{id}/join")]
+        [HttpPost("msels/{id}/join")]
         [ProducesResponseType(typeof(string), (int)HttpStatusCode.Created)]
-        [SwaggerOperation(OperationId = "joinMselByInvitation")]
-        public async Task<IActionResult> JoinByInvitation(Guid id, CancellationToken ct)
+        [SwaggerOperation(OperationId = "joinMsel")]
+        public async Task<IActionResult> JoinMsel(Guid id, CancellationToken ct)
         {
-            var msel = await _mselService.JoinByInvitationAsync(id, ct);
+            var msel = await _mselService.JoinMselAsync(id, ct);
             return Ok(msel);
         }
 
         /// <summary>
-        /// Launch a MSEL by invitation
+        /// Launch a MSEL
         /// </summary>
         /// <remarks>
-        /// Launches the msel and joins the user to the team indicated by the invitation
+        /// Launches the msel and joins the user to the team indicated by a valid invitation
         /// <para />
         /// </remarks>
         /// <param name="id"></param>
         /// <param name="ct"></param>
-        [HttpPost("invitations/{id}/launch")]
+        [HttpPost("msels/{id}/launch")]
         [ProducesResponseType(typeof(string), (int)HttpStatusCode.Created)]
-        [SwaggerOperation(OperationId = "launchMselByInvitation")]
-        public async Task<IActionResult> LaunchByInvitation(Guid id, CancellationToken ct)
+        [SwaggerOperation(OperationId = "launchMsel")]
+        public async Task<IActionResult> LaunchMsel(Guid id, CancellationToken ct)
         {
-            var msel = await _mselService.LaunchByInvitationAsync(id, ct);
+            var msel = await _mselService.LaunchMselAsync(id, ct);
             return Ok(msel);
         }
 

@@ -26,6 +26,7 @@ namespace Blueprint.Api.Services
     public interface IPlayerService
     {
         Task<IEnumerable<ApplicationTemplate>> GetApplicationTemplatesAsync(CancellationToken ct);
+        Task<IEnumerable<View>> GetMyViewsAsync(CancellationToken ct);
     }
 
     public class PlayerService : IPlayerService
@@ -67,6 +68,18 @@ namespace Blueprint.Api.Services
             {
             }
             return (IEnumerable<ApplicationTemplate>)applicationTemplates;
+        }
+
+        public async Task<IEnumerable<View>> GetMyViewsAsync(CancellationToken ct) {
+            var views = new List<View>();
+            try
+            {
+                views = (List<View>)await _playerApiClient.GetUserViewsAsync(_user.GetId(), ct);
+            }
+            catch (System.Exception)
+            {
+            }
+            return views;
         }
 
     }

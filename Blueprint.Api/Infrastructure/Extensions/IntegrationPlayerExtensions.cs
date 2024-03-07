@@ -127,5 +127,12 @@ namespace Blueprint.Api.Infrastructure.Extensions
             }
         }
 
+        // Add User to Player Team
+        public static async Task AddUserToTeamAsync(Guid userId, Guid teamId, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            // create Player TeamUsers
+            await playerApiClient.AddUserToTeamAsync(teamId, userId, ct);
+        }
+
     }
 }

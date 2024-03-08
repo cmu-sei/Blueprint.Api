@@ -72,7 +72,6 @@ namespace Blueprint.Api.Services
         private readonly IIntegrationQueue _integrationQueue;
         private readonly IPlayerService _playerService;
         private readonly IJoinQueue _joinQueue;
-        private readonly ILaunchQueue _launchQueue;
 
         public MselService(
             BlueprintContext context,
@@ -82,7 +81,6 @@ namespace Blueprint.Api.Services
             IIntegrationQueue integrationQueue,
             IPlayerService playerService,
             IJoinQueue joinQueue,
-            ILaunchQueue launchQueue,
             IPrincipal user,
             ILogger<MselService> logger,
             IMapper mapper)
@@ -97,7 +95,6 @@ namespace Blueprint.Api.Services
             _integrationQueue = integrationQueue;
             _playerService = playerService;
             _joinQueue = joinQueue;
-            _launchQueue = launchQueue;
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct)
@@ -248,7 +245,7 @@ namespace Blueprint.Api.Services
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
             
-            var newMselEntity = await privateMselCopyAsync(mselId, ct);
+            var newMselEntity = await privateMselCopyAsync(mselId, null, ct);
             var msel = _mapper.Map<Msel>(newMselEntity);
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
@@ -259,8 +256,9 @@ namespace Blueprint.Api.Services
             return msel;
         }
 
-        private async Task<MselEntity> privateMselCopyAsync(Guid mselId, CancellationToken ct)
+        private async Task<MselEntity> privateMselCopyAsync(Guid mselId, Guid? currentUserTeamId, CancellationToken ct)
         {
+            var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == _user.GetId())).Name;
             var mselEntity = await _context.Msels
                 .AsNoTracking()
                 .Include(m => m.DataFields)
@@ -287,7 +285,7 @@ namespace Blueprint.Api.Services
             mselEntity.CreatedBy = _user.GetId();
             mselEntity.DateModified = mselEntity.DateCreated;
             mselEntity.ModifiedBy = mselEntity.CreatedBy;
-            mselEntity.Name = mselEntity.Name + " - " + _user.Identity.Name;
+            mselEntity.Name = mselEntity.Name + " - " + username;
             mselEntity.IsTemplate = false;
             mselEntity.GalleryCollectionId = null;
             mselEntity.GalleryExhibitId = null;
@@ -325,10 +323,16 @@ namespace Blueprint.Api.Services
             // copy Teams
             foreach (var mselTeam in mselEntity.MselTeams)
             {
+                var addUser = mselTeam.Id == currentUserTeamId;
                 mselTeam.Id = Guid.NewGuid();
                 mselTeam.MselId = mselEntity.Id;
                 mselTeam.Msel = null;
                 mselTeam.Team = null;
+                // add current user to the indicated team
+                if (addUser)
+                {
+                    mselTeam.Team.TeamUsers.Add(new TeamUserEntity{TeamId = mselTeam.Id, UserId = _user.GetId()});
+                }
             }
             // copy Organizations
             foreach (var organization in mselEntity.Organizations)
@@ -1631,7 +1635,7 @@ namespace Blueprint.Api.Services
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
                 throw new InvalidOperationException(userVerificationErrorMessage);
-            _integrationQueue.Add(mselId);
+            _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null});
             
             return _mapper.Map<ViewModels.Msel>(msel); 
         }
@@ -1649,7 +1653,7 @@ namespace Blueprint.Api.Services
             if (msel.PlayerViewId == null)
                 throw new InvalidOperationException($"MSEL {mselId} is not associated to a Player View.");
             // add msel to process queue
-            _integrationQueue.Add(mselId);
+            _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null});
 
             return _mapper.Map<ViewModels.Msel>(msel); 
         }
@@ -1781,7 +1785,7 @@ namespace Blueprint.Api.Services
             // determine if the user has a valid invitation
             var currentDateTime = DateTime.UtcNow;
             var userEmail = _user.Claims.SingleOrDefault(c => c.Type == "Email").Value;
-            var canLaunch = await _context.Invitations
+            var invitation = await _context.Invitations
                 .Where(i =>
                     !i.WasDeactivated &&
                     i.ExpirationDateTime < currentDateTime &&
@@ -1789,17 +1793,17 @@ namespace Blueprint.Api.Services
                     i.MselId == mselId &&
                     i.Msel.IsTemplate
                 )
-                .AnyAsync(ct);
+                .SingleOrDefaultAsync(ct);
 
-            if (!canLaunch)
+            if (invitation == null)
                 throw new ForbiddenException();
 
             // clone the template MSEL
-            var mselEntity = await privateMselCopyAsync(mselId, ct);
+            var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct);
             // create the new player view ID, so that the UI will be able to look for it to be created
             var playerViewId = Guid.NewGuid();
             // add the launch data to the launch queue
-            _launchQueue.Add(new LaunchInformation{MselId = mselEntity.Id, PlayerViewId = playerViewId});
+            _integrationQueue.Add(new IntegrationInformation{MselId = mselEntity.Id, PlayerViewId = playerViewId});
 
             return playerViewId;
         }

@@ -56,9 +56,8 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var items = await _context.Teams
-                .ProjectTo<ViewModels.Team>(_mapper.ConfigurationProvider)
                 .ToArrayAsync(ct);
-            return items;
+            return _mapper.Map<IEnumerable<Team>>(items);
         }
 
         public async Task<ViewModels.Team> GetAsync(Guid id, CancellationToken ct)
@@ -67,9 +66,8 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var item = await _context.Teams
-                .ProjectTo<ViewModels.Team>(_mapper.ConfigurationProvider, dest => dest.Users)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
-            return item;
+            return _mapper.Map<Team>(item);
         }
 
         public async Task<IEnumerable<ViewModels.Team>> GetMineAsync(CancellationToken ct)

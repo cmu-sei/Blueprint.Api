@@ -75,11 +75,11 @@ namespace Blueprint.Api.Services
                     {
                         _logger.LogDebug("The IntegrationService is ready to process tasks.");
                         // _implementatioQueue is a BlockingCollection, so this loop will sleep if nothing is in the queue
-                        var mselId = _integrationQueue.Take(new CancellationToken());
+                        var integrationInformation = _integrationQueue.Take(new CancellationToken());
                         // process on a new thread
                         // When adding a Task to the IntegrationQueue, the UserId MUST be changed to the current UserId, so that all results can be assigned to the correct user
                         var newThread = new Thread(ProcessTheMsel);
-                        newThread.Start(mselId);
+                        newThread.Start(integrationInformation);
                     }
                     catch (System.Exception ex)
                     {
@@ -89,12 +89,12 @@ namespace Blueprint.Api.Services
             });
         }
 
-        private async void ProcessTheMsel(Object mselIdObject)
+        private async void ProcessTheMsel(Object integrationInformationObject)
         {
             var ct = new CancellationToken();
-            var mselId = (Guid)mselIdObject;
+            var integrationInformation = (IntegrationInformation)integrationInformationObject;
             var currentProcessStep = "Begin processing";
-            _logger.LogDebug($"{currentProcessStep} {mselId}");
+            _logger.LogDebug($"{currentProcessStep} {integrationInformation.MselId}");
             try
             {
                 using (var scope = _scopeFactory.CreateScope())
@@ -107,7 +107,7 @@ namespace Blueprint.Api.Services
                         .Include(m => m.PlayerApplications)
                         .ThenInclude(pa => pa.PlayerApplicationTeams)
                         .AsSplitQuery()
-                        .SingleOrDefaultAsync(m => m.Id == mselId);
+                        .SingleOrDefaultAsync(m => m.Id == integrationInformation.MselId);
                     var isAPush = !(
                         msel.PlayerViewId != null ||
                         msel.GalleryExhibitId != null ||
@@ -130,7 +130,7 @@ namespace Blueprint.Api.Services
                             await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + "Pushing Integrations", null, ct);
                             // Player processing part 1
                             currentProcessStep = "Player - begin processing part 1";
-                            playerTeamDictionary = await PlayerProcessPart1(msel, playerApiClient, blueprintContext, ct);
+                            playerTeamDictionary = await PlayerProcessPart1(msel, integrationInformation.PlayerViewId, playerApiClient, blueprintContext, ct);
 
                             // Gallery processing
                             msel = await blueprintContext.Msels
@@ -139,7 +139,7 @@ namespace Blueprint.Api.Services
                                 .Include(m => m.ScenarioEvents)
                                 .ThenInclude(se => se.DataValues)
                                 .AsSplitQuery()
-                                .SingleOrDefaultAsync(m => m.Id == mselId);
+                                .SingleOrDefaultAsync(m => m.Id == integrationInformation.MselId);
                             currentProcessStep = "Gallery - begin processing";
                             var scenarioEventService = scope.ServiceProvider.GetRequiredService<IScenarioEventService>();
                             await GalleryProcess(msel, scenarioEventService, galleryApiClient, blueprintContext, ct);
@@ -150,7 +150,7 @@ namespace Blueprint.Api.Services
                                 .Include(m => m.CiteRoles)
                                 .Include(m => m.Moves)
                                 .AsSplitQuery()
-                                .SingleOrDefaultAsync(m => m.Id == mselId);
+                                .SingleOrDefaultAsync(m => m.Id == integrationInformation.MselId);
                             currentProcessStep = "CITE - begin processing";
                             await CiteProcess(msel, citeApiClient, blueprintContext, ct);
 
@@ -205,7 +205,7 @@ namespace Blueprint.Api.Services
             }
             catch (System.Exception ex)
             {
-                _logger.LogError($"{currentProcessStep} {mselId}", ex);
+                _logger.LogError($"{currentProcessStep} {integrationInformation}", ex);
             }
         }
 
@@ -215,7 +215,7 @@ namespace Blueprint.Api.Services
             return true;
         }
 
-        private async Task<Dictionary<Guid, Guid>> PlayerProcessPart1(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        private async Task<Dictionary<Guid, Guid>> PlayerProcessPart1(MselEntity msel, Guid? playerViewId, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             var playerTeamDictionary = new Dictionary<Guid, Guid>();
             var currentProcessStep = "Player create view";
@@ -223,7 +223,7 @@ namespace Blueprint.Api.Services
             {
                 // create the Player View
                 await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing View to Player", null, ct);
-                await IntegrationPlayerExtensions.CreateViewAsync(msel, playerApiClient, blueprintContext, ct);
+                await IntegrationPlayerExtensions.CreateViewAsync(msel, playerViewId, playerApiClient, blueprintContext, ct);
                 // create the Player Teams
                 currentProcessStep = "Player create teams";
                 await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to Player", null, ct);
@@ -287,6 +287,12 @@ namespace Blueprint.Api.Services
 
         }
 
+    }
+
+    public class IntegrationInformation
+    {
+        public Guid MselId { get; set; }
+        public Guid? PlayerViewId { get; set; }
     }
 
 }

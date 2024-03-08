@@ -10,21 +10,21 @@ namespace Blueprint.Api.Services
 
     public interface IIntegrationQueue
     {
-        void Add(Guid mselId);
+        void Add(IntegrationInformation integrationInformation);
 
-        Guid Take(CancellationToken cancellationToken);
+        IntegrationInformation Take(CancellationToken cancellationToken);
     }
 
     public class IntegrationQueue : IIntegrationQueue
     {
-        private BlockingCollection<Guid> _integrationQueue = new BlockingCollection<Guid>();
+        private BlockingCollection<IntegrationInformation> _integrationQueue = new BlockingCollection<IntegrationInformation>();
 
-        public void Add(Guid mselId)
+        public void Add(IntegrationInformation integrationInformation)
         {
-            _integrationQueue.Add(mselId);
+            _integrationQueue.Add(integrationInformation);
         }
 
-        public Guid Take(CancellationToken cancellationToken)
+        public IntegrationInformation Take(CancellationToken cancellationToken)
         {
             return _integrationQueue.Take(cancellationToken);
         }

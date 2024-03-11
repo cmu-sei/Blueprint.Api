@@ -16,8 +16,7 @@ namespace Blueprint.Api.Infrastructure.Mappings
                 .ForMember(m => m.Users, opt => opt.ExplicitExpansion());
 
             CreateMap<Team, TeamEntity>()
-                .ForMember(m => m.TeamUsers, opt => opt.Ignore())
-                .ForMember(m => m.MselTeams, opt => opt.Ignore());
+                .ForMember(m => m.TeamUsers, opt => opt.Ignore());
         }
     }
 }

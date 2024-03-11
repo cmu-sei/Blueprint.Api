@@ -30,11 +30,6 @@ namespace Blueprint.Api.Data.Models
         public MselEntity Msel { get; set; }
         public Guid? CiteTeamTypeId { get; set; }
         public string Email { get; set; }
-        public Guid? PlayerTeamId { get; set; }
-        public Guid? GalleryTeamId { get; set; }
-        public Guid? CiteTeamId { get; set; }
-        public bool canTeamLeaderInvite { get; set; }
-        public bool canTeamMemberInvite { get; set; }
     }
 
     public class MselTeamConfiguration : IEntityTypeConfiguration<MselTeamEntity>
@@ -42,17 +37,6 @@ namespace Blueprint.Api.Data.Models
         public void Configure(EntityTypeBuilder<MselTeamEntity> builder)
         {
             builder.HasIndex(x => new { x.TeamId, x.MselId }).IsUnique();
-
-            builder
-                .HasOne(u => u.Team)
-                .WithMany(p => p.MselTeams)
-                .HasForeignKey(x => x.TeamId)
-                .OnDelete(DeleteBehavior.Cascade);
-            builder
-                .HasOne(u => u.Msel)
-                .WithMany(p => p.MselTeams)
-                .HasForeignKey(x => x.MselId)
-                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

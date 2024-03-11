@@ -203,8 +203,7 @@ namespace Blueprint.Api.Services
             }
 
             var mselEntity = await _context.Msels
-                .Include(m => m.MselTeams)
-                .ThenInclude(mt => mt.Team)
+                .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
                 .Include(m => m.UserMselRoles)
@@ -265,8 +264,7 @@ namespace Blueprint.Api.Services
                 .ThenInclude(df => df.DataOptions)
                 .Include(m => m.ScenarioEvents)
                 .ThenInclude(se => se.DataValues)
-                .Include(m => m.MselTeams)
-                .ThenInclude(mt => mt.Team)
+                .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
                 .Include(m => m.UserMselRoles)
@@ -321,17 +319,13 @@ namespace Blueprint.Api.Services
                 move.CreatedBy = mselEntity.CreatedBy;
             }
             // copy Teams
-            foreach (var mselTeam in mselEntity.MselTeams)
+            foreach (var team in mselEntity.Teams)
             {
-                var addUser = mselTeam.Id == currentUserTeamId;
-                mselTeam.Id = Guid.NewGuid();
-                mselTeam.MselId = mselEntity.Id;
-                mselTeam.Msel = null;
-                mselTeam.Team = null;
+                var addUser = team.Id == currentUserTeamId;
                 // add current user to the indicated team
                 if (addUser)
                 {
-                    mselTeam.Team.TeamUsers.Add(new TeamUserEntity{TeamId = mselTeam.Id, UserId = _user.GetId()});
+                    team.TeamUsers.Add(new TeamUserEntity{TeamId = team.Id, UserId = _user.GetId()});
                 }
             }
             // copy Organizations
@@ -405,8 +399,7 @@ namespace Blueprint.Api.Services
 
             // get the new MSEL to return
             mselEntity = await _context.Msels
-                .Include(m => m.MselTeams)
-                .ThenInclude(mt => mt.Team)
+                .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
                 .Include(m => m.UserMselRoles)
@@ -1503,8 +1496,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.CiteRoles)
                 .Include(m => m.DataFields)
                 .Include(m => m.Moves)
-                .Include(m => m.MselTeams)
-                .ThenInclude(mt => mt.Team)
+                .Include(m => m.Teams)
                 .Include(m => m.Organizations)
                 .Include(m => m.Pages)
                 .Include(m => m.ScenarioEvents)
@@ -1549,27 +1541,8 @@ namespace Blueprint.Api.Services
                 ReferenceHandler = ReferenceHandler.Preserve
             };
             var mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
-            var teamsToAdd = new List<Guid>();
-            // remove existing teams to prevent duplicate key errors
-            foreach (var mselTeam in mselEntity.MselTeams)
-            {
-                var exists = await _context.Teams.AnyAsync(t => t.Id == mselTeam.TeamId, ct);
-                if (exists)
-                {
-                    mselTeam.Team = null;
-                }
-                else
-                {
-                    if (teamsToAdd.Contains(mselTeam.TeamId))
-                    {
-                        mselTeam.Team = null;
-                    }
-                    else
-                    {
-                        teamsToAdd.Add(mselTeam.TeamId);
-                    }
-                }
-            }
+            // get the list of team IDs
+            var teamsToAdd = mselEntity.Teams.Select(t => t.Id).ToList();
             foreach (var citeRole in mselEntity.CiteRoles)
             {
                 var exists = await _context.Teams.AnyAsync(t => t.Id == citeRole.TeamId, ct);

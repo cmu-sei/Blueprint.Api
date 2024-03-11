@@ -18,6 +18,7 @@ namespace Blueprint.Api.Data.Models
 
         public ICollection<UserPermissionEntity> UserPermissions { get; set; } = new List<UserPermissionEntity>();
         public ICollection<TeamUserEntity> TeamUsers { get; set; } = new List<TeamUserEntity>();
+        public ICollection<UnitUserEntity> UnitUsers { get; set; } = new List<UnitUserEntity>();
     }
 
     public class UserConfiguration : IEntityTypeConfiguration<UserEntity>

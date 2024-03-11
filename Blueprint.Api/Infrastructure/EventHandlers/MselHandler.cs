@@ -56,8 +56,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         {
             var groupIds = GetGroups(mselEntity);
             mselEntity = await _db.Msels
-                .Include(m => m.MselTeams)
-                .ThenInclude(mt => mt.Team)
+                .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
                 .Include(m => m.UserMselRoles)

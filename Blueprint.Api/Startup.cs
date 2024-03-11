@@ -187,6 +187,7 @@ namespace Blueprint.Api
             services.AddScoped<IMselService, MselService>();
             services.AddScoped<IMselPageService, MselPageService>();
             services.AddScoped<IMselTeamService, MselTeamService>();
+            services.AddScoped<IMselUnitService, MselUnitService>();
             services.AddScoped<IMoveService, MoveService>();
             services.AddScoped<IOrganizationService, OrganizationService>();
             services.AddScoped<IPermissionService, PermissionService>();
@@ -195,6 +196,8 @@ namespace Blueprint.Api
             services.AddScoped<IPlayerService, PlayerService>();
             services.AddScoped<ITeamService, TeamService>();
             services.AddScoped<ITeamUserService, TeamUserService>();
+            services.AddScoped<IUnitService, UnitService>();
+            services.AddScoped<IUnitUserService, UnitUserService>();
             services.AddScoped<IUserService, UserService>();
             services.AddScoped<IUserPermissionService, UserPermissionService>();
             services.AddScoped<IUserMselRoleService, UserMselRoleService>();

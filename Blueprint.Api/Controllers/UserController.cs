@@ -90,6 +90,26 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets all Users for a unit
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of all of the Users on the unit.
+        /// <para />
+        /// Only accessible to a SuperUser
+        /// </remarks>
+        /// <param name="unitId">The id of the Unit</param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("units/{unitId}/users")]
+        [ProducesResponseType(typeof(IEnumerable<User>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getUnitUsers")]
+        public async Task<IActionResult> GetByUnit(Guid unitId, CancellationToken ct)
+        {
+            var list = await _userService.GetByUnitAsync(unitId, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Creates a new User
         /// </summary>
         /// <remarks>

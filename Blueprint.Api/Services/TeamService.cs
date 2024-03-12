@@ -27,6 +27,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Team>> GetAsync(CancellationToken ct);
         Task<ViewModels.Team> GetAsync(Guid id, CancellationToken ct);
         Task<IEnumerable<ViewModels.Team>> GetMineAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.Team>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<IEnumerable<ViewModels.Team>> GetByUserAsync(Guid userId, CancellationToken ct);
         Task<ViewModels.Team> CreateAsync(ViewModels.Team team, CancellationToken ct);
         Task<ViewModels.Team> UpdateAsync(Guid id, ViewModels.Team team, CancellationToken ct);
@@ -79,6 +80,27 @@ namespace Blueprint.Api.Services
                 .Where(w => w.UserId == _user.GetId())
                 .Include(tu => tu.Team)
                 .Select(x => x.Team)
+                .ToListAsync(ct);
+
+            return _mapper.Map<IEnumerable<Team>>(items);
+        }
+
+        public async Task<IEnumerable<ViewModels.Team>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        {
+            if (
+                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
+                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+               )
+            {
+                var msel = await _context.Msels.FindAsync(mselId);
+                if (!msel.IsTemplate)
+                    throw new ForbiddenException();
+            }
+
+            var items = await _context.Teams
+                .Where(t => t.MselId == mselId)
+                .Include(t => t.TeamUsers)
+                .ThenInclude(tu => tu.User)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<Team>>(items);

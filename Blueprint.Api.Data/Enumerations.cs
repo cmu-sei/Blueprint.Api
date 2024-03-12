@@ -54,7 +54,10 @@ namespace Blueprint.Api.Data.Enumerations
         Approver = 30,
         MoveEditor = 40,
         Viewer = 50,
-        Evaluator = 60,
+        Evaluator = 60
+    }
+
+    public enum TeamRole{
         GalleryObserver = 70,
         CiteObserver = 80,
         Participant = 90,

@@ -62,6 +62,23 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets Teams for the specified MSEL
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of the Teams for the specified MSEL.
+        /// <para />
+        /// </remarks>
+        /// <returns></returns>
+        [HttpGet("msels/{mselId}/teams")]
+        [ProducesResponseType(typeof(IEnumerable<Team>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getTeamsByMsel")]
+        public async Task<IActionResult> GetByMsel([FromRoute] Guid mselId, CancellationToken ct)
+        {
+            var list = await _teamService.GetByMselAsync(mselId, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Gets Teams for the specified user
         /// </summary>
         /// <remarks>

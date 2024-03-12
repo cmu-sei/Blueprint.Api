@@ -12,7 +12,6 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
         public string ShortName { get; set; }
         public Guid? MselId { get; set; }
-        public virtual Msel Msel { get; set; }
         public Guid? CiteTeamTypeId { get; set; }
         public string Email { get; set; }
         public Guid? PlayerTeamId { get; set; }
@@ -20,11 +19,11 @@ namespace Blueprint.Api.ViewModels
         public Guid? CiteTeamId { get; set; }
         public bool canTeamLeaderInvite { get; set; }
         public bool canTeamMemberInvite { get; set; }
-        public ICollection<User> Users { get; set; } = new List<User>();
-        public virtual ICollection<CardTeam> CardTeams { get; set; } = new HashSet<CardTeam>();
-        public virtual ICollection<PlayerApplicationTeam> PlayerApplicationTeams { get; set; } = new HashSet<PlayerApplicationTeam>();
-        public virtual ICollection<Invitation> Invitations { get; set; } = new HashSet<Invitation>();
-        public Guid? OldTeamId { get; set; }
+        public User[] Users { get; set; }
+        public CardTeam[] CardTeams { get; set; }
+        public PlayerApplicationTeam[] PlayerApplicationTeams { get; set; }
+        public Invitation[] Invitations { get; set; }
+        public ICollection<UserTeamRole> UserTeamRoles { get; set; } = new List<UserTeamRole>();
 
     }
 

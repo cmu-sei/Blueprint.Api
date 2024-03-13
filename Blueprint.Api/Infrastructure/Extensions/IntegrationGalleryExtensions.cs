@@ -112,8 +112,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         await galleryApiClient.CreateUserAsync(newUser, ct);
                     }
                     // create Gallery TeamUsers
-                    var isObserverRole = await blueprintContext.UserMselRoles
-                        .AnyAsync(umr => umr.UserId == user.Id && umr.MselId == msel.Id && umr.Role == MselRole.GalleryObserver);
+                    var isObserverRole = await blueprintContext.UserTeamRoles
+                        .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == mselTeam.Team.Id && umr.Role == TeamRole.GalleryObserver);
                     var teamUser = new TeamUser() {
                         TeamId = galleryTeam.Id,
                         UserId = user.Id,

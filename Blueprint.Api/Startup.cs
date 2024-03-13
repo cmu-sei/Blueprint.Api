@@ -201,6 +201,7 @@ namespace Blueprint.Api
             services.AddScoped<IUserService, UserService>();
             services.AddScoped<IUserPermissionService, UserPermissionService>();
             services.AddScoped<IUserMselRoleService, UserMselRoleService>();
+            services.AddScoped<IUserTeamRoleService, UserTeamRoleService>();
             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
             services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>().HttpContext?.User);
             services.AddHttpClient();

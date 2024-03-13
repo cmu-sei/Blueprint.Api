@@ -127,8 +127,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             await citeApiClient.CreateUserAsync(newUser, ct);
                         }
                         // create Cite TeamUsers
-                        var isObserver = await blueprintContext.UserMselRoles
-                            .AnyAsync(umr => umr.UserId == user.Id && umr.MselId == msel.Id && umr.Role == MselRole.CiteObserver);
+                        var isObserver = await blueprintContext.UserTeamRoles
+                            .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == mselTeam.Team.Id && umr.Role == TeamRole.CiteObserver);
                         var teamUser = new TeamUser() {
                             TeamId = citeTeam.Id,
                             UserId = user.Id,

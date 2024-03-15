@@ -30,6 +30,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Team>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<IEnumerable<ViewModels.Team>> GetByUserAsync(Guid userId, CancellationToken ct);
         Task<ViewModels.Team> CreateAsync(ViewModels.Team team, CancellationToken ct);
+        Task<ViewModels.Team> CreateFromUnitAsync(Guid unitId, Guid mselId, CancellationToken ct);
         Task<ViewModels.Team> UpdateAsync(Guid id, ViewModels.Team team, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     }
@@ -123,7 +124,10 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Team> CreateAsync(ViewModels.Team team, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            if (
+                    !(await MselOwnerRequirement.IsMet(_user.GetId(), team.MselId, _context)) &&
+                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+               )
                 throw new ForbiddenException();
 
             team.Id = team.Id != Guid.Empty ? team.Id : Guid.NewGuid();
@@ -137,6 +141,43 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"Team {team.Name} ({teamEntity.Id}) created by {_user.GetId()}");
             return await GetAsync(teamEntity.Id, ct);
+        }
+
+        public async Task<ViewModels.Team> CreateFromUnitAsync(Guid unitId, Guid mselId, CancellationToken ct)
+        {
+            if (
+                    !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)) &&
+                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+               )
+                throw new ForbiddenException();
+
+            var unit = await _context.Units
+                .Include(u => u.UnitUsers)
+                .SingleOrDefaultAsync(u => u.Id == unitId, ct);
+            if (unit == null)
+                throw new EntityNotFoundException<Unit>("Unit not found for ID: " + unitId);
+            // create the new team entity
+            var team = new TeamEntity {
+                Id = Guid.NewGuid(),
+                Name = unit.Name,
+                ShortName = unit.ShortName,
+                MselId = mselId
+            };
+            // add all of the UnitUsers as TeamUsers
+            foreach (var unitUser in unit.UnitUsers)
+            {
+                var teamUser = new TeamUserEntity(){
+                    TeamId = team.Id,
+                    UserId = unitUser.UserId
+                };
+                team.TeamUsers.Add(teamUser);
+            }
+            // save the team and return the result
+            _context.Teams.Add(team);
+            await _context.SaveChangesAsync(ct);
+            _logger.LogWarning($"Team {team.Name} ({team.Id}) created by {_user.GetId()}");
+
+            return await GetAsync(team.Id, ct);
         }
 
         public async Task<ViewModels.Team> UpdateAsync(Guid id, ViewModels.Team team, CancellationToken ct)

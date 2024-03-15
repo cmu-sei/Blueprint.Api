@@ -60,8 +60,7 @@ namespace Blueprint.Api.Data.Enumerations
     public enum TeamRole{
         GalleryObserver = 70,
         CiteObserver = 80,
-        Participant = 90,
-        Inviter = 100
+        Inviter = 90
     }
 
     public enum GalleryArticleParameter{

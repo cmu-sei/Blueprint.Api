@@ -67,6 +67,8 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var item = await _context.Teams
+                .Include(t => t.TeamUsers)
+                .ThenInclude(tu => tu.User)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
             return _mapper.Map<Team>(item);
         }

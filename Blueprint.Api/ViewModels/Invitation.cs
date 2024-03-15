@@ -12,9 +12,7 @@ namespace Blueprint.Api.ViewModels
 
         public Guid Id { get; set; }
         public Guid MselId { get; set; }
-        public Msel Msel { get; set; }
         public Guid TeamId { get; set; }
-        public Team Team { get; set; }
         public string EmailDomain { get; set; }
         public DateTime? ExpirationDateTime { get; set; }
         public int MaxUsersAllowed { get; set; }

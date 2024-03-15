@@ -43,7 +43,7 @@ namespace Blueprint.Api.Data.Models
             builder
                 .HasOne(u => u.Team)
                 .WithMany(p => p.Invitations)
-                .HasForeignKey(x => x.MselId)
+                .HasForeignKey(x => x.TeamId)
                 .OnDelete(DeleteBehavior.Cascade);
 
         }

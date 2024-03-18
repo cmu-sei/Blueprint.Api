@@ -29,7 +29,6 @@ using Blueprint.Api.ViewModels;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Packaging;
-using System.IO.Pipelines;
 
 namespace Blueprint.Api.Services
 {
@@ -55,6 +54,10 @@ namespace Blueprint.Api.Services
         Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
+        Task<Guid> JoinMselAsync(Guid mselId, CancellationToken ct);  // returns the Player View ID
+        Task<Guid> LaunchMselAsync(Guid mselId, CancellationToken ct);  // returns the Player View ID
     }
 
     public class MselService : IMselService
@@ -67,6 +70,8 @@ namespace Blueprint.Api.Services
         private readonly ClientOptions _clientOptions;
         private readonly IScenarioEventService _scenarioEventService;
         private readonly IIntegrationQueue _integrationQueue;
+        private readonly IPlayerService _playerService;
+        private readonly IJoinQueue _joinQueue;
 
         public MselService(
             BlueprintContext context,
@@ -74,6 +79,8 @@ namespace Blueprint.Api.Services
             IAuthorizationService authorizationService,
             IScenarioEventService scenarioEventService,
             IIntegrationQueue integrationQueue,
+            IPlayerService playerService,
+            IJoinQueue joinQueue,
             IPrincipal user,
             ILogger<MselService> logger,
             IMapper mapper)
@@ -86,6 +93,8 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
             _logger = logger;
             _integrationQueue = integrationQueue;
+            _playerService = playerService;
+            _joinQueue = joinQueue;
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct)
@@ -194,8 +203,7 @@ namespace Blueprint.Api.Services
             }
 
             var mselEntity = await _context.Msels
-                .Include(m => m.MselTeams)
-                .ThenInclude(mt => mt.Team)
+                .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
                 .Include(m => m.UserMselRoles)
@@ -235,15 +243,28 @@ namespace Blueprint.Api.Services
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
+            
+            var newMselEntity = await privateMselCopyAsync(mselId, null, ct);
+            var msel = _mapper.Map<Msel>(newMselEntity);
+            // add the needed parameters for Gallery integration
+            if (msel.UseGallery)
+            {
+                msel.GalleryArticleParameters = Enum.GetNames(typeof(GalleryArticleParameter)).ToList();
+                msel.GallerySourceTypes = Enum.GetNames(typeof(GallerySourceType)).ToList();
+            }
+            return msel;
+        }
 
+        private async Task<MselEntity> privateMselCopyAsync(Guid mselId, Guid? currentUserTeamId, CancellationToken ct)
+        {
+            var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == _user.GetId())).Name;
             var mselEntity = await _context.Msels
                 .AsNoTracking()
                 .Include(m => m.DataFields)
                 .ThenInclude(df => df.DataOptions)
                 .Include(m => m.ScenarioEvents)
                 .ThenInclude(se => se.DataValues)
-                .Include(m => m.MselTeams)
-                .ThenInclude(mt => mt.Team)
+                .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
                 .Include(m => m.UserMselRoles)
@@ -262,7 +283,7 @@ namespace Blueprint.Api.Services
             mselEntity.CreatedBy = _user.GetId();
             mselEntity.DateModified = mselEntity.DateCreated;
             mselEntity.ModifiedBy = mselEntity.CreatedBy;
-            mselEntity.Name = "Copy of " + mselEntity.Name;
+            mselEntity.Name = mselEntity.Name + " - " + username;
             mselEntity.IsTemplate = false;
             mselEntity.GalleryCollectionId = null;
             mselEntity.GalleryExhibitId = null;
@@ -298,12 +319,14 @@ namespace Blueprint.Api.Services
                 move.CreatedBy = mselEntity.CreatedBy;
             }
             // copy Teams
-            foreach (var mselTeam in mselEntity.MselTeams)
+            foreach (var team in mselEntity.Teams)
             {
-                mselTeam.Id = Guid.NewGuid();
-                mselTeam.MselId = mselEntity.Id;
-                mselTeam.Msel = null;
-                mselTeam.Team = null;
+                var addUser = team.Id == currentUserTeamId;
+                // add current user to the indicated team
+                if (addUser)
+                {
+                    team.TeamUsers.Add(new TeamUserEntity{TeamId = team.Id, UserId = _user.GetId()});
+                }
             }
             // copy Organizations
             foreach (var organization in mselEntity.Organizations)
@@ -373,9 +396,17 @@ namespace Blueprint.Api.Services
 
             _context.Msels.Add(mselEntity);
             await _context.SaveChangesAsync(ct);
-            var msel = await GetAsync(mselEntity.Id, ct);
 
-            return msel;
+            // get the new MSEL to return
+            mselEntity = await _context.Msels
+                .Include(m => m.Teams)
+                .ThenInclude(t => t.TeamUsers)
+                .ThenInclude(tu => tu.User)
+                .Include(m => m.UserMselRoles)
+                .AsSplitQuery()
+                .SingleOrDefaultAsync(sm => sm.Id == mselEntity.Id, ct);
+
+            return mselEntity;
         }
 
         public async Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, CancellationToken ct)
@@ -1465,8 +1496,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.CiteRoles)
                 .Include(m => m.DataFields)
                 .Include(m => m.Moves)
-                .Include(m => m.MselTeams)
-                .ThenInclude(mt => mt.Team)
+                .Include(m => m.Teams)
                 .Include(m => m.Organizations)
                 .Include(m => m.Pages)
                 .Include(m => m.ScenarioEvents)
@@ -1511,27 +1541,8 @@ namespace Blueprint.Api.Services
                 ReferenceHandler = ReferenceHandler.Preserve
             };
             var mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
-            var teamsToAdd = new List<Guid>();
-            // remove existing teams to prevent duplicate key errors
-            foreach (var mselTeam in mselEntity.MselTeams)
-            {
-                var exists = await _context.Teams.AnyAsync(t => t.Id == mselTeam.TeamId, ct);
-                if (exists)
-                {
-                    mselTeam.Team = null;
-                }
-                else
-                {
-                    if (teamsToAdd.Contains(mselTeam.TeamId))
-                    {
-                        mselTeam.Team = null;
-                    }
-                    else
-                    {
-                        teamsToAdd.Add(mselTeam.TeamId);
-                    }
-                }
-            }
+            // get the list of team IDs
+            var teamsToAdd = mselEntity.Teams.Select(t => t.Id).ToList();
             foreach (var citeRole in mselEntity.CiteRoles)
             {
                 var exists = await _context.Teams.AnyAsync(t => t.Id == citeRole.TeamId, ct);
@@ -1590,14 +1601,14 @@ namespace Blueprint.Api.Services
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)
-                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to create a Player View.");
+                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to push integrations.");
             if (msel.PlayerViewId != null)
-                throw new InvalidOperationException($"MSEL {mselId} is already associated to a Player View.");
+                throw new InvalidOperationException($"MSEL {mselId} is already deployed.");
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
                 throw new InvalidOperationException(userVerificationErrorMessage);
-            _integrationQueue.Add(mselId);
+            _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null});
             
             return _mapper.Map<ViewModels.Msel>(msel); 
         }
@@ -1615,7 +1626,7 @@ namespace Blueprint.Api.Services
             if (msel.PlayerViewId == null)
                 throw new InvalidOperationException($"MSEL {mselId} is not associated to a Player View.");
             // add msel to process queue
-            _integrationQueue.Add(mselId);
+            _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null});
 
             return _mapper.Map<ViewModels.Msel>(msel); 
         }
@@ -1654,6 +1665,131 @@ namespace Blueprint.Api.Services
             }
 
             return explanation;
+        }
+
+        public async Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct)
+        {
+            var myMsels = (IQueryable<MselEntity>)_context.Msels;
+            var myDeployedMselIds = await GetMyDeployedMselIdsAsync(ct);
+            // get the IDs for MSELs where user has an invitation
+            var currentDateTime = DateTime.UtcNow;
+            var userEmail = _user.Claims.SingleOrDefault(c => c.Type == "Email").Value;
+            var inviteMselIds = await _context.Invitations
+                .Where(i =>
+                    !i.WasDeactivated &&
+                    i.ExpirationDateTime < currentDateTime &&
+                    userEmail.EndsWith(i.EmailDomain)
+                )
+                .Select(i => i.MselId)
+                .ToListAsync(ct);
+            // get the actual MSELs
+            myMsels = myMsels
+                .Where(m =>
+                    (m.Status == ItemStatus.Deployed && inviteMselIds.Contains(m.Id)) ||
+                    myDeployedMselIds.Contains(m.Id)
+                );
+            return _mapper.Map<IEnumerable<Msel>>(await myMsels.ToListAsync(ct));;
+        }
+
+        public async Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct)
+        {
+            // get the launchable MSELs where user has an invitation
+            var currentDateTime = DateTime.UtcNow;
+            var userEmail = _user.Claims.SingleOrDefault(c => c.Type == "Email").Value;
+            var myMsels = _context.Invitations
+                .Where(i =>
+                    !i.WasDeactivated &&
+                    i.ExpirationDateTime < currentDateTime &&
+                    userEmail.EndsWith(i.EmailDomain) &&
+                    i.Msel.IsTemplate
+                )
+                .Select(i => i.Msel);
+            return _mapper.Map<IEnumerable<Msel>>(await myMsels.ToListAsync(ct));;
+        }
+
+        /// <summary>
+        /// Joins the current user to a MSEL that has already been launched
+        /// </summary>
+        /// <param name="mselId"></param>
+        /// <param name="ct"></param>
+        /// <returns>The Player View ID</returns>
+        public async Task<Guid> JoinMselAsync(Guid mselId, CancellationToken ct)
+        {
+            var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == mselId);
+            if (msel == null)
+                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to join.");
+
+            Guid? playerViewId;
+            var myDeployedMselIds = await GetMyDeployedMselIdsAsync(ct);
+            if (myDeployedMselIds.Contains(mselId))
+            {
+                // Note: invitations cannot be used to add a user to multiple teams
+                playerViewId = (Guid)msel.PlayerViewId;
+            }
+            else
+            {
+                // get MSEL, if the user has an invitation
+                var currentDateTime = DateTime.UtcNow;
+                var userEmail = _user.Claims.SingleOrDefault(c => c.Type == "Email").Value;
+                var joinInformation = await _context.Invitations
+                    .Where(i =>
+                        !i.WasDeactivated &&
+                        i.ExpirationDateTime < currentDateTime &&
+                        (i.EmailDomain == null || userEmail.EndsWith(i.EmailDomain)) &&
+                        i.MselId == mselId
+                    )
+                    .Select(i => 
+                        new JoinInformation{
+                            UserId = _user.GetId(),
+                            PlayerViewId = (Guid)i.Msel.PlayerViewId,
+                            PlayerTeamId = (Guid)i.Team.PlayerTeamId
+                        }
+                    )
+                    .SingleOrDefaultAsync(ct);
+                // add the join data to the join queue
+                _joinQueue.Add(joinInformation);
+                playerViewId = joinInformation.PlayerViewId;
+            }
+            return (Guid)playerViewId;
+        }
+
+        public async Task<Guid> LaunchMselAsync(Guid mselId, CancellationToken ct)
+        {
+            // determine if the user has a valid invitation
+            var currentDateTime = DateTime.UtcNow;
+            var userEmail = _user.Claims.SingleOrDefault(c => c.Type == "Email").Value;
+            var invitation = await _context.Invitations
+                .Where(i =>
+                    !i.WasDeactivated &&
+                    i.ExpirationDateTime < currentDateTime &&
+                    (i.EmailDomain == null || userEmail.EndsWith(i.EmailDomain)) &&
+                    i.MselId == mselId &&
+                    i.Msel.IsTemplate
+                )
+                .SingleOrDefaultAsync(ct);
+
+            if (invitation == null)
+                throw new ForbiddenException();
+
+            // clone the template MSEL
+            var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct);
+            // create the new player view ID, so that the UI will be able to look for it to be created
+            var playerViewId = Guid.NewGuid();
+            // add the launch data to the launch queue
+            _integrationQueue.Add(new IntegrationInformation{MselId = mselEntity.Id, PlayerViewId = playerViewId});
+
+            return playerViewId;
+        }
+
+        private async Task<IEnumerable<Guid>> GetMyDeployedMselIdsAsync(CancellationToken ct)
+        {
+            // get the IDs for MSELs where user is already on a team in a Player View
+            var myViewIds = (await _playerService.GetMyViewsAsync(ct)).Select(v => v.Id).ToList();
+            var myDeployedMselIds = await _context.Msels
+                .Where(m => m.PlayerViewId != null && myViewIds.Contains((Guid)m.PlayerViewId))
+                .Select(umr => umr.Id)
+                .ToListAsync(ct);
+            return myDeployedMselIds;
         }
 
     }

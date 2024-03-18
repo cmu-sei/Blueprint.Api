@@ -12,7 +12,6 @@ namespace Blueprint.Api.Infrastructure.Mappings
         public MselProfile()
         {
             CreateMap<MselEntity, Msel>()
-                .ForMember(m => m.Teams, opt => opt.MapFrom(mn => mn.MselTeams.Select(mt => mt.Team)))
                 .ForMember(m => m.Pages, opt => opt.ExplicitExpansion());
 
             CreateMap<Msel, MselEntity>()
@@ -22,7 +21,7 @@ namespace Blueprint.Api.Infrastructure.Mappings
                 .ForMember(m => m.Organizations, opt => opt.Ignore())
                 .ForMember(m => m.Pages, opt => opt.Ignore())
                 .ForMember(m => m.ScenarioEvents, opt => opt.Ignore())
-                .ForMember(m => m.MselTeams, opt => opt.Ignore())
+                .ForMember(m => m.Teams, opt => opt.Ignore())
                 .ForMember(m => m.UserMselRoles, opt => opt.Ignore());
 
             CreateMap<MselEntity, MselEntity>()

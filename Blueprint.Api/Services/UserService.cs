@@ -26,7 +26,8 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.User>> GetAsync(CancellationToken ct);
         Task<ViewModels.User> GetAsync(Guid id, CancellationToken ct);
-        Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid TeamId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.User>> GetByUnitAsync(Guid unitId, CancellationToken ct);
         Task<ViewModels.User> CreateAsync(ViewModels.User user, CancellationToken ct);
         Task<ViewModels.User> UpdateAsync(Guid id, ViewModels.User user, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
@@ -83,6 +84,19 @@ namespace Blueprint.Api.Services
 
             var items = await _context.TeamUsers
                 .Where(tu => tu.TeamId == teamId)
+                .Select(tu => tu.User)
+                .ToListAsync(ct);
+
+            return _mapper.Map<IEnumerable<User>>(items);
+        }
+
+        public async Task<IEnumerable<ViewModels.User>> GetByUnitAsync(Guid unitId, CancellationToken ct)
+        {
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var items = await _context.UnitUsers
+                .Where(tu => tu.UnitId == unitId)
                 .Select(tu => tu.User)
                 .ToListAsync(ct);
 

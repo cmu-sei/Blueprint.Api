@@ -15,12 +15,21 @@ namespace Blueprint.Api.Data.Models
         public Guid Id { get; set; }
         public string Name { get; set; }
         public string ShortName { get; set; }
+        public Guid? MselId { get; set; }
+        public virtual MselEntity Msel { get; set; }
+        public Guid? CiteTeamTypeId { get; set; }
+        public string Email { get; set; }
         public Guid? PlayerTeamId { get; set; }
-        public bool IsParticipantTeam { get; set; }
+        public Guid? GalleryTeamId { get; set; }
+        public Guid? CiteTeamId { get; set; }
+        public bool canTeamLeaderInvite { get; set; }
+        public bool canTeamMemberInvite { get; set; }
         public ICollection<TeamUserEntity> TeamUsers { get; set; } = new List<TeamUserEntity>();
-        public virtual ICollection<MselTeamEntity> MselTeams { get; set; } = new HashSet<MselTeamEntity>();
         public virtual ICollection<CardTeamEntity> CardTeams { get; set; } = new HashSet<CardTeamEntity>();
         public virtual ICollection<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; } = new HashSet<PlayerApplicationTeamEntity>();
+        public virtual ICollection<InvitationEntity> Invitations { get; set; } = new HashSet<InvitationEntity>();
+        public Guid? OldTeamId { get; set; }
+        public virtual ICollection<UserTeamRoleEntity> UserTeamRoles { get; set; } = new HashSet<UserTeamRoleEntity>();
     }
 
     public class TeamConfiguration : IEntityTypeConfiguration<TeamEntity>

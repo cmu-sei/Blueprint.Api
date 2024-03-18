@@ -41,7 +41,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create a Player View for this MSEL
-        public static async Task CreateViewAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateViewAsync(MselEntity msel, Guid? playerViewId, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             ViewForm viewForm = new ViewForm() {
                 Name = msel.Name,
@@ -49,6 +49,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 Status = ViewStatus.Active,
                 CreateAdminTeam = true
             };
+            if (playerViewId != null) viewForm.Id = (Guid)playerViewId;
             var newView = await playerApiClient.CreateViewAsync(viewForm, ct);
             // update the MSEL
             msel.PlayerViewId = newView.Id;
@@ -125,6 +126,13 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     await playerApiClient.CreateApplicationInstanceAsync(applicationInstanceForm.TeamId, applicationInstanceForm, ct);
                 }
             }
+        }
+
+        // Add User to Player Team
+        public static async Task AddUserToTeamAsync(Guid userId, Guid teamId, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            // create Player TeamUsers
+            await playerApiClient.AddUserToTeamAsync(teamId, userId, ct);
         }
 
     }

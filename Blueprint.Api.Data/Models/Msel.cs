@@ -19,14 +19,18 @@ namespace Blueprint.Api.Data.Models
         public ItemStatus Status { get; set; }
         public bool UsePlayer { get; set; }
         public Guid? PlayerViewId { get; set; }
+        public IntegrationType PlayerIntegrationType { get; set; }
         public bool UseGallery { get; set; }
         public Guid? GalleryCollectionId { get; set; }
         public Guid? GalleryExhibitId { get; set; }
+        public IntegrationType GalleryIntegrationType { get; set; }
         public bool UseCite { get; set; }
         public Guid? CiteEvaluationId { get; set; }
         public Guid? CiteScoringModelId { get; set; }
+        public IntegrationType CiteIntegrationType { get; set; }
         public bool UseSteamfitter { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
+        public IntegrationType SteamfitterIntegrationType { get; set; }
         public bool IsTemplate { get; set; }
         public DateTime StartTime { get; set; }
         public int DurationSeconds { get; set; }
@@ -39,7 +43,8 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<MoveEntity> Moves { get; set; } = new HashSet<MoveEntity>();
         public virtual ICollection<DataFieldEntity> DataFields { get; set; } = new HashSet<DataFieldEntity>();
         public virtual ICollection<ScenarioEventEntity> ScenarioEvents { get; set; } = new HashSet<ScenarioEventEntity>();
-        public virtual ICollection<MselTeamEntity> MselTeams { get; set; } = new HashSet<MselTeamEntity>();
+        public virtual ICollection<TeamEntity> Teams { get; set; } = new HashSet<TeamEntity>();
+        public virtual ICollection<MselUnitEntity> MselUnits { get; set; } = new HashSet<MselUnitEntity>();
         public virtual ICollection<OrganizationEntity> Organizations { get; set; } = new HashSet<OrganizationEntity>();
         public virtual ICollection<UserMselRoleEntity> UserMselRoles { get; set; } = new HashSet<UserMselRoleEntity>();
         public string HeaderRowMetadata { get; set; }
@@ -48,6 +53,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();
         public virtual ICollection<PlayerApplicationEntity> PlayerApplications { get; set; } = new HashSet<PlayerApplicationEntity>();
         public virtual ICollection<MselPageEntity> Pages { get; set; } = new HashSet<MselPageEntity>();
+        public virtual ICollection<InvitationEntity> Invitations { get; set; } = new HashSet<InvitationEntity>();
     }
 }
 

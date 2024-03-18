@@ -183,9 +183,11 @@ namespace Blueprint.Api
             services.AddScoped<IDataOptionService, DataOptionService>();
             services.AddScoped<IDataValueService, DataValueService>();
             services.AddScoped<IScenarioEventService, ScenarioEventService>();
+            services.AddScoped<IInvitationService, InvitationService>();
             services.AddScoped<IMselService, MselService>();
             services.AddScoped<IMselPageService, MselPageService>();
             services.AddScoped<IMselTeamService, MselTeamService>();
+            services.AddScoped<IMselUnitService, MselUnitService>();
             services.AddScoped<IMoveService, MoveService>();
             services.AddScoped<IOrganizationService, OrganizationService>();
             services.AddScoped<IPermissionService, PermissionService>();
@@ -194,14 +196,19 @@ namespace Blueprint.Api
             services.AddScoped<IPlayerService, PlayerService>();
             services.AddScoped<ITeamService, TeamService>();
             services.AddScoped<ITeamUserService, TeamUserService>();
+            services.AddScoped<IUnitService, UnitService>();
+            services.AddScoped<IUnitUserService, UnitUserService>();
             services.AddScoped<IUserService, UserService>();
             services.AddScoped<IUserPermissionService, UserPermissionService>();
             services.AddScoped<IUserMselRoleService, UserMselRoleService>();
+            services.AddScoped<IUserTeamRoleService, UserTeamRoleService>();
             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
             services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>().HttpContext?.User);
             services.AddHttpClient();
             services.AddSingleton<IIntegrationQueue, IntegrationQueue>();
             services.AddHostedService<IntegrationService>();
+            services.AddSingleton<IJoinQueue, JoinQueue>();
+            services.AddHostedService<JoinService>();
 
             ApplyPolicies(services);
 

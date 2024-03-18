@@ -11,10 +11,20 @@ namespace Blueprint.Api.ViewModels
         public Guid Id { get; set; }
         public string Name { get; set; }
         public string ShortName { get; set; }
+        public Guid? MselId { get; set; }
+        public Guid? CiteTeamTypeId { get; set; }
+        public string Email { get; set; }
         public Guid? PlayerTeamId { get; set; }
-        public bool IsParticipantTeam { get; set; }
-        public ICollection<User> Users { get; set; } = new List<User>();
-        public ICollection<Msel> Msels { get; set; } = new List<Msel>();
+        public Guid? GalleryTeamId { get; set; }
+        public Guid? CiteTeamId { get; set; }
+        public bool canTeamLeaderInvite { get; set; }
+        public bool canTeamMemberInvite { get; set; }
+        public User[] Users { get; set; }
+        public CardTeam[] CardTeams { get; set; }
+        public PlayerApplicationTeam[] PlayerApplicationTeams { get; set; }
+        public Invitation[] Invitations { get; set; }
+        public ICollection<UserTeamRole> UserTeamRoles { get; set; } = new List<UserTeamRole>();
+
     }
 
 }

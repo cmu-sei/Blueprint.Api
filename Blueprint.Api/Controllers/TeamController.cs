@@ -62,6 +62,23 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets Teams for the specified MSEL
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of the Teams for the specified MSEL.
+        /// <para />
+        /// </remarks>
+        /// <returns></returns>
+        [HttpGet("msels/{mselId}/teams")]
+        [ProducesResponseType(typeof(IEnumerable<Team>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getTeamsByMsel")]
+        public async Task<IActionResult> GetByMsel([FromRoute] Guid mselId, CancellationToken ct)
+        {
+            var list = await _teamService.GetByMselAsync(mselId, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Gets Teams for the specified user
         /// </summary>
         /// <remarks>
@@ -120,6 +137,26 @@ namespace Blueprint.Api.Controllers
         {
             team.CreatedBy = User.GetId();
             var createdTeam = await _teamService.CreateAsync(team, ct);
+            return CreatedAtAction(nameof(this.Get), new { id = createdTeam.Id }, createdTeam);
+        }
+
+        /// <summary>
+        /// Creates a new Team for a MSEL from a Unit
+        /// </summary>
+        /// <remarks>
+        /// Creates a new Team on the specified MSEL from the specified Unit
+        /// <para />
+        /// Accessible only an Administrator or MSEL Owner
+        /// </remarks>
+        /// <param name="mselId">The MSEL to create the Team on</param>
+        /// <param name="unitId">The Unit to create the Team from</param>
+        /// <param name="ct"></param>
+        [HttpPost("teams/msel/{mselId}/unit/{unitId}")]
+        [ProducesResponseType(typeof(Team), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "createTeamFromUnit")]
+        public async Task<IActionResult> CreateTeamFromUnit(Guid mselId, Guid unitId, CancellationToken ct)
+        {
+            var createdTeam = await _teamService.CreateFromUnitAsync(unitId, mselId, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdTeam.Id }, createdTeam);
         }
 

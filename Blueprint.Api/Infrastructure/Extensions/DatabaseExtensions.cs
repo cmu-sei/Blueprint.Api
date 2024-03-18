@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -11,7 +12,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Hosting;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Data;
@@ -269,6 +269,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
                 case "PostgreSQL":
                     builder.UseNpgsql(connectionString, options => options.MigrationsAssembly(migrationsAssembly));
+                    builder.ConfigureWarnings(w => w.Throw(RelationalEventId.MultipleCollectionIncludeWarning));
                     break;
 
             }

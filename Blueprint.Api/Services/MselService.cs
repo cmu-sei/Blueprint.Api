@@ -1722,17 +1722,23 @@ namespace Blueprint.Api.Services
                 .Select(mt => mt.Msel)
                 .ToListAsync(ct);
             // get deployed msels with an invitation
-            var email = _user.Claims.First(c => c.Type == "Email")?.Value;
-            var now = DateTime.Now;
-            var inviteMselList = await _context.Invitations
+            var email = _user.Claims.First(c => c.Type == "email")?.Value;
+            var now = DateTime.UtcNow;
+            var invitationList = await _context.Invitations
                 .Where(i =>
                     !i.WasDeactivated &&
                     i.ExpirationDateTime > now &&
                     i.UserCount < i.MaxUsersAllowed &&
-                    i.EmailDomain.Contains('@') &&
-                    email.EndsWith(i.EmailDomain) &&
                     i.Msel.Status == ItemStatus.Deployed)
-                .Select(i => i.Msel)
+                .ToListAsync(ct);
+            var mselIdList = invitationList
+                .Where(i =>
+                    i.EmailDomain.Contains('@') &&
+                    email.EndsWith(i.EmailDomain)
+                )
+                .Select(i => i.MselId);
+            var inviteMselList = await _context.Msels
+                .Where(m => mselIdList.Contains(m.Id))
                 .ToListAsync(ct);
             // combine lists
             var mselList = teamMselList.Union(inviteMselList).OrderByDescending(m => m.DateCreated);
@@ -1747,17 +1753,23 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             // get template msels with an invitation
-            var email = _user.Claims.First(c => c.Type == "Email")?.Value;
+            var email = _user.Claims.First(c => c.Type == "email")?.Value;
             var now = DateTime.UtcNow;
-            var mselList = await _context.Invitations
+            var invitationList = await _context.Invitations
                 .Where(i =>
                     !i.WasDeactivated &&
                     i.ExpirationDateTime > now &&
                     i.UserCount < i.MaxUsersAllowed &&
-                    i.EmailDomain.Contains('@') &&
-                    email.EndsWith(i.EmailDomain) &&
                     i.Msel.IsTemplate)
-                .Select(i => i.Msel)
+                .ToListAsync(ct);
+            var mselIdList = invitationList
+                .Where(i =>
+                    i.EmailDomain.Contains('@') &&
+                    email.EndsWith(i.EmailDomain)
+                )
+                .Select(i => i.MselId);
+            var mselList = await _context.Msels
+                .Where(m => mselIdList.Contains(m.Id))
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<Msel>>(mselList);

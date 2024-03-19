@@ -30,6 +30,8 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<InvitationEntity> Invitations { get; set; } = new HashSet<InvitationEntity>();
         public Guid? OldTeamId { get; set; }
         public virtual ICollection<UserTeamRoleEntity> UserTeamRoles { get; set; } = new HashSet<UserTeamRoleEntity>();
+        public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();
+        public virtual ICollection<CiteRoleEntity> CiteRoles { get; set; } = new HashSet<CiteRoleEntity>();
     }
 
     public class TeamConfiguration : IEntityTypeConfiguration<TeamEntity>
@@ -37,6 +39,11 @@ namespace Blueprint.Api.Data.Models
         public void Configure(EntityTypeBuilder<TeamEntity> builder)
         {
             builder.HasIndex(e => e.Id).IsUnique();
+
+            builder
+                .HasOne(d => d.Msel)
+                .WithMany(d => d.Teams)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

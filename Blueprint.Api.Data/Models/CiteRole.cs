@@ -30,6 +30,10 @@ namespace Blueprint.Api.Data.Models
                 .HasOne(d => d.Msel)
                 .WithMany(d => d.CiteRoles)
                 .OnDelete(DeleteBehavior.Cascade);
+            builder
+                .HasOne(d => d.Team)
+                .WithMany(d => d.CiteRoles)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 

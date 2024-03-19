@@ -257,6 +257,7 @@ namespace Blueprint.Api.Services
 
         private async Task<MselEntity> privateMselCopyAsync(Guid mselId, Guid? currentUserTeamId, CancellationToken ct)
         {
+            var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == _user.GetId())).Name;
             var mselEntity = await _context.Msels
                 .AsNoTracking()
@@ -264,9 +265,11 @@ namespace Blueprint.Api.Services
                 .ThenInclude(df => df.DataOptions)
                 .Include(m => m.ScenarioEvents)
                 .ThenInclude(se => se.DataValues)
+                .Include(m => m.MselUnits)
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
-                .ThenInclude(tu => tu.User)
+                .Include(m => m.Teams)
+                .ThenInclude(t => t.UserTeamRoles)
                 .Include(m => m.UserMselRoles)
                 .Include(m => m.Moves)
                 .Include(m => m.Organizations)
@@ -280,7 +283,7 @@ namespace Blueprint.Api.Services
 
             mselEntity.Id = Guid.NewGuid();
             mselEntity.DateCreated = DateTime.UtcNow;
-            mselEntity.CreatedBy = _user.GetId();
+            mselEntity.CreatedBy = currentUserId;
             mselEntity.DateModified = mselEntity.DateCreated;
             mselEntity.ModifiedBy = mselEntity.CreatedBy;
             mselEntity.Name = mselEntity.Name + " - " + username;
@@ -318,14 +321,45 @@ namespace Blueprint.Api.Services
                 move.DateCreated = mselEntity.DateCreated;
                 move.CreatedBy = mselEntity.CreatedBy;
             }
+            // copy MselUnits
+            foreach (var mselUnit in mselEntity.MselUnits)
+            {
+                mselUnit.Id = Guid.NewGuid();
+                mselUnit.MselId = mselEntity.Id;
+                mselUnit.Msel = null;
+            }
             // copy Teams
             foreach (var team in mselEntity.Teams)
             {
+                team.Id = Guid.NewGuid();
+                team.MselId = mselEntity.Id;
+                team.Msel = null;
+                team.DateCreated = mselEntity.DateCreated;
+                team.CreatedBy = mselEntity.CreatedBy;
+                team.DateModified = mselEntity.DateModified;
+                team.ModifiedBy = mselEntity.ModifiedBy;
                 var addUser = team.Id == currentUserTeamId;
+                // copy TeamUsers
+                foreach(var teamUser in team.TeamUsers)
+                {
+                    addUser = addUser && teamUser.UserId != currentUserId;
+                    teamUser.Id = Guid.NewGuid();
+                    teamUser.TeamId = team.Id;
+                    teamUser.Team = null;
+                    teamUser.User = null;
+                }
                 // add current user to the indicated team
                 if (addUser)
                 {
-                    team.TeamUsers.Add(new TeamUserEntity{TeamId = team.Id, UserId = _user.GetId()});
+                    team.TeamUsers.Add(new TeamUserEntity{TeamId = team.Id, UserId = currentUserId});
+                }
+                // copy TeamUserRoles
+                foreach(var userTeamRole in team.UserTeamRoles)
+                {
+                    userTeamRole.Id = Guid.NewGuid();
+                    userTeamRole.TeamId = team.Id;
+                    userTeamRole.Team = null;
+                    userTeamRole.User = null;
                 }
             }
             // copy Organizations
@@ -1669,42 +1703,64 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct)
         {
-            var myMsels = (IQueryable<MselEntity>)_context.Msels;
-            var myDeployedMselIds = await GetMyDeployedMselIdsAsync(ct);
-            // get the IDs for MSELs where user has an invitation
-            var currentDateTime = DateTime.UtcNow;
-            var userEmail = _user.Claims.SingleOrDefault(c => c.Type == "Email").Value;
-            var inviteMselIds = await _context.Invitations
+            var userId = _user.GetId();
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            // get the user's teams
+            var teamIdList = await _context.TeamUsers
+                .Where(tu => tu.UserId == userId)
+                .Select(tu => tu.TeamId)
+                .ToListAsync(ct);
+            // get the teams' deployed msels
+            var teamMselList = await _context.MselTeams
+                .Where(mt =>
+                    mt.Msel.PlayerViewId != null &&
+                    mt.Msel.Status == ItemStatus.Deployed &&
+                    teamIdList.Contains(mt.TeamId)
+                )
+                .Select(mt => mt.Msel)
+                .ToListAsync(ct);
+            // get deployed msels with an invitation
+            var email = _user.Claims.First(c => c.Type == "Email")?.Value;
+            var now = DateTime.Now;
+            var inviteMselList = await _context.Invitations
                 .Where(i =>
                     !i.WasDeactivated &&
-                    i.ExpirationDateTime < currentDateTime &&
-                    userEmail.EndsWith(i.EmailDomain)
-                )
-                .Select(i => i.MselId)
+                    i.ExpirationDateTime > now &&
+                    i.UserCount < i.MaxUsersAllowed &&
+                    i.EmailDomain.Contains('@') &&
+                    email.EndsWith(i.EmailDomain) &&
+                    i.Msel.Status == ItemStatus.Deployed)
+                .Select(i => i.Msel)
                 .ToListAsync(ct);
-            // get the actual MSELs
-            myMsels = myMsels
-                .Where(m =>
-                    (m.Status == ItemStatus.Deployed && inviteMselIds.Contains(m.Id)) ||
-                    myDeployedMselIds.Contains(m.Id)
-                );
-            return _mapper.Map<IEnumerable<Msel>>(await myMsels.ToListAsync(ct));;
+            // combine lists
+            var mselList = teamMselList.Union(inviteMselList).OrderByDescending(m => m.DateCreated);
+
+            return _mapper.Map<IEnumerable<Msel>>(mselList);
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct)
         {
-            // get the launchable MSELs where user has an invitation
-            var currentDateTime = DateTime.UtcNow;
-            var userEmail = _user.Claims.SingleOrDefault(c => c.Type == "Email").Value;
-            var myMsels = _context.Invitations
+            var userId = _user.GetId();
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            // get template msels with an invitation
+            var email = _user.Claims.First(c => c.Type == "Email")?.Value;
+            var now = DateTime.UtcNow;
+            var mselList = await _context.Invitations
                 .Where(i =>
                     !i.WasDeactivated &&
-                    i.ExpirationDateTime < currentDateTime &&
-                    userEmail.EndsWith(i.EmailDomain) &&
-                    i.Msel.IsTemplate
-                )
-                .Select(i => i.Msel);
-            return _mapper.Map<IEnumerable<Msel>>(await myMsels.ToListAsync(ct));;
+                    i.ExpirationDateTime > now &&
+                    i.UserCount < i.MaxUsersAllowed &&
+                    i.EmailDomain.Contains('@') &&
+                    email.EndsWith(i.EmailDomain) &&
+                    i.Msel.IsTemplate)
+                .Select(i => i.Msel)
+                .ToListAsync(ct);
+
+            return _mapper.Map<IEnumerable<Msel>>(mselList);
         }
 
         /// <summary>

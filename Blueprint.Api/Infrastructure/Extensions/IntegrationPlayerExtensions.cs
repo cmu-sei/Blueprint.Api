@@ -57,27 +57,26 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Player Teams for this MSEL
-        public static async Task<Dictionary<Guid, Guid>> CreateTeamsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateTeamsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             var playerTeamDictionary = new Dictionary<Guid, Guid>();
             // get the Player teams, Player Users, and the Player TeamUsers
             var playerUserIds = (await playerApiClient.GetUsersAsync(ct)).Select(u => u.Id);
             // get the teams for this MSEL and loop through them
-            var mselTeams = await blueprintContext.MselTeams
-                .Where(mt => mt.MselId == msel.Id)
-                .Include(mt => mt.Team)
+            var teams = await blueprintContext.Teams
+                .Where(t => t.MselId == msel.Id)
                 .ToListAsync();
-            foreach (var mselTeam in mselTeams)
+            foreach (var team in teams)
             {
                 // create team in Player
                 var playerTeamForm = new TeamForm() {
-                    Name = mselTeam.Team.Name
+                    Name = team.Name
                 };
                 var playerTeam = await playerApiClient.CreateTeamAsync((Guid)msel.PlayerViewId, playerTeamForm, ct);
-                playerTeamDictionary.Add(mselTeam.Team.Id, playerTeam.Id);
+                team.PlayerTeamId = playerTeam.Id;
                 // get all of the users for this team and loop through them
                 var users = await blueprintContext.TeamUsers
-                    .Where(tu => tu.TeamId == mselTeam.Team.Id)
+                    .Where(tu => tu.TeamId == team.Id)
                     .Select(tu => tu.User)
                     .ToListAsync(ct);
                 foreach (var user in users)
@@ -95,12 +94,12 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     await playerApiClient.AddUserToTeamAsync(playerTeam.Id, user.Id, ct);
                 }
             }
-
-            return playerTeamDictionary;
+            // save the teams PlayerTeamId values
+            await blueprintContext.SaveChangesAsync(ct);
         }
 
         // Create Player Applications for this MSEL
-        public static async Task CreateApplicationsAsync(MselEntity msel, Dictionary<Guid, Guid> playerTeamDictionary, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateApplicationsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             foreach (var application in msel.PlayerApplications)
             {
@@ -116,11 +115,12 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 // create the Player Team Applications
                 var applicationTeams = await blueprintContext.PlayerApplicationTeams
                     .Where(ct => ct.PlayerApplicationId == application.Id)
+                    .Include(apt => apt.Team)
                     .ToListAsync(ct);
                 foreach (var applicationTeam in applicationTeams)
                 {
                     var applicationInstanceForm = new ApplicationInstanceForm() {
-                        TeamId = playerTeamDictionary[applicationTeam.TeamId],
+                        TeamId = (Guid)applicationTeam.Team.PlayerTeamId,
                         ApplicationId = (Guid)playerApplication.Id
                     };
                     await playerApiClient.CreateApplicationInstanceAsync(applicationInstanceForm.TeamId, applicationInstanceForm, ct);

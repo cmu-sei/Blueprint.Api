@@ -47,7 +47,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             var move0 = msel.Moves.SingleOrDefault(m => m.MoveNumber == 0);
             Evaluation newEvaluation = new Evaluation() {
                 Description = msel.Name,
-                Status = Cite.Api.Client.ItemStatus.Pending,
+                Status = Cite.Api.Client.ItemStatus.Active,
                 CurrentMoveNumber = 0,
                 ScoringModelId = (Guid)msel.CiteScoringModelId,
                 GalleryExhibitId = msel.GalleryExhibitId,
@@ -156,7 +156,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         {
             foreach (var role in msel.CiteRoles)
             {
-                var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == role.TeamId).CiteTeamId;
+                var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == role.TeamId)?.CiteTeamId;
                 if (citeTeamId != null)
                 {
                     Role citeRole = new Role() {
@@ -175,7 +175,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         {
             foreach (var action in msel.CiteActions)
             {
-                var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == (Guid)action.TeamId).CiteTeamId;
+                var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == (Guid)action.TeamId)?.CiteTeamId;
                 if (citeTeamId != null)
                 {
                     // create the action

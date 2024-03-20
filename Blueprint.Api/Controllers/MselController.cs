@@ -427,25 +427,25 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Join a MSEL
+        /// Join a MSEL by invitation
         /// </summary>
         /// <remarks>
-        /// Joins the user to the msel
+        /// Joins the user to the msel based on a valid invitation
         /// <para />
         /// </remarks>
         /// <param name="id"></param>
         /// <param name="ct"></param>
         [HttpPost("msels/{id}/join")]
-        [ProducesResponseType(typeof(string), (int)HttpStatusCode.Created)]
-        [SwaggerOperation(OperationId = "joinMsel")]
+        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "joinMselByInvitation")]
         public async Task<IActionResult> JoinMsel(Guid id, CancellationToken ct)
         {
-            var msel = await _mselService.JoinMselAsync(id, ct);
+            var msel = await _mselService.JoinMselByInvitationAsync(id, ct);
             return Ok(msel);
         }
 
         /// <summary>
-        /// Launch a MSEL
+        /// Launch a MSEL by invitation
         /// </summary>
         /// <remarks>
         /// Launches the msel and joins the user to the team indicated by a valid invitation
@@ -454,11 +454,11 @@ namespace Blueprint.Api.Controllers
         /// <param name="id"></param>
         /// <param name="ct"></param>
         [HttpPost("msels/{id}/launch")]
-        [ProducesResponseType(typeof(string), (int)HttpStatusCode.Created)]
-        [SwaggerOperation(OperationId = "launchMsel")]
+        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "launchMselByInvitation")]
         public async Task<IActionResult> LaunchMsel(Guid id, CancellationToken ct)
         {
-            var msel = await _mselService.LaunchMselAsync(id, ct);
+            var msel = await _mselService.LaunchMselByInvitationAsync(id, ct);
             return Ok(msel);
         }
 

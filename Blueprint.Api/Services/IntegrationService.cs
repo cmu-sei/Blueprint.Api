@@ -112,6 +112,7 @@ namespace Blueprint.Api.Services
                         msel.GalleryExhibitId != null ||
                         msel.CiteEvaluationId != null ||
                         msel.SteamfitterScenarioId != null);
+                    var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
                     try
                     {
                         var tokenResponse = await ApiClientsExtensions.GetToken(scope);
@@ -120,10 +121,14 @@ namespace Blueprint.Api.Services
                         var playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
                         if (isAPush)
                         {
-                            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + "Pushing Integrations", null, ct);
+                            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Integrations", null, ct);
                             // Player processing part 1
                             currentProcessStep = "Player - begin processing part 1";
                             await PlayerProcessPart1(msel, integrationInformation.PlayerViewId, playerApiClient, blueprintContext, ct);
+
+                            // set the MSEL status
+                            msel.Status = Data.Enumerations.ItemStatus.Deployed;
+                            await blueprintContext.SaveChangesAsync(ct);
 
                             // Gallery processing
                             if (msel.UseGallery)
@@ -164,11 +169,11 @@ namespace Blueprint.Api.Services
                             // Player processing part 2
                             currentProcessStep = "Player - push applications";
                             await IntegrationPlayerExtensions.CreateApplicationsAsync(msel, playerApiClient, blueprintContext, ct);
-                            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + "", null, ct);
+                            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + "", null, ct);
                         }
                         else
                         {
-                            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + "Pulling Integrations", null, ct);
+                            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Integrations", null, ct);
                             // Pull from CITE
                             if (msel.UseCite)
                             {
@@ -177,13 +182,14 @@ namespace Blueprint.Api.Services
                                 var citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CurrentValue.CiteApiUrl, tokenResponse);
 
                                 currentProcessStep = "CITE - pull evaluation";
+                                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling CITE Evaluation", null, ct);
                                 try
                                 {
                                     await IntegrationCiteExtensions.PullFromCiteAsync(msel, citeApiClient, blueprintContext, ct);
                                 }
                                 catch (System.Exception ex)
                                 {
-                                _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                                    _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
                                 }
                             }
                             // Pull from Gallery
@@ -194,17 +200,19 @@ namespace Blueprint.Api.Services
                                 var galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse);
 
                                 currentProcessStep = "Gallery - pull collection";
+                                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Gallery Collection", null, ct);
                                 try
                                 {
                                     await IntegrationGalleryExtensions.PullFromGalleryAsync(msel, galleryApiClient, blueprintContext, ct);
                                 }
                                 catch (System.Exception ex)
                                 {
-                                _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                                    _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
                                 }
                             }
                             // Pull from Player
                             currentProcessStep = "Player - pull view";
+                            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Player View", null, ct);
                             try
                             {
                                 await IntegrationPlayerExtensions.PullFromPlayerAsync(msel, playerApiClient, blueprintContext, ct);
@@ -213,7 +221,10 @@ namespace Blueprint.Api.Services
                             {
                                _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
                             }
-                            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + "", null, ct);
+                            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + "", null, ct);
+                            // set the MSEL status
+                            msel.Status = Data.Enumerations.ItemStatus.Approved;
+                            await blueprintContext.SaveChangesAsync(ct);
                         }
 
                     }
@@ -239,14 +250,15 @@ namespace Blueprint.Api.Services
         private async Task PlayerProcessPart1(MselEntity msel, Guid? playerViewId, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             var currentProcessStep = "Player create view";
+            var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
             try
             {
                 // create the Player View
-                await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing View to Player", null, ct);
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing View to Player", null, ct);
                 await IntegrationPlayerExtensions.CreateViewAsync(msel, playerViewId, playerApiClient, blueprintContext, ct);
                 // create the Player Teams
                 currentProcessStep = "Player create teams";
-                await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to Player", null, ct);
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to Player", null, ct);
                 await IntegrationPlayerExtensions.CreateTeamsAsync(msel, playerApiClient, blueprintContext, ct);
             }
             catch (System.Exception ex)
@@ -258,49 +270,51 @@ namespace Blueprint.Api.Services
 
         private async Task CiteProcess(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
+            var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
             // start a transaction, because we will modify many database items
             await blueprintContext.Database.BeginTransactionAsync();
             // create the Cite Evaluation
-            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Evaluation to CITE", null, ct);
+            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Evaluation to CITE", null, ct);
             await IntegrationCiteExtensions.CreateEvaluationAsync(msel, citeApiClient, blueprintContext, ct);
             // create the Cite Moves
-            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Moves to CITE", null, ct);
+            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Moves to CITE", null, ct);
             await IntegrationCiteExtensions.CreateMovesAsync(msel, citeApiClient, blueprintContext, ct);
             // create the Cite Teams
-            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to CITE", null, ct);
+            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to CITE", null, ct);
             await IntegrationCiteExtensions.CreateTeamsAsync(msel, citeApiClient, blueprintContext, ct);
             // create the Cite Roles
-            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Roles to CITE", null, ct);
+            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Roles to CITE", null, ct);
             await IntegrationCiteExtensions.CreateRolesAsync(msel, citeApiClient, blueprintContext, ct);
             // create the Cite Actions
-            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Actions to CITE", null, ct);
+            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Actions to CITE", null, ct);
             await IntegrationCiteExtensions.CreateActionsAsync(msel, citeApiClient, blueprintContext, ct);
             // commit the transaction
-            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to CITE", null, ct);
+            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to CITE", null, ct);
             await blueprintContext.Database.CommitTransactionAsync(ct);
         }
 
         private async Task GalleryProcess(MselEntity msel, IScenarioEventService scenarioEventService, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
+            var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
             // start a transaction, because we will modify many database items
             await blueprintContext.Database.BeginTransactionAsync();
             // create the Gallery Collection
-            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Collection to Gallery", null, ct);
+            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Collection to Gallery", null, ct);
             await IntegrationGalleryExtensions.CreateCollectionAsync(msel, galleryApiClient, blueprintContext, ct);
             // create the Gallery Exhibit
-            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Exhibit to Gallery", null, ct);
+            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Exhibit to Gallery", null, ct);
             await IntegrationGalleryExtensions.CreateExhibitAsync(msel, galleryApiClient, blueprintContext, ct);
             // create the Gallery Teams
-            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to Gallery", null, ct);
+            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to Gallery", null, ct);
             await IntegrationGalleryExtensions.CreateTeamsAsync(msel, galleryApiClient, blueprintContext, ct);
             // create the Gallery Cards
-            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Cards to Gallery", null, ct);
+            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Cards to Gallery", null, ct);
             await IntegrationGalleryExtensions.CreateCardsAsync(msel, galleryApiClient, blueprintContext, ct);
             // create the Gallery Articles
-            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Articles to Gallery", null, ct);
+            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Articles to Gallery", null, ct);
             await IntegrationGalleryExtensions.CreateArticlesAsync(msel, galleryApiClient, blueprintContext, scenarioEventService, ct);
             // commit the transaction
-            await _hubContext.Clients.Group(msel.Id.ToString()).SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to Gallery", null, ct);
+            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to Gallery", null, ct);
             await blueprintContext.Database.CommitTransactionAsync(ct);
 
 

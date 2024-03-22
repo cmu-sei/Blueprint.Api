@@ -13,6 +13,7 @@ using Cite.Api.Client;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace Blueprint.Api.Infrastructure.Extensions
 {
@@ -91,7 +92,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
             var citeUserIds = (await citeApiClient.GetUsersAsync(ct)).Select(u => u.Id);
             // get the teams for this MSEL and loop through them
             var teams = await blueprintContext.Teams
-                .Where(mt => mt.MselId == msel.Id)
+                .Where(t => t.MselId == msel.Id)
+                .Include(t => t.UserTeamRoles)
                 .ToListAsync();
             foreach (var team in teams)
             {
@@ -113,6 +115,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         .Where(tu => tu.TeamId == team.Id)
                         .Select(tu => tu.User)
                         .ToListAsync(ct);
+                    var citePermissions = await citeApiClient.GetPermissionsAsync(ct);
                     foreach (var user in users)
                     {
                         // if this user is not in Cite, add it
@@ -124,6 +127,21 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             };
                             await citeApiClient.CreateUserAsync(newUser, ct);
                         }
+                        // create UserPermissions
+                        try
+                        {
+                            var userPermission = new UserPermission{UserId = user.Id, PermissionId = citePermissions.SingleOrDefault(p => p.Key == "CanModify").Id};
+                            await citeApiClient.CreateUserPermissionAsync(userPermission, ct);
+                            userPermission = new UserPermission{UserId = user.Id, PermissionId = citePermissions.SingleOrDefault(p => p.Key == "CanSubmit").Id};
+                            await citeApiClient.CreateUserPermissionAsync(userPermission, ct);
+                            if (team.UserTeamRoles.Any(x => x.UserId == user.Id && x.Role == TeamRole.CiteIncrementer))
+                            {
+                                userPermission = new UserPermission{UserId = user.Id, PermissionId = citePermissions.SingleOrDefault(p => p.Key == "CanIncrementMove").Id};
+                                await citeApiClient.CreateUserPermissionAsync(userPermission, ct);
+                            }
+                        }
+                        catch (Exception ex)
+                        {}
                         // create Cite TeamUsers
                         var isObserver = await blueprintContext.UserTeamRoles
                             .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.CiteObserver);
@@ -137,9 +155,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             await citeApiClient.CreateTeamUserAsync(teamUser, ct);
                         }
                         catch (Exception ex)
-                        {
-                            var problem = user.Name;
-                        }
+                        {}
                     }
                 }
                 else

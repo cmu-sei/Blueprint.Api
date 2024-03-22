@@ -68,23 +68,6 @@
       "IsTemplate": true
     }
   ],
-  "MselTeams": [
-    {
-      "Id": "3434c38e-58b0-4af1-80d1-1895af913434",
-      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
-      "TeamId": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8"
-    },
-    {
-      "Id": "2369b966-28f1-40ed-8a34-fb85461cda1e",
-      "MselId": "01bd78ae-8713-4ac5-8c16-35f1c8755efd",
-      "TeamId": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8"
-    },
-    {
-      "Id": "c71ca281-3437-4ac6-93d2-0127be1e306d",
-      "MselId": "21852591-c4b5-48a0-a9dd-142510abf504",
-      "TeamId": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8"
-    }
-  ],
   "ScenarioEvents": [
     {
       "Id": "45453b75-92f4-4568-8a21-c1adf8a639eb",

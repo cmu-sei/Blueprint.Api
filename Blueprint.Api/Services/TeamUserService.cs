@@ -60,12 +60,18 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.TeamUser> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var item = await _context.TeamUsers
                 .Include(tu => tu.User)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
+            if (item == null)
+                throw new EntityNotFoundException<TeamUser>("TeamUser not found " + id.ToString());
+
+            var mselId = (await _context.Teams.SingleOrDefaultAsync(t => t.Id == item.TeamId)).MselId;
+            if (
+                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
+                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+               )
+                throw new ForbiddenException();
 
             return _mapper.Map<TeamUser>(item);
         }

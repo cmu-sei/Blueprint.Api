@@ -218,46 +218,6 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Adds a Team to a Msel
-        /// </summary>
-        /// <remarks>
-        /// Adds the team specified to the MSEL specified
-        /// <para />
-        /// Accessible only to a ContentDeveloper or a MSEL owner
-        /// </remarks>
-        /// <param name="mselId">The ID of the Msel to update</param>
-        /// <param name="teamId">The ID of the Team</param>
-        /// <param name="ct"></param>
-        [HttpPut("msels/{mselId}/addteam/{teamId}")]
-        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "AddTeamToMsel")]
-        public async Task<IActionResult> AddTeamToMsel([FromRoute] Guid mselId, [FromRoute] Guid teamId, CancellationToken ct)
-        {
-            var msel = await _mselService.AddTeamToMselAsync(mselId, teamId, ct);
-            return Ok(msel);
-        }
-
-        /// <summary>
-        /// Removes a Team from a Msel
-        /// </summary>
-        /// <remarks>
-        /// Removes the team specified from the MSEL specified
-        /// <para />
-        /// Accessible only to a ContentDeveloper or a MSEL owner
-        /// </remarks>
-        /// <param name="mselId">The ID of the Msel to update</param>
-        /// <param name="teamId">The ID of the Team</param>
-        /// <param name="ct"></param>
-        [HttpPut("msels/{mselId}/removeteam/{teamId}")]
-        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "RemoveTeamFromMsel")]
-        public async Task<IActionResult> RemoveTeamFromMsel([FromRoute] Guid mselId, [FromRoute] Guid teamId, CancellationToken ct)
-        {
-            var msel = await _mselService.RemoveTeamFromMselAsync(mselId, teamId, ct);
-            return Ok(msel);
-        }
-
-        /// <summary>
         /// Adds a User Role to a Msel
         /// </summary>
         /// <remarks>
@@ -450,16 +410,17 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Launches the msel and joins the user to the team indicated by a valid invitation
         /// <para />
+        /// Returns the Player View ID that is being created
         /// </remarks>
         /// <param name="id"></param>
         /// <param name="ct"></param>
         [HttpPost("msels/{id}/launch")]
-        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.Created)]
+        [ProducesResponseType(typeof(Guid), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "launchMselByInvitation")]
         public async Task<IActionResult> LaunchMsel(Guid id, CancellationToken ct)
         {
-            var msel = await _mselService.LaunchMselByInvitationAsync(id, ct);
-            return Ok(msel);
+            var playerViewId = await _mselService.LaunchMselByInvitationAsync(id, ct);
+            return Ok(playerViewId);
         }
 
     }

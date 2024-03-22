@@ -161,20 +161,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 }
                 context.SaveChanges();
             }
-            // MSELTEAMS
-            if (options.MselTeams != null && options.MselTeams.Any())
-            {
-                var dbMselTeams = context.MselTeams.ToList();
-
-                foreach (MselTeamEntity mselTeam in options.MselTeams)
-                {
-                    if (!dbMselTeams.Where(x => x.Id == mselTeam.Id  || (x.MselId == mselTeam.MselId && x.TeamId == mselTeam.TeamId)).Any())
-                    {
-                        context.MselTeams.Add(mselTeam);
-                    }
-                }
-                context.SaveChanges();
-            }
             // MOVES
             if (options.Moves != null && options.Moves.Any())
             {

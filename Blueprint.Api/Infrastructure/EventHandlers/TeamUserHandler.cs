@@ -13,6 +13,7 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
+using Microsoft.EntityFrameworkCore;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
@@ -55,7 +56,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(teamUserEntity);
-            var teamUser = await _TeamUserService.GetAsync(teamUserEntity.Id, cancellationToken);
+            var teamUser = await _db.TeamUsers.Include(tu => tu.User).SingleOrDefaultAsync(tu => tu.Id == teamUserEntity.Id, cancellationToken);
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)

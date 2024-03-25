@@ -80,6 +80,11 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 var httpContextAccessor = p.GetRequiredService<IHttpContextAccessor>();
                 var httpClientFactory = p.GetRequiredService<IHttpClientFactory>();
                 var clientOptions = p.GetRequiredService<ClientOptions>();
+                // TODO:  figure out why this is needed!
+                if (httpContextAccessor.HttpContext == null)
+                {
+                    return null;
+                }
 
                 var playerUri = new Uri(clientOptions.PlayerApiUrl);
 

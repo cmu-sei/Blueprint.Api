@@ -14,9 +14,9 @@ namespace Blueprint.Api.Infrastructure.Authorization
     {
         public static async Task<Boolean> IsMet(Guid userId, Guid? mselId, BlueprintContext blueprintContext)
         {
-            var mselTeamIdList = await blueprintContext.MselTeams
-                .Where(mt => mt.MselId == mselId)
-                .Select(mt => mt.TeamId)
+            var mselTeamIdList = await blueprintContext.Teams
+                .Where(t => t.MselId == mselId)
+                .Select(t => t.Id)
                 .ToListAsync();
             var isSuccess = await blueprintContext.TeamUsers
                 .Where(tu => tu.UserId == userId && mselTeamIdList.Contains(tu.TeamId))

@@ -13,6 +13,7 @@ using Cite.Api.Client;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace Blueprint.Api.Infrastructure.Extensions
 {
@@ -47,7 +48,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             var move0 = msel.Moves.SingleOrDefault(m => m.MoveNumber == 0);
             Evaluation newEvaluation = new Evaluation() {
                 Description = msel.Name,
-                Status = Cite.Api.Client.ItemStatus.Pending,
+                Status = Cite.Api.Client.ItemStatus.Active,
                 CurrentMoveNumber = 0,
                 ScoringModelId = (Guid)msel.CiteScoringModelId,
                 GalleryExhibitId = msel.GalleryExhibitId,
@@ -85,36 +86,36 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Cite Teams for this MSEL
-        public static async Task<Dictionary<Guid, Guid>> CreateTeamsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateTeamsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            var citeTeamDictionary = new Dictionary<Guid, Guid>();
             // get the Cite teams, Cite Users, and the Cite TeamUsers
             var citeUserIds = (await citeApiClient.GetUsersAsync(ct)).Select(u => u.Id);
             // get the teams for this MSEL and loop through them
-            var mselTeams = await blueprintContext.MselTeams
-                .Where(mt => mt.MselId == msel.Id)
-                .Include(mt => mt.Team)
+            var teams = await blueprintContext.Teams
+                .Where(t => t.MselId == msel.Id)
+                .Include(t => t.UserTeamRoles)
                 .ToListAsync();
-            foreach (var mselTeam in mselTeams)
+            foreach (var team in teams)
             {
-                if (mselTeam.CiteTeamTypeId != null)
+                if (team.CiteTeamTypeId != null)
                 {
                     var citeTeamId = Guid.NewGuid();
                     // create team in Cite
                     var citeTeam = new Team() {
                         Id = citeTeamId,
-                        Name = mselTeam.Team.Name,
-                        ShortName = mselTeam.Team.ShortName,
+                        Name = team.Name,
+                        ShortName = team.ShortName,
                         EvaluationId = (Guid)msel.CiteEvaluationId,
-                        TeamTypeId = (Guid)mselTeam.CiteTeamTypeId
+                        TeamTypeId = (Guid)team.CiteTeamTypeId
                     };
                     citeTeam = await citeApiClient.CreateTeamAsync(citeTeam, ct);
-                    citeTeamDictionary.Add(mselTeam.TeamId, citeTeam.Id);
+                    team.CiteTeamId = citeTeam.Id;
                     // get all of the users for this team and loop through them
                     var users = await blueprintContext.TeamUsers
-                        .Where(tu => tu.TeamId == mselTeam.Team.Id)
+                        .Where(tu => tu.TeamId == team.Id)
                         .Select(tu => tu.User)
                         .ToListAsync(ct);
+                    var citePermissions = await citeApiClient.GetPermissionsAsync(ct);
                     foreach (var user in users)
                     {
                         // if this user is not in Cite, add it
@@ -126,38 +127,58 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             };
                             await citeApiClient.CreateUserAsync(newUser, ct);
                         }
+                        // create UserPermissions
+                        try
+                        {
+                            var userPermission = new UserPermission{UserId = user.Id, PermissionId = citePermissions.SingleOrDefault(p => p.Key == "CanModify").Id};
+                            await citeApiClient.CreateUserPermissionAsync(userPermission, ct);
+                            userPermission = new UserPermission{UserId = user.Id, PermissionId = citePermissions.SingleOrDefault(p => p.Key == "CanSubmit").Id};
+                            await citeApiClient.CreateUserPermissionAsync(userPermission, ct);
+                            if (team.UserTeamRoles.Any(x => x.UserId == user.Id && x.Role == TeamRole.CiteIncrementer))
+                            {
+                                userPermission = new UserPermission{UserId = user.Id, PermissionId = citePermissions.SingleOrDefault(p => p.Key == "CanIncrementMove").Id};
+                                await citeApiClient.CreateUserPermissionAsync(userPermission, ct);
+                            }
+                        }
+                        catch (Exception ex)
+                        {}
                         // create Cite TeamUsers
                         var isObserver = await blueprintContext.UserTeamRoles
-                            .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == mselTeam.Team.Id && umr.Role == TeamRole.CiteObserver);
+                            .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.CiteObserver);
                         var teamUser = new TeamUser() {
                             TeamId = citeTeam.Id,
                             UserId = user.Id,
                             IsObserver = isObserver
                         };
-                        await citeApiClient.CreateTeamUserAsync(teamUser, ct);
+                        try
+                        {
+                            await citeApiClient.CreateTeamUserAsync(teamUser, ct);
+                        }
+                        catch (Exception ex)
+                        {}
                     }
                 }
                 else
                 {
-                    citeTeamDictionary.Add(mselTeam.TeamId, Guid.Empty);
+                    team.CiteTeamId = null;
                 }
             }
-
-            return citeTeamDictionary;
+            // save team CiteTeamIds
+            await blueprintContext.SaveChangesAsync(ct);
         }
 
         // Create Cite Roles for this MSEL
-        public static async Task CreateRolesAsync(MselEntity msel, Dictionary<Guid, Guid> citeTeamDictionary, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateRolesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             foreach (var role in msel.CiteRoles)
             {
-                var citeTeamId = citeTeamDictionary[(Guid)role.TeamId];
-                if (citeTeamId != Guid.Empty)
+                var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == role.TeamId)?.CiteTeamId;
+                if (citeTeamId != null)
                 {
                     Role citeRole = new Role() {
                         EvaluationId = (Guid)msel.CiteEvaluationId,
                         Name = role.Name,
-                        TeamId = citeTeamId
+                        TeamId = (Guid)citeTeamId
                     };
                     await citeApiClient.CreateRoleAsync(citeRole, ct);
                     await blueprintContext.SaveChangesAsync(ct);
@@ -166,17 +187,17 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Cite Articles for this MSEL
-        public static async Task CreateActionsAsync(MselEntity msel, Dictionary<Guid, Guid> citeTeamDictionary, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateActionsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             foreach (var action in msel.CiteActions)
             {
-                var citeTeamId = citeTeamDictionary[(Guid)action.TeamId];
-                if (citeTeamId != Guid.Empty)
+                var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == (Guid)action.TeamId)?.CiteTeamId;
+                if (citeTeamId != null)
                 {
                     // create the action
                     Cite.Api.Client.Action citeAction = new Cite.Api.Client.Action() {
                         EvaluationId = (Guid)msel.CiteEvaluationId,
-                        TeamId = citeTeamId,
+                        TeamId = (Guid)citeTeamId,
                         MoveNumber = action.MoveNumber,
                         InjectNumber = action.InjectNumber,
                         Description = action.Description

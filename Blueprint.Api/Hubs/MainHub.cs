@@ -13,6 +13,7 @@ using Blueprint.Api.Data;
 using Blueprint.Api.Services;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Options;
+using Microsoft.CodeAnalysis.VisualBasic.Syntax;
 
 namespace Blueprint.Api.Hubs
 {
@@ -108,23 +109,33 @@ namespace Blueprint.Api.Hubs
         {
             var userGuid = Guid.Parse(userId);
             var idList = new List<string>();
-            var teamIdList = await _context.TeamUsers
-                .Where(tu => tu.UserId == userGuid)
-                .Select(tu => tu.TeamId)
-                .ToListAsync();
-            // get my teams' msels
-            var teamMselIdList = await _context.MselTeams
-                .Where(mt => teamIdList.Contains(mt.TeamId))
-                .Select(mt => mt.Msel.Id.ToString())
-                .ToListAsync();
-            // get msels I created and all templates
-            var myMselIdList = await _context.Msels
-                .Where(m => m.CreatedBy == userGuid || m.IsTemplate)
-                .Select(m => m.Id.ToString())
-                .ToListAsync();
-            // combine lists
-            var mselIdList = teamMselIdList.Union(myMselIdList);
-            idList.AddRange(mselIdList);
+            if ((await _authorizationService.AuthorizeAsync(Context.User, null, new FullRightsRequirement())).Succeeded)
+            {
+                idList = await _context.Msels
+                    .Where(m => m.Status != Data.Enumerations.ItemStatus.Archived)
+                    .Select(m => m.Id.ToString())
+                    .ToListAsync();
+            }
+            else
+            {
+                var teamIdList = await _context.TeamUsers
+                    .Where(tu => tu.UserId == userGuid)
+                    .Select(tu => tu.TeamId)
+                    .ToListAsync();
+                // get my teams' msels
+                var teamMselIdList = await _context.Teams
+                    .Where(t => teamIdList.Contains(t.Id) && t.Msel.Status != Data.Enumerations.ItemStatus.Archived)
+                    .Select(t => t.Msel.Id.ToString())
+                    .ToListAsync();
+                // get msels I created and all templates
+                var myMselIdList = await _context.Msels
+                    .Where(m => (m.CreatedBy == userGuid || m.IsTemplate) && m.Status != Data.Enumerations.ItemStatus.Archived)
+                    .Select(m => m.Id.ToString())
+                    .ToListAsync();
+                // combine lists
+                var mselIdList = teamMselIdList.Union(myMselIdList);
+                idList.AddRange(mselIdList);
+            }
 
             return idList;
         }

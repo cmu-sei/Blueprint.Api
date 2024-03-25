@@ -41,8 +41,6 @@ namespace Blueprint.Api.Services
         Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct);
         Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, CancellationToken ct);
-        Task<ViewModels.Msel> AddTeamToMselAsync(Guid mselId, Guid teamId, CancellationToken ct);
-        Task<ViewModels.Msel> RemoveTeamFromMselAsync(Guid mselId, Guid teamId, CancellationToken ct);
         Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, CancellationToken ct);
         Task<ViewModels.Msel> RemoveUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
@@ -56,8 +54,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
-        Task<Guid> JoinMselAsync(Guid mselId, CancellationToken ct);  // returns the Player View ID
-        Task<Guid> LaunchMselAsync(Guid mselId, CancellationToken ct);  // returns the Player View ID
+        Task<Guid> JoinMselByInvitationAsync(Guid mselId, CancellationToken ct);  // returns the Player View ID
+        Task<Guid> LaunchMselByInvitationAsync(Guid mselId, CancellationToken ct);  // returns the Player View ID
     }
 
     public class MselService : IMselService
@@ -117,18 +115,16 @@ namespace Blueprint.Api.Services
             {
                 Guid teamId;
                 Guid.TryParse(queryParameters.TeamId, out teamId);
-                var mselTeamIdList = await _context.MselTeams
-                    .Where(mt => mt.TeamId == teamId)
-                    .Select(mt => mt.TeamId)
-                    .ToListAsync();
+                var mselId = (await _context.Teams
+                    .SingleOrDefaultAsync(t => t.Id == teamId)).MselId;
                 if (msels == null)
                 {
                     msels = _context.Msels
-                        .Where(m => mselTeamIdList.Contains(m.Id));
+                        .Where(m => mselId == m.Id);
                 }
                 else
                 {
-                    msels = msels.Where(m => mselTeamIdList.Contains(m.Id));
+                    msels = msels.Where(m => mselId == m.Id);
                 }
             }
             // filter based on description
@@ -170,22 +166,26 @@ namespace Blueprint.Api.Services
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
                     throw new ForbiddenException();
             }
-            // get the user's teams
-            var teamIdList = await _context.TeamUsers
+            // get the user's units
+            var unitIdList = await _context.UnitUsers
                 .Where(tu => tu.UserId == userId)
-                .Select(tu => tu.TeamId)
+                .Select(tu => tu.UnitId)
                 .ToListAsync(ct);
-            // get the teams' msels
-            var teamMselList = await _context.MselTeams
-                .Where(mt => teamIdList.Contains(mt.TeamId))
-                .Select(mt => mt.Msel)
+            // get the units' msels
+            var unitMselList = await _context.MselUnits
+                .Where(mu => unitIdList.Contains(mu.UnitId) && mu.Msel.Status != ItemStatus.Archived)
+                .Select(mu => mu.Msel)
                 .ToListAsync(ct);
-            // get msels created by user and all templates
-            var myMselList = await _context.Msels
-                .Where(m => m.CreatedBy == userId || m.IsTemplate)
-                .ToListAsync(ct);
+            // get msels created by user and all templates, if user is a content developer
+            var myMselList = new List<MselEntity>();
+            if ((await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            {
+                myMselList = await _context.Msels
+                    .Where(m => (m.CreatedBy == userId || m.IsTemplate) && m.Status != ItemStatus.Archived)
+                    .ToListAsync(ct);
+            }
             // combine lists
-            var mselList = teamMselList.Union(myMselList).OrderByDescending(m => m.DateCreated);
+            var mselList = unitMselList.Union(myMselList).OrderBy(m => m.Name);
 
             return _mapper.Map<IEnumerable<Msel>>(mselList);
         }
@@ -274,8 +274,11 @@ namespace Blueprint.Api.Services
                 .Include(m => m.Moves)
                 .Include(m => m.Organizations)
                 .Include(m => m.Cards)
+                .ThenInclude(c => c.CardTeams)
                 .Include(m => m.CiteActions)
                 .Include(m => m.CiteRoles)
+                .Include(m => m.PlayerApplications)
+                .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (mselEntity == null)
@@ -331,6 +334,10 @@ namespace Blueprint.Api.Services
             // copy Teams
             foreach (var team in mselEntity.Teams)
             {
+                // save the old Team ID
+                var oldTeamId = team.Id;
+                var addUser = oldTeamId == currentUserTeamId;
+                // update the team information
                 team.Id = Guid.NewGuid();
                 team.MselId = mselEntity.Id;
                 team.Msel = null;
@@ -338,7 +345,6 @@ namespace Blueprint.Api.Services
                 team.CreatedBy = mselEntity.CreatedBy;
                 team.DateModified = mselEntity.DateModified;
                 team.ModifiedBy = mselEntity.ModifiedBy;
-                var addUser = team.Id == currentUserTeamId;
                 // copy TeamUsers
                 foreach(var teamUser in team.TeamUsers)
                 {
@@ -348,11 +354,6 @@ namespace Blueprint.Api.Services
                     teamUser.Team = null;
                     teamUser.User = null;
                 }
-                // add current user to the indicated team
-                if (addUser)
-                {
-                    team.TeamUsers.Add(new TeamUserEntity{TeamId = team.Id, UserId = currentUserId});
-                }
                 // copy TeamUserRoles
                 foreach(var userTeamRole in team.UserTeamRoles)
                 {
@@ -360,6 +361,56 @@ namespace Blueprint.Api.Services
                     userTeamRole.TeamId = team.Id;
                     userTeamRole.Team = null;
                     userTeamRole.User = null;
+                }
+                // add current user to the indicated team
+                // and give inviter role
+                if (addUser)
+                {
+                    team.TeamUsers.Add(new TeamUserEntity{TeamId = team.Id, UserId = currentUserId});
+                    team.UserTeamRoles.Add(new UserTeamRoleEntity{TeamId = team.Id, UserId = currentUserId, Role = TeamRole.Inviter});
+                    team.UserTeamRoles.Add(new UserTeamRoleEntity{TeamId = team.Id, UserId = currentUserId, Role = TeamRole.CiteIncrementer});
+                }
+                // update TeamId in CardTeams
+                foreach (var card in mselEntity.Cards)
+                {
+                    foreach (var cardTeam in card.CardTeams)
+                    {
+                        if (cardTeam.TeamId == oldTeamId)
+                        {
+                            cardTeam.TeamId = team.Id;
+                            cardTeam.Team = null;
+                        }
+                    }
+                }
+                // update TeamId in CiteActions
+                foreach (var citeAction in mselEntity.CiteActions)
+                {
+                    if (citeAction.TeamId == oldTeamId)
+                    {
+                        citeAction.TeamId = team.Id;
+                        citeAction.Team = null;
+                    }
+                }
+                // update TeamId in CiteRoles
+                foreach (var citeRole in mselEntity.CiteRoles)
+                {
+                    if (citeRole.TeamId == oldTeamId)
+                    {
+                        citeRole.TeamId = team.Id;
+                        citeRole.Team = null;
+                    }
+                }
+                // update TeamId in PlayerApplicationTeams
+                foreach (var playerApplication in mselEntity.PlayerApplications)
+                {
+                    foreach (var playerApplicationTeam in playerApplication.PlayerApplicationTeams)
+                    {
+                        if (playerApplicationTeam.TeamId == oldTeamId)
+                        {
+                            playerApplicationTeam.TeamId = team.Id;
+                            playerApplicationTeam.Team = null;
+                        }
+                    }
                 }
             }
             // copy Organizations
@@ -408,6 +459,12 @@ namespace Blueprint.Api.Services
                 card.DateCreated = mselEntity.DateCreated;
                 card.CreatedBy = mselEntity.CreatedBy;
                 card.GalleryId = null;
+                foreach (var cardTeam in card.CardTeams)
+                {
+                    cardTeam.Id = Guid.NewGuid();
+                    cardTeam.CardId = card.Id;
+                    cardTeam.Card = null;
+                }
             }
             // copy CITE Roles
             foreach (var citeRole in mselEntity.CiteRoles)
@@ -426,6 +483,21 @@ namespace Blueprint.Api.Services
                 citeAction.Msel = null;
                 citeAction.DateCreated = mselEntity.DateCreated;
                 citeAction.CreatedBy = mselEntity.CreatedBy;
+            }
+            // copy Player Applications
+            foreach (var playerApplication in mselEntity.PlayerApplications)
+            {
+                playerApplication.Id = Guid.NewGuid();
+                playerApplication.MselId = mselEntity.Id;
+                playerApplication.Msel = null;
+                playerApplication.DateCreated = mselEntity.DateCreated;
+                playerApplication.CreatedBy = mselEntity.CreatedBy;
+                foreach (var playerApplicationTeam in playerApplication.PlayerApplicationTeams)
+                {
+                    playerApplicationTeam.Id = Guid.NewGuid();
+                    playerApplicationTeam.PlayerApplicationId = playerApplication.Id;
+                    playerApplicationTeam.PlayerApplication = null;
+                }
             }
 
             _context.Msels.Add(mselEntity);
@@ -467,59 +539,6 @@ namespace Blueprint.Api.Services
             msel = await GetAsync(mselToUpdate.Id, ct);
 
             return msel;
-        }
-
-        public async Task<ViewModels.Msel> AddTeamToMselAsync(Guid mselId, Guid teamId, CancellationToken ct)
-        {
-            var msel = await _context.Msels.SingleOrDefaultAsync(v => v.Id == mselId, ct);
-            if (msel == null)
-                throw new EntityNotFoundException<MselEntity>();
-
-            var team = await _context.Teams.SingleOrDefaultAsync(v => v.Id == teamId, ct);
-            if (team == null)
-                throw new EntityNotFoundException<TeamEntity>();
-
-            // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
-                throw new ForbiddenException();
-
-            if (await _context.MselTeams.AnyAsync(mt => mt.TeamId ==teamId && mt.MselId == mselId))
-                throw new ArgumentException("MSEL Team already exists.");
-
-            var mselTeam = new MselTeamEntity(teamId, mselId);
-            mselTeam.Id = Guid.NewGuid();
-            _context.MselTeams.Add(mselTeam);
-            // change the MSEL modified info
-            msel.ModifiedBy = _user.GetId();
-            msel.DateModified = DateTime.UtcNow;
-            await _context.SaveChangesAsync(ct);
-
-            return await GetAsync(mselId, ct);
-        }
-
-        public async Task<ViewModels.Msel> RemoveTeamFromMselAsync(Guid mselId, Guid teamId, CancellationToken ct)
-        {
-            var msel = await _context.Msels.SingleOrDefaultAsync(v => v.Id == mselId, ct);
-            if (msel == null)
-                throw new EntityNotFoundException<MselEntity>();
-
-            // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
-                throw new ForbiddenException();
-
-            var item = await _context.MselTeams.FirstOrDefaultAsync(mt => mt.TeamId ==teamId && mt.MselId == mselId);
-            if (item == null)
-                throw new EntityNotFoundException<MselTeamEntity>();
-
-            _context.MselTeams.Remove(item);
-            // change the MSEL modified info
-            msel.ModifiedBy = _user.GetId();
-            msel.DateModified = DateTime.UtcNow;
-            await _context.SaveChangesAsync(ct);
-
-            return await GetAsync(mselId, ct);
         }
 
         public async Task<ViewModels.Msel> AddUserMselRoleAsync(Guid userId, Guid mselId, MselRole mselRole, CancellationToken ct)
@@ -1667,10 +1686,10 @@ namespace Blueprint.Api.Services
 
         private async Task<string> FindDuplicateMselUsersAsync(Guid mselId, CancellationToken ct)
         {
-            var duplicateResultList = await _context.MselTeams
+            var duplicateResultList = await _context.Teams
                 .AsNoTracking()
-                .Where(mt => mt.MselId == mselId && mt.CiteTeamTypeId != null)
-                .SelectMany(mt => mt.Team.TeamUsers)
+                .Where(t => t.MselId == mselId && t.CiteTeamTypeId != null)
+                .SelectMany(t => t.TeamUsers)
                 .Select(tu => new DuplicateResult {
                     TeamId = tu.TeamId,
                     UserId = tu.UserId,
@@ -1713,26 +1732,32 @@ namespace Blueprint.Api.Services
                 .Select(tu => tu.TeamId)
                 .ToListAsync(ct);
             // get the teams' deployed msels
-            var teamMselList = await _context.MselTeams
-                .Where(mt =>
-                    mt.Msel.PlayerViewId != null &&
-                    mt.Msel.Status == ItemStatus.Deployed &&
-                    teamIdList.Contains(mt.TeamId)
+            var teamMselList = await _context.Teams
+                .Where(t =>
+                    t.Msel.PlayerViewId != null &&
+                    t.Msel.Status == ItemStatus.Deployed &&
+                    teamIdList.Contains(t.Id)
                 )
                 .Select(mt => mt.Msel)
                 .ToListAsync(ct);
             // get deployed msels with an invitation
-            var email = _user.Claims.First(c => c.Type == "Email")?.Value;
-            var now = DateTime.Now;
-            var inviteMselList = await _context.Invitations
+            var email = _user.Claims.First(c => c.Type == "email")?.Value;
+            var now = DateTime.UtcNow;
+            var invitationList = await _context.Invitations
                 .Where(i =>
                     !i.WasDeactivated &&
                     i.ExpirationDateTime > now &&
                     i.UserCount < i.MaxUsersAllowed &&
-                    i.EmailDomain.Contains('@') &&
-                    email.EndsWith(i.EmailDomain) &&
                     i.Msel.Status == ItemStatus.Deployed)
-                .Select(i => i.Msel)
+                .ToListAsync(ct);
+            var mselIdList = invitationList
+                .Where(i =>
+                    i.EmailDomain.Contains('@') &&
+                    email.EndsWith(i.EmailDomain)
+                )
+                .Select(i => i.MselId);
+            var inviteMselList = await _context.Msels
+                .Where(m => mselIdList.Contains(m.Id))
                 .ToListAsync(ct);
             // combine lists
             var mselList = teamMselList.Union(inviteMselList).OrderByDescending(m => m.DateCreated);
@@ -1747,17 +1772,23 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             // get template msels with an invitation
-            var email = _user.Claims.First(c => c.Type == "Email")?.Value;
+            var email = _user.Claims.First(c => c.Type == "email")?.Value;
             var now = DateTime.UtcNow;
-            var mselList = await _context.Invitations
+            var invitationList = await _context.Invitations
                 .Where(i =>
                     !i.WasDeactivated &&
                     i.ExpirationDateTime > now &&
                     i.UserCount < i.MaxUsersAllowed &&
-                    i.EmailDomain.Contains('@') &&
-                    email.EndsWith(i.EmailDomain) &&
                     i.Msel.IsTemplate)
-                .Select(i => i.Msel)
+                .ToListAsync(ct);
+            var mselIdList = invitationList
+                .Where(i =>
+                    i.EmailDomain.Contains('@') &&
+                    email.EndsWith(i.EmailDomain)
+                )
+                .Select(i => i.MselId);
+            var mselList = await _context.Msels
+                .Where(m => mselIdList.Contains(m.Id))
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<Msel>>(mselList);
@@ -1769,7 +1800,7 @@ namespace Blueprint.Api.Services
         /// <param name="mselId"></param>
         /// <param name="ct"></param>
         /// <returns>The Player View ID</returns>
-        public async Task<Guid> JoinMselAsync(Guid mselId, CancellationToken ct)
+        public async Task<Guid> JoinMselByInvitationAsync(Guid mselId, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)
@@ -1784,46 +1815,55 @@ namespace Blueprint.Api.Services
             }
             else
             {
-                // get MSEL, if the user has an invitation
-                var currentDateTime = DateTime.UtcNow;
-                var userEmail = _user.Claims.SingleOrDefault(c => c.Type == "Email").Value;
-                var joinInformation = await _context.Invitations
+                // get deployed msels with an invitation
+                var email = _user.Claims.First(c => c.Type == "email")?.Value;
+                var now = DateTime.UtcNow;
+                var invitationList = await _context.Invitations
                     .Where(i =>
                         !i.WasDeactivated &&
-                        i.ExpirationDateTime < currentDateTime &&
-                        (i.EmailDomain == null || userEmail.EndsWith(i.EmailDomain)) &&
-                        i.MselId == mselId
-                    )
-                    .Select(i => 
-                        new JoinInformation{
-                            UserId = _user.GetId(),
-                            PlayerViewId = (Guid)i.Msel.PlayerViewId,
-                            PlayerTeamId = (Guid)i.Team.PlayerTeamId
-                        }
-                    )
-                    .SingleOrDefaultAsync(ct);
-                // add the join data to the join queue
-                _joinQueue.Add(joinInformation);
-                playerViewId = joinInformation.PlayerViewId;
+                        i.ExpirationDateTime > now &&
+                        i.UserCount < i.MaxUsersAllowed &&
+                        i.Msel.Status == ItemStatus.Deployed &&
+                        i.MselId == mselId)
+                    .Include(i => i.Team)
+                    .ToListAsync(ct);
+                var invitation = invitationList
+                    .SingleOrDefault(i =>
+                        i.EmailDomain.Contains('@') &&
+                        email.EndsWith(i.EmailDomain)
+                    );
+                if (invitation != null)
+                {
+                    var joinInformation = new JoinInformation{
+                                UserId = _user.GetId(),
+                                PlayerViewId = (Guid)msel.PlayerViewId,
+                                PlayerTeamId = (Guid)invitation.Team.PlayerTeamId
+                            };
+                    // add the join data to the join queue
+                    _joinQueue.Add(joinInformation);
+                }
             }
-            return (Guid)playerViewId;
+            return (Guid)msel.PlayerViewId;
         }
 
-        public async Task<Guid> LaunchMselAsync(Guid mselId, CancellationToken ct)
+        public async Task<Guid> LaunchMselByInvitationAsync(Guid mselId, CancellationToken ct)
         {
             // determine if the user has a valid invitation
-            var currentDateTime = DateTime.UtcNow;
-            var userEmail = _user.Claims.SingleOrDefault(c => c.Type == "Email").Value;
-            var invitation = await _context.Invitations
+            var email = _user.Claims.First(c => c.Type == "email")?.Value;
+            var now = DateTime.UtcNow;
+            var invitationList = await _context.Invitations
                 .Where(i =>
                     !i.WasDeactivated &&
-                    i.ExpirationDateTime < currentDateTime &&
-                    (i.EmailDomain == null || userEmail.EndsWith(i.EmailDomain)) &&
-                    i.MselId == mselId &&
-                    i.Msel.IsTemplate
-                )
-                .SingleOrDefaultAsync(ct);
-
+                    i.ExpirationDateTime > now &&
+                    i.UserCount < i.MaxUsersAllowed &&
+                    i.Msel.IsTemplate &&
+                    i.MselId == mselId)
+                .ToListAsync(ct);
+            var invitation = invitationList
+                .SingleOrDefault(i =>
+                    i.EmailDomain.Contains('@') &&
+                    email.EndsWith(i.EmailDomain)
+                );
             if (invitation == null)
                 throw new ForbiddenException();
 

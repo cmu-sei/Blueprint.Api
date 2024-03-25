@@ -13,6 +13,8 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.CodeAnalysis.VisualBasic.Syntax;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
@@ -20,25 +22,25 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
-        protected readonly ICiteRoleService _CiteRoleService;
+        protected readonly ICiteRoleService _citeRoleService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public CiteRoleHandler(
             BlueprintContext db,
             IMapper mapper,
-            ICiteRoleService CiteRoleService,
+            ICiteRoleService citeRoleService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
             _mapper = mapper;
-            _CiteRoleService = CiteRoleService;
+            _citeRoleService = citeRoleService;
             _mainHub = mainHub;
         }
 
-        protected string[] GetGroups(CiteRoleEntity CiteRoleEntity)
+        protected string[] GetGroups(CiteRoleEntity citeRoleEntity)
         {
             var groupIds = new List<string>();
-            groupIds.Add(CiteRoleEntity.MselId.ToString());
+            groupIds.Add(citeRoleEntity.MselId.ToString());
             // the admin data group gets everything
             groupIds.Add(MainHub.ADMIN_DATA_GROUP);
 
@@ -46,13 +48,16 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         }
 
         protected async Task HandleCreateOrUpdate(
-            CiteRoleEntity CiteRoleEntity,
+            CiteRoleEntity citeRoleEntity,
             string method,
             string[] modifiedProperties,
             CancellationToken cancellationToken)
         {
-            var groupIds = GetGroups(CiteRoleEntity);
-            var CiteRole = _mapper.Map<ViewModels.CiteRole>(CiteRoleEntity);
+            var groupIds = GetGroups(citeRoleEntity);
+            citeRoleEntity = await _db.CiteRoles
+                .Include(cr => cr.Team)
+                .SingleOrDefaultAsync(cr => cr.Id == citeRoleEntity.Id, cancellationToken);
+            var CiteRole = _mapper.Map<ViewModels.CiteRole>(citeRoleEntity);
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -69,8 +74,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         public CiteRoleCreatedSignalRHandler(
             BlueprintContext db,
             IMapper mapper,
-            ICiteRoleService CiteRoleService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CiteRoleService, mainHub) { }
+            ICiteRoleService citeRoleService,
+            IHubContext<MainHub> mainHub) : base(db, mapper, citeRoleService, mainHub) { }
 
         public async Task Handle(EntityCreated<CiteRoleEntity> notification, CancellationToken cancellationToken)
         {
@@ -83,8 +88,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         public CiteRoleUpdatedSignalRHandler(
             BlueprintContext db,
             IMapper mapper,
-            ICiteRoleService CiteRoleService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CiteRoleService, mainHub) { }
+            ICiteRoleService citeRoleService,
+            IHubContext<MainHub> mainHub) : base(db, mapper, citeRoleService, mainHub) { }
 
         public async Task Handle(EntityUpdated<CiteRoleEntity> notification, CancellationToken cancellationToken)
         {
@@ -101,8 +106,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         public CiteRoleDeletedSignalRHandler(
             BlueprintContext db,
             IMapper mapper,
-            ICiteRoleService CiteRoleService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CiteRoleService, mainHub)
+            ICiteRoleService citeRoleService,
+            IHubContext<MainHub> mainHub) : base(db, mapper, citeRoleService, mainHub)
         {
         }
 

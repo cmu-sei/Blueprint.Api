@@ -121,7 +121,10 @@ namespace Blueprint.Api.Services
                         var playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
                         if (isAPush)
                         {
+                            currentProcessStep = "Player - got client, starting push";
                             await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Integrations", null, ct);
+                            currentProcessStep = "Player - sent pushing integrations message";
+                            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Integrations 2", null, ct);
                             // Player processing part 1
                             currentProcessStep = "Player - begin processing part 1";
                             await PlayerProcessPart1(msel, integrationInformation.PlayerViewId, playerApiClient, blueprintContext, ct);
@@ -230,7 +233,8 @@ namespace Blueprint.Api.Services
                     }
                     catch (System.Exception ex)
                     {
-                        _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                        _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})");
+                        throw ex;
                     }
 
                 }
@@ -238,6 +242,7 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError($"{currentProcessStep} {integrationInformation}", ex);
+                throw ex;
             }
         }
 

@@ -116,6 +116,7 @@ namespace Blueprint.Api.Services
                     try
                     {
                         var tokenResponse = await ApiClientsExtensions.GetToken(scope);
+                        _logger.LogError($"TokenResponse is " + tokenResponse.AccessToken);
                         // Get Player API client
                         currentProcessStep = "Player - get API client";
                         var playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);

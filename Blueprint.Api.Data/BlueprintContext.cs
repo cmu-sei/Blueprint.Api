@@ -46,6 +46,7 @@ namespace Blueprint.Api.Data
         public DbSet<InvitationEntity> Invitations { get; set; }
         public DbSet<UnitEntity> Units { get; set; }
         public DbSet<UnitUserEntity> UnitUsers { get; set; }
+        public DbSet<MselTeamEntity> MselTeams { get; set; }
         public DbSet<MselUnitEntity> MselUnits { get; set; }
         public DbSet<UserTeamRoleEntity> UserTeamRoles { get; set; }
 

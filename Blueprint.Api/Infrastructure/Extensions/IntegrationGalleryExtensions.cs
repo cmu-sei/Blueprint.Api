@@ -111,7 +111,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     }
                     // create Gallery TeamUsers
                     var isObserverRole = await blueprintContext.UserTeamRoles
-                        .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.GalleryObserver);
+                        .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.Observer);
                     var teamUser = new TeamUser() {
                         TeamId = galleryTeam.Id,
                         UserId = user.Id,

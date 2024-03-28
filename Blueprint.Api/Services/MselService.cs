@@ -55,7 +55,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
         Task<Guid> JoinMselByInvitationAsync(Guid mselId, CancellationToken ct);  // returns the Player View ID
-        Task<Guid> LaunchMselByInvitationAsync(Guid mselId, CancellationToken ct);  // returns the Player View ID
+        Task<Msel> LaunchMselByInvitationAsync(Guid mselId, CancellationToken ct);  // returns the Player View ID
     }
 
     public class MselService : IMselService
@@ -368,7 +368,7 @@ namespace Blueprint.Api.Services
                 {
                     team.TeamUsers.Add(new TeamUserEntity{TeamId = team.Id, UserId = currentUserId});
                     team.UserTeamRoles.Add(new UserTeamRoleEntity{TeamId = team.Id, UserId = currentUserId, Role = TeamRole.Inviter});
-                    team.UserTeamRoles.Add(new UserTeamRoleEntity{TeamId = team.Id, UserId = currentUserId, Role = TeamRole.CiteIncrementer});
+                    team.UserTeamRoles.Add(new UserTeamRoleEntity{TeamId = team.Id, UserId = currentUserId, Role = TeamRole.Incrementer});
                 }
                 // update TeamId in CardTeams
                 foreach (var card in mselEntity.Cards)
@@ -1846,7 +1846,7 @@ namespace Blueprint.Api.Services
             return (Guid)msel.PlayerViewId;
         }
 
-        public async Task<Guid> LaunchMselByInvitationAsync(Guid mselId, CancellationToken ct)
+        public async Task<Msel> LaunchMselByInvitationAsync(Guid mselId, CancellationToken ct)
         {
             // determine if the user has a valid invitation
             var email = _user.Claims.First(c => c.Type == "email")?.Value;
@@ -1873,8 +1873,11 @@ namespace Blueprint.Api.Services
             var playerViewId = Guid.NewGuid();
             // add the launch data to the launch queue
             _integrationQueue.Add(new IntegrationInformation{MselId = mselEntity.Id, PlayerViewId = playerViewId});
+            // get the MSEL to return with the new Player View ID
+            var launchedMsel = _mapper.Map<Msel>(mselEntity);
+            launchedMsel.PlayerViewId = playerViewId;
 
-            return playerViewId;
+            return launchedMsel;
         }
 
         private async Task<IEnumerable<Guid>> GetMyDeployedMselIdsAsync(CancellationToken ct)

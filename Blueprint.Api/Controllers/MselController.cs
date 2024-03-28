@@ -415,12 +415,12 @@ namespace Blueprint.Api.Controllers
         /// <param name="id"></param>
         /// <param name="ct"></param>
         [HttpPost("msels/{id}/launch")]
-        [ProducesResponseType(typeof(Guid), (int)HttpStatusCode.Created)]
+        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "launchMselByInvitation")]
         public async Task<IActionResult> LaunchMsel(Guid id, CancellationToken ct)
         {
-            var playerViewId = await _mselService.LaunchMselByInvitationAsync(id, ct);
-            return Ok(playerViewId);
+            var launchedMsel = await _mselService.LaunchMselByInvitationAsync(id, ct);
+            return Ok(launchedMsel);
         }
 
     }

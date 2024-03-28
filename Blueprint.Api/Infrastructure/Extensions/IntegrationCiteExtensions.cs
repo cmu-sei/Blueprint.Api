@@ -127,34 +127,28 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             };
                             await citeApiClient.CreateUserAsync(newUser, ct);
                         }
-                        // create UserPermissions
-                        try
-                        {
-                            var userPermission = new UserPermission{UserId = user.Id, PermissionId = citePermissions.SingleOrDefault(p => p.Key == "CanModify").Id};
-                            await citeApiClient.CreateUserPermissionAsync(userPermission, ct);
-                            userPermission = new UserPermission{UserId = user.Id, PermissionId = citePermissions.SingleOrDefault(p => p.Key == "CanSubmit").Id};
-                            await citeApiClient.CreateUserPermissionAsync(userPermission, ct);
-                            if (team.UserTeamRoles.Any(x => x.UserId == user.Id && x.Role == TeamRole.CiteIncrementer))
-                            {
-                                userPermission = new UserPermission{UserId = user.Id, PermissionId = citePermissions.SingleOrDefault(p => p.Key == "CanIncrementMove").Id};
-                                await citeApiClient.CreateUserPermissionAsync(userPermission, ct);
-                            }
-                        }
-                        catch (Exception ex)
-                        {}
                         // create Cite TeamUsers
                         var isObserver = await blueprintContext.UserTeamRoles
-                            .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.CiteObserver);
+                            .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.Observer);
+                        var canIncrement = await blueprintContext.UserTeamRoles
+                            .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.Incrementer);
+                        var canModify = await blueprintContext.UserTeamRoles
+                            .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.Modifier);
+                        var canSubmit = await blueprintContext.UserTeamRoles
+                            .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.Submitter);
                         var teamUser = new TeamUser() {
                             TeamId = citeTeam.Id,
                             UserId = user.Id,
-                            IsObserver = isObserver
+                            IsObserver = isObserver,
+                            CanIncrementMove = canIncrement,
+                            CanModify = canModify,
+                            CanSubmit = canSubmit
                         };
                         try
                         {
                             await citeApiClient.CreateTeamUserAsync(teamUser, ct);
                         }
-                        catch (Exception ex)
+                        catch (System.Exception)
                         {}
                     }
                 }

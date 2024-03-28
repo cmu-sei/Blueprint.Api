@@ -123,9 +123,11 @@ namespace Blueprint.Api.Hubs
                     .Select(tu => tu.TeamId)
                     .ToListAsync();
                 // get my teams' msels
-                var teamMselIdList = await _context.Teams
+                var teamMselIds = _context.Teams
                     .Where(t => teamIdList.Contains(t.Id) && t.Msel.Status != Data.Enumerations.ItemStatus.Archived)
-                    .Select(t => t.Msel.Id.ToString())
+                    .Select(t => t.Msel.Id.ToString());
+                var teamMselIdList = await teamMselIds
+                    .Where(id => id != null)
                     .ToListAsync();
                 // get msels I created and all templates
                 var myMselIdList = await _context.Msels

@@ -113,11 +113,12 @@ namespace Blueprint.Api.Services
                         msel.CiteEvaluationId != null ||
                         msel.SteamfitterScenarioId != null);
                     var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
+                    currentProcessStep = "Try propcessing the MSEL";
                     try
                     {
                         var tokenResponse = await ApiClientsExtensions.GetToken(scope);
                         // Get Player API client
-                        currentProcessStep = "Player - get API client";
+                        currentProcessStep = "Player - get API client with token: " + tokenResponse.AccessToken;
                         var playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
                         if (isAPush)
                         {

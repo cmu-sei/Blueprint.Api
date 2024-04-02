@@ -39,11 +39,6 @@ namespace Blueprint.Api.Data.Models
         public void Configure(EntityTypeBuilder<TeamEntity> builder)
         {
             builder.HasIndex(e => e.Id).IsUnique();
-
-            builder
-                .HasOne(d => d.Msel)
-                .WithMany(d => d.Teams)
-                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

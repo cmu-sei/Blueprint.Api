@@ -273,27 +273,43 @@ namespace Blueprint.Api.Services
 
         private async Task CiteProcess(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
-            // start a transaction, because we will modify many database items
-            await blueprintContext.Database.BeginTransactionAsync();
-            // create the Cite Evaluation
-            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Evaluation to CITE", null, ct);
-            await IntegrationCiteExtensions.CreateEvaluationAsync(msel, citeApiClient, blueprintContext, ct);
-            // create the Cite Moves
-            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Moves to CITE", null, ct);
-            await IntegrationCiteExtensions.CreateMovesAsync(msel, citeApiClient, blueprintContext, ct);
-            // create the Cite Teams
-            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to CITE", null, ct);
-            await IntegrationCiteExtensions.CreateTeamsAsync(msel, citeApiClient, blueprintContext, ct);
-            // create the Cite Roles
-            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Roles to CITE", null, ct);
-            await IntegrationCiteExtensions.CreateRolesAsync(msel, citeApiClient, blueprintContext, ct);
-            // create the Cite Actions
-            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Actions to CITE", null, ct);
-            await IntegrationCiteExtensions.CreateActionsAsync(msel, citeApiClient, blueprintContext, ct);
-            // commit the transaction
-            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to CITE", null, ct);
-            await blueprintContext.Database.CommitTransactionAsync(ct);
+            var currentProcessStep = "CITE - get hubGroup";
+            try
+            {
+                var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
+                // start a transaction, because we will modify many database items
+                currentProcessStep = "CITE - begin transaction";
+                await blueprintContext.Database.BeginTransactionAsync();
+                // create the Cite Evaluation
+                currentProcessStep = "CITE - create evaluation";
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Evaluation to CITE", null, ct);
+                await IntegrationCiteExtensions.CreateEvaluationAsync(msel, citeApiClient, blueprintContext, ct);
+                // create the Cite Moves
+                currentProcessStep = "CITE - create moves";
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Moves to CITE", null, ct);
+                await IntegrationCiteExtensions.CreateMovesAsync(msel, citeApiClient, blueprintContext, ct);
+                // create the Cite Teams
+                currentProcessStep = "CITE - create teams";
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to CITE", null, ct);
+                await IntegrationCiteExtensions.CreateTeamsAsync(msel, citeApiClient, blueprintContext, ct);
+                // create the Cite Roles
+                currentProcessStep = "CITE - create roles";
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Roles to CITE", null, ct);
+                await IntegrationCiteExtensions.CreateRolesAsync(msel, citeApiClient, blueprintContext, ct);
+                // create the Cite Actions
+                currentProcessStep = "CITE - create actions";
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Actions to CITE", null, ct);
+                await IntegrationCiteExtensions.CreateActionsAsync(msel, citeApiClient, blueprintContext, ct);
+                // commit the transaction
+                currentProcessStep = "CITE - commit transaction";
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to CITE", null, ct);
+                await blueprintContext.Database.CommitTransactionAsync(ct);
+            }
+            catch (System.Exception ex)
+            {
+                _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                throw ex;
+            }
         }
 
         private async Task GalleryProcess(MselEntity msel, IScenarioEventService scenarioEventService, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)

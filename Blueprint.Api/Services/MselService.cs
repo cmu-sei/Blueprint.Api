@@ -1741,7 +1741,8 @@ namespace Blueprint.Api.Services
                 .Select(mt => mt.Msel)
                 .ToListAsync(ct);
             // get deployed msels with an invitation
-            var email = _user.Claims.First(c => c.Type == "email")?.Value;
+            var emailClaim = _user.Claims.SingleOrDefault(c => c.Type == "email");
+            var email = emailClaim == null ? "" : emailClaim.Value;
             var now = DateTime.UtcNow;
             var invitationList = await _context.Invitations
                 .Where(i =>
@@ -1772,7 +1773,8 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             // get template msels with an invitation
-            var email = _user.Claims.First(c => c.Type == "email")?.Value;
+            var emailClaim = _user.Claims.SingleOrDefault(c => c.Type == "email");
+            var email = emailClaim == null ? "" : emailClaim.Value;
             var now = DateTime.UtcNow;
             var invitationList = await _context.Invitations
                 .Where(i =>

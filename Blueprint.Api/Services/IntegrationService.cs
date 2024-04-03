@@ -170,6 +170,7 @@ namespace Blueprint.Api.Services
                             }
 
                             // Player processing part 2
+                            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Push Player Applications", null, ct);
                             currentProcessStep = "Player - push applications";
                             await IntegrationPlayerExtensions.CreateApplicationsAsync(msel, playerApiClient, blueprintContext, ct);
                             await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + "", null, ct);
@@ -277,9 +278,9 @@ namespace Blueprint.Api.Services
             try
             {
                 var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
-                // start a transaction, because we will modify many database items
-                currentProcessStep = "CITE - begin transaction";
-                await blueprintContext.Database.BeginTransactionAsync();
+                // // start a transaction, because we will modify many database items
+                // currentProcessStep = "CITE - begin transaction";
+                // await blueprintContext.Database.BeginTransactionAsync();
                 // create the Cite Evaluation
                 currentProcessStep = "CITE - create evaluation";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Evaluation to CITE", null, ct);
@@ -300,10 +301,10 @@ namespace Blueprint.Api.Services
                 currentProcessStep = "CITE - create actions";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Actions to CITE", null, ct);
                 await IntegrationCiteExtensions.CreateActionsAsync(msel, citeApiClient, blueprintContext, ct);
-                // commit the transaction
-                currentProcessStep = "CITE - commit transaction";
-                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to CITE", null, ct);
-                await blueprintContext.Database.CommitTransactionAsync(ct);
+                // // commit the transaction
+                // currentProcessStep = "CITE - commit transaction";
+                // await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to CITE", null, ct);
+                // await blueprintContext.Database.CommitTransactionAsync(ct);
             }
             catch (System.Exception ex)
             {

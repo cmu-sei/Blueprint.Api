@@ -11,7 +11,6 @@ using Microsoft.Extensions.Options;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
 using System;
-using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -227,7 +226,7 @@ namespace Blueprint.Api.Services
                             }
                             await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + "", null, ct);
                             // set the MSEL status
-                            msel.Status = Data.Enumerations.ItemStatus.Approved;
+                            msel.Status = integrationInformation.FinalStatus;
                             await blueprintContext.SaveChangesAsync(ct);
                         }
 
@@ -360,6 +359,7 @@ namespace Blueprint.Api.Services
     {
         public Guid MselId { get; set; }
         public Guid? PlayerViewId { get; set; }
+        public Data.Enumerations.ItemStatus FinalStatus { get; set; }
     }
 
 }

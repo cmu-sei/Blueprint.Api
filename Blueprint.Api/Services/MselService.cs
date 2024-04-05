@@ -598,6 +598,9 @@ namespace Blueprint.Api.Services
                 !( await MselOwnerRequirement.IsMet(_user.GetId(), id, _context)))
                 throw new ForbiddenException();
 
+            // pull integrations if there are any
+            await PullIntegrationsAsync(id, ItemStatus.Approved, ct);
+            // delete the MSEL
             var mselToDelete = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (mselToDelete == null)
                 throw new EntityNotFoundException<Msel>();
@@ -1847,12 +1850,16 @@ namespace Blueprint.Api.Services
                     );
                 if (invitation != null)
                 {
+                    // increment the invitation use count
+                    invitation.UserCount++;
+                    await _context.SaveChangesAsync(ct);
+                    // add the join data to the join queue
                     var joinInformation = new JoinInformation{
                                 UserId = _user.GetId(),
-                                PlayerViewId = (Guid)msel.PlayerViewId,
-                                PlayerTeamId = (Guid)invitation.Team.PlayerTeamId
+                                PlayerTeamId = invitation.Team.PlayerTeamId,
+                                GalleryTeamId = invitation.Team.GalleryTeamId,
+                                CiteTeamId = invitation.Team.CiteTeamId
                             };
-                    // add the join data to the join queue
                     _joinQueue.Add(joinInformation);
                 }
             }
@@ -1884,6 +1891,8 @@ namespace Blueprint.Api.Services
             var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct);
             // set the start time to the current time
             mselEntity.StartTime = DateTime.UtcNow;
+            // increment the invitation use count
+            invitation.UserCount++;
             await _context.SaveChangesAsync(ct);
             // create the new player view ID, so that the UI will be able to look for it to be created
             var playerViewId = Guid.NewGuid();

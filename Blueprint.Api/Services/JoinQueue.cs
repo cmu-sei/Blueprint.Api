@@ -33,8 +33,9 @@ namespace Blueprint.Api.Services
     public class JoinInformation
     {
         public Guid UserId { get; set; }
-        public Guid PlayerViewId { get; set; }
-        public Guid PlayerTeamId { get; set; }
+        public Guid? PlayerTeamId { get; set; }
+        public Guid? GalleryTeamId { get; set; }
+        public Guid? CiteTeamId { get; set; }
     }
 
 }

@@ -25,6 +25,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.PlayerApplication>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.PlayerApplication> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplication playerApplication, CancellationToken ct);
+        Task<ViewModels.PlayerApplication> CreateAndPushAsync(ViewModels.PlayerApplication playerApplication, CancellationToken ct);
         Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplication playerApplication, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     }
@@ -33,17 +34,20 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly IAuthorizationService _authorizationService;
+        private readonly IPlayerService _playerService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
 
         public PlayerApplicationService(
             BlueprintContext context,
             IAuthorizationService authorizationService,
+            IPlayerService playerService,
             IPrincipal user,
             IMapper mapper)
         {
             _context = context;
             _authorizationService = authorizationService;
+            _playerService = playerService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
         }
@@ -98,6 +102,16 @@ namespace Blueprint.Api.Services
             playerApplication = await GetAsync(playerApplicationEntity.Id, ct);
 
             return playerApplication;
+        }
+
+        public async Task<ViewModels.PlayerApplication> CreateAndPushAsync(ViewModels.PlayerApplication playerApplication, CancellationToken ct)
+        {
+            // authorization will be checked in CreateAsync
+            var item = await CreateAsync(playerApplication, ct);
+            // push the application to Player
+            await _playerService.PushApplication(item, ct);
+            
+            return item;
         }
 
         public async Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplication playerApplication, CancellationToken ct)

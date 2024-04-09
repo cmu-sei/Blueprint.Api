@@ -51,7 +51,8 @@ namespace Blueprint.Api.Services
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
         Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, CancellationToken ct);
+        Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, ItemStatus finalStatus, CancellationToken ct);
+        Task<ViewModels.Msel> ArchiveAsync(Guid mselId, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
         Task<Guid> JoinMselByInvitationAsync(Guid mselId, CancellationToken ct);  // returns the Player View ID
@@ -597,6 +598,9 @@ namespace Blueprint.Api.Services
                 !( await MselOwnerRequirement.IsMet(_user.GetId(), id, _context)))
                 throw new ForbiddenException();
 
+            // pull integrations if there are any
+            await PullIntegrationsAsync(id, ItemStatus.Approved, ct);
+            // delete the MSEL
             var mselToDelete = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (mselToDelete == null)
                 throw new EntityNotFoundException<Msel>();
@@ -1661,12 +1665,12 @@ namespace Blueprint.Api.Services
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
                 throw new InvalidOperationException(userVerificationErrorMessage);
-            _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null});
+            _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null, FinalStatus = ItemStatus.Deployed});
             
             return _mapper.Map<ViewModels.Msel>(msel); 
         }
 
-        public async Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, CancellationToken ct)
+        public async Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, ItemStatus finalStatus, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
@@ -1675,11 +1679,21 @@ namespace Blueprint.Api.Services
             // get the MSEL and verify data state
             var msel = await _context.Msels.FindAsync(mselId);
             if (msel == null)
-                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to remove from Player.");
-            if (msel.PlayerViewId == null)
-                throw new InvalidOperationException($"MSEL {mselId} is not associated to a Player View.");
+                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found.");
             // add msel to process queue
-            _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null});
+            _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null, FinalStatus = finalStatus});
+
+            return _mapper.Map<ViewModels.Msel>(msel); 
+        }
+
+        public async Task<ViewModels.Msel> ArchiveAsync(Guid mselId, CancellationToken ct)
+        {
+            // permissions will be checked in PullIntegrationsAsync
+            await PullIntegrationsAsync(mselId, ItemStatus.Archived, ct);
+            // get the MSEL and set status to aarchived
+            var msel = await _context.Msels.FindAsync(mselId);
+            msel.Status = ItemStatus.Archived;
+            await _context.SaveChangesAsync(ct);
 
             return _mapper.Map<ViewModels.Msel>(msel); 
         }
@@ -1741,7 +1755,8 @@ namespace Blueprint.Api.Services
                 .Select(mt => mt.Msel)
                 .ToListAsync(ct);
             // get deployed msels with an invitation
-            var email = _user.Claims.First(c => c.Type == "email")?.Value;
+            var emailClaim = _user.Claims.SingleOrDefault(c => c.Type == "email");
+            var email = emailClaim == null ? "" : emailClaim.Value;
             var now = DateTime.UtcNow;
             var invitationList = await _context.Invitations
                 .Where(i =>
@@ -1772,7 +1787,8 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             // get template msels with an invitation
-            var email = _user.Claims.First(c => c.Type == "email")?.Value;
+            var emailClaim = _user.Claims.SingleOrDefault(c => c.Type == "email");
+            var email = emailClaim == null ? "" : emailClaim.Value;
             var now = DateTime.UtcNow;
             var invitationList = await _context.Invitations
                 .Where(i =>
@@ -1834,12 +1850,16 @@ namespace Blueprint.Api.Services
                     );
                 if (invitation != null)
                 {
+                    // increment the invitation use count
+                    invitation.UserCount++;
+                    await _context.SaveChangesAsync(ct);
+                    // add the join data to the join queue
                     var joinInformation = new JoinInformation{
                                 UserId = _user.GetId(),
-                                PlayerViewId = (Guid)msel.PlayerViewId,
-                                PlayerTeamId = (Guid)invitation.Team.PlayerTeamId
+                                PlayerTeamId = invitation.Team.PlayerTeamId,
+                                GalleryTeamId = invitation.Team.GalleryTeamId,
+                                CiteTeamId = invitation.Team.CiteTeamId
                             };
-                    // add the join data to the join queue
                     _joinQueue.Add(joinInformation);
                 }
             }
@@ -1869,6 +1889,11 @@ namespace Blueprint.Api.Services
 
             // clone the template MSEL
             var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct);
+            // set the start time to the current time
+            mselEntity.StartTime = DateTime.UtcNow;
+            // increment the invitation use count
+            invitation.UserCount++;
+            await _context.SaveChangesAsync(ct);
             // create the new player view ID, so that the UI will be able to look for it to be created
             var playerViewId = Guid.NewGuid();
             // add the launch data to the launch queue

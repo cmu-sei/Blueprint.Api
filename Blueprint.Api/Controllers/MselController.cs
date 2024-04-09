@@ -373,7 +373,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Pulls all Integrations from the associated applications
         /// <para />
-        /// Accessible only to a ContentDeveloper or an Administrator
+        /// Accessible only to a ContentDeveloper or Msel Owner
         /// </remarks>
         /// <param name="id">The id of the MSEL</param>
         /// <param name="ct"></param>
@@ -382,7 +382,26 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "pullIntegrations")]
         public async Task<IActionResult> PullIntegrations(Guid id, CancellationToken ct)
         {
-            var msel = await _mselService.PullIntegrationsAsync(id, ct);
+            var msel = await _mselService.PullIntegrationsAsync(id, ItemStatus.Approved, ct);
+            return Ok(msel);
+        }
+
+        /// <summary>
+        /// End the MSEL deployment and archive it
+        /// </summary>
+        /// <remarks>
+        /// Pulls all Integrations from the associated applications and changes MSEL staus to Archived
+        /// <para />
+        /// Accessible only to a ContentDeveloper or MSEL Owner
+        /// </remarks>
+        /// <param name="id">The id of the MSEL</param>
+        /// <param name="ct"></param>
+        [HttpDelete("msels/{id}/archive")]
+        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.NoContent)]
+        [SwaggerOperation(OperationId = "archive")]
+        public async Task<IActionResult> Archive(Guid id, CancellationToken ct)
+        {
+            var msel = await _mselService.ArchiveAsync(id, ct);
             return Ok(msel);
         }
 

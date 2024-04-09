@@ -244,5 +244,13 @@ namespace Blueprint.Api.Infrastructure.Extensions
             return dataValue == null ? "" : dataValue.Value;
         }
 
+        // Add User to Gallery Team
+        public static async Task AddUserToTeamAsync(Guid userId, Guid teamId, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            // create Gallery TeamUsers
+            var galleryTeamUser = new TeamUser(){TeamId = teamId, UserId = userId};
+            await galleryApiClient.CreateTeamUserAsync(galleryTeamUser, ct);
+        }
+
     }
 }

@@ -201,5 +201,13 @@ namespace Blueprint.Api.Infrastructure.Extensions
             }
         }
 
+        // Add User to Cite Team
+        public static async Task AddUserToTeamAsync(Guid userId, Guid teamId, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            // create Cite TeamUsers
+            var citeTeamUser = new TeamUser(){TeamId = teamId, UserId = userId};
+            await citeApiClient.CreateTeamUserAsync(citeTeamUser, ct);
+        }
+
     }
 }

@@ -20,6 +20,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Player.Api.Client;
+using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Services
 {
@@ -27,6 +28,7 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ApplicationTemplate>> GetApplicationTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<View>> GetMyViewsAsync(CancellationToken ct);
+        Task<ApplicationInstance> PushApplication(PlayerApplication playerApplication, CancellationToken ct);
     }
 
     public class PlayerService : IPlayerService
@@ -80,6 +82,38 @@ namespace Blueprint.Api.Services
             {
             }
             return views;
+        }
+
+        public async Task<ApplicationInstance> PushApplication(PlayerApplication application, CancellationToken ct)
+        {
+            var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == application.MselId, ct);
+            var playerApplication = new Application() {
+                Name = application.Name,
+                Embeddable = application.Embeddable,
+                ViewId = (Guid)msel.PlayerViewId,
+                Url = new Uri(application.Url),
+                Icon = application.Icon,
+                LoadInBackground = application.LoadInBackground
+            };
+            playerApplication = await _playerApiClient.CreateApplicationAsync((Guid)msel.PlayerViewId, playerApplication, ct);
+            // create the Player Team Application
+            var mselTeamIds = await _context.Teams
+                .Where(t => t.MselId == msel.Id)
+                .Select(t => t.Id)
+                .ToListAsync(ct);
+            var userId = _user.GetId();
+            var playerTeamId = await _context.TeamUsers
+                .Where(tu => tu.UserId == userId && mselTeamIds.Contains(tu.TeamId))
+                .Select(tu => tu.Team.PlayerTeamId)
+                .SingleOrDefaultAsync(ct);
+            var applicationInstanceForm = new ApplicationInstanceForm() {
+                TeamId = (Guid)playerTeamId,
+                ApplicationId = playerApplication.Id,
+                DisplayOrder = msel.PlayerApplications.Count
+            };
+            var applicationInstance = await _playerApiClient.CreateApplicationInstanceAsync(applicationInstanceForm.TeamId, applicationInstanceForm, ct);
+
+            return applicationInstance;
         }
 
     }

@@ -89,6 +89,26 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Creates a new PlayerApplication and pushes to a Player View
+        /// </summary>
+        /// <remarks>
+        /// Creates a new PlayerApplication with the attributes specified
+        /// <para />
+        /// Accessible only to a ContentDeveloper or MSEL owner
+        /// </remarks>
+        /// <param name="playerApplication">The data used to create the PlayerApplication</param>
+        /// <param name="ct"></param>
+        [HttpPost("playerApplications/push")]
+        [ProducesResponseType(typeof(PlayerApplication), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "createAndPushPlayerApplication")]
+        public async Task<IActionResult> CreateAndPush([FromBody] PlayerApplication playerApplication, CancellationToken ct)
+        {
+            playerApplication.CreatedBy = User.GetId();
+            var createdPlayerApplication = await _playerApplicationService.CreateAndPushAsync(playerApplication, ct);
+            return CreatedAtAction(nameof(this.Get), new { id = createdPlayerApplication.Id }, createdPlayerApplication);
+        }
+
+        /// <summary>
         /// Updates a  PlayerApplication
         /// </summary>
         /// <remarks>

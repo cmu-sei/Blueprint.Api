@@ -277,13 +277,10 @@ namespace Blueprint.Api.Services
             try
             {
                 var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
-                // // start a transaction, because we will modify many database items
-                // currentProcessStep = "CITE - begin transaction";
-                // await blueprintContext.Database.BeginTransactionAsync();
                 // create the Cite Evaluation
                 currentProcessStep = "CITE - create evaluation";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Evaluation to CITE", null, ct);
-                await IntegrationCiteExtensions.CreateEvaluationAsync(msel, citeApiClient, blueprintContext, ct);
+                var evaluation = await IntegrationCiteExtensions.CreateEvaluationAsync(msel, citeApiClient, blueprintContext, ct);
                 // create the Cite Moves
                 currentProcessStep = "CITE - create moves";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Moves to CITE", null, ct);
@@ -300,10 +297,10 @@ namespace Blueprint.Api.Services
                 currentProcessStep = "CITE - create actions";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Actions to CITE", null, ct);
                 await IntegrationCiteExtensions.CreateActionsAsync(msel, citeApiClient, blueprintContext, ct);
-                // // commit the transaction
-                // currentProcessStep = "CITE - commit transaction";
-                // await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to CITE", null, ct);
-                // await blueprintContext.Database.CommitTransactionAsync(ct);
+                // update the evaluation, so that submissions get created
+                currentProcessStep = "CITE - advance";
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Finishing Evaluation to CITE", null, ct);
+                await IntegrationCiteExtensions.CycleMoveAsync(evaluation.Id, citeApiClient, blueprintContext, ct);
             }
             catch (System.Exception ex)
             {

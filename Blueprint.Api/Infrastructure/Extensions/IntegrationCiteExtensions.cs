@@ -43,7 +43,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create a Cite Evaluation for this MSEL
-        public static async Task CreateEvaluationAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task<Evaluation> CreateEvaluationAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             var move0 = msel.Moves.SingleOrDefault(m => m.MoveNumber == 0);
             Evaluation newEvaluation = new Evaluation() {
@@ -66,6 +66,15 @@ namespace Blueprint.Api.Infrastructure.Extensions
             // delete the default move 0 that was created when the evaluation was created
             var defaultMoveId = newEvaluation.Moves.Single().Id;
             await citeApiClient.DeleteMoveAsync(defaultMoveId);
+
+            return newEvaluation;
+        }
+
+        // Update a Cite Evaluation for this MSEL
+        public static async Task CycleMoveAsync(Guid evaluationId, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            await citeApiClient.SetEvaluationCurrentMoveAsync(evaluationId, 1, ct);
+            await citeApiClient.SetEvaluationCurrentMoveAsync(evaluationId, 0, ct);
         }
 
         // Create Cite Moves for this MSEL

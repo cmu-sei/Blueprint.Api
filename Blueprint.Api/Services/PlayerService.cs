@@ -109,7 +109,7 @@ namespace Blueprint.Api.Services
             var applicationInstanceForm = new ApplicationInstanceForm() {
                 TeamId = (Guid)playerTeamId,
                 ApplicationId = playerApplication.Id,
-                DisplayOrder = msel.PlayerApplications.Count
+                DisplayOrder = msel.PlayerApplications.Count + 1
             };
             var applicationInstance = await _playerApiClient.CreateApplicationInstanceAsync(applicationInstanceForm.TeamId, applicationInstanceForm, ct);
 

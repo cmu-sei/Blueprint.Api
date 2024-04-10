@@ -208,6 +208,8 @@ namespace Blueprint.Api
             services.AddHostedService<IntegrationService>();
             services.AddSingleton<IJoinQueue, JoinQueue>();
             services.AddHostedService<JoinService>();
+            services.AddSingleton<IAddApplicationQueue, AddApplicationQueue>();
+            services.AddHostedService<AddApplicationService>();
 
             ApplyPolicies(services);
 

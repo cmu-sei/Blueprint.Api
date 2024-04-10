@@ -57,6 +57,12 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         {
             var groupIds = GetGroups(teamUserEntity);
             var teamUser = await _db.TeamUsers.Include(tu => tu.User).SingleOrDefaultAsync(tu => tu.Id == teamUserEntity.Id, cancellationToken);
+            teamUser.Team.Msel = null;  // prevent object cycle
+            teamUser.Team.CiteActions = null;  // prevent object cycle
+            teamUser.Team.CiteRoles = null;  // prevent object cycle
+            teamUser.Team.UserTeamRoles = null;  // prevent object cycle
+            teamUser.Team.TeamUsers = null;  // prevent object cycle
+            teamUser.User.TeamUsers = null;  // prevent object cycle
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)

@@ -26,21 +26,16 @@ namespace Blueprint.Api.Infrastructure.Extensions
             return apiClient;
         }
 
-        public static async Task PullFromGalleryAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task PullFromGalleryAsync(Guid galleryCollectionId, GalleryApiClient galleryApiClient, CancellationToken ct)
         {
             try
             {
                 // delete
-                await galleryApiClient.DeleteCollectionAsync((Guid)msel.GalleryCollectionId, ct);
+                await galleryApiClient.DeleteCollectionAsync(galleryCollectionId, ct);
             }
             catch (System.Exception)
             {
             }
-            // update the MSEL
-            msel.GalleryExhibitId = null;
-            msel.GalleryCollectionId = null;
-            // save the changes
-            await blueprintContext.SaveChangesAsync(ct);
         }
 
         // Create a Gallery Collection for this MSEL

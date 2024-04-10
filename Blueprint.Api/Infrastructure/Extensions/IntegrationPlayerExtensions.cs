@@ -24,20 +24,16 @@ namespace Blueprint.Api.Infrastructure.Extensions
             return apiClient;
         }
 
-        public static async Task PullFromPlayerAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task PullFromPlayerAsync(Guid playerViewId, PlayerApiClient playerApiClient, CancellationToken ct)
         {
             try
             {
                 // delete
-                await playerApiClient.DeleteViewAsync((Guid)msel.PlayerViewId, ct);
+                await playerApiClient.DeleteViewAsync(playerViewId, ct);
             }
             catch (System.Exception)
             {
             }
-            // update the MSEL
-            msel.PlayerViewId = null;
-            // save the changes
-            await blueprintContext.SaveChangesAsync(ct);
         }
 
         // Create a Player View for this MSEL

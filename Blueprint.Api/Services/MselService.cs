@@ -598,12 +598,16 @@ namespace Blueprint.Api.Services
                 !( await MselOwnerRequirement.IsMet(_user.GetId(), id, _context)))
                 throw new ForbiddenException();
 
-            // pull integrations if there are any
-            await PullIntegrationsAsync(id, ItemStatus.Approved, ct);
             // delete the MSEL
             var mselToDelete = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (mselToDelete == null)
                 throw new EntityNotFoundException<Msel>();
+
+            // pull integrations if there are any
+            if (mselToDelete.Status == ItemStatus.Deployed)
+            {
+                await PullIntegrationsAsync(id, ItemStatus.Approved, ct);
+            }
 
             _context.Msels.Remove(mselToDelete);
             await _context.SaveChangesAsync(ct);

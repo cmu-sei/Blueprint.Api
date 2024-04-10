@@ -14,23 +14,31 @@ namespace Blueprint.Api.Infrastructure.Authorization
     {
         public static async Task<Boolean> IsMet(Guid userId, Guid? mselId, BlueprintContext blueprintContext)
         {
-            var mselTeamIdList = await blueprintContext.Teams
-                .Where(t => t.MselId == mselId)
-                .Select(t => t.Id)
-                .ToListAsync();
-            var isSuccess = await blueprintContext.TeamUsers
-                .Where(tu => tu.UserId == userId && mselTeamIdList.Contains(tu.TeamId))
-                .AnyAsync();
-            if (isSuccess)
+            var createdBy = (await blueprintContext.Msels.FirstOrDefaultAsync(m => m.Id == mselId)).CreatedBy;
+            if (createdBy == userId)
             {
-                isSuccess = await blueprintContext.UserMselRoles
-                    .Where(umr => umr.UserId == userId &&
-                        umr.MselId == mselId &&
-                        umr.Role == Data.Enumerations.MselRole.Owner)
-                    .AnyAsync();
+                return true;
             }
+            else
+            {
+                var mselTeamIdList = await blueprintContext.Teams
+                    .Where(t => t.MselId == mselId)
+                    .Select(t => t.Id)
+                    .ToListAsync();
+                var isSuccess = await blueprintContext.TeamUsers
+                    .Where(tu => tu.UserId == userId && mselTeamIdList.Contains(tu.TeamId))
+                    .AnyAsync();
+                if (isSuccess)
+                {
+                    isSuccess = await blueprintContext.UserMselRoles
+                        .Where(umr => umr.UserId == userId &&
+                            umr.MselId == mselId &&
+                            umr.Role == Data.Enumerations.MselRole.Owner)
+                        .AnyAsync();
+                }
 
-            return isSuccess;
+                return isSuccess;
+            }
         }
     }
 }

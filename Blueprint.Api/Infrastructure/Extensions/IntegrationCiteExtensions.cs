@@ -26,20 +26,16 @@ namespace Blueprint.Api.Infrastructure.Extensions
             return apiClient;
         }
 
-        public static async Task PullFromCiteAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task PullFromCiteAsync(Guid citeEvaluationId, CiteApiClient citeApiClient, CancellationToken ct)
         {
             try
             {
                 // delete
-                await citeApiClient.DeleteEvaluationAsync((Guid)msel.CiteEvaluationId, ct);
+                await citeApiClient.DeleteEvaluationAsync(citeEvaluationId, ct);
             }
             catch (System.Exception)
             {
             }
-            // update the MSEL
-            msel.CiteEvaluationId = null;
-            // save the changes
-            await blueprintContext.SaveChangesAsync(ct);
         }
 
         // Create a Cite Evaluation for this MSEL

@@ -61,21 +61,24 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 .ThenInclude(tu => tu.User)
                 .Include(m => m.UserMselRoles)
                 .AsSplitQuery()
-                .SingleOrDefaultAsync(sm => sm.Id == mselEntity.Id, cancellationToken);
+                .SingleOrDefaultAsync(m => m.Id == mselEntity.Id, cancellationToken);
             var msel = _mapper.Map<ViewModels.Msel>(mselEntity);
-            if (msel.UseGallery)
+            if (msel != null)
             {
-                msel.GalleryArticleParameters = Enum.GetNames(typeof(GalleryArticleParameter)).ToList();
-                msel.GallerySourceTypes = Enum.GetNames(typeof(GallerySourceType)).ToList();
-            }
-            var tasks = new List<Task>();
+                if (msel.UseGallery)
+                {
+                    msel.GalleryArticleParameters = Enum.GetNames(typeof(GalleryArticleParameter)).ToList();
+                    msel.GallerySourceTypes = Enum.GetNames(typeof(GallerySourceType)).ToList();
+                }
+                var tasks = new List<Task>();
 
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, msel, modifiedProperties, cancellationToken));
-            }
+                foreach (var groupId in groupIds)
+                {
+                    tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, msel, modifiedProperties, cancellationToken));
+                }
 
-            await Task.WhenAll(tasks);
+                await Task.WhenAll(tasks);
+            }
         }
     }
 

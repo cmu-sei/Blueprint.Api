@@ -188,7 +188,10 @@ namespace Blueprint.Api.Services
                                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling CITE Evaluation", null, ct);
                                 try
                                 {
-                                    await IntegrationCiteExtensions.PullFromCiteAsync(msel, citeApiClient, blueprintContext, ct);
+                                    if (msel.CiteEvaluationId != null)
+                                    {
+                                        await IntegrationCiteExtensions.PullFromCiteAsync((Guid)msel.CiteEvaluationId, citeApiClient, ct);
+                                    }
                                 }
                                 catch (System.Exception ex)
                                 {
@@ -206,7 +209,10 @@ namespace Blueprint.Api.Services
                                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Gallery Collection", null, ct);
                                 try
                                 {
-                                    await IntegrationGalleryExtensions.PullFromGalleryAsync(msel, galleryApiClient, blueprintContext, ct);
+                                    if (msel.GalleryCollectionId != null)
+                                    {
+                                        await IntegrationGalleryExtensions.PullFromGalleryAsync((Guid)msel.GalleryCollectionId, galleryApiClient, ct);
+                                    }
                                 }
                                 catch (System.Exception ex)
                                 {
@@ -218,16 +224,30 @@ namespace Blueprint.Api.Services
                             await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Player View", null, ct);
                             try
                             {
-                                await IntegrationPlayerExtensions.PullFromPlayerAsync(msel, playerApiClient, blueprintContext, ct);
+                                if (msel.PlayerViewId != null)
+                                {
+                                    await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, ct);
+                                }
                             }
-                            catch (System.Exception ex)
+                            catch (System.Exception)
                             {
-                               _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                                _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})");
                             }
-                            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + "", null, ct);
-                            // set the MSEL status
-                            msel.Status = integrationInformation.FinalStatus;
-                            await blueprintContext.SaveChangesAsync(ct);
+                            currentProcessStep = "MSEL update ";
+                            // update the MSEL
+                            var mselId = msel.Id;
+                            msel = await blueprintContext.Msels.FirstOrDefaultAsync(m => m.Id == mselId);
+                            if (msel != null)
+                            {
+                                msel.CiteEvaluationId = null;
+                                msel.GalleryExhibitId = null;
+                                msel.GalleryCollectionId = null;
+                                msel.PlayerViewId = null;
+                                msel.Status = integrationInformation.FinalStatus;
+                                await blueprintContext.SaveChangesAsync(ct);
+                            }
+                            // send completion status
+                            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, mselId + "", null, ct);
                         }
 
                     }

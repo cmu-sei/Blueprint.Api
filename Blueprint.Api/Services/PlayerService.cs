@@ -28,7 +28,7 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ApplicationTemplate>> GetApplicationTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<View>> GetMyViewsAsync(CancellationToken ct);
-        Task<ApplicationInstance> PushApplication(PlayerApplication playerApplication, CancellationToken ct);
+        Task PushApplication(PlayerApplication playerApplication, CancellationToken ct);
     }
 
     public class PlayerService : IPlayerService
@@ -39,6 +39,7 @@ namespace Blueprint.Api.Services
         private readonly IMapper _mapper;
         private readonly ClaimsPrincipal _user;
         private readonly IHubContext<MainHub> _hubContext;
+        private readonly IAddApplicationQueue _addApplicationQueue;
 
         public PlayerService(
             IHttpContextAccessor httpContextAccessor,
@@ -48,6 +49,7 @@ namespace Blueprint.Api.Services
             IUserClaimsService claimsService,
             BlueprintContext context,
             IHubContext<MainHub> hubContext,
+            IAddApplicationQueue addApplicationQueue,
             IMapper mapper)
 
         {
@@ -56,6 +58,7 @@ namespace Blueprint.Api.Services
             _context = context;
             _hubContext = hubContext;
             _authorizationService = authorizationService;
+            _addApplicationQueue = addApplicationQueue;
             _mapper = mapper;
         }
 
@@ -84,7 +87,7 @@ namespace Blueprint.Api.Services
             return views;
         }
 
-        public async Task<ApplicationInstance> PushApplication(PlayerApplication application, CancellationToken ct)
+        public async Task PushApplication(PlayerApplication application, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == application.MselId, ct);
             var playerApplication = new Application() {
@@ -95,8 +98,7 @@ namespace Blueprint.Api.Services
                 Icon = application.Icon,
                 LoadInBackground = application.LoadInBackground
             };
-            playerApplication = await _playerApiClient.CreateApplicationAsync((Guid)msel.PlayerViewId, playerApplication, ct);
-            // create the Player Team Application
+            // get the Player Team ID
             var mselTeamIds = await _context.Teams
                 .Where(t => t.MselId == msel.Id)
                 .Select(t => t.Id)
@@ -106,14 +108,12 @@ namespace Blueprint.Api.Services
                 .Where(tu => tu.UserId == userId && mselTeamIds.Contains(tu.TeamId))
                 .Select(tu => tu.Team.PlayerTeamId)
                 .SingleOrDefaultAsync(ct);
-            var applicationInstanceForm = new ApplicationInstanceForm() {
-                TeamId = (Guid)playerTeamId,
-                ApplicationId = playerApplication.Id,
+            var addApplicationInformation = new AddApplicationInformation{
+                Application = playerApplication,
+                PlayerTeamId = (Guid)playerTeamId,
                 DisplayOrder = msel.PlayerApplications.Count + 1
             };
-            var applicationInstance = await _playerApiClient.CreateApplicationInstanceAsync(applicationInstanceForm.TeamId, applicationInstanceForm, ct);
-
-            return applicationInstance;
+            _addApplicationQueue.Add(addApplicationInformation);
         }
 
     }

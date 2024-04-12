@@ -28,20 +28,38 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets all TeamUsers in the system
+        /// Gets TeamUsers for the specified msel
         /// </summary>
         /// <remarks>
-        /// Returns a list of all of the TeamUsers in the system.
+        /// Returns a list of the specified msel's TeamUsers.
         /// <para />
-        /// Only accessible to a SuperUser
+        /// Only accessible to an msel user
         /// </remarks>
         /// <returns></returns>
-        [HttpGet("teamusers")]
+        [HttpGet("msels/{mselId}/teamusers")]
         [ProducesResponseType(typeof(IEnumerable<TeamUser>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getTeamUsers")]
-        public async Task<IActionResult> Get(CancellationToken ct)
+        [SwaggerOperation(OperationId = "getMselTeamUsers")]
+        public async Task<IActionResult> GetByMsel([FromRoute] Guid mselId, CancellationToken ct)
         {
-            var list = await _teamUserService.GetAsync(ct);
+            var list = await _teamUserService.GetByMselAsync(mselId, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
+        /// Gets TeamUsers for the specified team
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of the specified team's TeamUsers.
+        /// <para />
+        /// Only accessible to an msel user
+        /// </remarks>
+        /// <returns></returns>
+        [HttpGet("teams/{teamId}/teamusers")]
+        [ProducesResponseType(typeof(IEnumerable<TeamUser>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getTeamTeamUsers")]
+        public async Task<IActionResult> GetByTeam([FromRoute] Guid teamId, CancellationToken ct)
+        {
+            var list = await _teamUserService.GetByTeamAsync(teamId, ct);
             return Ok(list);
         }
 

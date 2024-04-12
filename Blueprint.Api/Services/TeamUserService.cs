@@ -23,7 +23,8 @@ namespace Blueprint.Api.Services
 {
     public interface ITeamUserService
     {
-        Task<IEnumerable<ViewModels.TeamUser>> GetAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.TeamUser>> GetByMselAsync(Guid mselId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.TeamUser>> GetByTeamAsync(Guid teamId, CancellationToken ct);
         Task<ViewModels.TeamUser> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.TeamUser> CreateAsync(ViewModels.TeamUser teamUser, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
@@ -47,12 +48,36 @@ namespace Blueprint.Api.Services
             _logger = logger;
         }
 
-        public async Task<IEnumerable<ViewModels.TeamUser>> GetAsync(CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.TeamUser>> GetByMselAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            if (
+                    !(await MselUserRequirement.IsMet(_user.GetId(), mselId, _context)) &&
+                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+               )
                 throw new ForbiddenException();
 
             var items = await _context.TeamUsers
+                .Where(tu => tu.Team.MselId == mselId)
+                .ToListAsync(ct);
+
+            return _mapper.Map<IEnumerable<TeamUser>>(items);
+        }
+
+        public async Task<IEnumerable<ViewModels.TeamUser>> GetByTeamAsync(Guid teamId, CancellationToken ct)
+        {
+            var team = await _context.Teams.SingleOrDefaultAsync(t => t.Id == teamId);
+            if (team == null)
+                throw new EntityNotFoundException<Team>();
+
+            if (
+                    !(await MselUserRequirement.IsMet(_user.GetId(), team.MselId, _context)) &&
+                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+               )
+                throw new ForbiddenException();
+
+            var items = await _context.TeamUsers
+                .Where(tu => tu.TeamId == teamId)
+                .Include(tu => tu.User)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<TeamUser>>(items);

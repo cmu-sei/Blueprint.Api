@@ -27,24 +27,6 @@
       "PermissionId": "2f82cb36-4c0a-4b60-857f-c4f2a9e70817"
     }
   ],
-  "Teams": [
-    {
-      "Id": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8",
-      "Name": "Administrators",
-      "ShortName": "Admin"
-    },
-    {
-      "Id": "24a88c94-5d9a-4a62-8304-d49f559cace1",
-      "Name": "Exercise Control",
-      "ShortName": "EXERCISE-CONTROL"
-    }
-  ],
-  "TeamUsers": [
-    {
-      "TeamId": "9ec2c38e-58b0-4af1-80d1-1895af91e0e8",
-      "UserId": "9fd3c38e-58b0-4af1-80d1-1895af91f1f9"
-    }
-  ],
   "Msels": [
     {
       "Id": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
@@ -121,14 +103,6 @@
       "ShortName": "CISA",
       "Description": "The Cybersecurity and Infrastructure Security Agency (CISA) is an agency of the United States Department of Homeland Security (DHS) that is responsible for strengthening cybersecurity and infrastructure protection across all levels of government, coordinating cybersecurity programs with U.S. states, and improving the government's cybersecurity protections against private and nation-state hackers.",
       "IsTemplate": true
-    }
-  ],
-  "UserMselRoles": [
-    {
-      "Id": "5555beb0-c441-4b54-8e91-3716e3405555",
-      "MselId": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",
-      "UserId": "9fd3c38e-58b0-4af1-80d1-1895af91f1f9",
-      "Role": 10
     }
   ],
   "DataFields": [

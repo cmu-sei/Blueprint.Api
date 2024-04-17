@@ -1553,9 +1553,11 @@ namespace Blueprint.Api.Services
 
             var msel = await _context.Msels
                 .Include(m => m.Cards)
+                .ThenInclude(c => c.CardTeams)
                 .Include(m => m.CiteActions)
                 .Include(m => m.CiteRoles)
                 .Include(m => m.DataFields)
+                .ThenInclude(f => f.DataOptions)
                 .Include(m => m.Moves)
                 .Include(m => m.Teams)
                 .Include(m => m.Organizations)

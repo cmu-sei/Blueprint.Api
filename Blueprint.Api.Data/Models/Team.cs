@@ -15,7 +15,7 @@ namespace Blueprint.Api.Data.Models
         public Guid Id { get; set; }
         public string Name { get; set; }
         public string ShortName { get; set; }
-        public Guid? MselId { get; set; }
+        public Guid MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
         public Guid? CiteTeamTypeId { get; set; }
         public string Email { get; set; }
@@ -28,7 +28,6 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<CardTeamEntity> CardTeams { get; set; } = new HashSet<CardTeamEntity>();
         public virtual ICollection<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; } = new HashSet<PlayerApplicationTeamEntity>();
         public virtual ICollection<InvitationEntity> Invitations { get; set; } = new HashSet<InvitationEntity>();
-        public Guid? OldTeamId { get; set; }
         public virtual ICollection<UserTeamRoleEntity> UserTeamRoles { get; set; } = new HashSet<UserTeamRoleEntity>();
         public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();
         public virtual ICollection<CiteRoleEntity> CiteRoles { get; set; } = new HashSet<CiteRoleEntity>();
@@ -39,6 +38,10 @@ namespace Blueprint.Api.Data.Models
         public void Configure(EntityTypeBuilder<TeamEntity> builder)
         {
             builder.HasIndex(e => e.Id).IsUnique();
+            builder
+                .HasOne(d => d.Msel)
+                .WithMany(d => d.Teams)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

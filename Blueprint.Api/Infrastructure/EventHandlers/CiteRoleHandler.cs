@@ -57,6 +57,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             citeRoleEntity = await _db.CiteRoles
                 .Include(cr => cr.Team)
                 .SingleOrDefaultAsync(cr => cr.Id == citeRoleEntity.Id, cancellationToken);
+            citeRoleEntity.Msel = null;
             var CiteRole = _mapper.Map<ViewModels.CiteRole>(citeRoleEntity);
             var tasks = new List<Task>();
 

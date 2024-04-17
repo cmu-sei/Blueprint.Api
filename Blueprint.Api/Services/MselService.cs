@@ -285,6 +285,13 @@ namespace Blueprint.Api.Services
             if (mselEntity == null)
                 throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
 
+            return await privateMselCopyAsync(mselEntity, currentUserTeamId, ct);
+        }
+
+        private async Task<MselEntity> privateMselCopyAsync(MselEntity mselEntity, Guid? currentUserTeamId, CancellationToken ct)
+        {
+            var currentUserId = _user.GetId();
+            var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == _user.GetId())).Name;
             mselEntity.Id = Guid.NewGuid();
             mselEntity.DateCreated = DateTime.UtcNow;
             mselEntity.CreatedBy = currentUserId;
@@ -1553,9 +1560,11 @@ namespace Blueprint.Api.Services
 
             var msel = await _context.Msels
                 .Include(m => m.Cards)
+                .ThenInclude(c => c.CardTeams)
                 .Include(m => m.CiteActions)
                 .Include(m => m.CiteRoles)
                 .Include(m => m.DataFields)
+                .ThenInclude(f => f.DataOptions)
                 .Include(m => m.Moves)
                 .Include(m => m.Teams)
                 .Include(m => m.Organizations)
@@ -1602,49 +1611,8 @@ namespace Blueprint.Api.Services
                 ReferenceHandler = ReferenceHandler.Preserve
             };
             var mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
-            // get the list of team IDs
-            var teamsToAdd = mselEntity.Teams.Select(t => t.Id).ToList();
-            foreach (var citeRole in mselEntity.CiteRoles)
-            {
-                var exists = await _context.Teams.AnyAsync(t => t.Id == citeRole.TeamId, ct);
-                if (exists)
-                {
-                    citeRole.Team = null;
-                }
-                else
-                {
-                    if (teamsToAdd.Contains((Guid)citeRole.TeamId))
-                    {
-                        citeRole.Team = null;
-                    }
-                    else
-                    {
-                        teamsToAdd.Add((Guid)citeRole.TeamId);
-                    }
-                }
-            }
-            foreach (var citeAction in mselEntity.CiteActions)
-            {
-                var exists = await _context.Teams.AnyAsync(t => t.Id == citeAction.TeamId, ct);
-                if (exists)
-                {
-                    citeAction.Team = null;
-                }
-                else
-                {
-                    if (teamsToAdd.Contains((Guid)citeAction.TeamId))
-                    {
-                        citeAction.Team = null;
-                    }
-                    else
-                    {
-                        teamsToAdd.Add((Guid)citeAction.TeamId);
-                    }
-                }
-            }
-            // add this msel to the database
-            await _context.Msels.AddAsync(mselEntity);
-            await _context.SaveChangesAsync(ct);
+            // make a copy and add it to the database
+            mselEntity = await privateMselCopyAsync(mselEntity, null, ct);
 
             return _mapper.Map<Msel>(mselEntity);
         }

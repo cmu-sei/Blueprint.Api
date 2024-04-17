@@ -56,6 +56,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             citeActionEntity = await _db.CiteActions
                 .Include(ca => ca.Team)
                 .SingleOrDefaultAsync(ca => ca.Id == citeActionEntity.Id, cancellationToken);
+            citeActionEntity.Msel = null;
             var CiteAction = _mapper.Map<ViewModels.CiteAction>(citeActionEntity);
             var tasks = new List<Task>();
 

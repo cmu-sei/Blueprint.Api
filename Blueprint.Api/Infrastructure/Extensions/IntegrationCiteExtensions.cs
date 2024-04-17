@@ -210,7 +210,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
         public static async Task AddUserToTeamAsync(Guid userId, Guid teamId, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             // create Cite TeamUsers
-            var citeTeamUser = new TeamUser(){TeamId = teamId, UserId = userId};
+            var citeTeamUser = new TeamUser() {
+                TeamId = teamId,
+                UserId = userId,
+                IsObserver = false,
+                CanIncrementMove = false,
+                CanModify = true,
+                CanSubmit = false
+            };
             await citeApiClient.CreateTeamUserAsync(citeTeamUser, ct);
         }
 

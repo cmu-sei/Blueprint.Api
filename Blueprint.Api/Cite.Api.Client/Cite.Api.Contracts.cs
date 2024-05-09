@@ -4306,6 +4306,9 @@ namespace Cite.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("canSubmit")]
         public bool CanSubmit { get; set; }
 
+        [System.Text.Json.Serialization.JsonPropertyName("canManageTeam")]
+        public bool CanManageTeam { get; set; }
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "13.15.7.0 (NJsonSchema v10.6.7.0 (Newtonsoft.Json v13.0.0.0))")]

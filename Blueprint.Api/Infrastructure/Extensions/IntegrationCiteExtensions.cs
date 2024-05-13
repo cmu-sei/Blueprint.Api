@@ -135,6 +135,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         // create Cite TeamUsers
                         var isObserver = await blueprintContext.UserTeamRoles
                             .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.Observer);
+                        var canManageTeam = msel.CreatedBy == user.Id;
                         var canIncrement = await blueprintContext.UserTeamRoles
                             .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.Incrementer);
                         var canModify = await blueprintContext.UserTeamRoles
@@ -147,7 +148,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             IsObserver = isObserver,
                             CanIncrementMove = canIncrement,
                             CanModify = canModify,
-                            CanSubmit = canSubmit
+                            CanSubmit = canSubmit,
+                            CanManageTeam = canManageTeam
                         };
                         try
                         {

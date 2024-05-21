@@ -1735,8 +1735,12 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             var mselIdList = invitationList
                 .Where(i =>
-                    i.EmailDomain.Contains('@') &&
-                    email.EndsWith(i.EmailDomain)
+                    i.EmailDomain == null ||
+                    i.EmailDomain.Length == 0 ||
+                    (
+                        i.EmailDomain.Contains('@') &&
+                        email.EndsWith(i.EmailDomain)
+                    )
                 )
                 .Select(i => i.MselId);
             var inviteMselList = await _context.Msels
@@ -1767,8 +1771,12 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             var mselIdList = invitationList
                 .Where(i =>
-                    i.EmailDomain.Contains('@') &&
-                    email.EndsWith(i.EmailDomain)
+                    i.EmailDomain == null ||
+                    i.EmailDomain.Length == 0 ||
+                    (
+                        i.EmailDomain.Contains('@') &&
+                        email.EndsWith(i.EmailDomain)
+                    )
                 )
                 .Select(i => i.MselId);
             var mselList = await _context.Msels
@@ -1813,8 +1821,12 @@ namespace Blueprint.Api.Services
                     .ToListAsync(ct);
                 var invitation = invitationList
                     .SingleOrDefault(i =>
-                        i.EmailDomain.Contains('@') &&
-                        email.EndsWith(i.EmailDomain)
+                        i.EmailDomain == null ||
+                        i.EmailDomain.Length == 0 ||
+                        (
+                            i.EmailDomain.Contains('@') &&
+                            email.EndsWith(i.EmailDomain)
+                        )
                     );
                 if (invitation != null)
                 {
@@ -1836,6 +1848,11 @@ namespace Blueprint.Api.Services
 
         public async Task<Msel> LaunchMselByInvitationAsync(Guid mselId, CancellationToken ct)
         {
+            //check to see if the MSEL exists
+            var exists = await _context.Msels.AnyAsync(m => m.Id == mselId);
+            if (!exists)
+                throw new EntityNotFoundException<Msel>($"Msel {mselId} not found when attempting to launch.");
+
             // determine if the user has a valid invitation
             var email = _user.Claims.First(c => c.Type == "email")?.Value;
             var now = DateTime.UtcNow;
@@ -1849,8 +1866,12 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             var invitation = invitationList
                 .SingleOrDefault(i =>
-                    i.EmailDomain == "" ||
-                    (i.EmailDomain.Contains('@') && email.EndsWith(i.EmailDomain))
+                    i.EmailDomain == null ||
+                    i.EmailDomain.Length == 0 ||
+                    (
+                        i.EmailDomain.Contains('@') &&
+                        email.EndsWith(i.EmailDomain)
+                    )
                 );
             if (invitation == null)
                 throw new ForbiddenException();

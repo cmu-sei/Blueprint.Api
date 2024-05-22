@@ -271,7 +271,6 @@ namespace Blueprint.Api.Services
                 .ThenInclude(t => t.TeamUsers)
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.UserTeamRoles)
-                .Include(m => m.UserMselRoles)
                 .Include(m => m.Moves)
                 .Include(m => m.Organizations)
                 .Include(m => m.Cards)
@@ -331,6 +330,13 @@ namespace Blueprint.Api.Services
                 move.Msel = null;
                 move.DateCreated = mselEntity.DateCreated;
                 move.CreatedBy = mselEntity.CreatedBy;
+            }
+            // copy Msel Pages
+            foreach (var page in mselEntity.Pages)
+            {
+                page.Id = Guid.NewGuid();
+                page.MselId = mselEntity.Id;
+                page.Msel = null;
             }
             // copy MselUnits
             foreach (var mselUnit in mselEntity.MselUnits)
@@ -430,14 +436,6 @@ namespace Blueprint.Api.Services
                 organization.DateCreated = mselEntity.DateCreated;
                 organization.CreatedBy = mselEntity.CreatedBy;
             }
-            // copy UserMselRoles
-            foreach (var userMselRole in mselEntity.UserMselRoles)
-            {
-                userMselRole.Id = Guid.NewGuid();
-                userMselRole.MselId = mselEntity.Id;
-                userMselRole.Msel = null;
-                userMselRole.User = null;
-            }
             // copy ScenarioEvents
             foreach (var scenarioEvent in mselEntity.ScenarioEvents)
             {
@@ -516,7 +514,6 @@ namespace Blueprint.Api.Services
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
-                .Include(m => m.UserMselRoles)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == mselEntity.Id, ct);
 
@@ -1571,7 +1568,6 @@ namespace Blueprint.Api.Services
                 .Include(m => m.Pages)
                 .Include(m => m.ScenarioEvents)
                 .ThenInclude(s => s.DataValues)
-                .Include(m => m.UserMselRoles)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)
@@ -1739,8 +1735,12 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             var mselIdList = invitationList
                 .Where(i =>
-                    i.EmailDomain.Contains('@') &&
-                    email.EndsWith(i.EmailDomain)
+                    i.EmailDomain == null ||
+                    i.EmailDomain.Length == 0 ||
+                    (
+                        i.EmailDomain.Contains('@') &&
+                        email.EndsWith(i.EmailDomain)
+                    )
                 )
                 .Select(i => i.MselId);
             var inviteMselList = await _context.Msels
@@ -1771,8 +1771,12 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             var mselIdList = invitationList
                 .Where(i =>
-                    i.EmailDomain.Contains('@') &&
-                    email.EndsWith(i.EmailDomain)
+                    i.EmailDomain == null ||
+                    i.EmailDomain.Length == 0 ||
+                    (
+                        i.EmailDomain.Contains('@') &&
+                        email.EndsWith(i.EmailDomain)
+                    )
                 )
                 .Select(i => i.MselId);
             var mselList = await _context.Msels
@@ -1817,8 +1821,12 @@ namespace Blueprint.Api.Services
                     .ToListAsync(ct);
                 var invitation = invitationList
                     .SingleOrDefault(i =>
-                        i.EmailDomain.Contains('@') &&
-                        email.EndsWith(i.EmailDomain)
+                        i.EmailDomain == null ||
+                        i.EmailDomain.Length == 0 ||
+                        (
+                            i.EmailDomain.Contains('@') &&
+                            email.EndsWith(i.EmailDomain)
+                        )
                     );
                 if (invitation != null)
                 {
@@ -1840,6 +1848,11 @@ namespace Blueprint.Api.Services
 
         public async Task<Msel> LaunchMselByInvitationAsync(Guid mselId, CancellationToken ct)
         {
+            //check to see if the MSEL exists
+            var exists = await _context.Msels.AnyAsync(m => m.Id == mselId);
+            if (!exists)
+                throw new EntityNotFoundException<Msel>($"Msel {mselId} not found when attempting to launch.");
+
             // determine if the user has a valid invitation
             var email = _user.Claims.First(c => c.Type == "email")?.Value;
             var now = DateTime.UtcNow;
@@ -1853,8 +1866,12 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             var invitation = invitationList
                 .SingleOrDefault(i =>
-                    i.EmailDomain.Contains('@') &&
-                    email.EndsWith(i.EmailDomain)
+                    i.EmailDomain == null ||
+                    i.EmailDomain.Length == 0 ||
+                    (
+                        i.EmailDomain.Contains('@') &&
+                        email.EndsWith(i.EmailDomain)
+                    )
                 );
             if (invitation == null)
                 throw new ForbiddenException();

@@ -55,8 +55,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.Msel> ArchiveAsync(Guid mselId, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
-        Task<Guid> JoinMselByInvitationAsync(Guid mselId, CancellationToken ct);  // returns the Player View ID
-        Task<Msel> LaunchMselByInvitationAsync(Guid mselId, CancellationToken ct);  // returns the Player View ID
+        Task<Guid> JoinMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct);  // returns the Player View ID
+        Task<Msel> LaunchMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct);  // returns the newly created MSEL
     }
 
     public class MselService : IMselService
@@ -1735,12 +1735,9 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             var mselIdList = invitationList
                 .Where(i =>
-                    i.EmailDomain == null ||
-                    i.EmailDomain.Length == 0 ||
-                    (
-                        i.EmailDomain.Contains('@') &&
-                        email.EndsWith(i.EmailDomain)
-                    )
+                    i.EmailDomain != null &&
+                    i.EmailDomain.Contains('@') &&
+                    email.EndsWith(i.EmailDomain)
                 )
                 .Select(i => i.MselId);
             var inviteMselList = await _context.Msels
@@ -1771,12 +1768,9 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             var mselIdList = invitationList
                 .Where(i =>
-                    i.EmailDomain == null ||
-                    i.EmailDomain.Length == 0 ||
-                    (
-                        i.EmailDomain.Contains('@') &&
-                        email.EndsWith(i.EmailDomain)
-                    )
+                    i.EmailDomain != null &&
+                    i.EmailDomain.Contains('@') &&
+                    email.EndsWith(i.EmailDomain)
                 )
                 .Select(i => i.MselId);
             var mselList = await _context.Msels
@@ -1790,9 +1784,10 @@ namespace Blueprint.Api.Services
         /// Joins the current user to a MSEL that has already been launched
         /// </summary>
         /// <param name="mselId"></param>
+        /// <param name="teamId"></param>
         /// <param name="ct"></param>
         /// <returns>The Player View ID</returns>
-        public async Task<Guid> JoinMselByInvitationAsync(Guid mselId, CancellationToken ct)
+        public async Task<Guid> JoinMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)
@@ -1816,7 +1811,8 @@ namespace Blueprint.Api.Services
                         i.ExpirationDateTime > now &&
                         i.UserCount < i.MaxUsersAllowed &&
                         i.Msel.Status == ItemStatus.Deployed &&
-                        i.MselId == mselId)
+                        i.MselId == mselId &&
+                        (teamId == null || teamId == i.TeamId))
                     .Include(i => i.Team)
                     .ToListAsync(ct);
                 var invitation = invitationList
@@ -1846,7 +1842,7 @@ namespace Blueprint.Api.Services
             return (Guid)msel.PlayerViewId;
         }
 
-        public async Task<Msel> LaunchMselByInvitationAsync(Guid mselId, CancellationToken ct)
+        public async Task<Msel> LaunchMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct)
         {
             //check to see if the MSEL exists
             var exists = await _context.Msels.AnyAsync(m => m.Id == mselId);
@@ -1862,7 +1858,8 @@ namespace Blueprint.Api.Services
                     i.ExpirationDateTime > now &&
                     i.UserCount < i.MaxUsersAllowed &&
                     i.Msel.IsTemplate &&
-                    i.MselId == mselId)
+                    i.MselId == mselId &&
+                    (teamId == null || i.TeamId == teamId))
                 .ToListAsync(ct);
             var invitation = invitationList
                 .SingleOrDefault(i =>

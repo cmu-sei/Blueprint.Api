@@ -412,15 +412,25 @@ namespace Blueprint.Api.Controllers
         /// Joins the user to the msel based on a valid invitation
         /// <para />
         /// </remarks>
-        /// <param name="id"></param>
+        /// <param name="mselId"></param>
+        /// <param name="teamId"></param>
         /// <param name="ct"></param>
-        [HttpPost("msels/{id}/join")]
+        [HttpPost("msels/{mselId}/join")]
         [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "joinMselByInvitation")]
-        public async Task<IActionResult> JoinMsel(Guid id, CancellationToken ct)
+        public async Task<IActionResult> JoinMsel(Guid mselId, [FromQuery] string teamId, CancellationToken ct)
         {
-            var msel = await _mselService.JoinMselByInvitationAsync(id, ct);
-            return Ok(msel);
+            Guid playerViewId;
+            Guid teamIdGuid;
+            if (Guid.TryParse(teamId, out teamIdGuid))
+            {
+                playerViewId = await _mselService.JoinMselByInvitationAsync(mselId, teamIdGuid, ct);
+            }
+            else
+            {
+                playerViewId = await _mselService.JoinMselByInvitationAsync(mselId, null, ct);
+            }
+            return Ok(playerViewId);
         }
 
         /// <summary>
@@ -431,14 +441,24 @@ namespace Blueprint.Api.Controllers
         /// <para />
         /// Returns the Player View ID that is being created
         /// </remarks>
-        /// <param name="id"></param>
+        /// <param name="mselId"></param>
+        /// <param name="teamId"></param>
         /// <param name="ct"></param>
-        [HttpPost("msels/{id}/launch")]
+        [HttpPost("msels/{mselId}/launch")]
         [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "launchMselByInvitation")]
-        public async Task<IActionResult> LaunchMsel(Guid id, CancellationToken ct)
+        public async Task<IActionResult> LaunchMsel(Guid mselId, [FromQuery] string teamId, CancellationToken ct)
         {
-            var launchedMsel = await _mselService.LaunchMselByInvitationAsync(id, ct);
+            Msel launchedMsel;
+            Guid teamIdGuid;
+            if (Guid.TryParse(teamId, out teamIdGuid))
+            {
+                launchedMsel = await _mselService.LaunchMselByInvitationAsync(mselId, teamIdGuid, ct);
+            }
+            else
+            {
+                launchedMsel = await _mselService.LaunchMselByInvitationAsync(mselId, null, ct);
+            }
             return Ok(launchedMsel);
         }
 

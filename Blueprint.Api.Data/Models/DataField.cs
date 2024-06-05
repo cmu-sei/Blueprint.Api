@@ -18,6 +18,8 @@ namespace Blueprint.Api.Data.Models
         public Guid Id { get; set; }
         public Guid? MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
+        public Guid? InjectTypeId { get; set; }
+        public virtual InjectTypeEntity InjectType { get; set; }
         public string Name { get; set; }
         public DataFieldType DataType { get; set; }
         public int DisplayOrder { get; set; }
@@ -37,8 +39,13 @@ namespace Blueprint.Api.Data.Models
     {
         public void Configure(EntityTypeBuilder<DataFieldEntity> builder)
         {
+            builder.HasCheckConstraint("data_field_msel_or_inject_type", "msel_id IS NOT NULL XOR inject_type_id IS NOT NULL");
             builder
                 .HasOne(d => d.Msel)
+                .WithMany(d => d.DataFields)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder
+                .HasOne(d => d.InjectType)
                 .WithMany(d => d.DataFields)
                 .OnDelete(DeleteBehavior.Cascade);
         }

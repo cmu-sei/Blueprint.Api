@@ -38,11 +38,16 @@ namespace Blueprint.Api.Data
         public DbSet<OrganizationEntity> Organizations { get; set; }
         public DbSet<CardEntity> Cards { get; set; }
         public DbSet<CardTeamEntity> CardTeams { get; set; }
+        public DbSet<CatalogEntity> Catalogs { get; set; }
+        public DbSet<CatalogInjectEntity> CatalogInjects { get; set; }
+        public DbSet<CatalogUnitEntity> CatalogUnits { get; set; }
         public DbSet<CiteActionEntity> CiteActions { get; set; }
         public DbSet<CiteRoleEntity> CiteRoles { get; set; }
+        public DbSet<InjectTypeEntity> InjectTypes { get; set; }
         public DbSet<PlayerApplicationEntity> PlayerApplications { get; set; }
         public DbSet<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; }
         public DbSet<MselPageEntity> MselPages { get; set; }
+        public DbSet<InjectEntity> Injects { get; set; }
         public DbSet<InvitationEntity> Invitations { get; set; }
         public DbSet<UnitEntity> Units { get; set; }
         public DbSet<UnitUserEntity> UnitUsers { get; set; }

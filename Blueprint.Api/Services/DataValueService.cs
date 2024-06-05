@@ -60,7 +60,7 @@ namespace Blueprint.Api.Services
                 .Select(se => se.Id)
                 .ToListAsync(ct);
             var dataValueEntities = await _context.DataValues
-                .Where(dv => scenarioEventIdList.Contains(dv.ScenarioEventId))
+                .Where(dv => scenarioEventIdList.Contains((Guid)dv.ScenarioEventId))
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<DataValue>>(dataValueEntities).ToList();;

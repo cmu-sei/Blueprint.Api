@@ -12,7 +12,6 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
         public string ShortName { get; set; }
         public ICollection<User> Users { get; set; } = new List<User>();
-        public Guid? OldTeamId { get; set; }
     }
 
 }

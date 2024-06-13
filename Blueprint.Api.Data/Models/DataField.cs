@@ -39,7 +39,8 @@ namespace Blueprint.Api.Data.Models
     {
         public void Configure(EntityTypeBuilder<DataFieldEntity> builder)
         {
-            builder.HasCheckConstraint("data_field_msel_or_inject_type", "msel_id IS NOT NULL XOR inject_type_id IS NOT NULL");
+            builder.HasCheckConstraint("data_field_msel_or_inject_type",
+                "(msel_id IS NOT NULL AND inject_type_id IS NULL) OR (msel_id IS NULL AND inject_type_id IS NOT NULL)");
             builder
                 .HasOne(d => d.Msel)
                 .WithMany(d => d.DataFields)
@@ -52,4 +53,3 @@ namespace Blueprint.Api.Data.Models
     }
 
 }
-

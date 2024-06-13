@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using Blueprint.Api.Data.Enumerations;
 
 namespace Blueprint.Api.ViewModels
 {
@@ -16,4 +15,3 @@ namespace Blueprint.Api.ViewModels
         public virtual ICollection<DataValue> DataValues { get; set; } = new HashSet<DataValue>();
    }
 }
-

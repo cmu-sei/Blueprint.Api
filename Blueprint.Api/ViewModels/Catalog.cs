@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using Blueprint.Api.Data.Enumerations;
 
 namespace Blueprint.Api.ViewModels
 {
@@ -20,4 +19,3 @@ namespace Blueprint.Api.ViewModels
         public virtual ICollection<Unit> Units { get; set; } = new HashSet<Unit>();
    }
 }
-

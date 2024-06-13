@@ -1060,7 +1060,6 @@ namespace Blueprint.Api.Services
                 var scenarioEvent = new ScenarioEventEntity() {
                     Id = Guid.NewGuid(),
                     MselId = mselId,
-                    RowIndex = rowIndex,    // rowIndex is no longer used to order the rows, because of parent/child relationships
                     DeltaSeconds = rowIndex * 60,    // value of seconds (1 minute) used to maintain the row order
                     RowMetadata = rowMetadata 
                 };

@@ -12,7 +12,7 @@ namespace Blueprint.Api.ViewModels
         public Guid Id { get; set; }
         public Guid MselId { get; set; }
         public virtual ICollection<DataValue> DataValues { get; set; } = new HashSet<DataValue>();
-        public int RowIndex { get; set; }
+        public int GroupOrder { get; set; }
         public bool IsHidden { get; set; }
         public string RowMetadata { get; set; }
         public int DeltaSeconds { get; set; }     // time from the start of the MSEL when this event should be executed

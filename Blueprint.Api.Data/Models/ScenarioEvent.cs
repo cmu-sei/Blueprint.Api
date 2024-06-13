@@ -19,7 +19,7 @@ namespace Blueprint.Api.Data.Models
         public Guid MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
         public virtual ICollection<DataValueEntity> DataValues { get; set; } = new HashSet<DataValueEntity>();
-        public int RowIndex { get; set; }       // used to order the scenario events on the MSEL
+        public int GroupOrder { get; set; }       // used to order the scenario events within a shared DeltaSeconds Group on the MSEL
         public bool IsHidden { get; set; }      // flag that hides the secenario event on the Exercise View shown to participants
         public string RowMetadata { get; set; }    // comma separated values (row height number, integer R, integer G, integer B)
         public int DeltaSeconds { get; set; }     // time from the start of the MSEL when this event should be executed

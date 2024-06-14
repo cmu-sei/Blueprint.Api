@@ -12,7 +12,7 @@ namespace Blueprint.Api.ViewModels
         public Guid Id { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
-        public ItemStatus Status { get; set; }
+        public MselItemStatus Status { get; set; }
         public bool UsePlayer { get; set; }
         public Guid? PlayerViewId { get; set; }
         public IntegrationType PlayerIntegrationType { get; set; }
@@ -53,4 +53,3 @@ namespace Blueprint.Api.ViewModels
         public virtual ICollection<Invitation> Invitations { get; set; } = new HashSet<Invitation>();
    }
 }
-

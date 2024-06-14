@@ -382,7 +382,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "pullIntegrations")]
         public async Task<IActionResult> PullIntegrations(Guid id, CancellationToken ct)
         {
-            var msel = await _mselService.PullIntegrationsAsync(id, ItemStatus.Approved, ct);
+            var msel = await _mselService.PullIntegrationsAsync(id, MselItemStatus.Approved, ct);
             return Ok(msel);
         }
 
@@ -464,4 +464,3 @@ namespace Blueprint.Api.Controllers
 
     }
 }
-

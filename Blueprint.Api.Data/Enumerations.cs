@@ -3,7 +3,7 @@
 
 namespace Blueprint.Api.Data.Enumerations
 {
-    public enum ItemStatus
+    public enum MselItemStatus
     {
         Pending = 0,
         Entered = 10,
@@ -97,4 +97,3 @@ namespace Blueprint.Api.Data.Enumerations
     }
 
 }
-

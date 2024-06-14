@@ -127,7 +127,7 @@ namespace Blueprint.Api.Services
                             await PlayerProcessPart1(msel, integrationInformation.PlayerViewId, playerApiClient, blueprintContext, ct);
 
                             // set the MSEL status
-                            msel.Status = Data.Enumerations.ItemStatus.Deployed;
+                            msel.Status = Data.Enumerations.MselItemStatus.Deployed;
                             await blueprintContext.SaveChangesAsync(ct);
 
                             // Gallery processing
@@ -376,7 +376,7 @@ namespace Blueprint.Api.Services
     {
         public Guid MselId { get; set; }
         public Guid? PlayerViewId { get; set; }
-        public Data.Enumerations.ItemStatus FinalStatus { get; set; }
+        public Data.Enumerations.MselItemStatus FinalStatus { get; set; }
     }
 
 }

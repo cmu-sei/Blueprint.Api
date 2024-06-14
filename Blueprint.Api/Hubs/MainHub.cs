@@ -112,7 +112,7 @@ namespace Blueprint.Api.Hubs
             if ((await _authorizationService.AuthorizeAsync(Context.User, null, new FullRightsRequirement())).Succeeded)
             {
                 idList = await _context.Msels
-                    .Where(m => m.Status != Data.Enumerations.ItemStatus.Archived)
+                    .Where(m => m.Status != Data.Enumerations.MselItemStatus.Archived)
                     .Select(m => m.Id.ToString())
                     .ToListAsync();
             }
@@ -124,14 +124,14 @@ namespace Blueprint.Api.Hubs
                     .ToListAsync();
                 // get my teams' msels
                 var teamMselIds = _context.Teams
-                    .Where(t => teamIdList.Contains(t.Id) && t.Msel.Status != Data.Enumerations.ItemStatus.Archived)
+                    .Where(t => teamIdList.Contains(t.Id) && t.Msel.Status != Data.Enumerations.MselItemStatus.Archived)
                     .Select(t => t.Msel.Id.ToString());
                 var teamMselIdList = await teamMselIds
                     .Where(id => id != null)
                     .ToListAsync();
                 // get msels I created and all templates
                 var myMselIdList = await _context.Msels
-                    .Where(m => (m.CreatedBy == userGuid || m.IsTemplate) && m.Status != Data.Enumerations.ItemStatus.Archived)
+                    .Where(m => (m.CreatedBy == userGuid || m.IsTemplate) && m.Status != Data.Enumerations.MselItemStatus.Archived)
                     .Select(m => m.Id.ToString())
                     .ToListAsync();
                 // combine lists

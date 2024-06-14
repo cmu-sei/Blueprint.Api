@@ -29,6 +29,22 @@ namespace Blueprint.Api.Services
             }
         }
 
+        public static async Task SetCatalogModifiedAsync(Guid? id, Guid? modifiedBy, DateTime? dateModified, BlueprintContext context, CancellationToken ct)
+        {
+            if (id != null)
+            {
+                var catalogToUpdate = await context.Catalogs.SingleOrDefaultAsync(v => v.Id == id, ct);
+                if (catalogToUpdate == null)
+                    throw new EntityNotFoundException<Catalog>();
+
+                // okay to update this catalog
+                catalogToUpdate.ModifiedBy = modifiedBy;
+                catalogToUpdate.DateModified = dateModified;
+                context.Catalogs.Update(catalogToUpdate);
+                await context.SaveChangesAsync(ct);
+            }
+        }
+
     }
 }
 

@@ -6,12 +6,12 @@ using System.Collections.Generic;
 
 namespace Blueprint.Api.ViewModels
 {
-    public class Unit : Base
+    public class Inject : Base
     {
         public Guid Id { get; set; }
-        public string Name { get; set; }
-        public string ShortName { get; set; }
-        public ICollection<User> Users { get; set; } = new List<User>();
-    }
-
+        public Guid InjectTypeId { get; set; }
+        public Guid? RequiresInjectId { get; set; }
+        public virtual Inject RequiresInject { get; set; }
+        public virtual ICollection<DataValue> DataValues { get; set; } = new HashSet<DataValue>();
+   }
 }

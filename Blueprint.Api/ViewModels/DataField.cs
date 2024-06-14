@@ -11,6 +11,7 @@ namespace Blueprint.Api.ViewModels
     {
         public Guid Id { get; set; }
         public Guid? MselId { get; set; }
+        public Guid? InjectTypeId { get; set; }
         public string Name { get; set; }
         public DataFieldType DataType { get; set; }
         public int DisplayOrder { get; set; }

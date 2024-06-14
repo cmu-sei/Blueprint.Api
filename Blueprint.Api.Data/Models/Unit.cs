@@ -17,7 +17,7 @@ namespace Blueprint.Api.Data.Models
         public string ShortName { get; set; }
         public ICollection<UnitUserEntity> UnitUsers { get; set; } = new List<UnitUserEntity>();
         public virtual ICollection<MselUnitEntity> MselUnits { get; set; } = new HashSet<MselUnitEntity>();
-        public Guid? OldTeamId { get; set; }
+        public virtual ICollection<CatalogUnitEntity> CatalogUnits { get; set; } = new HashSet<CatalogUnitEntity>();
     }
 
     public class UnitConfiguration : IEntityTypeConfiguration<UnitEntity>

@@ -19,6 +19,12 @@ namespace Blueprint.Api.Data.Enumerations
         Connect = 30
     }
 
+    public enum EventType {
+        Inject = 10,
+        Information = 20,
+        Facilitation = 30
+    }
+
     public enum EventExecutionStatus
     {
         Executed = 10,

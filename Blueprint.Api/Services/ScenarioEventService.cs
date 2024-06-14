@@ -18,7 +18,6 @@ using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
-using System.Security.Cryptography.X509Certificates;
 
 namespace Blueprint.Api.Services
 {

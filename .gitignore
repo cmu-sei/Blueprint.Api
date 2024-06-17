@@ -4,4 +4,4 @@ obj/
 .vs/
 appsettings.Development.json
 .vscode/
-node_modules/
+Blueprint.Api.Client/node_modules

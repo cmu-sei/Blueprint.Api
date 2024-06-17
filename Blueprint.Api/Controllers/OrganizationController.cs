@@ -56,7 +56,7 @@ namespace Blueprint.Api.Controllers
         /// <returns></returns>
         [HttpGet("msels/{mselId}/organizations")]
         [ProducesResponseType(typeof(IEnumerable<Organization>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getByMsel")]
+        [SwaggerOperation(OperationId = "getOrganizationsByMsel")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
             var list = await _organizationService.GetByMselAsync(mselId, ct);
@@ -148,4 +148,3 @@ namespace Blueprint.Api.Controllers
 
     }
 }
-

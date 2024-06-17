@@ -19,8 +19,7 @@ namespace Blueprint.Api.ViewModels
         public Guid Id { get; set; }
         public Guid CatalogId { get; set; }
         public Guid InjectId { get; set; }
-        public virtual Inject Inject { get; set; }
+        public virtual Injectm Inject { get; set; }
     }
 
 }
-

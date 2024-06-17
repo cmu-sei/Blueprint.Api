@@ -38,7 +38,7 @@ namespace Blueprint.Api.Controllers
         /// <returns></returns>
         [HttpGet("unitusers")]
         [ProducesResponseType(typeof(IEnumerable<UnitUser>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getUnitUsers")]
+        [SwaggerOperation(OperationId = "getAllUnitUsers")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
             var list = await _unitUserService.GetAsync(ct);
@@ -130,4 +130,3 @@ namespace Blueprint.Api.Controllers
 
     }
 }
-

@@ -36,7 +36,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="ct"></param>
         /// <returns></returns>
         [HttpGet("catalogs/{catalogId}/injects")]
-        [ProducesResponseType(typeof(IEnumerable<ViewModels.Inject>), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(IEnumerable<ViewModels.Injectm>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getInjectsByCatalog")]
         public async Task<IActionResult> GetByCatalog(Guid catalogId, CancellationToken ct)
         {
@@ -56,14 +56,14 @@ namespace Blueprint.Api.Controllers
         /// <param name="ct"></param>
         /// <returns></returns>
         [HttpGet("injects/{id}")]
-        [ProducesResponseType(typeof(ViewModels.Inject), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(ViewModels.Injectm), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getInject")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
             var inject = await _injectService.GetAsync(id, ct);
 
             if (inject == null)
-                throw new EntityNotFoundException<ViewModels.Inject>();
+                throw new EntityNotFoundException<ViewModels.Injectm>();
 
             return Ok(inject);
         }
@@ -80,9 +80,9 @@ namespace Blueprint.Api.Controllers
         /// <param name="inject">The data to create the Inject with</param>
         /// <param name="ct"></param>
         [HttpPost("catalog/{catalogId}/injects")]
-        [ProducesResponseType(typeof(ViewModels.Inject), (int)HttpStatusCode.Created)]
+        [ProducesResponseType(typeof(ViewModels.Injectm), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createInject")]
-        public async Task<IActionResult> Create([FromRoute] Guid catalogId, [FromBody] ViewModels.Inject inject, CancellationToken ct)
+        public async Task<IActionResult> Create([FromRoute] Guid catalogId, [FromBody] ViewModels.Injectm inject, CancellationToken ct)
         {
             var list = await _injectService.CreateAsync(catalogId, inject, ct);
             return Ok(list);
@@ -100,9 +100,9 @@ namespace Blueprint.Api.Controllers
         /// <param name="inject">The updated Inject values</param>
         /// <param name="ct"></param>
         [HttpPut("injects/{id}")]
-        [ProducesResponseType(typeof(ViewModels.Inject), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(ViewModels.Injectm), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateInject")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] ViewModels.Inject inject, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] ViewModels.Injectm inject, CancellationToken ct)
         {
             inject.ModifiedBy = User.GetId();
             var list = await _injectService.UpdateAsync(id, inject, ct);

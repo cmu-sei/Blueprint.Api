@@ -324,7 +324,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="ct"></param>
         [HttpPost("msels/json")]
         [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "uploadJsonFiles")]
+        [SwaggerOperation(OperationId = "uploadJsonMsel")]
         public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
         {
             var result = await _mselService.UploadJsonAsync(form, ct);
@@ -336,7 +336,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="ct"></param>
         [HttpGet("msels/{id}/json")]
         [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "downloadJson")]
+        [SwaggerOperation(OperationId = "downloadJsonMsel")]
         public async Task<IActionResult> DownloadJsonAsync(Guid id, CancellationToken ct)
         {
             (var stream, var fileName) = await _mselService.DownloadJsonAsync(id, ct);

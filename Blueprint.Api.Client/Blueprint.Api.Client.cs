@@ -10238,9 +10238,9 @@ namespace Blueprint.Api.Client
         /// </summary>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        public virtual System.Threading.Tasks.Task<Msel> UploadJsonFiles2Async(System.Guid? mselId, System.Guid? mselTemplateId, System.Guid? teamId, FileParameter toUpload)
+        public virtual System.Threading.Tasks.Task UploadJsonFiles2Async(string contentType, string contentDisposition, System.Collections.Generic.IDictionary<string, System.Collections.Generic.IEnumerable<string>> headers, long? length, string name, string fileName)
         {
-            return UploadJsonFiles2Async(mselId, mselTemplateId, teamId, toUpload, System.Threading.CancellationToken.None);
+            return UploadJsonFiles2Async(contentType, contentDisposition, headers, length, name, fileName, System.Threading.CancellationToken.None);
         }
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
@@ -10249,7 +10249,7 @@ namespace Blueprint.Api.Client
         /// </summary>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        public virtual async System.Threading.Tasks.Task<Msel> UploadJsonFiles2Async(System.Guid? mselId, System.Guid? mselTemplateId, System.Guid? teamId, FileParameter toUpload, System.Threading.CancellationToken cancellationToken)
+        public virtual async System.Threading.Tasks.Task UploadJsonFiles2Async(string contentType, string contentDisposition, System.Collections.Generic.IDictionary<string, System.Collections.Generic.IEnumerable<string>> headers, long? length, string name, string fileName, System.Threading.CancellationToken cancellationToken)
         {
             var urlBuilder_ = new System.Text.StringBuilder();
             urlBuilder_.Append("api/msels/json");
@@ -10265,39 +10265,50 @@ namespace Blueprint.Api.Client
                     content_.Headers.Remove("Content-Type");
                     content_.Headers.TryAddWithoutValidation("Content-Type", "multipart/form-data; boundary=" + boundary_);
 
-                    if (mselId == null)
-                        throw new System.ArgumentNullException("mselId");
+                    if (contentType == null)
+                        throw new System.ArgumentNullException("contentType");
                     else
                     {
-                        content_.Add(new System.Net.Http.StringContent(ConvertToString(mselId, System.Globalization.CultureInfo.InvariantCulture)), "MselId");
+                        content_.Add(new System.Net.Http.StringContent(ConvertToString(contentType, System.Globalization.CultureInfo.InvariantCulture)), "ContentType");
                     }
 
-                    if (mselTemplateId == null)
-                        throw new System.ArgumentNullException("mselTemplateId");
+                    if (contentDisposition == null)
+                        throw new System.ArgumentNullException("contentDisposition");
                     else
                     {
-                        content_.Add(new System.Net.Http.StringContent(ConvertToString(mselTemplateId, System.Globalization.CultureInfo.InvariantCulture)), "MselTemplateId");
+                        content_.Add(new System.Net.Http.StringContent(ConvertToString(contentDisposition, System.Globalization.CultureInfo.InvariantCulture)), "ContentDisposition");
                     }
 
-                    if (teamId == null)
-                        throw new System.ArgumentNullException("teamId");
+                    if (headers == null)
+                        throw new System.ArgumentNullException("headers");
                     else
                     {
-                        content_.Add(new System.Net.Http.StringContent(ConvertToString(teamId, System.Globalization.CultureInfo.InvariantCulture)), "TeamId");
+                        var json_ = System.Text.Json.JsonSerializer.Serialize(headers, _settings.Value);
+                        content_.Add(new System.Net.Http.StringContent(json_), "Headers");
                     }
 
-                    if (toUpload == null)
-                        throw new System.ArgumentNullException("toUpload");
+                    if (length == null)
+                        throw new System.ArgumentNullException("length");
                     else
                     {
-                        var content_toUpload_ = new System.Net.Http.StreamContent(toUpload.Data);
-                        if (!string.IsNullOrEmpty(toUpload.ContentType))
-                            content_toUpload_.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(toUpload.ContentType);
-                        content_.Add(content_toUpload_, "ToUpload", toUpload.FileName ?? "ToUpload");
+                        content_.Add(new System.Net.Http.StringContent(ConvertToString(length, System.Globalization.CultureInfo.InvariantCulture)), "Length");
+                    }
+
+                    if (name == null)
+                        throw new System.ArgumentNullException("name");
+                    else
+                    {
+                        content_.Add(new System.Net.Http.StringContent(ConvertToString(name, System.Globalization.CultureInfo.InvariantCulture)), "Name");
+                    }
+
+                    if (fileName == null)
+                        throw new System.ArgumentNullException("fileName");
+                    else
+                    {
+                        content_.Add(new System.Net.Http.StringContent(ConvertToString(fileName, System.Globalization.CultureInfo.InvariantCulture)), "FileName");
                     }
                     request_.Content = content_;
                     request_.Method = new System.Net.Http.HttpMethod("POST");
-                    request_.Headers.Accept.Add(System.Net.Http.Headers.MediaTypeWithQualityHeaderValue.Parse("text/plain"));
 
                     PrepareRequest(client_, request_, urlBuilder_);
 
@@ -10322,12 +10333,7 @@ namespace Blueprint.Api.Client
                         var status_ = (int)response_.StatusCode;
                         if (status_ == 200)
                         {
-                            var objectResponse_ = await ReadObjectResponseAsync<Msel>(response_, headers_, cancellationToken).ConfigureAwait(false);
-                            if (objectResponse_.Object == null)
-                            {
-                                throw new ApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
-                            }
-                            return objectResponse_.Object;
+                            return;
                         }
                         else
                         {

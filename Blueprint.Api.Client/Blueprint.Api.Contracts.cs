@@ -2595,7 +2595,7 @@ namespace Blueprint.Api.Client
         /// </summary>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Msel> UploadJsonFiles2Async(System.Guid? mselId, System.Guid? mselTemplateId, System.Guid? teamId, FileParameter toUpload);
+        System.Threading.Tasks.Task UploadJsonFiles2Async(string contentType, string contentDisposition, System.Collections.Generic.IDictionary<string, System.Collections.Generic.IEnumerable<string>> headers, long? length, string name, string fileName);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -2603,7 +2603,7 @@ namespace Blueprint.Api.Client
         /// </summary>
         /// <returns>Success</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Msel> UploadJsonFiles2Async(System.Guid? mselId, System.Guid? mselTemplateId, System.Guid? teamId, FileParameter toUpload, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task UploadJsonFiles2Async(string contentType, string contentDisposition, System.Collections.Generic.IDictionary<string, System.Collections.Generic.IEnumerable<string>> headers, long? length, string name, string fileName, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Download a msel by id as json file

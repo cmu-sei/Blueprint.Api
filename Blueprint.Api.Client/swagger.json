@@ -5928,35 +5928,50 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "MselId": {
-                    "type": "string",
-                    "format": "uuid"
+                  "ContentType": {
+                    "type": "string"
                   },
-                  "MselTemplateId": {
-                    "type": "string",
-                    "format": "uuid"
+                  "ContentDisposition": {
+                    "type": "string"
                   },
-                  "TeamId": {
-                    "type": "string",
-                    "format": "uuid"
+                  "Headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
                   },
-                  "ToUpload": {
-                    "type": "string",
-                    "format": "binary"
+                  "Length": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "Name": {
+                    "type": "string"
+                  },
+                  "FileName": {
+                    "type": "string"
                   }
                 }
               },
               "encoding": {
-                "MselId": {
+                "ContentType": {
                   "style": "form"
                 },
-                "MselTemplateId": {
+                "ContentDisposition": {
                   "style": "form"
                 },
-                "TeamId": {
+                "Headers": {
                   "style": "form"
                 },
-                "ToUpload": {
+                "Length": {
+                  "style": "form"
+                },
+                "Name": {
+                  "style": "form"
+                },
+                "FileName": {
                   "style": "form"
                 }
               }
@@ -5965,24 +5980,7 @@
         },
         "responses": {
           "200": {
-            "description": "Success",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/Msel"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Msel"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Msel"
-                }
-              }
-            }
+            "description": "Success"
           },
           "default": {
             "description": "Problem response",

@@ -4,3 +4,4 @@ obj/
 .vs/
 appsettings.Development.json
 .vscode/
+node_modules/

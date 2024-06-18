@@ -55,7 +55,7 @@ namespace Blueprint.Api.Controllers
         /// <returns></returns>
         [HttpGet("msels/{mselId}/citeRoles")]
         [ProducesResponseType(typeof(IEnumerable<CiteRole>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getByMsel")]
+        [SwaggerOperation(OperationId = "getRolesByMsel")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
             var list = await _citeRoleService.GetByMselAsync(mselId, ct);
@@ -147,4 +147,3 @@ namespace Blueprint.Api.Controllers
 
     }
 }
-

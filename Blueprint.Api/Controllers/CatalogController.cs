@@ -185,7 +185,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="ct"></param>
         [HttpPost("catalogs/json")]
         [ProducesResponseType(typeof(Catalog), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "uploadJsonFiles")]
+        [SwaggerOperation(OperationId = "uploadJsonCatalog")]
         public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
         {
             var result = await _catalogService.UploadJsonAsync(form, ct);
@@ -197,7 +197,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="ct"></param>
         [HttpGet("catalogs/{id}/json")]
         [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "downloadJson")]
+        [SwaggerOperation(OperationId = "downloadJsonCatalog")]
         public async Task<IActionResult> DownloadJsonAsync(Guid id, CancellationToken ct)
         {
             (var stream, var fileName) = await _catalogService.DownloadJsonAsync(id, ct);

@@ -8,6 +8,7 @@ using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Infrastructure.Extensions;
@@ -323,7 +324,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="ct"></param>
         [HttpPost("msels/json")]
         [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "uploadJsonFiles")]
+        [SwaggerOperation(OperationId = "uploadJsonMsel")]
         public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
         {
             var result = await _mselService.UploadJsonAsync(form, ct);
@@ -335,7 +336,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="ct"></param>
         [HttpGet("msels/{id}/json")]
         [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "downloadJson")]
+        [SwaggerOperation(OperationId = "downloadJsonMsel")]
         public async Task<IActionResult> DownloadJsonAsync(Guid id, CancellationToken ct)
         {
             (var stream, var fileName) = await _mselService.DownloadJsonAsync(id, ct);
@@ -382,7 +383,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "pullIntegrations")]
         public async Task<IActionResult> PullIntegrations(Guid id, CancellationToken ct)
         {
-            var msel = await _mselService.PullIntegrationsAsync(id, ItemStatus.Approved, ct);
+            var msel = await _mselService.PullIntegrationsAsync(id, MselItemStatus.Approved, ct);
             return Ok(msel);
         }
 
@@ -464,4 +465,3 @@ namespace Blueprint.Api.Controllers
 
     }
 }
-

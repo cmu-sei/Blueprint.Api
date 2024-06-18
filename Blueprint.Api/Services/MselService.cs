@@ -51,7 +51,7 @@ namespace Blueprint.Api.Services
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
         Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, ItemStatus finalStatus, CancellationToken ct);
+        Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, CancellationToken ct);
         Task<ViewModels.Msel> ArchiveAsync(Guid mselId, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
@@ -174,7 +174,7 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             // get the units' msels
             var unitMselList = await _context.MselUnits
-                .Where(mu => unitIdList.Contains(mu.UnitId) && mu.Msel.Status != ItemStatus.Archived)
+                .Where(mu => unitIdList.Contains(mu.UnitId) && mu.Msel.Status != MselItemStatus.Archived)
                 .Select(mu => mu.Msel)
                 .ToListAsync(ct);
             // get msels created by user and all templates, if user is a content developer
@@ -182,7 +182,7 @@ namespace Blueprint.Api.Services
             if ((await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
             {
                 myMselList = await _context.Msels
-                    .Where(m => (m.CreatedBy == userId || m.IsTemplate) && m.Status != ItemStatus.Archived)
+                    .Where(m => (m.CreatedBy == userId || m.IsTemplate) && m.Status != MselItemStatus.Archived)
                     .ToListAsync(ct);
             }
             // combine lists
@@ -244,7 +244,7 @@ namespace Blueprint.Api.Services
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
-            
+
             var newMselEntity = await privateMselCopyAsync(mselId, null, ct);
             var msel = _mapper.Map<Msel>(newMselEntity);
             // add the needed parameters for Gallery integration
@@ -608,9 +608,9 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<Msel>();
 
             // pull integrations if there are any
-            if (mselToDelete.Status == ItemStatus.Deployed)
+            if (mselToDelete.Status == MselItemStatus.Deployed)
             {
-                await PullIntegrationsAsync(id, ItemStatus.Approved, ct);
+                await PullIntegrationsAsync(id, MselItemStatus.Approved, ct);
             }
 
             _context.Msels.Remove(mselToDelete);
@@ -846,7 +846,7 @@ namespace Blueprint.Api.Services
                         Id = Guid.NewGuid(),
                         Name = uploadItem.FileName.Replace(".xlsx", ""),
                         Description = "Uploaded from " + uploadItem.FileName,
-                        Status = ItemStatus.Pending,
+                        Status = MselItemStatus.Pending,
                         IsTemplate = false,
                         HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : "",
                         CreatedBy = userId,
@@ -1061,7 +1061,7 @@ namespace Blueprint.Api.Services
                     Id = Guid.NewGuid(),
                     MselId = mselId,
                     DeltaSeconds = rowIndex * 60,    // value of seconds (1 minute) used to maintain the row order
-                    RowMetadata = rowMetadata 
+                    RowMetadata = rowMetadata
                 };
                 await _context.ScenarioEvents.AddAsync(scenarioEvent);
                 await CreateDataValuesAsync(scenarioEvent, dataRow, workbookPart, dataFields);
@@ -1632,12 +1632,12 @@ namespace Blueprint.Api.Services
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
                 throw new InvalidOperationException(userVerificationErrorMessage);
-            _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null, FinalStatus = ItemStatus.Deployed});
-            
-            return _mapper.Map<ViewModels.Msel>(msel); 
+            _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null, FinalStatus = MselItemStatus.Deployed});
+
+            return _mapper.Map<ViewModels.Msel>(msel);
         }
 
-        public async Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, ItemStatus finalStatus, CancellationToken ct)
+        public async Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
@@ -1650,19 +1650,19 @@ namespace Blueprint.Api.Services
             // add msel to process queue
             _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null, FinalStatus = finalStatus});
 
-            return _mapper.Map<ViewModels.Msel>(msel); 
+            return _mapper.Map<ViewModels.Msel>(msel);
         }
 
         public async Task<ViewModels.Msel> ArchiveAsync(Guid mselId, CancellationToken ct)
         {
             // permissions will be checked in PullIntegrationsAsync
-            await PullIntegrationsAsync(mselId, ItemStatus.Archived, ct);
+            await PullIntegrationsAsync(mselId, MselItemStatus.Archived, ct);
             // get the MSEL and set status to aarchived
             var msel = await _context.Msels.FindAsync(mselId);
-            msel.Status = ItemStatus.Archived;
+            msel.Status = MselItemStatus.Archived;
             await _context.SaveChangesAsync(ct);
 
-            return _mapper.Map<ViewModels.Msel>(msel); 
+            return _mapper.Map<ViewModels.Msel>(msel);
         }
 
         private async Task<string> FindDuplicateMselUsersAsync(Guid mselId, CancellationToken ct)
@@ -1716,7 +1716,7 @@ namespace Blueprint.Api.Services
             var teamMselList = await _context.Teams
                 .Where(t =>
                     t.Msel.PlayerViewId != null &&
-                    t.Msel.Status == ItemStatus.Deployed &&
+                    t.Msel.Status == MselItemStatus.Deployed &&
                     teamIdList.Contains(t.Id)
                 )
                 .Select(mt => mt.Msel)
@@ -1730,7 +1730,7 @@ namespace Blueprint.Api.Services
                     !i.WasDeactivated &&
                     i.ExpirationDateTime > now &&
                     i.UserCount < i.MaxUsersAllowed &&
-                    i.Msel.Status == ItemStatus.Deployed)
+                    i.Msel.Status == MselItemStatus.Deployed)
                 .ToListAsync(ct);
             var mselIdList = invitationList
                 .Where(i =>
@@ -1809,7 +1809,7 @@ namespace Blueprint.Api.Services
                         !i.WasDeactivated &&
                         i.ExpirationDateTime > now &&
                         i.UserCount < i.MaxUsersAllowed &&
-                        i.Msel.Status == ItemStatus.Deployed &&
+                        i.Msel.Status == MselItemStatus.Deployed &&
                         i.MselId == mselId &&
                         (teamId == null || teamId == i.TeamId))
                     .Include(i => i.Team)
@@ -1911,4 +1911,3 @@ namespace Blueprint.Api.Services
         public string UserName { get; set; }
     }
 }
-

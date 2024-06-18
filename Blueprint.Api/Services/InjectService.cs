@@ -23,10 +23,10 @@ namespace Blueprint.Api.Services
 {
     public interface IInjectService
     {
-        Task<IEnumerable<ViewModels.Inject>> GetByCatalogAsync(Guid catalogId, CancellationToken ct);
-        Task<ViewModels.Inject> GetAsync(Guid id, CancellationToken ct);
-        Task<ViewModels.Inject> CreateAsync(Guid catalogId, Inject inject, CancellationToken ct);
-        Task<ViewModels.Inject> UpdateAsync(Guid id, ViewModels.Inject inject, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Injectm>> GetByCatalogAsync(Guid catalogId, CancellationToken ct);
+        Task<ViewModels.Injectm> GetAsync(Guid id, CancellationToken ct);
+        Task<ViewModels.Injectm> CreateAsync(Guid catalogId, ViewModels.Injectm inject, CancellationToken ct);
+        Task<ViewModels.Injectm> UpdateAsync(Guid id, ViewModels.Injectm inject, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     }
 
@@ -37,7 +37,7 @@ namespace Blueprint.Api.Services
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
         private readonly DatabaseOptions _options;
-        
+
 
         public InjectService(
             BlueprintContext context,
@@ -53,7 +53,7 @@ namespace Blueprint.Api.Services
             _options = options;
         }
 
-        public async Task<IEnumerable<ViewModels.Inject>> GetByCatalogAsync(Guid catalogId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Injectm>> GetByCatalogAsync(Guid catalogId, CancellationToken ct)
         {
             // user must be a Content Developer or a Catalog viewer
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
@@ -64,10 +64,10 @@ namespace Blueprint.Api.Services
                 .Where(i => i.CatalogId == catalogId)
                 .Select(m => m.Inject)
                 .ToListAsync(ct);
-            return _mapper.Map<IEnumerable<Inject>>(injects);
+            return _mapper.Map<IEnumerable<Injectm>>(injects);
         }
 
-        public async Task<ViewModels.Inject> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.Injectm> GetAsync(Guid id, CancellationToken ct)
         {
             var item = await _context.Injects
                 .Include(se => se.DataValues)
@@ -91,13 +91,13 @@ namespace Blueprint.Api.Services
                     .Where(m => catalogIdList.Contains(m.CatalogId))
                     .AnyAsync(ct);
                 if (!isAuthorized)
-                    throw new ForbiddenException(); 
+                    throw new ForbiddenException();
             }
 
-            return _mapper.Map<ViewModels.Inject>(item);
+            return _mapper.Map<ViewModels.Injectm>(item);
         }
 
-        public async Task<ViewModels.Inject> CreateAsync(Guid catalogId, Inject inject, CancellationToken ct)
+        public async Task<ViewModels.Injectm> CreateAsync(Guid catalogId, Injectm inject, CancellationToken ct)
         {
             // user must be a Content Developer
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
@@ -142,10 +142,10 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return  _mapper.Map<ViewModels.Inject>(injectEntity);
+            return  _mapper.Map<ViewModels.Injectm>(injectEntity);
         }
 
-        public async Task<ViewModels.Inject> UpdateAsync(Guid id, ViewModels.Inject inject, CancellationToken ct)
+        public async Task<ViewModels.Injectm> UpdateAsync(Guid id, ViewModels.Injectm inject, CancellationToken ct)
         {
             // user must be a Content Developer
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
@@ -202,7 +202,7 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return _mapper.Map<ViewModels.Inject>(injectToUpdate);
+            return _mapper.Map<ViewModels.Injectm>(injectToUpdate);
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
@@ -228,4 +228,3 @@ namespace Blueprint.Api.Services
     }
 
  }
-

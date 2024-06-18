@@ -133,9 +133,9 @@ namespace Blueprint.Api
             });
 
             services.AddSwagger(_authOptions);
-            services.ConfigureSwaggerGen(options => {
-                options.CustomSchemaIds(x => x.FullName);
-            });
+            // services.ConfigureSwaggerGen(options => {
+            //     options.CustomSchemaIds(x => x.FullName);
+            // });
             services.AddCiteApiClient();
             services.AddGalleryApiClient();
             services.AddPlayerApiClient();

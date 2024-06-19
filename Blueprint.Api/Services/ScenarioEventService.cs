@@ -25,8 +25,8 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct);
-        Task<ViewModels.ScenarioEvent> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
-        Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<bool> BatchDeleteAsync(Guid[] idList, CancellationToken ct);
         Task<Dictionary<Guid, int[]>> GetMovesAndInjects(Guid mselId, CancellationToken ct);
@@ -86,7 +86,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<ViewModels.ScenarioEvent>(item);
         }
 
-        public async Task<ViewModels.ScenarioEvent> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
@@ -103,6 +103,12 @@ namespace Blueprint.Api.Services
             scenarioEvent.ModifiedBy = null;
             var scenarioEventEntity = _mapper.Map<ScenarioEventEntity>(scenarioEvent);
             _context.ScenarioEvents.Add(scenarioEventEntity);
+            var scenarioEventEnitities = new List<ScenarioEventEntity>
+            {
+                scenarioEventEntity
+            };
+            // handle any reordering that may be necessary
+            scenarioEventEnitities.AddRange(await ReorderScenarioEvents(scenarioEventEntity, true, ct));
             await _context.SaveChangesAsync(ct);
             // create the associated data values
             var dataFieldIdList = _context.DataFields
@@ -132,10 +138,10 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return  _mapper.Map<ViewModels.ScenarioEvent>(scenarioEventEntity);
+            return  _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
 
-        public async Task<ViewModels.ScenarioEvent> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
             var canUpdateScenarioEvent = (await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded ||
                 (await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context));
@@ -152,7 +158,9 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
-            // determine if row indexes need updated for the other scenario events on this MSEL
+            // determine if groupOrder needs to be updated for any other scenario events on this MSEL
+            var updateOrdering = scenarioEventToUpdate.DeltaSeconds != scenarioEvent.DeltaSeconds || 
+                scenarioEventToUpdate.GroupOrder != scenarioEvent.GroupOrder;
             // update this scenario event
             scenarioEvent.CreatedBy = scenarioEventToUpdate.CreatedBy;
             scenarioEvent.DateCreated = scenarioEventToUpdate.DateCreated;
@@ -160,6 +168,14 @@ namespace Blueprint.Api.Services
             scenarioEvent.DateModified = DateTime.UtcNow;
             _mapper.Map(scenarioEvent, scenarioEventToUpdate);
             _context.ScenarioEvents.Update(scenarioEventToUpdate);
+            var scenarioEventEnitities = new List<ScenarioEventEntity>
+            {
+                scenarioEventToUpdate
+            };
+            if (updateOrdering) 
+            {
+                scenarioEventEnitities.AddRange(await ReorderScenarioEvents(scenarioEventToUpdate, false, ct));
+            }
             await _context.SaveChangesAsync(ct);
             // get the DataField IDs for this MSEL
             var dataFieldIdList = await _context.DataFields
@@ -212,7 +228,7 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return _mapper.Map<ViewModels.ScenarioEvent>(scenarioEventToUpdate);
+            return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
@@ -339,6 +355,34 @@ namespace Blueprint.Api.Services
             }
 
             return movesAndInjects;
+        }
+
+        private async Task<List<ScenarioEventEntity>> ReorderScenarioEvents(ScenarioEventEntity scenarioEventEntity, Boolean isNewEvent, CancellationToken ct)
+        {
+            var scenarioEvents = await _context.ScenarioEvents
+                .Where(se => se.MselId == scenarioEventEntity.MselId &&
+                    se.DeltaSeconds == scenarioEventEntity.DeltaSeconds &&
+                    se.GroupOrder >= scenarioEventEntity.GroupOrder &&
+                    se.Id != scenarioEventEntity.Id)
+                    .Include(se => se.DataValues)
+                .OrderBy(se => se.GroupOrder)
+                .ToListAsync(ct);
+            // for newly created events with a zero GroupOrder created after/simultaneously with all of the others, assume it should be appended to the end
+            var reorder = scenarioEvents.Any(se => se.GroupOrder == scenarioEventEntity.GroupOrder) && 
+                (!isNewEvent || !(0 == scenarioEventEntity.GroupOrder && scenarioEvents.All(se => se.DateCreated >= scenarioEventEntity.DateCreated)));
+            if (reorder)
+            {
+                for (var i = scenarioEvents.Count; i > 0; i--)
+                {
+                    scenarioEvents[i-1].GroupOrder = scenarioEventEntity.GroupOrder + i;
+                }
+            }
+            else 
+            {
+                scenarioEventEntity.GroupOrder = scenarioEvents.Count;
+            }
+
+            return scenarioEvents;
         }
 
     }

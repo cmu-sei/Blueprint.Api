@@ -65,6 +65,7 @@ namespace Blueprint.Api.Services
             var scenarioEvents = await _context.ScenarioEvents
                 .Where(i => i.MselId == mselId)
                 .OrderBy(se => se.DeltaSeconds)
+                .ThenBy(se => se.GroupOrder)
                 .ToListAsync(ct);
             return _mapper.Map<IEnumerable<ScenarioEvent>>(scenarioEvents);
         }

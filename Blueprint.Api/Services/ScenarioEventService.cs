@@ -369,7 +369,7 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             // for newly created events with a zero GroupOrder created after/simultaneously with all of the others, assume it should be appended to the end
             var reorder = scenarioEvents.Any(se => se.GroupOrder == scenarioEventEntity.GroupOrder) && 
-                (!isNewEvent || !(0 == scenarioEventEntity.GroupOrder && scenarioEvents.All(se => se.DateCreated >= scenarioEventEntity.DateCreated)));
+                (!isNewEvent || !(0 == scenarioEventEntity.GroupOrder && scenarioEvents.All(se => se.DateCreated <= scenarioEventEntity.DateCreated)));
             if (reorder)
             {
                 for (var i = scenarioEvents.Count; i > 0; i--)
@@ -379,13 +379,11 @@ namespace Blueprint.Api.Services
             }
             else 
             {
-                scenarioEventEntity.GroupOrder = scenarioEvents.Count;
+                scenarioEventEntity.GroupOrder = 0 == scenarioEvents.Count ? 0 : scenarioEvents.Last().GroupOrder + 1;
             }
 
-            return scenarioEvents;
+            return reorder ? scenarioEvents : new List<ScenarioEventEntity>();
         }
-
     }
-
  }
 

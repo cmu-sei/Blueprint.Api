@@ -80,7 +80,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="scenarioEvent">The data to create the ScenarioEvent with</param>
         /// <param name="ct"></param>
         [HttpPost("scenarioEvents")]
-        [ProducesResponseType(typeof(ViewModels.ScenarioEvent), (int)HttpStatusCode.Created)]
+        [ProducesResponseType(typeof(IEnumerable<ViewModels.ScenarioEvent>), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createScenarioEvent")]
         public async Task<IActionResult> Create([FromBody] ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
@@ -101,7 +101,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="scenarioEvent">The updated ScenarioEvent values</param>
         /// <param name="ct"></param>
         [HttpPut("scenarioEvents/{id}")]
-        [ProducesResponseType(typeof(ViewModels.ScenarioEvent), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(IEnumerable<ViewModels.ScenarioEvent>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateScenarioEvent")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {

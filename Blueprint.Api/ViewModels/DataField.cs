@@ -13,6 +13,7 @@ namespace Blueprint.Api.ViewModels
         public Guid? MselId { get; set; }
         public Guid? InjectTypeId { get; set; }
         public string Name { get; set; }
+        public string Description { get; set; }
         public DataFieldType DataType { get; set; }
         public int DisplayOrder { get; set; }
         public bool OnScenarioEventList { get; set; }
@@ -28,4 +29,3 @@ namespace Blueprint.Api.ViewModels
     }
 
 }
-

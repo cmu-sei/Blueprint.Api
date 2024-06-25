@@ -21,6 +21,7 @@ namespace Blueprint.Api.Data.Models
         public Guid? InjectTypeId { get; set; }
         public virtual InjectTypeEntity InjectType { get; set; }
         public string Name { get; set; }
+        public string Description { get; set; }
         public DataFieldType DataType { get; set; }
         public int DisplayOrder { get; set; }
         public bool OnScenarioEventList { get; set; }
@@ -40,7 +41,7 @@ namespace Blueprint.Api.Data.Models
         public void Configure(EntityTypeBuilder<DataFieldEntity> builder)
         {
             builder.HasCheckConstraint("data_field_msel_or_inject_type",
-                "(msel_id IS NOT NULL AND inject_type_id IS NULL) OR (msel_id IS NULL AND inject_type_id IS NOT NULL)");
+                "msel_id IS NULL OR inject_type_id IS NULL");
             builder
                 .HasOne(d => d.Msel)
                 .WithMany(d => d.DataFields)

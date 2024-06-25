@@ -63,7 +63,7 @@
         ],
         "summary": "Gets Cards by msel",
         "description": "Returns a list of Cards for the msel.",
-        "operationId": "getByMsel",
+        "operationId": "getCardsByMsel",
         "parameters": [
           {
             "name": "mselId",
@@ -1235,7 +1235,7 @@
           "Catalog"
         ],
         "summary": "Upload a json Catalog file",
-        "operationId": "uploadJsonFiles",
+        "operationId": "uploadJsonCatalog",
         "requestBody": {
           "content": {
             "multipart/form-data": {
@@ -1317,7 +1317,7 @@
           "Catalog"
         ],
         "summary": "Download a catalog by id as json file",
-        "operationId": "downloadJson",
+        "operationId": "downloadJsonCatalog",
         "parameters": [
           {
             "name": "id",
@@ -2058,7 +2058,7 @@
         ],
         "summary": "Gets CiteActions by msel",
         "description": "Returns a list of CiteActions for the msel.",
-        "operationId": "getByMsel",
+        "operationId": "getActionsByMsel",
         "parameters": [
           {
             "name": "mselId",
@@ -2395,7 +2395,7 @@
         ],
         "summary": "Gets CiteRoles by msel",
         "description": "Returns a list of CiteRoles for the msel.",
-        "operationId": "getByMsel",
+        "operationId": "getRolesByMsel",
         "parameters": [
           {
             "name": "mselId",
@@ -2732,7 +2732,7 @@
         ],
         "summary": "Gets DataFields by msel",
         "description": "Returns a list of DataFields for the msel.",
-        "operationId": "getByMsel",
+        "operationId": "getDataFieldsByMsel",
         "parameters": [
           {
             "name": "mselId",
@@ -3038,7 +3038,7 @@
         ],
         "summary": "Gets DataOptions by msel",
         "description": "Returns a list of DataOptions for the msel.",
-        "operationId": "getByMsel",
+        "operationId": "getDataOptionsByMsel",
         "parameters": [
           {
             "name": "mselId",
@@ -3387,7 +3387,7 @@
         ],
         "summary": "Gets DataValues by msel",
         "description": "Returns a list of DataValues for the msel.",
-        "operationId": "getByMsel",
+        "operationId": "getDataValuesByMsel",
         "parameters": [
           {
             "name": "mselId",
@@ -3820,7 +3820,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Inject"
+                    "$ref": "#/components/schemas/Injectm"
                   }
                 }
               },
@@ -3828,7 +3828,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Inject"
+                    "$ref": "#/components/schemas/Injectm"
                   }
                 }
               },
@@ -3836,7 +3836,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Inject"
+                    "$ref": "#/components/schemas/Injectm"
                   }
                 }
               }
@@ -3881,17 +3881,17 @@
             "content": {
               "text/plain": {
                 "schema": {
-                  "$ref": "#/components/schemas/Inject"
+                  "$ref": "#/components/schemas/Injectm"
                 }
               },
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Inject"
+                  "$ref": "#/components/schemas/Injectm"
                 }
               },
               "text/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Inject"
+                  "$ref": "#/components/schemas/Injectm"
                 }
               }
             }
@@ -3932,17 +3932,17 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Inject"
+                "$ref": "#/components/schemas/Injectm"
               }
             },
             "text/json": {
               "schema": {
-                "$ref": "#/components/schemas/Inject"
+                "$ref": "#/components/schemas/Injectm"
               }
             },
             "application/*+json": {
               "schema": {
-                "$ref": "#/components/schemas/Inject"
+                "$ref": "#/components/schemas/Injectm"
               }
             }
           }
@@ -3953,17 +3953,17 @@
             "content": {
               "text/plain": {
                 "schema": {
-                  "$ref": "#/components/schemas/Inject"
+                  "$ref": "#/components/schemas/Injectm"
                 }
               },
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Inject"
+                  "$ref": "#/components/schemas/Injectm"
                 }
               },
               "text/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Inject"
+                  "$ref": "#/components/schemas/Injectm"
                 }
               }
             }
@@ -4037,17 +4037,17 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Inject"
+                "$ref": "#/components/schemas/Injectm"
               }
             },
             "text/json": {
               "schema": {
-                "$ref": "#/components/schemas/Inject"
+                "$ref": "#/components/schemas/Injectm"
               }
             },
             "application/*+json": {
               "schema": {
-                "$ref": "#/components/schemas/Inject"
+                "$ref": "#/components/schemas/Injectm"
               }
             }
           }
@@ -4058,17 +4058,17 @@
             "content": {
               "text/plain": {
                 "schema": {
-                  "$ref": "#/components/schemas/Inject"
+                  "$ref": "#/components/schemas/Injectm"
                 }
               },
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Inject"
+                  "$ref": "#/components/schemas/Injectm"
                 }
               },
               "text/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Inject"
+                  "$ref": "#/components/schemas/Injectm"
                 }
               }
             }
@@ -4651,7 +4651,7 @@
         ],
         "summary": "Gets Moves by msel",
         "description": "Returns a list of Moves for the msel.",
-        "operationId": "getByMsel",
+        "operationId": "getMovesByMsel",
         "parameters": [
           {
             "name": "mselId",
@@ -5921,57 +5921,42 @@
           "Msel"
         ],
         "summary": "Upload a json MSEL file",
-        "operationId": "uploadJsonFiles",
+        "operationId": "uploadJsonMsel",
         "requestBody": {
           "content": {
             "multipart/form-data": {
               "schema": {
                 "type": "object",
                 "properties": {
-                  "ContentType": {
-                    "type": "string"
+                  "MselId": {
+                    "type": "string",
+                    "format": "uuid"
                   },
-                  "ContentDisposition": {
-                    "type": "string"
+                  "MselTemplateId": {
+                    "type": "string",
+                    "format": "uuid"
                   },
-                  "Headers": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
+                  "TeamId": {
+                    "type": "string",
+                    "format": "uuid"
                   },
-                  "Length": {
-                    "type": "integer",
-                    "format": "int64"
-                  },
-                  "Name": {
-                    "type": "string"
-                  },
-                  "FileName": {
-                    "type": "string"
+                  "ToUpload": {
+                    "type": "string",
+                    "format": "binary"
                   }
                 }
               },
               "encoding": {
-                "ContentType": {
+                "MselId": {
                   "style": "form"
                 },
-                "ContentDisposition": {
+                "MselTemplateId": {
                   "style": "form"
                 },
-                "Headers": {
+                "TeamId": {
                   "style": "form"
                 },
-                "Length": {
-                  "style": "form"
-                },
-                "Name": {
-                  "style": "form"
-                },
-                "FileName": {
+                "ToUpload": {
                   "style": "form"
                 }
               }
@@ -5980,7 +5965,24 @@
         },
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Msel"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Msel"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Msel"
+                }
+              }
+            }
           },
           "default": {
             "description": "Problem response",
@@ -6001,7 +6003,7 @@
           "Msel"
         ],
         "summary": "Download a msel by id as json file",
-        "operationId": "downloadJson",
+        "operationId": "downloadJsonMsel",
         "parameters": [
           {
             "name": "id",
@@ -7012,7 +7014,7 @@
         ],
         "summary": "Gets Organizations by msel",
         "description": "Returns a list of Organizations for the msel.",
-        "operationId": "getByMsel",
+        "operationId": "getOrganizationsByMsel",
         "parameters": [
           {
             "name": "mselId",
@@ -7734,7 +7736,7 @@
         ],
         "summary": "Gets PlayerApplications by msel",
         "description": "Returns a list of PlayerApplications for the msel.",
-        "operationId": "getByMsel",
+        "operationId": "getApplicationsByMsel",
         "parameters": [
           {
             "name": "mselId",
@@ -10090,7 +10092,7 @@
         ],
         "summary": "Gets all UnitUsers in the system",
         "description": "Returns a list of all of the UnitUsers in the system.\r\n<para />\r\nOnly accessible to a SuperUser",
-        "operationId": "getUnitUsers",
+        "operationId": "getAllUnitUsers",
         "responses": {
           "200": {
             "description": "Success",
@@ -11726,7 +11728,7 @@
           "injects": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Inject"
+              "$ref": "#/components/schemas/Injectm"
             },
             "nullable": true
           },
@@ -11756,7 +11758,7 @@
             "format": "uuid"
           },
           "inject": {
-            "$ref": "#/components/schemas/Inject"
+            "$ref": "#/components/schemas/Injectm"
           }
         },
         "additionalProperties": false
@@ -13231,53 +13233,6 @@
         },
         "additionalProperties": false
       },
-      "Inject": {
-        "type": "object",
-        "properties": {
-          "dateCreated": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "dateModified": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "createdBy": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "modifiedBy": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "injectTypeId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "requiresInjectId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "requiresInject": {
-            "$ref": "#/components/schemas/Inject"
-          },
-          "dataValues": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DataValue"
-            },
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
       "InjectType": {
         "type": "object",
         "properties": {
@@ -13315,6 +13270,53 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DataField"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "Injectm": {
+        "type": "object",
+        "properties": {
+          "dateCreated": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dateModified": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "modifiedBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "injectTypeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requiresInjectId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "requiresInject": {
+            "$ref": "#/components/schemas/Injectm"
+          },
+          "dataValues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DataValue"
             },
             "nullable": true
           }

@@ -17,6 +17,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.JsonConverters;
 
 namespace Blueprint.Api.Services
 {
@@ -56,6 +57,7 @@ namespace Blueprint.Api.Services
 
             var dataFieldEntities = await _context.DataFields
                 .Where(dataField => dataField.IsTemplate)
+                .Include(dataField => dataField.DataOptions)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<DataField>>(dataFieldEntities).ToList();;
@@ -83,7 +85,9 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.DataField> GetAsync(Guid id, CancellationToken ct)
         {
-            var item = await _context.DataFields.SingleAsync(dataField => dataField.Id == id, ct);
+            var item = await _context.DataFields
+                .Include(dataField => dataField.DataOptions)
+                .SingleAsync(dataField => dataField.Id == id, ct);
 
             if (item == null)
                 throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
@@ -97,29 +101,49 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, CancellationToken ct)
         {
+            var userId = _user.GetId();
+            var dateNow = DateTime.UtcNow;
             // must be a content developer or MSEL owner
             // Content developers and MSEL owners can update anything, others require condition checks
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context))
+                !await MselOwnerRequirement.IsMet(userId, dataField.MselId, _context))
                 throw new ForbiddenException();
 
-            // start a transaction, because we may also update other data fields
+            // start a transaction
             await _context.Database.BeginTransactionAsync();
             dataField.Id = dataField.Id != Guid.Empty ? dataField.Id : Guid.NewGuid();
-            dataField.DateCreated = DateTime.UtcNow;
-            dataField.CreatedBy = _user.GetId();
+            dataField.DateCreated = dateNow;
+            dataField.CreatedBy = userId;
             dataField.DateModified = null;
             dataField.ModifiedBy = null;
             var dataFieldEntity = _mapper.Map<DataFieldEntity>(dataField);
             _context.DataFields.Add(dataFieldEntity);
+            // update DataOptions
+            foreach (var dataOption in dataField.DataOptions)
+            {
+                dataOption.DataFieldId = dataField.Id;
+                dataOption.Id = Guid.NewGuid();
+                dataOption.DateCreated = dateNow;
+                dataOption.CreatedBy = userId;
+                var newDataOption = _mapper.Map<DataOptionEntity>(dataOption);
+                _context.DataOptions.Add(newDataOption);
+            }
             await _context.SaveChangesAsync(ct);
-            // add data values for the new data field
-            await AddNewDataValues(dataFieldEntity, ct);
-            // reorder the data fields
-            await Reorder(dataFieldEntity, false, ct);
-            // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataField.CreatedBy, dataField.DateCreated, _context, ct);
-            // commit the transaction
+            // If on a MSEL
+            if (dataFieldEntity.MselId != null)
+            {
+                // add data values for the new data field
+                await AddNewDataValues(dataFieldEntity, ct);
+                // reorder the data fields
+                await Reorder(dataFieldEntity, false, ct);
+                // update the MSEL modified info
+                await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataField.CreatedBy, dataField.DateCreated, _context, ct);
+                // commit the transaction
+            }
+            else if (dataFieldEntity.InjectTypeId != null)
+            {
+
+            }
             await _context.Database.CommitTransactionAsync(ct);
 
             return _mapper.Map<DataField>(dataFieldEntity);
@@ -127,28 +151,68 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct)
         {
+            var exists = await _context.DataFields
+                .AnyAsync(v => v.Id == id, ct);
+            if (!exists)
+                throw new EntityNotFoundException<DataField>();
+
+            var userId = _user.GetId();
+            var dateNow = DateTime.UtcNow;
             // must be a content developer or MSEL owner
             // Content developers and MSEL owners can update anything, others require condition checks
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
+                !(await MselOwnerRequirement.IsMet(userId, dataField.MselId, _context)))
                 throw new ForbiddenException();
 
-            var dataFieldToUpdate = await _context.DataFields.SingleOrDefaultAsync(v => v.Id == id, ct);
-            if (dataFieldToUpdate == null)
-                throw new EntityNotFoundException<DataField>();
-
+            // start a transaction
+            await _context.Database.BeginTransactionAsync();
+            var existingDataOptions = await _context.DataOptions
+                .Where(dataField => dataField.DataFieldId == id)
+                .ToListAsync();
+            // update DataOptions
+            foreach (var dataOption in existingDataOptions)
+            {
+                if(!dataField.DataOptions.Any(d => d.Id == dataOption.Id))
+                {
+                    _context.DataOptions.Remove(dataOption);
+                }
+            }
+            foreach (var dataOption in dataField.DataOptions)
+            {
+                dataOption.DataFieldId = id;
+                var existingDataOption = existingDataOptions
+                    .Where(d => d.Id == dataOption.Id)
+                    .SingleOrDefault();
+                if (existingDataOption != null)
+                {
+                    dataOption.DateModified = dateNow;
+                    dataOption.ModifiedBy = userId;
+                    _context.Entry(existingDataOption).CurrentValues.SetValues(dataOption);
+                }
+                else
+                {
+                    dataOption.Id = Guid.NewGuid();
+                    dataOption.DateCreated = dateNow;
+                    dataOption.CreatedBy = userId;
+                    var newDataOption = _mapper.Map<DataOptionEntity>(dataOption);
+                    _context.DataOptions.Add(newDataOption);
+                }
+            }
+            await _context.SaveChangesAsync(ct);
+            // get the existing dataField
+            var dataFieldToUpdate = await _context.DataFields
+                .Include(df => df.DataOptions)
+                .SingleOrDefaultAsync(v => v.Id == id, ct);
             // get the initial and final display order for this data field
             var first = Math.Min(dataField.DisplayOrder, dataFieldToUpdate.DisplayOrder);
             var last = Math.Max(dataField.DisplayOrder, dataFieldToUpdate.DisplayOrder);
-            // start a transaction, because we may also update other data fields
-            await _context.Database.BeginTransactionAsync();
             var updateDisplayOrder = dataFieldToUpdate.DisplayOrder != dataField.DisplayOrder;
             var newIndexIsGreater = dataField.DisplayOrder > dataFieldToUpdate.DisplayOrder;
             // update values
             dataField.CreatedBy = dataFieldToUpdate.CreatedBy;
             dataField.DateCreated = dataFieldToUpdate.DateCreated;
-            dataField.ModifiedBy = _user.GetId();
-            dataField.DateModified = DateTime.UtcNow;
+            dataField.ModifiedBy = userId;
+            dataField.DateModified = dateNow;
             _mapper.Map(dataField, dataFieldToUpdate);
             _context.DataFields.Update(dataFieldToUpdate);
             await _context.SaveChangesAsync(ct);
@@ -248,4 +312,3 @@ namespace Blueprint.Api.Services
 
     }
 }
-

@@ -213,7 +213,8 @@ namespace Blueprint.Api.Services
             dataField.DateCreated = dataFieldToUpdate.DateCreated;
             dataField.ModifiedBy = userId;
             dataField.DateModified = dateNow;
-            _context.Entry(dataFieldToUpdate).CurrentValues.SetValues(dataFieldToUpdate);
+            _mapper.Map(dataField, dataFieldToUpdate);
+            _context.DataFields.Update(dataFieldToUpdate);
             await _context.SaveChangesAsync(ct);
             // reorder the data fields if necessary
             if (updateDisplayOrder)

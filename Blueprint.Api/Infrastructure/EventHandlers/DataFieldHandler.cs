@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
@@ -52,6 +53,9 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(dataFieldEntity);
+            dataFieldEntity = await _db.DataFields
+                .Include(f => f.DataOptions)
+                .SingleOrDefaultAsync(f => f.Id == dataFieldEntity.Id);
             var dataField = _mapper.Map<ViewModels.DataField>(dataFieldEntity);
             var tasks = new List<Task>();
 

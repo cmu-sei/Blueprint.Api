@@ -72,7 +72,8 @@ namespace Blueprint.Api.Services
             if (dataField == null)
                 throw new EntityNotFoundException<DataField>(dataFieldId.ToString());
 
-            if (!(await MselViewRequirement.IsMet(_user.GetId(), dataField.MselId, _context)) &&
+            if (!(dataField.MselId == null) &&
+                !(await MselViewRequirement.IsMet(_user.GetId(), dataField.MselId, _context)) &&
                 !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
@@ -116,8 +117,12 @@ namespace Blueprint.Api.Services
             dataOption.DateModified = null;
             dataOption.ModifiedBy = null;
             var dataOptionEntity = _mapper.Map<DataOptionEntity>(dataOption);
-
             _context.DataOptions.Add(dataOptionEntity);
+            await _context.SaveChangesAsync(ct);
+            // update the dataField
+            var dataFieldEntity = await _context.DataFields.FindAsync(dataOption.DataFieldId);
+            dataField.ModifiedBy = dataFieldEntity.CreatedBy;
+            dataField.DateModified = dataFieldEntity.DateCreated;
             await _context.SaveChangesAsync(ct);
             dataOption = await GetAsync(dataOptionEntity.Id, ct);
 
@@ -145,8 +150,12 @@ namespace Blueprint.Api.Services
             dataOption.ModifiedBy = _user.GetId();
             dataOption.DateModified = DateTime.UtcNow;
             _mapper.Map(dataOption, dataOptionToUpdate);
-
             _context.DataOptions.Update(dataOptionToUpdate);
+            await _context.SaveChangesAsync(ct);
+            // updated the dataField
+            var dataFieldEntity = await _context.DataFields.FindAsync(dataOption.DataFieldId);
+            dataField.ModifiedBy = dataFieldEntity.ModifiedBy;
+            dataField.DateModified = dataFieldEntity.DateModified;
             await _context.SaveChangesAsync(ct);
 
             dataOption = await GetAsync(dataOptionToUpdate.Id, ct);
@@ -171,10 +180,14 @@ namespace Blueprint.Api.Services
 
             _context.DataOptions.Remove(dataOptionToDelete);
             await _context.SaveChangesAsync(ct);
+            // updated the dataField
+            var dataFieldEntity = await _context.DataFields.FindAsync(dataOptionToDelete.DataFieldId);
+            dataField.ModifiedBy = _user.GetId();
+            dataField.DateModified = DateTime.UtcNow;
+            await _context.SaveChangesAsync(ct);
 
             return true;
         }
 
     }
 }
-

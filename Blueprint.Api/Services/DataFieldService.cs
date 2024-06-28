@@ -25,6 +25,7 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.DataField>> GetTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.DataField>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct);
         Task<ViewModels.DataField> GetAsync(Guid id, CancellationToken ct);
          Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, CancellationToken ct);
          Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct);
@@ -77,6 +78,19 @@ namespace Blueprint.Api.Services
 
             var dataFieldEntities = await _context.DataFields
                 .Where(dataField => dataField.MselId == mselId)
+                .Include(df => df.DataOptions)
+                .ToListAsync(ct);
+
+            return _mapper.Map<IEnumerable<DataField>>(dataFieldEntities).ToList();;
+        }
+
+        public async Task<IEnumerable<ViewModels.DataField>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct)
+        {
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var dataFieldEntities = await _context.DataFields
+                .Where(dataField => dataField.InjectTypeId == injectTypeId)
                 .Include(df => df.DataOptions)
                 .ToListAsync(ct);
 
@@ -142,7 +156,8 @@ namespace Blueprint.Api.Services
             }
             else if (dataFieldEntity.InjectTypeId != null)
             {
-
+                // reorder the data fields
+                await Reorder(dataFieldEntity, false, ct);
             }
             await _context.Database.CommitTransactionAsync(ct);
 
@@ -261,7 +276,7 @@ namespace Blueprint.Api.Services
         private async Task Reorder(DataFieldEntity dataFieldEntity, bool newIndexIsGreater, CancellationToken ct)
         {
             var dataFields = await _context.DataFields
-                .Where(df => df.MselId == dataFieldEntity.MselId)
+                .Where(df => df.MselId == dataFieldEntity.MselId && df.InjectTypeId == dataFieldEntity.InjectTypeId)
                 .OrderBy(se => se.DisplayOrder)
                 .ToListAsync(ct);
             var isHere = dataFields.Any(df => df.Id == dataFieldEntity.Id);

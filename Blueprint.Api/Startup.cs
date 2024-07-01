@@ -176,6 +176,9 @@ namespace Blueprint.Api
 
             services.AddScoped<ICardService, CardService>();
             services.AddScoped<ICardTeamService, CardTeamService>();
+            services.AddScoped<ICatalogService, CatalogService>();
+            services.AddScoped<ICatalogInjectService, CatalogInjectService>();
+            services.AddScoped<ICatalogUnitService, CatalogUnitService>();
             services.AddScoped<ICiteService, CiteService>();
             services.AddScoped<ICiteActionService, CiteActionService>();
             services.AddScoped<ICiteRoleService, CiteRoleService>();
@@ -183,8 +186,9 @@ namespace Blueprint.Api
             services.AddScoped<IDataOptionService, DataOptionService>();
             services.AddScoped<IDataValueService, DataValueService>();
             services.AddScoped<IScenarioEventService, ScenarioEventService>();
-            services.AddScoped<IInvitationService, InvitationService>();
+            services.AddScoped<IInjectService, InjectService>();
             services.AddScoped<IInjectTypeService, InjectTypeService>();
+            services.AddScoped<IInvitationService, InvitationService>();
             services.AddScoped<IMselService, MselService>();
             services.AddScoped<IMselPageService, MselPageService>();
             services.AddScoped<IMselUnitService, MselUnitService>();

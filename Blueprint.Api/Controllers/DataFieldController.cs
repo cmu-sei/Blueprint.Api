@@ -64,6 +64,24 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets DataFields by inject type
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of DataFields for the inject type.
+        /// </remarks>
+        /// <param name="injectTypeId"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("injectTypes/{injectTypeId}/dataFields")]
+        [ProducesResponseType(typeof(IEnumerable<DataField>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getDataFieldsByInjectType")]
+        public async Task<IActionResult> GetByInjectType(Guid injectTypeId, CancellationToken ct)
+        {
+            var list = await _dataFieldService.GetByInjectTypeAsync(injectTypeId, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Gets a specific DataField by id
         /// </summary>
         /// <remarks>

@@ -189,6 +189,7 @@ namespace Blueprint.Api
             services.AddScoped<IInjectService, InjectService>();
             services.AddScoped<IInjectTypeService, InjectTypeService>();
             services.AddScoped<IInvitationService, InvitationService>();
+            services.AddScoped<IInjectTypeService, InjectTypeService>();
             services.AddScoped<IMselService, MselService>();
             services.AddScoped<IMselPageService, MselPageService>();
             services.AddScoped<IMselUnitService, MselUnitService>();

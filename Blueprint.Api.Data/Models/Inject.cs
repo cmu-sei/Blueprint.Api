@@ -13,6 +13,8 @@ namespace Blueprint.Api.Data.Models
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
+        public string Name { get; set;}
+        public string Description { get; set;}
         public Guid InjectTypeId { get; set; }
         public InjectTypeEntity InjectType { get; set; }
         public Guid? RequiresInjectId { get; set; }
@@ -22,4 +24,3 @@ namespace Blueprint.Api.Data.Models
     }
 
 }
-

@@ -24,6 +24,7 @@ namespace Blueprint.Api.Services
     public interface IInjectService
     {
         Task<IEnumerable<ViewModels.Injectm>> GetByCatalogAsync(Guid catalogId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Injectm>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct);
         Task<ViewModels.Injectm> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.Injectm> CreateAsync(Guid catalogId, ViewModels.Injectm inject, CancellationToken ct);
         Task<ViewModels.Injectm> UpdateAsync(Guid id, ViewModels.Injectm inject, CancellationToken ct);
@@ -63,6 +64,18 @@ namespace Blueprint.Api.Services
             var injects = await _context.CatalogInjects
                 .Where(i => i.CatalogId == catalogId)
                 .Select(m => m.Inject)
+                .ToListAsync(ct);
+            return _mapper.Map<IEnumerable<Injectm>>(injects);
+        }
+
+        public async Task<IEnumerable<ViewModels.Injectm>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct)
+        {
+            // user must be a Content Developer or a Catalog viewer
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var injects = await _context.Injects
+                .Where(i => i.InjectTypeId == injectTypeId)
                 .ToListAsync(ct);
             return _mapper.Map<IEnumerable<Injectm>>(injects);
         }

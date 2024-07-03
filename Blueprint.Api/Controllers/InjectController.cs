@@ -45,6 +45,24 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets Injects for an InjectType
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of Injects for the InjectType.
+        /// </remarks>
+        /// <param name="injectTypeId">The ID of the InjectType</param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("injecttypes/{injectTypeId}/injects")]
+        [ProducesResponseType(typeof(IEnumerable<ViewModels.Injectm>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getInjectsByInjectType")]
+        public async Task<IActionResult> GetByInjectType(Guid injectTypeId, CancellationToken ct)
+        {
+            var list = await _injectService.GetByCatalogAsync(injectTypeId, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Gets a specific Inject by id
         /// </summary>
         /// <remarks>

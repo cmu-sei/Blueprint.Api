@@ -63,6 +63,7 @@ namespace Blueprint.Api.Services
 
             var injects = await _context.CatalogInjects
                 .Where(i => i.CatalogId == catalogId)
+                .Include(m => m.Inject.DataValues)
                 .Select(m => m.Inject)
                 .ToListAsync(ct);
             return _mapper.Map<IEnumerable<Injectm>>(injects);
@@ -76,6 +77,7 @@ namespace Blueprint.Api.Services
 
             var injects = await _context.Injects
                 .Where(i => i.InjectTypeId == injectTypeId)
+                .Include(m => m.DataValues)
                 .ToListAsync(ct);
             return _mapper.Map<IEnumerable<Injectm>>(injects);
         }
@@ -138,8 +140,10 @@ namespace Blueprint.Api.Services
                     .FirstOrDefault(dv => dv.DataFieldId == dataField.Id);
                 if (dataValue == null)
                 {
-                    dataValue = new DataValue();
-                    dataValue.DataFieldId = dataField.Id;
+                    dataValue = new DataValue() {
+                        DataFieldId = dataField.Id,
+                        InjectId = inject.Id
+                    };
                 }
                 dataValue.Id = Guid.NewGuid();
                 dataValue.CreatedBy = inject.CreatedBy;
@@ -149,6 +153,10 @@ namespace Blueprint.Api.Services
                 var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
                 _context.DataValues.Add(dataValueEntity);
             }
+            await _context.SaveChangesAsync(ct);
+            // add the inject to the catalog
+            var catalogInject = new CatalogInjectEntity(inject.Id, catalogId);
+            _context.CatalogInjects.Add(catalogInject);
             await _context.SaveChangesAsync(ct);
             // update the Catalog modified info
             await ServiceUtilities.SetCatalogModifiedAsync(catalogId, injectEntity.CreatedBy, injectEntity.DateCreated, _context, ct);
@@ -202,7 +210,7 @@ namespace Blueprint.Api.Services
                     var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
                     _context.DataValues.Add(dataValueEntity);
                 }
-                else if (dataValue.Value != dataValueToUpdate.Value)
+                else if (dataValue != null && dataValue.Value != dataValueToUpdate.Value)
                 {
                     // update the DataValue
                     dataValueToUpdate.ModifiedBy = injectToUpdate.ModifiedBy;
@@ -215,7 +223,7 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return _mapper.Map<ViewModels.Injectm>(injectToUpdate);
+            return await GetAsync(id, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

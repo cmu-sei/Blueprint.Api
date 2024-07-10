@@ -126,14 +126,12 @@ namespace Blueprint.Api.Services
             inject.CreatedBy = _user.GetId();
             inject.DateModified = null;
             inject.ModifiedBy = null;
-            var injectEntity = _mapper.Map<InjectEntity>(inject);
-            _context.Injects.Add(injectEntity);
-            await _context.SaveChangesAsync(ct);
-            // create the associated data values
+            // complete the data values for all data fields
             var dataFieldList = await _context.InjectTypes
                 .Where(m => m.Id == inject.InjectTypeId)
                 .Select(m => m.DataFields)
                 .SingleOrDefaultAsync(ct);
+            var completeDataValues = new List<DataValue>();
             foreach (var dataField in dataFieldList)
             {
                 var dataValue = inject.DataValues
@@ -145,16 +143,18 @@ namespace Blueprint.Api.Services
                         InjectId = inject.Id
                     };
                 }
+                dataValue.InjectId = inject.Id;
                 dataValue.Id = Guid.NewGuid();
                 dataValue.CreatedBy = inject.CreatedBy;
                 dataValue.DateCreated = inject.DateCreated;
                 dataValue.DateModified = null;
                 dataValue.ModifiedBy = null;
-                var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
-                _context.DataValues.Add(dataValueEntity);
+                completeDataValues.Add(dataValue);
             }
+            inject.DataValues = completeDataValues;
+            var injectEntity = _mapper.Map<InjectEntity>(inject);
+            _context.Injects.Add(injectEntity);
             await _context.SaveChangesAsync(ct);
-            // add the inject to the catalog
             var catalogInject = new CatalogInjectEntity(inject.Id, catalogId);
             _context.CatalogInjects.Add(catalogInject);
             await _context.SaveChangesAsync(ct);
@@ -179,7 +179,6 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update DataValues and other injects
             await _context.Database.BeginTransactionAsync();
-            // determine if row indexes need updated for the other injects on this Catalog
             // update this inject
             inject.CreatedBy = injectToUpdate.CreatedBy;
             inject.DateCreated = injectToUpdate.DateCreated;

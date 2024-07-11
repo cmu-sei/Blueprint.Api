@@ -9,9 +9,10 @@ namespace Blueprint.Api.ViewModels
     public class Injectm : Base
     {
         public Guid Id { get; set; }
+        public string Name { get; set;}
+        public string Description { get; set;}
         public Guid InjectTypeId { get; set; }
         public Guid? RequiresInjectId { get; set; }
-        public virtual Injectm RequiresInject { get; set; }
         public virtual ICollection<DataValue> DataValues { get; set; } = new HashSet<DataValue>();
    }
 }

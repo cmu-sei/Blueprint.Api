@@ -24,6 +24,7 @@ namespace Blueprint.Api.Services
     public interface IInjectService
     {
         Task<IEnumerable<ViewModels.Injectm>> GetByCatalogAsync(Guid catalogId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Injectm>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct);
         Task<ViewModels.Injectm> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.Injectm> CreateAsync(Guid catalogId, ViewModels.Injectm inject, CancellationToken ct);
         Task<ViewModels.Injectm> UpdateAsync(Guid id, ViewModels.Injectm inject, CancellationToken ct);
@@ -62,7 +63,21 @@ namespace Blueprint.Api.Services
 
             var injects = await _context.CatalogInjects
                 .Where(i => i.CatalogId == catalogId)
+                .Include(m => m.Inject.DataValues)
                 .Select(m => m.Inject)
+                .ToListAsync(ct);
+            return _mapper.Map<IEnumerable<Injectm>>(injects);
+        }
+
+        public async Task<IEnumerable<ViewModels.Injectm>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct)
+        {
+            // user must be a Content Developer or a Catalog viewer
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var injects = await _context.Injects
+                .Where(i => i.InjectTypeId == injectTypeId)
+                .Include(m => m.DataValues)
                 .ToListAsync(ct);
             return _mapper.Map<IEnumerable<Injectm>>(injects);
         }
@@ -111,31 +126,37 @@ namespace Blueprint.Api.Services
             inject.CreatedBy = _user.GetId();
             inject.DateModified = null;
             inject.ModifiedBy = null;
-            var injectEntity = _mapper.Map<InjectEntity>(inject);
-            _context.Injects.Add(injectEntity);
-            await _context.SaveChangesAsync(ct);
-            // create the associated data values
+            // complete the data values for all data fields
             var dataFieldList = await _context.InjectTypes
                 .Where(m => m.Id == inject.InjectTypeId)
                 .Select(m => m.DataFields)
                 .SingleOrDefaultAsync(ct);
+            var completeDataValues = new List<DataValue>();
             foreach (var dataField in dataFieldList)
             {
                 var dataValue = inject.DataValues
                     .FirstOrDefault(dv => dv.DataFieldId == dataField.Id);
                 if (dataValue == null)
                 {
-                    dataValue = new DataValue();
-                    dataValue.DataFieldId = dataField.Id;
+                    dataValue = new DataValue() {
+                        DataFieldId = dataField.Id,
+                        InjectId = inject.Id
+                    };
                 }
+                dataValue.InjectId = inject.Id;
                 dataValue.Id = Guid.NewGuid();
                 dataValue.CreatedBy = inject.CreatedBy;
                 dataValue.DateCreated = inject.DateCreated;
                 dataValue.DateModified = null;
                 dataValue.ModifiedBy = null;
-                var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
-                _context.DataValues.Add(dataValueEntity);
+                completeDataValues.Add(dataValue);
             }
+            inject.DataValues = completeDataValues;
+            var injectEntity = _mapper.Map<InjectEntity>(inject);
+            _context.Injects.Add(injectEntity);
+            await _context.SaveChangesAsync(ct);
+            var catalogInject = new CatalogInjectEntity(inject.Id, catalogId);
+            _context.CatalogInjects.Add(catalogInject);
             await _context.SaveChangesAsync(ct);
             // update the Catalog modified info
             await ServiceUtilities.SetCatalogModifiedAsync(catalogId, injectEntity.CreatedBy, injectEntity.DateCreated, _context, ct);
@@ -158,7 +179,6 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update DataValues and other injects
             await _context.Database.BeginTransactionAsync();
-            // determine if row indexes need updated for the other injects on this Catalog
             // update this inject
             inject.CreatedBy = injectToUpdate.CreatedBy;
             inject.DateCreated = injectToUpdate.DateCreated;
@@ -189,7 +209,7 @@ namespace Blueprint.Api.Services
                     var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
                     _context.DataValues.Add(dataValueEntity);
                 }
-                else if (dataValue.Value != dataValueToUpdate.Value)
+                else if (dataValue != null && dataValue.Value != dataValueToUpdate.Value)
                 {
                     // update the DataValue
                     dataValueToUpdate.ModifiedBy = injectToUpdate.ModifiedBy;
@@ -202,7 +222,7 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return _mapper.Map<ViewModels.Injectm>(injectToUpdate);
+            return await GetAsync(id, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

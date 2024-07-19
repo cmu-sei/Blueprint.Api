@@ -84,8 +84,24 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createScenarioEvent")]
         public async Task<IActionResult> Create([FromBody] ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
-            scenarioEvent.CreatedBy = User.GetId();
             var list = await _scenarioEventService.CreateAsync(scenarioEvent, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
+        /// Creates ScenarioEvents from a list of injects
+        /// </summary>
+        /// <remarks>
+        /// Creates new ScenarioEvents from the specified injects for the specified MSEL
+        /// </remarks>
+        /// <param name="createFromInjectsForm">The data to create the ScenarioEvents</param>
+        /// <param name="ct"></param>
+        [HttpPost("scenarioEvents/fromInjects")]
+        [ProducesResponseType(typeof(IEnumerable<ViewModels.ScenarioEvent>), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "createScenarioEventsFromInjects")]
+        public async Task<IActionResult> CreateFromInjects([FromBody] CreateFromInjectsForm createFromInjectsForm, CancellationToken ct)
+        {
+            var list = await _scenarioEventService.CreateFromInjectsAsync(createFromInjectsForm, ct);
             return Ok(list);
         }
 

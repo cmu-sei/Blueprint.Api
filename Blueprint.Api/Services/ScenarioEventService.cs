@@ -12,12 +12,14 @@ using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.JsonConverters;
 
 namespace Blueprint.Api.Services
 {
@@ -26,6 +28,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> CreateFromInjectsAsync(CreateFromInjectsForm createFromInjectsForm, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<bool> BatchDeleteAsync(Guid[] idList, CancellationToken ct);
@@ -39,7 +42,7 @@ namespace Blueprint.Api.Services
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
         private readonly DatabaseOptions _options;
-        
+
 
         public ScenarioEventService(
             BlueprintContext context,
@@ -141,6 +144,128 @@ namespace Blueprint.Api.Services
             return  _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
 
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> CreateFromInjectsAsync(CreateFromInjectsForm createFromInjectsForm, CancellationToken ct)
+        {
+            var userId = _user.GetId();
+            // user must be a Content Developer or a MSEL owner
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(userId, createFromInjectsForm.MselId, _context)))
+                throw new ForbiddenException();
+
+            // get the MSEL
+            var msel = await _context.Msels
+                .Include(m => m.DataFields)
+                .SingleOrDefaultAsync(x => x.Id == createFromInjectsForm.MselId);
+            if (msel == null)
+                throw new EntityNotFoundException<MselEntity>("Msel " + createFromInjectsForm.MselId.ToString() + " was not found.");
+
+            // get the inject type
+            var injectType = await _context.InjectTypes
+                .Include(m => m.DataFields)
+                .ThenInclude(n => n.DataOptions)
+                .AsSplitQuery()
+                .SingleOrDefaultAsync(m => m.Id == createFromInjectsForm.InjectTypeId);
+            if (injectType == null)
+                throw new EntityNotFoundException<InjectTypeEntity>("Inject Type " + createFromInjectsForm.InjectTypeId.ToString() + " was not found.");
+
+            // start a transaction, because we may also update DataValues and other scenario events
+            await _context.Database.BeginTransactionAsync();
+            var dateCreated = DateTime.UtcNow;
+            // create a data field dictionary and create any missing data fields
+            var dataFieldDictionary = new Dictionary<Guid, Guid>();
+            var displayOrder = msel.DataFields.Count > 0
+                ? msel.DataFields.Max(m => m.DisplayOrder)
+                : 0;
+            foreach (var injectDataField in injectType.DataFields)
+            {
+                var showIt = injectDataField.DataType != DataFieldType.Html;
+                var mselDataFieldEntity = msel.DataFields.SingleOrDefault(m => m.Name == injectDataField.Name && m.DataType == injectDataField.DataType);
+                if (mselDataFieldEntity == null)
+                {
+                    mselDataFieldEntity = new DataFieldEntity()
+                    {
+                        Id = Guid.NewGuid(),
+                        MselId = msel.Id,
+                        Name = injectDataField.Name,
+                        DataType = injectDataField.DataType,
+                        DisplayOrder = ++displayOrder,
+                        DateCreated = dateCreated,
+                        CreatedBy = userId,
+                        IsChosenFromList = injectDataField.IsChosenFromList,
+                        OnScenarioEventList = showIt,
+                        OnExerciseView = showIt,
+                    };
+                    _context.DataFields.Add(mselDataFieldEntity);
+                    if (injectDataField.IsChosenFromList)
+                    {
+                        foreach (var injectDataOption in injectDataField.DataOptions)
+                        {
+                            var mselDataOption = new DataOptionEntity()
+                            {
+                                Id = Guid.NewGuid(),
+                                DataFieldId = mselDataFieldEntity.Id,
+                                OptionName = injectDataOption.OptionName,
+                                OptionValue = injectDataOption.OptionValue,
+                                DisplayOrder = injectDataOption.DisplayOrder,
+                            };
+                            _context.DataOptions.Add(mselDataOption);
+                        }
+                    }
+                }
+                dataFieldDictionary[injectDataField.Id] = mselDataFieldEntity.Id;
+            }
+            await _context.SaveChangesAsync(ct);
+            // create a scenario event for each inject
+            foreach (var injectId in createFromInjectsForm.InjectIdList)
+            {
+                // get the inject
+                var inject = await _context.Injects
+                    .Include(m => m.DataValues)
+                    .SingleOrDefaultAsync(x => x.Id == injectId);
+                if (inject == null)
+                    throw new EntityNotFoundException<InjectEntity>("Inject " + injectId.ToString() + " was not found.");
+                // create the new scenario event
+                var scenarioEventEntity = new ScenarioEventEntity()
+                {
+                    Id = Guid.NewGuid(),
+                    MselId = msel.Id,
+                    InjectId = injectId,
+                    DeltaSeconds = 0,
+                };
+                // create the data values
+                foreach (var injectDataValueEntity in inject.DataValues)
+                {
+                    var scenarioEventDataValueEntity = new DataValueEntity()
+                    {
+                        Id = Guid.NewGuid(),
+                        DataFieldId = dataFieldDictionary[injectDataValueEntity.DataFieldId],
+                        ScenarioEventId = scenarioEventEntity.Id,
+                        Value = injectDataValueEntity.Value,
+                        CreatedBy = userId,
+                        DateCreated = dateCreated
+                    };
+                    scenarioEventEntity.DataValues.Add(scenarioEventDataValueEntity);
+                }
+                _context.ScenarioEvents.Add(scenarioEventEntity);
+                await _context.SaveChangesAsync(ct);
+                // handle any reordering that may be necessary
+                await ReorderScenarioEvents(scenarioEventEntity, true, ct);
+                await _context.SaveChangesAsync(ct);
+            }
+            // update the MSEL modified info
+            msel.ModifiedBy = userId;
+            msel.DateModified = dateCreated;
+            await _context.SaveChangesAsync(ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
+            // return all msel scenarioEvents
+            var scenarioEventEnitities = await _context.ScenarioEvents
+                .Include(m => m.DataValues)
+                .Where(m => m.MselId == msel.Id)
+                .ToListAsync(ct);
+            return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
+        }
+
         public async Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
             var canUpdateScenarioEvent = (await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded ||
@@ -159,7 +284,7 @@ namespace Blueprint.Api.Services
             // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
             // determine if groupOrder needs to be updated for any other scenario events on this MSEL
-            var updateOrdering = scenarioEventToUpdate.DeltaSeconds != scenarioEvent.DeltaSeconds || 
+            var updateOrdering = scenarioEventToUpdate.DeltaSeconds != scenarioEvent.DeltaSeconds ||
                 scenarioEventToUpdate.GroupOrder != scenarioEvent.GroupOrder;
             // update this scenario event
             scenarioEvent.CreatedBy = scenarioEventToUpdate.CreatedBy;
@@ -172,7 +297,7 @@ namespace Blueprint.Api.Services
             {
                 scenarioEventToUpdate
             };
-            if (updateOrdering) 
+            if (updateOrdering)
             {
                 scenarioEventEnitities.AddRange(await ReorderScenarioEvents(scenarioEventToUpdate, false, ct));
             }
@@ -368,7 +493,7 @@ namespace Blueprint.Api.Services
                 .OrderBy(se => se.GroupOrder)
                 .ToListAsync(ct);
             // for newly created events with a zero GroupOrder created after/simultaneously with all of the others, assume it should be appended to the end
-            var reorder = scenarioEvents.Any(se => se.GroupOrder == scenarioEventEntity.GroupOrder) && 
+            var reorder = scenarioEvents.Any(se => se.GroupOrder == scenarioEventEntity.GroupOrder) &&
                 (!isNewEvent || !(0 == scenarioEventEntity.GroupOrder && scenarioEvents.All(se => se.DateCreated <= scenarioEventEntity.DateCreated)));
             if (reorder)
             {
@@ -377,7 +502,7 @@ namespace Blueprint.Api.Services
                     scenarioEvents[i-1].GroupOrder = scenarioEventEntity.GroupOrder + i;
                 }
             }
-            else 
+            else
             {
                 scenarioEventEntity.GroupOrder = 0 == scenarioEvents.Count ? 0 : scenarioEvents.Last().GroupOrder + 1;
             }
@@ -385,5 +510,13 @@ namespace Blueprint.Api.Services
             return reorder ? scenarioEvents : new List<ScenarioEventEntity>();
         }
     }
- }
 
+    public class CreateFromInjectsForm
+    {
+        public List<Guid> InjectIdList { get; set; }
+        public Guid InjectTypeId { get; set; }
+        public Guid MselId { get; set; }
+        public bool AddDataFields { get; set; }
+    }
+
+}

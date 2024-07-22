@@ -15,7 +15,6 @@ namespace Blueprint.Api.ViewModels
         public bool IsPublic { get; set; }
         public Guid? ParentId { get; set; }
         public Catalog Parent { get; set; }
-        public virtual ICollection<Injectm> Injects { get; set; } = new HashSet<Injectm>();
         public virtual ICollection<Unit> Units { get; set; } = new HashSet<Unit>();
         public string ListDataFields { get; set; }  // comma separated list of data field IDs to show in the list of injects
     }

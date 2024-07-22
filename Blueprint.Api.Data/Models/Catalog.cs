@@ -22,7 +22,6 @@ namespace Blueprint.Api.Data.Models
         public bool IsPublic { get; set; }
         public Guid? ParentId { get; set; }
         public CatalogEntity Parent { get; set; }
-        public virtual ICollection<InjectEntity> Injects { get; set; } = new HashSet<InjectEntity>();
         public virtual ICollection<CatalogUnitEntity> CatalogUnits { get; set; } = new HashSet<CatalogUnitEntity>();
         public virtual ICollection<CatalogInjectEntity> CatalogInjects { get; set; } = new HashSet<CatalogInjectEntity>();
         public string ListDataFields { get; set; }  // comma separated list of data field IDs to show in the list of injects

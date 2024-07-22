@@ -180,13 +180,37 @@ namespace Blueprint.Api.Services
 
         private async Task<CatalogEntity> privateCatalogCopyAsync(CatalogEntity catalogEntity, CancellationToken ct)
         {
-            // assign a new ID
+            // set new catalog entity values
+            var currentUserId = _user.GetId();
+            var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId)).Name;
             catalogEntity.Id = Guid.NewGuid();
-            // update all CatalogInjects to have a new ID and the new catalog ID
+            catalogEntity.DateCreated = DateTime.UtcNow;
+            catalogEntity.CreatedBy = currentUserId;
+            catalogEntity.DateModified = catalogEntity.DateCreated;
+            catalogEntity.ModifiedBy = catalogEntity.CreatedBy;
+            catalogEntity.Name = catalogEntity.Name + " - " + username;
+            catalogEntity.IsPublic = false;
+            // create copies of the injects, if they don't already exist
+            var injectIdCrossReference = new Dictionary<Guid, Guid>();
+            foreach (var catalogInject in catalogEntity.CatalogInjects)
+            {
+                var injectExists = await _context.injects
+                    .AnyAsync(m => m.Id == catalogInject.InjectId);
+                if (injectExists)
+                {
+                    injectIdCrossReference[catalogInject.InjectId] = catalogInject.InjectId;
+                }
+                else
+                {
+                    newId = Guid.NewGuid();
+                }
+            }
+            // update all CatalogInjects to have a new ID, new catalog ID, and correct InjectId
             foreach (var ci in catalogEntity.CatalogInjects)
             {
                 ci.Id = Guid.NewGuid();
                 ci.CatalogId = catalogEntity.Id;
+                ci.
             }
             await _context.Catalogs.AddAsync(catalogEntity);
             await _context.SaveChangesAsync();
@@ -242,6 +266,12 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var catalog = await _context.Catalogs
+                .Include(m => m.CatalogInjects)
+                .ThenInclude(n => n.Inject)
+                .Include(m => m.InjectType)
+                .ThenInclude(n => n.DataFields)
+                .ThenInclude(p => p.DataOptions)
+                .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == catalogId);
             if (catalog == null)
             {
@@ -280,11 +310,6 @@ namespace Blueprint.Api.Services
                 ReferenceHandler = ReferenceHandler.Preserve
             };
             var catalogEntity = JsonSerializer.Deserialize<CatalogEntity>(catalogJson, options);
-            // create copies of the injects, if they don't already exist
-            foreach (var inject in catalogEntity.CatalogInjects)
-            {
-                // TODO: create new injects and replace InjectId on CatalogInject
-            }
             // make a copy of the catalog and add it to the database
             catalogEntity = await privateCatalogCopyAsync(catalogEntity, ct);
 

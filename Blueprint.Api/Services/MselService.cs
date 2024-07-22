@@ -290,7 +290,7 @@ namespace Blueprint.Api.Services
         private async Task<MselEntity> privateMselCopyAsync(MselEntity mselEntity, Guid? currentUserTeamId, CancellationToken ct)
         {
             var currentUserId = _user.GetId();
-            var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == _user.GetId())).Name;
+            var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId)).Name;
             mselEntity.Id = Guid.NewGuid();
             mselEntity.DateCreated = DateTime.UtcNow;
             mselEntity.CreatedBy = currentUserId;

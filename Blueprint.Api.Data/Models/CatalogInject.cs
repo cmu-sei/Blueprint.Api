@@ -13,7 +13,7 @@ namespace Blueprint.Api.Data.Models
     {
         public CatalogInjectEntity() { }
 
-        public CatalogInjectEntity(Guid injectId, Guid catalogId)
+        public CatalogInjectEntity(Guid catalogId, Guid injectId)
         {
             InjectId = injectId;
             CatalogId = catalogId;
@@ -28,6 +28,8 @@ namespace Blueprint.Api.Data.Models
 
         public Guid CatalogId { get; set; }
         public CatalogEntity Catalog { get; set; }
+        public bool IsNew { get; set; }
+        public int DisplayOrder { get; set; }
     }
 
     public class CatalogInjectConfiguration : IEntityTypeConfiguration<CatalogInjectEntity>
@@ -49,4 +51,3 @@ namespace Blueprint.Api.Data.Models
         }
     }
 }
-

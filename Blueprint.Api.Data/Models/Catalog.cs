@@ -25,6 +25,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<InjectEntity> Injects { get; set; } = new HashSet<InjectEntity>();
         public virtual ICollection<CatalogUnitEntity> CatalogUnits { get; set; } = new HashSet<CatalogUnitEntity>();
         public virtual ICollection<CatalogInjectEntity> CatalogInjects { get; set; } = new HashSet<CatalogInjectEntity>();
+        public string ListDataFields { get; set; }  // comma separated list of data field IDs to show in the list of injects
     }
 
     public class CatalogConfiguration : IEntityTypeConfiguration<CatalogEntity>
@@ -36,4 +37,3 @@ namespace Blueprint.Api.Data.Models
     }
 
 }
-

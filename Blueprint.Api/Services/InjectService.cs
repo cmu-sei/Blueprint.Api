@@ -155,7 +155,7 @@ namespace Blueprint.Api.Services
             var injectEntity = _mapper.Map<InjectEntity>(inject);
             _context.Injects.Add(injectEntity);
             await _context.SaveChangesAsync(ct);
-            var catalogInject = new CatalogInjectEntity(inject.Id, catalogId);
+            var catalogInject = new CatalogInjectEntity(catalogId, inject.Id);
             _context.CatalogInjects.Add(catalogInject);
             await _context.SaveChangesAsync(ct);
             // update the Catalog modified info

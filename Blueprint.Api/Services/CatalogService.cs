@@ -190,11 +190,11 @@ namespace Blueprint.Api.Services
             catalogEntity.ModifiedBy = catalogEntity.CreatedBy;
             catalogEntity.Name = catalogEntity.Name + " - " + username;
             catalogEntity.IsPublic = false;
-            // create copies of the injects, if they don't already exist
+            // update all CatalogInjects to have a new ID, new catalog ID, and correct InjectId
             var injectIdCrossReference = new Dictionary<Guid, Guid>();
             foreach (var catalogInject in catalogEntity.CatalogInjects)
             {
-                var injectExists = await _context.injects
+                var injectExists = await _context.Injects
                     .AnyAsync(m => m.Id == catalogInject.InjectId);
                 if (injectExists)
                 {
@@ -202,15 +202,12 @@ namespace Blueprint.Api.Services
                 }
                 else
                 {
-                    newId = Guid.NewGuid();
+                    injectIdCrossReference[catalogInject.InjectId] = Guid.NewGuid();
+
                 }
-            }
-            // update all CatalogInjects to have a new ID, new catalog ID, and correct InjectId
-            foreach (var ci in catalogEntity.CatalogInjects)
-            {
-                ci.Id = Guid.NewGuid();
-                ci.CatalogId = catalogEntity.Id;
-                ci.
+                catalogInject.Id = Guid.NewGuid();
+                catalogInject.CatalogId = catalogEntity.Id;
+                catalogInject.InjectId = injectIdCrossReference[catalogInject.InjectId];
             }
             await _context.Catalogs.AddAsync(catalogEntity);
             await _context.SaveChangesAsync();

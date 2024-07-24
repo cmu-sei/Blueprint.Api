@@ -182,7 +182,7 @@ namespace Blueprint.Api.Services
         {
             // set new catalog entity values
             var currentUserId = _user.GetId();
-            var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId)).Name;
+            var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId, ct)).Name;
             catalogEntity.Id = Guid.NewGuid();
             catalogEntity.DateCreated = DateTime.UtcNow;
             catalogEntity.CreatedBy = currentUserId;
@@ -195,10 +195,11 @@ namespace Blueprint.Api.Services
             foreach (var catalogInject in catalogEntity.CatalogInjects)
             {
                 var injectExists = await _context.Injects
-                    .AnyAsync(m => m.Id == catalogInject.InjectId);
+                    .AnyAsync(m => m.Id == catalogInject.InjectId, ct);
                 if (injectExists)
                 {
                     injectIdCrossReference[catalogInject.InjectId] = catalogInject.InjectId;
+                    catalogInject.Inject = null;
                 }
                 else
                 {
@@ -208,6 +209,32 @@ namespace Blueprint.Api.Services
                 catalogInject.Id = Guid.NewGuid();
                 catalogInject.CatalogId = catalogEntity.Id;
                 catalogInject.InjectId = injectIdCrossReference[catalogInject.InjectId];
+            }
+            // update the inject type and data fields, if necessary
+            var dataFieldIdCrossReference = new Dictionary<Guid, Guid>();
+            var injectTypeExists = await _context.InjectTypes
+                .AnyAsync(m => m.Id == catalogEntity.InjectTypeId, ct);
+            if (injectTypeExists)
+            {
+                catalogEntity.InjectType = null;
+            }
+            else
+            {
+                var newId = Guid.NewGuid();
+                catalogEntity.InjectTypeId = newId;
+                catalogEntity.InjectType.Id = newId;
+                foreach (var df in catalogEntity.InjectType.DataFields)
+                {
+                    df.Id = Guid.NewGuid();
+                    df.InjectTypeId = newId;
+                    df.InjectType = null;
+                    foreach (var dataOption in df.DataOptions)
+                    {
+                        dataOption.Id = Guid.NewGuid();
+                        dataOption.DataFieldId = df.Id;
+                    }
+                }
+
             }
             await _context.Catalogs.AddAsync(catalogEntity);
             await _context.SaveChangesAsync();

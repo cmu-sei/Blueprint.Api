@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,6 +24,24 @@ namespace Blueprint.Api.Controllers
         {
             _catalogInjectService = catalogInjectService;
             _authorizationService = authorizationService;
+        }
+
+        /// <summary>
+        /// Gets all CatalogInjects for a Catalog
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of all of the CatalogInjects for the catalog.
+        /// </remarks>
+        /// <param name="catalogId">The id of the Catalog</param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("catalogs/{catalogId}/cataloginjects")]
+        [ProducesResponseType(typeof(IEnumerable<CatalogInject>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getCatalogInjects")]
+        public async Task<IActionResult> GetByCatalog(Guid catalogId, CancellationToken ct)
+        {
+            var list = await _catalogInjectService.GetByCatalogAsync(catalogId, ct);
+            return Ok(list);
         }
 
         /// <summary>

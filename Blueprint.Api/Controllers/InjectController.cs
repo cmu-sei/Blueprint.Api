@@ -58,7 +58,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getInjectsByInjectType")]
         public async Task<IActionResult> GetByInjectType(Guid injectTypeId, CancellationToken ct)
         {
-            var list = await _injectService.GetByCatalogAsync(injectTypeId, ct);
+            var list = await _injectService.GetByInjectTypeAsync(injectTypeId, ct);
             return Ok(list);
         }
 

@@ -13,7 +13,6 @@ using Blueprint.Api.Data;
 using Blueprint.Api.Services;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Options;
-using Microsoft.CodeAnalysis.VisualBasic.Syntax;
 
 namespace Blueprint.Api.Hubs
 {
@@ -49,6 +48,7 @@ namespace Blueprint.Api.Hubs
         {
             var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
             var idList = await GetMselIdList(userId);
+            idList.AddRange(await GetUnitIdList(userId));
             idList.Add(userId);
             foreach (var id in idList)
             {
@@ -118,15 +118,15 @@ namespace Blueprint.Api.Hubs
             }
             else
             {
-                var teamIdList = await _context.TeamUsers
+                var unitIdList = await _context.UnitUsers
                     .Where(tu => tu.UserId == userGuid)
-                    .Select(tu => tu.TeamId)
+                    .Select(tu => tu.UnitId)
                     .ToListAsync();
-                // get my teams' msels
-                var teamMselIds = _context.Teams
-                    .Where(t => teamIdList.Contains(t.Id) && t.Msel.Status != Data.Enumerations.MselItemStatus.Archived)
+                // get my unit's msels
+                var unitMselIds = _context.MselUnits
+                    .Where(t => unitIdList.Contains(t.Id) && t.Msel.Status != Data.Enumerations.MselItemStatus.Archived)
                     .Select(t => t.Msel.Id.ToString());
-                var teamMselIdList = await teamMselIds
+                var unitMselIdList = await unitMselIds
                     .Where(id => id != null)
                     .ToListAsync();
                 // get msels I created and all templates
@@ -135,11 +135,22 @@ namespace Blueprint.Api.Hubs
                     .Select(m => m.Id.ToString())
                     .ToListAsync();
                 // combine lists
-                var mselIdList = teamMselIdList.Union(myMselIdList);
+                var mselIdList = unitMselIdList.Union(myMselIdList);
                 idList.AddRange(mselIdList);
             }
 
             return idList;
+        }
+
+        private async Task<List<string>> GetUnitIdList(string userId)
+        {
+            var userGuid = Guid.Parse(userId);
+            var unitIdList = await _context.UnitUsers
+                .Where(tu => tu.UserId == userGuid)
+                .Select(tu => tu.UnitId.ToString())
+                .ToListAsync();
+
+            return unitIdList;
         }
 
         private async Task<List<string>> GetAdminIdList()
@@ -166,6 +177,9 @@ namespace Blueprint.Api.Hubs
         public const string CardTeamCreated = "CardTeamCreated";
         public const string CardTeamUpdated = "CardTeamUpdated";
         public const string CardTeamDeleted = "CardTeamDeleted";
+        public const string CatalogCreated = "CatalogCreated";
+        public const string CatalogUpdated = "CatalogUpdated";
+        public const string CatalogDeleted = "CatalogDeleted";
         public const string CiteActionCreated = "CiteActionCreated";
         public const string CiteActionUpdated = "CiteActionUpdated";
         public const string CiteActionDeleted = "CiteActionDeleted";
@@ -178,6 +192,12 @@ namespace Blueprint.Api.Hubs
         public const string DataValueCreated = "DataValueCreated";
         public const string DataValueUpdated = "DataValueUpdated";
         public const string DataValueDeleted = "DataValueDeleted";
+        public const string InjectCreated = "InjectCreated";
+        public const string InjectUpdated = "InjectUpdated";
+        public const string InjectDeleted = "InjectDeleted";
+        public const string InjectTypeCreated = "InjectTypeCreated";
+        public const string InjectTypeUpdated = "InjectTypeUpdated";
+        public const string InjectTypeDeleted = "InjectTypeDeleted";
         public const string MselCreated = "MselCreated";
         public const string MselUpdated = "MselUpdated";
         public const string MselDeleted = "MselDeleted";

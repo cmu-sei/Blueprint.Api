@@ -26,6 +26,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.CatalogInject>> GetByCatalogAsync(Guid catalogId, CancellationToken ct);
         Task<ViewModels.CatalogInject> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.CatalogInject> CreateAsync(ViewModels.CatalogInject catalogInject, CancellationToken ct);
+        Task<IEnumerable<ViewModels.CatalogInject>> CreateMultipleAsync(List<ViewModels.CatalogInject> catalogInjects, CancellationToken ct);
         Task<Guid> DeleteAsync(Guid id, CancellationToken ct);
         Task<Guid> DeleteByIdsAsync(Guid catalogId, Guid injectId, CancellationToken ct);
     }
@@ -70,10 +71,14 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.CatalogInject> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !await CatalogViewRequirement.IsMet(_user.GetId(), id, _context))
                 throw new ForbiddenException();
 
             var item = await _context.CatalogInjects
+                .Include(m => m.Inject)
+                .ThenInclude(n => n.DataValues)
+                .AsSplitQuery()
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
             return _mapper.Map<CatalogInject>(item);
@@ -81,7 +86,7 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.CatalogInject> CreateAsync(ViewModels.CatalogInject catalogInject, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
             catalogInject.Id = catalogInject.Id != Guid.Empty ? catalogInject.Id : Guid.NewGuid();
@@ -99,9 +104,35 @@ namespace Blueprint.Api.Services
             return await GetAsync(catalogInjectEntity.Id, ct);
         }
 
+        public async Task<IEnumerable<ViewModels.CatalogInject>> CreateMultipleAsync(List<ViewModels.CatalogInject> catalogInjects, CancellationToken ct)
+        {
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+                throw new ForbiddenException();
+
+            var catalogInjectList = new List<CatalogInject>();
+            foreach (var catalogInject in catalogInjects)
+            {
+                catalogInject.Id = catalogInject.Id != Guid.Empty ? catalogInject.Id : Guid.NewGuid();
+                var catalogInjectEntity = _mapper.Map<CatalogInjectEntity>(catalogInject);
+
+                _context.CatalogInjects.Add(catalogInjectEntity);
+                await _context.SaveChangesAsync(ct);
+                _logger.LogWarning($"CatalogInject created by {_user.GetId()} = catalog: {catalogInject.CatalogId} and inject: {catalogInject.InjectId}");
+                // update the catalog modified info
+                var catalog = await _context.Catalogs
+                    .SingleOrDefaultAsync(m => m.Id == catalogInject.CatalogId);
+                catalog.ModifiedBy = _user.GetId();
+                catalog.DateModified = DateTime.UtcNow;
+                await _context.SaveChangesAsync(ct);
+                var newOne = await GetAsync(catalogInjectEntity.Id, ct);
+                catalogInjectList.Add(newOne);
+            }
+            return catalogInjectList;
+        }
+
         public async Task<Guid> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
             var catalogInjectToDelete = await _context.CatalogInjects.SingleOrDefaultAsync(v => v.Id == id, ct);
@@ -123,7 +154,7 @@ namespace Blueprint.Api.Services
 
         public async Task<Guid> DeleteByIdsAsync(Guid catalogId, Guid injectId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
             var catalogInjectToDelete = await _context.CatalogInjects.SingleOrDefaultAsync(v => v.CatalogId == catalogId && v.InjectId == injectId, ct);

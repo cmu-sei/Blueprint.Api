@@ -50,7 +50,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Returns the CatalogInject with the id specified
         /// <para />
-        /// Only accessible to a SuperCatalog
+        /// Only accessible to a SuperUser
         /// </remarks>
         /// <param name="id">The id of the CatalogInject</param>
         /// <param name="ct"></param>
@@ -74,7 +74,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Creates a new CatalogInject with the attributes specified
         /// <para />
-        /// Accessible only to a SuperCatalog
+        /// Accessible only to a SuperUser
         /// </remarks>
         /// <param name="inject">The data to create the CatalogInject with</param>
         /// <param name="ct"></param>
@@ -88,12 +88,31 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Creates multiple CatalogInjects
+        /// </summary>
+        /// <remarks>
+        /// Creates multiple CatalogInjects with the attributes specified
+        /// <para />
+        /// Accessible only to a SuperUser
+        /// </remarks>
+        /// <param name="catalogInjects">The data to create the CatalogInjects with</param>
+        /// <param name="ct"></param>
+        [HttpPost("cataloginjects/multiple")]
+        [ProducesResponseType(typeof(IEnumerable<CatalogInject>), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "createMultipleCatalogInjects")]
+        public async Task<IActionResult> CreateMultiple([FromBody] List<CatalogInject> catalogInjects, CancellationToken ct)
+        {
+            var createdCatalogInjects = await _catalogInjectService.CreateMultipleAsync(catalogInjects, ct);
+            return Ok(createdCatalogInjects);
+        }
+
+        /// <summary>
         /// Deletes a CatalogInject
         /// </summary>
         /// <remarks>
         /// Deletes a CatalogInject with the specified id
         /// <para />
-        /// Accessible only to a SuperCatalog
+        /// Accessible only to a SuperUser
         /// </remarks>
         /// <param name="id">The id of the CatalogInject to delete</param>
         /// <param name="ct"></param>
@@ -112,7 +131,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Deletes a CatalogInject with the specified catalog ID and inject ID
         /// <para />
-        /// Accessible only to a SuperCatalog
+        /// Accessible only to a SuperUser
         /// </remarks>
         /// <param name="catalogId">ID of a catalog.</param>
         /// <param name="injectId">ID of a inject.</param>

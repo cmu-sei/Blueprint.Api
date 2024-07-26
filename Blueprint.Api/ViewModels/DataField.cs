@@ -19,6 +19,7 @@ namespace Blueprint.Api.ViewModels
         public bool OnScenarioEventList { get; set; }
         public bool OnExerciseView { get; set; }
         public bool IsChosenFromList { get; set; } // flag that this DataField value should be chosen from a dropdown selector
+        public bool IsMultiSelect { get; set; } // flag that this DataField value should be chosen from a multi-select dropdown
         public virtual ICollection<DataOption> DataOptions { get; set; } = new HashSet<DataOption>(); // values to be included in the dropdown selector
         public string CellMetadata { get; set; } // spreadsheet metadata defining the column header cell attributes
         public string ColumnMetadata { get; set; } // spreadsheet metadata defining the column attributes

@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,12 +27,30 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets all CatalogInjects for a Catalog
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of all of the CatalogInjects for the catalog.
+        /// </remarks>
+        /// <param name="catalogId">The id of the Catalog</param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("catalogs/{catalogId}/cataloginjects")]
+        [ProducesResponseType(typeof(IEnumerable<CatalogInject>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getCatalogInjects")]
+        public async Task<IActionResult> GetByCatalog(Guid catalogId, CancellationToken ct)
+        {
+            var list = await _catalogInjectService.GetByCatalogAsync(catalogId, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Gets a specific CatalogInject by id
         /// </summary>
         /// <remarks>
         /// Returns the CatalogInject with the id specified
         /// <para />
-        /// Only accessible to a SuperCatalog
+        /// Only accessible to a SuperUser
         /// </remarks>
         /// <param name="id">The id of the CatalogInject</param>
         /// <param name="ct"></param>
@@ -55,7 +74,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Creates a new CatalogInject with the attributes specified
         /// <para />
-        /// Accessible only to a SuperCatalog
+        /// Accessible only to a SuperUser
         /// </remarks>
         /// <param name="inject">The data to create the CatalogInject with</param>
         /// <param name="ct"></param>
@@ -69,12 +88,31 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Creates multiple CatalogInjects
+        /// </summary>
+        /// <remarks>
+        /// Creates multiple CatalogInjects with the attributes specified
+        /// <para />
+        /// Accessible only to a SuperUser
+        /// </remarks>
+        /// <param name="catalogInjects">The data to create the CatalogInjects with</param>
+        /// <param name="ct"></param>
+        [HttpPost("cataloginjects/multiple")]
+        [ProducesResponseType(typeof(IEnumerable<CatalogInject>), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "createMultipleCatalogInjects")]
+        public async Task<IActionResult> CreateMultiple([FromBody] List<CatalogInject> catalogInjects, CancellationToken ct)
+        {
+            var createdCatalogInjects = await _catalogInjectService.CreateMultipleAsync(catalogInjects, ct);
+            return Ok(createdCatalogInjects);
+        }
+
+        /// <summary>
         /// Deletes a CatalogInject
         /// </summary>
         /// <remarks>
         /// Deletes a CatalogInject with the specified id
         /// <para />
-        /// Accessible only to a SuperCatalog
+        /// Accessible only to a SuperUser
         /// </remarks>
         /// <param name="id">The id of the CatalogInject to delete</param>
         /// <param name="ct"></param>
@@ -93,7 +131,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Deletes a CatalogInject with the specified catalog ID and inject ID
         /// <para />
-        /// Accessible only to a SuperCatalog
+        /// Accessible only to a SuperUser
         /// </remarks>
         /// <param name="catalogId">ID of a catalog.</param>
         /// <param name="injectId">ID of a inject.</param>

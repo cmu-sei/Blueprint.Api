@@ -26,8 +26,9 @@ namespace Blueprint.Api.Data.Models
         public int DisplayOrder { get; set; }
         public bool OnScenarioEventList { get; set; }
         public bool OnExerciseView { get; set; }
-        public bool IsChosenFromList { get; set; } // flag that this DataField value should be chosen from a dropdown selector
-        public virtual ICollection<DataOptionEntity> DataOptions { get; set; } = new HashSet<DataOptionEntity>(); // values to be included in the dropdown selector
+        public bool IsChosenFromList { get; set; } // flag that this DataField value should be chosen from a dropdown
+        public bool IsMultiSelect { get; set; } // flag that this DataField value should be chosen from a multi-select dropdown
+        public virtual ICollection<DataOptionEntity> DataOptions { get; set; } = new HashSet<DataOptionEntity>(); // values to be included in the dropdown
         public string CellMetadata { get; set; } // spreadsheet metadata defining the column header cell attributes
         public string ColumnMetadata { get; set; } // spreadsheet metadata defining the column attributes
         public bool IsInitiallyHidden { get; set;} // determines if this data field is hidden behind the "More Fields" button or is displayed initially

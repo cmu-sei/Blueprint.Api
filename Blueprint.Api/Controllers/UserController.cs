@@ -70,6 +70,24 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets all MSEL Users
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of all of the MSEL Users.
+        /// </remarks>
+        /// <param name="mselId">The id of the MSEL</param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("msels/{mselId}/users")]
+        [ProducesResponseType(typeof(IEnumerable<User>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getMselUsers")]
+        public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
+        {
+            var list = await _userService.GetByMselAsync(mselId, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Gets all Users for a team
         /// </summary>
         /// <remarks>
@@ -173,4 +191,3 @@ namespace Blueprint.Api.Controllers
 
     }
 }
-

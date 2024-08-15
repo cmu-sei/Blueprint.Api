@@ -14,12 +14,12 @@ namespace Blueprint.Api.Infrastructure.Authorization
     {
         public static async Task<Boolean> IsMet(Guid userId, Guid? mselId, BlueprintContext blueprintContext)
         {
-            var mselTeamIdList = await blueprintContext.Teams
+            var mselUnitIdList = await blueprintContext.MselUnits
                 .Where(t => t.MselId == mselId)
-                .Select(t => t.Id)
+                .Select(t => t.UnitId)
                 .ToListAsync();
-            var isSuccess = await blueprintContext.TeamUsers
-                .Where(tu => tu.UserId == userId && mselTeamIdList.Contains(tu.TeamId))
+            var isSuccess = await blueprintContext.UnitUsers
+                .Where(tu => tu.UserId == userId && mselUnitIdList.Contains(tu.UnitId))
                 .AnyAsync();
             if (isSuccess)
             {
@@ -34,4 +34,3 @@ namespace Blueprint.Api.Infrastructure.Authorization
         }
     }
 }
-

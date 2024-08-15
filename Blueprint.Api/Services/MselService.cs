@@ -204,6 +204,8 @@ namespace Blueprint.Api.Services
             }
 
             var mselEntity = await _context.Msels
+                .Include(m => m.MselUnits)
+                .ThenInclude(t => t.Unit)
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)

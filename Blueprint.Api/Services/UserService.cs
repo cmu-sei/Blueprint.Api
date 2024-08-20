@@ -26,6 +26,7 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.User>> GetAsync(CancellationToken ct);
         Task<ViewModels.User> GetAsync(Guid id, CancellationToken ct);
+        Task<IEnumerable<ViewModels.User>> GetByMselAsync(Guid mselId, CancellationToken ct);
         Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, CancellationToken ct);
         Task<IEnumerable<ViewModels.User>> GetByUnitAsync(Guid unitId, CancellationToken ct);
         Task<ViewModels.User> CreateAsync(ViewModels.User user, CancellationToken ct);
@@ -75,6 +76,34 @@ namespace Blueprint.Api.Services
                 .ProjectTo<ViewModels.User>(_mapper.ConfigurationProvider, dest => dest.Permissions)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
             return item;
+        }
+
+        public async Task<IEnumerable<ViewModels.User>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        {
+            if (
+                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
+                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+               )
+                throw new ForbiddenException();
+
+            var mselUnitIdList = await _context.MselUnits
+                .Where(t => t.MselId == mselId)
+                .Select(t => t.UnitId)
+                .ToListAsync();
+            var unitUsers = await _context.UnitUsers
+                .Where(tu => mselUnitIdList.Contains(tu.UnitId))
+                .Select(tu => tu.User)
+                .ToListAsync(ct);
+            var mselTeamIdList = await _context.Teams
+                .Where(t => t.MselId == mselId)
+                .Select(t => t.Id)
+                .ToListAsync();
+            var teamUsers = await _context.TeamUsers
+                .Where(tu => mselTeamIdList.Contains(tu.TeamId))
+                .Select(tu => tu.User)
+                .ToListAsync(ct);
+            var items = unitUsers.Union(teamUsers);
+            return _mapper.Map<IEnumerable<User>>(items);
         }
 
         public async Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, CancellationToken ct)
@@ -171,4 +200,3 @@ namespace Blueprint.Api.Services
 
     }
 }
-

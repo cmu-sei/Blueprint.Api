@@ -40,6 +40,7 @@ namespace Blueprint.Api.ViewModels
         public virtual ICollection<DataField> DataFields { get; set; } = new HashSet<DataField>();
         public virtual ICollection<ScenarioEvent> ScenarioEvents { get; set; } = new HashSet<ScenarioEvent>();
         public ICollection<Team> Teams { get; set; } = new List<Team>();
+        public ICollection<Unit> Units { get; set; } = new List<Unit>();
         public ICollection<UserMselRole> UserMselRoles { get; set; } = new List<UserMselRole>();
         public string HeaderRowMetadata { get; set; }
         public virtual ICollection<Organization> Organizations { get; set; } = new HashSet<Organization>();

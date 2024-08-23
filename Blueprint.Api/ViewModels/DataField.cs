@@ -23,10 +23,12 @@ namespace Blueprint.Api.ViewModels
         public virtual ICollection<DataOption> DataOptions { get; set; } = new HashSet<DataOption>(); // values to be included in the dropdown selector
         public string CellMetadata { get; set; } // spreadsheet metadata defining the column header cell attributes
         public string ColumnMetadata { get; set; } // spreadsheet metadata defining the column attributes
-        public bool IsInitiallyHidden { get; set;} // determines if this data field is hidden behind the "More Fields" button or is displayed initially
+        public bool IsShownOnDefaultTab { get; set; } // determines if this data field is displayed on the default tab
         public bool IsOnlyShownToOwners { get; set;} // determines if this data field gets displayed for all users or just owners (i.e. spreadsheet metadata)
         public string GalleryArticleParameter { get; set; } // the Gallery Article parameter associated with this DataField
         public bool IsTemplate { get; set; }
+        public bool IsInformationField { get; set; }  // will be displayed for Information scenario event types
+        public bool IsFacilitationField { get; set; }  // will be displayed for Facilitation scenario event types
     }
 
 }

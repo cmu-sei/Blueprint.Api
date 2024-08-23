@@ -176,10 +176,60 @@ namespace Blueprint.Api.Services
             var displayOrder = msel.DataFields.Count > 0
                 ? msel.DataFields.Max(m => m.DisplayOrder)
                 : 0;
+            // add the name data field
+            var nameDataFieldId = Guid.Empty;
+            var mselDataFieldEntity = msel.DataFields.SingleOrDefault(m => m.Name == "Name" && m.DataType == DataFieldType.String);
+            if (mselDataFieldEntity != null)
+            {
+                nameDataFieldId = mselDataFieldEntity.Id;
+            }
+            else
+            {
+                nameDataFieldId = Guid.NewGuid();
+                mselDataFieldEntity = new DataFieldEntity()
+                {
+                    Id = nameDataFieldId,
+                    MselId = msel.Id,
+                    Name = "Name",
+                    DataType = DataFieldType.String,
+                    DisplayOrder = ++displayOrder,
+                    DateCreated = dateCreated,
+                    CreatedBy = userId,
+                    IsChosenFromList = false,
+                    OnScenarioEventList = true,
+                    OnExerciseView = true,
+                };
+                _context.DataFields.Add(mselDataFieldEntity);
+            }
+            // add the desciption data field
+            var descriptionDataFieldId = Guid.Empty;
+            mselDataFieldEntity = msel.DataFields.SingleOrDefault(m => m.Name == "Description" && m.DataType == DataFieldType.String);
+            if (mselDataFieldEntity != null)
+            {
+                descriptionDataFieldId = mselDataFieldEntity.Id;
+            }
+            else
+            {
+                descriptionDataFieldId = Guid.NewGuid();
+                mselDataFieldEntity = new DataFieldEntity()
+                {
+                    Id = descriptionDataFieldId,
+                    MselId = msel.Id,
+                    Name = "Description",
+                    DataType = DataFieldType.String,
+                    DisplayOrder = ++displayOrder,
+                    DateCreated = dateCreated,
+                    CreatedBy = userId,
+                    IsChosenFromList = false,
+                    OnScenarioEventList = true,
+                    OnExerciseView = true,
+                };
+                _context.DataFields.Add(mselDataFieldEntity);
+            }
             foreach (var injectDataField in injectType.DataFields)
             {
                 var showIt = injectDataField.DataType != DataFieldType.Html;
-                var mselDataFieldEntity = msel.DataFields.SingleOrDefault(m => m.Name == injectDataField.Name && m.DataType == injectDataField.DataType);
+                mselDataFieldEntity = msel.DataFields.SingleOrDefault(m => m.Name == injectDataField.Name && m.DataType == injectDataField.DataType);
                 if (mselDataFieldEntity == null)
                 {
                     mselDataFieldEntity = new DataFieldEntity()
@@ -230,12 +280,35 @@ namespace Blueprint.Api.Services
                     Id = Guid.NewGuid(),
                     MselId = msel.Id,
                     InjectId = injectId,
+                    ScenarioEventType = EventType.Inject,
                     DeltaSeconds = 0,
                 };
-                // create the data values
+                // create the data value for the inject name
+                var scenarioEventDataValueEntity = new DataValueEntity()
+                {
+                    Id = Guid.NewGuid(),
+                    DataFieldId = nameDataFieldId,
+                    ScenarioEventId = scenarioEventEntity.Id,
+                    Value = inject.Name,
+                    CreatedBy = userId,
+                    DateCreated = dateCreated
+                };
+                scenarioEventEntity.DataValues.Add(scenarioEventDataValueEntity);
+                // create the data value for the inject description
+                scenarioEventDataValueEntity = new DataValueEntity()
+                {
+                    Id = Guid.NewGuid(),
+                    DataFieldId = descriptionDataFieldId,
+                    ScenarioEventId = scenarioEventEntity.Id,
+                    Value = inject.Description,
+                    CreatedBy = userId,
+                    DateCreated = dateCreated
+                };
+                scenarioEventEntity.DataValues.Add(scenarioEventDataValueEntity);
+                // create the data values for each inject data value
                 foreach (var injectDataValueEntity in inject.DataValues)
                 {
-                    var scenarioEventDataValueEntity = new DataValueEntity()
+                    scenarioEventDataValueEntity = new DataValueEntity()
                     {
                         Id = Guid.NewGuid(),
                         DataFieldId = dataFieldDictionary[injectDataValueEntity.DataFieldId],

@@ -204,7 +204,16 @@ namespace Blueprint.Api.Services
                 else
                 {
                     injectIdCrossReference[catalogInject.InjectId] = Guid.NewGuid();
-
+                    // null objects that will cause exceptions by creating a duplicate
+                    catalogInject.Inject.InjectType = null;
+                    catalogInject.Inject.RequiresInject = null;
+                    // loop through the inject data values
+                    foreach (var dataValue in catalogInject.Inject.DataValues)
+                    {
+                        dataValue.Inject = null;
+                        dataValue.DataField = null;
+                        dataValue.ScenarioEvent = null;
+                    }
                 }
                 catalogInject.Id = Guid.NewGuid();
                 catalogInject.CatalogId = catalogEntity.Id;
@@ -292,6 +301,7 @@ namespace Blueprint.Api.Services
             var catalog = await _context.Catalogs
                 .Include(m => m.CatalogInjects)
                 .ThenInclude(n => n.Inject)
+                .ThenInclude(p => p.DataValues)
                 .Include(m => m.InjectType)
                 .ThenInclude(n => n.DataFields)
                 .ThenInclude(p => p.DataOptions)

@@ -20,6 +20,8 @@ using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
 using Blueprint.Api.Infrastructure.JsonConverters;
+using NuGet.Packaging.Licenses;
+using System.Data;
 
 namespace Blueprint.Api.Services
 {
@@ -29,6 +31,7 @@ namespace Blueprint.Api.Services
         Task<ViewModels.ScenarioEvent> GetAsync(Guid id, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> CreateFromInjectsAsync(CreateFromInjectsForm createFromInjectsForm, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> CopyScenarioEventsToMselAsync(Guid mselId, List<Guid> scenarioEventIdList, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<bool> BatchDeleteAsync(Guid[] idList, CancellationToken ct);
@@ -335,6 +338,152 @@ namespace Blueprint.Api.Services
             var scenarioEventEnitities = await _context.ScenarioEvents
                 .Include(m => m.DataValues)
                 .Where(m => m.MselId == msel.Id)
+                .ToListAsync(ct);
+            return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
+        }
+
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> CopyScenarioEventsToMselAsync(Guid mselId, List<Guid> scenarioEventIdList, CancellationToken ct)
+        {
+            // make sure destination MSEL exists
+            var destinationMsel = await _context.Msels
+                .Include(m => m.DataFields)
+                .SingleOrDefaultAsync(v => v.Id == mselId, ct);
+            if (destinationMsel == null)
+                throw new EntityNotFoundException<ScenarioEventEntity>($"MSEL not found {mselId}.");
+
+            // make sure the source MSEL and all scenarioEvents exist
+            var sourceMsel = await _context.ScenarioEvents
+                .Where(m => m.Id == scenarioEventIdList[0])
+                .Include(m => m.Msel)
+                .ThenInclude(m => m.DataFields)
+                .ThenInclude(f => f.DataOptions)
+                .Include(m => m.Msel)
+                .ThenInclude(m => m.ScenarioEvents)
+                .ThenInclude(s => s.DataValues)
+                .Select(m => m.Msel)
+                .AsSplitQuery()
+                .AsNoTracking()
+                .SingleOrDefaultAsync(ct);
+
+            // user must be a Content Developer or a MSEL owner for both source and destination MSELs
+            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+                !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context) &&
+                  await MselOwnerRequirement.IsMet(_user.GetId(), sourceMsel.Id, _context)))
+                throw new ForbiddenException();
+
+            // get the sourceScenarioEvents
+            var sourceScenarioEvents = sourceMsel.ScenarioEvents.Where(s => scenarioEventIdList.Contains(s.Id));
+            if (sourceMsel == null || sourceScenarioEvents.Count() != scenarioEventIdList.Count())
+                throw new DataException("The list of Scenario Event IDs was invalid.");
+
+            // determine which data fields are used by these scenario events
+            var neededDataFields = new List<Guid>();
+            foreach (var scenarioEvent in sourceScenarioEvents)
+            {
+                foreach (var dataValue in scenarioEvent.DataValues)
+                {
+                    if (dataValue.Value != null && !neededDataFields.Contains(dataValue.DataFieldId))
+                    {
+                        neededDataFields.Add(dataValue.DataFieldId);
+                    }
+                }
+            }
+            // set some initial values
+            var userId = _user.GetId();
+            var dateCreated = DateTime.UtcNow;
+            var dataFieldDictionary = new Dictionary<Guid, Guid>();
+            var displayOrder = destinationMsel.DataFields.Count > 0
+                ? destinationMsel.DataFields.Max(m => m.DisplayOrder)
+                : 0;
+
+            // start a transaction
+            await _context.Database.BeginTransactionAsync();
+
+            // get the data field map (create new data fields as necessary)
+            foreach (var sourceDataField in sourceMsel.DataFields.Where(m => neededDataFields.Contains(m.Id)))
+            {
+                var destinationDataField = destinationMsel.DataFields.SingleOrDefault(m => m.Name == sourceDataField.Name && m.DataType == sourceDataField.DataType);
+                if (destinationDataField == null)
+                {
+                    destinationDataField = new DataFieldEntity()
+                    {
+                        Id = Guid.NewGuid(),
+                        MselId = destinationMsel.Id,
+                        Name = sourceDataField.Name,
+                        DataType = sourceDataField.DataType,
+                        DisplayOrder = ++displayOrder,
+                        DateCreated = dateCreated,
+                        CreatedBy = userId,
+                        IsChosenFromList = sourceDataField.IsChosenFromList,
+                        OnScenarioEventList = sourceDataField.OnScenarioEventList,
+                        OnExerciseView = sourceDataField.OnExerciseView,
+                    };
+                    _context.DataFields.Add(destinationDataField);
+                    if (sourceDataField.IsChosenFromList)
+                    {
+                        foreach (var sourceDataOption in sourceDataField.DataOptions)
+                        {
+                            var destinationDataOption = new DataOptionEntity()
+                            {
+                                Id = Guid.NewGuid(),
+                                DataFieldId = destinationDataField.Id,
+                                OptionName = sourceDataOption.OptionName,
+                                OptionValue = sourceDataOption.OptionValue,
+                                DisplayOrder = sourceDataOption.DisplayOrder,
+                            };
+                            _context.DataOptions.Add(destinationDataOption);
+                        }
+                    }
+                }
+                dataFieldDictionary[destinationDataField.Id] = sourceDataField.Id;
+            }
+            await _context.SaveChangesAsync(ct);
+            // get the new list of data field IDs
+            var dataFieldIdList = _context.DataFields
+                .Where(df => df.MselId == destinationMsel.Id)
+                .Select(df => df.Id);
+            // Loop through the source scenario events
+            foreach (var sourceScenarioEvent in sourceScenarioEvents)
+            {
+                var destinationScenarioEvent = new ScenarioEventEntity()
+                {
+                    Id = Guid.NewGuid(),
+                    MselId = destinationMsel.Id,
+                    GroupOrder = 0,
+                    IsHidden = false,
+                    DeltaSeconds = sourceScenarioEvent.DeltaSeconds,
+                    ScenarioEventType = sourceScenarioEvent.ScenarioEventType,
+                    Description = sourceScenarioEvent.Description,
+                    InjectId = sourceScenarioEvent.InjectId,
+                    DateCreated = dateCreated,
+                    CreatedBy = userId,
+                };
+                _context.ScenarioEvents.Add(destinationScenarioEvent);
+                // create blank data values
+                foreach (var dataFieldId in dataFieldIdList)
+                {
+                    var dataValue = new DataValueEntity();
+                    dataValue.DataFieldId = dataFieldId;
+                    dataValue.Id = Guid.NewGuid();
+                    dataValue.ScenarioEventId = destinationScenarioEvent.Id;
+                    dataValue.CreatedBy = userId;
+                    dataValue.DateCreated = dateCreated;
+                    dataValue.DateModified = null;
+                    dataValue.ModifiedBy = null;
+                    if (dataFieldDictionary.Keys.Contains(dataFieldId))
+                    {
+                        dataValue.Value = sourceScenarioEvent.DataValues.Single(m => m.DataFieldId == dataFieldDictionary[dataFieldId]).Value;
+                    }
+                    _context.DataValues.Add(dataValue);
+                }
+            }
+            await _context.SaveChangesAsync(ct);
+            // commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
+            // return all msel scenarioEvents
+            var scenarioEventEnitities = await _context.ScenarioEvents
+                .Include(m => m.DataValues)
+                .Where(m => m.MselId == destinationMsel.Id)
                 .ToListAsync(ct);
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }

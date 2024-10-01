@@ -13,6 +13,7 @@ using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.Services;
 using Swashbuckle.AspNetCore.Annotations;
+using Blueprint.Api.Migrations.PostgreSQL.Migrations;
 
 namespace Blueprint.Api.Controllers
 {
@@ -106,10 +107,28 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Updates an ScenarioEvent
+        /// Copies ScenarioEvents from one MSEL to another
         /// </summary>
         /// <remarks>
-        /// Updates an ScenarioEvent with the attributes specified
+        /// Copies ScenarioEvents from the supplied list to another MSEL
+        /// </remarks>
+        /// <param name="scenarioEventIdList">The list of ScenarioEvent IDs</param>
+        /// <param name="mselId">The MSEL ID</param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{mselId}/scenarioEvents/copy")]
+        [ProducesResponseType(typeof(IEnumerable<ViewModels.ScenarioEvent>), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "copyScenarioEventsToMsel")]
+        public async Task<IActionResult> CreateFromInjects([FromRoute] Guid mselId, [FromBody] List<Guid> scenarioEventIdList, CancellationToken ct)
+        {
+            var list = await _scenarioEventService.CopyScenarioEventsToMselAsync(mselId, scenarioEventIdList, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
+        /// Updates a ScenarioEvent
+        /// </summary>
+        /// <remarks>
+        /// Updates a ScenarioEvent with the attributes specified
         /// <para />
         /// Accessible only to a SuperUser or a User on an Admin Team within the specified ScenarioEvent
         /// </remarks>
@@ -127,10 +146,10 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Deletes an ScenarioEvent
+        /// Deletes a ScenarioEvent
         /// </summary>
         /// <remarks>
-        /// Deletes an ScenarioEvent with the specified id
+        /// Deletes a ScenarioEvent with the specified id
         /// <para />
         /// Accessible only to a SuperUser or a User on an Admin Team within the specified ScenarioEvent
         /// </remarks>

@@ -7,7 +7,7 @@ ENV ASPNETCORE_HTTP_PORTS=4302
 ENV ASPNETCORE_ENVIRONMENT=DEVELOPMENT
 
 COPY . /app
-WORKDIR /app/Cite.Api
+WORKDIR /app/Blueprint.Api
 RUN dotnet publish -c Release -o /app/dist
 CMD ["dotnet", "run"]
 

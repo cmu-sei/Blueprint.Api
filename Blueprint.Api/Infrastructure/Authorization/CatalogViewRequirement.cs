@@ -7,7 +7,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
-using Microsoft.CodeAnalysis.VisualBasic.Syntax;
 
 namespace Blueprint.Api.Infrastructure.Authorization
 {
@@ -34,4 +33,3 @@ namespace Blueprint.Api.Infrastructure.Authorization
         }
     }
 }
-

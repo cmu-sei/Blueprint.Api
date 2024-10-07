@@ -9,7 +9,7 @@
 
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
-    public partial class rowindexsort : Migration
+    public partial class Rowindexsort : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {

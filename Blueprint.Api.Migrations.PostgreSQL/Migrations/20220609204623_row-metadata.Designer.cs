@@ -18,7 +18,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
     [Migration("20220609204623_row-metadata")]
-    partial class rowmetadata
+    partial class Rowmetadata
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {

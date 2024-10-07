@@ -16,7 +16,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
     [Migration("20230420140753_msel-pages-ix-fix")]
-    partial class mselpagesixfix
+    partial class Mselpagesixfix
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {

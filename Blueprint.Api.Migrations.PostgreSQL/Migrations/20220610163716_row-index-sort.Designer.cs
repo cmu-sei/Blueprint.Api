@@ -18,7 +18,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
     [Migration("20220610163716_row-index-sort")]
-    partial class rowindexsort
+    partial class Rowindexsort
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {

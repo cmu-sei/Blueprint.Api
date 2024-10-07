@@ -1,16 +1,16 @@
 /*
- Copyright 2023 Carnegie Mellon University. All Rights Reserved. 
+ Copyright 2023 Carnegie Mellon University. All Rights Reserved.
  Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 */
 
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
-    public partial class movestarttime : Migration
+    public partial class Movestarttime : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {

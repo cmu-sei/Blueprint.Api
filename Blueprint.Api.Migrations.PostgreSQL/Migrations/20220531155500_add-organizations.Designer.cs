@@ -18,7 +18,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
     [Migration("20220531155500_add-organizations")]
-    partial class addorganizations
+    partial class Addorganizations
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {

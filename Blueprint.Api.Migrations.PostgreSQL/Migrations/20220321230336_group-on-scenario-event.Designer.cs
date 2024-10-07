@@ -18,7 +18,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
     [Migration("20220321230336_group-on-scenario-event")]
-    partial class grouponscenarioevent
+    partial class Grouponscenarioevent
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {

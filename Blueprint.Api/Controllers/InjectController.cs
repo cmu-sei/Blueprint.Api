@@ -94,7 +94,7 @@ namespace Blueprint.Api.Controllers
         /// <para />
         /// Accessible only to a SuperUser or an Administrator
         /// </remarks>
-        /// <param name="catalogId"> The ID of the catalog where the inject will be added
+        /// <param name="catalogId"> The ID of the catalog where the inject will be added</param>
         /// <param name="inject">The data to create the Inject with</param>
         /// <param name="ct"></param>
         [HttpPost("catalog/{catalogId}/injects")]

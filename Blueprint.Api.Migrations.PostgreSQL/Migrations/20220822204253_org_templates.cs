@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
-    public partial class org_templates : Migration
+    public partial class Org_templates : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {

@@ -17,11 +17,10 @@ namespace Blueprint.Api.Data
     public class BlueprintContext : DbContext
     {
         public List<Entry> Entries { get; set; } = new List<Entry>();
-        private DbContextOptions<BlueprintContext> _options;
+        // Needed for EventInterceptor
+        public IServiceProvider ServiceProvider;
 
-        public BlueprintContext(DbContextOptions<BlueprintContext> options) : base(options) {
-            _options = options;
-        }
+        public BlueprintContext(DbContextOptions<BlueprintContext> options) : base(options) { }
 
         public DbSet<UserEntity> Users { get; set; }
         public DbSet<PermissionEntity> Permissions { get; set; }
@@ -120,4 +119,3 @@ namespace Blueprint.Api.Data
         }
     }
 }
-

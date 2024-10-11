@@ -30,6 +30,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.JsonWebTokens;
 using AutoMapper.Internal;
+using MediatR;
 
 namespace Blueprint.Api;
 
@@ -64,25 +65,25 @@ public class Startup
         switch (provider)
         {
             case "InMemory":
-                services.AddDbContextPool<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
-                    .AddInterceptors(serviceProvider.GetRequiredService<EntityTransactionInterceptor>())
+                services.AddPooledDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
+                    .AddInterceptors(serviceProvider.GetRequiredService<EventInterceptor>())
                     .UseInMemoryDatabase("api"));
                 break;
             case "Sqlite":
-                services.AddDbContextPool<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
-                    .AddInterceptors(serviceProvider.GetRequiredService<EntityTransactionInterceptor>())
-                    .UseConfiguredDatabase(Configuration))
+                services.AddPooledDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
+                   .AddInterceptors(serviceProvider.GetRequiredService<EventInterceptor>())
+                   .UseConfiguredDatabase(Configuration))
                     .AddHealthChecks().AddSqlite(connectionString, tags: new[] { "ready", "live" });
                 break;
             case "SqlServer":
-                services.AddDbContextPool<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
-                    .AddInterceptors(serviceProvider.GetRequiredService<EntityTransactionInterceptor>())
+                services.AddPooledDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
+                    .AddInterceptors(serviceProvider.GetRequiredService<EventInterceptor>())
                     .UseConfiguredDatabase(Configuration))
                     .AddHealthChecks().AddSqlServer(connectionString, tags: new[] { "ready", "live" });
                 break;
             case "PostgreSQL":
-                services.AddDbContextPool<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
-                    .AddInterceptors(serviceProvider.GetRequiredService<EntityTransactionInterceptor>())
+                services.AddPooledDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
+                    .AddInterceptors(serviceProvider.GetRequiredService<EventInterceptor>())
                     .UseConfiguredDatabase(Configuration))
                     .AddHealthChecks().AddNpgSql(connectionString, tags: new[] { "ready", "live" });
                 break;
@@ -90,22 +91,25 @@ public class Startup
 
         services.AddOptions()
             .Configure<DatabaseOptions>(Configuration.GetSection("Database"))
-                .AddScoped(config => config.GetService<IOptionsMonitor<DatabaseOptions>>().CurrentValue)
+            .AddScoped(config => config.GetService<IOptionsMonitor<DatabaseOptions>>().CurrentValue)
 
             .Configure<ClaimsTransformationOptions>(Configuration.GetSection("ClaimsTransformation"))
-                .AddScoped(config => config.GetService<IOptionsMonitor<ClaimsTransformationOptions>>().CurrentValue)
+            .AddScoped(config => config.GetService<IOptionsMonitor<ClaimsTransformationOptions>>().CurrentValue)
 
             .Configure<SeedDataOptions>(Configuration.GetSection("SeedData"))
-                .AddScoped(config => config.GetService<IOptionsMonitor<SeedDataOptions>>().CurrentValue);
+            .AddScoped(config => config.GetService<IOptionsMonitor<SeedDataOptions>>().CurrentValue);
 
         services
             .Configure<ClientOptions>(Configuration.GetSection("ClientSettings"))
-                .AddScoped(config => config.GetService<IOptionsMonitor<ClientOptions>>().CurrentValue);
+            .AddScoped(config => config.GetService<IOptionsMonitor<ClientOptions>>().CurrentValue);
 
         services.AddScoped<IClaimsTransformation, AuthorizationClaimsTransformer>();
         services.AddScoped<IUserClaimsService, UserClaimsService>();
 
         services.AddCors(options => options.UseConfiguredCors(Configuration.GetSection("CorsPolicy")));
+
+        services.AddScoped<BlueprintContextFactory>();
+        services.AddScoped(sp => sp.GetRequiredService<BlueprintContextFactory>().CreateDbContext());
 
         services.AddSignalR(o => o.StatefulReconnectBufferSize = _signalROptions.StatefulReconnectBufferSizeBytes)
             .AddJsonProtocol(options =>
@@ -218,7 +222,7 @@ public class Startup
 
         ApplyPolicies(services);
 
-        services.AddTransient<EntityTransactionInterceptor>();
+        services.AddTransient<EventInterceptor>();
         services.AddAutoMapper(cfg =>
         {
             cfg.Internal().ForAllPropertyMaps(
@@ -230,6 +234,7 @@ public class Startup
             .Configure<ResourceOwnerAuthorizationOptions>(Configuration.GetSection("ResourceOwnerAuthorization"))
             .AddScoped(config => config.GetService<IOptionsMonitor<ResourceOwnerAuthorizationOptions>>().CurrentValue);
 
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(typeof(Startup).Assembly));
     }
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

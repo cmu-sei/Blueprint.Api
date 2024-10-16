@@ -76,7 +76,7 @@ namespace Blueprint.Api.Services
                     }
                     catch (System.Exception ex)
                     {
-                        _logger.LogError("Exception encountered in AddApplicationService Run loop.", ex);
+                        _logger.LogError(ex, "Exception encountered in AddApplicationService Run loop.");
                     }
                 }
             });

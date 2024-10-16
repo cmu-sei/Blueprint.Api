@@ -12,7 +12,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
-using Microsoft.AspNetCore.Hosting;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -21,7 +20,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
 {
     public static class DatabaseExtensions
     {
-        public static IWebHost InitializeDatabase(this IWebHost webHost)
+        public static IHost InitializeDatabase(this IHost webHost)
         {
             using (var scope = webHost.Services.CreateScope())
             {

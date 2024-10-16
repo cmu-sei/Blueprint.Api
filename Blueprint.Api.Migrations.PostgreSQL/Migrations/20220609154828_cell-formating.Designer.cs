@@ -18,7 +18,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
     [Migration("20220609154828_cell-formating")]
-    partial class cellformating
+    partial class Cellformating
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {

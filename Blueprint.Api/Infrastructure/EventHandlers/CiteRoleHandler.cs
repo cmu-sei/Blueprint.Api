@@ -14,7 +14,6 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.CodeAnalysis.VisualBasic.Syntax;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {

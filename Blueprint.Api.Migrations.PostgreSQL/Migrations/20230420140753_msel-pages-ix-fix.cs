@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
-    public partial class mselpagesixfix : Migration
+    public partial class Mselpagesixfix : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {

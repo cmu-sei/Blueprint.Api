@@ -18,7 +18,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
     [Migration("20220721184029_team-roles")]
-    partial class teamroles
+    partial class Teamroles
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {

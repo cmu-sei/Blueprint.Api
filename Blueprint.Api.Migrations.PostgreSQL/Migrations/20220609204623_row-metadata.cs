@@ -9,7 +9,7 @@
 
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
-    public partial class rowmetadata : Migration
+    public partial class Rowmetadata : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {

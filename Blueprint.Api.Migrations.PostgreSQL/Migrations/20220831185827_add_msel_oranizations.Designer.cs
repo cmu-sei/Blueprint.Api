@@ -18,7 +18,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
     [Migration("20220831185827_add_msel_oranizations")]
-    partial class add_msel_oranizations
+    partial class Add_msel_oranizations
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {

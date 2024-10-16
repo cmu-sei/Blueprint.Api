@@ -1,6 +1,6 @@
 # How to create the nuget package for Blueprint.Api.Client
 1. cd ../Blueprint.Api
-2. swagger tofile --output ../Blueprint.Api.Client/swagger.json bin/Debug/net6.0/Blueprint.Api.dll v1
+2. swagger tofile --output ../Blueprint.Api.Client/swagger.json bin/Debug/net8.0/Blueprint.Api.dll v1
 3. cd ../Blueprint.Api.Client
 4. npm install
 5. ./node_modules/.bin/nswag run /runtime:Net60

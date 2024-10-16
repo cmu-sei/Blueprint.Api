@@ -9,7 +9,7 @@
 
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
-    public partial class cellformating : Migration
+    public partial class Cellformating : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {

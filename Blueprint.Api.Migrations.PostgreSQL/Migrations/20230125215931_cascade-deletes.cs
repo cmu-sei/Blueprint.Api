@@ -1,15 +1,15 @@
 /*
- Copyright 2023 Carnegie Mellon University. All Rights Reserved. 
+ Copyright 2023 Carnegie Mellon University. All Rights Reserved.
  Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 */
 
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
-    public partial class cascadedeletes : Migration
+    public partial class Cascadedeletes : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {

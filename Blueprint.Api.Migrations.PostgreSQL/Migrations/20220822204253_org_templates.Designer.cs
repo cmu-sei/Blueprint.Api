@@ -18,7 +18,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
     [Migration("20220822204253_org_templates")]
-    partial class org_templates
+    partial class Org_templates
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {

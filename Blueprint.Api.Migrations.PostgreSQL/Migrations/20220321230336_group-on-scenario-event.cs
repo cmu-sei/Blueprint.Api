@@ -9,7 +9,7 @@
 
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
-    public partial class grouponscenarioevent : Migration
+    public partial class Grouponscenarioevent : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {

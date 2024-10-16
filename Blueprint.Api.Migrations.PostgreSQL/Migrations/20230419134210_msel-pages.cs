@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
-    public partial class mselpages : Migration
+    public partial class Mselpages : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {

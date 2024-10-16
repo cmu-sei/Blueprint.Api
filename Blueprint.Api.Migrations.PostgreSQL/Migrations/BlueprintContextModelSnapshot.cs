@@ -84,7 +84,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("MselId");
 
-                    b.ToTable("cards");
+                    b.ToTable("cards", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.CardTeamEntity", b =>
@@ -118,7 +118,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("TeamId", "CardId")
                         .IsUnique();
 
-                    b.ToTable("card_teams");
+                    b.ToTable("card_teams", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.CatalogEntity", b =>
@@ -178,7 +178,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("ParentId");
 
-                    b.ToTable("catalogs");
+                    b.ToTable("catalogs", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.CatalogInjectEntity", b =>
@@ -212,7 +212,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("InjectId", "CatalogId")
                         .IsUnique();
 
-                    b.ToTable("catalog_injects");
+                    b.ToTable("catalog_injects", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.CatalogUnitEntity", b =>
@@ -238,7 +238,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("UnitId", "CatalogId")
                         .IsUnique();
 
-                    b.ToTable("catalog_units");
+                    b.ToTable("catalog_units", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.CiteActionEntity", b =>
@@ -299,7 +299,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("TeamId");
 
-                    b.ToTable("cite_actions");
+                    b.ToTable("cite_actions", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.CiteRoleEntity", b =>
@@ -348,7 +348,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("TeamId");
 
-                    b.ToTable("cite_roles");
+                    b.ToTable("cite_roles", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataFieldEntity", b =>
@@ -453,9 +453,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("MselId");
 
-                    b.ToTable("data_fields");
-
-                    b.HasCheckConstraint("data_field_msel_or_inject_type", "msel_id IS NULL OR inject_type_id IS NULL");
+                    b.ToTable("data_fields", null, t =>
+                        {
+                            t.HasCheckConstraint("data_field_msel_or_inject_type", "msel_id IS NULL OR inject_type_id IS NULL");
+                        });
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataOptionEntity", b =>
@@ -502,7 +503,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("DataFieldId");
 
-                    b.ToTable("data_options");
+                    b.ToTable("data_options", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataValueEntity", b =>
@@ -561,9 +562,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("ScenarioEventId", "InjectId", "DataFieldId")
                         .IsUnique();
 
-                    b.ToTable("data_values");
-
-                    b.HasCheckConstraint("data_value_scenario_event_or_inject", "(scenario_event_id IS NOT NULL AND inject_id IS NULL) OR (scenario_event_id IS NULL AND inject_id IS NOT NULL)");
+                    b.ToTable("data_values", null, t =>
+                        {
+                            t.HasCheckConstraint("data_value_scenario_event_or_inject", "(scenario_event_id IS NOT NULL AND inject_id IS NULL) OR (scenario_event_id IS NULL AND inject_id IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.InjectEntity", b =>
@@ -612,7 +614,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("RequiresInjectId");
 
-                    b.ToTable("injects");
+                    b.ToTable("injects", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.InjectTypeEntity", b =>
@@ -652,7 +654,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("inject_types");
+                    b.ToTable("inject_types", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.InvitationEntity", b =>
@@ -704,7 +706,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("TeamId");
 
-                    b.ToTable("invitations");
+                    b.ToTable("invitations", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.MoveEntity", b =>
@@ -764,7 +766,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("MselId", "MoveNumber")
                         .IsUnique();
 
-                    b.ToTable("moves");
+                    b.ToTable("moves", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselEntity", b =>
@@ -901,7 +903,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("msels");
+                    b.ToTable("msels", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselPageEntity", b =>
@@ -935,7 +937,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("MselId");
 
-                    b.ToTable("msel_pages");
+                    b.ToTable("msel_pages", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselTeamEntity", b =>
@@ -969,7 +971,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("TeamId", "MselId")
                         .IsUnique();
 
-                    b.ToTable("msel_teams");
+                    b.ToTable("msel_teams", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselUnitEntity", b =>
@@ -995,7 +997,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("UnitId", "MselId")
                         .IsUnique();
 
-                    b.ToTable("msel_units");
+                    b.ToTable("msel_units", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.OrganizationEntity", b =>
@@ -1054,7 +1056,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("MselId");
 
-                    b.ToTable("organizations");
+                    b.ToTable("organizations", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.PermissionEntity", b =>
@@ -1102,7 +1104,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("Key", "Value")
                         .IsUnique();
 
-                    b.ToTable("permissions");
+                    b.ToTable("permissions", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.PlayerApplicationEntity", b =>
@@ -1157,7 +1159,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("MselId");
 
-                    b.ToTable("player_applications");
+                    b.ToTable("player_applications", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.PlayerApplicationTeamEntity", b =>
@@ -1183,7 +1185,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("TeamId", "PlayerApplicationId")
                         .IsUnique();
 
-                    b.ToTable("player_application_teams");
+                    b.ToTable("player_application_teams", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventEntity", b =>
@@ -1248,7 +1250,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("MselId");
 
-                    b.ToTable("scenario_events");
+                    b.ToTable("scenario_events", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.TeamEntity", b =>
@@ -1322,7 +1324,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("MselId");
 
-                    b.ToTable("teams");
+                    b.ToTable("teams", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.TeamUserEntity", b =>
@@ -1348,7 +1350,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("UserId", "TeamId")
                         .IsUnique();
 
-                    b.ToTable("team_users");
+                    b.ToTable("team_users", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.UnitEntity", b =>
@@ -1388,7 +1390,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("Id")
                         .IsUnique();
 
-                    b.ToTable("units");
+                    b.ToTable("units", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.UnitUserEntity", b =>
@@ -1414,7 +1416,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("UserId", "UnitId")
                         .IsUnique();
 
-                    b.ToTable("unit_users");
+                    b.ToTable("unit_users", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.UserEntity", b =>
@@ -1450,7 +1452,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("Id")
                         .IsUnique();
 
-                    b.ToTable("users");
+                    b.ToTable("users", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.UserMselRoleEntity", b =>
@@ -1496,7 +1498,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("MselId", "UserId", "Role")
                         .IsUnique();
 
-                    b.ToTable("user_msel_roles");
+                    b.ToTable("user_msel_roles", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.UserPermissionEntity", b =>
@@ -1522,7 +1524,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("UserId", "PermissionId")
                         .IsUnique();
 
-                    b.ToTable("user_permissions");
+                    b.ToTable("user_permissions", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.UserTeamRoleEntity", b =>
@@ -1568,7 +1570,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("TeamId", "UserId", "Role")
                         .IsUnique();
 
-                    b.ToTable("user_team_roles");
+                    b.ToTable("user_team_roles", (string)null);
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.CardEntity", b =>

@@ -16,7 +16,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
     [Migration("20230419134210_msel-pages")]
-    partial class mselpages
+    partial class Mselpages
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {

@@ -537,36 +537,39 @@ namespace Blueprint.Api.Services
                     .SingleOrDefaultAsync(dv => dv.ScenarioEventId == scenarioEvent.Id && dv.DataFieldId == dataFieldId, ct);
                 var dataValue = scenarioEvent.DataValues
                     .SingleOrDefault(dv => dv.ScenarioEventId == scenarioEvent.Id && dv.DataFieldId == dataFieldId);
-                if (dataValueToUpdate == null)
+                if (dataValueToUpdate != null || dataValue != null)
                 {
-                    dataValue.Id = Guid.NewGuid();
-                    dataValue.CreatedBy = (Guid)scenarioEvent.ModifiedBy;
-                    dataValue.DateCreated = (DateTime)scenarioEvent.DateModified;
-                    dataValue.DateModified = dataValue.DateCreated;
-                    dataValue.ModifiedBy = dataValue.CreatedBy;
-                    dataValue.CellMetadata = cellMetadata;
-                    var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
-                    _context.DataValues.Add(dataValueEntity);
-                }
-                else if (dataValue == null)
-                {
-                    if (dataValueToUpdate.CellMetadata != cellMetadata)
+                    if (dataValueToUpdate == null)
+                    {
+                        dataValue.Id = Guid.NewGuid();
+                        dataValue.CreatedBy = (Guid)scenarioEvent.ModifiedBy;
+                        dataValue.DateCreated = (DateTime)scenarioEvent.DateModified;
+                        dataValue.DateModified = dataValue.DateCreated;
+                        dataValue.ModifiedBy = dataValue.CreatedBy;
+                        dataValue.CellMetadata = cellMetadata;
+                        var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
+                        _context.DataValues.Add(dataValueEntity);
+                    }
+                    else if (dataValue == null)
+                    {
+                        if (dataValueToUpdate.CellMetadata != cellMetadata)
+                        {
+                            // update the DataValue
+                            dataValueToUpdate.ModifiedBy = scenarioEventToUpdate.ModifiedBy;
+                            dataValueToUpdate.DateModified = scenarioEventToUpdate.DateModified;
+                            dataValueToUpdate.CellMetadata = cellMetadata;
+                            _context.DataValues.Update(dataValueToUpdate);
+                        }
+                    }
+                    else if (dataValue.Value != dataValueToUpdate.Value || dataValueToUpdate.CellMetadata != cellMetadata)
                     {
                         // update the DataValue
                         dataValueToUpdate.ModifiedBy = scenarioEventToUpdate.ModifiedBy;
                         dataValueToUpdate.DateModified = scenarioEventToUpdate.DateModified;
+                        dataValueToUpdate.Value = dataValue.Value;
                         dataValueToUpdate.CellMetadata = cellMetadata;
                         _context.DataValues.Update(dataValueToUpdate);
                     }
-                }
-                else if (dataValue.Value != dataValueToUpdate.Value || dataValueToUpdate.CellMetadata != cellMetadata)
-                {
-                    // update the DataValue
-                    dataValueToUpdate.ModifiedBy = scenarioEventToUpdate.ModifiedBy;
-                    dataValueToUpdate.DateModified = scenarioEventToUpdate.DateModified;
-                    dataValueToUpdate.Value = dataValue.Value;
-                    dataValueToUpdate.CellMetadata = cellMetadata;
-                    _context.DataValues.Update(dataValueToUpdate);
                 }
             }
             await _context.SaveChangesAsync(ct);

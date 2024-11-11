@@ -204,7 +204,7 @@ namespace Blueprint.Api.Services
                 else
                 {
                     injectIdCrossReference[catalogInject.InjectId] = Guid.NewGuid();
-                    // null objects that will cause exceptions by creating a duplicate
+                    // null the objects that would have caused exceptions by creating a duplicate
                     catalogInject.Inject.InjectType = null;
                     catalogInject.Inject.RequiresInject = null;
                     // loop through the inject data values
@@ -221,10 +221,35 @@ namespace Blueprint.Api.Services
             }
             // update the inject type and data fields, if necessary
             var dataFieldIdCrossReference = new Dictionary<Guid, Guid>();
-            var injectTypeExists = await _context.InjectTypes
-                .AnyAsync(m => m.Id == catalogEntity.InjectTypeId, ct);
-            if (injectTypeExists)
+            var existingInjectType = await _context.InjectTypes
+                .Include(m => m.DataFields)
+                .SingleOrDefaultAsync(m => m.Id == catalogEntity.InjectTypeId || m.Name == catalogEntity.InjectType.Name, ct);
+            if (existingInjectType != null)
             {
+                if (existingInjectType.Id != catalogEntity.InjectTypeId)
+                {
+                    var missingDataFields = "";
+                    foreach (var dataField in catalogEntity.InjectType.DataFields)
+                    {
+                        var hasMatch = existingInjectType.DataFields.Any(m => m.Name == dataField.Name && m.DataType == dataField.DataType);
+                        if (!hasMatch)
+                        {
+                            missingDataFields = missingDataFields + " '" + dataField.Name + "'";
+                        }
+                    }
+                    if (missingDataFields != "")
+                    {
+                        throw new InvalidDataException("There is an existing Inject Type with the same name, but without matching Data Fields for (" + missingDataFields + ")");
+                    }
+                    catalogEntity.InjectTypeId = existingInjectType.Id;
+                    foreach (var catalogInject in catalogEntity.CatalogInjects)
+                    {
+                        if (catalogInject.Inject != null)
+                        {
+                            catalogInject.Inject.InjectTypeId = existingInjectType.Id;
+                        }
+                    }
+                }
                 catalogEntity.InjectType = null;
             }
             else

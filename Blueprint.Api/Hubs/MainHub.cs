@@ -124,8 +124,8 @@ namespace Blueprint.Api.Hubs
                     .ToListAsync();
                 // get my unit's msels
                 var unitMselIds = _context.MselUnits
-                    .Where(t => unitIdList.Contains(t.Id) && t.Msel.Status != Data.Enumerations.MselItemStatus.Archived)
-                    .Select(t => t.Msel.Id.ToString());
+                    .Where(mu => unitIdList.Contains(mu.UnitId) && mu.Msel.Status != Data.Enumerations.MselItemStatus.Archived)
+                    .Select(mu => mu.MselId.ToString());
                 var unitMselIdList = await unitMselIds
                     .Where(id => id != null)
                     .ToListAsync();

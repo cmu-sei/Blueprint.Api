@@ -175,6 +175,7 @@ namespace Blueprint.Api.Services
             // get the units' msels
             var unitMselList = await _context.MselUnits
                 .Where(mu => unitIdList.Contains(mu.UnitId) && mu.Msel.Status != MselItemStatus.Archived)
+                .Include(mu => mu.Msel.UserMselRoles)
                 .Select(mu => mu.Msel)
                 .ToListAsync(ct);
             // get msels created by user and all templates, if user is a content developer
@@ -183,10 +184,16 @@ namespace Blueprint.Api.Services
             {
                 myMselList = await _context.Msels
                     .Where(m => (m.CreatedBy == userId || m.IsTemplate) && m.Status != MselItemStatus.Archived)
+                    .Include(m => m.UserMselRoles)
                     .ToListAsync(ct);
             }
             // combine lists
             var mselList = unitMselList.Union(myMselList).OrderBy(m => m.Name);
+            // only return UserMselRoles for the requested user
+            foreach (var msel in mselList)
+            {
+                FilterUserMselRolesByUser(userId, msel);
+            }
 
             return _mapper.Map<IEnumerable<Msel>>(mselList);
         }
@@ -212,6 +219,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.UserMselRoles)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
+            FilterUserMselRolesByUser(_user.GetId(), mselEntity);
             var msel = _mapper.Map<Msel>(mselEntity);
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
@@ -1901,6 +1909,18 @@ namespace Blueprint.Api.Services
                 .Select(umr => umr.Id)
                 .ToListAsync(ct);
             return myDeployedMselIds;
+        }
+
+        private void FilterUserMselRolesByUser(Guid userId, MselEntity msel)
+        {
+            var userMselRoles = msel.UserMselRoles.ToArray();
+            for (var i = 0; i < userMselRoles.Count(); i++)
+            {
+                if (userMselRoles[i].UserId != userId)
+                {
+                    msel.UserMselRoles.Remove(userMselRoles[i]);
+                }
+            }
         }
 
     }

@@ -110,7 +110,7 @@ namespace Blueprint.Api.Services
             var item = await CreateAsync(playerApplication, ct);
             // push the application to Player
             await _playerService.PushApplication(item, ct);
-            
+
             return item;
         }
 
@@ -129,6 +129,7 @@ namespace Blueprint.Api.Services
             playerApplication.DateCreated = playerApplicationToUpdate.DateCreated;
             playerApplication.ModifiedBy = _user.GetId();
             playerApplication.DateModified = DateTime.UtcNow;
+            playerApplication.Msel = null;
             _mapper.Map(playerApplication, playerApplicationToUpdate);
 
             _context.PlayerApplications.Update(playerApplicationToUpdate);
@@ -158,4 +159,3 @@ namespace Blueprint.Api.Services
 
     }
 }
-

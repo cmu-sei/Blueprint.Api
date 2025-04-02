@@ -23,7 +23,7 @@ namespace Blueprint.Api.ViewModels
         public Guid Id { get; set; }
         public Guid PlayerApplicationId { get; set; }
         public Guid TeamId { get; set; }
+        public int DisplayOrder { get; set; }
     }
 
 }
-

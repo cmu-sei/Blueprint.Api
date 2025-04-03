@@ -9,7 +9,6 @@ namespace Blueprint.Api.ViewModels
     {
         public Guid Id { get; set; }
         public Guid MselId { get; set; }
-        public virtual Msel Msel { get; set; }
         public string Name { get; set; }
         public string Url { get; set; }
         public string Icon { get; set; }
@@ -18,4 +17,3 @@ namespace Blueprint.Api.ViewModels
     }
 
 }
-

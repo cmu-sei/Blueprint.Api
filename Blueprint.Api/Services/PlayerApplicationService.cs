@@ -129,7 +129,6 @@ namespace Blueprint.Api.Services
             playerApplication.DateCreated = playerApplicationToUpdate.DateCreated;
             playerApplication.ModifiedBy = _user.GetId();
             playerApplication.DateModified = DateTime.UtcNow;
-            playerApplication.Msel = null;
             _mapper.Map(playerApplication, playerApplicationToUpdate);
 
             _context.PlayerApplications.Update(playerApplicationToUpdate);

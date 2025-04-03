@@ -97,19 +97,23 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Create Player Applications for this MSEL
         public static async Task CreateApplicationsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            var displayOrder = 1;
             foreach (var application in msel.PlayerApplications)
             {
-                var applicationUrl = application.Url
+                var urlString = application.Url
                     .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
                     .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
                     .Replace("{steamFitterScenarioId}", msel.SteamfitterScenarioId.ToString())
                     .Replace("{playerViewId}", msel.PlayerViewId.ToString());
+                Uri applicationUrl;
+                if (!Uri.TryCreate(urlString, UriKind.Absolute, out applicationUrl) || !(applicationUrl.Scheme == Uri.UriSchemeHttp || applicationUrl.Scheme == Uri.UriSchemeHttps))
+                {
+                    applicationUrl = null;
+                }
                 var playerApplication = new Application() {
                     Name = application.Name,
                     Embeddable = application.Embeddable,
                     ViewId = (Guid)msel.PlayerViewId,
-                    Url = new Uri(applicationUrl),
+                    Url = applicationUrl,
                     Icon = application.Icon,
                     LoadInBackground = application.LoadInBackground
                 };
@@ -124,11 +128,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     var applicationInstanceForm = new ApplicationInstanceForm() {
                         TeamId = (Guid)applicationTeam.Team.PlayerTeamId,
                         ApplicationId = (Guid)playerApplication.Id,
-                        DisplayOrder = displayOrder
+                        DisplayOrder = applicationTeam.DisplayOrder
                     };
                     await playerApiClient.CreateApplicationInstanceAsync(applicationInstanceForm.TeamId, applicationInstanceForm, ct);
                 }
-                displayOrder++;
             }
         }
 

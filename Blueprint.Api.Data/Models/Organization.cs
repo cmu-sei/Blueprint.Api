@@ -4,6 +4,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Blueprint.Api.Data.Attributes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -16,7 +17,10 @@ namespace Blueprint.Api.Data.Models
         public Guid Id { get; set; }
         public string Name { get; set; }
         public string ShortName { get; set; }
+
+        [SanitizeHtml]
         public string Description { get; set; }
+
         public string Summary { get; set; }
         public string Email { get; set; }
         public bool IsTemplate { get; set; }

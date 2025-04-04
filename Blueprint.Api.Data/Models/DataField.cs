@@ -8,6 +8,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Data.Attributes;
 
 namespace Blueprint.Api.Data.Models
 {
@@ -21,7 +22,10 @@ namespace Blueprint.Api.Data.Models
         public Guid? InjectTypeId { get; set; }
         public virtual InjectTypeEntity InjectType { get; set; }
         public string Name { get; set; }
+
+        [SanitizeHtml]
         public string Description { get; set; }
+
         public DataFieldType DataType { get; set; }
         public int DisplayOrder { get; set; }
         public bool OnScenarioEventList { get; set; }
@@ -32,7 +36,7 @@ namespace Blueprint.Api.Data.Models
         public string CellMetadata { get; set; } // spreadsheet metadata defining the column header cell attributes
         public string ColumnMetadata { get; set; } // spreadsheet metadata defining the column attributes
         public bool IsShownOnDefaultTab { get; set; } // determines if this data field is displayed on the default tab
-        public bool IsOnlyShownToOwners { get; set;} // determines if this data field gets displayed for all users or just owners (i.e. spreadsheet metadata)
+        public bool IsOnlyShownToOwners { get; set; } // determines if this data field gets displayed for all users or just owners (i.e. spreadsheet metadata)
         public string GalleryArticleParameter { get; set; } // the Gallery Article parameter associated with this DataField
         public bool IsTemplate { get; set; }
         public bool IsInformationField { get; set; }  // will be displayed for Information scenario event types

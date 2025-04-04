@@ -30,7 +30,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.JsonWebTokens;
 using AutoMapper.Internal;
-using Ganss.Xss;
 
 namespace Blueprint.Api;
 
@@ -237,15 +236,7 @@ public class Startup
 
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(typeof(Startup).Assembly));
 
-        // TODO: Make configurable and move to extension method
-        services.AddSingleton<IHtmlSanitizer>(_ =>
-        {
-            var sanitizer = new HtmlSanitizer();
-            sanitizer.AllowedTags.Add("video");
-            sanitizer.AllowedAttributes.Add("controls");
-            sanitizer.AllowedTags.Add("source");
-            return sanitizer;
-        });
+        services.AddHtmlSanitizer(Configuration);
     }
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

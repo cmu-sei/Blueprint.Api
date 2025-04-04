@@ -16,6 +16,9 @@ using Cite.Api.Client;
 using Gallery.Api.Client;
 using Player.Api.Client;
 using Steamfitter.Api.Client;
+using Ganss.Xss;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace Blueprint.Api.Infrastructure.Extensions
 {
@@ -162,5 +165,43 @@ namespace Blueprint.Api.Infrastructure.Extensions
             });
         }
 
+        public static void AddHtmlSanitizer(this IServiceCollection services, IConfiguration configuration)
+        {
+            services.Configure<Options.HtmlSanitizerOptions>(configuration.GetSection("HtmlSanitizer"));
+
+            services.AddSingleton<IHtmlSanitizer>(serviceProvider =>
+            {
+                var options = serviceProvider.GetRequiredService<IOptions<Options.HtmlSanitizerOptions>>().Value;
+
+                var sanitizer = new HtmlSanitizer();
+
+                foreach (var tag in options.AllowedTags)
+                {
+                    sanitizer.AllowedTags.Add(tag);
+                }
+
+                foreach (var attribute in options.AllowedAttributes)
+                {
+                    sanitizer.AllowedAttributes.Add(attribute);
+                }
+
+                foreach (var cls in options.AllowedClasses)
+                {
+                    sanitizer.AllowedClasses.Add(cls);
+                }
+
+                foreach (var prop in options.AllowedCssProperties)
+                {
+                    sanitizer.AllowedCssProperties.Add(prop);
+                }
+
+                foreach (var scheme in options.AllowedSchemes)
+                {
+                    sanitizer.AllowedSchemes.Add(scheme);
+                }
+
+                return sanitizer;
+            });
+        }
     }
 }

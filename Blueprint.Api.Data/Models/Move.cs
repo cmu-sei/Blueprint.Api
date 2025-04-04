@@ -4,6 +4,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Blueprint.Api.Data.Attributes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -19,7 +20,10 @@ namespace Blueprint.Api.Data.Models
         public int DeltaSeconds { get; set; }
         public DateTime? MoveStartTime { get; set; }
         public DateTime? SituationTime { get; set; }
+
+        [SanitizeHtml]
         public string SituationDescription { get; set; }
+
         public Guid MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
     }

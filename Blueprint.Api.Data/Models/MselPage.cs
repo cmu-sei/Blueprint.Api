@@ -4,6 +4,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Blueprint.Api.Data.Attributes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -19,7 +20,10 @@ namespace Blueprint.Api.Data.Models
         public Guid MselId { get; set; }
         public MselEntity Msel { get; set; }
         public string Name { get; set; }
+
+        [SanitizeHtml]
         public string Content { get; set; }
+
         public bool AllCanView { get; set; }
     }
 

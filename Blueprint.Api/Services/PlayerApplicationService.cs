@@ -110,7 +110,7 @@ namespace Blueprint.Api.Services
             var item = await CreateAsync(playerApplication, ct);
             // push the application to Player
             await _playerService.PushApplication(item, ct);
-            
+
             return item;
         }
 
@@ -158,4 +158,3 @@ namespace Blueprint.Api.Services
 
     }
 }
-

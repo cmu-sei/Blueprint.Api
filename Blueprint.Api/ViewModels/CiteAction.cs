@@ -9,9 +9,7 @@ namespace Blueprint.Api.ViewModels
     {
         public Guid Id { get; set; }
         public Guid? MselId { get; set; }
-        public virtual Msel Msel { get; set; }
         public Guid? TeamId { get; set; }
-        public virtual Team Team { get; set; }
         public int MoveNumber { get; set; }
         public int InjectNumber { get; set; }
         public int ActionNumber { get; set; }
@@ -20,4 +18,3 @@ namespace Blueprint.Api.ViewModels
     }
 
 }
-

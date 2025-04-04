@@ -17,6 +17,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using System.IO;
 
 namespace Blueprint.Api.Services
 {
@@ -122,11 +123,19 @@ namespace Blueprint.Api.Services
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
 
+            // make sure that the display order is valid
+            var itemList = await _context.PlayerApplicationTeams.Where(m => m.TeamId == playerApplicationTeam.TeamId).OrderBy(m => m.DisplayOrder).ToListAsync();
+            if (playerApplicationTeam.DisplayOrder > itemList.Count + 1 || playerApplicationTeam.DisplayOrder < 1)
+            {
+                playerApplicationTeam.DisplayOrder = itemList.Count + 1;
+            }
+            // create the new item
             var playerApplicationTeamEntity = _mapper.Map<PlayerApplicationTeamEntity>(playerApplicationTeam);
             playerApplicationTeamEntity.Id = playerApplicationTeamEntity.Id != Guid.Empty ? playerApplicationTeamEntity.Id : Guid.NewGuid();
-
+            // save the new item
             _context.PlayerApplicationTeams.Add(playerApplicationTeamEntity);
             await _context.SaveChangesAsync(ct);
+            await UpdateOrdering(playerApplicationTeamEntity, itemList, ct);
 
             return await GetAsync(playerApplicationTeamEntity.Id, ct);
         }
@@ -135,6 +144,11 @@ namespace Blueprint.Api.Services
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
+
+            // make sure that the display order is valid
+            var itemList = await _context.PlayerApplicationTeams.Where(m => m.TeamId == playerApplicationTeam.TeamId && m.Id != playerApplicationTeam.Id).OrderBy(m => m.DisplayOrder).ToListAsync();
+            if (playerApplicationTeam.DisplayOrder > itemList.Count + 1 || playerApplicationTeam.DisplayOrder < 1)
+                throw new InvalidDataException("The requested display order is not valid");
 
             var playerApplicationTeamToUpdate = await _context.PlayerApplicationTeams.SingleOrDefaultAsync(v => v.Id == id, ct);
 
@@ -147,6 +161,7 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
 
             playerApplicationTeam = await GetAsync(playerApplicationTeamToUpdate.Id, ct);
+            await UpdateOrdering(playerApplicationTeamToUpdate, itemList, ct);
 
             return playerApplicationTeam;
         }
@@ -163,6 +178,10 @@ namespace Blueprint.Api.Services
 
             _context.PlayerApplicationTeams.Remove(playerApplicationTeamToDelete);
             await _context.SaveChangesAsync(ct);
+            // make sure that the remaining display order is valid
+            var itemList = await _context.PlayerApplicationTeams.Where(m => m.TeamId == playerApplicationTeamToDelete.TeamId).OrderBy(m => m.DisplayOrder).ToListAsync();
+            playerApplicationTeamToDelete.DisplayOrder = itemList.Count + 1;
+            await UpdateOrdering(playerApplicationTeamToDelete, itemList, ct);
 
             return true;
         }
@@ -183,6 +202,29 @@ namespace Blueprint.Api.Services
             return true;
         }
 
+        private async Task UpdateOrdering(PlayerApplicationTeamEntity newItem, List<PlayerApplicationTeamEntity> itemList, CancellationToken ct)
+        {
+            // update pre-existing items that come before the new item, if necessary
+            for (int index = 0; index < newItem.DisplayOrder - 1; index++)
+            {
+                var item = itemList[index];
+                if (item.DisplayOrder != index + 1)
+                {
+                    item.DisplayOrder = index + 1;
+                }
+            }
+            // update pre-existing items that come after the new item, if necessary
+            for (int index = newItem.DisplayOrder - 1; index < itemList.Count; index++)
+            {
+                var item = itemList[index];
+                if (item.DisplayOrder != index + 2)
+                {
+                    item.DisplayOrder = index + 2;
+                }
+            }
+            await _context.SaveChangesAsync(ct);
+
+        }
+
     }
 }
-

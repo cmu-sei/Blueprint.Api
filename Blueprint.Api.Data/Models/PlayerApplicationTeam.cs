@@ -28,6 +28,7 @@ namespace Blueprint.Api.Data.Models
 
         public Guid PlayerApplicationId { get; set; }
         public PlayerApplicationEntity PlayerApplication { get; set; }
+        public int DisplayOrder { get; set; }
     }
 
     public class PlayerApplicationTeamConfiguration : IEntityTypeConfiguration<PlayerApplicationTeamEntity>
@@ -49,4 +50,3 @@ namespace Blueprint.Api.Data.Models
         }
     }
 }
-

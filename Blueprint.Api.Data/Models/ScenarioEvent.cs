@@ -8,6 +8,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Data.Attributes;
 
 namespace Blueprint.Api.Data.Models
 {
@@ -24,7 +25,10 @@ namespace Blueprint.Api.Data.Models
         public string RowMetadata { get; set; }    // comma separated values (row height number, integer R, integer G, integer B)
         public int DeltaSeconds { get; set; }     // time from the start of the MSEL when this event should be executed
         public EventType ScenarioEventType { get; set; }
+
+        [SanitizeHtml]
         public string Description { get; set; }
+
         public Guid? InjectId { get; set; }
         public InjectEntity Inject { get; set; }
     }

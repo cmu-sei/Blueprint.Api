@@ -8,9 +8,7 @@ using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
-using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
-using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 
@@ -18,20 +16,14 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class UserHandler
     {
-        protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
-        protected readonly IUserService _UserService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public UserHandler(
-            BlueprintContext db,
             IMapper mapper,
-            IUserService UserService,
             IHubContext<MainHub> mainHub)
         {
-            _db = db;
             _mapper = mapper;
-            _UserService = UserService;
             _mainHub = mainHub;
         }
 
@@ -67,10 +59,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     public class UserCreatedSignalRHandler : UserHandler, INotificationHandler<EntityCreated<UserEntity>>
     {
         public UserCreatedSignalRHandler(
-            BlueprintContext db,
             IMapper mapper,
-            IUserService userService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, userService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(mapper, mainHub) { }
 
         public async Task Handle(EntityCreated<UserEntity> notification, CancellationToken cancellationToken)
         {
@@ -81,10 +71,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     public class UserUpdatedSignalRHandler : UserHandler, INotificationHandler<EntityUpdated<UserEntity>>
     {
         public UserUpdatedSignalRHandler(
-            BlueprintContext db,
             IMapper mapper,
-            IUserService userService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, userService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(mapper, mainHub) { }
 
         public async Task Handle(EntityUpdated<UserEntity> notification, CancellationToken cancellationToken)
         {
@@ -99,10 +87,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     public class UserDeletedSignalRHandler : UserHandler, INotificationHandler<EntityDeleted<UserEntity>>
     {
         public UserDeletedSignalRHandler(
-            BlueprintContext db,
             IMapper mapper,
-            IUserService userService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, userService, mainHub)
+            IHubContext<MainHub> mainHub) : base(mapper, mainHub)
         {
         }
 

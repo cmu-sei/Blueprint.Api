@@ -10,5 +10,5 @@
 # To install swagger on Windows managed machine
 1. Create folder C:\SEI\Tools\.dotnet\tools and copy contents from C:\Users\<usrname>\.dotnet\tools
 2. Delete C:\Users\<usrname>\.dotnet\tools and then create a symlink from C:\Users\<usrname>\.dotnet\tools to C:\SEI\Tools\.dotnet\tools
-3. dotnet tool install --global Swashbuckle.AspNetCore.Cli --version 6.2.3       
+3. dotnet tool install --global Swashbuckle.AspNetCore.Cli --version 6.2.3
    ** (note:  the version MUST match what is in Blueprint.Api.csproj)

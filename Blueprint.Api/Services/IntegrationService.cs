@@ -13,12 +13,13 @@ using Blueprint.Api.Hubs;
 using System;
 using System.Net.Http;
 using System.Threading;
-using System.Threading.Tasks;
+using STT = System.Threading.Tasks;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Data;
 using Cite.Api.Client;
 using Gallery.Api.Client;
 using Player.Api.Client;
+using Steamfitter.Api.Client;
 
 
 namespace Blueprint.Api.Services
@@ -52,21 +53,21 @@ namespace Blueprint.Api.Services
             _clientOptions = clientOptions;
         }
 
-        public Task StartAsync(CancellationToken cancellationToken)
+        public STT.Task StartAsync(CancellationToken cancellationToken)
         {
             _ = Run();
 
-            return Task.CompletedTask;
+            return STT.Task.CompletedTask;
         }
 
-        public Task StopAsync(CancellationToken cancellationToken)
+        public STT.Task StopAsync(CancellationToken cancellationToken)
         {
-            return Task.CompletedTask;
+            return STT.Task.CompletedTask;
         }
 
-        private async Task Run()
+        private async STT.Task Run()
         {
-            await Task.Run(() =>
+            await STT.Task.Run(() =>
             {
                 while (true)
                 {
@@ -166,6 +167,23 @@ namespace Blueprint.Api.Services
                                     .AsSplitQuery()
                                     .SingleOrDefaultAsync(m => m.Id == integrationInformation.MselId);
                                 await CiteProcess(msel, citeApiClient, blueprintContext, ct);
+                            }
+
+                            // Steamfitter processing
+                            if (msel.UseSteamfitter)
+                            {
+                                // Get Steamfitter API client
+                                currentProcessStep = "Steamfitter - get API client";
+                                var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
+
+                                currentProcessStep = "Steamfitter - begin processing";
+                                msel = await blueprintContext.Msels
+                                    .Include(m => m.Moves)
+                                    .Include(m => m.ScenarioEvents)
+                                    .ThenInclude(se => se.DataValues)
+                                    .AsSplitQuery()
+                                    .SingleOrDefaultAsync(m => m.Id == integrationInformation.MselId);
+                                await SteamfitterProcess(msel, steamfitterApiClient, blueprintContext, ct);
                             }
 
                             // Player processing part 2
@@ -270,7 +288,7 @@ namespace Blueprint.Api.Services
             return true;
         }
 
-        private async Task PlayerProcessPart1(MselEntity msel, Guid? playerViewId, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        private async STT.Task PlayerProcessPart1(MselEntity msel, Guid? playerViewId, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             var currentProcessStep = "Player create view";
             var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
@@ -291,7 +309,7 @@ namespace Blueprint.Api.Services
             }
         }
 
-        private async Task CiteProcess(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        private async STT.Task CiteProcess(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             var currentProcessStep = "CITE - get hubGroup";
             try
@@ -329,7 +347,7 @@ namespace Blueprint.Api.Services
             }
         }
 
-        private async Task GalleryProcess(MselEntity msel, IScenarioEventService scenarioEventService, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        private async STT.Task GalleryProcess(MselEntity msel, IScenarioEventService scenarioEventService, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             var currentProcessStep = "Gallery - get hubGroup";
             try
@@ -362,6 +380,24 @@ namespace Blueprint.Api.Services
                 currentProcessStep = "Gallery - commit transaction";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to Gallery", null, ct);
                 await blueprintContext.Database.CommitTransactionAsync(ct);
+            }
+            catch (System.Exception ex)
+            {
+                _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                throw ex;
+            }
+        }
+
+        private async STT.Task SteamfitterProcess(MselEntity msel, SteamfitterApiClient steamfitterApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            var currentProcessStep = "Steamfitter - get hubGroup";
+            try
+            {
+                var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
+                // create the Steamfitter Scenario
+                currentProcessStep = "Steamfitter - create scenario";
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Scenario to Steamfitter", null, ct);
+                var scenario = await IntegrationSteamfitterExtensions.CreateScenarioAsync(msel, steamfitterApiClient, blueprintContext, ct);
             }
             catch (System.Exception ex)
             {

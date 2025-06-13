@@ -113,23 +113,25 @@ namespace Blueprint.Api.Services
                         msel.CiteEvaluationId != null ||
                         msel.SteamfitterScenarioId != null);
                     var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
-                    currentProcessStep = "Try propcessing the MSEL";
+                    currentProcessStep = "Try processing the MSEL";
                     try
                     {
+                        PlayerApiClient playerApiClient = null;
+                        currentProcessStep = "Getting Auth Token with scope " + scope;
                         var tokenResponse = await ApiClientsExtensions.GetToken(scope);
-                        // Get Player API client
-                        currentProcessStep = "Player - get API client with token: " + tokenResponse.AccessToken;
-                        var playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
                         if (isAPush)
                         {
-                            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Integrations", null, ct);
                             // Player processing part 1
-                            currentProcessStep = "Player - begin processing part 1";
-                            await PlayerProcessPart1(msel, integrationInformation.PlayerViewId, playerApiClient, blueprintContext, ct);
-
-                            // set the MSEL status
-                            msel.Status = Data.Enumerations.MselItemStatus.Deployed;
-                            await blueprintContext.SaveChangesAsync(ct);
+                            if (msel.UsePlayer)
+                            {
+                                // Get Player API client
+                                currentProcessStep = "Player - get API client with token: " + tokenResponse.AccessToken;
+                                playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
+                                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Integrations", null, ct);
+                                // Player processing part 1
+                                currentProcessStep = "Player - begin processing part 1";
+                                await PlayerProcessPart1(msel, integrationInformation.PlayerViewId, playerApiClient, blueprintContext, ct);
+                            }
 
                             // Gallery processing
                             if (msel.UseGallery)
@@ -187,29 +189,33 @@ namespace Blueprint.Api.Services
                             }
 
                             // Player processing part 2
-                            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Push Player Applications", null, ct);
-                            currentProcessStep = "Player - push applications";
-                            await IntegrationPlayerExtensions.CreateApplicationsAsync(msel, playerApiClient, blueprintContext, ct);
+                            if (msel.UsePlayer)
+                            {
+                                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Push Player Applications", null, ct);
+                                currentProcessStep = "Player - push applications";
+                                await IntegrationPlayerExtensions.CreateApplicationsAsync(msel, playerApiClient, blueprintContext, ct);
+                            }
+                            // set the MSEL status
+                            msel.Status = Data.Enumerations.MselItemStatus.Deployed;
+                            await blueprintContext.SaveChangesAsync(ct);
+                            // tell UI we are done
                             await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + "", null, ct);
                         }
                         else
                         {
                             await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Integrations", null, ct);
                             // Pull from CITE
-                            if (msel.UseCite)
+                            if (msel.CiteEvaluationId != null)
                             {
-                                // Get CITE API client
-                                currentProcessStep = "CITE - get API client";
-                                var citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CurrentValue.CiteApiUrl, tokenResponse);
-
-                                currentProcessStep = "CITE - pull evaluation";
-                                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling CITE Evaluation", null, ct);
                                 try
                                 {
-                                    if (msel.CiteEvaluationId != null)
-                                    {
-                                        await IntegrationCiteExtensions.PullFromCiteAsync((Guid)msel.CiteEvaluationId, citeApiClient, ct);
-                                    }
+                                    // Get CITE API client
+                                    currentProcessStep = "CITE - get API client";
+                                    var citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CurrentValue.CiteApiUrl, tokenResponse);
+
+                                    currentProcessStep = "CITE - pull evaluation";
+                                    await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling CITE Evaluation", null, ct);
+                                    await IntegrationCiteExtensions.PullFromCiteAsync((Guid)msel.CiteEvaluationId, citeApiClient, ct);
                                 }
                                 catch (System.Exception ex)
                                 {
@@ -217,20 +223,16 @@ namespace Blueprint.Api.Services
                                 }
                             }
                             // Pull from Gallery
-                            if (msel.UseGallery)
+                            if (msel.GalleryCollectionId != null)
                             {
-                                // Get Gallery API client
-                                currentProcessStep = "Gallery - get API client";
-                                var galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse);
-
-                                currentProcessStep = "Gallery - pull collection";
-                                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Gallery Collection", null, ct);
                                 try
                                 {
-                                    if (msel.GalleryCollectionId != null)
-                                    {
-                                        await IntegrationGalleryExtensions.PullFromGalleryAsync((Guid)msel.GalleryCollectionId, galleryApiClient, ct);
-                                    }
+                                    // Get Gallery API client
+                                    currentProcessStep = "Gallery - get API client";
+                                    var galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse);
+                                    currentProcessStep = "Gallery - pull collection";
+                                    await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Gallery Collection", null, ct);
+                                    await IntegrationGalleryExtensions.PullFromGalleryAsync((Guid)msel.GalleryCollectionId, galleryApiClient, ct);
                                 }
                                 catch (System.Exception ex)
                                 {
@@ -238,21 +240,38 @@ namespace Blueprint.Api.Services
                                 }
                             }
                             // Pull from Player
-                            currentProcessStep = "Player - pull view";
-                            await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Player View", null, ct);
-                            try
+                            if (msel.PlayerViewId != null)
                             {
-                                if (msel.PlayerViewId != null)
+                                try
                                 {
+                                    currentProcessStep = "Player - get API client with token: " + tokenResponse.AccessToken;
+                                    playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
+                                    currentProcessStep = "Player - pull view";
+                                    await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Player View", null, ct);
                                     await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, ct);
                                 }
+                                catch (System.Exception)
+                                {
+                                    _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})");
+                                }
                             }
-                            catch (System.Exception)
+                            // Pull from Steamfitter
+                            if (msel.SteamfitterScenarioId != null)
                             {
-                                _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})");
+                                try
+                                {
+                                    currentProcessStep = "Steamfitter - pull scenario";
+                                    await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Steamfitter Scenario", null, ct);
+                                    var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
+                                    await IntegrationSteamfitterExtensions.PullFromSteamfitterAsync((Guid)msel.SteamfitterScenarioId, steamfitterApiClient, ct);
+                                }
+                                catch (System.Exception)
+                                {
+                                    _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})");
+                                }
                             }
-                            currentProcessStep = "MSEL update ";
                             // update the MSEL
+                            currentProcessStep = "MSEL update ";
                             var mselId = msel.Id;
                             msel = await blueprintContext.Msels.FirstOrDefaultAsync(m => m.Id == mselId);
                             if (msel != null)
@@ -261,6 +280,7 @@ namespace Blueprint.Api.Services
                                 msel.GalleryExhibitId = null;
                                 msel.GalleryCollectionId = null;
                                 msel.PlayerViewId = null;
+                                msel.SteamfitterScenarioId = null;
                                 msel.Status = integrationInformation.FinalStatus;
                                 await blueprintContext.SaveChangesAsync(ct);
                             }

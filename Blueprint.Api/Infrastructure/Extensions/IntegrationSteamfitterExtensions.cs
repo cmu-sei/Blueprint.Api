@@ -40,6 +40,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         public static async STT.Task<Scenario> CreateScenarioAsync(MselEntity msel, SteamfitterApiClient steamfitterApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             var startDate = DateTime.UtcNow;
+            startDate = msel.StartTime < startDate ? startDate : msel.StartTime;
             ScenarioForm scenarioForm = new ScenarioForm()
             {
                 Name = msel.Name,

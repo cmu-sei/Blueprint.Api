@@ -453,7 +453,6 @@ namespace Blueprint.Api.Services
                     IsHidden = false,
                     DeltaSeconds = sourceScenarioEvent.DeltaSeconds,
                     ScenarioEventType = sourceScenarioEvent.ScenarioEventType,
-                    Description = sourceScenarioEvent.Description,
                     InjectId = sourceScenarioEvent.InjectId,
                     DateCreated = dateCreated,
                     CreatedBy = userId,

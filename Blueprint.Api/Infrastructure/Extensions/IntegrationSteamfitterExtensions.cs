@@ -64,7 +64,11 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Create the Scenario Tasks for this MSEL
         private static async STT.Task CreateScenarioTasksAsync(MselEntity msel, SteamfitterApiClient SteamfitterApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            // TODO:  create the tasks here
+            foreach (var scenarioEvent in msel.ScenarioEvents)
+            {
+                // var deliveryMethod = GetArticleValue(GalleryArticleParameter.DeliveryMethod.ToString(), scenarioEvent.DataValues, msel.DataFields);
+                // if (deliveryMethod.Contains("Gallery"))
+            }
         }
 
     }

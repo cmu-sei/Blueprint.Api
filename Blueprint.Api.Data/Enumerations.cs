@@ -13,13 +13,15 @@ namespace Blueprint.Api.Data.Enumerations
         Archived = 50
     }
 
-    public enum IntegrationType {
+    public enum IntegrationType
+    {
         Deploy = 10,
         // Clone = 20,  add this when cloning is implemented
         Connect = 30
     }
 
-    public enum EventType {
+    public enum EventType
+    {
         Inject = 10,
         Information = 20,
         Facilitation = 30
@@ -34,7 +36,8 @@ namespace Blueprint.Api.Data.Enumerations
         Expired = 50
     }
 
-    public enum DataFieldType{
+    public enum DataFieldType
+    {
         String = 0,
         Integer = 10,
         Double = 20,
@@ -51,10 +54,11 @@ namespace Blueprint.Api.Data.Enumerations
         Checkbox = 130,    // used to track statuses about the inject.
         Url = 140,    // link to other information
         Move = 150,     // values will be filled from the MSEL moves
-        DeliveryMethod = 160     // values will currently be filled from Notification, Email, and Gallery
+        IntegrationTarget = 160     // values will currently be filled from Notification, Email, and Gallery
     }
 
-    public enum MselRole{
+    public enum MselRole
+    {
         Owner = 10,
         Editor = 20,
         Approver = 30,
@@ -63,7 +67,8 @@ namespace Blueprint.Api.Data.Enumerations
         Evaluator = 60
     }
 
-    public enum TeamRole{
+    public enum TeamRole
+    {
         Observer = 80,
         Inviter = 90,
         Incrementer = 100,
@@ -71,29 +76,38 @@ namespace Blueprint.Api.Data.Enumerations
         Submitter = 120
     }
 
-    public enum GalleryArticleParameter{
-      Name,
-      Description,
-      Status,
-      SourceType,
-      SourceName,
-      Url,
-      DatePosted,
-      OpenInNewTab,
-      CardId,
-      DeliveryMethod,
-      ToOrg,
-      FromOrg,
-      Summary
+    public enum GalleryArticleParameter
+    {
+        Name,
+        Description,
+        Status,
+        SourceType,
+        SourceName,
+        Url,
+        DatePosted,
+        OpenInNewTab,
+        CardId,
+        DeliveryMethod,
+        ToOrg,
+        FromOrg,
+        Summary
     }
 
-    public enum GallerySourceType{
+    public enum GallerySourceType
+    {
         News,
         Social,
         Email,
         Phone,
         Intel,
         Reporting
+    }
+
+    public enum IntegrationTarget
+    {
+      Gallery,
+      Email,
+      Notification
     }
 
 }

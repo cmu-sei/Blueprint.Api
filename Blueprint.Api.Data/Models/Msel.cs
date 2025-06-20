@@ -43,9 +43,9 @@ namespace Blueprint.Api.Data.Models
         public bool ShowGroupOnScenarioEventList { get; set; }
         public bool ShowGroupOnExerciseView { get; set; }
         public int GroupDisplayOrder { get; set; }
-        public bool ShowDeliveryMethodOnScenarioEventList { get; set; }
-        public bool ShowDeliveryMethodOnExerciseView { get; set; }
-        public int DeliveryMethodDisplayOrder { get; set; }
+        public bool ShowIntegrationTargetOnScenarioEventList { get; set; }
+        public bool ShowIntegrationTargetOnExerciseView { get; set; }
+        public int IntegrationTargetDisplayOrder { get; set; }
         public virtual ICollection<MoveEntity> Moves { get; set; } = new HashSet<MoveEntity>();
         public virtual ICollection<DataFieldEntity> DataFields { get; set; } = new HashSet<DataFieldEntity>();
         public virtual ICollection<ScenarioEventEntity> ScenarioEvents { get; set; } = new HashSet<ScenarioEventEntity>();

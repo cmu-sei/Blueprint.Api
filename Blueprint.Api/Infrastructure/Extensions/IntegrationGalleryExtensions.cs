@@ -166,8 +166,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
             foreach (var scenarioEvent in msel.ScenarioEvents)
             {
-                var deliveryMethod = GetArticleValue(GalleryArticleParameter.DeliveryMethod.ToString(), scenarioEvent.DataValues, msel.DataFields);
-                if (deliveryMethod.Contains("Gallery"))
+                if (scenarioEvent.IntegrationTarget.Contains("Gallery"))
                 {
                     object status = Gallery.Api.Client.ItemStatus.Unused;
                     object sourceType = SourceType.News;

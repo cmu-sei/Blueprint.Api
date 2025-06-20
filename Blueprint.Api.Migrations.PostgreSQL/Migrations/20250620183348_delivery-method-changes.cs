@@ -5,7 +5,7 @@
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     /// <inheritdoc />
-    public partial class deliverymethodchange : Migration
+    public partial class deliverymethodchanges : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -13,17 +13,17 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
             migrationBuilder.RenameColumn(
                 name: "description",
                 table: "scenario_events",
-                newName: "delivery_method");
+                newName: "integration_target");
 
             migrationBuilder.AddColumn<int>(
-                name: "delivery_method_display_order",
+                name: "group_display_order",
                 table: "msels",
                 type: "integer",
                 nullable: false,
                 defaultValue: 0);
 
             migrationBuilder.AddColumn<int>(
-                name: "group_display_order",
+                name: "integration_target_display_order",
                 table: "msels",
                 type: "integer",
                 nullable: false,
@@ -37,14 +37,14 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                 defaultValue: 0);
 
             migrationBuilder.AddColumn<bool>(
-                name: "show_delivery_method_on_exercise_view",
+                name: "show_integration_target_on_exercise_view",
                 table: "msels",
                 type: "boolean",
                 nullable: false,
                 defaultValue: false);
 
             migrationBuilder.AddColumn<bool>(
-                name: "show_delivery_method_on_scenario_event_list",
+                name: "show_integration_target_on_scenario_event_list",
                 table: "msels",
                 type: "boolean",
                 nullable: false,
@@ -62,11 +62,11 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(
-                name: "delivery_method_display_order",
+                name: "group_display_order",
                 table: "msels");
 
             migrationBuilder.DropColumn(
-                name: "group_display_order",
+                name: "integration_target_display_order",
                 table: "msels");
 
             migrationBuilder.DropColumn(
@@ -74,11 +74,11 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                 table: "msels");
 
             migrationBuilder.DropColumn(
-                name: "show_delivery_method_on_exercise_view",
+                name: "show_integration_target_on_exercise_view",
                 table: "msels");
 
             migrationBuilder.DropColumn(
-                name: "show_delivery_method_on_scenario_event_list",
+                name: "show_integration_target_on_scenario_event_list",
                 table: "msels");
 
             migrationBuilder.DropColumn(
@@ -86,7 +86,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                 table: "msels");
 
             migrationBuilder.RenameColumn(
-                name: "delivery_method",
+                name: "integration_target",
                 table: "scenario_events",
                 newName: "description");
         }

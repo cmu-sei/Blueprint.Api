@@ -18,6 +18,6 @@ namespace Blueprint.Api.ViewModels
         public int DeltaSeconds { get; set; }     // time from the start of the MSEL when this event should be executed
         public EventType ScenarioEventType { get; set; }
         public Guid? InjectId { get; set; }
-        public string DeliveryMethod { get; set; }
+        public string IntegrationTarget { get; set; }
    }
 }

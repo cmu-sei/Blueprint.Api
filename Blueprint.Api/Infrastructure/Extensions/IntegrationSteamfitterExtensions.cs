@@ -66,8 +66,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
         {
             foreach (var scenarioEvent in msel.ScenarioEvents)
             {
-                // var deliveryMethod = GetArticleValue(GalleryArticleParameter.DeliveryMethod.ToString(), scenarioEvent.DataValues, msel.DataFields);
-                // if (deliveryMethod.Contains("Gallery"))
+                // var IntegrationTarget = GetArticleValue(GalleryArticleParameter.IntegrationTarget.ToString(), scenarioEvent.DataValues, msel.DataFields);
+                // if (IntegrationTarget.Contains("Gallery"))
             }
         }
 

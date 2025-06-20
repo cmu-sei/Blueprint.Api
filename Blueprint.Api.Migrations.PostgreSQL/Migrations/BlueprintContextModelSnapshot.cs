@@ -796,10 +796,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("date_modified");
 
-                    b.Property<int>("DeliveryMethodDisplayOrder")
-                        .HasColumnType("integer")
-                        .HasColumnName("delivery_method_display_order");
-
                     b.Property<string>("Description")
                         .HasColumnType("text")
                         .HasColumnName("description");
@@ -828,6 +824,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("header_row_metadata");
 
+                    b.Property<int>("IntegrationTargetDisplayOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("integration_target_display_order");
+
                     b.Property<bool>("IsTemplate")
                         .HasColumnType("boolean")
                         .HasColumnName("is_template");
@@ -852,14 +852,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("player_view_id");
 
-                    b.Property<bool>("ShowDeliveryMethodOnExerciseView")
-                        .HasColumnType("boolean")
-                        .HasColumnName("show_delivery_method_on_exercise_view");
-
-                    b.Property<bool>("ShowDeliveryMethodOnScenarioEventList")
-                        .HasColumnType("boolean")
-                        .HasColumnName("show_delivery_method_on_scenario_event_list");
-
                     b.Property<bool>("ShowGroupOnExerciseView")
                         .HasColumnType("boolean")
                         .HasColumnName("show_group_on_exercise_view");
@@ -867,6 +859,14 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<bool>("ShowGroupOnScenarioEventList")
                         .HasColumnType("boolean")
                         .HasColumnName("show_group_on_scenario_event_list");
+
+                    b.Property<bool>("ShowIntegrationTargetOnExerciseView")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_integration_target_on_exercise_view");
+
+                    b.Property<bool>("ShowIntegrationTargetOnScenarioEventList")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_integration_target_on_scenario_event_list");
 
                     b.Property<bool>("ShowMoveOnExerciseView")
                         .HasColumnType("boolean")
@@ -1231,10 +1231,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("date_modified");
 
-                    b.Property<string>("DeliveryMethod")
-                        .HasColumnType("text")
-                        .HasColumnName("delivery_method");
-
                     b.Property<int>("DeltaSeconds")
                         .HasColumnType("integer")
                         .HasColumnName("delta_seconds");
@@ -1246,6 +1242,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<Guid?>("InjectId")
                         .HasColumnType("uuid")
                         .HasColumnName("inject_id");
+
+                    b.Property<string>("IntegrationTarget")
+                        .HasColumnType("text")
+                        .HasColumnName("integration_target");
 
                     b.Property<bool>("IsHidden")
                         .HasColumnType("boolean")

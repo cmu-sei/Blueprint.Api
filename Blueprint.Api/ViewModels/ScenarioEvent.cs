@@ -19,5 +19,7 @@ namespace Blueprint.Api.ViewModels
         public EventType ScenarioEventType { get; set; }
         public Guid? InjectId { get; set; }
         public string IntegrationTarget { get; set; }
+        public Guid? SteamfitterTaskId { get; set; }
+        public SteamfitterTask SteamfitterTask { get; set; }
    }
 }

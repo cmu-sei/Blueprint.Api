@@ -70,6 +70,7 @@ namespace Blueprint.Api.Services
 
             var scenarioEvents = await _context.ScenarioEvents
                 .Where(i => i.MselId == mselId)
+                .Include(e => e.SteamfitterTask)
                 .OrderBy(se => se.DeltaSeconds)
                 .ThenBy(se => se.GroupOrder)
                 .ToListAsync(ct);
@@ -80,6 +81,7 @@ namespace Blueprint.Api.Services
         {
             var item = await _context.ScenarioEvents
                 .Include(se => se.DataValues)
+                .Include(se => se.SteamfitterTask)
                 .SingleAsync(a => a.Id == id, ct);
 
             if (item == null)
@@ -337,6 +339,7 @@ namespace Blueprint.Api.Services
             // return all msel scenarioEvents
             var scenarioEventEnitities = await _context.ScenarioEvents
                 .Include(m => m.DataValues)
+                .Include(se => se.SteamfitterTask)
                 .Where(m => m.MselId == msel.Id)
                 .ToListAsync(ct);
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
@@ -482,6 +485,7 @@ namespace Blueprint.Api.Services
             // return all msel scenarioEvents
             var scenarioEventEnitities = await _context.ScenarioEvents
                 .Include(m => m.DataValues)
+                .Include(se => se.SteamfitterTask)
                 .Where(m => m.MselId == destinationMsel.Id)
                 .ToListAsync(ct);
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
@@ -498,12 +502,19 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException($"No update permissions");
 
             // make sure entity exists
-            var scenarioEventToUpdate = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
+            var scenarioEventToUpdate = await _context.ScenarioEvents.Include(m => m.SteamfitterTask).SingleOrDefaultAsync(v => v.Id == id, ct);
             if (scenarioEventToUpdate == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>($"ScenarioEvent not found {id}.");
 
             // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
+            // // process the steamfitter task, if necessary
+            // if (scenarioEventToUpdate.SteamfitterTask != null)
+            // {
+            //     _context.SteamfitterTasks.Remove(scenarioEventToUpdate.SteamfitterTask);
+            //     scenarioEventToUpdate.SteamfitterTask = null;
+            //     scenarioEventToUpdate.SteamfitterTaskId = null;
+            // }
             // determine if groupOrder needs to be updated for any other scenario events on this MSEL
             var updateOrdering = scenarioEventToUpdate.DeltaSeconds != scenarioEvent.DeltaSeconds ||
                 scenarioEventToUpdate.GroupOrder != scenarioEvent.GroupOrder;
@@ -512,6 +523,11 @@ namespace Blueprint.Api.Services
             scenarioEvent.DateCreated = scenarioEventToUpdate.DateCreated;
             scenarioEvent.ModifiedBy = _user.GetId();
             scenarioEvent.DateModified = DateTime.UtcNow;
+            if (scenarioEvent.SteamfitterTask != null)
+            {
+                scenarioEvent.SteamfitterTask.ScenarioEvent = null;
+                scenarioEvent.SteamfitterTask.ScenarioEventId = scenarioEvent.Id;
+            }
             _mapper.Map(scenarioEvent, scenarioEventToUpdate);
             _context.ScenarioEvents.Update(scenarioEventToUpdate);
             var scenarioEventEnitities = new List<ScenarioEventEntity>
@@ -714,6 +730,7 @@ namespace Blueprint.Api.Services
                     se.GroupOrder >= scenarioEventEntity.GroupOrder &&
                     se.Id != scenarioEventEntity.Id)
                     .Include(se => se.DataValues)
+                    .Include(se => se.SteamfitterTask)
                 .OrderBy(se => se.GroupOrder)
                 .ToListAsync(ct);
             // for newly created events with a zero GroupOrder created after/simultaneously with all of the others, assume it should be appended to the end

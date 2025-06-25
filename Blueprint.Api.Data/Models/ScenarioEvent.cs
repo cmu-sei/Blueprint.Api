@@ -28,6 +28,8 @@ namespace Blueprint.Api.Data.Models
         public Guid? InjectId { get; set; }
         public InjectEntity Inject { get; set; }
         public string IntegrationTarget { get; set; }
+        public Guid? SteamfitterTaskId { get; set; }
+        public SteamfitterTaskEntity SteamfitterTask { get; set; }
     }
 
     public class ScenarioEventEntityConfiguration : IEntityTypeConfiguration<ScenarioEventEntity>

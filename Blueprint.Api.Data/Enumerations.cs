@@ -103,11 +103,42 @@ namespace Blueprint.Api.Data.Enumerations
         Reporting
     }
 
+    public enum SteamfitterTaskAction
+    {
+        // http actions
+        http_get = 11,
+        http_post = 12,
+        http_put = 13,
+        http_delete = 14
+    }
+
+        public enum SteamfitterTaskTrigger
+    {
+        Time = 1,
+        Success = 2,
+        Failure = 3,
+        Completion = 4,
+        Expiration = 5,
+        Manual = 6
+    }
+
     public enum IntegrationTarget
     {
-      Gallery,
-      Email,
-      Notification
+        Gallery,
+        Steamfitter
+    }
+
+    public enum SteamfitterIntegrationType
+    {
+        // blueprint helpers
+        Notification = 1,
+        Email = 2,
+        // steamfitter http actions
+        http_get = 11,
+        http_post = 12,
+        http_put = 13,
+        http_delete = 14,
+
     }
 
 }

@@ -182,7 +182,7 @@ namespace Blueprint.Api.Services
                                 msel = await blueprintContext.Msels
                                     .Include(m => m.Moves)
                                     .Include(m => m.ScenarioEvents)
-                                    .ThenInclude(se => se.DataValues)
+                                    .ThenInclude(m => m.SteamfitterTask)
                                     .AsSplitQuery()
                                     .SingleOrDefaultAsync(m => m.Id == integrationInformation.MselId);
                                 await SteamfitterProcess(msel, steamfitterApiClient, blueprintContext, ct);
@@ -418,6 +418,20 @@ namespace Blueprint.Api.Services
                 currentProcessStep = "Steamfitter - create scenario";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Scenario to Steamfitter", null, ct);
                 var scenario = await IntegrationSteamfitterExtensions.CreateScenarioAsync(msel, steamfitterApiClient, blueprintContext, ct);
+                // create the scenario tasks
+                foreach (var scenarioEvent in msel.ScenarioEvents)
+                {
+                    if (scenarioEvent.IntegrationTarget.Contains("Steamfitter") && scenarioEvent.SteamfitterTask != null)
+                    {
+                        currentProcessStep = "Steamfitter - pushing steamfitter task " + scenarioEvent.SteamfitterTaskId.ToString();
+                        var steamfitterTask = await IntegrationSteamfitterExtensions.CreateScenarioTasksAsync(
+                            msel,
+                            scenarioEvent.SteamfitterTask,
+                            steamfitterApiClient,
+                            _clientOptions.CurrentValue,
+                            ct);
+                    }
+                }
             }
             catch (System.Exception ex)
             {

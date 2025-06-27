@@ -1615,7 +1615,7 @@ namespace Blueprint.Api.Services
             var mselJson = "";
             var options = new JsonSerializerOptions()
             {
-                ReferenceHandler = ReferenceHandler.Preserve
+                ReferenceHandler = ReferenceHandler.IgnoreCycles
             };
             mselJson = JsonSerializer.Serialize(msel, options);
             // convert string to stream

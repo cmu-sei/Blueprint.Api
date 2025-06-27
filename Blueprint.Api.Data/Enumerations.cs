@@ -133,6 +133,7 @@ namespace Blueprint.Api.Data.Enumerations
         // blueprint helpers
         Notification = 1,
         Email = 2,
+        SituationUpdate = 3,
         // steamfitter http actions
         http_get = 11,
         http_post = 12,

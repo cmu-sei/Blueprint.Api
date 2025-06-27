@@ -2,16 +2,16 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using STT = System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
 using IdentityModel.Client;
 using Steamfitter.Api.Client;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Options;
+using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Infrastructure.Extensions
 {
@@ -37,7 +37,11 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create a Steamfitter Scenario for this MSEL
-        public static async STT.Task<Scenario> CreateScenarioAsync(MselEntity msel, SteamfitterApiClient steamfitterApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async STT.Task<Scenario> CreateScenarioAsync(
+            MselEntity msel,
+            SteamfitterApiClient steamfitterApiClient,
+            BlueprintContext blueprintContext,
+            CancellationToken ct)
         {
             var startDate = DateTime.UtcNow;
             startDate = msel.StartTime < startDate ? startDate : msel.StartTime;
@@ -55,20 +59,80 @@ namespace Blueprint.Api.Infrastructure.Extensions
             msel.SteamfitterScenarioId = newScenario.Id;
             await blueprintContext.SaveChangesAsync(ct);
 
-            // add the scenario tasks
-            await CreateScenarioTasksAsync(msel, steamfitterApiClient, blueprintContext, ct);
-
             return newScenario;
         }
 
         // Create the Scenario Tasks for this MSEL
-        private static async STT.Task CreateScenarioTasksAsync(MselEntity msel, SteamfitterApiClient SteamfitterApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async STT.Task<Task> CreateScenarioTasksAsync(
+            MselEntity msel,
+            SteamfitterTaskEntity steamfitterTaskEntity,
+            SteamfitterApiClient steamfitterApiClient,
+            Options.ClientOptions clientOptions,
+            CancellationToken ct)
         {
-            foreach (var scenarioEvent in msel.ScenarioEvents)
+            var action = TaskAction.Http_post;
+            var apiUrl = "http";
+            var playerApiUrl = clientOptions.PlayerApiUrl.EndsWith("/") ? clientOptions.PlayerApiUrl : clientOptions.PlayerApiUrl + "/";
+            var citeApiUrl = clientOptions.CiteApiUrl.EndsWith("/") ? clientOptions.CiteApiUrl : clientOptions.CiteApiUrl + "/";
+            var galleryApiUrl = clientOptions.PlayerApiUrl.EndsWith("/") ? clientOptions.GalleryApiUrl : clientOptions.GalleryApiUrl + "/";
+            switch (steamfitterTaskEntity.TaskType)
             {
-                // var IntegrationTarget = GetArticleValue(GalleryArticleParameter.IntegrationTarget.ToString(), scenarioEvent.DataValues, msel.DataFields);
-                // if (IntegrationTarget.Contains("Gallery"))
+                case SteamfitterIntegrationType.Notification:
+                    action = TaskAction.Http_post;
+                    apiUrl = "http";
+                    steamfitterTaskEntity.ActionParameters["Url"] = playerApiUrl + "views/" +  msel.PlayerViewId + "/notifications";
+                    steamfitterTaskEntity.ActionParameters["Body"] = "{text: \"" + steamfitterTaskEntity.ActionParameters["notificationText"] + "}";
+                    break;
+                case SteamfitterIntegrationType.http_delete:
+                    action = TaskAction.Http_delete;
+                    apiUrl = "http";
+                    break;
+                case SteamfitterIntegrationType.http_get:
+                    action = TaskAction.Http_get;
+                    apiUrl = "http";
+                    break;
+                case SteamfitterIntegrationType.http_put:
+                    action = TaskAction.Http_put;
+                    apiUrl = "http";
+                    break;
+                case SteamfitterIntegrationType.Email:
+                    action = TaskAction.Send_email;
+                    apiUrl = "stackstorm";
+                    break;
+                case SteamfitterIntegrationType.SituationUpdate:
+                    action = TaskAction.Http_put;
+                    apiUrl = "http";
+                    steamfitterTaskEntity.ActionParameters["Url"] = citeApiUrl + "evaluations/" +  msel.CiteEvaluationId + "/situation";
+                    steamfitterTaskEntity.ActionParameters["Body"] =
+                        "{\"situationTime\": \"" +
+                        steamfitterTaskEntity.ActionParameters["situationTime"] +
+                        "\", \"situationDescription\": \"" +
+                        steamfitterTaskEntity.ActionParameters["situationDescription"] +
+                        "\"}";
+                    break;
             }
+            var taskForm = new TaskForm()
+            {
+                ScenarioId = msel.SteamfitterScenarioId,
+                Name = steamfitterTaskEntity.Name,
+                Description = steamfitterTaskEntity.Description,
+                Action = action,
+                ApiUrl = apiUrl,
+                ActionParameters = steamfitterTaskEntity.ActionParameters,
+                ExpectedOutput = steamfitterTaskEntity.ExpectedOutput,
+                ExpirationSeconds = steamfitterTaskEntity.ExpirationSeconds,
+                DelaySeconds = steamfitterTaskEntity.DelaySeconds,
+                IntervalSeconds = steamfitterTaskEntity.IntervalSeconds,
+                Iterations = steamfitterTaskEntity.Iterations,
+                IterationTermination = TaskIterationTermination.IterationCount,
+                TriggerCondition = TaskTrigger.Manual,
+                UserExecutable = steamfitterTaskEntity.UserExecutable,
+                Repeatable = steamfitterTaskEntity.Repeatable,
+                Executable = true
+            };
+            var steamfitterTask = await steamfitterApiClient.CreateTaskAsync(taskForm, ct);
+
+            return steamfitterTask;
         }
 
     }

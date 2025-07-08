@@ -276,7 +276,6 @@ namespace Blueprint.Api.Services
                 .ThenInclude(df => df.DataOptions)
                 .Include(m => m.ScenarioEvents)
                 .ThenInclude(se => se.DataValues)
-                .Include(m => m.MselUnits)
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .Include(m => m.Teams)
@@ -289,6 +288,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.CiteRoles)
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
+                .Include(m => m.Pages)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (mselEntity == null)
@@ -356,7 +356,7 @@ namespace Blueprint.Api.Services
             {
                 // save the old page ID cross reference
                 newGuidValues[page.Id] = Guid.NewGuid();
-                // set new move values
+                // set new page values
                 page.Id = newGuidValues[page.Id];
                 page.MselId = mselEntity.Id;
                 page.Msel = null;
@@ -1593,18 +1593,24 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var msel = await _context.Msels
+                .AsNoTracking()
+                .Include(m => m.DataFields)
+                .ThenInclude(df => df.DataOptions)
+                .Include(m => m.ScenarioEvents)
+                .ThenInclude(se => se.DataValues)
+                .Include(m => m.Teams)
+                .ThenInclude(t => t.TeamUsers)
+                .Include(m => m.Teams)
+                .ThenInclude(t => t.UserTeamRoles)
+                .Include(m => m.Moves)
+                .Include(m => m.Organizations)
                 .Include(m => m.Cards)
                 .ThenInclude(c => c.CardTeams)
                 .Include(m => m.CiteActions)
                 .Include(m => m.CiteRoles)
-                .Include(m => m.DataFields)
-                .ThenInclude(f => f.DataOptions)
-                .Include(m => m.Moves)
-                .Include(m => m.Teams)
-                .Include(m => m.Organizations)
+                .Include(m => m.PlayerApplications)
+                .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.Pages)
-                .Include(m => m.ScenarioEvents)
-                .ThenInclude(s => s.DataValues)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)

@@ -52,7 +52,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 Status = ScenarioStatus.Active,
                 StartDate = startDate,
                 EndDate = startDate.AddSeconds(msel.DurationSeconds),
-                ViewId = msel.PlayerViewId
+                ViewId = msel.PlayerViewId,
+                View = msel.Name
             };
             var newScenario = await steamfitterApiClient.CreateScenarioAsync(scenarioForm, ct);
             // update the MSEL
@@ -72,16 +73,17 @@ namespace Blueprint.Api.Infrastructure.Extensions
         {
             var action = TaskAction.Http_post;
             var apiUrl = "http";
-            var playerApiUrl = clientOptions.PlayerApiUrl.EndsWith("/") ? clientOptions.PlayerApiUrl : clientOptions.PlayerApiUrl + "/";
-            var citeApiUrl = clientOptions.CiteApiUrl.EndsWith("/") ? clientOptions.CiteApiUrl : clientOptions.CiteApiUrl + "/";
-            var galleryApiUrl = clientOptions.PlayerApiUrl.EndsWith("/") ? clientOptions.GalleryApiUrl : clientOptions.GalleryApiUrl + "/";
+            var playerApiUrl = clientOptions.PlayerApiUrl.EndsWith("/") ? clientOptions.PlayerApiUrl + "api/" : clientOptions.PlayerApiUrl + "/api/";
+            var citeApiUrl = clientOptions.CiteApiUrl.EndsWith("/") ? clientOptions.CiteApiUrl + "api/" : clientOptions.CiteApiUrl + "/api/";
+            var galleryApiUrl = clientOptions.PlayerApiUrl.EndsWith("/") ? clientOptions.GalleryApiUrl + "api/" : clientOptions.GalleryApiUrl + "/api/";
             switch (steamfitterTaskEntity.TaskType)
             {
                 case SteamfitterIntegrationType.Notification:
                     action = TaskAction.Http_post;
                     apiUrl = "http";
                     steamfitterTaskEntity.ActionParameters["Url"] = playerApiUrl + "views/" +  msel.PlayerViewId + "/notifications";
-                    steamfitterTaskEntity.ActionParameters["Body"] = "{text: \"" + steamfitterTaskEntity.ActionParameters["notificationText"] + "}";
+                    steamfitterTaskEntity.ActionParameters["Body"] = "{\"text\": \"" + steamfitterTaskEntity.ActionParameters["notificationText"] + "\"}";
+                    steamfitterTaskEntity.ExpectedOutput = "Message was sent";
                     break;
                 case SteamfitterIntegrationType.http_delete:
                     action = TaskAction.Http_delete;
@@ -128,7 +130,9 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 TriggerCondition = TaskTrigger.Manual,
                 UserExecutable = steamfitterTaskEntity.UserExecutable,
                 Repeatable = steamfitterTaskEntity.Repeatable,
-                Executable = true
+                Executable = true,
+                VmList = [],
+                VmMask = ""
             };
             var steamfitterTask = await steamfitterApiClient.CreateTaskAsync(taskForm, ct);
 

@@ -204,6 +204,21 @@ namespace Blueprint.Api.Services
                         else
                         {
                             await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Integrations", null, ct);
+                            // Pull from Steamfitter
+                            if (msel.SteamfitterScenarioId != null)
+                            {
+                                try
+                                {
+                                    currentProcessStep = "Steamfitter - pull scenario";
+                                    await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Steamfitter Scenario", null, ct);
+                                    var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
+                                    await IntegrationSteamfitterExtensions.PullFromSteamfitterAsync((Guid)msel.SteamfitterScenarioId, steamfitterApiClient, ct);
+                                }
+                                catch (System.Exception)
+                                {
+                                    _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})");
+                                }
+                            }
                             // Pull from CITE
                             if (msel.CiteEvaluationId != null)
                             {
@@ -248,22 +263,9 @@ namespace Blueprint.Api.Services
                                     playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
                                     currentProcessStep = "Player - pull view";
                                     await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Player View", null, ct);
+                                    // TODO:  Player requires two deletes?
                                     await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, ct);
-                                }
-                                catch (System.Exception)
-                                {
-                                    _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})");
-                                }
-                            }
-                            // Pull from Steamfitter
-                            if (msel.SteamfitterScenarioId != null)
-                            {
-                                try
-                                {
-                                    currentProcessStep = "Steamfitter - pull scenario";
-                                    await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Steamfitter Scenario", null, ct);
-                                    var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
-                                    await IntegrationSteamfitterExtensions.PullFromSteamfitterAsync((Guid)msel.SteamfitterScenarioId, steamfitterApiClient, ct);
+                                    await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, ct);
                                 }
                                 catch (System.Exception)
                                 {

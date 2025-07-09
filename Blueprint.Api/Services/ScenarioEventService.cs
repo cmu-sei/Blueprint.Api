@@ -508,13 +508,6 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
-            // // process the steamfitter task, if necessary
-            // if (scenarioEventToUpdate.SteamfitterTask != null)
-            // {
-            //     _context.SteamfitterTasks.Remove(scenarioEventToUpdate.SteamfitterTask);
-            //     scenarioEventToUpdate.SteamfitterTask = null;
-            //     scenarioEventToUpdate.SteamfitterTaskId = null;
-            // }
             // determine if groupOrder needs to be updated for any other scenario events on this MSEL
             var updateOrdering = scenarioEventToUpdate.DeltaSeconds != scenarioEvent.DeltaSeconds ||
                 scenarioEventToUpdate.GroupOrder != scenarioEvent.GroupOrder;
@@ -523,11 +516,6 @@ namespace Blueprint.Api.Services
             scenarioEvent.DateCreated = scenarioEventToUpdate.DateCreated;
             scenarioEvent.ModifiedBy = _user.GetId();
             scenarioEvent.DateModified = DateTime.UtcNow;
-            if (scenarioEvent.SteamfitterTask != null)
-            {
-                scenarioEvent.SteamfitterTask.ScenarioEvent = null;
-                scenarioEvent.SteamfitterTask.ScenarioEventId = scenarioEvent.Id;
-            }
             _mapper.Map(scenarioEvent, scenarioEventToUpdate);
             _context.ScenarioEvents.Update(scenarioEventToUpdate);
             var scenarioEventEnitities = new List<ScenarioEventEntity>
@@ -539,6 +527,12 @@ namespace Blueprint.Api.Services
                 scenarioEventEnitities.AddRange(await ReorderScenarioEvents(scenarioEventToUpdate, false, ct));
             }
             await _context.SaveChangesAsync(ct);
+            // verify the SteamfitterTask
+            var steamfitterTask = await _context.SteamfitterTasks.SingleOrDefaultAsync(m => m.ScenarioEventId == scenarioEventToUpdate.Id, ct);
+            if (steamfitterTask != null && scenarioEventToUpdate.SteamfitterTaskId == null)
+            {
+                scenarioEventToUpdate.SteamfitterTaskId = steamfitterTask.Id;
+            }
             // get the DataField IDs for this MSEL
             var dataFieldIdList = await _context.DataFields
                 .Where(df => df.MselId == scenarioEvent.MselId)

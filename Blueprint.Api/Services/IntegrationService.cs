@@ -1,7 +1,6 @@
 // Copyright 2024 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
-using AutoMapper;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +19,8 @@ using Cite.Api.Client;
 using Gallery.Api.Client;
 using Player.Api.Client;
 using Steamfitter.Api.Client;
+using System.Collections.Generic;
+using System.Linq;
 
 
 namespace Blueprint.Api.Services
@@ -421,18 +422,59 @@ namespace Blueprint.Api.Services
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Scenario to Steamfitter", null, ct);
                 var scenario = await IntegrationSteamfitterExtensions.CreateScenarioAsync(msel, steamfitterApiClient, blueprintContext, ct);
                 // create the scenario tasks
-                foreach (var scenarioEvent in msel.ScenarioEvents)
+                var sortedScenarioEvents = msel.ScenarioEvents.OrderBy(m => m.DeltaSeconds).ToList();
+                var sortedMoves = msel.Moves.OrderBy(m => m.MoveNumber).ToList();
+                var movesAndGroups = GetMovesAndGroups(sortedScenarioEvents, sortedMoves);
+                var clientOptions = _clientOptions.CurrentValue;
+                var playerApiUrl = clientOptions.PlayerApiUrl.EndsWith("/") ? clientOptions.PlayerApiUrl + "api/" : clientOptions.PlayerApiUrl + "/api/";
+                var citeApiUrl = clientOptions.CiteApiUrl.EndsWith("/") ? clientOptions.CiteApiUrl + "api/" : clientOptions.CiteApiUrl + "/api/";
+                var galleryApiUrl = clientOptions.PlayerApiUrl.EndsWith("/") ? clientOptions.GalleryApiUrl + "api/" : clientOptions.GalleryApiUrl + "/api/";
+                var moveNumber = -1;
+                var groupNumber = 0;
+                Task triggerTask = null;
+                foreach (var scenarioEvent in sortedScenarioEvents)
                 {
-                    if (scenarioEvent.IntegrationTarget.Contains("Steamfitter") && scenarioEvent.SteamfitterTask != null)
+                    if (movesAndGroups[scenarioEvent.Id][0] > moveNumber)
                     {
-                        currentProcessStep = "Steamfitter - pushing steamfitter task " + scenarioEvent.SteamfitterTaskId.ToString();
-                        var steamfitterTask = await IntegrationSteamfitterExtensions.CreateScenarioTasksAsync(
+                        moveNumber = movesAndGroups[scenarioEvent.Id][0];
+                        groupNumber = 0;
+                        triggerTask = await IntegrationSteamfitterExtensions.CreateNextMoveTasksAsync(
                             msel,
-                            scenarioEvent.SteamfitterTask,
                             steamfitterApiClient,
-                            _clientOptions.CurrentValue,
+                            moveNumber,
+                            citeApiUrl,
+                            galleryApiUrl,
+                            null,
                             ct);
                     }
+                    else if (movesAndGroups[scenarioEvent.Id][1] > groupNumber)
+                    {
+                        groupNumber = movesAndGroups[scenarioEvent.Id][1];
+                        triggerTask = await IntegrationSteamfitterExtensions.CreateNextGroupTasksAsync(
+                            msel,
+                            steamfitterApiClient,
+                            moveNumber,
+                            groupNumber,
+                            citeApiUrl,
+                            galleryApiUrl,
+                            null,
+                            ct);
+                    }
+                    if (scenarioEvent.IntegrationTarget.Contains("Steamfitter") && scenarioEvent.SteamfitterTask != null)
+                        {
+                            currentProcessStep = "Steamfitter - pushing steamfitter task " + scenarioEvent.SteamfitterTaskId.ToString();
+                            triggerTask = await IntegrationSteamfitterExtensions.CreateScenarioTasksAsync(
+                                msel,
+                                scenarioEvent.SteamfitterTask,
+                                steamfitterApiClient,
+                                moveNumber,
+                                groupNumber,
+                                playerApiUrl,
+                                citeApiUrl,
+                                galleryApiUrl,
+                                triggerTask,
+                                ct);
+                        }
                 }
             }
             catch (System.Exception ex)
@@ -440,6 +482,38 @@ namespace Blueprint.Api.Services
                 _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
                 throw ex;
             }
+        }
+
+        private static Dictionary<Guid, int[]> GetMovesAndGroups(
+            List<ScenarioEventEntity> sortedScenarioEvents,
+            List<MoveEntity> sortedMoves)
+        {
+            var movesAndGroups = new Dictionary<Guid, int[]>();
+            if (sortedScenarioEvents.Count > 0)
+            {
+                var moveIndex = sortedMoves.Count > 0 ? -1 : 0;
+                var groupIndex = 0;
+                var groupSeconds = sortedScenarioEvents[0].DeltaSeconds;
+                //loop through ordered scenario events
+                for (int index = 0; index < sortedScenarioEvents.Count; index++)
+                {
+                    var scenarioEvent = sortedScenarioEvents[index];
+                    if (moveIndex < sortedMoves.Count - 1 && scenarioEvent.DeltaSeconds >= sortedMoves[moveIndex + 1].DeltaSeconds)
+                    {
+                        moveIndex++;
+                        groupIndex = 0;
+                        groupSeconds = scenarioEvent.DeltaSeconds;
+                    }
+                    else if (scenarioEvent.DeltaSeconds > groupSeconds)
+                    {
+                        groupIndex++;
+                        groupSeconds = scenarioEvent.DeltaSeconds;
+                    }
+                    var moveNumber = moveIndex < 0 || sortedMoves.Count == 0 ? -1 : sortedMoves[moveIndex].MoveNumber;
+                    movesAndGroups[scenarioEvent.Id] = [moveIndex, groupIndex];
+                }
+            }
+            return movesAndGroups;
         }
 
     }

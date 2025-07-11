@@ -428,7 +428,7 @@ namespace Blueprint.Api.Services
                 var clientOptions = _clientOptions.CurrentValue;
                 var playerApiUrl = clientOptions.PlayerApiUrl.EndsWith("/") ? clientOptions.PlayerApiUrl + "api/" : clientOptions.PlayerApiUrl + "/api/";
                 var citeApiUrl = clientOptions.CiteApiUrl.EndsWith("/") ? clientOptions.CiteApiUrl + "api/" : clientOptions.CiteApiUrl + "/api/";
-                var galleryApiUrl = clientOptions.PlayerApiUrl.EndsWith("/") ? clientOptions.GalleryApiUrl + "api/" : clientOptions.GalleryApiUrl + "/api/";
+                var galleryApiUrl = clientOptions.GalleryApiUrl.EndsWith("/") ? clientOptions.GalleryApiUrl + "api/" : clientOptions.GalleryApiUrl + "/api/";
                 var moveNumber = -1;
                 var groupNumber = 0;
                 Task triggerTask = null;

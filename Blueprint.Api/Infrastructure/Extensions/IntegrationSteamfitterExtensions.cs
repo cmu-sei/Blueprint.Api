@@ -120,6 +120,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         "\", \"situationDescription\": \"" +
                         steamfitterTaskEntity.ActionParameters["situationDescription"] +
                         "\"}";
+                    steamfitterTaskEntity.ExpectedOutput = "\"id\":\"" + msel.CiteEvaluationId + "\"";
                     break;
             }
             var moveString = moveNumber < 0 ? "-1" : "00" + moveNumber.ToString();

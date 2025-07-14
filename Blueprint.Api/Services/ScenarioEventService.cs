@@ -363,6 +363,9 @@ namespace Blueprint.Api.Services
                 .Include(m => m.Msel)
                 .ThenInclude(m => m.ScenarioEvents)
                 .ThenInclude(s => s.DataValues)
+                .Include(m => m.Msel)
+                .ThenInclude(m => m.ScenarioEvents)
+                .ThenInclude(s => s.SteamfitterTask)
                 .Select(m => m.Msel)
                 .AsSplitQuery()
                 .AsNoTracking()
@@ -460,6 +463,32 @@ namespace Blueprint.Api.Services
                     DateCreated = dateCreated,
                     CreatedBy = userId,
                 };
+                if (sourceScenarioEvent.SteamfitterTaskId != null)
+                {
+                    sourceScenarioEvent.SteamfitterTaskId = Guid.NewGuid();
+                    var destinationSteamfitterTask = new SteamfitterTask()
+                    {
+                        Id = (Guid)sourceScenarioEvent.SteamfitterTaskId,
+                        ScenarioEventId = destinationScenarioEvent.Id,
+                        TaskType = sourceScenarioEvent.SteamfitterTask.TaskType,
+                        Name = sourceScenarioEvent.SteamfitterTask.Name,
+                        Description = sourceScenarioEvent.SteamfitterTask.Description,
+                        Action = sourceScenarioEvent.SteamfitterTask.Action,
+                        ActionParameters = sourceScenarioEvent.SteamfitterTask.ActionParameters,
+                        VmMask = sourceScenarioEvent.SteamfitterTask.VmMask,
+                        ApiUrl = sourceScenarioEvent.SteamfitterTask.ApiUrl,
+                        ExpectedOutput = sourceScenarioEvent.SteamfitterTask.ExpectedOutput,
+                        ExpirationSeconds = sourceScenarioEvent.SteamfitterTask.ExpirationSeconds,
+                        DelaySeconds = sourceScenarioEvent.SteamfitterTask.DelaySeconds,
+                        IntervalSeconds = sourceScenarioEvent.SteamfitterTask.IntervalSeconds,
+                        Iterations = sourceScenarioEvent.SteamfitterTask.Iterations,
+                        TriggerCondition = sourceScenarioEvent.SteamfitterTask.TriggerCondition,
+                        UserExecutable = sourceScenarioEvent.SteamfitterTask.UserExecutable,
+                        Repeatable = sourceScenarioEvent.SteamfitterTask.Repeatable,
+                        DateCreated = dateCreated,
+                        CreatedBy = userId
+                    };
+                }
                 _context.ScenarioEvents.Add(destinationScenarioEvent);
                 // create blank data values
                 foreach (var dataFieldId in dataFieldIdList)

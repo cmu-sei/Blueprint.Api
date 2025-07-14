@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
@@ -55,14 +54,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(mselEntity);
-            mselEntity = await _db.Msels
-                .Include(m => m.Teams)
-                .ThenInclude(t => t.TeamUsers)
-                .ThenInclude(tu => tu.User)
-                .Include(m => m.UserMselRoles)
-                .AsSplitQuery()
-                .SingleOrDefaultAsync(m => m.Id == mselEntity.Id, cancellationToken);
-            var msel = _mapper.Map<ViewModels.Msel>(mselEntity);
+            var msel = await _mselService.GetAsync(mselEntity.Id, cancellationToken);
             if (msel != null)
             {
                 if (msel.UseGallery)

@@ -70,6 +70,7 @@ namespace Blueprint.Api.Services
 
             var scenarioEvents = await _context.ScenarioEvents
                 .Where(i => i.MselId == mselId)
+                .Include(e => e.SteamfitterTask)
                 .OrderBy(se => se.DeltaSeconds)
                 .ThenBy(se => se.GroupOrder)
                 .ToListAsync(ct);
@@ -80,6 +81,7 @@ namespace Blueprint.Api.Services
         {
             var item = await _context.ScenarioEvents
                 .Include(se => se.DataValues)
+                .Include(se => se.SteamfitterTask)
                 .SingleAsync(a => a.Id == id, ct);
 
             if (item == null)
@@ -337,6 +339,7 @@ namespace Blueprint.Api.Services
             // return all msel scenarioEvents
             var scenarioEventEnitities = await _context.ScenarioEvents
                 .Include(m => m.DataValues)
+                .Include(se => se.SteamfitterTask)
                 .Where(m => m.MselId == msel.Id)
                 .ToListAsync(ct);
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
@@ -360,6 +363,9 @@ namespace Blueprint.Api.Services
                 .Include(m => m.Msel)
                 .ThenInclude(m => m.ScenarioEvents)
                 .ThenInclude(s => s.DataValues)
+                .Include(m => m.Msel)
+                .ThenInclude(m => m.ScenarioEvents)
+                .ThenInclude(s => s.SteamfitterTask)
                 .Select(m => m.Msel)
                 .AsSplitQuery()
                 .AsNoTracking()
@@ -453,11 +459,36 @@ namespace Blueprint.Api.Services
                     IsHidden = false,
                     DeltaSeconds = sourceScenarioEvent.DeltaSeconds,
                     ScenarioEventType = sourceScenarioEvent.ScenarioEventType,
-                    Description = sourceScenarioEvent.Description,
                     InjectId = sourceScenarioEvent.InjectId,
                     DateCreated = dateCreated,
                     CreatedBy = userId,
                 };
+                if (sourceScenarioEvent.SteamfitterTaskId != null)
+                {
+                    sourceScenarioEvent.SteamfitterTaskId = Guid.NewGuid();
+                    var destinationSteamfitterTask = new SteamfitterTask()
+                    {
+                        Id = (Guid)sourceScenarioEvent.SteamfitterTaskId,
+                        ScenarioEventId = destinationScenarioEvent.Id,
+                        TaskType = sourceScenarioEvent.SteamfitterTask.TaskType,
+                        Name = sourceScenarioEvent.SteamfitterTask.Name,
+                        Description = sourceScenarioEvent.SteamfitterTask.Description,
+                        Action = sourceScenarioEvent.SteamfitterTask.Action,
+                        ActionParameters = sourceScenarioEvent.SteamfitterTask.ActionParameters,
+                        VmMask = sourceScenarioEvent.SteamfitterTask.VmMask,
+                        ApiUrl = sourceScenarioEvent.SteamfitterTask.ApiUrl,
+                        ExpectedOutput = sourceScenarioEvent.SteamfitterTask.ExpectedOutput,
+                        ExpirationSeconds = sourceScenarioEvent.SteamfitterTask.ExpirationSeconds,
+                        DelaySeconds = sourceScenarioEvent.SteamfitterTask.DelaySeconds,
+                        IntervalSeconds = sourceScenarioEvent.SteamfitterTask.IntervalSeconds,
+                        Iterations = sourceScenarioEvent.SteamfitterTask.Iterations,
+                        TriggerCondition = sourceScenarioEvent.SteamfitterTask.TriggerCondition,
+                        UserExecutable = sourceScenarioEvent.SteamfitterTask.UserExecutable,
+                        Repeatable = sourceScenarioEvent.SteamfitterTask.Repeatable,
+                        DateCreated = dateCreated,
+                        CreatedBy = userId
+                    };
+                }
                 _context.ScenarioEvents.Add(destinationScenarioEvent);
                 // create blank data values
                 foreach (var dataFieldId in dataFieldIdList)
@@ -483,6 +514,7 @@ namespace Blueprint.Api.Services
             // return all msel scenarioEvents
             var scenarioEventEnitities = await _context.ScenarioEvents
                 .Include(m => m.DataValues)
+                .Include(se => se.SteamfitterTask)
                 .Where(m => m.MselId == destinationMsel.Id)
                 .ToListAsync(ct);
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
@@ -499,7 +531,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException($"No update permissions");
 
             // make sure entity exists
-            var scenarioEventToUpdate = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
+            var scenarioEventToUpdate = await _context.ScenarioEvents.Include(m => m.SteamfitterTask).SingleOrDefaultAsync(v => v.Id == id, ct);
             if (scenarioEventToUpdate == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>($"ScenarioEvent not found {id}.");
 
@@ -524,6 +556,12 @@ namespace Blueprint.Api.Services
                 scenarioEventEnitities.AddRange(await ReorderScenarioEvents(scenarioEventToUpdate, false, ct));
             }
             await _context.SaveChangesAsync(ct);
+            // verify the SteamfitterTask
+            var steamfitterTask = await _context.SteamfitterTasks.SingleOrDefaultAsync(m => m.ScenarioEventId == scenarioEventToUpdate.Id, ct);
+            if (steamfitterTask != null && scenarioEventToUpdate.SteamfitterTaskId == null)
+            {
+                scenarioEventToUpdate.SteamfitterTaskId = steamfitterTask.Id;
+            }
             // get the DataField IDs for this MSEL
             var dataFieldIdList = await _context.DataFields
                 .Where(df => df.MselId == scenarioEvent.MselId)
@@ -715,6 +753,7 @@ namespace Blueprint.Api.Services
                     se.GroupOrder >= scenarioEventEntity.GroupOrder &&
                     se.Id != scenarioEventEntity.Id)
                     .Include(se => se.DataValues)
+                    .Include(se => se.SteamfitterTask)
                 .OrderBy(se => se.GroupOrder)
                 .ToListAsync(ct);
             // for newly created events with a zero GroupOrder created after/simultaneously with all of the others, assume it should be appended to the end

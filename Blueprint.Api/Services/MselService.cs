@@ -276,7 +276,8 @@ namespace Blueprint.Api.Services
                 .ThenInclude(df => df.DataOptions)
                 .Include(m => m.ScenarioEvents)
                 .ThenInclude(se => se.DataValues)
-                .Include(m => m.MselUnits)
+                .Include(m => m.ScenarioEvents)
+                .ThenInclude(se => se.SteamfitterTask)
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .Include(m => m.Teams)
@@ -289,6 +290,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.CiteRoles)
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
+                .Include(m => m.Pages)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (mselEntity == null)
@@ -312,7 +314,9 @@ namespace Blueprint.Api.Services
             mselEntity.GalleryCollectionId = null;
             mselEntity.GalleryExhibitId = null;
             mselEntity.CiteEvaluationId = null;
-            var dataFieldIdCrossReference = new Dictionary<Guid, Guid>();
+            mselEntity.PlayerViewId = null;
+            mselEntity.SteamfitterScenarioId = null;
+            mselEntity.Status = MselItemStatus.Pending;
             // copy DataFields
             foreach (var dataField in mselEntity.DataFields)
             {
@@ -320,12 +324,14 @@ namespace Blueprint.Api.Services
                 newGuidValues[dataField.Id] = Guid.NewGuid();
                 // set new data field values
                 var newDataFieldId = newGuidValues[dataField.Id];
-                dataFieldIdCrossReference[dataField.Id] = newDataFieldId;
+                newGuidValues[dataField.Id] = newDataFieldId;
                 dataField.Id = newDataFieldId;
                 dataField.MselId = mselEntity.Id;
                 dataField.Msel = null;
                 dataField.DateCreated = mselEntity.DateCreated;
                 dataField.CreatedBy = mselEntity.CreatedBy;
+                dataField.DateModified = mselEntity.DateCreated;
+                dataField.ModifiedBy = mselEntity.CreatedBy;
                 // copy DataOptions
                 foreach (var dataOption in dataField.DataOptions)
                 {
@@ -337,6 +343,8 @@ namespace Blueprint.Api.Services
                     dataOption.DataField = null;
                     dataOption.DateCreated = mselEntity.DateCreated;
                     dataOption.CreatedBy = mselEntity.CreatedBy;
+                    dataOption.DateModified = mselEntity.DateCreated;
+                    dataOption.ModifiedBy = mselEntity.CreatedBy;
                 }
             }
             // copy Moves
@@ -350,13 +358,15 @@ namespace Blueprint.Api.Services
                 move.Msel = null;
                 move.DateCreated = mselEntity.DateCreated;
                 move.CreatedBy = mselEntity.CreatedBy;
+                move.DateModified = mselEntity.DateCreated;
+                move.ModifiedBy = mselEntity.CreatedBy;
             }
             // copy Msel Pages
             foreach (var page in mselEntity.Pages)
             {
                 // save the old page ID cross reference
                 newGuidValues[page.Id] = Guid.NewGuid();
-                // set new move values
+                // set new page values
                 page.Id = newGuidValues[page.Id];
                 page.MselId = mselEntity.Id;
                 page.Msel = null;
@@ -374,8 +384,8 @@ namespace Blueprint.Api.Services
                 team.Msel = null;
                 team.DateCreated = mselEntity.DateCreated;
                 team.CreatedBy = mselEntity.CreatedBy;
-                team.DateModified = mselEntity.DateModified;
-                team.ModifiedBy = mselEntity.ModifiedBy;
+                team.DateModified = mselEntity.DateCreated;
+                team.ModifiedBy = mselEntity.CreatedBy;
                 // copy TeamUsers
                 foreach(var teamUser in team.TeamUsers)
                 {
@@ -401,48 +411,6 @@ namespace Blueprint.Api.Services
                     team.UserTeamRoles.Add(new UserTeamRoleEntity{TeamId = team.Id, UserId = currentUserId, Role = TeamRole.Inviter});
                     team.UserTeamRoles.Add(new UserTeamRoleEntity{TeamId = team.Id, UserId = currentUserId, Role = TeamRole.Incrementer});
                 }
-                // update TeamId in CardTeams
-                foreach (var card in mselEntity.Cards)
-                {
-                    foreach (var cardTeam in card.CardTeams)
-                    {
-                        if (cardTeam.TeamId == oldTeamId)
-                        {
-                            cardTeam.TeamId = team.Id;
-                            cardTeam.Team = null;
-                        }
-                    }
-                }
-                // update TeamId in CiteActions
-                foreach (var citeAction in mselEntity.CiteActions)
-                {
-                    if (citeAction.TeamId == oldTeamId)
-                    {
-                        citeAction.TeamId = team.Id;
-                        citeAction.Team = null;
-                    }
-                }
-                // update TeamId in CiteRoles
-                foreach (var citeRole in mselEntity.CiteRoles)
-                {
-                    if (citeRole.TeamId == oldTeamId)
-                    {
-                        citeRole.TeamId = team.Id;
-                        citeRole.Team = null;
-                    }
-                }
-                // update TeamId in PlayerApplicationTeams
-                foreach (var playerApplication in mselEntity.PlayerApplications)
-                {
-                    foreach (var playerApplicationTeam in playerApplication.PlayerApplicationTeams)
-                    {
-                        if (playerApplicationTeam.TeamId == oldTeamId)
-                        {
-                            playerApplicationTeam.TeamId = team.Id;
-                            playerApplicationTeam.Team = null;
-                        }
-                    }
-                }
             }
             // copy Organizations
             foreach (var organization in mselEntity.Organizations)
@@ -455,6 +423,8 @@ namespace Blueprint.Api.Services
                 organization.Msel = null;
                 organization.DateCreated = mselEntity.DateCreated;
                 organization.CreatedBy = mselEntity.CreatedBy;
+                organization.DateModified = mselEntity.DateCreated;
+                organization.ModifiedBy = mselEntity.CreatedBy;
             }
             // copy Gallery Cards
             foreach (var card in mselEntity.Cards)
@@ -467,12 +437,16 @@ namespace Blueprint.Api.Services
                 card.Msel = null;
                 card.DateCreated = mselEntity.DateCreated;
                 card.CreatedBy = mselEntity.CreatedBy;
+                card.DateModified = mselEntity.DateCreated;
+                card.ModifiedBy = mselEntity.CreatedBy;
                 card.GalleryId = null;
                 foreach (var cardTeam in card.CardTeams)
                 {
                     cardTeam.Id = Guid.NewGuid();
                     cardTeam.CardId = card.Id;
                     cardTeam.Card = null;
+                    cardTeam.TeamId = newGuidValues[cardTeam.TeamId];
+                    cardTeam.Team = null;
                 }
             }
             // copy CITE Roles
@@ -481,8 +455,12 @@ namespace Blueprint.Api.Services
                 citeRole.Id = Guid.NewGuid();
                 citeRole.MselId = mselEntity.Id;
                 citeRole.Msel = null;
+                citeRole.TeamId = newGuidValues[(Guid)citeRole.TeamId];
+                citeRole.Team = null;
                 citeRole.DateCreated = mselEntity.DateCreated;
                 citeRole.CreatedBy = mselEntity.CreatedBy;
+                citeRole.DateModified = mselEntity.DateCreated;
+                citeRole.ModifiedBy = mselEntity.CreatedBy;
             }
             // copy CITE Actions
             foreach (var citeAction in mselEntity.CiteActions)
@@ -490,8 +468,12 @@ namespace Blueprint.Api.Services
                 citeAction.Id = Guid.NewGuid();
                 citeAction.MselId = mselEntity.Id;
                 citeAction.Msel = null;
+                citeAction.TeamId = newGuidValues[(Guid)citeAction.TeamId];
+                citeAction.Team = null;
                 citeAction.DateCreated = mselEntity.DateCreated;
                 citeAction.CreatedBy = mselEntity.CreatedBy;
+                citeAction.DateModified = mselEntity.DateCreated;
+                citeAction.ModifiedBy = mselEntity.CreatedBy;
             }
             // copy Player Applications
             foreach (var playerApplication in mselEntity.PlayerApplications)
@@ -501,6 +483,8 @@ namespace Blueprint.Api.Services
                 playerApplication.Msel = null;
                 playerApplication.DateCreated = mselEntity.DateCreated;
                 playerApplication.CreatedBy = mselEntity.CreatedBy;
+                playerApplication.DateModified = mselEntity.DateCreated;
+                playerApplication.ModifiedBy = mselEntity.CreatedBy;
                 foreach (var playerApplicationTeam in playerApplication.PlayerApplicationTeams)
                 {
                     playerApplicationTeam.Id = Guid.NewGuid();
@@ -511,37 +495,9 @@ namespace Blueprint.Api.Services
                 }
             }
             // copy ScenarioEvents
-            foreach (var scenarioEvent in mselEntity.ScenarioEvents)
+            foreach (var scenarioEventEntity in mselEntity.ScenarioEvents)
             {
-                scenarioEvent.Id = Guid.NewGuid();
-                scenarioEvent.MselId = mselEntity.Id;
-                scenarioEvent.Msel = null;
-                scenarioEvent.DateCreated = mselEntity.DateCreated;
-                scenarioEvent.CreatedBy = mselEntity.CreatedBy;
-                // copy DataValues
-                foreach (var dataValue in scenarioEvent.DataValues)
-                {
-                    dataValue.Id = Guid.NewGuid();
-                    dataValue.ScenarioEventId = scenarioEvent.Id;
-                    dataValue.ScenarioEvent = null;
-                    dataValue.DataFieldId = dataFieldIdCrossReference[dataValue.DataFieldId];
-                    dataValue.DataField = null;
-                    dataValue.DateCreated = mselEntity.DateCreated;
-                    dataValue.CreatedBy = mselEntity.CreatedBy;
-                    // substitute new Guid value for any old Guid value
-                    Guid oldGuidValue;
-                    if (Guid.TryParse(dataValue.Value, out oldGuidValue))
-                    {
-                        try
-                        {
-                            dataValue.Value = newGuidValues[oldGuidValue].ToString();
-                        }
-                        catch (System.Exception)
-                        {
-                            dataValue.Value = null;
-                        }
-                    }
-                }
+                ScenarioEventReplaceIds(scenarioEventEntity, mselEntity.Id, mselEntity.DateCreated, mselEntity.CreatedBy, newGuidValues);
             }
 
             _context.Msels.Add(mselEntity);
@@ -556,6 +512,62 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(sm => sm.Id == mselEntity.Id, ct);
 
             return mselEntity;
+        }
+
+        private void ScenarioEventReplaceIds(
+            ScenarioEventEntity scenarioEventEntity,
+            Guid mselId,
+            DateTime dateCreated,
+            Guid createdBy,
+            Dictionary<Guid, Guid> newGuidValues)
+        {
+            scenarioEventEntity.Id = Guid.NewGuid();
+            scenarioEventEntity.MselId = mselId;
+            scenarioEventEntity.Msel = null;
+            scenarioEventEntity.Inject = null;
+            scenarioEventEntity.InjectId = null;
+            scenarioEventEntity.DateCreated = dateCreated;
+            scenarioEventEntity.CreatedBy = createdBy;
+            scenarioEventEntity.DateModified = dateCreated;
+            scenarioEventEntity.ModifiedBy = createdBy;
+            // copy DataValues
+            foreach (var dataValue in scenarioEventEntity.DataValues)
+            {
+                dataValue.Id = Guid.NewGuid();
+                dataValue.ScenarioEventId = scenarioEventEntity.Id;
+                dataValue.ScenarioEvent = null;
+                dataValue.DataFieldId = newGuidValues[dataValue.DataFieldId];
+                dataValue.DataField = null;
+                dataValue.DateCreated = dateCreated;
+                dataValue.CreatedBy = createdBy;
+                dataValue.DateModified = dateCreated;
+                dataValue.ModifiedBy = createdBy;
+                // substitute new Guid value for any old Guid value
+                Guid oldGuidValue;
+                if (Guid.TryParse(dataValue.Value, out oldGuidValue))
+                {
+                    try
+                    {
+                        dataValue.Value = newGuidValues[oldGuidValue].ToString();
+                    }
+                    catch (System.Exception)
+                    {
+                        dataValue.Value = null;
+                    }
+                }
+            }
+            // copy steamfitter task
+            if (scenarioEventEntity.SteamfitterTask != null)
+            {
+                scenarioEventEntity.SteamfitterTaskId = Guid.NewGuid();
+                scenarioEventEntity.SteamfitterTask.Id = (Guid)scenarioEventEntity.SteamfitterTaskId;
+                scenarioEventEntity.SteamfitterTask.ScenarioEventId = scenarioEventEntity.Id;
+                scenarioEventEntity.SteamfitterTask.ScenarioEvent = null;
+                scenarioEventEntity.SteamfitterTask.DateCreated = dateCreated;
+                scenarioEventEntity.SteamfitterTask.CreatedBy = createdBy;
+                scenarioEventEntity.SteamfitterTask.DateModified = dateCreated;
+                scenarioEventEntity.SteamfitterTask.ModifiedBy = createdBy;
+            }
         }
 
         public async Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, CancellationToken ct)
@@ -1593,18 +1605,26 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var msel = await _context.Msels
+                .AsNoTracking()
+                .Include(m => m.DataFields)
+                .ThenInclude(df => df.DataOptions)
+                .Include(m => m.ScenarioEvents)
+                .ThenInclude(se => se.DataValues)
+                .Include(m => m.ScenarioEvents)
+                .ThenInclude(se => se.SteamfitterTask)
+                .Include(m => m.Teams)
+                .ThenInclude(t => t.TeamUsers)
+                .Include(m => m.Teams)
+                .ThenInclude(t => t.UserTeamRoles)
+                .Include(m => m.Moves)
+                .Include(m => m.Organizations)
                 .Include(m => m.Cards)
                 .ThenInclude(c => c.CardTeams)
                 .Include(m => m.CiteActions)
                 .Include(m => m.CiteRoles)
-                .Include(m => m.DataFields)
-                .ThenInclude(f => f.DataOptions)
-                .Include(m => m.Moves)
-                .Include(m => m.Teams)
-                .Include(m => m.Organizations)
+                .Include(m => m.PlayerApplications)
+                .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.Pages)
-                .Include(m => m.ScenarioEvents)
-                .ThenInclude(s => s.DataValues)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)
@@ -1615,7 +1635,7 @@ namespace Blueprint.Api.Services
             var mselJson = "";
             var options = new JsonSerializerOptions()
             {
-                ReferenceHandler = ReferenceHandler.Preserve
+                ReferenceHandler = ReferenceHandler.IgnoreCycles
             };
             mselJson = JsonSerializer.Serialize(msel, options);
             // convert string to stream

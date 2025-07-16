@@ -17,8 +17,9 @@ namespace Blueprint.Api.ViewModels
         public string RowMetadata { get; set; }
         public int DeltaSeconds { get; set; }     // time from the start of the MSEL when this event should be executed
         public EventType ScenarioEventType { get; set; }
-        public string Description { get; set; }
         public Guid? InjectId { get; set; }
+        public string IntegrationTarget { get; set; }
+        public Guid? SteamfitterTaskId { get; set; }
+        public SteamfitterTask SteamfitterTask { get; set; }
    }
 }
-

@@ -32,10 +32,16 @@ namespace Blueprint.Api.ViewModels
         public int DurationSeconds { get; set; }
         public bool ShowTimeOnScenarioEventList { get; set; }
         public bool ShowTimeOnExerciseView { get; set; }
+        public int TimeDisplayOrder { get; set; }
         public bool ShowMoveOnScenarioEventList { get; set; }
         public bool ShowMoveOnExerciseView { get; set; }
+        public int MoveDisplayOrder { get; set; }
         public bool ShowGroupOnScenarioEventList { get; set; }
         public bool ShowGroupOnExerciseView { get; set; }
+        public int GroupDisplayOrder { get; set; }
+        public bool ShowIntegrationTargetOnScenarioEventList { get; set; }
+        public bool ShowIntegrationTargetOnExerciseView { get; set; }
+        public int IntegrationTargetDisplayOrder { get; set; }
         public virtual ICollection<Move> Moves { get; set; } = new HashSet<Move>();
         public virtual ICollection<DataField> DataFields { get; set; } = new HashSet<DataField>();
         public virtual ICollection<ScenarioEvent> ScenarioEvents { get; set; } = new HashSet<ScenarioEvent>();

@@ -361,7 +361,8 @@ namespace Blueprint.Api.Services
                 // update the evaluation, so that submissions get created
                 currentProcessStep = "CITE - advance";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Finishing Evaluation to CITE", null, ct);
-                await IntegrationCiteExtensions.CycleMoveAsync(evaluation.Id, citeApiClient, blueprintContext, ct);
+                evaluation.Status = Cite.Api.Client.ItemStatus.Active;
+                await IntegrationCiteExtensions.ActivateAsync(evaluation, citeApiClient, blueprintContext, ct);
             }
             catch (System.Exception ex)
             {

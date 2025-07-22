@@ -44,7 +44,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             var move0 = msel.Moves.SingleOrDefault(m => m.MoveNumber == 0);
             Evaluation newEvaluation = new Evaluation() {
                 Description = msel.Name,
-                Status = Cite.Api.Client.ItemStatus.Active,
+                Status = Cite.Api.Client.ItemStatus.Pending,
                 CurrentMoveNumber = 0,
                 ScoringModelId = (Guid)msel.CiteScoringModelId,
                 GalleryExhibitId = msel.GalleryExhibitId,
@@ -67,10 +67,9 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Update a Cite Evaluation for this MSEL
-        public static async Task CycleMoveAsync(Guid evaluationId, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task ActivateAsync(Evaluation evaluation, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            await citeApiClient.SetEvaluationCurrentMoveAsync(evaluationId, 1, ct);
-            await citeApiClient.SetEvaluationCurrentMoveAsync(evaluationId, 0, ct);
+            await citeApiClient.UpdateEvaluationAsync(evaluation.Id, evaluation, ct);
         }
 
         // Create Cite Moves for this MSEL

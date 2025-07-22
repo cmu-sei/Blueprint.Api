@@ -15,6 +15,8 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
+using Microsoft.EntityFrameworkCore;
+using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
@@ -54,7 +56,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(mselEntity);
-            var msel = await _mselService.GetAsync(mselEntity.Id, cancellationToken);
+            mselEntity = await _db.Msels
+                .Include(m => m.MselUnits)
+                .ThenInclude(t => t.Unit)
+                .Include(m => m.Teams)
+                .ThenInclude(t => t.TeamUsers)
+                .ThenInclude(tu => tu.User)
+                .Include(m => m.UserMselRoles)
+                .AsSplitQuery()
+                .SingleOrDefaultAsync(sm => sm.Id == mselEntity.Id, cancellationToken);
+            var userId = mselEntity.ModifiedBy == null ? mselEntity.CreatedBy : mselEntity.ModifiedBy;
+            _mselService.FilterUserMselRolesByUser((Guid)userId, mselEntity);
+            var msel = _mapper.Map<Msel>(mselEntity);
             if (msel != null)
             {
                 if (msel.UseGallery)

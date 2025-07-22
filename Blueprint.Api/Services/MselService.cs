@@ -57,6 +57,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
         Task<Guid> JoinMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct);  // returns the Player View ID
         Task<Msel> LaunchMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct);  // returns the newly created MSEL
+        void FilterUserMselRolesByUser(Guid userId, MselEntity mselEntity);
     }
 
     public class MselService : IMselService
@@ -1664,6 +1665,11 @@ namespace Blueprint.Api.Services
                 ReferenceHandler = ReferenceHandler.Preserve
             };
             var mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
+            foreach (var team in mselEntity.Teams)
+            {
+                team.TeamUsers = [];
+                team.UserTeamRoles = [];
+            }
             // make a copy and add it to the database
             mselEntity = await privateMselCopyAsync(mselEntity, null, ct);
 
@@ -1959,14 +1965,14 @@ namespace Blueprint.Api.Services
             return myDeployedMselIds;
         }
 
-        private void FilterUserMselRolesByUser(Guid userId, MselEntity msel)
+        public void FilterUserMselRolesByUser(Guid userId, MselEntity mselEntity)
         {
-            var userMselRoles = msel.UserMselRoles.ToArray();
+            var userMselRoles = mselEntity.UserMselRoles.ToArray();
             for (var i = 0; i < userMselRoles.Count(); i++)
             {
                 if (userMselRoles[i].UserId != userId)
                 {
-                    msel.UserMselRoles.Remove(userMselRoles[i]);
+                    mselEntity.UserMselRoles.Remove(userMselRoles[i]);
                 }
             }
         }

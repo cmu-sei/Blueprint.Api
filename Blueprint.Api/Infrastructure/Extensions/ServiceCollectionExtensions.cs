@@ -52,9 +52,9 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     }
                 });
 
-                c.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
+                c.AddSecurityRequirement((document) => new OpenApiSecurityRequirement
                 {
-                    { new OpenApiSecuritySchemeReference("oauth2"), [authOptions.AuthorizationScope] }
+                    { new OpenApiSecuritySchemeReference("oauth2", document), [authOptions.AuthorizationScope] }
                 });
 
                 c.IncludeXmlComments(commentsFile);

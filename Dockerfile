@@ -1,7 +1,7 @@
 #
 #multi-stage target: dev
 #
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dev
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dev
 
 ENV ASPNETCORE_HTTP_PORTS=4302
 ENV ASPNETCORE_ENVIRONMENT=DEVELOPMENT
@@ -14,7 +14,7 @@ CMD ["dotnet", "run"]
 #
 #multi-stage target: prod
 #
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS prod
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS prod
 ENV DOTNET_HOSTBUILDER__RELOADCONFIGCHANGE=false
 COPY --from=dev /app/dist /app
 

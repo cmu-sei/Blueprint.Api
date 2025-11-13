@@ -4,7 +4,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.CodeAnalysis;
-using Microsoft.OpenApi.Models;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Infrastructure.OperationFilters;
 using System;
@@ -19,6 +18,7 @@ using Steamfitter.Api.Client;
 using Ganss.Xss;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
 
 namespace Blueprint.Api.Infrastructure.Extensions
 {
@@ -52,27 +52,31 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     }
                 });
 
-                c.AddSecurityRequirement(new OpenApiSecurityRequirement()
+                c.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
                 {
-                    {
-                        new OpenApiSecurityScheme
-                        {
-                            Reference = new OpenApiReference
-                            {
-                                Type = ReferenceType.SecurityScheme,
-                                Id = "oauth2"
-                            },
-                            Scheme = "oauth2"
-                        },
-                        new[] {authOptions.AuthorizationScope}
-                    }
+                    { new OpenApiSecuritySchemeReference("oauth2"), [authOptions.AuthorizationScope] }
                 });
 
                 c.IncludeXmlComments(commentsFile);
                 c.EnableAnnotations();
                 c.OperationFilter<DefaultResponseOperationFilter>();
-                c.MapType<Optional<Guid?>>(() => new OpenApiSchema { Type = "string", Format = "uuid", Nullable = true });
-                c.MapType<JsonElement?>(() => new OpenApiSchema { Type = "object", Nullable = true });
+                c.MapType<Optional<Guid?>>(() => new OpenApiSchema
+                {
+                    OneOf = new List<IOpenApiSchema>
+                    {
+                        new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+                        new OpenApiSchema { Type = JsonSchemaType.Null }
+                    }
+                });
+
+                c.MapType<JsonElement?>(() => new OpenApiSchema
+                {
+                    OneOf = new List<IOpenApiSchema>
+                    {
+                        new OpenApiSchema { Type = JsonSchemaType.Object },
+                        new OpenApiSchema { Type = JsonSchemaType.Null }
+                    }
+                });
             });
         }
 

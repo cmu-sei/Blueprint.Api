@@ -119,7 +119,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         .Where(tu => tu.TeamId == team.Id)
                         .Select(tu => tu.User)
                         .ToListAsync(ct);
-                    var citePermissions = await citeApiClient.GetPermissionsAsync(ct);
                     foreach (var user in users)
                     {
                         // if this user is not in Cite, add it
@@ -131,28 +130,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             };
                             await citeApiClient.CreateUserAsync(newUser, ct);
                         }
-                        // create Cite TeamUsers
-                        var isObserver = await blueprintContext.UserTeamRoles
-                            .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.Observer);
-                        var canManageTeam = msel.CreatedBy == user.Id;
-                        var canIncrement = await blueprintContext.UserTeamRoles
-                            .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.Incrementer);
-                        var canModify = await blueprintContext.UserTeamRoles
-                            .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.Modifier);
-                        var canSubmit = await blueprintContext.UserTeamRoles
-                            .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.Submitter);
-                        var teamUser = new TeamUser() {
+                        // create Cite TeamMemberships
+                        var teamMembership = new TeamMembership() {
                             TeamId = citeTeam.Id,
-                            UserId = user.Id,
-                            IsObserver = isObserver,
-                            CanIncrementMove = canIncrement,
-                            CanModify = canModify,
-                            CanSubmit = canSubmit,
-                            CanManageTeam = canManageTeam
+                            UserId = user.Id
                         };
                         try
                         {
-                            await citeApiClient.CreateTeamUserAsync(teamUser, ct);
+                            await citeApiClient.CreateTeamMembershipAsync(citeTeam.Id, teamMembership, ct);
                         }
                         catch (System.Exception)
                         {}
@@ -167,7 +152,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             await blueprintContext.SaveChangesAsync(ct);
         }
 
-        // Create Cite Roles for this MSEL
+        // Create Cite Duties for this MSEL (formerly Roles)
         public static async Task CreateRolesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             foreach (var role in msel.CiteRoles)
@@ -175,12 +160,12 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == role.TeamId)?.CiteTeamId;
                 if (citeTeamId != null)
                 {
-                    Role citeRole = new Role() {
+                    Duty citeDuty = new Duty() {
                         EvaluationId = (Guid)msel.CiteEvaluationId,
                         Name = role.Name,
                         TeamId = (Guid)citeTeamId
                     };
-                    await citeApiClient.CreateRoleAsync(citeRole, ct);
+                    await citeApiClient.CreateDutyAsync(citeDuty, ct);
                     await blueprintContext.SaveChangesAsync(ct);
                 }
             }
@@ -210,16 +195,12 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Add User to Cite Team
         public static async Task AddUserToTeamAsync(Guid userId, Guid teamId, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            // create Cite TeamUsers
-            var citeTeamUser = new TeamUser() {
+            // create Cite TeamMembership
+            var citeTeamMembership = new TeamMembership() {
                 TeamId = teamId,
-                UserId = userId,
-                IsObserver = false,
-                CanIncrementMove = false,
-                CanModify = true,
-                CanSubmit = false
+                UserId = userId
             };
-            await citeApiClient.CreateTeamUserAsync(citeTeamUser, ct);
+            await citeApiClient.CreateTeamMembershipAsync(teamId, citeTeamMembership, ct);
         }
 
     }

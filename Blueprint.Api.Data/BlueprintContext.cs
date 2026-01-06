@@ -54,6 +54,9 @@ namespace Blueprint.Api.Data
         public DbSet<MselTeamEntity> MselTeams { get; set; }
         public DbSet<MselUnitEntity> MselUnits { get; set; }
         public DbSet<UserTeamRoleEntity> UserTeamRoles { get; set; }
+        public DbSet<SystemRoleEntity> SystemRoles { get; set; }
+        public DbSet<GroupEntity> Groups { get; set; }
+        public DbSet<GroupMembershipEntity> GroupMemberships { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

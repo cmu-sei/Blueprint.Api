@@ -105,10 +105,7 @@ namespace Blueprint.Api.Services
             await _context.Database.BeginTransactionAsync();
             // create the scenario event
             scenarioEvent.Id = scenarioEvent.Id != Guid.Empty ? scenarioEvent.Id : Guid.NewGuid();
-            scenarioEvent.DateCreated = DateTime.UtcNow;
             scenarioEvent.CreatedBy = _user.GetId();
-            scenarioEvent.DateModified = null;
-            scenarioEvent.ModifiedBy = null;
             var scenarioEventEntity = _mapper.Map<ScenarioEventEntity>(scenarioEvent);
             _context.ScenarioEvents.Add(scenarioEventEntity);
             var scenarioEventEnitities = new List<ScenarioEventEntity>
@@ -134,15 +131,12 @@ namespace Blueprint.Api.Services
                 dataValue.Id = Guid.NewGuid();
                 dataValue.ScenarioEventId = scenarioEvent.Id;
                 dataValue.CreatedBy = scenarioEvent.CreatedBy;
-                dataValue.DateCreated = scenarioEvent.DateCreated;
-                dataValue.DateModified = null;
-                dataValue.ModifiedBy = null;
                 var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
                 _context.DataValues.Add(dataValueEntity);
             }
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(scenarioEventEntity.MselId, scenarioEventEntity.CreatedBy, scenarioEventEntity.DateCreated, _context, ct);
+            await ServiceUtilities.SetMselModifiedAsync(scenarioEventEntity.MselId, scenarioEventEntity.CreatedBy, DateTime.UtcNow, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
@@ -198,7 +192,6 @@ namespace Blueprint.Api.Services
                     Name = "Name",
                     DataType = DataFieldType.String,
                     DisplayOrder = ++displayOrder,
-                    DateCreated = dateCreated,
                     CreatedBy = userId,
                     IsChosenFromList = false,
                     OnScenarioEventList = true,
@@ -223,7 +216,6 @@ namespace Blueprint.Api.Services
                     Name = "Description",
                     DataType = DataFieldType.String,
                     DisplayOrder = ++displayOrder,
-                    DateCreated = dateCreated,
                     CreatedBy = userId,
                     IsChosenFromList = false,
                     OnScenarioEventList = true,
@@ -244,7 +236,6 @@ namespace Blueprint.Api.Services
                         Name = injectDataField.Name,
                         DataType = injectDataField.DataType,
                         DisplayOrder = ++displayOrder,
-                        DateCreated = dateCreated,
                         CreatedBy = userId,
                         IsChosenFromList = injectDataField.IsChosenFromList,
                         OnScenarioEventList = showIt,
@@ -295,8 +286,7 @@ namespace Blueprint.Api.Services
                     DataFieldId = nameDataFieldId,
                     ScenarioEventId = scenarioEventEntity.Id,
                     Value = inject.Name,
-                    CreatedBy = userId,
-                    DateCreated = dateCreated
+                    CreatedBy = userId
                 };
                 scenarioEventEntity.DataValues.Add(scenarioEventDataValueEntity);
                 // create the data value for the inject description
@@ -306,8 +296,7 @@ namespace Blueprint.Api.Services
                     DataFieldId = descriptionDataFieldId,
                     ScenarioEventId = scenarioEventEntity.Id,
                     Value = inject.Description,
-                    CreatedBy = userId,
-                    DateCreated = dateCreated
+                    CreatedBy = userId
                 };
                 scenarioEventEntity.DataValues.Add(scenarioEventDataValueEntity);
                 // create the data values for each inject data value
@@ -319,8 +308,7 @@ namespace Blueprint.Api.Services
                         DataFieldId = dataFieldDictionary[injectDataValueEntity.DataFieldId],
                         ScenarioEventId = scenarioEventEntity.Id,
                         Value = injectDataValueEntity.Value,
-                        CreatedBy = userId,
-                        DateCreated = dateCreated
+                        CreatedBy = userId
                     };
                     scenarioEventEntity.DataValues.Add(scenarioEventDataValueEntity);
                 }
@@ -332,7 +320,6 @@ namespace Blueprint.Api.Services
             }
             // update the MSEL modified info
             msel.ModifiedBy = userId;
-            msel.DateModified = dateCreated;
             await _context.SaveChangesAsync(ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
@@ -418,7 +405,6 @@ namespace Blueprint.Api.Services
                         Name = sourceDataField.Name,
                         DataType = sourceDataField.DataType,
                         DisplayOrder = ++displayOrder,
-                        DateCreated = dateCreated,
                         CreatedBy = userId,
                         IsChosenFromList = sourceDataField.IsChosenFromList,
                         OnScenarioEventList = sourceDataField.OnScenarioEventList,
@@ -460,7 +446,6 @@ namespace Blueprint.Api.Services
                     DeltaSeconds = sourceScenarioEvent.DeltaSeconds,
                     ScenarioEventType = sourceScenarioEvent.ScenarioEventType,
                     InjectId = sourceScenarioEvent.InjectId,
-                    DateCreated = dateCreated,
                     CreatedBy = userId,
                 };
                 if (sourceScenarioEvent.SteamfitterTaskId != null)
@@ -485,7 +470,6 @@ namespace Blueprint.Api.Services
                         TriggerCondition = sourceScenarioEvent.SteamfitterTask.TriggerCondition,
                         UserExecutable = sourceScenarioEvent.SteamfitterTask.UserExecutable,
                         Repeatable = sourceScenarioEvent.SteamfitterTask.Repeatable,
-                        DateCreated = dateCreated,
                         CreatedBy = userId
                     };
                 }
@@ -498,9 +482,6 @@ namespace Blueprint.Api.Services
                     dataValue.Id = Guid.NewGuid();
                     dataValue.ScenarioEventId = destinationScenarioEvent.Id;
                     dataValue.CreatedBy = userId;
-                    dataValue.DateCreated = dateCreated;
-                    dataValue.DateModified = null;
-                    dataValue.ModifiedBy = null;
                     if (dataFieldDictionary.Keys.Contains(dataFieldId))
                     {
                         dataValue.Value = sourceScenarioEvent.DataValues.Single(m => m.DataFieldId == dataFieldDictionary[dataFieldId]).Value;
@@ -541,10 +522,7 @@ namespace Blueprint.Api.Services
             var updateOrdering = scenarioEventToUpdate.DeltaSeconds != scenarioEvent.DeltaSeconds ||
                 scenarioEventToUpdate.GroupOrder != scenarioEvent.GroupOrder;
             // update this scenario event
-            scenarioEvent.CreatedBy = scenarioEventToUpdate.CreatedBy;
-            scenarioEvent.DateCreated = scenarioEventToUpdate.DateCreated;
             scenarioEvent.ModifiedBy = _user.GetId();
-            scenarioEvent.DateModified = DateTime.UtcNow;
             _mapper.Map(scenarioEvent, scenarioEventToUpdate);
             _context.ScenarioEvents.Update(scenarioEventToUpdate);
             var scenarioEventEnitities = new List<ScenarioEventEntity>
@@ -581,9 +559,6 @@ namespace Blueprint.Api.Services
                     {
                         dataValue.Id = Guid.NewGuid();
                         dataValue.CreatedBy = (Guid)scenarioEvent.ModifiedBy;
-                        dataValue.DateCreated = (DateTime)scenarioEvent.DateModified;
-                        dataValue.DateModified = dataValue.DateCreated;
-                        dataValue.ModifiedBy = dataValue.CreatedBy;
                         dataValue.CellMetadata = cellMetadata;
                         var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
                         _context.DataValues.Add(dataValueEntity);
@@ -594,7 +569,6 @@ namespace Blueprint.Api.Services
                         {
                             // update the DataValue
                             dataValueToUpdate.ModifiedBy = scenarioEventToUpdate.ModifiedBy;
-                            dataValueToUpdate.DateModified = scenarioEventToUpdate.DateModified;
                             dataValueToUpdate.CellMetadata = cellMetadata;
                             _context.DataValues.Update(dataValueToUpdate);
                         }
@@ -603,7 +577,6 @@ namespace Blueprint.Api.Services
                     {
                         // update the DataValue
                         dataValueToUpdate.ModifiedBy = scenarioEventToUpdate.ModifiedBy;
-                        dataValueToUpdate.DateModified = scenarioEventToUpdate.DateModified;
                         dataValueToUpdate.Value = dataValue.Value;
                         dataValueToUpdate.CellMetadata = cellMetadata;
                         _context.DataValues.Update(dataValueToUpdate);
@@ -612,7 +585,7 @@ namespace Blueprint.Api.Services
             }
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(scenarioEventToUpdate.MselId, scenarioEventToUpdate.ModifiedBy, scenarioEventToUpdate.DateModified, _context, ct);
+            await ServiceUtilities.SetMselModifiedAsync(scenarioEventToUpdate.MselId, scenarioEventToUpdate.ModifiedBy, DateTime.UtcNow, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 

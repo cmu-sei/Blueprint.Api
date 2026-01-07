@@ -122,10 +122,7 @@ namespace Blueprint.Api.Services
             await _context.Database.BeginTransactionAsync();
             // create the inject
             inject.Id = inject.Id != Guid.Empty ? inject.Id : Guid.NewGuid();
-            inject.DateCreated = DateTime.UtcNow;
             inject.CreatedBy = _user.GetId();
-            inject.DateModified = null;
-            inject.ModifiedBy = null;
             // complete the data values for all data fields
             var dataFieldList = await _context.InjectTypes
                 .Where(m => m.Id == inject.InjectTypeId)
@@ -146,9 +143,6 @@ namespace Blueprint.Api.Services
                 dataValue.InjectId = inject.Id;
                 dataValue.Id = Guid.NewGuid();
                 dataValue.CreatedBy = inject.CreatedBy;
-                dataValue.DateCreated = inject.DateCreated;
-                dataValue.DateModified = null;
-                dataValue.ModifiedBy = null;
                 completeDataValues.Add(dataValue);
             }
             inject.DataValues = completeDataValues;
@@ -180,10 +174,7 @@ namespace Blueprint.Api.Services
             // start a transaction, because we may also update DataValues and other injects
             await _context.Database.BeginTransactionAsync();
             // update this inject
-            inject.CreatedBy = injectToUpdate.CreatedBy;
-            inject.DateCreated = injectToUpdate.DateCreated;
             inject.ModifiedBy = _user.GetId();
-            inject.DateModified = DateTime.UtcNow;
             _mapper.Map(inject, injectToUpdate);
             _context.Injects.Update(injectToUpdate);
             await _context.SaveChangesAsync(ct);
@@ -203,9 +194,6 @@ namespace Blueprint.Api.Services
                 {
                     dataValue.Id = Guid.NewGuid();
                     dataValue.CreatedBy = (Guid)inject.ModifiedBy;
-                    dataValue.DateCreated = (DateTime)inject.DateModified;
-                    dataValue.DateModified = dataValue.DateCreated;
-                    dataValue.ModifiedBy = dataValue.CreatedBy;
                     var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
                     _context.DataValues.Add(dataValueEntity);
                 }
@@ -213,7 +201,6 @@ namespace Blueprint.Api.Services
                 {
                     // update the DataValue
                     dataValueToUpdate.ModifiedBy = injectToUpdate.ModifiedBy;
-                    dataValueToUpdate.DateModified = injectToUpdate.DateModified;
                     dataValueToUpdate.Value = dataValue.Value;
                     _context.DataValues.Update(dataValueToUpdate);
                 }

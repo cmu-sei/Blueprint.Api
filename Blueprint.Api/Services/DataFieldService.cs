@@ -126,10 +126,7 @@ namespace Blueprint.Api.Services
             // start a transaction
             await _context.Database.BeginTransactionAsync();
             dataField.Id = dataField.Id != Guid.Empty ? dataField.Id : Guid.NewGuid();
-            dataField.DateCreated = dateNow;
             dataField.CreatedBy = userId;
-            dataField.DateModified = null;
-            dataField.ModifiedBy = null;
             var dataFieldEntity = _mapper.Map<DataFieldEntity>(dataField);
             _context.DataFields.Add(dataFieldEntity);
             // update DataOptions
@@ -137,7 +134,6 @@ namespace Blueprint.Api.Services
             {
                 dataOption.DataFieldId = dataField.Id;
                 dataOption.Id = Guid.NewGuid();
-                dataOption.DateCreated = dateNow;
                 dataOption.CreatedBy = userId;
                 var newDataOption = _mapper.Map<DataOptionEntity>(dataOption);
                 _context.DataOptions.Add(newDataOption);
@@ -151,7 +147,7 @@ namespace Blueprint.Api.Services
                 // reorder the data fields
                 await Reorder(dataFieldEntity, false, ct);
                 // update the MSEL modified info
-                await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataField.CreatedBy, dataField.DateCreated, _context, ct);
+                await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataField.CreatedBy, DateTime.UtcNow, _context, ct);
                 // commit the transaction
             }
             else if (dataFieldEntity.InjectTypeId != null)
@@ -200,14 +196,12 @@ namespace Blueprint.Api.Services
                     .SingleOrDefault();
                 if (existingDataOption != null)
                 {
-                    dataOption.DateModified = dateNow;
                     dataOption.ModifiedBy = userId;
                     _context.Entry(existingDataOption).CurrentValues.SetValues(dataOption);
                 }
                 else
                 {
                     dataOption.Id = Guid.NewGuid();
-                    dataOption.DateCreated = dateNow;
                     dataOption.CreatedBy = userId;
                     var newDataOption = _mapper.Map<DataOptionEntity>(dataOption);
                     _context.DataOptions.Add(newDataOption);
@@ -224,10 +218,7 @@ namespace Blueprint.Api.Services
             var updateDisplayOrder = dataFieldToUpdate.DisplayOrder != dataField.DisplayOrder;
             var newIndexIsGreater = dataField.DisplayOrder > dataFieldToUpdate.DisplayOrder;
             // update values
-            dataField.CreatedBy = dataFieldToUpdate.CreatedBy;
-            dataField.DateCreated = dataFieldToUpdate.DateCreated;
             dataField.ModifiedBy = userId;
-            dataField.DateModified = dateNow;
             _mapper.Map(dataField, dataFieldToUpdate);
             _context.DataFields.Update(dataFieldToUpdate);
             await _context.SaveChangesAsync(ct);
@@ -237,7 +228,7 @@ namespace Blueprint.Api.Services
                 await Reorder(dataFieldToUpdate, newIndexIsGreater, ct);
             }
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataField.ModifiedBy, dataField.DateModified, _context, ct);
+            await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataField.ModifiedBy, DateTime.UtcNow, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
@@ -314,11 +305,13 @@ namespace Blueprint.Api.Services
                 .Where(se => se.MselId == dataFieldEntity.MselId)
                 .Select(se => se.Id)
                 .ToListAsync(ct);
+            var userId = _user.GetId();
             foreach (var scenarioEventId in scenarioEventIds)
             {
                 var dataValueEntity = new DataValueEntity() {
                     ScenarioEventId = scenarioEventId,
-                    DataFieldId = dataFieldEntity.Id
+                    DataFieldId = dataFieldEntity.Id,
+                    CreatedBy = userId
                 };
                 _context.DataValues.Add(dataValueEntity);
             }

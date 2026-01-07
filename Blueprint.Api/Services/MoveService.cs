@@ -85,15 +85,12 @@ namespace Blueprint.Api.Services
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
             move.Id = move.Id != Guid.Empty ? move.Id : Guid.NewGuid();
-            move.DateCreated = DateTime.UtcNow;
             move.CreatedBy = _user.GetId();
-            move.DateModified = null;
-            move.ModifiedBy = null;
             var moveEntity = _mapper.Map<MoveEntity>(move);
             _context.Moves.Add(moveEntity);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(move.MselId, move.CreatedBy, move.DateCreated, _context, ct);
+            await ServiceUtilities.SetMselModifiedAsync(move.MselId, move.CreatedBy, DateTime.UtcNow, _context, ct);
             move = await GetAsync(moveEntity.Id, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
@@ -115,15 +112,12 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
-            move.CreatedBy = moveToUpdate.CreatedBy;
-            move.DateCreated = moveToUpdate.DateCreated;
             move.ModifiedBy = _user.GetId();
-            move.DateModified = DateTime.UtcNow;
             _mapper.Map(move, moveToUpdate);
             _context.Moves.Update(moveToUpdate);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(moveToUpdate.MselId, moveToUpdate.ModifiedBy, moveToUpdate.DateModified, _context, ct);
+            await ServiceUtilities.SetMselModifiedAsync(moveToUpdate.MselId, moveToUpdate.ModifiedBy, DateTime.UtcNow, _context, ct);
             move = await GetAsync(moveToUpdate.Id, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);

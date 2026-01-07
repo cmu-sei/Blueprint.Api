@@ -23,6 +23,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             services.AddSingleton<IAuthorizationHandler, FullRightsHandler>();
             services.AddSingleton<IAuthorizationHandler, ContentDeveloperHandler>();
             services.AddSingleton<IAuthorizationHandler, BaseUserHandler>();
+            services.AddSingleton<IAuthorizationHandler, SystemPermissionHandler>();
         }
     }
 }

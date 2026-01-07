@@ -103,10 +103,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             unit.Id = unit.Id != Guid.Empty ? unit.Id : Guid.NewGuid();
-            unit.DateCreated = DateTime.UtcNow;
             unit.CreatedBy = _user.GetId();
-            unit.DateModified = null;
-            unit.ModifiedBy = null;
             var unitEntity = _mapper.Map<UnitEntity>(unit);
 
             _context.Units.Add(unitEntity);
@@ -131,10 +128,7 @@ namespace Blueprint.Api.Services
             if (unitToUpdate == null)
                 throw new EntityNotFoundException<Unit>();
 
-            unit.CreatedBy = unitToUpdate.CreatedBy;
-            unit.DateCreated = unitToUpdate.DateCreated;
             unit.ModifiedBy = _user.GetId();
-            unit.DateModified = DateTime.UtcNow;
             _mapper.Map(unit, unitToUpdate);
 
             _context.Units.Update(unitToUpdate);

@@ -95,16 +95,13 @@ namespace Blueprint.Api.Services
             }
 
             dataValue.Id = dataValue.Id != Guid.Empty ? dataValue.Id : Guid.NewGuid();
-            dataValue.DateCreated = DateTime.UtcNow;
             dataValue.CreatedBy = _user.GetId();
-            dataValue.DateModified = null;
-            dataValue.ModifiedBy = null;
             var DataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
 
             _context.DataValues.Add(DataValueEntity);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(mselId, dataValue.CreatedBy, dataValue.DateCreated, _context, ct);
+            await ServiceUtilities.SetMselModifiedAsync(mselId, dataValue.CreatedBy, DateTime.UtcNow, _context, ct);
             dataValue = await GetAsync(DataValueEntity.Id, ct);
 
             return dataValue;
@@ -143,16 +140,13 @@ namespace Blueprint.Api.Services
                 }
             }
 
-            dataValue.CreatedBy = dataValueToUpdate.CreatedBy;
-            dataValue.DateCreated = dataValueToUpdate.DateCreated;
             dataValue.ModifiedBy = _user.GetId();
-            dataValue.DateModified = DateTime.UtcNow;
             _mapper.Map(dataValue, dataValueToUpdate);
 
             _context.DataValues.Update(dataValueToUpdate);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataValue.ModifiedBy, dataValue.DateModified, _context, ct);
+            await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataValue.ModifiedBy, DateTime.UtcNow, _context, ct);
 
             dataValue = await GetAsync(dataValueToUpdate.Id, ct);
 

@@ -131,10 +131,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             team.Id = team.Id != Guid.Empty ? team.Id : Guid.NewGuid();
-            team.DateCreated = DateTime.UtcNow;
             team.CreatedBy = _user.GetId();
-            team.DateModified = null;
-            team.ModifiedBy = null;
             var teamEntity = _mapper.Map<TeamEntity>(team);
 
             _context.Teams.Add(teamEntity);
@@ -161,7 +158,8 @@ namespace Blueprint.Api.Services
                 Id = Guid.NewGuid(),
                 Name = unit.Name,
                 ShortName = unit.ShortName,
-                MselId = mselId
+                MselId = mselId,
+                CreatedBy = _user.GetId()
             };
             // add all of the UnitUsers as TeamUsers
             foreach (var unitUser in unit.UnitUsers)
@@ -196,10 +194,7 @@ namespace Blueprint.Api.Services
             if (teamToUpdate == null)
                 throw new EntityNotFoundException<Team>();
 
-            team.CreatedBy = teamToUpdate.CreatedBy;
-            team.DateCreated = teamToUpdate.DateCreated;
             team.ModifiedBy = _user.GetId();
-            team.DateModified = DateTime.UtcNow;
             _mapper.Map(team, teamToUpdate);
 
             _context.Teams.Update(teamToUpdate);

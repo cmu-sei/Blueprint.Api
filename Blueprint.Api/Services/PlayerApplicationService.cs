@@ -91,10 +91,7 @@ namespace Blueprint.Api.Services
                 !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context))
                 throw new ForbiddenException();
             playerApplication.Id = playerApplication.Id != Guid.Empty ? playerApplication.Id : Guid.NewGuid();
-            playerApplication.DateCreated = DateTime.UtcNow;
             playerApplication.CreatedBy = _user.GetId();
-            playerApplication.DateModified = null;
-            playerApplication.ModifiedBy = null;
             var playerApplicationEntity = _mapper.Map<PlayerApplicationEntity>(playerApplication);
 
             _context.PlayerApplications.Add(playerApplicationEntity);
@@ -125,10 +122,7 @@ namespace Blueprint.Api.Services
             if (playerApplicationToUpdate == null)
                 throw new EntityNotFoundException<PlayerApplication>();
 
-            playerApplication.CreatedBy = playerApplicationToUpdate.CreatedBy;
-            playerApplication.DateCreated = playerApplicationToUpdate.DateCreated;
             playerApplication.ModifiedBy = _user.GetId();
-            playerApplication.DateModified = DateTime.UtcNow;
             _mapper.Map(playerApplication, playerApplicationToUpdate);
 
             _context.PlayerApplications.Update(playerApplicationToUpdate);

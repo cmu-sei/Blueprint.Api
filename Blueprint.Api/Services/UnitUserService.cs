@@ -80,10 +80,7 @@ namespace Blueprint.Api.Services
             var requestedUnit = await _context.Units.FindAsync(unitUser.UnitId);
             // okay to add this UnitUser
             unitUser.Id = unitUser.Id != Guid.Empty ? unitUser.Id : Guid.NewGuid();
-            unitUser.DateCreated = DateTime.UtcNow;
             unitUser.CreatedBy = _user.GetId();
-            unitUser.DateModified = null;
-            unitUser.ModifiedBy = null;
             var unitUserEntity = _mapper.Map<UnitUserEntity>(unitUser);
 
             _context.UnitUsers.Add(unitUserEntity);

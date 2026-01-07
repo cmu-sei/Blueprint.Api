@@ -103,10 +103,7 @@ namespace Blueprint.Api.Services
                 !await MselOwnerRequirement.IsMet(_user.GetId(), citeRole.MselId, _context))
                 throw new ForbiddenException();
             citeRole.Id = citeRole.Id != Guid.Empty ? citeRole.Id : Guid.NewGuid();
-            citeRole.DateCreated = DateTime.UtcNow;
             citeRole.CreatedBy = _user.GetId();
-            citeRole.DateModified = null;
-            citeRole.ModifiedBy = null;
             var citeRoleEntity = _mapper.Map<CiteRoleEntity>(citeRole);
 
             _context.CiteRoles.Add(citeRoleEntity);
@@ -127,10 +124,7 @@ namespace Blueprint.Api.Services
             if (citeRoleToUpdate == null)
                 throw new EntityNotFoundException<CiteRole>();
 
-            citeRole.CreatedBy = citeRoleToUpdate.CreatedBy;
-            citeRole.DateCreated = citeRoleToUpdate.DateCreated;
             citeRole.ModifiedBy = _user.GetId();
-            citeRole.DateModified = DateTime.UtcNow;
             _mapper.Map(citeRole, citeRoleToUpdate);
 
             _context.CiteRoles.Update(citeRoleToUpdate);

@@ -87,10 +87,7 @@ namespace Blueprint.Api.Services
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync();
             userTeamRole.Id = userTeamRole.Id != Guid.Empty ? userTeamRole.Id : Guid.NewGuid();
-            userTeamRole.DateCreated = DateTime.UtcNow;
             userTeamRole.CreatedBy = _user.GetId();
-            userTeamRole.DateModified = null;
-            userTeamRole.ModifiedBy = null;
             var userTeamRoleEntity = _mapper.Map<UserTeamRoleEntity>(userTeamRole);
 
             _context.UserTeamRoles.Add(userTeamRoleEntity);

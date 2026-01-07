@@ -99,7 +99,6 @@ namespace Blueprint.Api.Services
             var catalog = await _context.Catalogs
                 .SingleOrDefaultAsync(m => m.Id == catalogInject.CatalogId);
             catalog.ModifiedBy = _user.GetId();
-            catalog.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
             return await GetAsync(catalogInjectEntity.Id, ct);
         }
@@ -122,7 +121,6 @@ namespace Blueprint.Api.Services
                 var catalog = await _context.Catalogs
                     .SingleOrDefaultAsync(m => m.Id == catalogInject.CatalogId);
                 catalog.ModifiedBy = _user.GetId();
-                catalog.DateModified = DateTime.UtcNow;
                 await _context.SaveChangesAsync(ct);
                 var newOne = await GetAsync(catalogInjectEntity.Id, ct);
                 catalogInjectList.Add(newOne);
@@ -147,7 +145,6 @@ namespace Blueprint.Api.Services
             var catalog = await _context.Catalogs
                 .SingleOrDefaultAsync(m => m.Id == catalogInjectToDelete.CatalogId);
             catalog.ModifiedBy = _user.GetId();
-            catalog.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
             return id;
         }
@@ -169,7 +166,6 @@ namespace Blueprint.Api.Services
             var catalog = await _context.Catalogs
                 .SingleOrDefaultAsync(m => m.Id == catalogId);
             catalog.ModifiedBy = _user.GetId();
-            catalog.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
             return catalogInjectToDelete.Id;
         }

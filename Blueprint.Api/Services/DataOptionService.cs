@@ -112,17 +112,13 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             dataOption.Id = dataOption.Id != Guid.Empty ? dataOption.Id : Guid.NewGuid();
-            dataOption.DateCreated = DateTime.UtcNow;
             dataOption.CreatedBy = _user.GetId();
-            dataOption.DateModified = null;
-            dataOption.ModifiedBy = null;
             var dataOptionEntity = _mapper.Map<DataOptionEntity>(dataOption);
             _context.DataOptions.Add(dataOptionEntity);
             await _context.SaveChangesAsync(ct);
             // update the dataField
             var dataFieldEntity = await _context.DataFields.FindAsync(dataOption.DataFieldId);
             dataField.ModifiedBy = dataFieldEntity.CreatedBy;
-            dataField.DateModified = dataFieldEntity.DateCreated;
             await _context.SaveChangesAsync(ct);
             dataOption = await GetAsync(dataOptionEntity.Id, ct);
 
@@ -145,17 +141,13 @@ namespace Blueprint.Api.Services
             if (dataOptionToUpdate == null)
                 throw new EntityNotFoundException<DataOption>();
 
-            dataOption.CreatedBy = dataOptionToUpdate.CreatedBy;
-            dataOption.DateCreated = dataOptionToUpdate.DateCreated;
             dataOption.ModifiedBy = _user.GetId();
-            dataOption.DateModified = DateTime.UtcNow;
             _mapper.Map(dataOption, dataOptionToUpdate);
             _context.DataOptions.Update(dataOptionToUpdate);
             await _context.SaveChangesAsync(ct);
             // updated the dataField
             var dataFieldEntity = await _context.DataFields.FindAsync(dataOption.DataFieldId);
             dataField.ModifiedBy = dataFieldEntity.ModifiedBy;
-            dataField.DateModified = dataFieldEntity.DateModified;
             await _context.SaveChangesAsync(ct);
 
             dataOption = await GetAsync(dataOptionToUpdate.Id, ct);
@@ -183,7 +175,6 @@ namespace Blueprint.Api.Services
             // updated the dataField
             var dataFieldEntity = await _context.DataFields.FindAsync(dataOptionToDelete.DataFieldId);
             dataField.ModifiedBy = _user.GetId();
-            dataField.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
 
             return true;

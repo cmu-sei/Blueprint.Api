@@ -100,10 +100,7 @@ namespace Blueprint.Api.Services
                 !await MselOwnerRequirement.IsMet(_user.GetId(), card.MselId, _context))
                 throw new ForbiddenException();
             card.Id = card.Id != Guid.Empty ? card.Id : Guid.NewGuid();
-            card.DateCreated = DateTime.UtcNow;
             card.CreatedBy = _user.GetId();
-            card.DateModified = null;
-            card.ModifiedBy = null;
             var cardEntity = _mapper.Map<CardEntity>(card);
 
             _context.Cards.Add(cardEntity);
@@ -124,10 +121,7 @@ namespace Blueprint.Api.Services
             if (cardToUpdate == null)
                 throw new EntityNotFoundException<Card>();
 
-            card.CreatedBy = cardToUpdate.CreatedBy;
-            card.DateCreated = cardToUpdate.DateCreated;
             card.ModifiedBy = _user.GetId();
-            card.DateModified = DateTime.UtcNow;
             _mapper.Map(card, cardToUpdate);
 
             _context.Cards.Update(cardToUpdate);

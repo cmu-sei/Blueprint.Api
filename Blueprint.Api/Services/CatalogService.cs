@@ -150,10 +150,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             catalog.Id = catalog.Id != Guid.Empty ? catalog.Id : Guid.NewGuid();
-            catalog.DateCreated = DateTime.UtcNow;
             catalog.CreatedBy = _user.GetId();
-            catalog.DateModified = catalog.DateCreated;
-            catalog.ModifiedBy = catalog.CreatedBy;
             var catalogEntity = _mapper.Map<CatalogEntity>(catalog);
 
             _context.Catalogs.Add(catalogEntity);
@@ -184,10 +181,7 @@ namespace Blueprint.Api.Services
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId, ct)).Name;
             catalogEntity.Id = Guid.NewGuid();
-            catalogEntity.DateCreated = DateTime.UtcNow;
             catalogEntity.CreatedBy = currentUserId;
-            catalogEntity.DateModified = catalogEntity.DateCreated;
-            catalogEntity.ModifiedBy = catalogEntity.CreatedBy;
             catalogEntity.Name = catalogEntity.Name + " - " + username;
             catalogEntity.IsPublic = false;
             // update all CatalogInjects to have a new ID, new catalog ID, and correct InjectId
@@ -286,10 +280,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<Catalog>();
 
             // okay to update this catalog
-            catalog.CreatedBy = catalogToUpdate.CreatedBy;
-            catalog.DateCreated = catalogToUpdate.DateCreated;
             catalog.ModifiedBy = _user.GetId();
-            catalog.DateModified = DateTime.UtcNow;
             _mapper.Map(catalog, catalogToUpdate);
 
             _context.Catalogs.Update(catalogToUpdate);

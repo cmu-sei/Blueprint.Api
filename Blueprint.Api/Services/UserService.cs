@@ -137,10 +137,7 @@ namespace Blueprint.Api.Services
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
                 throw new ForbiddenException();
 
-            user.DateCreated = DateTime.UtcNow;
             user.CreatedBy = _user.GetId();
-            user.DateModified = null;
-            user.ModifiedBy = null;
             var userEntity = _mapper.Map<UserEntity>(user);
 
             _context.Users.Add(userEntity);
@@ -165,10 +162,7 @@ namespace Blueprint.Api.Services
             if (userToUpdate == null)
                 throw new EntityNotFoundException<User>();
 
-            user.CreatedBy = userToUpdate.CreatedBy;
-            user.DateCreated = userToUpdate.DateCreated;
             user.ModifiedBy = _user.GetId();
-            user.DateModified = DateTime.UtcNow;
             _mapper.Map(user, userToUpdate);
 
             _context.Users.Update(userToUpdate);

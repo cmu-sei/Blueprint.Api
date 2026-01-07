@@ -74,10 +74,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             userPermission.Id = userPermission.Id != Guid.Empty ? userPermission.Id : Guid.NewGuid();
-            userPermission.DateCreated = DateTime.UtcNow;
             userPermission.CreatedBy = _user.GetId();
-            userPermission.DateModified = null;
-            userPermission.ModifiedBy = null;
             var userPermissionEntity = _mapper.Map<UserPermissionEntity>(userPermission);
 
             _context.UserPermissions.Add(userPermissionEntity);

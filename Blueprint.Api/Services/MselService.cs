@@ -238,10 +238,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             msel.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
-            msel.DateCreated = DateTime.UtcNow;
             msel.CreatedBy = _user.GetId();
-            msel.DateModified = msel.DateCreated;
-            msel.ModifiedBy = msel.CreatedBy;
             var mselEntity = _mapper.Map<MselEntity>(msel);
 
             _context.Msels.Add(mselEntity);
@@ -306,10 +303,7 @@ namespace Blueprint.Api.Services
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId)).Name;
             mselEntity.Id = Guid.NewGuid();
-            mselEntity.DateCreated = DateTime.UtcNow;
             mselEntity.CreatedBy = currentUserId;
-            mselEntity.DateModified = mselEntity.DateCreated;
-            mselEntity.ModifiedBy = mselEntity.CreatedBy;
             mselEntity.Name = mselEntity.Name + " - " + username;
             mselEntity.IsTemplate = false;
             mselEntity.GalleryCollectionId = null;
@@ -329,10 +323,7 @@ namespace Blueprint.Api.Services
                 dataField.Id = newDataFieldId;
                 dataField.MselId = mselEntity.Id;
                 dataField.Msel = null;
-                dataField.DateCreated = mselEntity.DateCreated;
                 dataField.CreatedBy = mselEntity.CreatedBy;
-                dataField.DateModified = mselEntity.DateCreated;
-                dataField.ModifiedBy = mselEntity.CreatedBy;
                 // copy DataOptions
                 foreach (var dataOption in dataField.DataOptions)
                 {
@@ -342,10 +333,7 @@ namespace Blueprint.Api.Services
                     dataOption.Id = newGuidValues[dataOption.Id];
                     dataOption.DataFieldId = dataField.Id;
                     dataOption.DataField = null;
-                    dataOption.DateCreated = mselEntity.DateCreated;
                     dataOption.CreatedBy = mselEntity.CreatedBy;
-                    dataOption.DateModified = mselEntity.DateCreated;
-                    dataOption.ModifiedBy = mselEntity.CreatedBy;
                 }
             }
             // copy Moves
@@ -357,10 +345,7 @@ namespace Blueprint.Api.Services
                 move.Id = newGuidValues[move.Id];
                 move.MselId = mselEntity.Id;
                 move.Msel = null;
-                move.DateCreated = mselEntity.DateCreated;
                 move.CreatedBy = mselEntity.CreatedBy;
-                move.DateModified = mselEntity.DateCreated;
-                move.ModifiedBy = mselEntity.CreatedBy;
             }
             // copy Msel Pages
             foreach (var page in mselEntity.Pages)
@@ -383,10 +368,7 @@ namespace Blueprint.Api.Services
                 team.Id = newGuidValues[team.Id];
                 team.MselId = mselEntity.Id;
                 team.Msel = null;
-                team.DateCreated = mselEntity.DateCreated;
                 team.CreatedBy = mselEntity.CreatedBy;
-                team.DateModified = mselEntity.DateCreated;
-                team.ModifiedBy = mselEntity.CreatedBy;
                 // copy TeamUsers
                 foreach(var teamUser in team.TeamUsers)
                 {
@@ -422,10 +404,7 @@ namespace Blueprint.Api.Services
                 organization.Id = newGuidValues[organization.Id];
                 organization.MselId = mselEntity.Id;
                 organization.Msel = null;
-                organization.DateCreated = mselEntity.DateCreated;
                 organization.CreatedBy = mselEntity.CreatedBy;
-                organization.DateModified = mselEntity.DateCreated;
-                organization.ModifiedBy = mselEntity.CreatedBy;
             }
             // copy Gallery Cards
             foreach (var card in mselEntity.Cards)
@@ -436,10 +415,7 @@ namespace Blueprint.Api.Services
                 card.Id = newGuidValues[card.Id];
                 card.MselId = mselEntity.Id;
                 card.Msel = null;
-                card.DateCreated = mselEntity.DateCreated;
                 card.CreatedBy = mselEntity.CreatedBy;
-                card.DateModified = mselEntity.DateCreated;
-                card.ModifiedBy = mselEntity.CreatedBy;
                 card.GalleryId = null;
                 foreach (var cardTeam in card.CardTeams)
                 {
@@ -458,10 +434,7 @@ namespace Blueprint.Api.Services
                 citeRole.Msel = null;
                 citeRole.TeamId = newGuidValues[(Guid)citeRole.TeamId];
                 citeRole.Team = null;
-                citeRole.DateCreated = mselEntity.DateCreated;
                 citeRole.CreatedBy = mselEntity.CreatedBy;
-                citeRole.DateModified = mselEntity.DateCreated;
-                citeRole.ModifiedBy = mselEntity.CreatedBy;
             }
             // copy CITE Actions
             foreach (var citeAction in mselEntity.CiteActions)
@@ -471,10 +444,7 @@ namespace Blueprint.Api.Services
                 citeAction.Msel = null;
                 citeAction.TeamId = newGuidValues[(Guid)citeAction.TeamId];
                 citeAction.Team = null;
-                citeAction.DateCreated = mselEntity.DateCreated;
                 citeAction.CreatedBy = mselEntity.CreatedBy;
-                citeAction.DateModified = mselEntity.DateCreated;
-                citeAction.ModifiedBy = mselEntity.CreatedBy;
             }
             // copy Player Applications
             foreach (var playerApplication in mselEntity.PlayerApplications)
@@ -482,10 +452,7 @@ namespace Blueprint.Api.Services
                 playerApplication.Id = Guid.NewGuid();
                 playerApplication.MselId = mselEntity.Id;
                 playerApplication.Msel = null;
-                playerApplication.DateCreated = mselEntity.DateCreated;
                 playerApplication.CreatedBy = mselEntity.CreatedBy;
-                playerApplication.DateModified = mselEntity.DateCreated;
-                playerApplication.ModifiedBy = mselEntity.CreatedBy;
                 foreach (var playerApplicationTeam in playerApplication.PlayerApplicationTeams)
                 {
                     playerApplicationTeam.Id = Guid.NewGuid();
@@ -527,10 +494,7 @@ namespace Blueprint.Api.Services
             scenarioEventEntity.Msel = null;
             scenarioEventEntity.Inject = null;
             scenarioEventEntity.InjectId = null;
-            scenarioEventEntity.DateCreated = dateCreated;
             scenarioEventEntity.CreatedBy = createdBy;
-            scenarioEventEntity.DateModified = dateCreated;
-            scenarioEventEntity.ModifiedBy = createdBy;
             // copy DataValues
             foreach (var dataValue in scenarioEventEntity.DataValues)
             {
@@ -539,10 +503,7 @@ namespace Blueprint.Api.Services
                 dataValue.ScenarioEvent = null;
                 dataValue.DataFieldId = newGuidValues[dataValue.DataFieldId];
                 dataValue.DataField = null;
-                dataValue.DateCreated = dateCreated;
                 dataValue.CreatedBy = createdBy;
-                dataValue.DateModified = dateCreated;
-                dataValue.ModifiedBy = createdBy;
                 // substitute new Guid value for any old Guid value
                 Guid oldGuidValue;
                 if (Guid.TryParse(dataValue.Value, out oldGuidValue))
@@ -564,10 +525,7 @@ namespace Blueprint.Api.Services
                 scenarioEventEntity.SteamfitterTask.Id = (Guid)scenarioEventEntity.SteamfitterTaskId;
                 scenarioEventEntity.SteamfitterTask.ScenarioEventId = scenarioEventEntity.Id;
                 scenarioEventEntity.SteamfitterTask.ScenarioEvent = null;
-                scenarioEventEntity.SteamfitterTask.DateCreated = dateCreated;
                 scenarioEventEntity.SteamfitterTask.CreatedBy = createdBy;
-                scenarioEventEntity.SteamfitterTask.DateModified = dateCreated;
-                scenarioEventEntity.SteamfitterTask.ModifiedBy = createdBy;
             }
         }
 
@@ -583,10 +541,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<Msel>();
 
             // okay to update this msel
-            msel.CreatedBy = mselToUpdate.CreatedBy;
-            msel.DateCreated = mselToUpdate.DateCreated;
             msel.ModifiedBy = _user.GetId();
-            msel.DateModified = DateTime.UtcNow;
             _mapper.Map(msel, mselToUpdate);
 
             _context.Msels.Update(mselToUpdate);
@@ -613,10 +568,10 @@ namespace Blueprint.Api.Services
 
             var userMeslRole = new UserMselRoleEntity(userId, mselId, mselRole);
             userMeslRole.Id = Guid.NewGuid();
+            userMeslRole.CreatedBy = _user.GetId();
             _context.UserMselRoles.Add(userMeslRole);
             // change the MSEL modified info
             msel.ModifiedBy = _user.GetId();
-            msel.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
 
             return await GetAsync(mselId, ct);
@@ -640,7 +595,6 @@ namespace Blueprint.Api.Services
             _context.UserMselRoles.Remove(item);
             // change the MSEL modified info
             msel.ModifiedBy = _user.GetId();
-            msel.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
 
             return await GetAsync(mselId, ct);
@@ -891,7 +845,6 @@ namespace Blueprint.Api.Services
                 if (msel == null)
                 {
                     var userId = _user.GetId();
-                    var utcDatTimeNow = DateTime.UtcNow;
                     // create the MSEL entity
                     msel = new MselEntity() {
                         Id = Guid.NewGuid(),
@@ -901,9 +854,6 @@ namespace Blueprint.Api.Services
                         IsTemplate = false,
                         HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : "",
                         CreatedBy = userId,
-                        DateCreated = utcDatTimeNow,
-                        ModifiedBy = userId,
-                        DateModified = utcDatTimeNow,
                         DataFields = new List<DataFieldEntity>()
                     };
                     await _context.Msels.AddAsync(msel, ct);

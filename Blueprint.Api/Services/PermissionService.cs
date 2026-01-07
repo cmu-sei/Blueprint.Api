@@ -99,10 +99,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             permission.Id = permission.Id != Guid.Empty ? permission.Id : Guid.NewGuid();
-            permission.DateCreated = DateTime.UtcNow;
             permission.CreatedBy = _user.GetId();
-            permission.DateModified = null;
-            permission.ModifiedBy = null;
             var permissionEntity = _mapper.Map<PermissionEntity>(permission);
 
             _context.Permissions.Add(permissionEntity);
@@ -121,9 +118,6 @@ namespace Blueprint.Api.Services
             if (permissionToUpdate == null)
                 throw new EntityNotFoundException<Permission>();
 
-            permission.CreatedBy = permissionToUpdate.CreatedBy;
-            permission.DateCreated = permissionToUpdate.DateCreated;
-            permission.DateModified = DateTime.UtcNow;
             permission.ModifiedBy = _user.GetId();
             _mapper.Map(permission, permissionToUpdate);
 

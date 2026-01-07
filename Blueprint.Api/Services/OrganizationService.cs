@@ -110,10 +110,7 @@ namespace Blueprint.Api.Services
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
             organization.Id = organization.Id != Guid.Empty ? organization.Id : Guid.NewGuid();
-            organization.DateCreated = DateTime.UtcNow;
             organization.CreatedBy = _user.GetId();
-            organization.DateModified = null;
-            organization.ModifiedBy = null;
             var organizationEntity = _mapper.Map<OrganizationEntity>(organization);
             _context.Organizations.Add(organizationEntity);
             await _context.SaveChangesAsync(ct);
@@ -149,10 +146,7 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
-            organization.CreatedBy = organizationToUpdate.CreatedBy;
-            organization.DateCreated = organizationToUpdate.DateCreated;
             organization.ModifiedBy = _user.GetId();
-            organization.DateModified = DateTime.UtcNow;
             _mapper.Map(organization, organizationToUpdate);
             _context.Organizations.Update(organizationToUpdate);
             await _context.SaveChangesAsync(ct);

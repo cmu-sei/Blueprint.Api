@@ -82,6 +82,35 @@ namespace Blueprint.Api.Data
         /// </summary>
         private void SaveEntries()
         {
+            // Handle audit fields for added entries
+            var addedEntries = ChangeTracker.Entries().Where(x => x.State == EntityState.Added);
+            foreach (var entry in addedEntries)
+            {
+                try
+                {
+                    ((BaseEntity)entry.Entity).DateCreated = DateTime.UtcNow;
+                    ((BaseEntity)entry.Entity).DateModified = null;
+                    ((BaseEntity)entry.Entity).ModifiedBy = null;
+                }
+                catch
+                { }
+            }
+
+            // Handle audit fields for modified entries
+            var modifiedEntries = ChangeTracker.Entries().Where(x => x.State == EntityState.Modified);
+            foreach (var entry in modifiedEntries)
+            {
+                try
+                {
+                    ((BaseEntity)entry.Entity).DateModified = DateTime.UtcNow;
+                    ((BaseEntity)entry.Entity).CreatedBy = (Guid)entry.OriginalValues["CreatedBy"];
+                    ((BaseEntity)entry.Entity).DateCreated = DateTime.SpecifyKind((DateTime)entry.OriginalValues["DateCreated"], DateTimeKind.Utc);
+                }
+                catch
+                { }
+            }
+
+            // Track changes for event notifications
             foreach (var entry in ChangeTracker.Entries())
             {
                 // find value of id property

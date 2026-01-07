@@ -72,10 +72,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             injectType.Id = injectType.Id != Guid.Empty ? injectType.Id : Guid.NewGuid();
-            injectType.DateCreated = DateTime.UtcNow;
             injectType.CreatedBy = _user.GetId();
-            injectType.DateModified = null;
-            injectType.ModifiedBy = null;
             var injectTypeEntity = _mapper.Map<InjectTypeEntity>(injectType);
 
             _context.InjectTypes.Add(injectTypeEntity);
@@ -94,9 +91,6 @@ namespace Blueprint.Api.Services
             if (injectTypeToUpdate == null)
                 throw new EntityNotFoundException<InjectType>();
 
-            injectType.CreatedBy = injectTypeToUpdate.CreatedBy;
-            injectType.DateCreated = injectTypeToUpdate.DateCreated;
-            injectType.DateModified = DateTime.UtcNow;
             injectType.ModifiedBy = _user.GetId();
             _mapper.Map(injectType, injectTypeToUpdate);
 

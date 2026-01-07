@@ -111,10 +111,7 @@ namespace Blueprint.Api.Services
             var requestedTeam = await _context.Teams.FindAsync(teamUser.TeamId);
             // okay to add this TeamUser
             teamUser.Id = teamUser.Id != Guid.Empty ? teamUser.Id : Guid.NewGuid();
-            teamUser.DateCreated = DateTime.UtcNow;
             teamUser.CreatedBy = _user.GetId();
-            teamUser.DateModified = null;
-            teamUser.ModifiedBy = null;
             var teamUserEntity = _mapper.Map<TeamUserEntity>(teamUser);
 
             _context.TeamUsers.Add(teamUserEntity);

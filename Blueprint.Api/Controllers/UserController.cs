@@ -6,10 +6,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
+using Blueprint.Api.Infrastructure.Authorization;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -19,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class UserController : BaseController
     {
         private readonly IUserService _userService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public UserController(IUserService userService, IAuthorizationService authorizationService)
+        public UserController(IUserService userService, IBlueprintAuthorizationService authorizationService)
         {
             _userService = userService;
             _authorizationService = authorizationService;
@@ -41,7 +42,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUsers")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
-            var list = await _userService.GetAsync(ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct);
+            var list = await _userService.GetAsync(hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -61,7 +63,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUser")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var user = await _userService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct);
+            var user = await _userService.GetAsync(id, hasSystemPermission, ct);
 
             if (user == null)
                 throw new EntityNotFoundException<User>();
@@ -83,7 +86,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getMselUsers")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _userService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _userService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -103,6 +107,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getTeamUsers")]
         public async Task<IActionResult> GetByTeam(Guid teamId, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
+
             var list = await _userService.GetByTeamAsync(teamId, ct);
             return Ok(list);
         }
@@ -123,6 +130,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUnitUsers")]
         public async Task<IActionResult> GetByUnit(Guid unitId, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
+
             var list = await _userService.GetByUnitAsync(unitId, ct);
             return Ok(list);
         }
@@ -142,6 +152,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createUser")]
         public async Task<IActionResult> Create([FromBody] User user, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
+
             user.CreatedBy = User.GetId();
             var createdUser = await _userService.CreateAsync(user, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdUser.Id }, createdUser);
@@ -164,6 +177,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateUser")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] User user, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
+
             user.ModifiedBy = User.GetId();
             var updatedUser = await _userService.UpdateAsync(id, user, ct);
             return Ok(updatedUser);
@@ -184,6 +200,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteUser")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
+
             await _userService.DeleteAsync(id, ct);
             return NoContent();
         }

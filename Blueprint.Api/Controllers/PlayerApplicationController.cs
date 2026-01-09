@@ -6,11 +6,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -20,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class PlayerApplicationController : BaseController
     {
         private readonly IPlayerApplicationService _playerApplicationService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public PlayerApplicationController(IPlayerApplicationService playerApplicationService, IAuthorizationService authorizationService)
+        public PlayerApplicationController(IPlayerApplicationService playerApplicationService, IBlueprintAuthorizationService authorizationService)
         {
             _playerApplicationService = playerApplicationService;
             _authorizationService = authorizationService;
@@ -42,7 +42,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getApplicationsByMsel")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _playerApplicationService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _playerApplicationService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -60,7 +61,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getPlayerApplication")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var playerApplication = await _playerApplicationService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var playerApplication = await _playerApplicationService.GetAsync(id, hasSystemPermission, ct);
 
             if (playerApplication == null)
                 throw new EntityNotFoundException<PlayerApplication>();
@@ -83,8 +85,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createPlayerApplication")]
         public async Task<IActionResult> Create([FromBody] PlayerApplication playerApplication, CancellationToken ct)
         {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             playerApplication.CreatedBy = User.GetId();
-            var createdPlayerApplication = await _playerApplicationService.CreateAsync(playerApplication, ct);
+            var createdPlayerApplication = await _playerApplicationService.CreateAsync(playerApplication, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdPlayerApplication.Id }, createdPlayerApplication);
         }
 
@@ -103,8 +106,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createAndPushPlayerApplication")]
         public async Task<IActionResult> CreateAndPush([FromBody] PlayerApplication playerApplication, CancellationToken ct)
         {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             playerApplication.CreatedBy = User.GetId();
-            var createdPlayerApplication = await _playerApplicationService.CreateAndPushAsync(playerApplication, ct);
+            var createdPlayerApplication = await _playerApplicationService.CreateAndPushAsync(playerApplication, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdPlayerApplication.Id }, createdPlayerApplication);
         }
 
@@ -125,8 +129,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updatePlayerApplication")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] PlayerApplication playerApplication, CancellationToken ct)
         {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             playerApplication.ModifiedBy = User.GetId();
-            var updatedPlayerApplication = await _playerApplicationService.UpdateAsync(id, playerApplication, ct);
+            var updatedPlayerApplication = await _playerApplicationService.UpdateAsync(id, playerApplication, hasSystemPermission, ct);
             return Ok(updatedPlayerApplication);
         }
 
@@ -145,7 +150,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deletePlayerApplication")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _playerApplicationService.DeleteAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            await _playerApplicationService.DeleteAsync(id, hasSystemPermission, ct);
             return NoContent();
         }
 

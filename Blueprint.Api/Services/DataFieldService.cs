@@ -9,7 +9,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -17,45 +16,38 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
-using Blueprint.Api.Infrastructure.JsonConverters;
 
 namespace Blueprint.Api.Services
 {
     public interface IDataFieldService
     {
         Task<IEnumerable<ViewModels.DataField>> GetTemplatesAsync(CancellationToken ct);
-        Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.DataField>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct);
-        Task<ViewModels.DataField> GetAsync(Guid id, CancellationToken ct);
-         Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, CancellationToken ct);
-         Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct);
-         Task<Guid> DeleteAsync(Guid id, CancellationToken ct);
+        Task<ViewModels.DataField> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
+        Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
+        Task<Guid> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
     }
 
     public class DataFieldService : IDataFieldService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
 
         public DataFieldService(
             BlueprintContext context,
-            IAuthorizationService authorizationService,
             IPrincipal user,
             IMapper mapper)
         {
             _context = context;
-            _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.DataField>> GetTemplatesAsync(CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var dataFieldEntities = await _context.DataFields
                 .Where(dataField => dataField.IsTemplate)
                 .Include(dataField => dataField.DataOptions)
@@ -64,12 +56,9 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<DataField>>(dataFieldEntities).ToList();;
         }
 
-        public async Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
-            if (
-                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
-                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
-               )
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
             {
                 var msel = await _context.Msels.FindAsync(mselId);
                 if (!msel.IsTemplate)
@@ -86,9 +75,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.DataField>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var dataFieldEntities = await _context.DataFields
                 .Where(dataField => dataField.InjectTypeId == injectTypeId)
                 .Include(df => df.DataOptions)
@@ -97,7 +83,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<DataField>>(dataFieldEntities).ToList();;
         }
 
-        public async Task<ViewModels.DataField> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.DataField> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var item = await _context.DataFields
                 .Include(dataField => dataField.DataOptions)
@@ -106,22 +92,30 @@ namespace Blueprint.Api.Services
             if (item == null)
                 throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
 
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
-                throw new ForbiddenException();
+            // Templates (null MselId) can be viewed by anyone
+            if (item.MselId.HasValue)
+            {
+                if (!hasSystemPermission && !await MselViewRequirement.IsMet(_user.GetId(), item.MselId, _context))
+                    throw new ForbiddenException();
+            }
 
             return _mapper.Map<DataField>(item);
         }
 
-        public async Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, CancellationToken ct)
+        public async Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
         {
             var userId = _user.GetId();
             var dateNow = DateTime.UtcNow;
-            // must be a content developer or MSEL owner
-            // Content developers and MSEL owners can update anything, others require condition checks
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselOwnerRequirement.IsMet(userId, dataField.MselId, _context))
-                throw new ForbiddenException();
+            if (dataField.MselId.HasValue)
+            {
+                if (!hasMselPermission && !await MselEditorRequirement.IsMet(userId, dataField.MselId, _context))
+                    throw new ForbiddenException();
+            }
+            else
+            {
+                if (!hasDataFieldPermission)
+                    throw new ForbiddenException();
+            }
 
             // start a transaction
             await _context.Database.BeginTransactionAsync();
@@ -160,7 +154,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<DataField>(dataFieldEntity);
         }
 
-        public async Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, CancellationToken ct)
+        public async Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
         {
             var exists = await _context.DataFields
                 .AnyAsync(v => v.Id == id, ct);
@@ -169,11 +163,16 @@ namespace Blueprint.Api.Services
 
             var userId = _user.GetId();
             var dateNow = DateTime.UtcNow;
-            // must be a content developer or MSEL owner
-            // Content developers and MSEL owners can update anything, others require condition checks
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(userId, dataField.MselId, _context)))
-                throw new ForbiddenException();
+            if (dataField.MselId.HasValue)
+            {
+                if (!hasMselPermission && !await MselEditorRequirement.IsMet(userId, dataField.MselId, _context))
+                    throw new ForbiddenException();
+            }
+            else
+            {
+                if (!hasDataFieldPermission)
+                    throw new ForbiddenException();
+            }
 
             // start a transaction
             await _context.Database.BeginTransactionAsync();
@@ -235,17 +234,22 @@ namespace Blueprint.Api.Services
             return _mapper.Map<DataField>(dataFieldToUpdate);;
         }
 
-        public async Task<Guid> DeleteAsync(Guid id, CancellationToken ct)
+        public async Task<Guid> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
         {
             var dataFieldToDelete = await _context.DataFields.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (dataFieldToDelete == null)
                 throw new EntityNotFoundException<DataField>();
 
-            // must be a content developer or MSEL owner
-            // Content developers and MSEL owners can update anything, others require condition checks
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), dataFieldToDelete.MselId, _context)))
-                throw new ForbiddenException();
+            if (dataFieldToDelete.MselId.HasValue)
+            {
+                if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), dataFieldToDelete.MselId, _context))
+                    throw new ForbiddenException();
+            }
+            else
+            {
+                if (!hasDataFieldPermission)
+                    throw new ForbiddenException();
+            }
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync();

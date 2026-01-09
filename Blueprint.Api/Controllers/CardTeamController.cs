@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
@@ -19,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class CardTeamController : BaseController
     {
         private readonly ICardTeamService _cardTeamService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public CardTeamController(ICardTeamService cardTeamService, IAuthorizationService authorizationService)
+        public CardTeamController(ICardTeamService cardTeamService, IBlueprintAuthorizationService authorizationService)
         {
             _cardTeamService = cardTeamService;
             _authorizationService = authorizationService;
@@ -40,6 +41,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCardTeams")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct))
+                throw new ForbiddenException();
             var list = await _cardTeamService.GetAsync(ct);
             return Ok(list);
         }
@@ -58,7 +61,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getMselCardTeams")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _cardTeamService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _cardTeamService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -76,7 +80,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCardCardTeams")]
         public async Task<IActionResult> GetByCard(Guid cardId, CancellationToken ct)
         {
-            var list = await _cardTeamService.GetByCardAsync(cardId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _cardTeamService.GetByCardAsync(cardId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -95,7 +100,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCardTeam")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var team = await _cardTeamService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var team = await _cardTeamService.GetAsync(id, hasSystemPermission, ct);
 
             if (team == null)
                 throw new EntityNotFoundException<CardTeam>();
@@ -117,6 +123,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createCardTeam")]
         public async Task<IActionResult> Create([FromBody] CardTeam cardTeam, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
+                throw new ForbiddenException();
             var createdCardTeam = await _cardTeamService.CreateAsync(cardTeam, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdCardTeam.Id }, createdCardTeam);
         }
@@ -138,6 +146,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateCardTeam")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CardTeam cardTeam, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
+                throw new ForbiddenException();
             var updatedCardTeam = await _cardTeamService.UpdateAsync(id, cardTeam, ct);
             return Ok(updatedCardTeam);
         }
@@ -156,6 +166,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteCardTeam")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
+                throw new ForbiddenException();
             await _cardTeamService.DeleteAsync(id, ct);
             return NoContent();
         }
@@ -175,6 +187,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteCardTeamByIds")]
         public async Task<IActionResult> Delete(Guid teamId, Guid cardId, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
+                throw new ForbiddenException();
             await _cardTeamService.DeleteByIdsAsync(teamId, cardId, ct);
             return NoContent();
         }

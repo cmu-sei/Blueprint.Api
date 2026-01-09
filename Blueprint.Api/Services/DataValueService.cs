@@ -9,7 +9,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
@@ -23,36 +22,32 @@ namespace Blueprint.Api.Services
 {
     public interface IDataValueService
     {
-        Task<IEnumerable<ViewModels.DataValue>> GetByMselAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.DataValue> GetAsync(Guid id, CancellationToken ct);
-        Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValue DataValue, CancellationToken ct);
-        Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValue DataValue, CancellationToken ct);
-        Task<bool> DeleteAsync(Guid id, CancellationToken ct);
+        Task<IEnumerable<ViewModels.DataValue>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.DataValue> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValue dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
+        Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValue dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
+        Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
     }
 
     public class DataValueService : IDataValueService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
 
         public DataValueService(
             BlueprintContext context,
-            IAuthorizationService authorizationService,
             IPrincipal user,
             IMapper mapper)
         {
             _context = context;
-            _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
         }
 
-        public async Task<IEnumerable<ViewModels.DataValue>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.DataValue>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
+            if (!hasSystemPermission && !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
                 throw new ForbiddenException();
 
             var scenarioEventIdList = await _context.ScenarioEvents
@@ -66,7 +61,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<DataValue>>(dataValueEntities).ToList();;
         }
 
-        public async Task<ViewModels.DataValue> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.DataValue> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var item = await _context.DataValues
                 .Include(dv => dv.DataField)
@@ -74,25 +69,21 @@ namespace Blueprint.Api.Services
             if (item == null)
                 throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
 
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselUserRequirement.IsMet(_user.GetId(), item.DataField.MselId, _context))
+            if (!hasSystemPermission && !await MselViewRequirement.IsMet(_user.GetId(), item.DataField.MselId, _context))
                 throw new ForbiddenException();
 
             return _mapper.Map<DataValue>(item);
         }
 
-        public async Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValue dataValue, CancellationToken ct)
+        public async Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValue dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
         {
             var mselId = await _context.DataFields
                 .Where(df => df.Id == dataValue.DataFieldId)
                 .Select(df => df.MselId)
                 .FirstOrDefaultAsync(ct);
-            // user must be a Content Developer or be a MSEL editor
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                if (!await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context))
-                    throw new ForbiddenException();
-            }
+            // DataValues are always MSEL-specific (through ScenarioEvent)
+            if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context))
+                throw new ForbiddenException();
 
             dataValue.Id = dataValue.Id != Guid.Empty ? dataValue.Id : Guid.NewGuid();
             dataValue.CreatedBy = _user.GetId();
@@ -102,12 +93,12 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(mselId, dataValue.CreatedBy, DateTime.UtcNow, _context, ct);
-            dataValue = await GetAsync(DataValueEntity.Id, ct);
+            dataValue = await GetAsync(DataValueEntity.Id, true, ct);
 
             return dataValue;
         }
 
-        public async Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValue dataValue, CancellationToken ct)
+        public async Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValue dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
         {
             var dataValueToUpdate = await _context.DataValues.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (dataValueToUpdate == null)
@@ -117,11 +108,10 @@ namespace Blueprint.Api.Services
             if (dataField == null)
                 throw new EntityNotFoundException<DataField>($"For DataValue ID = {id} DataField ID = {dataValueToUpdate.DataFieldId}");
 
-            // Content Developers and MSEL Owners can change every DataValue
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
+            // Users with EditMsels permission or MSEL Owners can change every DataValue
+            if (!hasMselPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
             {
-                // to change the assignedTeam, user must be a Content Developer or a MSEL owner
+                // to change the assignedTeam, user must have EditMsels permission or be a MSEL owner
                 if (dataField.DataType == DataFieldType.Team)
                     throw new ForbiddenException("Cannot change the Assigned Team.");
                 // Evaluators can update checkboxes
@@ -148,12 +138,12 @@ namespace Blueprint.Api.Services
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataValue.ModifiedBy, DateTime.UtcNow, _context, ct);
 
-            dataValue = await GetAsync(dataValueToUpdate.Id, ct);
+            dataValue = await GetAsync(dataValueToUpdate.Id, true, ct);
 
             return dataValue;
         }
 
-        public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
+        public async Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
         {
             var dataValueToDelete = await _context.DataValues.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (dataValueToDelete == null)
@@ -163,12 +153,9 @@ namespace Blueprint.Api.Services
                 .Where(df => df.Id == dataValueToDelete.DataFieldId)
                 .Select(df => df.MselId)
                 .FirstOrDefaultAsync();
-            // user must be a Content Developer or be on the requested team and be able to submit
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                if (!( await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context)))
-                    throw new ForbiddenException();
-            }
+            // DataValues are always MSEL-specific (through ScenarioEvent)
+            if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context))
+                throw new ForbiddenException();
 
             _context.DataValues.Remove(dataValueToDelete);
             await _context.SaveChangesAsync(ct);

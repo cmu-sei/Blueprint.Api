@@ -185,7 +185,7 @@ public class Startup
         services.AddScoped<ICatalogUnitService, CatalogUnitService>();
         services.AddScoped<ICiteService, CiteService>();
         services.AddScoped<ICiteActionService, CiteActionService>();
-        services.AddScoped<ICiteRoleService, CiteRoleService>();
+        services.AddScoped<ICiteDutyService, CiteDutyService>();
         services.AddScoped<IDataFieldService, DataFieldService>();
         services.AddScoped<IDataOptionService, DataOptionService>();
         services.AddScoped<IDataValueService, DataValueService>();

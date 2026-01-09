@@ -165,7 +165,7 @@ namespace Blueprint.Api.Services
                                 currentProcessStep = "CITE - begin processing";
                                 msel = await blueprintContext.Msels
                                     .Include(m => m.CiteActions)
-                                    .Include(m => m.CiteRoles)
+                                    .Include(m => m.CiteDuties)
                                     .Include(m => m.Moves)
                                     .AsSplitQuery()
                                     .SingleOrDefaultAsync(m => m.Id == integrationInformation.MselId);
@@ -350,10 +350,10 @@ namespace Blueprint.Api.Services
                 currentProcessStep = "CITE - create teams";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to CITE", null, ct);
                 await IntegrationCiteExtensions.CreateTeamsAsync(msel, citeApiClient, blueprintContext, ct);
-                // create the Cite Roles
-                currentProcessStep = "CITE - create roles";
-                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Roles to CITE", null, ct);
-                await IntegrationCiteExtensions.CreateRolesAsync(msel, citeApiClient, blueprintContext, ct);
+                // create the Cite Duties
+                currentProcessStep = "CITE - create duties";
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Duties to CITE", null, ct);
+                await IntegrationCiteExtensions.CreateDutiesAsync(msel, citeApiClient, blueprintContext, ct);
                 // create the Cite Actions
                 currentProcessStep = "CITE - create actions";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Actions to CITE", null, ct);

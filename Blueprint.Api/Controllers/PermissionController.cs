@@ -6,10 +6,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
+using Blueprint.Api.Infrastructure.Authorization;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -19,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class PermissionController : BaseController
     {
         private readonly IPermissionService _permissionService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public PermissionController(IPermissionService permissionService, IAuthorizationService authorizationService)
+        public PermissionController(IPermissionService permissionService, IBlueprintAuthorizationService authorizationService)
         {
             _permissionService = permissionService;
             _authorizationService = authorizationService;
@@ -41,6 +42,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getPermissions")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
+
             var list = await _permissionService.GetAsync(ct);
             return Ok(list);
         }
@@ -75,6 +79,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getPermissionsByUser")]
         public async Task<IActionResult> GetByUser([FromRoute] Guid userId, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
+
             var list = await _permissionService.GetByUserAsync(userId, ct);
             return Ok(list);
         }
@@ -95,6 +102,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getPermission")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
+
             var permission = await _permissionService.GetAsync(id, ct);
 
             if (permission == null)
@@ -118,6 +128,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createPermission")]
         public async Task<IActionResult> Create([FromBody] Permission permission, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
+
             permission.CreatedBy = User.GetId();
             var createdPermission = await _permissionService.CreateAsync(permission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdPermission.Id }, createdPermission);
@@ -139,6 +152,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updatePermission")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Permission permission, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
+
             permission.ModifiedBy = User.GetId();
             var updatedPermission = await _permissionService.UpdateAsync(id, permission, ct);
             return Ok(updatedPermission);
@@ -159,6 +175,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deletePermission")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
+
             await _permissionService.DeleteAsync(id, ct);
             return NoContent();
         }

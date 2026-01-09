@@ -6,11 +6,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -20,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class CardController : BaseController
     {
         private readonly ICardService _cardService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public CardController(ICardService cardService, IAuthorizationService authorizationService)
+        public CardController(ICardService cardService, IBlueprintAuthorizationService authorizationService)
         {
             _cardService = cardService;
             _authorizationService = authorizationService;
@@ -59,7 +59,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCardsByMsel")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _cardService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _cardService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -77,7 +78,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCard")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var card = await _cardService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var card = await _cardService.GetAsync(id, hasSystemPermission, ct);
 
             if (card == null)
                 throw new EntityNotFoundException<Card>();
@@ -100,8 +102,10 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createCard")]
         public async Task<IActionResult> Create([FromBody] Card card, CancellationToken ct)
         {
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasGalleryCardPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageGalleryCards], ct);
             card.CreatedBy = User.GetId();
-            var createdCard = await _cardService.CreateAsync(card, ct);
+            var createdCard = await _cardService.CreateAsync(card, hasMselPermission, hasGalleryCardPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdCard.Id }, createdCard);
         }
 
@@ -122,8 +126,10 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateCard")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Card card, CancellationToken ct)
         {
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasGalleryCardPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageGalleryCards], ct);
             card.ModifiedBy = User.GetId();
-            var updatedCard = await _cardService.UpdateAsync(id, card, ct);
+            var updatedCard = await _cardService.UpdateAsync(id, card, hasMselPermission, hasGalleryCardPermission, ct);
             return Ok(updatedCard);
         }
 
@@ -142,7 +148,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteCard")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _cardService.DeleteAsync(id, ct);
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasGalleryCardPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageGalleryCards], ct);
+            await _cardService.DeleteAsync(id, hasMselPermission, hasGalleryCardPermission, ct);
             return NoContent();
         }
 

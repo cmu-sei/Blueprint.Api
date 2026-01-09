@@ -9,7 +9,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -23,34 +22,31 @@ namespace Blueprint.Api.Services
 {
     public interface IUserMselRoleService
     {
-        Task<IEnumerable<ViewModels.UserMselRole>> GetByMselAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.UserMselRole> GetAsync(Guid id, CancellationToken ct);
-        Task<ViewModels.UserMselRole> CreateAsync(ViewModels.UserMselRole userMselRole, CancellationToken ct);
-        Task<bool> DeleteAsync(Guid id, CancellationToken ct);
+        Task<IEnumerable<ViewModels.UserMselRole>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.UserMselRole> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.UserMselRole> CreateAsync(ViewModels.UserMselRole userMselRole, bool hasSystemPermission, CancellationToken ct);
+        Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
     }
 
     public class UserMselRoleService : IUserMselRoleService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
         private readonly ILogger<IUserMselRoleService> _logger;
 
-        public UserMselRoleService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal user, ILogger<IUserMselRoleService> logger, IMapper mapper)
+        public UserMselRoleService(BlueprintContext context, IPrincipal user, ILogger<IUserMselRoleService> logger, IMapper mapper)
         {
             _context = context;
-            _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
             _logger = logger;
         }
 
-        public async Task<IEnumerable<ViewModels.UserMselRole>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.UserMselRole>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // must be a MSEL viewer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
 
             var items = await _context.UserMselRoles
@@ -60,24 +56,22 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<UserMselRole>>(items);
         }
 
-        public async Task<ViewModels.UserMselRole> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.UserMselRole> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var item = await _context.UserMselRoles
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
             // must be a MSEL viewer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, _context)))
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, _context)))
                 throw new ForbiddenException();
 
             return _mapper.Map<UserMselRole>(item);
         }
 
-        public async Task<ViewModels.UserMselRole> CreateAsync(ViewModels.UserMselRole userMselRole, CancellationToken ct)
+        public async Task<ViewModels.UserMselRole> CreateAsync(ViewModels.UserMselRole userMselRole, bool hasSystemPermission, CancellationToken ct)
         {
             // must be a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), userMselRole.MselId, _context)))
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), userMselRole.MselId, _context)))
                 throw new ForbiddenException();
 
             // start a transaction, because we may also update other data fields
@@ -93,10 +87,10 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
             _logger.LogWarning($"UserMselRole created by {_user.GetId()} = User: {userMselRole.UserId}, Role: {userMselRole.Role} on MSEL: {userMselRole.MselId}");
-            return await GetAsync(userMselRoleEntity.Id, ct);
+            return await GetAsync(userMselRoleEntity.Id, true, ct);
         }
 
-        public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
+        public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var userMselRoleToDelete = await _context.UserMselRoles.SingleOrDefaultAsync(v => v.Id == id, ct);
 
@@ -104,8 +98,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<UserMselRole>();
 
             // must be a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), userMselRoleToDelete.MselId, _context)))
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), userMselRoleToDelete.MselId, _context)))
                 throw new ForbiddenException();
 
             // start a transaction, because we may also update other data fields

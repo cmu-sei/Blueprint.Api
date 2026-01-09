@@ -8,12 +8,10 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
-using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
 
@@ -32,23 +30,18 @@ namespace Blueprint.Api.Services
     public class InjectTypeService : IInjectTypeService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
 
-        public InjectTypeService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal user, IMapper mapper)
+        public InjectTypeService(BlueprintContext context, IPrincipal user, IMapper mapper)
         {
             _context = context;
-            _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.InjectType>> GetAsync(CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var items = await _context.InjectTypes
                 .ToListAsync(ct);
 
@@ -57,9 +50,6 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.InjectType> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var item = await _context.InjectTypes
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
@@ -68,9 +58,6 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.InjectType> CreateAsync(ViewModels.InjectType injectType, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             injectType.Id = injectType.Id != Guid.Empty ? injectType.Id : Guid.NewGuid();
             injectType.CreatedBy = _user.GetId();
             var injectTypeEntity = _mapper.Map<InjectTypeEntity>(injectType);
@@ -83,9 +70,6 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.InjectType> UpdateAsync(Guid id, ViewModels.InjectType injectType, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var injectTypeToUpdate = await _context.InjectTypes.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (injectTypeToUpdate == null)
@@ -102,9 +86,6 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var injectTypeToDelete = await _context.InjectTypes.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (injectTypeToDelete == null)

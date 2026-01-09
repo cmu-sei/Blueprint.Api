@@ -25,7 +25,6 @@ namespace Blueprint.Api.Hubs
         private readonly BlueprintContext _context;
         private readonly DatabaseOptions _options;
         private readonly CancellationToken _ct;
-        private readonly IAuthorizationService _authorizationService;
         private readonly IBlueprintAuthorizationService _blueprintAuthorizationService;
         public const string ADMIN_DATA_GROUP = "AdminDataGroup";
         public const string GROUP_GROUP = "AdminGroupGroup";
@@ -37,7 +36,6 @@ namespace Blueprint.Api.Hubs
             IMselService mselService,
             BlueprintContext context,
             DatabaseOptions options,
-            IAuthorizationService authorizationService,
             IBlueprintAuthorizationService blueprintAuthorizationService
         )
         {
@@ -47,7 +45,6 @@ namespace Blueprint.Api.Hubs
             _options = options;
             CancellationTokenSource source = new CancellationTokenSource();
             _ct = source.Token;
-            _authorizationService = authorizationService;
             _blueprintAuthorizationService = blueprintAuthorizationService;
         }
 
@@ -116,7 +113,7 @@ namespace Blueprint.Api.Hubs
         {
             var userGuid = Guid.Parse(userId);
             var idList = new List<string>();
-            if ((await _authorizationService.AuthorizeAsync(Context.User, null, new FullRightsRequirement())).Succeeded)
+            if (await _blueprintAuthorizationService.AuthorizeAsync([SystemPermission.ManageUsers], _ct))
             {
                 idList = await _context.Msels
                     .Where(m => m.Status != Data.Enumerations.MselItemStatus.Archived)
@@ -167,7 +164,7 @@ namespace Blueprint.Api.Hubs
             var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
             idList.Add(userId);
             // content developer or system admin
-            if ((await _authorizationService.AuthorizeAsync(Context.User, null, new ContentDeveloperRequirement())).Succeeded)
+            if (await _blueprintAuthorizationService.AuthorizeAsync([SystemPermission.EditMsels], _ct))
             {
                 idList.Add(ADMIN_DATA_GROUP);
             }
@@ -206,9 +203,9 @@ namespace Blueprint.Api.Hubs
         public const string CiteActionCreated = "CiteActionCreated";
         public const string CiteActionUpdated = "CiteActionUpdated";
         public const string CiteActionDeleted = "CiteActionDeleted";
-        public const string CiteRoleCreated = "CiteRoleCreated";
-        public const string CiteRoleUpdated = "CiteRoleUpdated";
-        public const string CiteRoleDeleted = "CiteRoleDeleted";
+        public const string CiteDutyCreated = "CiteDutyCreated";
+        public const string CiteDutyUpdated = "CiteDutyUpdated";
+        public const string CiteDutyDeleted = "CiteDutyDeleted";
         public const string DataFieldCreated = "DataFieldCreated";
         public const string DataFieldUpdated = "DataFieldUpdated";
         public const string DataFieldDeleted = "DataFieldDeleted";

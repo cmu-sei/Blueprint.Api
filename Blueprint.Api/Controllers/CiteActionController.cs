@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
@@ -19,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class CiteActionController : BaseController
     {
         private readonly ICiteActionService _citeActionService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public CiteActionController(ICiteActionService citeActionService, IAuthorizationService authorizationService)
+        public CiteActionController(ICiteActionService citeActionService, IBlueprintAuthorizationService authorizationService)
         {
             _citeActionService = citeActionService;
             _authorizationService = authorizationService;
@@ -58,7 +59,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getActionsByMsel")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _citeActionService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _citeActionService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -76,7 +78,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCiteAction")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var citeAction = await _citeActionService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var citeAction = await _citeActionService.GetAsync(id, hasSystemPermission, ct);
 
             if (citeAction == null)
                 throw new EntityNotFoundException<CiteAction>();
@@ -99,8 +102,10 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createCiteAction")]
         public async Task<IActionResult> Create([FromBody] CiteAction citeAction, CancellationToken ct)
         {
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasCiteActionPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageCiteActions], ct);
             citeAction.CreatedBy = User.GetId();
-            var createdCiteAction = await _citeActionService.CreateAsync(citeAction, ct);
+            var createdCiteAction = await _citeActionService.CreateAsync(citeAction, hasMselPermission, hasCiteActionPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdCiteAction.Id }, createdCiteAction);
         }
 
@@ -121,8 +126,10 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateCiteAction")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CiteAction citeAction, CancellationToken ct)
         {
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasCiteActionPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageCiteActions], ct);
             citeAction.ModifiedBy = User.GetId();
-            var updatedCiteAction = await _citeActionService.UpdateAsync(id, citeAction, ct);
+            var updatedCiteAction = await _citeActionService.UpdateAsync(id, citeAction, hasMselPermission, hasCiteActionPermission, ct);
             return Ok(updatedCiteAction);
         }
 
@@ -141,7 +148,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteCiteAction")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _citeActionService.DeleteAsync(id, ct);
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasCiteActionPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageCiteActions], ct);
+            await _citeActionService.DeleteAsync(id, hasMselPermission, hasCiteActionPermission, ct);
             return NoContent();
         }
 

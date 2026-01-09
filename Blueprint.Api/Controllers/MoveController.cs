@@ -6,11 +6,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -20,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class MoveController : BaseController
     {
         private readonly IMoveService _moveService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public MoveController(IMoveService moveService, IAuthorizationService authorizationService)
+        public MoveController(IMoveService moveService, IBlueprintAuthorizationService authorizationService)
         {
             _moveService = moveService;
             _authorizationService = authorizationService;
@@ -42,7 +42,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getMovesByMsel")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _moveService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _moveService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -60,7 +61,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getMove")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var move = await _moveService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var move = await _moveService.GetAsync(id, hasSystemPermission, ct);
 
             if (move == null)
                 throw new EntityNotFoundException<Move>();
@@ -83,8 +85,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createMove")]
         public async Task<IActionResult> Create([FromBody] Move move, CancellationToken ct)
         {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             move.CreatedBy = User.GetId();
-            var createdMove = await _moveService.CreateAsync(move, ct);
+            var createdMove = await _moveService.CreateAsync(move, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdMove.Id }, createdMove);
         }
 
@@ -105,8 +108,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateMove")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Move move, CancellationToken ct)
         {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             move.ModifiedBy = User.GetId();
-            var updatedMove = await _moveService.UpdateAsync(id, move, ct);
+            var updatedMove = await _moveService.UpdateAsync(id, move, hasSystemPermission, ct);
             return Ok(updatedMove);
         }
 
@@ -125,7 +129,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteMove")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _moveService.DeleteAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            await _moveService.DeleteAsync(id, hasSystemPermission, ct);
             return NoContent();
         }
 

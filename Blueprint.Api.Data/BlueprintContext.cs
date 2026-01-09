@@ -42,7 +42,7 @@ namespace Blueprint.Api.Data
         public DbSet<CatalogInjectEntity> CatalogInjects { get; set; }
         public DbSet<CatalogUnitEntity> CatalogUnits { get; set; }
         public DbSet<CiteActionEntity> CiteActions { get; set; }
-        public DbSet<CiteRoleEntity> CiteRoles { get; set; }
+        public DbSet<CiteDutyEntity> CiteDuties { get; set; }
         public DbSet<InjectTypeEntity> InjectTypes { get; set; }
         public DbSet<PlayerApplicationEntity> PlayerApplications { get; set; }
         public DbSet<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; }

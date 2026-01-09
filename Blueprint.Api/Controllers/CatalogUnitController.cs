@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
@@ -18,9 +19,9 @@ namespace Blueprint.Api.Controllers
     public class CatalogUnitController : BaseController
     {
         private readonly ICatalogUnitService _catalogUnitService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public CatalogUnitController(ICatalogUnitService catalogUnitService, IAuthorizationService authorizationService)
+        public CatalogUnitController(ICatalogUnitService catalogUnitService, IBlueprintAuthorizationService authorizationService)
         {
             _catalogUnitService = catalogUnitService;
             _authorizationService = authorizationService;
@@ -40,6 +41,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCatalogUnits")]
         public async Task<IActionResult> GetByCatalog(Guid catalogId, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             var list = await _catalogUnitService.GetByCatalogAsync(catalogId, ct);
             return Ok(list);
         }
@@ -59,7 +62,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCatalogUnit")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var unit = await _catalogUnitService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct);
+            var unit = await _catalogUnitService.GetAsync(id, hasSystemPermission, ct);
 
             if (unit == null)
                 throw new EntityNotFoundException<CatalogUnit>();
@@ -81,6 +85,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createCatalogUnit")]
         public async Task<IActionResult> Create([FromBody] CatalogUnit catalogUnit, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             var createdCatalogUnit = await _catalogUnitService.CreateAsync(catalogUnit, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdCatalogUnit.Id }, createdCatalogUnit);
         }
@@ -100,6 +106,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateCatalogUnit")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CatalogUnit catalogUnit, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             var updatedUnit = await _catalogUnitService.UpdateAsync(id, catalogUnit, ct);
             return Ok(updatedUnit);
         }
@@ -118,6 +126,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteCatalogUnit")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             await _catalogUnitService.DeleteAsync(id, ct);
             return NoContent();
         }
@@ -137,6 +147,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteCatalogUnitByIds")]
         public async Task<IActionResult> Delete(Guid catalogId, Guid unitId, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             await _catalogUnitService.DeleteByIdsAsync(catalogId, unitId, ct);
             return NoContent();
         }

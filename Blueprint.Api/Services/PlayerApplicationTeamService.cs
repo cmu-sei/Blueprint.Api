@@ -9,7 +9,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -24,9 +23,9 @@ namespace Blueprint.Api.Services
     public interface IPlayerApplicationTeamService
     {
         Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetAsync(CancellationToken ct);
-        Task<ViewModels.PlayerApplicationTeam> GetAsync(Guid id, CancellationToken ct);
-        Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByPlayerApplicationAsync(Guid playerApplicationId, CancellationToken ct);
-        Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByMselAsync(Guid mselId, CancellationToken ct);
+        Task<ViewModels.PlayerApplicationTeam> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByPlayerApplicationAsync(Guid playerApplicationId, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.PlayerApplicationTeam> CreateAsync(ViewModels.PlayerApplicationTeam playerApplicationTeam, CancellationToken ct);
         Task<ViewModels.PlayerApplicationTeam> UpdateAsync(Guid id, ViewModels.PlayerApplicationTeam playerApplicationTeam, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
@@ -36,38 +35,30 @@ namespace Blueprint.Api.Services
     public class PlayerApplicationTeamService : IPlayerApplicationTeamService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
 
-        public PlayerApplicationTeamService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal team, IMapper mapper)
+        public PlayerApplicationTeamService(BlueprintContext context, IPrincipal team, IMapper mapper)
         {
             _context = context;
-            _authorizationService = authorizationService;
             _user = team as ClaimsPrincipal;
             _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetAsync(CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var items = await _context.PlayerApplicationTeams
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<PlayerApplicationTeam>>(items);
         }
 
-        public async Task<ViewModels.PlayerApplicationTeam> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.PlayerApplicationTeam> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var item = await _context.PlayerApplicationTeams
                 .Include(ct => ct.PlayerApplication)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
-            if (
-                    !(await MselViewRequirement.IsMet(_user.GetId(), item.PlayerApplication.MselId, _context)) &&
-                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
-               )
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.PlayerApplication.MselId, _context)))
             {
                 var mselCheck = await _context.Msels.FindAsync(item.PlayerApplication.MselId);
                 if (!mselCheck.IsTemplate)
@@ -77,13 +68,10 @@ namespace Blueprint.Api.Services
             return _mapper.Map<PlayerApplicationTeam>(item);
         }
 
-        public async Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByPlayerApplicationAsync(Guid playerApplicationId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByPlayerApplicationAsync(Guid playerApplicationId, bool hasSystemPermission, CancellationToken ct)
         {
             var playerApplication = await _context.PlayerApplications.FirstOrDefaultAsync(c => c.Id == playerApplicationId, ct);
-            if (
-                    !(await MselViewRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context)) &&
-                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
-               )
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context)))
             {
                 var mselCheck = await _context.Msels.FindAsync(playerApplication.MselId);
                 if (!mselCheck.IsTemplate)
@@ -96,12 +84,9 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<PlayerApplicationTeam>>(items);
         }
 
-        public async Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
-            if (
-                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
-                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
-               )
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
             {
                 var mselCheck = await _context.Msels.FindAsync(mselId);
                 if (!mselCheck.IsTemplate)
@@ -120,9 +105,6 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.PlayerApplicationTeam> CreateAsync(ViewModels.PlayerApplicationTeam playerApplicationTeam, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             // make sure that the display order is valid
             var itemList = await _context.PlayerApplicationTeams.Where(m => m.TeamId == playerApplicationTeam.TeamId).OrderBy(m => m.DisplayOrder).ToListAsync();
             if (playerApplicationTeam.DisplayOrder > itemList.Count + 1 || playerApplicationTeam.DisplayOrder < 1)
@@ -137,14 +119,11 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             await UpdateOrdering(playerApplicationTeamEntity, itemList, ct);
 
-            return await GetAsync(playerApplicationTeamEntity.Id, ct);
+            return await GetAsync(playerApplicationTeamEntity.Id, true, ct);
         }
 
         public async Task<ViewModels.PlayerApplicationTeam> UpdateAsync(Guid id, ViewModels.PlayerApplicationTeam playerApplicationTeam, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             // make sure that the display order is valid
             var itemList = await _context.PlayerApplicationTeams.Where(m => m.TeamId == playerApplicationTeam.TeamId && m.Id != playerApplicationTeam.Id).OrderBy(m => m.DisplayOrder).ToListAsync();
             if (playerApplicationTeam.DisplayOrder > itemList.Count + 1 || playerApplicationTeam.DisplayOrder < 1)
@@ -160,7 +139,7 @@ namespace Blueprint.Api.Services
             _context.PlayerApplicationTeams.Update(playerApplicationTeamToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            playerApplicationTeam = await GetAsync(playerApplicationTeamToUpdate.Id, ct);
+            playerApplicationTeam = await GetAsync(playerApplicationTeamToUpdate.Id, true, ct);
             await UpdateOrdering(playerApplicationTeamToUpdate, itemList, ct);
 
             return playerApplicationTeam;
@@ -168,9 +147,6 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var playerApplicationTeamToDelete = await _context.PlayerApplicationTeams.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (playerApplicationTeamToDelete == null)
@@ -188,9 +164,6 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteByIdsAsync(Guid playerApplicationId, Guid teamId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var playerApplicationTeamToDelete = await _context.PlayerApplicationTeams.SingleOrDefaultAsync(v => (v.TeamId == teamId) && (v.PlayerApplicationId == playerApplicationId), ct);
 
             if (playerApplicationTeamToDelete == null)

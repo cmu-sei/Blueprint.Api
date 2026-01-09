@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
@@ -19,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class PlayerApplicationTeamController : BaseController
     {
         private readonly IPlayerApplicationTeamService _playerApplicationTeamService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public PlayerApplicationTeamController(IPlayerApplicationTeamService playerApplicationTeamService, IAuthorizationService authorizationService)
+        public PlayerApplicationTeamController(IPlayerApplicationTeamService playerApplicationTeamService, IBlueprintAuthorizationService authorizationService)
         {
             _playerApplicationTeamService = playerApplicationTeamService;
             _authorizationService = authorizationService;
@@ -40,6 +41,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getPlayerApplicationTeams")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct))
+                throw new ForbiddenException();
             var list = await _playerApplicationTeamService.GetAsync(ct);
             return Ok(list);
         }
@@ -58,7 +61,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getMselPlayerApplicationTeams")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _playerApplicationTeamService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _playerApplicationTeamService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -76,7 +80,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getPlayerApplicationPlayerApplicationTeams")]
         public async Task<IActionResult> GetByPlayerApplication(Guid playerApplicationId, CancellationToken ct)
         {
-            var list = await _playerApplicationTeamService.GetByPlayerApplicationAsync(playerApplicationId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _playerApplicationTeamService.GetByPlayerApplicationAsync(playerApplicationId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -95,7 +100,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getPlayerApplicationTeam")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var team = await _playerApplicationTeamService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var team = await _playerApplicationTeamService.GetAsync(id, hasSystemPermission, ct);
 
             if (team == null)
                 throw new EntityNotFoundException<PlayerApplicationTeam>();
@@ -117,6 +123,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createPlayerApplicationTeam")]
         public async Task<IActionResult> Create([FromBody] PlayerApplicationTeam playerApplicationTeam, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
+                throw new ForbiddenException();
             var createdPlayerApplicationTeam = await _playerApplicationTeamService.CreateAsync(playerApplicationTeam, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdPlayerApplicationTeam.Id }, createdPlayerApplicationTeam);
         }
@@ -138,6 +146,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updatePlayerApplicationTeam")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] PlayerApplicationTeam playerApplicationTeam, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
+                throw new ForbiddenException();
             var updatedPlayerApplicationTeam = await _playerApplicationTeamService.UpdateAsync(id, playerApplicationTeam, ct);
             return Ok(updatedPlayerApplicationTeam);
         }
@@ -156,6 +166,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deletePlayerApplicationTeam")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
+                throw new ForbiddenException();
             await _playerApplicationTeamService.DeleteAsync(id, ct);
             return NoContent();
         }
@@ -175,6 +187,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deletePlayerApplicationTeamByIds")]
         public async Task<IActionResult> Delete(Guid teamId, Guid playerApplicationId, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
+                throw new ForbiddenException();
             await _playerApplicationTeamService.DeleteByIdsAsync(teamId, playerApplicationId, ct);
             return NoContent();
         }

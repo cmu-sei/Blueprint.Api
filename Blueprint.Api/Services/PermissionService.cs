@@ -10,12 +10,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using AutoMapper.QueryableExtensions;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
-using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
 
@@ -36,23 +34,18 @@ namespace Blueprint.Api.Services
     public class PermissionService : IPermissionService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
 
-        public PermissionService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal user, IMapper mapper)
+        public PermissionService(BlueprintContext context, IPrincipal user, IMapper mapper)
         {
             _context = context;
-            _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.Permission>> GetAsync(CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var items = await _context.Permissions
                 .ToListAsync(ct);
 
@@ -71,9 +64,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Permission>> GetByUserAsync(Guid userId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var items = await _context.UserPermissions
                 .Where(w => w.UserId == userId)
                 .Select(x => x.Permission)
@@ -84,9 +74,6 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Permission> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var item = await _context.Permissions
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
@@ -95,9 +82,6 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Permission> CreateAsync(ViewModels.Permission permission, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             permission.Id = permission.Id != Guid.Empty ? permission.Id : Guid.NewGuid();
             permission.CreatedBy = _user.GetId();
             var permissionEntity = _mapper.Map<PermissionEntity>(permission);
@@ -110,9 +94,6 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Permission> UpdateAsync(Guid id, ViewModels.Permission permission, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var permissionToUpdate = await _context.Permissions.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (permissionToUpdate == null)
@@ -129,9 +110,6 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var permissionToDelete = await _context.Permissions.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (permissionToDelete == null)

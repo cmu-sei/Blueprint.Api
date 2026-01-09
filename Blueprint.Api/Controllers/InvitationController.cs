@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
@@ -18,9 +19,9 @@ namespace Blueprint.Api.Controllers
     public class InvitationController : BaseController
     {
         private readonly IInvitationService _invitationService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public InvitationController(IInvitationService invitationService, IAuthorizationService authorizationService)
+        public InvitationController(IInvitationService invitationService, IBlueprintAuthorizationService authorizationService)
         {
             _invitationService = invitationService;
             _authorizationService = authorizationService;
@@ -40,7 +41,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getInvitations")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _invitationService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _invitationService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -59,7 +61,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getInvitation")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var invitation = await _invitationService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var invitation = await _invitationService.GetAsync(id, hasSystemPermission, ct);
 
             if (invitation == null)
                 throw new EntityNotFoundException<Invitation>();
@@ -81,7 +84,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createInvitation")]
         public async Task<IActionResult> Create([FromBody] Invitation invitation, CancellationToken ct)
         {
-            var createdInvitation = await _invitationService.CreateAsync(invitation, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var createdInvitation = await _invitationService.CreateAsync(invitation, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdInvitation.Id }, createdInvitation);
         }
 
@@ -100,7 +104,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateInvitation")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Invitation invitation, CancellationToken ct)
         {
-            var updatedPage = await _invitationService.UpdateAsync(id, invitation, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var updatedPage = await _invitationService.UpdateAsync(id, invitation, hasSystemPermission, ct);
             return Ok(updatedPage);
         }
 
@@ -118,7 +123,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteInvitation")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _invitationService.DeleteAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            await _invitationService.DeleteAsync(id, hasSystemPermission, ct);
             return NoContent();
         }
 

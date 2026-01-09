@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Blueprint.Api.Data.Models
 {
-    public class CiteRoleEntity : BaseEntity
+    public class CiteDutyEntity : BaseEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -22,20 +22,19 @@ namespace Blueprint.Api.Data.Models
         public bool IsTemplate { get; set; }
     }
 
-    public class CiteRoleEntityConfiguration : IEntityTypeConfiguration<CiteRoleEntity>
+    public class CiteDutyEntityConfiguration : IEntityTypeConfiguration<CiteDutyEntity>
     {
-        public void Configure(EntityTypeBuilder<CiteRoleEntity> builder)
+        public void Configure(EntityTypeBuilder<CiteDutyEntity> builder)
         {
             builder
                 .HasOne(d => d.Msel)
-                .WithMany(d => d.CiteRoles)
+                .WithMany(d => d.CiteDuties)
                 .OnDelete(DeleteBehavior.Cascade);
             builder
                 .HasOne(d => d.Team)
-                .WithMany(d => d.CiteRoles)
+                .WithMany(d => d.CiteDuties)
                 .OnDelete(DeleteBehavior.Cascade);
         }
     }
 
 }
-

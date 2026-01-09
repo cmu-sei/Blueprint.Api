@@ -6,17 +6,15 @@ using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Infrastructure.Mappings
 {
-    public class CiteRoleProfile : AutoMapper.Profile
+    public class CiteDutyProfile : AutoMapper.Profile
     {
-        public CiteRoleProfile()
+        public CiteDutyProfile()
         {
-            CreateMap<CiteRoleEntity, CiteRole>();
+            CreateMap<CiteDutyEntity, CiteDuty>();
 
-            CreateMap<CiteRole, CiteRoleEntity>()
+            CreateMap<CiteDuty, CiteDutyEntity>()
                 .ForMember(cr => cr.Msel, opt => opt.Ignore());
 
         }
     }
 }
-
-

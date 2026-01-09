@@ -9,7 +9,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -23,34 +22,31 @@ namespace Blueprint.Api.Services
 {
     public interface IUserTeamRoleService
     {
-        Task<IEnumerable<ViewModels.UserTeamRole>> GetByMselAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.UserTeamRole> GetAsync(Guid id, CancellationToken ct);
-        Task<ViewModels.UserTeamRole> CreateAsync(ViewModels.UserTeamRole userTeamRole, CancellationToken ct);
-        Task<bool> DeleteAsync(Guid id, CancellationToken ct);
+        Task<IEnumerable<ViewModels.UserTeamRole>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.UserTeamRole> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.UserTeamRole> CreateAsync(ViewModels.UserTeamRole userTeamRole, bool hasSystemPermission, CancellationToken ct);
+        Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
     }
 
     public class UserTeamRoleService : IUserTeamRoleService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
         private readonly ILogger<IUserTeamRoleService> _logger;
 
-        public UserTeamRoleService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal user, ILogger<IUserTeamRoleService> logger, IMapper mapper)
+        public UserTeamRoleService(BlueprintContext context, IPrincipal user, ILogger<IUserTeamRoleService> logger, IMapper mapper)
         {
             _context = context;
-            _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
             _logger = logger;
         }
 
-        public async Task<IEnumerable<ViewModels.UserTeamRole>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.UserTeamRole>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // must be a msel viewer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
 
             var items = await _context.UserTeamRoles
@@ -60,28 +56,26 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<UserTeamRole>>(items);
         }
 
-        public async Task<ViewModels.UserTeamRole> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.UserTeamRole> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var item = await _context.UserTeamRoles
                 .Include(x => x.Team)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
             // must be a msel viewer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselViewRequirement.IsMet(_user.GetId(), item.Team.MselId, _context)))
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.Team.MselId, _context)))
                 throw new ForbiddenException();
 
             return _mapper.Map<UserTeamRole>(item);
         }
 
-        public async Task<ViewModels.UserTeamRole> CreateAsync(ViewModels.UserTeamRole userTeamRole, CancellationToken ct)
+        public async Task<ViewModels.UserTeamRole> CreateAsync(ViewModels.UserTeamRole userTeamRole, bool hasSystemPermission, CancellationToken ct)
         {
             // must be a msel owner
             var team = await _context.Teams.SingleOrDefaultAsync(t => t.Id == userTeamRole.TeamId);
             if (team == null)
                 throw new EntityNotFoundException<Team>();
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), team.MselId, _context)))
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), team.MselId, _context)))
                 throw new ForbiddenException();
 
             // start a transaction, because we may also update other data fields
@@ -97,10 +91,10 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
             _logger.LogWarning($"UserTeamRole created by {_user.GetId()} = User: {userTeamRole.UserId}, Role: {userTeamRole.Role} on team: {userTeamRole.TeamId}");
-            return await GetAsync(userTeamRoleEntity.Id, ct);
+            return await GetAsync(userTeamRoleEntity.Id, true, ct);
         }
 
-        public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
+        public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var userTeamRoleToDelete = await _context.UserTeamRoles.Include(x => x.Team).SingleOrDefaultAsync(v => v.Id == id, ct);
 
@@ -108,8 +102,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<UserTeamRole>();
 
             // must be a team owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), userTeamRoleToDelete.Team.MselId, _context)))
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), userTeamRoleToDelete.Team.MselId, _context)))
                 throw new ForbiddenException();
 
             // start a transaction, because we may also update other data fields

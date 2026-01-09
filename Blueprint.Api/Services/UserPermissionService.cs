@@ -8,12 +8,10 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
-using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
@@ -32,15 +30,13 @@ namespace Blueprint.Api.Services
     public class UserPermissionService : IUserPermissionService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
         private readonly ILogger<IUserPermissionService> _logger;
 
-        public UserPermissionService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal user, ILogger<IUserPermissionService> logger, IMapper mapper)
+        public UserPermissionService(BlueprintContext context, IPrincipal user, ILogger<IUserPermissionService> logger, IMapper mapper)
         {
             _context = context;
-            _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
             _logger = logger;
@@ -48,9 +44,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.UserPermission>> GetAsync(CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var items = await _context.UserPermissions
                 .ToListAsync(ct);
 
@@ -59,9 +52,6 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.UserPermission> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var item = await _context.UserPermissions
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
@@ -70,9 +60,6 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.UserPermission> CreateAsync(ViewModels.UserPermission userPermission, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             userPermission.Id = userPermission.Id != Guid.Empty ? userPermission.Id : Guid.NewGuid();
             userPermission.CreatedBy = _user.GetId();
             var userPermissionEntity = _mapper.Map<UserPermissionEntity>(userPermission);
@@ -85,9 +72,6 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var userPermissionToDelete = await _context.UserPermissions.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (userPermissionToDelete == null)
@@ -101,9 +85,6 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteByIdsAsync(Guid userId, Guid permissionId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var userPermissionToDelete = await _context.UserPermissions.SingleOrDefaultAsync(v => v.UserId == userId && v.PermissionId == permissionId, ct);
 
             if (userPermissionToDelete == null)

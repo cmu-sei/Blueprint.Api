@@ -152,17 +152,17 @@ namespace Blueprint.Api.Infrastructure.Extensions
             await blueprintContext.SaveChangesAsync(ct);
         }
 
-        // Create Cite Duties for this MSEL (formerly Roles)
-        public static async Task CreateRolesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        // Create Cite Duties for this MSEL
+        public static async Task CreateDutiesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            foreach (var role in msel.CiteRoles)
+            foreach (var duty in msel.CiteDuties)
             {
-                var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == role.TeamId)?.CiteTeamId;
+                var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == duty.TeamId)?.CiteTeamId;
                 if (citeTeamId != null)
                 {
                     Duty citeDuty = new Duty() {
                         EvaluationId = (Guid)msel.CiteEvaluationId,
-                        Name = role.Name,
+                        Name = duty.Name,
                         TeamId = (Guid)citeTeamId
                     };
                     await citeApiClient.CreateDutyAsync(citeDuty, ct);

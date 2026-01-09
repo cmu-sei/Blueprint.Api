@@ -9,7 +9,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -24,7 +23,7 @@ namespace Blueprint.Api.Services
     public interface ICatalogUnitService
     {
         Task<IEnumerable<ViewModels.CatalogUnit>> GetByCatalogAsync(Guid catalogId, CancellationToken ct);
-        Task<ViewModels.CatalogUnit> GetAsync(Guid id, CancellationToken ct);
+        Task<ViewModels.CatalogUnit> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.CatalogUnit> CreateAsync(ViewModels.CatalogUnit catalogUnit, CancellationToken ct);
         Task<ViewModels.CatalogUnit> UpdateAsync(Guid id, ViewModels.CatalogUnit catalogUnit, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
@@ -34,15 +33,13 @@ namespace Blueprint.Api.Services
     public class CatalogUnitService : ICatalogUnitService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
         private readonly ILogger<ICatalogUnitService> _logger;
 
-        public CatalogUnitService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal user, ILogger<ICatalogUnitService> logger, IMapper mapper)
+        public CatalogUnitService(BlueprintContext context, IPrincipal user, ILogger<ICatalogUnitService> logger, IMapper mapper)
         {
             _context = context;
-            _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
             _logger = logger;
@@ -54,10 +51,6 @@ namespace Blueprint.Api.Services
             if (catalog == null)
                 throw new EntityNotFoundException<CatalogEntity>();
 
-            // user must be a Content Developer or a Catalog owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var items = await _context.CatalogUnits
                 .Where(tc => tc.CatalogId == catalogId)
                 .Include(mt => mt.Unit)
@@ -68,15 +61,14 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<CatalogUnit>>(items);
         }
 
-        public async Task<ViewModels.CatalogUnit> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.CatalogUnit> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var catalogUnit = await _context.CatalogUnits.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (catalogUnit == null)
                 throw new EntityNotFoundException<CatalogEntity>();
 
-            // user must be a Content Developer or a Catalog Viewer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await CatalogViewRequirement.IsMet(_user.GetId(), catalogUnit.CatalogId, _context)))
+            // user must have ViewMsels permission or be a Catalog Viewer
+            if (!hasSystemPermission && !(await CatalogViewRequirement.IsMet(_user.GetId(), catalogUnit.CatalogId, _context)))
                 throw new ForbiddenException();
 
             var item = await _context.CatalogUnits
@@ -98,10 +90,6 @@ namespace Blueprint.Api.Services
             if (unit == null)
                 throw new EntityNotFoundException<UnitEntity>();
 
-            // user must be a Content Developer or a Catalog owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             if (await _context.CatalogUnits.AnyAsync(mt => mt.UnitId == unit.Id && mt.CatalogId == catalog.Id))
                 throw new ArgumentException("Catalog Unit already exists.");
 
@@ -111,15 +99,11 @@ namespace Blueprint.Api.Services
             _context.CatalogUnits.Add(catalogUnitEntity);
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"Unit {catalogUnit.UnitId} added to Catalog {catalogUnit.CatalogId} by {_user.GetId()}");
-            return await GetAsync(catalogUnitEntity.Id, ct);
+            return await GetAsync(catalogUnitEntity.Id, true, ct);
         }
 
         public async Task<ViewModels.CatalogUnit> UpdateAsync(Guid id, ViewModels.CatalogUnit catalogUnit, CancellationToken ct)
         {
-            // user must be a Content Developer or a Catalog owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var catalogUnitToUpdate = await _context.CatalogUnits.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (catalogUnitToUpdate == null)
                 throw new EntityNotFoundException<CatalogUnit>();
@@ -129,7 +113,7 @@ namespace Blueprint.Api.Services
             _context.CatalogUnits.Update(catalogUnitToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            catalogUnit = await GetAsync(catalogUnitToUpdate.Id, ct);
+            catalogUnit = await GetAsync(catalogUnitToUpdate.Id, true, ct);
             return catalogUnit;
         }
 
@@ -138,10 +122,6 @@ namespace Blueprint.Api.Services
             var catalogUnitToDelete = await _context.CatalogUnits.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (catalogUnitToDelete == null)
                 throw new EntityNotFoundException<CatalogUnit>();
-
-            // user must be a Content Developer or a Catalog owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
 
             _context.CatalogUnits.Remove(catalogUnitToDelete);
             await _context.SaveChangesAsync(ct);
@@ -154,10 +134,6 @@ namespace Blueprint.Api.Services
             var catalogUnitToDelete = await _context.CatalogUnits.SingleOrDefaultAsync(v => (v.UnitId == unitId) && (v.CatalogId == catalogId), ct);
             if (catalogUnitToDelete == null)
                 throw new EntityNotFoundException<CatalogUnit>();
-
-            // user must be a Content Developer or a Catalog owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
 
             _context.CatalogUnits.Remove(catalogUnitToDelete);
             await _context.SaveChangesAsync(ct);

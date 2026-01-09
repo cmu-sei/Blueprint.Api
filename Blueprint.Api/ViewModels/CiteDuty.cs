@@ -5,7 +5,7 @@ using System;
 
 namespace Blueprint.Api.ViewModels
 {
-    public class CiteRole : Base
+    public class CiteDuty : Base
     {
         public Guid Id { get; set; }
         public Guid? MselId { get; set; }

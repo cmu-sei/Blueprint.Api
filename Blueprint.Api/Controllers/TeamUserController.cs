@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
@@ -19,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class TeamUserController : BaseController
     {
         private readonly ITeamUserService _teamUserService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public TeamUserController(ITeamUserService teamUserService, IAuthorizationService authorizationService)
+        public TeamUserController(ITeamUserService teamUserService, IBlueprintAuthorizationService authorizationService)
         {
             _teamUserService = teamUserService;
             _authorizationService = authorizationService;
@@ -41,7 +42,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getMselTeamUsers")]
         public async Task<IActionResult> GetByMsel([FromRoute] Guid mselId, CancellationToken ct)
         {
-            var list = await _teamUserService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _teamUserService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -59,7 +61,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getTeamTeamUsers")]
         public async Task<IActionResult> GetByTeam([FromRoute] Guid teamId, CancellationToken ct)
         {
-            var list = await _teamUserService.GetByTeamAsync(teamId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _teamUserService.GetByTeamAsync(teamId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -79,7 +82,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getTeamUser")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var team = await _teamUserService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var team = await _teamUserService.GetAsync(id, hasSystemPermission, ct);
 
             if (team == null)
                 throw new EntityNotFoundException<TeamUser>();
@@ -102,6 +106,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createTeamUser")]
         public async Task<IActionResult> Create([FromBody] TeamUser team, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
             team.CreatedBy = User.GetId();
             var createdTeamUser = await _teamUserService.CreateAsync(team, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdTeamUser.Id }, createdTeamUser);
@@ -122,6 +128,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteTeamUser")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
             await _teamUserService.DeleteAsync(id, ct);
             return NoContent();
         }
@@ -142,6 +150,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteTeamUserByIds")]
         public async Task<IActionResult> Delete(Guid teamId, Guid userId, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
             await _teamUserService.DeleteByIdsAsync(teamId, userId, ct);
             return NoContent();
         }

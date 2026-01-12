@@ -13,45 +13,34 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "cite_roles");
+            // Rename cite_roles to cite_duties to preserve existing data
+            migrationBuilder.RenameTable(
+                name: "cite_roles",
+                newName: "cite_duties");
+
+            // Rename primary key constraint
+            migrationBuilder.Sql("ALTER TABLE cite_duties RENAME CONSTRAINT \"PK_cite_roles\" TO \"PK_cite_duties\";");
+
+            // Rename foreign key constraints
+            migrationBuilder.Sql("ALTER TABLE cite_duties RENAME CONSTRAINT \"FK_cite_roles_msels_msel_id\" TO \"FK_cite_duties_msels_msel_id\";");
+            migrationBuilder.Sql("ALTER TABLE cite_duties RENAME CONSTRAINT \"FK_cite_roles_teams_team_id\" TO \"FK_cite_duties_teams_team_id\";");
+
+            // Rename indexes
+            migrationBuilder.RenameIndex(
+                name: "IX_cite_roles_msel_id",
+                table: "cite_duties",
+                newName: "IX_cite_duties_msel_id");
+
+            migrationBuilder.RenameIndex(
+                name: "IX_cite_roles_team_id",
+                table: "cite_duties",
+                newName: "IX_cite_duties_team_id");
 
             migrationBuilder.AddColumn<Guid>(
                 name: "role_id",
                 table: "users",
                 type: "uuid",
                 nullable: true);
-
-            migrationBuilder.CreateTable(
-                name: "cite_duties",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false, defaultValueSql: "uuid_generate_v4()"),
-                    msel_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    team_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    name = table.Column<string>(type: "text", nullable: true),
-                    is_template = table.Column<bool>(type: "boolean", nullable: false),
-                    date_created = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    date_modified = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    created_by = table.Column<Guid>(type: "uuid", nullable: false),
-                    modified_by = table.Column<Guid>(type: "uuid", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_cite_duties", x => x.id);
-                    table.ForeignKey(
-                        name: "FK_cite_duties_msels_msel_id",
-                        column: x => x.msel_id,
-                        principalTable: "msels",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_cite_duties_teams_team_id",
-                        column: x => x.team_id,
-                        principalTable: "teams",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
 
             migrationBuilder.CreateTable(
                 name: "groups",
@@ -123,16 +112,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                 column: "role_id");
 
             migrationBuilder.CreateIndex(
-                name: "IX_cite_duties_msel_id",
-                table: "cite_duties",
-                column: "msel_id");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_cite_duties_team_id",
-                table: "cite_duties",
-                column: "team_id");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_group_memberships_group_id_user_id",
                 table: "group_memberships",
                 columns: new[] { "group_id", "user_id" },
@@ -171,9 +150,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                 table: "users");
 
             migrationBuilder.DropTable(
-                name: "cite_duties");
-
-            migrationBuilder.DropTable(
                 name: "group_memberships");
 
             migrationBuilder.DropTable(
@@ -190,46 +166,28 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                 name: "role_id",
                 table: "users");
 
-            migrationBuilder.CreateTable(
-                name: "cite_roles",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false, defaultValueSql: "uuid_generate_v4()"),
-                    msel_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    team_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    created_by = table.Column<Guid>(type: "uuid", nullable: false),
-                    date_created = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    date_modified = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    is_template = table.Column<bool>(type: "boolean", nullable: false),
-                    modified_by = table.Column<Guid>(type: "uuid", nullable: true),
-                    name = table.Column<string>(type: "text", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_cite_roles", x => x.id);
-                    table.ForeignKey(
-                        name: "FK_cite_roles_msels_msel_id",
-                        column: x => x.msel_id,
-                        principalTable: "msels",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_cite_roles_teams_team_id",
-                        column: x => x.team_id,
-                        principalTable: "teams",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
+            // Rename indexes back
+            migrationBuilder.RenameIndex(
+                name: "IX_cite_duties_msel_id",
+                table: "cite_duties",
+                newName: "IX_cite_roles_msel_id");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_cite_roles_msel_id",
-                table: "cite_roles",
-                column: "msel_id");
+            migrationBuilder.RenameIndex(
+                name: "IX_cite_duties_team_id",
+                table: "cite_duties",
+                newName: "IX_cite_roles_team_id");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_cite_roles_team_id",
-                table: "cite_roles",
-                column: "team_id");
+            // Rename foreign key constraints back
+            migrationBuilder.Sql("ALTER TABLE cite_duties RENAME CONSTRAINT \"FK_cite_duties_msels_msel_id\" TO \"FK_cite_roles_msels_msel_id\";");
+            migrationBuilder.Sql("ALTER TABLE cite_duties RENAME CONSTRAINT \"FK_cite_duties_teams_team_id\" TO \"FK_cite_roles_teams_team_id\";");
+
+            // Rename primary key constraint back
+            migrationBuilder.Sql("ALTER TABLE cite_duties RENAME CONSTRAINT \"PK_cite_duties\" TO \"PK_cite_roles\";");
+
+            // Rename cite_duties back to cite_roles to preserve existing data
+            migrationBuilder.RenameTable(
+                name: "cite_duties",
+                newName: "cite_roles");
         }
     }
 }

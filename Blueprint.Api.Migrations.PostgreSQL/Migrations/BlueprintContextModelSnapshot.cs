@@ -299,7 +299,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.ToTable("cite_actions");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CiteRoleEntity", b =>
+            modelBuilder.Entity("Blueprint.Api.Data.Models.CiteDutyEntity", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -345,7 +345,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("TeamId");
 
-                    b.ToTable("cite_roles");
+                    b.ToTable("cite_duties");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataFieldEntity", b =>
@@ -1483,7 +1483,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                             Description = "Can create and manage their own MSELs.",
                             Immutable = false,
                             Name = "Content Developer",
-                            Permissions = new[] { 0, 1, 2, 3 }
+                            Permissions = new[] { 1, 2, 3, 4 }
                         },
                         new
                         {
@@ -1492,7 +1492,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                             Description = "Can view all MSELs, but cannot make any changes.",
                             Immutable = false,
                             Name = "Observer",
-                            Permissions = new[] { 1, 11, 13, 15 }
+                            Permissions = new[] { 2, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25 }
                         });
                 });
 
@@ -1923,15 +1923,15 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Team");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CiteRoleEntity", b =>
+            modelBuilder.Entity("Blueprint.Api.Data.Models.CiteDutyEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
-                        .WithMany("CiteRoles")
+                        .WithMany("CiteDuties")
                         .HasForeignKey("MselId")
                         .OnDelete(DeleteBehavior.Cascade);
 
                     b.HasOne("Blueprint.Api.Data.Models.TeamEntity", "Team")
-                        .WithMany("CiteRoles")
+                        .WithMany("CiteDuties")
                         .HasForeignKey("TeamId")
                         .OnDelete(DeleteBehavior.Cascade);
 
@@ -2262,7 +2262,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .IsRequired();
 
                     b.HasOne("Blueprint.Api.Data.Models.UserEntity", "User")
-                        .WithMany("UserPermissions")
+                        .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -2331,7 +2331,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.Navigation("CiteActions");
 
-                    b.Navigation("CiteRoles");
+                    b.Navigation("CiteDuties");
 
                     b.Navigation("DataFields");
 
@@ -2377,7 +2377,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.Navigation("CiteActions");
 
-                    b.Navigation("CiteRoles");
+                    b.Navigation("CiteDuties");
 
                     b.Navigation("Invitations");
 
@@ -2404,8 +2404,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("TeamUsers");
 
                     b.Navigation("UnitUsers");
-
-                    b.Navigation("UserPermissions");
                 });
 #pragma warning restore 612, 618
         }

@@ -138,19 +138,7 @@ namespace Blueprint.Api.Services
                         CreatedBy = subClaim
                     };
 
-                    // First user is default SystemAdmin
-                    if (!anyUsers)
-                    {
-                        var systemAdminPermission = await _context.Permissions.FirstOrDefaultAsync(p => p.Key == BlueprintClaimTypes.SystemAdmin.ToString());
-
-                        if (systemAdminPermission != null)
-                        {
-                            user.UserPermissions.Add(new UserPermissionEntity(user.Id, systemAdminPermission.Id));
-                        }
-                    }
-
                     _context.Users.Add(user);
-                    await _context.SaveChangesAsync();
                 }
                 else
                 {
@@ -158,9 +146,14 @@ namespace Blueprint.Api.Services
                     {
                         user.Name = nameClaim;
                         _context.Update(user);
-                        await _context.SaveChangesAsync();
                     }
                 }
+                try
+                {
+                    await _context.SaveChangesAsync();
+
+                }
+                catch (Exception) { }
             }
 
             return user;

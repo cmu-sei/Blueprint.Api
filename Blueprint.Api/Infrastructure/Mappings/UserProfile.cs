@@ -11,11 +11,8 @@ namespace Blueprint.Api.Infrastructure.Mappings
     {
         public UserProfile()
         {
-            CreateMap<UserEntity, User>()
-                .ForMember(m => m.Permissions, opt => opt.MapFrom(x => x.UserPermissions.Select(y => y.Permission)))
-                .ForMember(m => m.Permissions, opt => opt.ExplicitExpansion());
+            CreateMap<UserEntity, User>();
             CreateMap<User, UserEntity>()
-                .ForMember(m => m.UserPermissions, opt => opt.Ignore())
                 .ForMember(m => m.TeamUsers, opt => opt.Ignore())
                 .ForMember(m => m.UnitUsers, opt => opt.Ignore())
                 .ForMember(m => m.GroupMemberships, opt => opt.Ignore())

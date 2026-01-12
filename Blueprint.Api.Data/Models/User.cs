@@ -19,7 +19,6 @@ namespace Blueprint.Api.Data.Models
         public Guid? RoleId { get; set; }
         public SystemRoleEntity Role { get; set; }
 
-        public ICollection<UserPermissionEntity> UserPermissions { get; set; } = new List<UserPermissionEntity>();
         public ICollection<TeamUserEntity> TeamUsers { get; set; } = new List<TeamUserEntity>();
         public ICollection<UnitUserEntity> UnitUsers { get; set; } = new List<UnitUserEntity>();
         public ICollection<GroupMembershipEntity> GroupMemberships { get; set; } = new List<GroupMembershipEntity>();

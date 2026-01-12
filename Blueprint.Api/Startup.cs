@@ -199,7 +199,6 @@ public class Startup
         services.AddScoped<IMselUnitService, MselUnitService>();
         services.AddScoped<IMoveService, MoveService>();
         services.AddScoped<IOrganizationService, OrganizationService>();
-        services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<IPlayerApplicationService, PlayerApplicationService>();
         services.AddScoped<IPlayerApplicationTeamService, PlayerApplicationTeamService>();
         services.AddScoped<IPlayerService, PlayerService>();
@@ -208,7 +207,6 @@ public class Startup
         services.AddScoped<IUnitService, UnitService>();
         services.AddScoped<IUnitUserService, UnitUserService>();
         services.AddScoped<IUserService, UserService>();
-        services.AddScoped<IUserPermissionService, UserPermissionService>();
         services.AddScoped<IUserMselRoleService, UserMselRoleService>();
         services.AddScoped<IUserTeamRoleService, UserTeamRoleService>();
         services.AddScoped<IGroupService, GroupService>();

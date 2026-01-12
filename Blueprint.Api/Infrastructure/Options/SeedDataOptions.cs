@@ -8,9 +8,9 @@ namespace Blueprint.Api.Infrastructure.Options
 {
     public class SeedDataOptions
     {
-        public List<PermissionEntity> Permissions { get; set; }
+        public List<SystemRoleEntity> Roles { get; set; }
+        public List<GroupEntity> Groups { get; set; }
         public List<UserEntity> Users { get; set; }
-        public List<UserPermissionEntity> UserPermissions { get; set; }
         public List<TeamEntity> Teams { get; set; }
         public List<TeamUserEntity> TeamUsers { get; set; }
         public List<MselEntity> Msels { get; set; }

@@ -11,6 +11,8 @@ using System.Collections.Generic;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Data.Extensions;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using MediatR;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Blueprint.Api.Data
 {
@@ -19,6 +21,9 @@ namespace Blueprint.Api.Data
         public List<Entry> Entries { get; set; } = new List<Entry>();
         // Needed for EventInterceptor
         public IServiceProvider ServiceProvider;
+
+        // Entity Events collected by EventTransactionInterceptor and published in SaveChanges
+        public List<INotification> Events { get; } = [];
 
         public BlueprintContext(DbContextOptions<BlueprintContext> options) : base(options) { }
 
@@ -68,10 +73,36 @@ namespace Blueprint.Api.Data
 
         }
 
+        public override int SaveChanges()
+        {
+            SaveEntries();
+            var result = base.SaveChanges();
+            PublishEvents().Wait();
+            return result;
+        }
+
         public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
         {
             SaveEntries();
-            return await base.SaveChangesAsync(ct);
+            var result = await base.SaveChangesAsync(ct);
+            await PublishEvents(ct);
+            return result;
+        }
+
+        private async Task PublishEvents(CancellationToken cancellationToken = default)
+        {
+            // Publish deferred events after transaction is committed and cleared
+            if (Events.Count > 0 && ServiceProvider is not null)
+            {
+                var mediator = ServiceProvider.GetRequiredService<IMediator>();
+                var eventsToPublish = Events.ToArray();
+                Events.Clear();
+
+                foreach (var evt in eventsToPublish)
+                {
+                    await mediator.Publish(evt, cancellationToken);
+                }
+            }
         }
 
         /// <summary>

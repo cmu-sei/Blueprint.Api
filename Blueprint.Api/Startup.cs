@@ -210,7 +210,7 @@ public class Startup
         services.AddScoped<IUserMselRoleService, UserMselRoleService>();
         services.AddScoped<IUserTeamRoleService, UserTeamRoleService>();
         services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
-        services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>().HttpContext?.User);
+        services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>()?.HttpContext?.User);
         services.AddHttpClient();
         services.AddSingleton<IIntegrationQueue, IntegrationQueue>();
         services.AddHostedService<IntegrationService>();

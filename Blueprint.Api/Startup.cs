@@ -215,7 +215,7 @@ public class Startup
         services.AddScoped<IIdentityResolver, IdentityResolver>();
         services.AddSingleton<IUserIdProvider, SubUserIdProvider>();
         services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
-        services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>().HttpContext?.User);
+        services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>()?.HttpContext?.User);
         services.AddHttpClient();
         services.AddSingleton<IIntegrationQueue, IntegrationQueue>();
         services.AddHostedService<IntegrationService>();

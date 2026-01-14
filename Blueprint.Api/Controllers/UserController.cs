@@ -42,7 +42,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUsers")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewUsers], ct);
             var list = await _userService.GetAsync(hasSystemPermission, ct);
             return Ok(list);
         }
@@ -63,7 +63,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUser")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewUsers], ct);
             var user = await _userService.GetAsync(id, hasSystemPermission, ct);
 
             if (user == null)
@@ -107,10 +107,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getTeamUsers")]
         public async Task<IActionResult> GetByTeam(Guid teamId, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
-                throw new ForbiddenException();
-
-            var list = await _userService.GetByTeamAsync(teamId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _userService.GetByTeamAsync(teamId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -130,7 +128,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUnitUsers")]
         public async Task<IActionResult> GetByUnit(Guid unitId, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewUnits], ct))
                 throw new ForbiddenException();
 
             var list = await _userService.GetByUnitAsync(unitId, ct);

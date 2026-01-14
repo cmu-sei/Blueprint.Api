@@ -30,7 +30,7 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.Catalog>> GetAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Catalog>> GetMineAsync(CancellationToken ct);
-        Task<IEnumerable<ViewModels.Catalog>> GetUserCatalogsAsync(Guid userId, bool hasManageUsersPermission, bool hasEditMselsPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Catalog>> GetUserCatalogsAsync(Guid userId, bool hasManageUsersPermission, CancellationToken ct);
         Task<ViewModels.Catalog> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Catalog> CreateAsync(ViewModels.Catalog catalog, CancellationToken ct);
         Task<ViewModels.Catalog> CopyAsync(Guid catalogId, CancellationToken ct);
@@ -85,10 +85,10 @@ namespace Blueprint.Api.Services
         {
             var userId = _user.GetId();
             // true for hasManageUsersPermission since this is self-access
-            return await GetUserCatalogsAsync(userId, true, false, ct);
+            return await GetUserCatalogsAsync(userId, true, ct);
         }
 
-        public async Task<IEnumerable<ViewModels.Catalog>> GetUserCatalogsAsync(Guid userId, bool hasManageUsersPermission, bool hasEditMselsPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Catalog>> GetUserCatalogsAsync(Guid userId, bool hasManageUsersPermission, CancellationToken ct)
         {
             var currentUserId = _user.GetId();
             if (currentUserId != userId && !hasManageUsersPermission)
@@ -105,12 +105,9 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             // get catalogs created by user
             var myCatalogList = new List<CatalogEntity>();
-            if (hasEditMselsPermission)
-            {
-                myCatalogList = await _context.Catalogs
-                    .Where(m => m.CreatedBy == userId)
-                    .ToListAsync(ct);
-            }
+            myCatalogList = await _context.Catalogs
+                .Where(m => m.CreatedBy == userId)
+                .ToListAsync(ct);
             // combine lists
             var catalogList = unitCatalogList.Union(myCatalogList).OrderBy(m => m.Name);
 

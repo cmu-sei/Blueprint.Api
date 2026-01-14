@@ -122,7 +122,7 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> GetUserMsels(Guid userId, CancellationToken ct)
         {
             var hasManageUsersPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct);
-            var hasEditMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasEditMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
             var list = await _mselService.GetUserMselsAsync(userId, hasManageUsersPermission, hasEditMselsPermission, ct);
             return Ok(list);
         }
@@ -348,7 +348,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "uploadJsonMsel")]
         public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct))
                 throw new ForbiddenException();
 
             var result = await _mselService.UploadJsonAsync(form, ct);
@@ -391,7 +391,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "pushIntegrations")]
         public async Task<IActionResult> PushIntegrations(Guid id, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             var msel = await _mselService.PushIntegrationsAsync(id, hasSystemPermission, ct);
             return Ok(msel);
         }
@@ -411,7 +411,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "pullIntegrations")]
         public async Task<IActionResult> PullIntegrations(Guid id, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             var msel = await _mselService.PullIntegrationsAsync(id, MselItemStatus.Approved, hasSystemPermission, ct);
             return Ok(msel);
         }
@@ -431,7 +431,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "archive")]
         public async Task<IActionResult> Archive(Guid id, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             var msel = await _mselService.ArchiveAsync(id, hasSystemPermission, ct);
             return Ok(msel);
         }

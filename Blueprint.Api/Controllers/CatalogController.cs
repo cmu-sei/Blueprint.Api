@@ -43,7 +43,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCatalogs")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct))
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewCatalogs], ct))
                 throw new ForbiddenException();
             var list = await _catalogService.GetAsync(ct);
             return Ok(list);
@@ -81,8 +81,7 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> GetUserCatalogs(Guid userId, CancellationToken ct)
         {
             var hasManageUsersPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct);
-            var hasManageCatalogsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewCatalogs], ct);
-            var list = await _catalogService.GetUserCatalogsAsync(userId, hasManageUsersPermission, hasManageCatalogsPermission, ct);
+            var list = await _catalogService.GetUserCatalogsAsync(userId, hasManageUsersPermission, ct);
             return Ok(list);
         }
 

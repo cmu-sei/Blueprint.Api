@@ -29,24 +29,6 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets all Team in the system
-        /// </summary>
-        /// <remarks>
-        /// Returns a list of all of the Teams in the system.
-        /// <para />
-        /// Only accessible to a SuperUser
-        /// </remarks>
-        /// <returns></returns>
-        [HttpGet("teams")]
-        [ProducesResponseType(typeof(IEnumerable<Team>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getTeams")]
-        public async Task<IActionResult> Get(CancellationToken ct)
-        {
-            var list = await _teamService.GetAsync(ct);
-            return Ok(list);
-        }
-
-        /// <summary>
         /// Gets Teams for the current user
         /// </summary>
         /// <remarks>
@@ -186,11 +168,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateTeam")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Team team, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
-                throw new ForbiddenException();
-
-            team.ModifiedBy = User.GetId();
-            var updatedTeam = await _teamService.UpdateAsync(id, team, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var updatedTeam = await _teamService.UpdateAsync(id, team, hasSystemPermission, ct);
             return Ok(updatedTeam);
         }
 
@@ -209,10 +188,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteTeam")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
-                throw new ForbiddenException();
-
-            await _teamService.DeleteAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            await _teamService.DeleteAsync(id, hasSystemPermission, ct);
             return NoContent();
         }
 

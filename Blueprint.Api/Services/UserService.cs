@@ -18,6 +18,7 @@ using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
+using DocumentFormat.OpenXml.Office2010.Excel;
 
 namespace Blueprint.Api.Services
 {
@@ -26,7 +27,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.User>> GetAsync(bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.User> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.User>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.User>> GetByUnitAsync(Guid unitId, CancellationToken ct);
         Task<ViewModels.User> CreateAsync(ViewModels.User user, CancellationToken ct);
         Task<ViewModels.User> UpdateAsync(Guid id, ViewModels.User user, CancellationToken ct);
@@ -52,7 +53,7 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.User>> GetAsync(bool hasSystemPermission, CancellationToken ct)
         {
-            if(!hasSystemPermission &&
+            if (!hasSystemPermission &&
                 !(await _context.TeamUsers.AnyAsync(tu => tu.UserId == _user.GetId()))
             )
                 throw new ForbiddenException();
@@ -78,7 +79,7 @@ namespace Blueprint.Api.Services
         {
             if (
                     !hasSystemPermission &&
-                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context))
+                    !await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)
                )
                 throw new ForbiddenException();
 
@@ -102,8 +103,18 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<User>>(items);
         }
 
-        public async Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, bool hasSystemPermission, CancellationToken ct)
         {
+            var team = await _context.Teams.FirstOrDefaultAsync(m => m.Id == teamId);
+            if (team == null)
+                throw new EntityNotFoundException<TeamEntity>();
+
+            if (
+                    !hasSystemPermission &&
+                    !await MselViewRequirement.IsMet(_user.GetId(), team.MselId, _context)
+               )
+                throw new ForbiddenException();
+
             var items = await _context.TeamUsers
                 .Where(tu => tu.TeamId == teamId)
                 .Select(tu => tu.User)

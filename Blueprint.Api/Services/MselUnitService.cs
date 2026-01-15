@@ -51,8 +51,8 @@ namespace Blueprint.Api.Services
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
 
-            // user must have ViewMsels permission or be a MSEL owner
-            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
+            // user must have ViewMsels permission or be a MSEL viewer
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), msel.Id, _context)))
                 throw new ForbiddenException();
 
             var items = await _context.MselUnits

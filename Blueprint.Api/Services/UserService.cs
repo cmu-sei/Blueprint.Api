@@ -56,12 +56,18 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission &&
                 !(await _context.TeamUsers.AnyAsync(tu => tu.UserId == _user.GetId()))
             )
-                throw new ForbiddenException();
-
-            var items = await _context.Users
-                .ProjectTo<ViewModels.User>(_mapper.ConfigurationProvider, dest => dest.Permissions)
-                .ToArrayAsync(ct);
-            return items;
+            {
+                return await _context.Users
+                    .Where(u => u.Id == _user.GetId())
+                    .ProjectTo<ViewModels.User>(_mapper.ConfigurationProvider, dest => dest.Permissions)
+                    .ToArrayAsync(ct);
+            }
+            else
+            {
+                return await _context.Users
+                    .ProjectTo<ViewModels.User>(_mapper.ConfigurationProvider, dest => dest.Permissions)
+                    .ToArrayAsync(ct);
+            }
         }
 
         public async Task<ViewModels.User> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)

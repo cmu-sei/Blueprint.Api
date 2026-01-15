@@ -34,7 +34,7 @@ namespace Blueprint.Api.Services
     public interface IMselService
     {
         Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct);
-        Task<IEnumerable<ViewModels.Msel>> GetMineAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasEditMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct);
@@ -142,13 +142,13 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<Msel>>(await msels.ToListAsync());
         }
 
-        public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasSystemPermission, CancellationToken ct)
         {
             var userId = _user.GetId();
-            return await GetUserMselsAsync(userId, true, true, ct);
+            return await GetUserMselsAsync(userId, false, hasSystemPermission, ct);
         }
 
-        public async Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasEditMselsPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasViewMselsPermission, CancellationToken ct)
         {
             var currentUserId = _user.GetId();
             if (currentUserId != userId && !hasManageUsersPermission)
@@ -166,7 +166,7 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             // get msels created by user and all templates, if user is a content developer
             var myMselList = new List<MselEntity>();
-            if (hasEditMselsPermission)
+            if (hasViewMselsPermission)
             {
                 myMselList = await _context.Msels
                     .Where(m => (m.CreatedBy == userId || m.IsTemplate) && m.Status != MselItemStatus.Archived)
@@ -174,7 +174,12 @@ namespace Blueprint.Api.Services
                     .ToListAsync(ct);
             }
             // combine lists
-            var mselList = unitMselList.Union(myMselList).OrderBy(m => m.Name);
+            var mselList = unitMselList.Union(myMselList).OrderBy(m => m.Name).ToList();
+            // clear the list, if the list only has templates and the user has no SystemPermission
+            if (!myMselList.Any(m => !m.IsTemplate) && !hasViewMselsPermission)
+            {
+                mselList = mselList.Where(m => !m.IsTemplate).ToList();
+            }
             // only return UserMselRoles for the requested user
             foreach (var msel in mselList)
             {

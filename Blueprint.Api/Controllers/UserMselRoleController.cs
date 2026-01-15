@@ -83,7 +83,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createUserMselRole")]
         public async Task<IActionResult> Create([FromBody] UserMselRole role, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             role.CreatedBy = User.GetId();
             var createdUserMselRole = await _userUserMselRoleService.CreateAsync(role, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdUserMselRole.Id }, createdUserMselRole);
@@ -104,7 +104,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteUserMselRole")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             await _userUserMselRoleService.DeleteAsync(id, hasSystemPermission, ct);
             return NoContent();
         }

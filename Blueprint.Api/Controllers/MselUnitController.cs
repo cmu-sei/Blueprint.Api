@@ -84,7 +84,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createMselUnit")]
         public async Task<IActionResult> Create([FromBody] MselUnit mselUnit, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             var createdMselUnit = await _mselUnitService.CreateAsync(mselUnit, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdMselUnit.Id }, createdMselUnit);
         }
@@ -104,7 +104,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateMselUnit")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] MselUnit mselUnit, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             var updatedUnit = await _mselUnitService.UpdateAsync(id, mselUnit, hasSystemPermission, ct);
             return Ok(updatedUnit);
         }
@@ -123,7 +123,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteMselUnit")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             await _mselUnitService.DeleteAsync(id, hasSystemPermission, ct);
             return NoContent();
         }
@@ -143,7 +143,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteMselUnitByIds")]
         public async Task<IActionResult> Delete(Guid mselId, Guid unitId, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             await _mselUnitService.DeleteByIdsAsync(mselId, unitId, hasSystemPermission, ct);
             return NoContent();
         }

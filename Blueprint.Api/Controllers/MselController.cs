@@ -69,7 +69,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getMyMsels")]
         public async Task<IActionResult> GetMine(CancellationToken ct)
         {
-            var list = await _mselService.GetMineAsync(ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _mselService.GetMineAsync(hasSystemPermission, ct);
             return Ok(list);
         }
 

@@ -42,7 +42,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getInjectTypes")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewInjectTypes], ct))
                 throw new ForbiddenException();
 
             var list = await _injectTypeService.GetAsync(ct);
@@ -65,7 +65,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getInjectType")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewInjectTypes], ct))
                 throw new ForbiddenException();
 
             var injectType = await _injectTypeService.GetAsync(id, ct);
@@ -91,7 +91,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createInjectType")]
         public async Task<IActionResult> Create([FromBody] InjectType injectType, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageInjectTypes], ct))
                 throw new ForbiddenException();
 
             injectType.CreatedBy = User.GetId();
@@ -115,7 +115,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateInjectType")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] InjectType injectType, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageInjectTypes], ct))
                 throw new ForbiddenException();
 
             injectType.ModifiedBy = User.GetId();
@@ -138,7 +138,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteInjectType")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageInjectTypes], ct))
                 throw new ForbiddenException();
 
             await _injectTypeService.DeleteAsync(id, ct);

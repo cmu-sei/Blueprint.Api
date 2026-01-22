@@ -12,6 +12,8 @@ namespace Blueprint.Api.ViewModels
 
         public string Name { get; set; }
 
+        public Guid? RoleId { get; set; }
+
         public Permission[] Permissions { get; set; }
     }
 }

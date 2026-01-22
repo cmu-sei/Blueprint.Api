@@ -48,12 +48,28 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         }
 
                         IHostEnvironment env = services.GetService<IHostEnvironment>();
+                        IConfiguration configuration = services.GetService<IConfiguration>();
                         string seedFile = Path.Combine(
                             env.ContentRootPath,
                             databaseOptions.SeedFile
                         );
-                        if (File.Exists(seedFile)) {
-                            SeedDataOptions seedDataOptions = JsonSerializer.Deserialize<SeedDataOptions>(File.ReadAllText(seedFile));
+
+                        SeedDataOptions seedDataOptions = null;
+
+                        // Try to load from seed file first
+                        if (File.Exists(seedFile))
+                        {
+                            seedDataOptions = JsonSerializer.Deserialize<SeedDataOptions>(File.ReadAllText(seedFile));
+                        }
+                        // Fall back to SeedData section in appsettings.json
+                        else
+                        {
+                            seedDataOptions = new SeedDataOptions();
+                            configuration.GetSection("SeedData").Bind(seedDataOptions);
+                        }
+
+                        if (seedDataOptions != null)
+                        {
                             ProcessSeedDataOptions(seedDataOptions, ctx);
                         }
                     }
@@ -77,45 +93,62 @@ namespace Blueprint.Api.Infrastructure.Extensions
         private static void ProcessSeedDataOptions(SeedDataOptions options, BlueprintContext context)
         {
             // PERMISSIONS
-            if (options.Permissions != null && options.Permissions.Any())
+            if ((bool)options.Roles?.Any())
             {
-                var dbPermissions = context.Permissions.ToList();
+                var dbRoles = context.SystemRoles.ToHashSet();
 
-                foreach (PermissionEntity permission in options.Permissions)
+                foreach (SystemRoleEntity role in options.Roles)
                 {
-                    if (!dbPermissions.Where(x => x.Key == permission.Key && x.Value == permission.Value).Any())
+                    if (!dbRoles.Any(x => x.Name == role.Name))
                     {
-                        context.Permissions.Add(permission);
+                        context.SystemRoles.Add(role);
                     }
                 }
                 context.SaveChanges();
             }
             // USERS
-            if (options.Users != null && options.Users.Any())
+            if (options.Users?.Any() == true)
             {
-                var dbUsers = context.Users.ToList();
+                var dbUserIds = context.Users.Select(x => x.Id).ToHashSet();
 
                 foreach (UserEntity user in options.Users)
                 {
-                    if (!dbUsers.Where(x => x.Id == user.Id).Any())
+                    if (!dbUserIds.Contains(user.Id))
                     {
+                        if (user.Role?.Id == Guid.Empty && !string.IsNullOrEmpty(user.Role.Name))
+                        {
+                            var role = context.SystemRoles.FirstOrDefault(x => x.Name == user.Role.Name);
+                            if (role != null)
+                            {
+                                user.RoleId = role.Id;
+                                user.Role = role;
+                            }
+                            else
+                            {
+                                user.RoleId = null;
+                                user.Role = null;
+                            }
+                        }
+
                         context.Users.Add(user);
                     }
                 }
+
                 context.SaveChanges();
             }
-            // USERPERMISSIONS
-            if (options.UserPermissions != null && options.UserPermissions.Any())
+            // GROUPS
+            if (options.Groups?.Any() == true)
             {
-                var dbUserPermissions = context.UserPermissions.ToList();
+                var dbGroup = context.Groups.ToHashSet();
 
-                foreach (UserPermissionEntity userPermission in options.UserPermissions)
+                foreach (var group in options.Groups)
                 {
-                    if (!dbUserPermissions.Where(x => x.UserId == userPermission.UserId && x.PermissionId == userPermission.PermissionId).Any())
+                    if (!dbGroup.Any(x => x.Name == group.Name))
                     {
-                        context.UserPermissions.Add(userPermission);
+                        context.Groups.Add(group);
                     }
                 }
+
                 context.SaveChanges();
             }
             // TEAMS

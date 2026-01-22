@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
@@ -18,9 +19,9 @@ namespace Blueprint.Api.Controllers
     public class InjectController : BaseController
     {
         private readonly IInjectService _injectService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public InjectController(IInjectService injectService, IAuthorizationService authorizationService)
+        public InjectController(IInjectService injectService, IBlueprintAuthorizationService authorizationService)
         {
             _injectService = injectService;
             _authorizationService = authorizationService;
@@ -40,7 +41,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getInjectsByCatalog")]
         public async Task<IActionResult> GetByCatalog(Guid catalogId, CancellationToken ct)
         {
-            var list = await _injectService.GetByCatalogAsync(catalogId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _injectService.GetByCatalogAsync(catalogId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -58,6 +60,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getInjectsByInjectType")]
         public async Task<IActionResult> GetByInjectType(Guid injectTypeId, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct))
+                throw new ForbiddenException();
             var list = await _injectService.GetByInjectTypeAsync(injectTypeId, ct);
             return Ok(list);
         }
@@ -78,7 +82,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getInject")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var inject = await _injectService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var inject = await _injectService.GetAsync(id, hasSystemPermission, ct);
 
             if (inject == null)
                 throw new EntityNotFoundException<ViewModels.Injectm>();
@@ -102,6 +107,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createInject")]
         public async Task<IActionResult> Create([FromRoute] Guid catalogId, [FromBody] ViewModels.Injectm inject, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
+                throw new ForbiddenException();
             var list = await _injectService.CreateAsync(catalogId, inject, ct);
             return Ok(list);
         }
@@ -122,6 +129,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateInject")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] ViewModels.Injectm inject, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
+                throw new ForbiddenException();
             inject.ModifiedBy = User.GetId();
             var list = await _injectService.UpdateAsync(id, inject, ct);
             return Ok(list);
@@ -142,6 +151,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteInject")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
+                throw new ForbiddenException();
             var returnVal = await _injectService.DeleteAsync(id, ct);
             return Ok(returnVal);
         }

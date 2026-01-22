@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
@@ -19,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class UserMselRoleController : BaseController
     {
         private readonly IUserMselRoleService _userUserMselRoleService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public UserMselRoleController(IUserMselRoleService userUserMselRoleService, IAuthorizationService authorizationService)
+        public UserMselRoleController(IUserMselRoleService userUserMselRoleService, IBlueprintAuthorizationService authorizationService)
         {
             _userUserMselRoleService = userUserMselRoleService;
             _authorizationService = authorizationService;
@@ -39,7 +40,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUserMselRolesByMsel")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _userUserMselRoleService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _userUserMselRoleService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -57,7 +59,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUserMselRole")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var role = await _userUserMselRoleService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var role = await _userUserMselRoleService.GetAsync(id, hasSystemPermission, ct);
 
             if (role == null)
                 throw new EntityNotFoundException<UserMselRole>();
@@ -80,8 +83,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createUserMselRole")]
         public async Task<IActionResult> Create([FromBody] UserMselRole role, CancellationToken ct)
         {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             role.CreatedBy = User.GetId();
-            var createdUserMselRole = await _userUserMselRoleService.CreateAsync(role, ct);
+            var createdUserMselRole = await _userUserMselRoleService.CreateAsync(role, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdUserMselRole.Id }, createdUserMselRole);
         }
 
@@ -100,7 +104,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteUserMselRole")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _userUserMselRoleService.DeleteAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
+            await _userUserMselRoleService.DeleteAsync(id, hasSystemPermission, ct);
             return NoContent();
         }
 

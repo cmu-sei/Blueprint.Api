@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
@@ -19,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class UserTeamRoleController : BaseController
     {
         private readonly IUserTeamRoleService _userUserTeamRoleService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public UserTeamRoleController(IUserTeamRoleService userUserTeamRoleService, IAuthorizationService authorizationService)
+        public UserTeamRoleController(IUserTeamRoleService userUserTeamRoleService, IBlueprintAuthorizationService authorizationService)
         {
             _userUserTeamRoleService = userUserTeamRoleService;
             _authorizationService = authorizationService;
@@ -39,7 +40,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUserTeamRolesByMsel")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _userUserTeamRoleService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _userUserTeamRoleService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -57,7 +59,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUserTeamRole")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var role = await _userUserTeamRoleService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var role = await _userUserTeamRoleService.GetAsync(id, hasSystemPermission, ct);
 
             if (role == null)
                 throw new EntityNotFoundException<UserTeamRole>();
@@ -80,8 +83,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createUserTeamRole")]
         public async Task<IActionResult> Create([FromBody] UserTeamRole role, CancellationToken ct)
         {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             role.CreatedBy = User.GetId();
-            var createdUserTeamRole = await _userUserTeamRoleService.CreateAsync(role, ct);
+            var createdUserTeamRole = await _userUserTeamRoleService.CreateAsync(role, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdUserTeamRole.Id }, createdUserTeamRole);
         }
 
@@ -100,7 +104,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteUserTeamRole")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _userUserTeamRoleService.DeleteAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            await _userUserTeamRoleService.DeleteAsync(id, hasSystemPermission, ct);
             return NoContent();
         }
 

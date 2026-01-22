@@ -10,7 +10,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using AutoMapper.QueryableExtensions;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -19,15 +18,16 @@ using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
+using DocumentFormat.OpenXml.Office2010.Excel;
 
 namespace Blueprint.Api.Services
 {
     public interface IUserService
     {
-        Task<IEnumerable<ViewModels.User>> GetAsync(CancellationToken ct);
-        Task<ViewModels.User> GetAsync(Guid id, CancellationToken ct);
-        Task<IEnumerable<ViewModels.User>> GetByMselAsync(Guid mselId, CancellationToken ct);
-        Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.User>> GetAsync(bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.User> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.User>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.User>> GetByUnitAsync(Guid unitId, CancellationToken ct);
         Task<ViewModels.User> CreateAsync(ViewModels.User user, CancellationToken ct);
         Task<ViewModels.User> UpdateAsync(Guid id, ViewModels.User user, CancellationToken ct);
@@ -38,38 +38,41 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IAuthorizationService _authorizationService;
         private readonly IUserClaimsService _userClaimsService;
         private readonly IMapper _mapper;
         private readonly ILogger<IUserService> _logger;
 
-        public UserService(BlueprintContext context, IPrincipal user, IAuthorizationService authorizationService, IUserClaimsService userClaimsService, ILogger<IUserService> logger, IMapper mapper)
+        public UserService(BlueprintContext context, IPrincipal user, IUserClaimsService userClaimsService, ILogger<IUserService> logger, IMapper mapper)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _authorizationService = authorizationService;
             _userClaimsService = userClaimsService;
             _mapper = mapper;
             _logger = logger;
         }
 
-        public async Task<IEnumerable<ViewModels.User>> GetAsync(CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.User>> GetAsync(bool hasSystemPermission, CancellationToken ct)
         {
-            if(!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded &&
+            if (!hasSystemPermission &&
                 !(await _context.TeamUsers.AnyAsync(tu => tu.UserId == _user.GetId()))
             )
-                throw new ForbiddenException();
-
-            var items = await _context.Users
-                .ProjectTo<ViewModels.User>(_mapper.ConfigurationProvider, dest => dest.Permissions)
-                .ToArrayAsync(ct);
-            return items;
+            {
+                return await _context.Users
+                    .Where(u => u.Id == _user.GetId())
+                    .ProjectTo<ViewModels.User>(_mapper.ConfigurationProvider, dest => dest.Permissions)
+                    .ToArrayAsync(ct);
+            }
+            else
+            {
+                return await _context.Users
+                    .ProjectTo<ViewModels.User>(_mapper.ConfigurationProvider, dest => dest.Permissions)
+                    .ToArrayAsync(ct);
+            }
         }
 
-        public async Task<ViewModels.User> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.User> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded &&
-                !((await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded && id == _user.GetId()))
+            if (!hasSystemPermission && id != _user.GetId())
                 throw new ForbiddenException();
 
             var item = await _context.Users
@@ -78,11 +81,11 @@ namespace Blueprint.Api.Services
             return item;
         }
 
-        public async Task<IEnumerable<ViewModels.User>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.User>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             if (
-                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
-                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+                    !hasSystemPermission &&
+                    !await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)
                )
                 throw new ForbiddenException();
 
@@ -106,9 +109,16 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<User>>(items);
         }
 
-        public async Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, bool hasSystemPermission, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
+            var team = await _context.Teams.FirstOrDefaultAsync(m => m.Id == teamId);
+            if (team == null)
+                throw new EntityNotFoundException<TeamEntity>();
+
+            if (
+                    !hasSystemPermission &&
+                    !await MselViewRequirement.IsMet(_user.GetId(), team.MselId, _context)
+               )
                 throw new ForbiddenException();
 
             var items = await _context.TeamUsers
@@ -121,9 +131,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.User>> GetByUnitAsync(Guid unitId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var items = await _context.UnitUsers
                 .Where(tu => tu.UnitId == unitId)
                 .Select(tu => tu.User)
@@ -134,26 +141,17 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.User> CreateAsync(ViewModels.User user, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            user.DateCreated = DateTime.UtcNow;
             user.CreatedBy = _user.GetId();
-            user.DateModified = null;
-            user.ModifiedBy = null;
             var userEntity = _mapper.Map<UserEntity>(user);
 
             _context.Users.Add(userEntity);
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"User {user.Name} ({userEntity.Id}) created by {_user.GetId()}");
-            return await GetAsync(user.Id, ct);
+            return await GetAsync(user.Id, true, ct);
         }
 
         public async Task<ViewModels.User> UpdateAsync(Guid id, ViewModels.User user, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             // Don't allow changing your own Id
             if (id == _user.GetId() && id != user.Id)
             {
@@ -165,23 +163,17 @@ namespace Blueprint.Api.Services
             if (userToUpdate == null)
                 throw new EntityNotFoundException<User>();
 
-            user.CreatedBy = userToUpdate.CreatedBy;
-            user.DateCreated = userToUpdate.DateCreated;
             user.ModifiedBy = _user.GetId();
-            user.DateModified = DateTime.UtcNow;
             _mapper.Map(user, userToUpdate);
 
             _context.Users.Update(userToUpdate);
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"User {user.Name} ({userToUpdate.Id}) updated by {_user.GetId()}");
-            return await GetAsync(id, ct);
+            return await GetAsync(id, true, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             if (id == _user.GetId())
             {
                 throw new ForbiddenException("You cannot delete your own account");

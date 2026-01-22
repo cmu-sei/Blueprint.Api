@@ -9,7 +9,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -23,9 +22,9 @@ namespace Blueprint.Api.Services
     public interface ICardTeamService
     {
         Task<IEnumerable<ViewModels.CardTeam>> GetAsync(CancellationToken ct);
-        Task<ViewModels.CardTeam> GetAsync(Guid id, CancellationToken ct);
-        Task<IEnumerable<ViewModels.CardTeam>> GetByCardAsync(Guid cardId, CancellationToken ct);
-        Task<IEnumerable<ViewModels.CardTeam>> GetByMselAsync(Guid mselId, CancellationToken ct);
+        Task<ViewModels.CardTeam> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.CardTeam>> GetByCardAsync(Guid cardId, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.CardTeam>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.CardTeam> CreateAsync(ViewModels.CardTeam cardTeam, CancellationToken ct);
         Task<ViewModels.CardTeam> UpdateAsync(Guid id, ViewModels.CardTeam cardTeam, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
@@ -35,38 +34,30 @@ namespace Blueprint.Api.Services
     public class CardTeamService : ICardTeamService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
 
-        public CardTeamService(BlueprintContext context, IAuthorizationService authorizationService, IPrincipal team, IMapper mapper)
+        public CardTeamService(BlueprintContext context, IPrincipal team, IMapper mapper)
         {
             _context = context;
-            _authorizationService = authorizationService;
             _user = team as ClaimsPrincipal;
             _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.CardTeam>> GetAsync(CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var items = await _context.CardTeams
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<CardTeam>>(items);
         }
 
-        public async Task<ViewModels.CardTeam> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.CardTeam> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var item = await _context.CardTeams
                 .Include(ct => ct.Card)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
-            if (
-                    !(await MselViewRequirement.IsMet(_user.GetId(), item.Card.MselId, _context)) &&
-                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
-               )
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.Card.MselId, _context)))
             {
                 var mselCheck = await _context.Msels.FindAsync(item.Card.MselId);
                 if (!mselCheck.IsTemplate)
@@ -76,13 +67,10 @@ namespace Blueprint.Api.Services
             return _mapper.Map<CardTeam>(item);
         }
 
-        public async Task<IEnumerable<ViewModels.CardTeam>> GetByCardAsync(Guid cardId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.CardTeam>> GetByCardAsync(Guid cardId, bool hasSystemPermission, CancellationToken ct)
         {
             var card = await _context.Cards.FirstOrDefaultAsync(c => c.Id == cardId, ct);
-            if (
-                    !(await MselViewRequirement.IsMet(_user.GetId(), card.MselId, _context)) &&
-                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
-               )
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), card.MselId, _context)))
             {
                 var mselCheck = await _context.Msels.FindAsync(card.MselId);
                 if (!mselCheck.IsTemplate)
@@ -95,12 +83,9 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<CardTeam>>(items);
         }
 
-        public async Task<IEnumerable<ViewModels.CardTeam>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.CardTeam>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
-            if (
-                    !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)) &&
-                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
-               )
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
             {
                 var mselCheck = await _context.Msels.FindAsync(mselId);
                 if (!mselCheck.IsTemplate)
@@ -119,23 +104,17 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.CardTeam> CreateAsync(ViewModels.CardTeam cardTeam, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var cardTeamEntity = _mapper.Map<CardTeamEntity>(cardTeam);
             cardTeamEntity.Id = cardTeamEntity.Id != Guid.Empty ? cardTeamEntity.Id : Guid.NewGuid();
 
             _context.CardTeams.Add(cardTeamEntity);
             await _context.SaveChangesAsync(ct);
 
-            return await GetAsync(cardTeamEntity.Id, ct);
+            return await GetAsync(cardTeamEntity.Id, true, ct);
         }
 
         public async Task<ViewModels.CardTeam> UpdateAsync(Guid id, ViewModels.CardTeam cardTeam, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var cardTeamToUpdate = await _context.CardTeams.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (cardTeamToUpdate == null)
@@ -146,16 +125,13 @@ namespace Blueprint.Api.Services
             _context.CardTeams.Update(cardTeamToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            cardTeam = await GetAsync(cardTeamToUpdate.Id, ct);
+            cardTeam = await GetAsync(cardTeamToUpdate.Id, true, ct);
 
             return cardTeam;
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var cardTeamToDelete = await _context.CardTeams.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (cardTeamToDelete == null)
@@ -169,9 +145,6 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteByIdsAsync(Guid cardId, Guid teamId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var cardTeamToDelete = await _context.CardTeams.SingleOrDefaultAsync(v => (v.TeamId == teamId) && (v.CardId == cardId), ct);
 
             if (cardTeamToDelete == null)

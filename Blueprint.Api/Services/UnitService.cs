@@ -10,13 +10,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using AutoMapper.QueryableExtensions;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
-using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
 
@@ -37,24 +35,19 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IAuthorizationService _authorizationService;
         private readonly IMapper _mapper;
         private readonly ILogger<IUnitService> _logger;
 
-        public UnitService(BlueprintContext context, IPrincipal unit, IAuthorizationService authorizationService, ILogger<IUnitService> logger, IMapper mapper)
+        public UnitService(BlueprintContext context, IPrincipal unit, ILogger<IUnitService> logger, IMapper mapper)
         {
             _context = context;
             _user = unit as ClaimsPrincipal;
-            _authorizationService = authorizationService;
             _mapper = mapper;
             _logger = logger;
         }
 
         public async Task<IEnumerable<ViewModels.Unit>> GetAsync(CancellationToken ct)
         {
-            if(!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var items = await _context.Units
                 .ToArrayAsync(ct);
             return _mapper.Map<IEnumerable<Unit>>(items);
@@ -62,9 +55,6 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Unit> GetAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var item = await _context.Units
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
             return _mapper.Map<Unit>(item);
@@ -72,9 +62,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Unit>> GetMineAsync(CancellationToken ct)
         {
-            if(!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var items = await _context.UnitUsers
                 .Where(w => w.UserId == _user.GetId())
                 .Include(tu => tu.Unit)
@@ -86,9 +73,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Unit>> GetByUserAsync(Guid userId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var items = await _context.UnitUsers
                 .Where(w => w.UserId == userId)
                 .Select(x => x.Unit)
@@ -99,14 +83,8 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Unit> CreateAsync(ViewModels.Unit unit, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             unit.Id = unit.Id != Guid.Empty ? unit.Id : Guid.NewGuid();
-            unit.DateCreated = DateTime.UtcNow;
             unit.CreatedBy = _user.GetId();
-            unit.DateModified = null;
-            unit.ModifiedBy = null;
             var unitEntity = _mapper.Map<UnitEntity>(unit);
 
             _context.Units.Add(unitEntity);
@@ -117,9 +95,6 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Unit> UpdateAsync(Guid id, ViewModels.Unit unit, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             // Don't allow changing your own Id
             if (id == _user.GetId() && id != unit.Id)
             {
@@ -131,10 +106,7 @@ namespace Blueprint.Api.Services
             if (unitToUpdate == null)
                 throw new EntityNotFoundException<Unit>();
 
-            unit.CreatedBy = unitToUpdate.CreatedBy;
-            unit.DateCreated = unitToUpdate.DateCreated;
             unit.ModifiedBy = _user.GetId();
-            unit.DateModified = DateTime.UtcNow;
             _mapper.Map(unit, unitToUpdate);
 
             _context.Units.Update(unitToUpdate);
@@ -145,9 +117,6 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             if (id == _user.GetId())
             {
                 throw new ForbiddenException("You cannot delete your own account");

@@ -6,10 +6,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
+using Blueprint.Api.Infrastructure.Authorization;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -19,30 +20,12 @@ namespace Blueprint.Api.Controllers
     public class TeamController : BaseController
     {
         private readonly ITeamService _teamService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public TeamController(ITeamService teamService, IAuthorizationService authorizationService)
+        public TeamController(ITeamService teamService, IBlueprintAuthorizationService authorizationService)
         {
             _teamService = teamService;
             _authorizationService = authorizationService;
-        }
-
-        /// <summary>
-        /// Gets all Team in the system
-        /// </summary>
-        /// <remarks>
-        /// Returns a list of all of the Teams in the system.
-        /// <para />
-        /// Only accessible to a SuperUser
-        /// </remarks>
-        /// <returns></returns>
-        [HttpGet("teams")]
-        [ProducesResponseType(typeof(IEnumerable<Team>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getTeams")]
-        public async Task<IActionResult> Get(CancellationToken ct)
-        {
-            var list = await _teamService.GetAsync(ct);
-            return Ok(list);
         }
 
         /// <summary>
@@ -74,7 +57,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getTeamsByMsel")]
         public async Task<IActionResult> GetByMsel([FromRoute] Guid mselId, CancellationToken ct)
         {
-            var list = await _teamService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _teamService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -92,6 +76,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getTeamsByUser")]
         public async Task<IActionResult> GetByUser([FromRoute] Guid userId, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
+                throw new ForbiddenException();
+
             var list = await _teamService.GetByUserAsync(userId, ct);
             return Ok(list);
         }
@@ -112,6 +99,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getTeam")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct))
+                throw new ForbiddenException();
+
             var team = await _teamService.GetAsync(id, ct);
 
             if (team == null)
@@ -135,8 +125,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createTeam")]
         public async Task<IActionResult> Create([FromBody] Team team, CancellationToken ct)
         {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             team.CreatedBy = User.GetId();
-            var createdTeam = await _teamService.CreateAsync(team, ct);
+            var createdTeam = await _teamService.CreateAsync(team, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdTeam.Id }, createdTeam);
         }
 
@@ -156,7 +147,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createTeamFromUnit")]
         public async Task<IActionResult> CreateTeamFromUnit(Guid mselId, Guid unitId, CancellationToken ct)
         {
-            var createdTeam = await _teamService.CreateFromUnitAsync(unitId, mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var createdTeam = await _teamService.CreateFromUnitAsync(unitId, mselId, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdTeam.Id }, createdTeam);
         }
 
@@ -176,8 +168,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateTeam")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Team team, CancellationToken ct)
         {
-            team.ModifiedBy = User.GetId();
-            var updatedTeam = await _teamService.UpdateAsync(id, team, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var updatedTeam = await _teamService.UpdateAsync(id, team, hasSystemPermission, ct);
             return Ok(updatedTeam);
         }
 
@@ -196,7 +188,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteTeam")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _teamService.DeleteAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            await _teamService.DeleteAsync(id, hasSystemPermission, ct);
             return NoContent();
         }
 

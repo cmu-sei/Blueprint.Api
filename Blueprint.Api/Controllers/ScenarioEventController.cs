@@ -6,23 +6,22 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.Services;
 using Swashbuckle.AspNetCore.Annotations;
-using Blueprint.Api.Migrations.PostgreSQL.Migrations;
 
 namespace Blueprint.Api.Controllers
 {
     public class ScenarioEventController : BaseController
     {
         private readonly IScenarioEventService _scenarioEventService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public ScenarioEventController(IScenarioEventService scenarioEventService, IAuthorizationService authorizationService)
+        public ScenarioEventController(IScenarioEventService scenarioEventService, IBlueprintAuthorizationService authorizationService)
         {
             _scenarioEventService = scenarioEventService;
             _authorizationService = authorizationService;
@@ -42,7 +41,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getScenarioEventsByMsel")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _scenarioEventService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _scenarioEventService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -62,7 +62,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getScenarioEvent")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var scenarioEvent = await _scenarioEventService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var scenarioEvent = await _scenarioEventService.GetAsync(id, hasSystemPermission, ct);
 
             if (scenarioEvent == null)
                 throw new EntityNotFoundException<ViewModels.ScenarioEvent>();
@@ -85,7 +86,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createScenarioEvent")]
         public async Task<IActionResult> Create([FromBody] ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
-            var list = await _scenarioEventService.CreateAsync(scenarioEvent, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var list = await _scenarioEventService.CreateAsync(scenarioEvent, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -102,7 +104,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createScenarioEventsFromInjects")]
         public async Task<IActionResult> CreateFromInjects([FromBody] CreateFromInjectsForm createFromInjectsForm, CancellationToken ct)
         {
-            var list = await _scenarioEventService.CreateFromInjectsAsync(createFromInjectsForm, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var list = await _scenarioEventService.CreateFromInjectsAsync(createFromInjectsForm, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -120,7 +123,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "copyScenarioEventsToMsel")]
         public async Task<IActionResult> CreateFromInjects([FromRoute] Guid mselId, [FromBody] List<Guid> scenarioEventIdList, CancellationToken ct)
         {
-            var list = await _scenarioEventService.CopyScenarioEventsToMselAsync(mselId, scenarioEventIdList, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var list = await _scenarioEventService.CopyScenarioEventsToMselAsync(mselId, scenarioEventIdList, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -140,8 +144,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateScenarioEvent")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
         {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             scenarioEvent.ModifiedBy = User.GetId();
-            var list = await _scenarioEventService.UpdateAsync(id, scenarioEvent, ct);
+            var list = await _scenarioEventService.UpdateAsync(id, scenarioEvent, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -160,7 +165,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteScenarioEvent")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            var returnVal = await _scenarioEventService.DeleteAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var returnVal = await _scenarioEventService.DeleteAsync(id, hasSystemPermission, ct);
             return Ok(returnVal);
         }
 
@@ -177,7 +183,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "batchDeleteScenarioEvents")]
         public async Task<IActionResult> BatchDelete([FromBody] Guid[] scenarioEventIdList, CancellationToken ct)
         {
-            var returnVal = await _scenarioEventService.BatchDeleteAsync(scenarioEventIdList, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var returnVal = await _scenarioEventService.BatchDeleteAsync(scenarioEventIdList, hasSystemPermission, ct);
             return Ok(returnVal);
         }
 

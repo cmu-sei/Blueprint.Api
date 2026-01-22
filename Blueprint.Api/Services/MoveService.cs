@@ -9,7 +9,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -22,36 +21,32 @@ namespace Blueprint.Api.Services
 {
     public interface IMoveService
     {
-        Task<IEnumerable<ViewModels.Move>> GetByMselAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.Move> GetAsync(Guid id, CancellationToken ct);
-        Task<ViewModels.Move> CreateAsync(ViewModels.Move move, CancellationToken ct);
-        Task<ViewModels.Move> UpdateAsync(Guid id, ViewModels.Move move, CancellationToken ct);
-        Task<bool> DeleteAsync(Guid id, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Move>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Move> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Move> CreateAsync(ViewModels.Move move, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Move> UpdateAsync(Guid id, ViewModels.Move move, bool hasSystemPermission, CancellationToken ct);
+        Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
     }
 
     public class MoveService : IMoveService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
 
         public MoveService(
             BlueprintContext context,
-            IAuthorizationService authorizationService,
             IPrincipal user,
             IMapper mapper)
         {
             _context = context;
-            _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
         }
 
-        public async Task<IEnumerable<ViewModels.Move>> GetByMselAsync(Guid mselId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Move>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
+            if (!hasSystemPermission && !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
                 throw new ForbiddenException();
 
             var moveEntities = await _context.Moves
@@ -61,23 +56,22 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<Move>>(moveEntities).ToList();;
         }
 
-        public async Task<ViewModels.Move> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.Move> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var item = await _context.Moves.SingleAsync(move => move.Id == id, ct);
             if (item == null)
                 throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
 
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
+            if (!hasSystemPermission && !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
                 throw new ForbiddenException();
 
             return _mapper.Map<Move>(item);
         }
 
-        public async Task<ViewModels.Move> CreateAsync(ViewModels.Move move, CancellationToken ct)
+        public async Task<ViewModels.Move> CreateAsync(ViewModels.Move move, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+            if (!hasSystemPermission &&
                 ! await MselOwnerRequirement.IsMet(_user.GetId(), move.MselId, _context) &&
                 ! await MoveEditorRequirement.IsMet(_user.GetId(), move.MselId, _context))
                 throw new ForbiddenException();
@@ -85,26 +79,23 @@ namespace Blueprint.Api.Services
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
             move.Id = move.Id != Guid.Empty ? move.Id : Guid.NewGuid();
-            move.DateCreated = DateTime.UtcNow;
             move.CreatedBy = _user.GetId();
-            move.DateModified = null;
-            move.ModifiedBy = null;
             var moveEntity = _mapper.Map<MoveEntity>(move);
             _context.Moves.Add(moveEntity);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(move.MselId, move.CreatedBy, move.DateCreated, _context, ct);
-            move = await GetAsync(moveEntity.Id, ct);
+            await ServiceUtilities.SetMselModifiedAsync(move.MselId, move.CreatedBy, DateTime.UtcNow, _context, ct);
+            move = await GetAsync(moveEntity.Id, true, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
             return move;
         }
 
-        public async Task<ViewModels.Move> UpdateAsync(Guid id, ViewModels.Move move, CancellationToken ct)
+        public async Task<ViewModels.Move> UpdateAsync(Guid id, ViewModels.Move move, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+            if (!hasSystemPermission &&
                 !( await MselOwnerRequirement.IsMet(_user.GetId(), move.MselId, _context)) &&
                 !( await MoveEditorRequirement.IsMet(_user.GetId(), move.MselId, _context)))
                 throw new ForbiddenException();
@@ -115,30 +106,27 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
-            move.CreatedBy = moveToUpdate.CreatedBy;
-            move.DateCreated = moveToUpdate.DateCreated;
             move.ModifiedBy = _user.GetId();
-            move.DateModified = DateTime.UtcNow;
             _mapper.Map(move, moveToUpdate);
             _context.Moves.Update(moveToUpdate);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(moveToUpdate.MselId, moveToUpdate.ModifiedBy, moveToUpdate.DateModified, _context, ct);
-            move = await GetAsync(moveToUpdate.Id, ct);
+            await ServiceUtilities.SetMselModifiedAsync(moveToUpdate.MselId, moveToUpdate.ModifiedBy, DateTime.UtcNow, _context, ct);
+            move = await GetAsync(moveToUpdate.Id, true, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
             return move;
         }
 
-        public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
+        public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var moveToDelete = await _context.Moves.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (moveToDelete == null)
                 throw new EntityNotFoundException<Move>();
 
             // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
+            if (!hasSystemPermission &&
                 !( await MselOwnerRequirement.IsMet(_user.GetId(), moveToDelete.MselId, _context)) &&
                 !( await MoveEditorRequirement.IsMet(_user.GetId(), moveToDelete.MselId, _context)))
                 throw new ForbiddenException();

@@ -6,11 +6,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -20,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class DataOptionController : BaseController
     {
         private readonly IDataOptionService _dataOptionService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public DataOptionController(IDataOptionService dataOptionService, IAuthorizationService authorizationService)
+        public DataOptionController(IDataOptionService dataOptionService, IBlueprintAuthorizationService authorizationService)
         {
             _dataOptionService = dataOptionService;
             _authorizationService = authorizationService;
@@ -42,7 +42,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getDataOptionsByMsel")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _dataOptionService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _dataOptionService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -60,7 +61,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getByDataField")]
         public async Task<IActionResult> GetByDataField(Guid dataFieldId, CancellationToken ct)
         {
-            var list = await _dataOptionService.GetByDataFieldAsync(dataFieldId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _dataOptionService.GetByDataFieldAsync(dataFieldId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -78,7 +80,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getDataOption")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var dataOption = await _dataOptionService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var dataOption = await _dataOptionService.GetAsync(id, hasSystemPermission, ct);
 
             if (dataOption == null)
                 throw new EntityNotFoundException<DataOption>();
@@ -101,8 +104,10 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createDataOption")]
         public async Task<IActionResult> Create([FromBody] DataOption dataOption, CancellationToken ct)
         {
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
             dataOption.CreatedBy = User.GetId();
-            var createdDataOption = await _dataOptionService.CreateAsync(dataOption, ct);
+            var createdDataOption = await _dataOptionService.CreateAsync(dataOption, hasMselPermission, hasDataFieldPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdDataOption.Id }, createdDataOption);
         }
 
@@ -123,8 +128,10 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateDataOption")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] DataOption dataOption, CancellationToken ct)
         {
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
             dataOption.ModifiedBy = User.GetId();
-            var updatedDataOption = await _dataOptionService.UpdateAsync(id, dataOption, ct);
+            var updatedDataOption = await _dataOptionService.UpdateAsync(id, dataOption, hasMselPermission, hasDataFieldPermission, ct);
             return Ok(updatedDataOption);
         }
 
@@ -143,7 +150,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteDataOption")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _dataOptionService.DeleteAsync(id, ct);
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
+            await _dataOptionService.DeleteAsync(id, hasMselPermission, hasDataFieldPermission, ct);
             return NoContent();
         }
 

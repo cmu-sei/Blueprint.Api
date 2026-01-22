@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
@@ -18,9 +19,9 @@ namespace Blueprint.Api.Controllers
     public class MselPageController : BaseController
     {
         private readonly IMselPageService _mselPageService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public MselPageController(IMselPageService mselPageService, IAuthorizationService authorizationService)
+        public MselPageController(IMselPageService mselPageService, IBlueprintAuthorizationService authorizationService)
         {
             _mselPageService = mselPageService;
             _authorizationService = authorizationService;
@@ -40,7 +41,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getMselPages")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _mselPageService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _mselPageService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -59,7 +61,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getMselPage")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var page = await _mselPageService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var page = await _mselPageService.GetAsync(id, hasSystemPermission, ct);
 
             if (page == null)
                 throw new EntityNotFoundException<MselPage>();
@@ -81,7 +84,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createMselPage")]
         public async Task<IActionResult> Create([FromBody] MselPage mselPage, CancellationToken ct)
         {
-            var createdMselPage = await _mselPageService.CreateAsync(mselPage, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var createdMselPage = await _mselPageService.CreateAsync(mselPage, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdMselPage.Id }, createdMselPage);
         }
 
@@ -100,7 +104,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateMselPage")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] MselPage mselPage, CancellationToken ct)
         {
-            var updatedPage = await _mselPageService.UpdateAsync(id, mselPage, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var updatedPage = await _mselPageService.UpdateAsync(id, mselPage, hasSystemPermission, ct);
             return Ok(updatedPage);
         }
 
@@ -118,7 +123,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteMselPage")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _mselPageService.DeleteAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            await _mselPageService.DeleteAsync(id, hasSystemPermission, ct);
             return NoContent();
         }
 

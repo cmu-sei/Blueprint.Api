@@ -7,6 +7,10 @@ namespace Blueprint.Api.Infrastructure.Options
     {
         public bool EnableCaching { get; set; }
         public double CacheExpirationSeconds { get; set; }
+        public bool UseRolesFromIdP { get; set; }
+        public string RolesClaimPath { get; set; }
+        public bool UseGroupsFromIdP { get; set; }
+        public string GroupsClaimPath { get; set; }
     }
 }
 

@@ -47,7 +47,7 @@ namespace Blueprint.Api.Data
         public DbSet<CatalogInjectEntity> CatalogInjects { get; set; }
         public DbSet<CatalogUnitEntity> CatalogUnits { get; set; }
         public DbSet<CiteActionEntity> CiteActions { get; set; }
-        public DbSet<CiteRoleEntity> CiteRoles { get; set; }
+        public DbSet<CiteDutyEntity> CiteDuties { get; set; }
         public DbSet<InjectTypeEntity> InjectTypes { get; set; }
         public DbSet<PlayerApplicationEntity> PlayerApplications { get; set; }
         public DbSet<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; }
@@ -59,6 +59,9 @@ namespace Blueprint.Api.Data
         public DbSet<MselTeamEntity> MselTeams { get; set; }
         public DbSet<MselUnitEntity> MselUnits { get; set; }
         public DbSet<UserTeamRoleEntity> UserTeamRoles { get; set; }
+        public DbSet<SystemRoleEntity> SystemRoles { get; set; }
+        public DbSet<GroupEntity> Groups { get; set; }
+        public DbSet<GroupMembershipEntity> GroupMemberships { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -110,44 +113,34 @@ namespace Blueprint.Api.Data
         /// </summary>
         private void SaveEntries()
         {
-            foreach (var entry in ChangeTracker.Entries())
+            // Handle audit fields for added entries
+            var addedEntries = ChangeTracker.Entries().Where(x => x.State == EntityState.Added);
+            foreach (var entry in addedEntries)
             {
-                // find value of id property
-                var id = entry.Properties
-                    .FirstOrDefault(x =>
-                        x.Metadata.ValueGenerated == Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAdd)?.CurrentValue;
-
-                // find matching existing entry, if any
-                var e = Entries.FirstOrDefault(x => x.Properties.FirstOrDefault(y =>
-                    y.Metadata.ValueGenerated == Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAdd)?.CurrentValue == id);
-
-                if (e != null)
+                try
                 {
-                    // if entry already exists, mark which properties were previously modified,
-                    // remove old entry and add new one, to avoid duplicates
-                    var modifiedProperties = e.Properties
-                        .Where(x => x.IsModified)
-                        .Select(x => x.Metadata.Name)
-                        .ToArray();
-
-                    var newEntry = new Entry(entry);
-
-                    foreach (var property in newEntry.Properties)
-                    {
-                        if (modifiedProperties.Contains(property.Metadata.Name))
-                        {
-                            property.IsModified = true;
-                        }
-                    }
-
-                    Entries.Remove(e);
-                    Entries.Add(newEntry);
+                    ((BaseEntity)entry.Entity).DateCreated = DateTime.UtcNow;
+                    ((BaseEntity)entry.Entity).DateModified = null;
+                    ((BaseEntity)entry.Entity).ModifiedBy = null;
                 }
-                else
-                {
-                    Entries.Add(new Entry(entry));
-                }
+                catch
+                { }
             }
+
+            // Handle audit fields for modified entries
+            var modifiedEntries = ChangeTracker.Entries().Where(x => x.State == EntityState.Modified);
+            foreach (var entry in modifiedEntries)
+            {
+                try
+                {
+                    ((BaseEntity)entry.Entity).DateModified = DateTime.UtcNow;
+                    ((BaseEntity)entry.Entity).CreatedBy = (Guid)entry.OriginalValues["CreatedBy"];
+                    ((BaseEntity)entry.Entity).DateCreated = DateTime.SpecifyKind((DateTime)entry.OriginalValues["DateCreated"], DateTimeKind.Utc);
+                }
+                catch
+                { }
+            }
+
         }
     }
 }

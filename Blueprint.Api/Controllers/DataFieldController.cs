@@ -6,11 +6,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -20,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class DataFieldController : BaseController
     {
         private readonly IDataFieldService _dataFieldService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public DataFieldController(IDataFieldService dataFieldService, IAuthorizationService authorizationService)
+        public DataFieldController(IDataFieldService dataFieldService, IBlueprintAuthorizationService authorizationService)
         {
             _dataFieldService = dataFieldService;
             _authorizationService = authorizationService;
@@ -59,7 +59,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getDataFieldsByMsel")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _dataFieldService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _dataFieldService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -95,7 +96,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getDataField")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var dataField = await _dataFieldService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var dataField = await _dataFieldService.GetAsync(id, hasSystemPermission, ct);
 
             if (dataField == null)
                 throw new EntityNotFoundException<DataField>();
@@ -118,8 +120,10 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createDataField")]
         public async Task<IActionResult> Create([FromBody] DataField dataField, CancellationToken ct)
         {
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
             dataField.CreatedBy = User.GetId();
-            var result = await _dataFieldService.CreateAsync(dataField, ct);
+            var result = await _dataFieldService.CreateAsync(dataField, hasMselPermission, hasDataFieldPermission, ct);
             return Ok(result);
         }
 
@@ -140,8 +144,10 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateDataField")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] DataField dataField, CancellationToken ct)
         {
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
             dataField.ModifiedBy = User.GetId();
-            var result = await _dataFieldService.UpdateAsync(id, dataField, ct);
+            var result = await _dataFieldService.UpdateAsync(id, dataField, hasMselPermission, hasDataFieldPermission, ct);
             return Ok(result);
         }
 
@@ -160,7 +166,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteDataField")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            var result = await _dataFieldService.DeleteAsync(id, ct);
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
+            var result = await _dataFieldService.DeleteAsync(id, hasMselPermission, hasDataFieldPermission, ct);
             return Ok(result);
         }
 

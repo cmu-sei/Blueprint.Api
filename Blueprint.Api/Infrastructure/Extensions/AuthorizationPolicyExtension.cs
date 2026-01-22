@@ -20,9 +20,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
                 options.DefaultPolicy = policyBuilder.Build();
             });
-            services.AddSingleton<IAuthorizationHandler, FullRightsHandler>();
-            services.AddSingleton<IAuthorizationHandler, ContentDeveloperHandler>();
-            services.AddSingleton<IAuthorizationHandler, BaseUserHandler>();
+            services.AddSingleton<IAuthorizationHandler, SystemPermissionHandler>();
         }
     }
 }

@@ -112,7 +112,7 @@ namespace Blueprint.Api.Data.Enumerations
         http_delete = 14
     }
 
-        public enum SteamfitterTaskTrigger
+    public enum SteamfitterTaskTrigger
     {
         Time = 1,
         Success = 2,
@@ -140,6 +140,36 @@ namespace Blueprint.Api.Data.Enumerations
         http_put = 13,
         http_delete = 14,
 
+    }
+
+    public enum SystemPermission
+    {
+        CreateMsels = 1,
+        ViewMsels = 2,
+        EditMsels = 3,
+        ManageMsels = 4,
+        ViewUnits = 5,
+        ManageUnits = 6,
+        ViewOrganizations = 7,
+        ManageOrganizations = 8,
+        ViewDataFields = 9,
+        ManageDataFields = 10,
+        ViewInjectTypes = 11,
+        ManageInjectTypes = 12,
+        ViewCatalogs = 13,
+        ManageCatalogs = 14,
+        ViewGalleryCards = 15,
+        ManageGalleryCards = 16,
+        ViewCiteActions = 17,
+        ManageCiteActions = 18,
+        ViewCiteDuties = 19,
+        ManageCiteDuties = 20,
+        ViewUsers = 21,
+        ManageUsers = 22,
+        ViewRoles = 23,
+        ManageRoles = 24,
+        ViewGroups = 25,
+        ManageGroups = 26
     }
 
 }

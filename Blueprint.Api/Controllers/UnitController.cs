@@ -6,10 +6,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
+using Blueprint.Api.Infrastructure.Authorization;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -19,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class UnitController : BaseController
     {
         private readonly IUnitService _unitService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public UnitController(IUnitService unitService, IAuthorizationService authorizationService)
+        public UnitController(IUnitService unitService, IBlueprintAuthorizationService authorizationService)
         {
             _unitService = unitService;
             _authorizationService = authorizationService;
@@ -75,6 +76,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUnitsByUser")]
         public async Task<IActionResult> GetByUser([FromRoute] Guid userId, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewUnits], ct))
+                throw new ForbiddenException();
+
             var list = await _unitService.GetByUserAsync(userId, ct);
             return Ok(list);
         }
@@ -95,6 +99,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUnit")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewUnits], ct))
+                throw new ForbiddenException();
+
             var unit = await _unitService.GetAsync(id, ct);
 
             if (unit == null)
@@ -118,6 +125,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createUnit")]
         public async Task<IActionResult> Create([FromBody] Unit unit, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUnits], ct))
+                throw new ForbiddenException();
+
             unit.CreatedBy = User.GetId();
             var createdUnit = await _unitService.CreateAsync(unit, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdUnit.Id }, createdUnit);
@@ -139,6 +149,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateUnit")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Unit unit, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUnits], ct))
+                throw new ForbiddenException();
+
             unit.ModifiedBy = User.GetId();
             var updatedUnit = await _unitService.UpdateAsync(id, unit, ct);
             return Ok(updatedUnit);
@@ -159,6 +172,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteUnit")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUnits], ct))
+                throw new ForbiddenException();
+
             await _unitService.DeleteAsync(id, ct);
             return NoContent();
         }

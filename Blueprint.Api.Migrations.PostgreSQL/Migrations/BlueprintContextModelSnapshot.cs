@@ -299,7 +299,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.ToTable("cite_actions");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CiteRoleEntity", b =>
+            modelBuilder.Entity("Blueprint.Api.Data.Models.CiteDutyEntity", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -345,7 +345,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasIndex("TeamId");
 
-                    b.ToTable("cite_roles");
+                    b.ToTable("cite_duties");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataFieldEntity", b =>
@@ -563,6 +563,56 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         {
                             t.HasCheckConstraint("data_value_scenario_event_or_inject", "(scenario_event_id IS NOT NULL AND inject_id IS NULL) OR (scenario_event_id IS NULL AND inject_id IS NOT NULL)");
                         });
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.GroupEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("groups");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.GroupMembershipEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("GroupId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("group_memberships");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.InjectEntity", b =>
@@ -1381,6 +1431,71 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.ToTable("steamfitter_tasks");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.SystemRoleEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<bool>("AllPermissions")
+                        .HasColumnType("boolean")
+                        .HasColumnName("all_permissions");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("Immutable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("immutable");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.PrimitiveCollection<int[]>("Permissions")
+                        .HasColumnType("integer[]")
+                        .HasColumnName("permissions");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("system_roles");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("f35e8fff-f996-4cba-b303-3ba515ad8d2f"),
+                            AllPermissions = true,
+                            Description = "Can perform all actions",
+                            Immutable = true,
+                            Name = "Administrator",
+                            Permissions = new int[0]
+                        },
+                        new
+                        {
+                            Id = new Guid("d80b73c3-95d7-4468-8650-c62bbd082507"),
+                            AllPermissions = false,
+                            Description = "Can create and manage their own MSELs.",
+                            Immutable = false,
+                            Name = "Content Developer",
+                            Permissions = new[] { 1, 2, 3, 4 }
+                        },
+                        new
+                        {
+                            Id = new Guid("1da3027e-725d-4753-9455-a836ed9bdb1e"),
+                            AllPermissions = false,
+                            Description = "Can view all MSELs, but cannot make any changes.",
+                            Immutable = false,
+                            Name = "Observer",
+                            Permissions = new[] { 2, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25 }
+                        });
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.TeamEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1575,10 +1690,16 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
+                    b.Property<Guid?>("RoleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("role_id");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Id")
                         .IsUnique();
+
+                    b.HasIndex("RoleId");
 
                     b.ToTable("users");
                 });
@@ -1802,15 +1923,15 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Team");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CiteRoleEntity", b =>
+            modelBuilder.Entity("Blueprint.Api.Data.Models.CiteDutyEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
-                        .WithMany("CiteRoles")
+                        .WithMany("CiteDuties")
                         .HasForeignKey("MselId")
                         .OnDelete(DeleteBehavior.Cascade);
 
                     b.HasOne("Blueprint.Api.Data.Models.TeamEntity", "Team")
-                        .WithMany("CiteRoles")
+                        .WithMany("CiteDuties")
                         .HasForeignKey("TeamId")
                         .OnDelete(DeleteBehavior.Cascade);
 
@@ -1870,6 +1991,25 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Inject");
 
                     b.Navigation("ScenarioEvent");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.GroupMembershipEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.GroupEntity", "Group")
+                        .WithMany("Memberships")
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blueprint.Api.Data.Models.UserEntity", "User")
+                        .WithMany("GroupMemberships")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Group");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.InjectEntity", b =>
@@ -2085,6 +2225,15 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.UserEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.SystemRoleEntity", "Role")
+                        .WithMany()
+                        .HasForeignKey("RoleId");
+
+                    b.Navigation("Role");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.UserMselRoleEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
@@ -2113,7 +2262,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .IsRequired();
 
                     b.HasOne("Blueprint.Api.Data.Models.UserEntity", "User")
-                        .WithMany("UserPermissions")
+                        .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -2159,6 +2308,11 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("DataOptions");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.GroupEntity", b =>
+                {
+                    b.Navigation("Memberships");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.InjectEntity", b =>
                 {
                     b.Navigation("CatalogInjects");
@@ -2177,7 +2331,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.Navigation("CiteActions");
 
-                    b.Navigation("CiteRoles");
+                    b.Navigation("CiteDuties");
 
                     b.Navigation("DataFields");
 
@@ -2223,7 +2377,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.Navigation("CiteActions");
 
-                    b.Navigation("CiteRoles");
+                    b.Navigation("CiteDuties");
 
                     b.Navigation("Invitations");
 
@@ -2245,11 +2399,11 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.UserEntity", b =>
                 {
+                    b.Navigation("GroupMemberships");
+
                     b.Navigation("TeamUsers");
 
                     b.Navigation("UnitUsers");
-
-                    b.Navigation("UserPermissions");
                 });
 #pragma warning restore 612, 618
         }

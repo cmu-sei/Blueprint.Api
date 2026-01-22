@@ -6,11 +6,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
-using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -20,9 +20,9 @@ namespace Blueprint.Api.Controllers
     public class OrganizationController : BaseController
     {
         private readonly IOrganizationService _organizationService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public OrganizationController(IOrganizationService organizationService, IAuthorizationService authorizationService)
+        public OrganizationController(IOrganizationService organizationService, IBlueprintAuthorizationService authorizationService)
         {
             _organizationService = organizationService;
             _authorizationService = authorizationService;
@@ -59,7 +59,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getOrganizationsByMsel")]
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
-            var list = await _organizationService.GetByMselAsync(mselId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _organizationService.GetByMselAsync(mselId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -77,7 +78,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getOrganization")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var organization = await _organizationService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var organization = await _organizationService.GetAsync(id, hasSystemPermission, ct);
 
             if (organization == null)
                 throw new EntityNotFoundException<Organization>();
@@ -100,8 +102,10 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createOrganization")]
         public async Task<IActionResult> Create([FromBody] Organization organization, CancellationToken ct)
         {
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasOrganizationPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageOrganizations], ct);
             organization.CreatedBy = User.GetId();
-            var createdOrganization = await _organizationService.CreateAsync(organization, ct);
+            var createdOrganization = await _organizationService.CreateAsync(organization, hasMselPermission, hasOrganizationPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdOrganization.Id }, createdOrganization);
         }
 
@@ -122,8 +126,10 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateOrganization")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Organization organization, CancellationToken ct)
         {
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasOrganizationPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageOrganizations], ct);
             organization.ModifiedBy = User.GetId();
-            var updatedOrganization = await _organizationService.UpdateAsync(id, organization, ct);
+            var updatedOrganization = await _organizationService.UpdateAsync(id, organization, hasMselPermission, hasOrganizationPermission, ct);
             return Ok(updatedOrganization);
         }
 
@@ -142,7 +148,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteOrganization")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            await _organizationService.DeleteAsync(id, ct);
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasOrganizationPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageOrganizations], ct);
+            await _organizationService.DeleteAsync(id, hasMselPermission, hasOrganizationPermission, ct);
             return NoContent();
         }
 

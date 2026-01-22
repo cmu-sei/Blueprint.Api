@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Services;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Options;
@@ -24,15 +25,18 @@ namespace Blueprint.Api.Hubs
         private readonly BlueprintContext _context;
         private readonly DatabaseOptions _options;
         private readonly CancellationToken _ct;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _blueprintAuthorizationService;
         public const string ADMIN_DATA_GROUP = "AdminDataGroup";
+        public const string GROUP_GROUP = "AdminGroupGroup";
+        public const string ROLE_GROUP = "AdminRoleGroup";
+        public const string USER_GROUP = "AdminUserGroup";
 
         public MainHub(
             ITeamService teamService,
             IMselService mselService,
             BlueprintContext context,
             DatabaseOptions options,
-            IAuthorizationService authorizationService
+            IBlueprintAuthorizationService blueprintAuthorizationService
         )
         {
             _teamService = teamService;
@@ -41,7 +45,7 @@ namespace Blueprint.Api.Hubs
             _options = options;
             CancellationTokenSource source = new CancellationTokenSource();
             _ct = source.Token;
-            _authorizationService = authorizationService;
+            _blueprintAuthorizationService = blueprintAuthorizationService;
         }
 
         public async Task Join()
@@ -109,7 +113,7 @@ namespace Blueprint.Api.Hubs
         {
             var userGuid = Guid.Parse(userId);
             var idList = new List<string>();
-            if ((await _authorizationService.AuthorizeAsync(Context.User, null, new FullRightsRequirement())).Succeeded)
+            if (await _blueprintAuthorizationService.AuthorizeAsync([SystemPermission.ManageUsers], _ct))
             {
                 idList = await _context.Msels
                     .Where(m => m.Status != Data.Enumerations.MselItemStatus.Archived)
@@ -155,13 +159,29 @@ namespace Blueprint.Api.Hubs
 
         private async Task<List<string>> GetAdminIdList()
         {
+            var ct = new CancellationToken();
             var idList = new List<string>();
             var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
             idList.Add(userId);
             // content developer or system admin
-            if ((await _authorizationService.AuthorizeAsync(Context.User, null, new ContentDeveloperRequirement())).Succeeded)
+            if (await _blueprintAuthorizationService.AuthorizeAsync([SystemPermission.EditMsels], _ct))
             {
                 idList.Add(ADMIN_DATA_GROUP);
+            }
+            // Groups permission
+            if (await _blueprintAuthorizationService.AuthorizeAsync([SystemPermission.ViewGroups], ct))
+            {
+                idList.Add(GROUP_GROUP);
+            }
+            // Roles permission
+            if (await _blueprintAuthorizationService.AuthorizeAsync([SystemPermission.ViewRoles], ct))
+            {
+                idList.Add(ROLE_GROUP);
+            }
+            // Users permission
+            if (await _blueprintAuthorizationService.AuthorizeAsync([SystemPermission.ViewUsers], ct))
+            {
+                idList.Add(USER_GROUP);
             }
 
             return idList;
@@ -183,9 +203,9 @@ namespace Blueprint.Api.Hubs
         public const string CiteActionCreated = "CiteActionCreated";
         public const string CiteActionUpdated = "CiteActionUpdated";
         public const string CiteActionDeleted = "CiteActionDeleted";
-        public const string CiteRoleCreated = "CiteRoleCreated";
-        public const string CiteRoleUpdated = "CiteRoleUpdated";
-        public const string CiteRoleDeleted = "CiteRoleDeleted";
+        public const string CiteDutyCreated = "CiteDutyCreated";
+        public const string CiteDutyUpdated = "CiteDutyUpdated";
+        public const string CiteDutyDeleted = "CiteDutyDeleted";
         public const string DataFieldCreated = "DataFieldCreated";
         public const string DataFieldUpdated = "DataFieldUpdated";
         public const string DataFieldDeleted = "DataFieldDeleted";
@@ -232,5 +252,14 @@ namespace Blueprint.Api.Hubs
         public const string UserMselRoleCreated = "UserMselRoleCreated";
         public const string UserMselRoleUpdated = "UserMselRoleUpdated";
         public const string UserMselRoleDeleted = "UserMselRoleDeleted";
+        public const string GroupCreated = "GroupCreated";
+        public const string GroupUpdated = "GroupUpdated";
+        public const string GroupDeleted = "GroupDeleted";
+        public const string GroupMembershipCreated = "GroupMembershipCreated";
+        public const string GroupMembershipUpdated = "GroupMembershipUpdated";
+        public const string GroupMembershipDeleted = "GroupMembershipDeleted";
+        public const string SystemRoleCreated = "SystemRoleCreated";
+        public const string SystemRoleUpdated = "SystemRoleUpdated";
+        public const string SystemRoleDeleted = "SystemRoleDeleted";
     }
 }

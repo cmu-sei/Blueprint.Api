@@ -55,7 +55,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<UserMselRoleEntity> UserMselRoles { get; set; } = new HashSet<UserMselRoleEntity>();
         public string HeaderRowMetadata { get; set; }
         public virtual ICollection<CardEntity> Cards { get; set; } = new HashSet<CardEntity>();
-        public virtual ICollection<CiteRoleEntity> CiteRoles { get; set; } = new HashSet<CiteRoleEntity>();
+        public virtual ICollection<CiteDutyEntity> CiteDuties { get; set; } = new HashSet<CiteDutyEntity>();
         public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();
         public virtual ICollection<PlayerApplicationEntity> PlayerApplications { get; set; } = new HashSet<PlayerApplicationEntity>();
         public virtual ICollection<MselPageEntity> Pages { get; set; } = new HashSet<MselPageEntity>();

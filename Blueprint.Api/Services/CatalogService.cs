@@ -14,7 +14,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -31,8 +30,8 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.Catalog>> GetAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Catalog>> GetMineAsync(CancellationToken ct);
-        Task<IEnumerable<ViewModels.Catalog>> GetUserCatalogsAsync(Guid userId, CancellationToken ct);
-        Task<ViewModels.Catalog> GetAsync(Guid id, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Catalog>> GetUserCatalogsAsync(Guid userId, bool hasManageUsersPermission, CancellationToken ct);
+        Task<ViewModels.Catalog> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Catalog> CreateAsync(ViewModels.Catalog catalog, CancellationToken ct);
         Task<ViewModels.Catalog> CopyAsync(Guid catalogId, CancellationToken ct);
         Task<ViewModels.Catalog> UpdateAsync(Guid id, ViewModels.Catalog catalog, CancellationToken ct);
@@ -44,7 +43,6 @@ namespace Blueprint.Api.Services
     public class CatalogService : ICatalogService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
         private readonly ILogger<CatalogService> _logger;
@@ -57,7 +55,6 @@ namespace Blueprint.Api.Services
         public CatalogService(
             BlueprintContext context,
             ClientOptions clientOptions,
-            IAuthorizationService authorizationService,
             IScenarioEventService scenarioEventService,
             IIntegrationQueue integrationQueue,
             IPlayerService playerService,
@@ -68,7 +65,6 @@ namespace Blueprint.Api.Services
         {
             _context = context;
             _clientOptions = clientOptions;
-            _authorizationService = authorizationService;
             _scenarioEventService = scenarioEventService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
@@ -80,10 +76,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Catalog>> GetAsync(CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-
             var catalogs = await _context.Catalogs.ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<Catalog>>(catalogs);
@@ -92,22 +84,15 @@ namespace Blueprint.Api.Services
         public async Task<IEnumerable<ViewModels.Catalog>> GetMineAsync(CancellationToken ct)
         {
             var userId = _user.GetId();
-            return await GetUserCatalogsAsync(userId, ct);
+            // true for hasManageUsersPermission since this is self-access
+            return await GetUserCatalogsAsync(userId, true, ct);
         }
 
-        public async Task<IEnumerable<ViewModels.Catalog>> GetUserCatalogsAsync(Guid userId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Catalog>> GetUserCatalogsAsync(Guid userId, bool hasManageUsersPermission, CancellationToken ct)
         {
             var currentUserId = _user.GetId();
-            if (currentUserId == userId)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                    throw new ForbiddenException();
-            }
-            else
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-            }
+            if (currentUserId != userId && !hasManageUsersPermission)
+                throw new ForbiddenException();
             // get the user's units
             var unitIdList = await _context.UnitUsers
                 .Where(tu => tu.UserId == userId)
@@ -120,22 +105,18 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             // get catalogs created by user
             var myCatalogList = new List<CatalogEntity>();
-            if ((await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                myCatalogList = await _context.Catalogs
-                    .Where(m => m.CreatedBy == userId)
-                    .ToListAsync(ct);
-            }
+            myCatalogList = await _context.Catalogs
+                .Where(m => m.CreatedBy == userId)
+                .ToListAsync(ct);
             // combine lists
             var catalogList = unitCatalogList.Union(myCatalogList).OrderBy(m => m.Name);
 
             return _mapper.Map<IEnumerable<Catalog>>(catalogList);
         }
 
-        public async Task<ViewModels.Catalog> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.Catalog> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
-            if (!await CatalogViewRequirement.IsMet(_user.GetId(), id, _context) &&
-                !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            if (!hasSystemPermission && !await CatalogViewRequirement.IsMet(_user.GetId(), id, _context))
                 throw new ForbiddenException();
 
             var catalogEntity = await _context.Catalogs
@@ -146,28 +127,19 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Catalog> CreateAsync(ViewModels.Catalog catalog, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             catalog.Id = catalog.Id != Guid.Empty ? catalog.Id : Guid.NewGuid();
-            catalog.DateCreated = DateTime.UtcNow;
             catalog.CreatedBy = _user.GetId();
-            catalog.DateModified = catalog.DateCreated;
-            catalog.ModifiedBy = catalog.CreatedBy;
             var catalogEntity = _mapper.Map<CatalogEntity>(catalog);
 
             _context.Catalogs.Add(catalogEntity);
             await _context.SaveChangesAsync(ct);
-            catalog = await GetAsync(catalogEntity.Id, ct);
+            catalog = await GetAsync(catalogEntity.Id, true, ct);
 
             return catalog;
         }
 
         public async Task<ViewModels.Catalog> CopyAsync(Guid catalogId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var newCatalogEntity = await _context.Catalogs
                 .Include(m => m.CatalogInjects)
                 .AsNoTracking()
@@ -184,10 +156,7 @@ namespace Blueprint.Api.Services
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId, ct)).Name;
             catalogEntity.Id = Guid.NewGuid();
-            catalogEntity.DateCreated = DateTime.UtcNow;
             catalogEntity.CreatedBy = currentUserId;
-            catalogEntity.DateModified = catalogEntity.DateCreated;
-            catalogEntity.ModifiedBy = catalogEntity.CreatedBy;
             catalogEntity.Name = catalogEntity.Name + " - " + username;
             catalogEntity.IsPublic = false;
             // update all CatalogInjects to have a new ID, new catalog ID, and correct InjectId
@@ -277,35 +246,24 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Catalog> UpdateAsync(Guid id, ViewModels.Catalog catalog, CancellationToken ct)
         {
-            // user must be a Content Developer or a Catalog owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var catalogToUpdate = await _context.Catalogs.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (catalogToUpdate == null)
                 throw new EntityNotFoundException<Catalog>();
 
             // okay to update this catalog
-            catalog.CreatedBy = catalogToUpdate.CreatedBy;
-            catalog.DateCreated = catalogToUpdate.DateCreated;
             catalog.ModifiedBy = _user.GetId();
-            catalog.DateModified = DateTime.UtcNow;
             _mapper.Map(catalog, catalogToUpdate);
 
             _context.Catalogs.Update(catalogToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            catalog = await GetAsync(catalogToUpdate.Id, ct);
+            catalog = await GetAsync(catalogToUpdate.Id, true, ct);
 
             return catalog;
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            // user must be a Content Developer or a Catalog owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             // delete the Catalog
             var catalogToDelete = await _context.Catalogs.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (catalogToDelete == null)
@@ -319,10 +277,6 @@ namespace Blueprint.Api.Services
 
         public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid catalogId, CancellationToken ct)
         {
-            // user must be a Content Developer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var catalog = await _context.Catalogs
                 .Include(m => m.CatalogInjects)
                 .ThenInclude(n => n.Inject)
@@ -353,10 +307,6 @@ namespace Blueprint.Api.Services
 
         public async Task<Catalog> UploadJsonAsync(FileForm form, CancellationToken ct)
         {
-            // user must be a Content Developer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var uploadItem = form.ToUpload;
             var catalogJson = "";
             using (StreamReader reader = new StreamReader(uploadItem.OpenReadStream()))

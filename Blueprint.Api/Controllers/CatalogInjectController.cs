@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
@@ -18,9 +19,9 @@ namespace Blueprint.Api.Controllers
     public class CatalogInjectController : BaseController
     {
         private readonly ICatalogInjectService _catalogInjectService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public CatalogInjectController(ICatalogInjectService catalogInjectService, IAuthorizationService authorizationService)
+        public CatalogInjectController(ICatalogInjectService catalogInjectService, IBlueprintAuthorizationService authorizationService)
         {
             _catalogInjectService = catalogInjectService;
             _authorizationService = authorizationService;
@@ -40,7 +41,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCatalogInjects")]
         public async Task<IActionResult> GetByCatalog(Guid catalogId, CancellationToken ct)
         {
-            var list = await _catalogInjectService.GetByCatalogAsync(catalogId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewCatalogs], ct);
+            var list = await _catalogInjectService.GetByCatalogAsync(catalogId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -60,7 +62,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCatalogInject")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var inject = await _catalogInjectService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewCatalogs], ct);
+            var inject = await _catalogInjectService.GetAsync(id, hasSystemPermission, ct);
 
             if (inject == null)
                 throw new EntityNotFoundException<CatalogInject>();
@@ -83,6 +86,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createCatalogInject")]
         public async Task<IActionResult> Create([FromBody] CatalogInject inject, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             var createdCatalogInject = await _catalogInjectService.CreateAsync(inject, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdCatalogInject.Id }, createdCatalogInject);
         }
@@ -102,6 +107,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createMultipleCatalogInjects")]
         public async Task<IActionResult> CreateMultiple([FromBody] List<CatalogInject> catalogInjects, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             var createdCatalogInjects = await _catalogInjectService.CreateMultipleAsync(catalogInjects, ct);
             return Ok(createdCatalogInjects);
         }
@@ -121,6 +128,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteCatalogInject")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             await _catalogInjectService.DeleteAsync(id, ct);
             return NoContent();
         }
@@ -141,6 +150,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteCatalogInjectByIds")]
         public async Task<IActionResult> Delete(Guid catalogId, Guid injectId, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             await _catalogInjectService.DeleteByIdsAsync(catalogId, injectId, ct);
             return NoContent();
         }

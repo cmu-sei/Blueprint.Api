@@ -6,9 +6,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
+using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -18,13 +20,11 @@ namespace Blueprint.Api.Controllers
     public class CatalogController : BaseController
     {
         private readonly ICatalogService _catalogService;
-        private readonly IAuthorizationService _authorizationService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
         public CatalogController(
             ICatalogService catalogService,
-            ICiteService citeService,
-            IPlayerService playerService,
-            IAuthorizationService authorizationService)
+            IBlueprintAuthorizationService authorizationService)
         {
             _catalogService = catalogService;
             _authorizationService = authorizationService;
@@ -43,6 +43,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCatalogs")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewCatalogs], ct))
+                throw new ForbiddenException();
             var list = await _catalogService.GetAsync(ct);
             return Ok(list);
         }
@@ -78,7 +80,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUserCatalogs")]
         public async Task<IActionResult> GetUserCatalogs(Guid userId, CancellationToken ct)
         {
-            var list = await _catalogService.GetUserCatalogsAsync(userId, ct);
+            var hasManageUsersPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct);
+            var list = await _catalogService.GetUserCatalogsAsync(userId, hasManageUsersPermission, ct);
             return Ok(list);
         }
 
@@ -96,7 +99,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCatalog")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var catalog = await _catalogService.GetAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewCatalogs], ct);
+            var catalog = await _catalogService.GetAsync(id, hasSystemPermission, ct);
             return Ok(catalog);
         }
 
@@ -115,6 +119,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createCatalog")]
         public async Task<IActionResult> Create([FromBody] Catalog catalog, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             catalog.CreatedBy = User.GetId();
             var createdCatalog = await _catalogService.CreateAsync(catalog, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdCatalog.Id }, createdCatalog);
@@ -135,6 +141,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "copyCatalog")]
         public async Task<IActionResult> Copy(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             var createdCatalog = await _catalogService.CopyAsync(id, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdCatalog.Id }, createdCatalog);
         }
@@ -156,6 +164,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "updateCatalog")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Catalog catalog, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             catalog.ModifiedBy = User.GetId();
             var updatedCatalog = await _catalogService.UpdateAsync(id, catalog, ct);
             return Ok(updatedCatalog);
@@ -176,6 +186,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteCatalog")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             await _catalogService.DeleteAsync(id, ct);
             return NoContent();
         }
@@ -188,6 +200,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "uploadJsonCatalog")]
         public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             var result = await _catalogService.UploadJsonAsync(form, ct);
             return Ok(result);
         }
@@ -200,6 +214,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "downloadJsonCatalog")]
         public async Task<IActionResult> DownloadJsonAsync(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCatalogs], ct))
+                throw new ForbiddenException();
             (var stream, var fileName) = await _catalogService.DownloadJsonAsync(id, ct);
 
             // If this is wrapped in an Ok, it throws an exception

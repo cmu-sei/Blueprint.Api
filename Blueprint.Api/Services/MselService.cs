@@ -14,7 +14,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -35,24 +34,24 @@ namespace Blueprint.Api.Services
     public interface IMselService
     {
         Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct);
-        Task<IEnumerable<ViewModels.Msel>> GetMineAsync(CancellationToken ct);
-        Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, CancellationToken ct);
-        Task<ViewModels.Msel> GetAsync(Guid id, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasEditMselsPermission, CancellationToken ct);
+        Task<ViewModels.Msel> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct);
         Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, CancellationToken ct);
-        Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, CancellationToken ct);
-        Task<ViewModels.Msel> RemoveUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, CancellationToken ct);
-        Task<bool> DeleteAsync(Guid id, CancellationToken ct);
+        Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Msel> RemoveUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct);
+        Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<Msel> UploadXlsxAsync(FileForm form, CancellationToken ct);
-        Task<Msel> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct);
+        Task<Msel> ReplaceAsync(FileForm form, Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, CancellationToken ct);
         Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
         Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, CancellationToken ct);
-        Task<ViewModels.Msel> ArchiveAsync(Guid mselId, CancellationToken ct);
+        Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Msel> ArchiveAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
         Task<Guid> JoinMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct);  // returns the Player View ID
@@ -63,7 +62,6 @@ namespace Blueprint.Api.Services
     public class MselService : IMselService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
         private readonly ILogger<MselService> _logger;
@@ -76,7 +74,6 @@ namespace Blueprint.Api.Services
         public MselService(
             BlueprintContext context,
             ClientOptions clientOptions,
-            IAuthorizationService authorizationService,
             IScenarioEventService scenarioEventService,
             IIntegrationQueue integrationQueue,
             IPlayerService playerService,
@@ -87,7 +84,6 @@ namespace Blueprint.Api.Services
         {
             _context = context;
             _clientOptions = clientOptions;
-            _authorizationService = authorizationService;
             _scenarioEventService = scenarioEventService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
@@ -99,9 +95,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             IQueryable<MselEntity> msels = null;
 
             // filter based on user
@@ -149,25 +142,17 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<Msel>>(await msels.ToListAsync());
         }
 
-        public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasSystemPermission, CancellationToken ct)
         {
             var userId = _user.GetId();
-            return await GetUserMselsAsync(userId, ct);
+            return await GetUserMselsAsync(userId, false, hasSystemPermission, ct);
         }
 
-        public async Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasViewMselsPermission, CancellationToken ct)
         {
             var currentUserId = _user.GetId();
-            if (currentUserId == userId)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                    throw new ForbiddenException();
-            }
-            else
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-            }
+            if (currentUserId != userId && !hasManageUsersPermission)
+                throw new ForbiddenException();
             // get the user's units
             var unitIdList = await _context.UnitUsers
                 .Where(tu => tu.UserId == userId)
@@ -181,7 +166,7 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             // get msels created by user and all templates, if user is a content developer
             var myMselList = new List<MselEntity>();
-            if ((await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            if (hasViewMselsPermission)
             {
                 myMselList = await _context.Msels
                     .Where(m => (m.CreatedBy == userId || m.IsTemplate) && m.Status != MselItemStatus.Archived)
@@ -189,7 +174,12 @@ namespace Blueprint.Api.Services
                     .ToListAsync(ct);
             }
             // combine lists
-            var mselList = unitMselList.Union(myMselList).OrderBy(m => m.Name);
+            var mselList = unitMselList.Union(myMselList).OrderBy(m => m.Name).ToList();
+            // clear the list, if the list only has templates and the user has no SystemPermission
+            if (!myMselList.Any(m => !m.IsTemplate) && !hasViewMselsPermission)
+            {
+                mselList = mselList.Where(m => !m.IsTemplate).ToList();
+            }
             // only return UserMselRoles for the requested user
             foreach (var msel in mselList)
             {
@@ -199,11 +189,11 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<Msel>>(mselList);
         }
 
-        public async Task<ViewModels.Msel> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.Msel> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             if (
-                    !(await MselViewRequirement.IsMet(_user.GetId(), id, _context)) &&
-                    !(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded
+                    !hasSystemPermission &&
+                    !(await MselViewRequirement.IsMet(_user.GetId(), id, _context))
                )
             {
                 var mselCheck = await _context.Msels.FindAsync(id);
@@ -234,28 +224,19 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             msel.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
-            msel.DateCreated = DateTime.UtcNow;
             msel.CreatedBy = _user.GetId();
-            msel.DateModified = msel.DateCreated;
-            msel.ModifiedBy = msel.CreatedBy;
             var mselEntity = _mapper.Map<MselEntity>(msel);
 
             _context.Msels.Add(mselEntity);
             await _context.SaveChangesAsync(ct);
-            msel = await GetAsync(mselEntity.Id, ct);
+            msel = await GetAsync(mselEntity.Id, true, ct);
 
             return msel;
         }
 
         public async Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var newMselEntity = await privateMselCopyAsync(mselId, null, ct);
             var msel = _mapper.Map<Msel>(newMselEntity);
             // add the needed parameters for Gallery integration
@@ -288,7 +269,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.Cards)
                 .ThenInclude(c => c.CardTeams)
                 .Include(m => m.CiteActions)
-                .Include(m => m.CiteRoles)
+                .Include(m => m.CiteDuties)
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.Pages)
@@ -306,10 +287,7 @@ namespace Blueprint.Api.Services
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId)).Name;
             mselEntity.Id = Guid.NewGuid();
-            mselEntity.DateCreated = DateTime.UtcNow;
             mselEntity.CreatedBy = currentUserId;
-            mselEntity.DateModified = mselEntity.DateCreated;
-            mselEntity.ModifiedBy = mselEntity.CreatedBy;
             mselEntity.Name = mselEntity.Name + " - " + username;
             mselEntity.IsTemplate = false;
             mselEntity.GalleryCollectionId = null;
@@ -329,10 +307,7 @@ namespace Blueprint.Api.Services
                 dataField.Id = newDataFieldId;
                 dataField.MselId = mselEntity.Id;
                 dataField.Msel = null;
-                dataField.DateCreated = mselEntity.DateCreated;
                 dataField.CreatedBy = mselEntity.CreatedBy;
-                dataField.DateModified = mselEntity.DateCreated;
-                dataField.ModifiedBy = mselEntity.CreatedBy;
                 // copy DataOptions
                 foreach (var dataOption in dataField.DataOptions)
                 {
@@ -342,10 +317,7 @@ namespace Blueprint.Api.Services
                     dataOption.Id = newGuidValues[dataOption.Id];
                     dataOption.DataFieldId = dataField.Id;
                     dataOption.DataField = null;
-                    dataOption.DateCreated = mselEntity.DateCreated;
                     dataOption.CreatedBy = mselEntity.CreatedBy;
-                    dataOption.DateModified = mselEntity.DateCreated;
-                    dataOption.ModifiedBy = mselEntity.CreatedBy;
                 }
             }
             // copy Moves
@@ -357,10 +329,7 @@ namespace Blueprint.Api.Services
                 move.Id = newGuidValues[move.Id];
                 move.MselId = mselEntity.Id;
                 move.Msel = null;
-                move.DateCreated = mselEntity.DateCreated;
                 move.CreatedBy = mselEntity.CreatedBy;
-                move.DateModified = mselEntity.DateCreated;
-                move.ModifiedBy = mselEntity.CreatedBy;
             }
             // copy Msel Pages
             foreach (var page in mselEntity.Pages)
@@ -383,12 +352,9 @@ namespace Blueprint.Api.Services
                 team.Id = newGuidValues[team.Id];
                 team.MselId = mselEntity.Id;
                 team.Msel = null;
-                team.DateCreated = mselEntity.DateCreated;
                 team.CreatedBy = mselEntity.CreatedBy;
-                team.DateModified = mselEntity.DateCreated;
-                team.ModifiedBy = mselEntity.CreatedBy;
                 // copy TeamUsers
-                foreach(var teamUser in team.TeamUsers)
+                foreach (var teamUser in team.TeamUsers)
                 {
                     addUser = addUser && teamUser.UserId != currentUserId;
                     teamUser.Id = Guid.NewGuid();
@@ -397,7 +363,7 @@ namespace Blueprint.Api.Services
                     teamUser.User = null;
                 }
                 // copy TeamUserRoles
-                foreach(var userTeamRole in team.UserTeamRoles)
+                foreach (var userTeamRole in team.UserTeamRoles)
                 {
                     userTeamRole.Id = Guid.NewGuid();
                     userTeamRole.TeamId = team.Id;
@@ -408,9 +374,9 @@ namespace Blueprint.Api.Services
                 // and give inviter role
                 if (addUser)
                 {
-                    team.TeamUsers.Add(new TeamUserEntity{TeamId = team.Id, UserId = currentUserId});
-                    team.UserTeamRoles.Add(new UserTeamRoleEntity{TeamId = team.Id, UserId = currentUserId, Role = TeamRole.Inviter});
-                    team.UserTeamRoles.Add(new UserTeamRoleEntity{TeamId = team.Id, UserId = currentUserId, Role = TeamRole.Incrementer});
+                    team.TeamUsers.Add(new TeamUserEntity { TeamId = team.Id, UserId = currentUserId });
+                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = TeamRole.Inviter });
+                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = TeamRole.Incrementer });
                 }
             }
             // copy Organizations
@@ -422,10 +388,7 @@ namespace Blueprint.Api.Services
                 organization.Id = newGuidValues[organization.Id];
                 organization.MselId = mselEntity.Id;
                 organization.Msel = null;
-                organization.DateCreated = mselEntity.DateCreated;
                 organization.CreatedBy = mselEntity.CreatedBy;
-                organization.DateModified = mselEntity.DateCreated;
-                organization.ModifiedBy = mselEntity.CreatedBy;
             }
             // copy Gallery Cards
             foreach (var card in mselEntity.Cards)
@@ -436,10 +399,7 @@ namespace Blueprint.Api.Services
                 card.Id = newGuidValues[card.Id];
                 card.MselId = mselEntity.Id;
                 card.Msel = null;
-                card.DateCreated = mselEntity.DateCreated;
                 card.CreatedBy = mselEntity.CreatedBy;
-                card.DateModified = mselEntity.DateCreated;
-                card.ModifiedBy = mselEntity.CreatedBy;
                 card.GalleryId = null;
                 foreach (var cardTeam in card.CardTeams)
                 {
@@ -450,18 +410,15 @@ namespace Blueprint.Api.Services
                     cardTeam.Team = null;
                 }
             }
-            // copy CITE Roles
-            foreach (var citeRole in mselEntity.CiteRoles)
+            // copy CITE Duties
+            foreach (var citeDuty in mselEntity.CiteDuties)
             {
-                citeRole.Id = Guid.NewGuid();
-                citeRole.MselId = mselEntity.Id;
-                citeRole.Msel = null;
-                citeRole.TeamId = newGuidValues[(Guid)citeRole.TeamId];
-                citeRole.Team = null;
-                citeRole.DateCreated = mselEntity.DateCreated;
-                citeRole.CreatedBy = mselEntity.CreatedBy;
-                citeRole.DateModified = mselEntity.DateCreated;
-                citeRole.ModifiedBy = mselEntity.CreatedBy;
+                citeDuty.Id = Guid.NewGuid();
+                citeDuty.MselId = mselEntity.Id;
+                citeDuty.Msel = null;
+                citeDuty.TeamId = newGuidValues[(Guid)citeDuty.TeamId];
+                citeDuty.Team = null;
+                citeDuty.CreatedBy = mselEntity.CreatedBy;
             }
             // copy CITE Actions
             foreach (var citeAction in mselEntity.CiteActions)
@@ -471,10 +428,7 @@ namespace Blueprint.Api.Services
                 citeAction.Msel = null;
                 citeAction.TeamId = newGuidValues[(Guid)citeAction.TeamId];
                 citeAction.Team = null;
-                citeAction.DateCreated = mselEntity.DateCreated;
                 citeAction.CreatedBy = mselEntity.CreatedBy;
-                citeAction.DateModified = mselEntity.DateCreated;
-                citeAction.ModifiedBy = mselEntity.CreatedBy;
             }
             // copy Player Applications
             foreach (var playerApplication in mselEntity.PlayerApplications)
@@ -482,10 +436,7 @@ namespace Blueprint.Api.Services
                 playerApplication.Id = Guid.NewGuid();
                 playerApplication.MselId = mselEntity.Id;
                 playerApplication.Msel = null;
-                playerApplication.DateCreated = mselEntity.DateCreated;
                 playerApplication.CreatedBy = mselEntity.CreatedBy;
-                playerApplication.DateModified = mselEntity.DateCreated;
-                playerApplication.ModifiedBy = mselEntity.CreatedBy;
                 foreach (var playerApplicationTeam in playerApplication.PlayerApplicationTeams)
                 {
                     playerApplicationTeam.Id = Guid.NewGuid();
@@ -527,10 +478,7 @@ namespace Blueprint.Api.Services
             scenarioEventEntity.Msel = null;
             scenarioEventEntity.Inject = null;
             scenarioEventEntity.InjectId = null;
-            scenarioEventEntity.DateCreated = dateCreated;
             scenarioEventEntity.CreatedBy = createdBy;
-            scenarioEventEntity.DateModified = dateCreated;
-            scenarioEventEntity.ModifiedBy = createdBy;
             // copy DataValues
             foreach (var dataValue in scenarioEventEntity.DataValues)
             {
@@ -539,10 +487,7 @@ namespace Blueprint.Api.Services
                 dataValue.ScenarioEvent = null;
                 dataValue.DataFieldId = newGuidValues[dataValue.DataFieldId];
                 dataValue.DataField = null;
-                dataValue.DateCreated = dateCreated;
                 dataValue.CreatedBy = createdBy;
-                dataValue.DateModified = dateCreated;
-                dataValue.ModifiedBy = createdBy;
                 // substitute new Guid value for any old Guid value
                 Guid oldGuidValue;
                 if (Guid.TryParse(dataValue.Value, out oldGuidValue))
@@ -564,18 +509,14 @@ namespace Blueprint.Api.Services
                 scenarioEventEntity.SteamfitterTask.Id = (Guid)scenarioEventEntity.SteamfitterTaskId;
                 scenarioEventEntity.SteamfitterTask.ScenarioEventId = scenarioEventEntity.Id;
                 scenarioEventEntity.SteamfitterTask.ScenarioEvent = null;
-                scenarioEventEntity.SteamfitterTask.DateCreated = dateCreated;
                 scenarioEventEntity.SteamfitterTask.CreatedBy = createdBy;
-                scenarioEventEntity.SteamfitterTask.DateModified = dateCreated;
-                scenarioEventEntity.SteamfitterTask.ModifiedBy = createdBy;
             }
         }
 
-        public async Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, CancellationToken ct)
+        public async Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !( await MselOwnerRequirement.IsMet(_user.GetId(), id, _context)))
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), id, _context)))
                 throw new ForbiddenException();
 
             var mselToUpdate = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
@@ -583,29 +524,25 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<Msel>();
 
             // okay to update this msel
-            msel.CreatedBy = mselToUpdate.CreatedBy;
-            msel.DateCreated = mselToUpdate.DateCreated;
             msel.ModifiedBy = _user.GetId();
-            msel.DateModified = DateTime.UtcNow;
             _mapper.Map(msel, mselToUpdate);
 
             _context.Msels.Update(mselToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            msel = await GetAsync(mselToUpdate.Id, ct);
+            msel = await GetAsync(mselToUpdate.Id, true, ct);
 
             return msel;
         }
 
-        public async Task<ViewModels.Msel> AddUserMselRoleAsync(Guid userId, Guid mselId, MselRole mselRole, CancellationToken ct)
+        public async Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(v => v.Id == mselId, ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
 
             // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
                 throw new ForbiddenException();
 
             if (await _context.UserMselRoles.AnyAsync(umr => umr.UserId == userId && umr.MselId == mselId && umr.Role == mselRole))
@@ -613,24 +550,23 @@ namespace Blueprint.Api.Services
 
             var userMeslRole = new UserMselRoleEntity(userId, mselId, mselRole);
             userMeslRole.Id = Guid.NewGuid();
+            userMeslRole.CreatedBy = _user.GetId();
             _context.UserMselRoles.Add(userMeslRole);
             // change the MSEL modified info
             msel.ModifiedBy = _user.GetId();
-            msel.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
 
-            return await GetAsync(mselId, ct);
+            return await GetAsync(mselId, true, ct);
         }
 
-        public async Task<ViewModels.Msel> RemoveUserMselRoleAsync(Guid userId, Guid mselId, MselRole mselRole, CancellationToken ct)
+        public async Task<ViewModels.Msel> RemoveUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(v => v.Id == mselId, ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
 
             // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
                 throw new ForbiddenException();
 
             var item = await _context.UserMselRoles.FirstOrDefaultAsync(umr => umr.UserId == userId && umr.MselId == mselId && umr.Role == mselRole);
@@ -640,17 +576,15 @@ namespace Blueprint.Api.Services
             _context.UserMselRoles.Remove(item);
             // change the MSEL modified info
             msel.ModifiedBy = _user.GetId();
-            msel.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
 
-            return await GetAsync(mselId, ct);
+            return await GetAsync(mselId, true, ct);
         }
 
-        public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
+        public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !( await MselOwnerRequirement.IsMet(_user.GetId(), id, _context)))
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), id, _context)))
                 throw new ForbiddenException();
 
             // delete the MSEL
@@ -661,7 +595,7 @@ namespace Blueprint.Api.Services
             // pull integrations if there are any
             if (mselToDelete.Status == MselItemStatus.Deployed)
             {
-                await PullIntegrationsAsync(id, MselItemStatus.Approved, ct);
+                await PullIntegrationsAsync(id, MselItemStatus.Approved, true, ct);
             }
 
             _context.Msels.Remove(mselToDelete);
@@ -672,20 +606,15 @@ namespace Blueprint.Api.Services
 
         public async Task<Msel> UploadXlsxAsync(FileForm form, CancellationToken ct)
         {
-            // user must be a Content Developer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var mselEntity = await createMselFromXlsxFile(form, null, ct);
 
             return _mapper.Map<Msel>(mselEntity);
         }
 
-        public async Task<Msel> ReplaceAsync(FileForm form, Guid mselId, CancellationToken ct)
+        public async Task<Msel> ReplaceAsync(FileForm form, Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !( await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
 
             if (form.MselId != null && form.MselId != mselId)
@@ -764,7 +693,8 @@ namespace Blueprint.Api.Services
                     Double width;
                     double.TryParse(dataField.ColumnMetadata, out width);
                     var cellMetadata = dataField.CellMetadata;
-                    columns.Append(new Column() {
+                    columns.Append(new Column()
+                    {
                         Min = (UInt32)(column.Ordinal + 1),
                         Max = (UInt32)(column.Ordinal + 1),
                         Width = width == 0 ? 10 : width,
@@ -782,7 +712,7 @@ namespace Blueprint.Api.Services
                 sheetData.AppendChild(headerRow);
 
                 // add a row for each ScenarioEvent contained in a dataTable row
-                for (var i=0; i < dataTable.Rows.Count; i++)
+                for (var i = 0; i < dataTable.Rows.Count; i++)
                 {
                     // create the row
                     DataRow dsrow = dataTable.Rows[i];
@@ -877,7 +807,7 @@ namespace Blueprint.Api.Services
         private async Task<MselEntity> createMselFromXlsxFile(FileForm form, MselEntity msel, CancellationToken ct)
         {
             var uploadItem = form.ToUpload;
-            using (SpreadsheetDocument doc = SpreadsheetDocument.Open(uploadItem.OpenReadStream(),false))
+            using (SpreadsheetDocument doc = SpreadsheetDocument.Open(uploadItem.OpenReadStream(), false))
             {
                 //create the object for workbook part
                 WorkbookPart workbookPart = doc.WorkbookPart;
@@ -891,9 +821,9 @@ namespace Blueprint.Api.Services
                 if (msel == null)
                 {
                     var userId = _user.GetId();
-                    var utcDatTimeNow = DateTime.UtcNow;
                     // create the MSEL entity
-                    msel = new MselEntity() {
+                    msel = new MselEntity()
+                    {
                         Id = Guid.NewGuid(),
                         Name = uploadItem.FileName.Replace(".xlsx", ""),
                         Description = "Uploaded from " + uploadItem.FileName,
@@ -901,17 +831,14 @@ namespace Blueprint.Api.Services
                         IsTemplate = false,
                         HeaderRowMetadata = headerRow.Height != null ? headerRow.Height.Value.ToString() : "",
                         CreatedBy = userId,
-                        DateCreated = utcDatTimeNow,
-                        ModifiedBy = userId,
-                        DateModified = utcDatTimeNow,
                         DataFields = new List<DataFieldEntity>()
                     };
                     await _context.Msels.AddAsync(msel, ct);
                 }
                 else
                 {
-                   var mselScenarioEvents =  _context.ScenarioEvents
-                        .Where(se => se.MselId == msel.Id);
+                    var mselScenarioEvents = _context.ScenarioEvents
+                         .Where(se => se.MselId == msel.Id);
                     _context.ScenarioEvents.RemoveRange(mselScenarioEvents);
                     await _context.SaveChangesAsync(ct);
                 }
@@ -1005,7 +932,7 @@ namespace Blueprint.Api.Services
                     if (columns != null)
                     {
                         var columnIndex = GetColumnIndex(thecurrentcell.CellReference.Value);
-                        var column = (Column)columns.ChildElements.FirstOrDefault(ce => columnIndex >= ((Column)ce).Min.Value && columnIndex<= ((Column)ce).Max.Value);
+                        var column = (Column)columns.ChildElements.FirstOrDefault(ce => columnIndex >= ((Column)ce).Min.Value && columnIndex <= ((Column)ce).Max.Value);
                         columnMetadata = column == null || column.Width == null ? "0.0" : column.Width.Value.ToString();
                     }
                     if (verifyDataFields)
@@ -1023,7 +950,8 @@ namespace Blueprint.Api.Services
                     else
                     {
                         // create and store the DataField
-                        var dataField = new DataFieldEntity() {
+                        var dataField = new DataFieldEntity()
+                        {
                             Id = Guid.NewGuid(),
                             MselId = msel.Id,
                             Name = currentcellvalue.Trim(),
@@ -1108,7 +1036,8 @@ namespace Blueprint.Api.Services
                 var rowMetadata = dataRow.Height != null ? dataRow.Height.Value.ToString() : "";
                 rowMetadata = rowMetadata + "," + GetTintedColor(cellColor, cellTint);
                 var rowIndex = (int)dataRow.RowIndex.Value - 1;     // header row was index 1
-                var scenarioEvent = new ScenarioEventEntity() {
+                var scenarioEvent = new ScenarioEventEntity()
+                {
                     Id = Guid.NewGuid(),
                     MselId = mselId,
                     DeltaSeconds = rowIndex * 60,    // value of seconds (1 minute) used to maintain the row order
@@ -1236,7 +1165,8 @@ namespace Blueprint.Api.Services
                     cellMetadata = cellColor + "," + cellTint + "," + fontWeight + "," + (int)dataField.DataType;
                 }
 
-                var dataValue = new DataValueEntity() {
+                var dataValue = new DataValueEntity()
+                {
                     Id = Guid.NewGuid(),
                     ScenarioEventId = scenarioEvent.Id,
                     DataFieldId = dataField.Id,
@@ -1267,7 +1197,7 @@ namespace Blueprint.Api.Services
                 var dataRow = dataTable.NewRow();
                 var dataValueList = await _context.DataValues
                     .Where(dv => dv.ScenarioEventId == scenarioEvent.Id)
-                    .OrderBy(dv =>dv.DataField.DisplayOrder)
+                    .OrderBy(dv => dv.DataField.DisplayOrder)
                     .Select(dv => new { Name = dv.DataField.Name, Value = dv.Value })
                     .ToListAsync(ct);
                 foreach (var dataValue in dataValueList)
@@ -1329,7 +1259,7 @@ namespace Blueprint.Api.Services
             fill2.Append(patternFill2);
             fills.Append(fill2);
 
-            for (var i=0; i < uniqueStyles.Count; i++)
+            for (var i = 0; i < uniqueStyles.Count; i++)
             {
                 var styleParts = uniqueStyles[i].Split(',');
                 Fill newFill = new Fill();
@@ -1349,14 +1279,14 @@ namespace Blueprint.Api.Services
             Borders borders = new Borders();
             Border noBorder = new Border();
             Border border = new Border();
-            LeftBorder leftBorder = new LeftBorder(){ Style = BorderStyleValues.Thin };
-            leftBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
-            RightBorder rightBorder = new RightBorder(){ Style = BorderStyleValues.Thin };
-            rightBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
-            TopBorder topBorder = new TopBorder(){ Style = BorderStyleValues.Thin };
-            topBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
-            BottomBorder bottomBorder = new BottomBorder(){ Style = BorderStyleValues.Thin };
-            bottomBorder.Append(new Color(){ Indexed = (UInt32Value)64U });
+            LeftBorder leftBorder = new LeftBorder() { Style = BorderStyleValues.Thin };
+            leftBorder.Append(new Color() { Indexed = (UInt32Value)64U });
+            RightBorder rightBorder = new RightBorder() { Style = BorderStyleValues.Thin };
+            rightBorder.Append(new Color() { Indexed = (UInt32Value)64U });
+            TopBorder topBorder = new TopBorder() { Style = BorderStyleValues.Thin };
+            topBorder.Append(new Color() { Indexed = (UInt32Value)64U });
+            BottomBorder bottomBorder = new BottomBorder() { Style = BorderStyleValues.Thin };
+            bottomBorder.Append(new Color() { Indexed = (UInt32Value)64U });
             border.Append(leftBorder);
             border.Append(rightBorder);
             border.Append(topBorder);
@@ -1373,14 +1303,15 @@ namespace Blueprint.Api.Services
             CellFormats cellFormats = new CellFormats();
             CellFormat cellFormat2 = new CellFormat() { NumberFormatId = (UInt32Value)0U, FontId = (UInt32Value)0U, FillId = (UInt32Value)0U, BorderId = (UInt32Value)1U, FormatId = (UInt32Value)0U };
             cellFormats.Append(cellFormat2);
-            for (int i=0; i < uniqueStyles.Count; i++)
+            for (int i = 0; i < uniqueStyles.Count; i++)
             {
                 var styleParts = uniqueStyles[i].Split(',');
                 UInt32 fontId = styleParts[2] == "bold" ? 1U : 0U;
                 UInt32 numberFormatId = 0;
                 var applyNumberFormat = false;
                 GetCellNumberFormatFromDataFieldDataType((DataFieldType)int.Parse(styleParts[3]), out numberFormatId, out applyNumberFormat);
-                CellFormat cellFormat = new CellFormat(new Alignment() { WrapText = true }) {
+                CellFormat cellFormat = new CellFormat(new Alignment() { WrapText = true })
+                {
                     NumberFormatId = (UInt32Value)numberFormatId,
                     FontId = (UInt32Value)fontId,
                     FillId = (UInt32Value)((UInt32)i + 2),
@@ -1388,15 +1319,16 @@ namespace Blueprint.Api.Services
                     FormatId = (UInt32Value)0U,
                     ApplyFill = true,
                     ApplyBorder = true,
-                    ApplyAlignment = true };
-                    if (applyNumberFormat)
-                    {
-                        cellFormat.ApplyNumberFormat = true;
-                    }
-                    if (fontId != 0)
-                    {
-                        cellFormat.ApplyFont = true;
-                    }
+                    ApplyAlignment = true
+                };
+                if (applyNumberFormat)
+                {
+                    cellFormat.ApplyNumberFormat = true;
+                }
+                if (fontId != 0)
+                {
+                    cellFormat.ApplyFont = true;
+                }
                 cellFormats.Append(cellFormat);
             }
             cellFormats.Count = (uint)cellFormats.ChildElements.Count;
@@ -1540,25 +1472,25 @@ namespace Blueprint.Api.Services
 
         private void GetCellNumberFormatFromDataFieldDataType(DataFieldType dataFieldType, out UInt32 numberFormatId, out bool applyNumberFormat)
         {
-                switch (dataFieldType)
-                {
-                    case DataFieldType.Double:
-                        numberFormatId = 1;
-                        applyNumberFormat = true;
-                        break;
-                    case DataFieldType.Integer:
-                        numberFormatId = 1;
-                        applyNumberFormat = true;
-                        break;
-                    case DataFieldType.DateTime:
-                        numberFormatId = 14;
-                        applyNumberFormat = true;
-                        break;
-                    default:
-                        numberFormatId = 0;
-                        applyNumberFormat = false;
-                        break;
-                }
+            switch (dataFieldType)
+            {
+                case DataFieldType.Double:
+                    numberFormatId = 1;
+                    applyNumberFormat = true;
+                    break;
+                case DataFieldType.Integer:
+                    numberFormatId = 1;
+                    applyNumberFormat = true;
+                    break;
+                case DataFieldType.DateTime:
+                    numberFormatId = 14;
+                    applyNumberFormat = true;
+                    break;
+                default:
+                    numberFormatId = 0;
+                    applyNumberFormat = false;
+                    break;
+            }
         }
 
         private string GetCellReference(int columnIndex, int rowIndex)
@@ -1601,10 +1533,6 @@ namespace Blueprint.Api.Services
 
         public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct)
         {
-            // user must be a Content Developer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var msel = await _context.Msels
                 .AsNoTracking()
                 .Include(m => m.DataFields)
@@ -1622,7 +1550,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.Cards)
                 .ThenInclude(c => c.CardTeams)
                 .Include(m => m.CiteActions)
-                .Include(m => m.CiteRoles)
+                .Include(m => m.CiteDuties)
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.Pages)
@@ -1649,10 +1577,6 @@ namespace Blueprint.Api.Services
 
         public async Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct)
         {
-            // user must be a Content Developer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var uploadItem = form.ToUpload;
             var mselJson = "";
             using (StreamReader reader = new StreamReader(uploadItem.OpenReadStream()))
@@ -1676,11 +1600,10 @@ namespace Blueprint.Api.Services
             return _mapper.Map<Msel>(mselEntity);
         }
 
-        public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, CancellationToken ct)
+        public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
             // get the MSEL and verify data state
             var msel = await _context.Msels
@@ -1696,31 +1619,30 @@ namespace Blueprint.Api.Services
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
                 throw new InvalidOperationException(userVerificationErrorMessage);
-            _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null, FinalStatus = MselItemStatus.Deployed});
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, FinalStatus = MselItemStatus.Deployed });
 
             return _mapper.Map<ViewModels.Msel>(msel);
         }
 
-        public async Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, CancellationToken ct)
+        public async Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
             // get the MSEL and verify data state
             var msel = await _context.Msels.FindAsync(mselId);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found.");
             // add msel to process queue
-            _integrationQueue.Add(new IntegrationInformation{MselId = mselId, PlayerViewId = null, FinalStatus = finalStatus});
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, FinalStatus = finalStatus });
 
             return _mapper.Map<ViewModels.Msel>(msel);
         }
 
-        public async Task<ViewModels.Msel> ArchiveAsync(Guid mselId, CancellationToken ct)
+        public async Task<ViewModels.Msel> ArchiveAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // permissions will be checked in PullIntegrationsAsync
-            await PullIntegrationsAsync(mselId, MselItemStatus.Archived, ct);
+            await PullIntegrationsAsync(mselId, MselItemStatus.Archived, hasSystemPermission, ct);
             // get the MSEL and set status to aarchived
             var msel = await _context.Msels.FindAsync(mselId);
             msel.Status = MselItemStatus.Archived;
@@ -1735,7 +1657,8 @@ namespace Blueprint.Api.Services
                 .AsNoTracking()
                 .Where(t => t.MselId == mselId && t.CiteTeamTypeId != null)
                 .SelectMany(t => t.TeamUsers)
-                .Select(tu => new DuplicateResult {
+                .Select(tu => new DuplicateResult
+                {
                     TeamId = tu.TeamId,
                     UserId = tu.UserId,
                     TeamName = tu.Team.ShortName,
@@ -1768,9 +1691,6 @@ namespace Blueprint.Api.Services
         public async Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct)
         {
             var userId = _user.GetId();
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             // get the user's teams
             var teamIdList = await _context.TeamUsers
                 .Where(tu => tu.UserId == userId)
@@ -1815,9 +1735,6 @@ namespace Blueprint.Api.Services
         public async Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct)
         {
             var userId = _user.GetId();
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new BaseUserRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             // get template msels with an invitation
             var emailClaim = _user.Claims.SingleOrDefault(c => c.Type == "email");
             var email = emailClaim == null ? "" : emailClaim.Value;
@@ -1893,12 +1810,13 @@ namespace Blueprint.Api.Services
                     invitation.UserCount++;
                     await _context.SaveChangesAsync(ct);
                     // add the join data to the join queue
-                    var joinInformation = new JoinInformation{
-                                UserId = _user.GetId(),
-                                PlayerTeamId = invitation.Team.PlayerTeamId,
-                                GalleryTeamId = invitation.Team.GalleryTeamId,
-                                CiteTeamId = invitation.Team.CiteTeamId
-                            };
+                    var joinInformation = new JoinInformation
+                    {
+                        UserId = _user.GetId(),
+                        PlayerTeamId = invitation.Team.PlayerTeamId,
+                        GalleryTeamId = invitation.Team.GalleryTeamId,
+                        CiteTeamId = invitation.Team.CiteTeamId
+                    };
                     _joinQueue.Add(joinInformation);
                 }
             }
@@ -1946,7 +1864,7 @@ namespace Blueprint.Api.Services
             // create the new player view ID, so that the UI will be able to look for it to be created
             var playerViewId = Guid.NewGuid();
             // add the launch data to the launch queue
-            _integrationQueue.Add(new IntegrationInformation{MselId = mselEntity.Id, PlayerViewId = playerViewId});
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselEntity.Id, PlayerViewId = playerViewId });
             // get the MSEL to return with the new Player View ID
             var launchedMsel = _mapper.Map<Msel>(mselEntity);
             launchedMsel.PlayerViewId = playerViewId;

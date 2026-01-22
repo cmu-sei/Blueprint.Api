@@ -9,7 +9,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -23,9 +22,9 @@ namespace Blueprint.Api.Services
 {
     public interface IInjectService
     {
-        Task<IEnumerable<ViewModels.Injectm>> GetByCatalogAsync(Guid catalogId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Injectm>> GetByCatalogAsync(Guid catalogId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Injectm>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct);
-        Task<ViewModels.Injectm> GetAsync(Guid id, CancellationToken ct);
+        Task<ViewModels.Injectm> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Injectm> CreateAsync(Guid catalogId, ViewModels.Injectm inject, CancellationToken ct);
         Task<ViewModels.Injectm> UpdateAsync(Guid id, ViewModels.Injectm inject, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
@@ -34,31 +33,26 @@ namespace Blueprint.Api.Services
     public class InjectService : IInjectService
     {
         private readonly BlueprintContext _context;
-        private readonly IAuthorizationService _authorizationService;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
         private readonly DatabaseOptions _options;
 
-
         public InjectService(
             BlueprintContext context,
-            IAuthorizationService authorizationService,
             IPrincipal user,
             IMapper mapper,
             DatabaseOptions options)
         {
             _context = context;
-            _authorizationService = authorizationService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
             _options = options;
         }
 
-        public async Task<IEnumerable<ViewModels.Injectm>> GetByCatalogAsync(Guid catalogId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Injectm>> GetByCatalogAsync(Guid catalogId, bool hasSystemPermission, CancellationToken ct)
         {
-            // user must be a Content Developer or a Catalog viewer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded &&
-                !await CatalogViewRequirement.IsMet(_user.GetId(), catalogId, _context))
+            // user must have ViewMsels permission or be a Catalog viewer
+            if (!hasSystemPermission && !await CatalogViewRequirement.IsMet(_user.GetId(), catalogId, _context))
                 throw new ForbiddenException();
 
             var injects = await _context.CatalogInjects
@@ -71,10 +65,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Injectm>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct)
         {
-            // user must be a Content Developer or a Catalog viewer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var injects = await _context.Injects
                 .Where(i => i.InjectTypeId == injectTypeId)
                 .Include(m => m.DataValues)
@@ -82,7 +72,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<Injectm>>(injects);
         }
 
-        public async Task<ViewModels.Injectm> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.Injectm> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var item = await _context.Injects
                 .Include(se => se.DataValues)
@@ -91,7 +81,7 @@ namespace Blueprint.Api.Services
             if (item == null)
                 throw new EntityNotFoundException<InjectEntity>();
 
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+            if (!hasSystemPermission)
             {
                 var userId = _user.GetId();
                 var unitIdList = await _context.CatalogUnits
@@ -114,18 +104,11 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Injectm> CreateAsync(Guid catalogId, Injectm inject, CancellationToken ct)
         {
-            // user must be a Content Developer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             // start a transaction, because we may also update DataValues
             await _context.Database.BeginTransactionAsync();
             // create the inject
             inject.Id = inject.Id != Guid.Empty ? inject.Id : Guid.NewGuid();
-            inject.DateCreated = DateTime.UtcNow;
             inject.CreatedBy = _user.GetId();
-            inject.DateModified = null;
-            inject.ModifiedBy = null;
             // complete the data values for all data fields
             var dataFieldList = await _context.InjectTypes
                 .Where(m => m.Id == inject.InjectTypeId)
@@ -146,9 +129,6 @@ namespace Blueprint.Api.Services
                 dataValue.InjectId = inject.Id;
                 dataValue.Id = Guid.NewGuid();
                 dataValue.CreatedBy = inject.CreatedBy;
-                dataValue.DateCreated = inject.DateCreated;
-                dataValue.DateModified = null;
-                dataValue.ModifiedBy = null;
                 completeDataValues.Add(dataValue);
             }
             inject.DataValues = completeDataValues;
@@ -168,10 +148,6 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Injectm> UpdateAsync(Guid id, ViewModels.Injectm inject, CancellationToken ct)
         {
-            // user must be a Content Developer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             // make sure entity exists
             var injectToUpdate = await _context.Injects.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (injectToUpdate == null)
@@ -180,10 +156,7 @@ namespace Blueprint.Api.Services
             // start a transaction, because we may also update DataValues and other injects
             await _context.Database.BeginTransactionAsync();
             // update this inject
-            inject.CreatedBy = injectToUpdate.CreatedBy;
-            inject.DateCreated = injectToUpdate.DateCreated;
             inject.ModifiedBy = _user.GetId();
-            inject.DateModified = DateTime.UtcNow;
             _mapper.Map(inject, injectToUpdate);
             _context.Injects.Update(injectToUpdate);
             await _context.SaveChangesAsync(ct);
@@ -203,9 +176,6 @@ namespace Blueprint.Api.Services
                 {
                     dataValue.Id = Guid.NewGuid();
                     dataValue.CreatedBy = (Guid)inject.ModifiedBy;
-                    dataValue.DateCreated = (DateTime)inject.DateModified;
-                    dataValue.DateModified = dataValue.DateCreated;
-                    dataValue.ModifiedBy = dataValue.CreatedBy;
                     var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
                     _context.DataValues.Add(dataValueEntity);
                 }
@@ -213,7 +183,6 @@ namespace Blueprint.Api.Services
                 {
                     // update the DataValue
                     dataValueToUpdate.ModifiedBy = injectToUpdate.ModifiedBy;
-                    dataValueToUpdate.DateModified = injectToUpdate.DateModified;
                     dataValueToUpdate.Value = dataValue.Value;
                     _context.DataValues.Update(dataValueToUpdate);
                 }
@@ -222,15 +191,11 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return await GetAsync(id, ct);
+            return await GetAsync(id, true, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            // user must be a Content Developer
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
             var injectToDelete = await _context.Injects.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (injectToDelete == null)
                 throw new EntityNotFoundException<InjectEntity>();

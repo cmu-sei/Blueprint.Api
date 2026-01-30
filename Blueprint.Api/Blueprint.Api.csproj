@@ -48,6 +48,7 @@
     <PackageReference Include="Player.Api.Client" Version="3.2.0" />
     <PackageReference Include="steamfitter.api.client" Version="1.7.0" />
     <PackageReference Include="HtmlSanitizer" Version="9.1.887-beta" />
+    <PackageReference Include="Crucible.Common.ServiceDefaults" Version="0.0.2"/>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Blueprint.Api.Data\Blueprint.Api.Data.csproj" />

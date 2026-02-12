@@ -108,7 +108,7 @@ public class Startup
             .AddScoped(config => config.GetService<IOptionsMonitor<ClientOptions>>().CurrentValue);
 
         services
-            .Configure<XApiOptions>(Configuration.GetSection("xApi"))
+            .Configure<XApiOptions>(Configuration.GetSection("XApiOptions"))
             .AddScoped(config => config.GetService<IOptionsMonitor<XApiOptions>>().CurrentValue);
 
         services.AddScoped<IClaimsTransformation, AuthorizationClaimsTransformer>();

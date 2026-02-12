@@ -32,7 +32,6 @@ namespace Blueprint.Api.Services
             Guid? teamId,
             CancellationToken ct);
         Task<bool> MselViewedAsync(MselEntity msel, CancellationToken ct);
-        Task<bool> InjectViewedAsync(InjectEntity inject, CancellationToken ct);
     }
 
     public class XApiService : IXApiService
@@ -312,55 +311,6 @@ namespace Blueprint.Api.Services
             }
 
             return await CreateAsync(verb, activity, category, grouping, parent, other, msel.Id, teamId, ct);
-        }
-
-        public async Task<bool> InjectViewedAsync(InjectEntity inject, CancellationToken ct)
-        {
-            if (!IsConfigured())
-            {
-                return true;
-            }
-
-            var verb = new Uri("http://id.tincanapi.com/verb/viewed");
-
-            var activity = new Dictionary<string, string>();
-            activity.Add("id", inject.Id.ToString());
-            activity.Add("name", inject.Description ?? "Inject");
-            activity.Add("description", "MSEL inject/event");
-            activity.Add("type", "inject");
-            activity.Add("activityType", "http://id.tincanapi.com/activitytype/task");
-            activity.Add("moreInfo", "/inject/" + inject.Id.ToString());
-
-            var category = new Dictionary<string, string>();
-            category.Add("id", "planning");
-            category.Add("name", "Planning");
-            category.Add("description", "MSEL planning and design activities");
-            category.Add("type", "category");
-            category.Add("activityType", "http://id.tincanapi.com/activitytype/category");
-
-            // InjectEntity is a catalog inject (template), not tied to a specific MSEL or scenario event
-            var parent = new Dictionary<string, string>();
-
-            // Get inject type as parent
-            var injectType = await _context.InjectTypes.FindAsync(inject.InjectTypeId);
-            if (injectType != null)
-            {
-                parent.Add("id", injectType.Id.ToString());
-                parent.Add("name", injectType.Name);
-                parent.Add("description", injectType.Description ?? "Inject Type");
-                parent.Add("type", "injectType");
-                parent.Add("activityType", "http://id.tincanapi.com/activitytype/category");
-                parent.Add("moreInfo", "");
-            }
-
-            var grouping = new List<Dictionary<string, string>>();
-            var other = new Dictionary<string, string>();
-
-            // No team or MSEL context for catalog injects
-            Guid? teamId = null;
-            Guid? mselId = null;
-
-            return await CreateAsync(verb, activity, category, grouping, parent, other, mselId, teamId, ct);
         }
     }
 }

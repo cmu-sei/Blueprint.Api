@@ -36,20 +36,17 @@ namespace Blueprint.Api.Services
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
         private readonly DatabaseOptions _options;
-        private readonly IXApiService _xApiService;
 
         public InjectService(
             BlueprintContext context,
             IPrincipal user,
             IMapper mapper,
-            DatabaseOptions options,
-            IXApiService xApiService)
+            DatabaseOptions options)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
             _options = options;
-            _xApiService = xApiService;
         }
 
         public async Task<IEnumerable<ViewModels.Injectm>> GetByCatalogAsync(Guid catalogId, bool hasSystemPermission, CancellationToken ct)
@@ -100,12 +97,6 @@ namespace Blueprint.Api.Services
                     .AnyAsync(ct);
                 if (!isAuthorized)
                     throw new ForbiddenException();
-            }
-
-            // Track xAPI
-            if (_xApiService.IsConfigured())
-            {
-                await _xApiService.InjectViewedAsync(item, ct);
             }
 
             return _mapper.Map<ViewModels.Injectm>(item);

@@ -62,6 +62,7 @@ namespace Blueprint.Api.Data
         public DbSet<SystemRoleEntity> SystemRoles { get; set; }
         public DbSet<GroupEntity> Groups { get; set; }
         public DbSet<GroupMembershipEntity> GroupMemberships { get; set; }
+        public DbSet<XApiQueuedStatementEntity> XApiQueuedStatements { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

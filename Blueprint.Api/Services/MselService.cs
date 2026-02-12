@@ -70,6 +70,7 @@ namespace Blueprint.Api.Services
         private readonly IIntegrationQueue _integrationQueue;
         private readonly IPlayerService _playerService;
         private readonly IJoinQueue _joinQueue;
+        private readonly IXApiService _xApiService;
 
         public MselService(
             BlueprintContext context,
@@ -80,7 +81,8 @@ namespace Blueprint.Api.Services
             IJoinQueue joinQueue,
             IPrincipal user,
             ILogger<MselService> logger,
-            IMapper mapper)
+            IMapper mapper,
+            IXApiService xApiService)
         {
             _context = context;
             _clientOptions = clientOptions;
@@ -91,6 +93,7 @@ namespace Blueprint.Api.Services
             _integrationQueue = integrationQueue;
             _playerService = playerService;
             _joinQueue = joinQueue;
+            _xApiService = xApiService;
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct)
@@ -217,6 +220,12 @@ namespace Blueprint.Api.Services
             {
                 msel.GalleryArticleParameters = Enum.GetNames(typeof(GalleryArticleParameter)).ToList();
                 msel.GallerySourceTypes = Enum.GetNames(typeof(GallerySourceType)).ToList();
+            }
+
+            // Track xAPI
+            if (_xApiService.IsConfigured())
+            {
+                await _xApiService.MselViewedAsync(mselEntity, ct);
             }
 
             return msel;

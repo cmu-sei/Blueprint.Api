@@ -107,6 +107,10 @@ public class Startup
             .Configure<ClientOptions>(Configuration.GetSection("ClientSettings"))
             .AddScoped(config => config.GetService<IOptionsMonitor<ClientOptions>>().CurrentValue);
 
+        services
+            .Configure<XApiOptions>(Configuration.GetSection("xApi"))
+            .AddScoped(config => config.GetService<IOptionsMonitor<XApiOptions>>().CurrentValue);
+
         services.AddScoped<IClaimsTransformation, AuthorizationClaimsTransformer>();
         services.AddScoped<IUserClaimsService, UserClaimsService>();
 
@@ -219,7 +223,13 @@ public class Startup
         services.AddSingleton<IUserIdProvider, SubUserIdProvider>();
         services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>()?.HttpContext?.User);
+        services.AddScoped<IXApiService, XApiService>();
+        services.AddScoped<IXApiQueueService, XApiQueueService>();
         services.AddHttpClient();
+
+        // Register xAPI Background Service
+        services.AddHostedService<Services.XApiBackgroundService>();
+
         services.AddSingleton<IIntegrationQueue, IntegrationQueue>();
         services.AddHostedService<IntegrationService>();
         services.AddSingleton<IJoinQueue, JoinQueue>();

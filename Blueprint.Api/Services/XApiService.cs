@@ -32,6 +32,8 @@ namespace Blueprint.Api.Services
             Guid? teamId,
             CancellationToken ct);
         Task<bool> MselViewedAsync(MselEntity msel, CancellationToken ct);
+        Task<bool> ExerciseStartedAsync(MselEntity msel, CancellationToken ct);
+        Task<bool> ExerciseStoppedAsync(MselEntity msel, CancellationToken ct);
     }
 
     public class XApiService : IXApiService
@@ -297,6 +299,88 @@ namespace Blueprint.Api.Services
             var parent = new Dictionary<string, string>();
             // No direct organization relationship on MSEL
 
+            var grouping = new List<Dictionary<string, string>>();
+            var other = new Dictionary<string, string>();
+
+            // Get user's team in this MSEL, if any
+            Guid? teamId = null;
+            var teamUser = await _context.TeamUsers
+                .Where(tu => tu.UserId == _user.GetId() && tu.Team.MselId == msel.Id)
+                .FirstOrDefaultAsync(ct);
+            if (teamUser != null)
+            {
+                teamId = teamUser.TeamId;
+            }
+
+            return await CreateAsync(verb, activity, category, grouping, parent, other, msel.Id, teamId, ct);
+        }
+
+        public async Task<bool> ExerciseStartedAsync(MselEntity msel, CancellationToken ct)
+        {
+            if (!IsConfigured())
+            {
+                return true;
+            }
+
+            var verb = new Uri("http://adlnet.gov/expapi/verbs/launched");
+
+            var activity = new Dictionary<string, string>();
+            activity.Add("id", msel.Id.ToString());
+            activity.Add("name", msel.Name);
+            activity.Add("description", msel.Description ?? "Mission Scenario Event List");
+            activity.Add("type", "msel");
+            activity.Add("activityType", "http://adlnet.gov/expapi/activities/simulation");
+            activity.Add("moreInfo", "/msel/" + msel.Id.ToString());
+
+            var category = new Dictionary<string, string>();
+            category.Add("id", "execution");
+            category.Add("name", "Execution");
+            category.Add("description", "MSEL execution and training activities");
+            category.Add("type", "category");
+            category.Add("activityType", "http://id.tincanapi.com/activitytype/category");
+
+            var parent = new Dictionary<string, string>();
+            var grouping = new List<Dictionary<string, string>>();
+            var other = new Dictionary<string, string>();
+
+            // Get user's team in this MSEL, if any
+            Guid? teamId = null;
+            var teamUser = await _context.TeamUsers
+                .Where(tu => tu.UserId == _user.GetId() && tu.Team.MselId == msel.Id)
+                .FirstOrDefaultAsync(ct);
+            if (teamUser != null)
+            {
+                teamId = teamUser.TeamId;
+            }
+
+            return await CreateAsync(verb, activity, category, grouping, parent, other, msel.Id, teamId, ct);
+        }
+
+        public async Task<bool> ExerciseStoppedAsync(MselEntity msel, CancellationToken ct)
+        {
+            if (!IsConfigured())
+            {
+                return true;
+            }
+
+            var verb = new Uri("http://adlnet.gov/expapi/verbs/terminated");
+
+            var activity = new Dictionary<string, string>();
+            activity.Add("id", msel.Id.ToString());
+            activity.Add("name", msel.Name);
+            activity.Add("description", msel.Description ?? "Mission Scenario Event List");
+            activity.Add("type", "msel");
+            activity.Add("activityType", "http://adlnet.gov/expapi/activities/simulation");
+            activity.Add("moreInfo", "/msel/" + msel.Id.ToString());
+
+            var category = new Dictionary<string, string>();
+            category.Add("id", "execution");
+            category.Add("name", "Execution");
+            category.Add("description", "MSEL execution and training activities");
+            category.Add("type", "category");
+            category.Add("activityType", "http://id.tincanapi.com/activitytype/category");
+
+            var parent = new Dictionary<string, string>();
             var grouping = new List<Dictionary<string, string>>();
             var other = new Dictionary<string, string>();
 

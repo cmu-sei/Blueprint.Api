@@ -1630,6 +1630,12 @@ namespace Blueprint.Api.Services
                 throw new InvalidOperationException(userVerificationErrorMessage);
             _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, FinalStatus = MselItemStatus.Deployed });
 
+            // Track xAPI - Exercise Started
+            if (_xApiService.IsConfigured())
+            {
+                await _xApiService.ExerciseStartedAsync(msel, ct);
+            }
+
             return _mapper.Map<ViewModels.Msel>(msel);
         }
 
@@ -1644,6 +1650,12 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found.");
             // add msel to process queue
             _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, FinalStatus = finalStatus });
+
+            // Track xAPI - Exercise Stopped
+            if (_xApiService.IsConfigured())
+            {
+                await _xApiService.ExerciseStoppedAsync(msel, ct);
+            }
 
             return _mapper.Map<ViewModels.Msel>(msel);
         }

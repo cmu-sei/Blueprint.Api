@@ -41,9 +41,9 @@ namespace Blueprint.Api.Services
         private readonly ClaimsPrincipal _user;
         private readonly XApiOptions _xApiOptions;
         private readonly IXApiQueueService _queueService;
-        private readonly Agent _agent;
-        private readonly AgentAccount _account;
-        private readonly Context _xApiContext;
+        private Agent _agent;
+        private AgentAccount _account;
+        private Context _xApiContext;
         private readonly ILogger<XApiService> _logger;
 
         public XApiService(
@@ -58,36 +58,39 @@ namespace Blueprint.Api.Services
             _xApiOptions = xApiOptions;
             _queueService = queueService;
             _logger = logger;
+        }
 
-            if (IsConfigured())
+        private void EnsureAgentInitialized()
+        {
+            if (_agent != null || !IsConfigured())
+                return;
+
+            // configure AgentAccount
+            _account = new TinCan.AgentAccount();
+            _account.name = _user.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
+            var iss = _user.Identities.First().Claims.First(c => c.Type == "iss")?.Value;
+            if (!string.IsNullOrEmpty(_xApiOptions.IssuerUrl))
             {
-                // configure AgentAccount
-                _account = new TinCan.AgentAccount();
-                _account.name = _user.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
-                var iss = _user.Identities.First().Claims.First(c => c.Type == "iss")?.Value;
-                if (!string.IsNullOrEmpty(_xApiOptions.IssuerUrl))
-                {
-                    _account.homePage = new Uri(_xApiOptions.IssuerUrl);
-                }
-                else if (iss.Contains("http"))
-                {
-                    _account.homePage = new Uri(iss);
-                }
-                else if (string.IsNullOrEmpty(_xApiOptions.IssuerUrl))
-                {
-                    _account.homePage = new Uri("http://" + iss);
-                }
-
-                // configure Agent
-                _agent = new TinCan.Agent();
-                _agent.name = _context.Users.Find(_user.GetId()).Name;
-                _agent.account = _account;
-
-                // Initialize the Context
-                _xApiContext = new Context();
-                _xApiContext.platform = _xApiOptions.Platform;
-                _xApiContext.language = "en-US";
+                _account.homePage = new Uri(_xApiOptions.IssuerUrl);
             }
+            else if (iss.Contains("http"))
+            {
+                _account.homePage = new Uri(iss);
+            }
+            else if (string.IsNullOrEmpty(_xApiOptions.IssuerUrl))
+            {
+                _account.homePage = new Uri("http://" + iss);
+            }
+
+            // configure Agent
+            _agent = new TinCan.Agent();
+            _agent.name = _context.Users.Find(_user.GetId()).Name;
+            _agent.account = _account;
+
+            // Initialize the Context
+            _xApiContext = new Context();
+            _xApiContext.platform = _xApiOptions.Platform;
+            _xApiContext.language = "en-US";
         }
 
         public bool IsConfigured()
@@ -111,6 +114,9 @@ namespace Blueprint.Api.Services
                 _logger.LogInformation("xAPI Service not configured");
                 return true;
             }
+
+            // Initialize agent lazily (only when needed, not in constructor)
+            EnsureAgentInitialized();
 
             var verb = new Verb();
             verb.id = verbUri;

@@ -296,18 +296,7 @@ namespace Blueprint.Api.Services
             category.Add("activityType", "http://id.tincanapi.com/activitytype/category");
 
             var parent = new Dictionary<string, string>();
-            if (msel.OrganizationId.HasValue)
-            {
-                var organization = await _context.Organizations.FindAsync(msel.OrganizationId.Value);
-                if (organization != null)
-                {
-                    parent.Add("id", organization.Id.ToString());
-                    parent.Add("name", organization.Name);
-                    parent.Add("description", organization.Description ?? "Organization");
-                    parent.Add("type", "organization");
-                    parent.Add("activityType", "http://id.tincanapi.com/activitytype/organization");
-                }
-            }
+            // No direct organization relationship on MSEL
 
             var grouping = new List<Dictionary<string, string>>();
             var other = new Dictionary<string, string>();
@@ -349,61 +338,27 @@ namespace Blueprint.Api.Services
             category.Add("type", "category");
             category.Add("activityType", "http://id.tincanapi.com/activitytype/category");
 
-            // Get MSEL as parent
-            var scenarioEvent = await _context.ScenarioEvents
-                .Where(se => se.Id == inject.ScenarioEventId)
-                .FirstOrDefaultAsync(ct);
-
+            // InjectEntity is a catalog inject (template), not tied to a specific MSEL or scenario event
             var parent = new Dictionary<string, string>();
-            if (scenarioEvent != null)
+
+            // Get inject type as parent
+            var injectType = await _context.InjectTypes.FindAsync(inject.InjectTypeId);
+            if (injectType != null)
             {
-                var msel = await _context.Msels.FindAsync(scenarioEvent.MselId);
-                if (msel != null)
-                {
-                    parent.Add("id", msel.Id.ToString());
-                    parent.Add("name", msel.Name);
-                    parent.Add("description", msel.Description ?? "Mission Scenario Event List");
-                    parent.Add("type", "msel");
-                    parent.Add("activityType", "http://adlnet.gov/expapi/activities/simulation");
-                    parent.Add("moreInfo", "/msel/" + msel.Id.ToString());
-                }
+                parent.Add("id", injectType.Id.ToString());
+                parent.Add("name", injectType.Name);
+                parent.Add("description", injectType.Description ?? "Inject Type");
+                parent.Add("type", "injectType");
+                parent.Add("activityType", "http://id.tincanapi.com/activitytype/category");
+                parent.Add("moreInfo", "");
             }
 
-            // Get Move as grouping context
             var grouping = new List<Dictionary<string, string>>();
-            if (inject.MoveNumber.HasValue && scenarioEvent != null)
-            {
-                var move = await _context.Moves
-                    .Where(m => m.MselId == scenarioEvent.MselId && m.MoveNumber == inject.MoveNumber.Value)
-                    .FirstOrDefaultAsync(ct);
-                if (move != null)
-                {
-                    var moveGrouping = new Dictionary<string, string>();
-                    moveGrouping.Add("id", move.Id.ToString());
-                    moveGrouping.Add("name", move.Title ?? $"Move {move.MoveNumber}");
-                    moveGrouping.Add("description", move.Description ?? "MSEL Move/Phase");
-                    moveGrouping.Add("type", "move");
-                    moveGrouping.Add("activityType", "http://id.tincanapi.com/activitytype/collection-simple");
-                    moveGrouping.Add("moreInfo", "");
-                    grouping.Add(moveGrouping);
-                }
-            }
-
             var other = new Dictionary<string, string>();
 
-            // Get user's team in this MSEL, if any
+            // No team or MSEL context for catalog injects
             Guid? teamId = null;
-            Guid? mselId = scenarioEvent?.MselId;
-            if (mselId.HasValue)
-            {
-                var teamUser = await _context.TeamUsers
-                    .Where(tu => tu.UserId == _user.GetId() && tu.Team.MselId == mselId.Value)
-                    .FirstOrDefaultAsync(ct);
-                if (teamUser != null)
-                {
-                    teamId = teamUser.TeamId;
-                }
-            }
+            Guid? mselId = null;
 
             return await CreateAsync(verb, activity, category, grouping, parent, other, mselId, teamId, ct);
         }

@@ -34,6 +34,9 @@ namespace Blueprint.Api.Services
         Task<bool> MselViewedAsync(MselEntity msel, CancellationToken ct);
         Task<bool> ExerciseStartedAsync(MselEntity msel, CancellationToken ct);
         Task<bool> ExerciseStoppedAsync(MselEntity msel, CancellationToken ct);
+        Task<bool> JoinPageViewedAsync(CancellationToken ct);
+        Task<bool> BuildPageViewedAsync(CancellationToken ct);
+        Task<bool> MselJoinedAsync(MselEntity msel, Guid? teamId, CancellationToken ct);
     }
 
     public class XApiService : IXApiService
@@ -42,6 +45,7 @@ namespace Blueprint.Api.Services
         private readonly ClaimsPrincipal _user;
         private readonly XApiOptions _xApiOptions;
         private readonly IXApiQueueService _queueService;
+        private readonly Infrastructure.Options.ClientOptions _clientOptions;
         private Agent _agent;
         private AgentAccount _account;
         private Context _xApiContext;
@@ -52,12 +56,14 @@ namespace Blueprint.Api.Services
             IPrincipal user,
             XApiOptions xApiOptions,
             IXApiQueueService queueService,
+            Infrastructure.Options.ClientOptions clientOptions,
             ILogger<XApiService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
             _xApiOptions = xApiOptions;
             _queueService = queueService;
+            _clientOptions = clientOptions;
             _logger = logger;
         }
 
@@ -213,7 +219,9 @@ namespace Blueprint.Api.Services
                     if (groupingItem.Count > 0)
                     {
                         var grouping = new TinCan.Activity();
-                        grouping.id = _xApiOptions.ApiUrl + groupingItem["type"] + "/" + groupingItem["id"];
+                        // Use apiUrl from groupingItem if available, otherwise use Blueprint API URL
+                        var apiUrl = groupingItem.ContainsKey("apiUrl") ? groupingItem["apiUrl"] : _xApiOptions.ApiUrl;
+                        grouping.id = apiUrl + groupingItem["type"] + "/" + groupingItem["id"];
                         grouping.definition = new ActivityDefinition();
                         grouping.definition.name = new LanguageMap();
                         grouping.definition.name.Add("en-US", groupingItem["name"]);
@@ -297,20 +305,9 @@ namespace Blueprint.Api.Services
             category.Add("activityType", "http://id.tincanapi.com/activitytype/category");
 
             var parent = new Dictionary<string, string>();
-            // No direct organization relationship on MSEL
-
-            var grouping = new List<Dictionary<string, string>>();
+            var grouping = BuildIntegrationGroupings(msel);
             var other = new Dictionary<string, string>();
-
-            // Get user's team in this MSEL, if any
-            Guid? teamId = null;
-            var teamUser = await _context.TeamUsers
-                .Where(tu => tu.UserId == _user.GetId() && tu.Team.MselId == msel.Id)
-                .FirstOrDefaultAsync(ct);
-            if (teamUser != null)
-            {
-                teamId = teamUser.TeamId;
-            }
+            var teamId = await GetUserTeamIdAsync(msel.Id, ct);
 
             return await CreateAsync(verb, activity, category, grouping, parent, other, msel.Id, teamId, ct);
         }
@@ -340,18 +337,9 @@ namespace Blueprint.Api.Services
             category.Add("activityType", "http://id.tincanapi.com/activitytype/category");
 
             var parent = new Dictionary<string, string>();
-            var grouping = new List<Dictionary<string, string>>();
+            var grouping = BuildIntegrationGroupings(msel);
             var other = new Dictionary<string, string>();
-
-            // Get user's team in this MSEL, if any
-            Guid? teamId = null;
-            var teamUser = await _context.TeamUsers
-                .Where(tu => tu.UserId == _user.GetId() && tu.Team.MselId == msel.Id)
-                .FirstOrDefaultAsync(ct);
-            if (teamUser != null)
-            {
-                teamId = teamUser.TeamId;
-            }
+            var teamId = await GetUserTeamIdAsync(msel.Id, ct);
 
             return await CreateAsync(verb, activity, category, grouping, parent, other, msel.Id, teamId, ct);
         }
@@ -381,20 +369,188 @@ namespace Blueprint.Api.Services
             category.Add("activityType", "http://id.tincanapi.com/activitytype/category");
 
             var parent = new Dictionary<string, string>();
+            var grouping = BuildIntegrationGroupings(msel);
+            var other = new Dictionary<string, string>();
+            var teamId = await GetUserTeamIdAsync(msel.Id, ct);
+
+            return await CreateAsync(verb, activity, category, grouping, parent, other, msel.Id, teamId, ct);
+        }
+
+        public async Task<bool> JoinPageViewedAsync(CancellationToken ct)
+        {
+            if (!IsConfigured())
+            {
+                return true;
+            }
+
+            var verb = new Uri("http://id.tincanapi.com/verb/viewed");
+
+            var activity = new Dictionary<string, string>();
+            activity.Add("id", "join-page");
+            activity.Add("name", "Join Event Page");
+            activity.Add("description", "Join an event landing page");
+            activity.Add("type", "page");
+            activity.Add("activityType", "http://activitystrea.ms/schema/1.0/page");
+            activity.Add("moreInfo", "/join");
+
+            var category = new Dictionary<string, string>();
+            category.Add("id", "navigation");
+            category.Add("name", "Navigation");
+            category.Add("description", "Page navigation and browsing activities");
+            category.Add("type", "category");
+            category.Add("activityType", "http://id.tincanapi.com/activitytype/category");
+
+            var parent = new Dictionary<string, string>();
             var grouping = new List<Dictionary<string, string>>();
             var other = new Dictionary<string, string>();
 
-            // Get user's team in this MSEL, if any
-            Guid? teamId = null;
-            var teamUser = await _context.TeamUsers
-                .Where(tu => tu.UserId == _user.GetId() && tu.Team.MselId == msel.Id)
-                .FirstOrDefaultAsync(ct);
-            if (teamUser != null)
+            return await CreateAsync(verb, activity, category, grouping, parent, other, null, null, ct);
+        }
+
+        public async Task<bool> BuildPageViewedAsync(CancellationToken ct)
+        {
+            if (!IsConfigured())
             {
-                teamId = teamUser.TeamId;
+                return true;
             }
 
+            var verb = new Uri("http://id.tincanapi.com/verb/viewed");
+
+            var activity = new Dictionary<string, string>();
+            activity.Add("id", "build-page");
+            activity.Add("name", "Manage Event Page");
+            activity.Add("description", "Manage an event landing page");
+            activity.Add("type", "page");
+            activity.Add("activityType", "http://activitystrea.ms/schema/1.0/page");
+            activity.Add("moreInfo", "/build");
+
+            var category = new Dictionary<string, string>();
+            category.Add("id", "navigation");
+            category.Add("name", "Navigation");
+            category.Add("description", "Page navigation and browsing activities");
+            category.Add("type", "category");
+            category.Add("activityType", "http://id.tincanapi.com/activitytype/category");
+
+            var parent = new Dictionary<string, string>();
+            var grouping = new List<Dictionary<string, string>>();
+            var other = new Dictionary<string, string>();
+
+            return await CreateAsync(verb, activity, category, grouping, parent, other, null, null, ct);
+        }
+
+        public async Task<bool> MselJoinedAsync(MselEntity msel, Guid? teamId, CancellationToken ct)
+        {
+            if (!IsConfigured())
+            {
+                return true;
+            }
+
+            var verb = new Uri("http://activitystrea.ms/schema/1.0/join");
+
+            var activity = new Dictionary<string, string>();
+            activity.Add("id", msel.Id.ToString());
+            activity.Add("name", msel.Name);
+            activity.Add("description", msel.Description ?? "Mission Scenario Event List");
+            activity.Add("type", "msel");
+            activity.Add("activityType", "http://adlnet.gov/expapi/activities/simulation");
+            activity.Add("moreInfo", "/msel/" + msel.Id.ToString());
+
+            var category = new Dictionary<string, string>();
+            category.Add("id", "execution");
+            category.Add("name", "Execution");
+            category.Add("description", "MSEL execution and training activities");
+            category.Add("type", "category");
+            category.Add("activityType", "http://id.tincanapi.com/activitytype/category");
+
+            var parent = new Dictionary<string, string>();
+            var grouping = BuildIntegrationGroupings(msel);
+            var other = new Dictionary<string, string>();
+
             return await CreateAsync(verb, activity, category, grouping, parent, other, msel.Id, teamId, ct);
+        }
+
+        private async Task<Guid?> GetUserTeamIdAsync(Guid mselId, CancellationToken ct)
+        {
+            var teamUser = await _context.TeamUsers
+                .Where(tu => tu.UserId == _user.GetId() && tu.Team.MselId == mselId)
+                .FirstOrDefaultAsync(ct);
+
+            return teamUser?.TeamId;
+        }
+
+        private List<Dictionary<string, string>> BuildIntegrationGroupings(MselEntity msel)
+        {
+            var grouping = new List<Dictionary<string, string>>();
+
+            if (msel.PlayerViewId.HasValue && !string.IsNullOrEmpty(_clientOptions.PlayerApiUrl))
+            {
+                var playerApiUrl = _clientOptions.PlayerApiUrl.EndsWith("/")
+                    ? _clientOptions.PlayerApiUrl + "api/"
+                    : _clientOptions.PlayerApiUrl + "/api/";
+
+                var playerIntegration = new Dictionary<string, string>();
+                playerIntegration.Add("id", msel.PlayerViewId.Value.ToString());
+                playerIntegration.Add("name", "Player View");
+                playerIntegration.Add("description", "Player application view for " + msel.Name);
+                playerIntegration.Add("type", "views");
+                playerIntegration.Add("activityType", "http://id.tincanapi.com/activitytype/resource");
+                playerIntegration.Add("moreInfo", "");
+                playerIntegration.Add("apiUrl", playerApiUrl);
+                grouping.Add(playerIntegration);
+            }
+
+            if (msel.GalleryExhibitId.HasValue && !string.IsNullOrEmpty(_clientOptions.GalleryApiUrl))
+            {
+                var galleryApiUrl = _clientOptions.GalleryApiUrl.EndsWith("/")
+                    ? _clientOptions.GalleryApiUrl + "api/"
+                    : _clientOptions.GalleryApiUrl + "/api/";
+
+                var galleryIntegration = new Dictionary<string, string>();
+                galleryIntegration.Add("id", msel.GalleryExhibitId.Value.ToString());
+                galleryIntegration.Add("name", "Gallery Exhibit");
+                galleryIntegration.Add("description", "Gallery exhibit for " + msel.Name);
+                galleryIntegration.Add("type", "exhibits");
+                galleryIntegration.Add("activityType", "http://id.tincanapi.com/activitytype/resource");
+                galleryIntegration.Add("moreInfo", "");
+                galleryIntegration.Add("apiUrl", galleryApiUrl);
+                grouping.Add(galleryIntegration);
+            }
+
+            if (msel.CiteEvaluationId.HasValue && !string.IsNullOrEmpty(_clientOptions.CiteApiUrl))
+            {
+                var citeApiUrl = _clientOptions.CiteApiUrl.EndsWith("/")
+                    ? _clientOptions.CiteApiUrl + "api/"
+                    : _clientOptions.CiteApiUrl + "/api/";
+
+                var citeIntegration = new Dictionary<string, string>();
+                citeIntegration.Add("id", msel.CiteEvaluationId.Value.ToString());
+                citeIntegration.Add("name", "CITE Evaluation");
+                citeIntegration.Add("description", "CITE evaluation for " + msel.Name);
+                citeIntegration.Add("type", "evaluations");
+                citeIntegration.Add("activityType", "http://id.tincanapi.com/activitytype/resource");
+                citeIntegration.Add("moreInfo", "");
+                citeIntegration.Add("apiUrl", citeApiUrl);
+                grouping.Add(citeIntegration);
+            }
+
+            if (msel.SteamfitterScenarioId.HasValue && !string.IsNullOrEmpty(_clientOptions.SteamfitterApiUrl))
+            {
+                var steamfitterApiUrl = _clientOptions.SteamfitterApiUrl.EndsWith("/")
+                    ? _clientOptions.SteamfitterApiUrl + "api/"
+                    : _clientOptions.SteamfitterApiUrl + "/api/";
+
+                var steamfitterIntegration = new Dictionary<string, string>();
+                steamfitterIntegration.Add("id", msel.SteamfitterScenarioId.Value.ToString());
+                steamfitterIntegration.Add("name", "Steamfitter Scenario");
+                steamfitterIntegration.Add("description", "Steamfitter scenario for " + msel.Name);
+                steamfitterIntegration.Add("type", "scenarios");
+                steamfitterIntegration.Add("activityType", "http://id.tincanapi.com/activitytype/resource");
+                steamfitterIntegration.Add("moreInfo", "");
+                steamfitterIntegration.Add("apiUrl", steamfitterApiUrl);
+                grouping.Add(steamfitterIntegration);
+            }
+
+            return grouping;
         }
     }
 }

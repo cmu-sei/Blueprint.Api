@@ -147,6 +147,12 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasSystemPermission, CancellationToken ct)
         {
+            // Track xAPI - Build Page Viewed
+            if (_xApiService.IsConfigured())
+            {
+                await _xApiService.BuildPageViewedAsync(ct);
+            }
+
             var userId = _user.GetId();
             return await GetUserMselsAsync(userId, false, hasSystemPermission, ct);
         }
@@ -1711,6 +1717,12 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct)
         {
+            // Track xAPI - Join Page Viewed
+            if (_xApiService.IsConfigured())
+            {
+                await _xApiService.JoinPageViewedAsync(ct);
+            }
+
             var userId = _user.GetId();
             // get the user's teams
             var teamIdList = await _context.TeamUsers
@@ -1841,6 +1853,13 @@ namespace Blueprint.Api.Services
                     _joinQueue.Add(joinInformation);
                 }
             }
+
+            // Track xAPI - MSEL Joined
+            if (_xApiService.IsConfigured())
+            {
+                await _xApiService.MselJoinedAsync(msel, teamId, ct);
+            }
+
             return (Guid)msel.PlayerViewId;
         }
 

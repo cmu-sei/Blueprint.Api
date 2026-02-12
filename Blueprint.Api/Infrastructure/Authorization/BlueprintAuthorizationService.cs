@@ -38,6 +38,13 @@ namespace Blueprint.Api.Infrastructure.Authorization
         public async Task<bool> AuthorizeAsync(SystemPermission[] requiredSystemPermissions, CancellationToken cancellationToken)
         {
             var claimsPrincipal = _userClaimsService.GetCurrentClaimsPrincipal();
+
+            // Fallback to identity resolver if current principal is null (e.g., during SignalR hub connection)
+            if (claimsPrincipal == null)
+            {
+                claimsPrincipal = _identityResolver.GetClaimsPrincipal();
+            }
+
             var permissionRequirement = new SystemPermissionRequirement(requiredSystemPermissions);
             var permissionResult = await _authorizationService.AuthorizeAsync(claimsPrincipal, null, permissionRequirement);
 

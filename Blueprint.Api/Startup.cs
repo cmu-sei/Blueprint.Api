@@ -12,8 +12,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Blueprint.Api.Infrastructure.EventHandlers;
 using Blueprint.Api.Infrastructure.Extensions;
+using Blueprint.Api.Infrastructure.EventHandlers;
+using Crucible.Common.EntityEvents.Extensions;
 using Blueprint.Api.Data;
 using Blueprint.Api.Infrastructure.JsonConverters;
 using Blueprint.Api.Infrastructure.Mapping;
@@ -69,25 +70,25 @@ public class Startup
         switch (provider)
         {
             case "InMemory":
-                services.AddPooledDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
-                    .AddInterceptors(serviceProvider.GetRequiredService<EventInterceptor>(), serviceProvider.GetRequiredService<SanitizerInterceptor>())
+                services.AddEventPublishingDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
+                    .AddInterceptors(serviceProvider.GetRequiredService<SanitizerInterceptor>())
                     .UseInMemoryDatabase("api"));
                 break;
             case "Sqlite":
-                services.AddPooledDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
-                   .AddInterceptors(serviceProvider.GetRequiredService<EventInterceptor>(), serviceProvider.GetRequiredService<SanitizerInterceptor>())
+                services.AddEventPublishingDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
+                   .AddInterceptors(serviceProvider.GetRequiredService<SanitizerInterceptor>())
                    .UseConfiguredDatabase(Configuration))
                     .AddHealthChecks().AddSqlite(connectionString, tags: new[] { "ready", "live" });
                 break;
             case "SqlServer":
-                services.AddPooledDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
-                    .AddInterceptors(serviceProvider.GetRequiredService<EventInterceptor>(), serviceProvider.GetRequiredService<SanitizerInterceptor>())
+                services.AddEventPublishingDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
+                    .AddInterceptors(serviceProvider.GetRequiredService<SanitizerInterceptor>())
                     .UseConfiguredDatabase(Configuration))
                     .AddHealthChecks().AddSqlServer(connectionString, tags: new[] { "ready", "live" });
                 break;
             case "PostgreSQL":
-                services.AddPooledDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
-                    .AddInterceptors(serviceProvider.GetRequiredService<EventInterceptor>(), serviceProvider.GetRequiredService<SanitizerInterceptor>())
+                services.AddEventPublishingDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
+                    .AddInterceptors(serviceProvider.GetRequiredService<SanitizerInterceptor>())
                     .UseConfiguredDatabase(Configuration))
                     .AddHealthChecks().AddNpgSql(connectionString, tags: new[] { "ready", "live" });
                 break;
@@ -111,9 +112,6 @@ public class Startup
         services.AddScoped<IUserClaimsService, UserClaimsService>();
 
         services.AddCors(options => options.UseConfiguredCors(Configuration.GetSection("CorsPolicy")));
-
-        services.AddScoped<BlueprintContextFactory>();
-        services.AddScoped(sp => sp.GetRequiredService<BlueprintContextFactory>().CreateDbContext());
 
         services.AddSignalR(o => o.StatefulReconnectBufferSize = _signalROptions.StatefulReconnectBufferSizeBytes)
             .AddJsonProtocol(options =>
@@ -229,7 +227,6 @@ public class Startup
 
         ApplyPolicies(services);
 
-        services.AddTransient<EventInterceptor>();
         services.AddTransient<SanitizerInterceptor>();
         services.AddAutoMapper(cfg =>
         {

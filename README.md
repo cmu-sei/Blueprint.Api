@@ -1,8 +1,8 @@
 # Blueprint.Api
 
-This project provides a restful api for the Collaborative Incident Threat Evaluator.
+This project provides a RESTful API for Blueprint, the Crucible scenario design and MSEL (Master Scenario Events List) management application.
 
-By default, msel.api is available at localhost:4724, with the swagger page at localhost:4724/api/index.html.
+By default, blueprint.api is available at localhost:4724, with the swagger page at localhost:4724/api/index.html.
 
 # Database Migrations
 

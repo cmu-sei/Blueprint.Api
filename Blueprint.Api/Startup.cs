@@ -239,8 +239,6 @@ public class Startup
             .Configure<ResourceOwnerAuthorizationOptions>(Configuration.GetSection("ResourceOwnerAuthorization"))
             .AddScoped(config => config.GetService<IOptionsMonitor<ResourceOwnerAuthorizationOptions>>().CurrentValue);
 
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(typeof(Startup).Assembly));
-
         // add Crucible Common Service Defaults with configuration from appsettings
         services.AddServiceDefaults(_env, Configuration, openTelemetryOptions =>
         {

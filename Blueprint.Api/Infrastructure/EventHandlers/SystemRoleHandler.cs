@@ -8,6 +8,7 @@ using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
+using Crucible.Common.EntityEvents.Events;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {

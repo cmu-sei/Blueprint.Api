@@ -21,29 +21,40 @@ Then remove the migration
 
 # Permissions
 
-SystemAdmin permission required for:
+## System Roles
 
-* User admin
-* Msel create/delete
+**Administrator** - Full system access, all permissions enabled
 
-Content Developer permission required for:
+**Content Developer** - Can create and manage MSELs:
+* CreateMsels
+* ViewMsels
+* EditMsels
+* ManageMsels
 
-* ScoringModel create/update/delete
-* Msel update
+**Observer** - Read-only access to all system resources:
+* ViewMsels, ViewUnits, ViewOrganizations, ViewDataFields
+* ViewInjectTypes, ViewCatalogs, ViewGalleryCards
+* ViewCiteActions, ViewCiteDuties
+* ViewUsers, ViewRoles, ViewGroups
 
-CanIncrementMove required for:
+## MSEL-Specific Roles
 
-* Msel update
+Users can be assigned roles for individual MSELs:
 
-CanSubmit permission required for:
+* **Owner** - Full control over the MSEL (includes all permissions below)
+* **Editor** - Can modify MSEL content and events
+* **Approver** - Can approve MSEL events
+* **MoveEditor** - Can advance the MSEL timeline/moves
+* **Viewer** - Read-only access to the MSEL
+* **Evaluator** - Can evaluate MSEL execution
 
-* Submission update for a team
+## Team Roles
 
-CanModify permission required for:
+Roles for team participation during MSEL execution:
 
-* Setting SubmissionOption value for a team
-
-Authenticated user has permission to:
-
-* Create a Submission
+* **Observer** - View team activities
+* **Inviter** - Invite users to the team
+* **Incrementer** - Advance team progress
+* **Modifier** - Modify team settings
+* **Submitter** - Submit team responses
 

@@ -328,7 +328,7 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
-                throw ex;
+                throw;
             }
         }
 
@@ -367,7 +367,7 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
-                throw ex;
+                throw;
             }
         }
 
@@ -408,7 +408,7 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
-                throw ex;
+                throw;
             }
         }
 
@@ -462,26 +462,26 @@ namespace Blueprint.Api.Services
                             ct);
                     }
                     if (scenarioEvent.IntegrationTarget.Contains("Steamfitter") && scenarioEvent.SteamfitterTask != null)
-                        {
-                            currentProcessStep = "Steamfitter - pushing steamfitter task " + scenarioEvent.SteamfitterTaskId.ToString();
-                            triggerTask = await IntegrationSteamfitterExtensions.CreateScenarioTasksAsync(
-                                msel,
-                                scenarioEvent.SteamfitterTask,
-                                steamfitterApiClient,
-                                moveNumber,
-                                groupNumber,
-                                playerApiUrl,
-                                citeApiUrl,
-                                galleryApiUrl,
-                                triggerTask,
-                                ct);
-                        }
+                    {
+                        currentProcessStep = "Steamfitter - pushing steamfitter task " + scenarioEvent.SteamfitterTaskId.ToString();
+                        triggerTask = await IntegrationSteamfitterExtensions.CreateScenarioTasksAsync(
+                            msel,
+                            scenarioEvent.SteamfitterTask,
+                            steamfitterApiClient,
+                            moveNumber,
+                            groupNumber,
+                            playerApiUrl,
+                            citeApiUrl,
+                            galleryApiUrl,
+                            triggerTask,
+                            ct);
+                    }
                 }
             }
             catch (System.Exception ex)
             {
                 _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
-                throw ex;
+                throw;
             }
         }
 

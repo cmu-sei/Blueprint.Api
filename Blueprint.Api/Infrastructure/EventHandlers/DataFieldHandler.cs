@@ -14,6 +14,7 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
+using Crucible.Common.EntityEvents.Events;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {

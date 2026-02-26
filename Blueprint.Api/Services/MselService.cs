@@ -240,7 +240,10 @@ namespace Blueprint.Api.Services
         public async Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct)
         {
             msel.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
+            msel.DateCreated = DateTime.UtcNow;
             msel.CreatedBy = _user.GetId();
+            msel.DateModified = null;
+            msel.ModifiedBy = null;
             var mselEntity = _mapper.Map<MselEntity>(msel);
 
             _context.Msels.Add(mselEntity);

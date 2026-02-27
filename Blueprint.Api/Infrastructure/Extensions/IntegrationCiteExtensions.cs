@@ -85,20 +85,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     SituationDescription = move.SituationDescription
                 };
                 await citeApiClient.CreateMoveAsync(citeMove, ct);
-                await blueprintContext.SaveChangesAsync(ct);
             }
         }
 
         // Create Cite Teams for this MSEL
-        public static async Task CreateTeamsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateTeamsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, HashSet<Guid> citeUserIds, CancellationToken ct)
         {
-            // get the Cite teams, Cite Users, and the Cite TeamUsers
-            var citeUserIds = (await citeApiClient.GetUsersAsync(ct)).Select(u => u.Id);
-            // get the teams for this MSEL and loop through them
-            var teams = await blueprintContext.Teams
-                .Where(t => t.MselId == msel.Id)
-                .Include(t => t.UserTeamRoles)
-                .ToListAsync();
+            // use eager-loaded teams from the MSEL
+            var teams = msel.Teams.ToList();
             foreach (var team in teams)
             {
                 if (team.CiteTeamTypeId != null)
@@ -114,11 +108,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     };
                     citeTeam = await citeApiClient.CreateTeamAsync(citeTeam, ct);
                     team.CiteTeamId = citeTeam.Id;
-                    // get all of the users for this team and loop through them
-                    var users = await blueprintContext.TeamUsers
-                        .Where(tu => tu.TeamId == team.Id)
-                        .Select(tu => tu.User)
-                        .ToListAsync(ct);
+                    // use eager-loaded users from the team
+                    var users = team.TeamUsers.Select(tu => tu.User).ToList();
                     foreach (var user in users)
                     {
                         // if this user is not in Cite, add it
@@ -129,6 +120,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                                 Name = user.Name
                             };
                             await citeApiClient.CreateUserAsync(newUser, ct);
+                            citeUserIds.Add(user.Id);
                         }
                         // create Cite TeamMemberships
                         var teamMembership = new TeamMembership() {
@@ -166,7 +158,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         TeamId = (Guid)citeTeamId
                     };
                     await citeApiClient.CreateDutyAsync(citeDuty, ct);
-                    await blueprintContext.SaveChangesAsync(ct);
                 }
             }
         }

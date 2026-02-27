@@ -53,15 +53,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Player Teams for this MSEL
-        public static async Task CreateTeamsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateTeamsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, HashSet<Guid> playerUserIds, CancellationToken ct)
         {
-            var playerTeamDictionary = new Dictionary<Guid, Guid>();
-            // get the Player teams, Player Users, and the Player TeamUsers
-            var playerUserIds = (await playerApiClient.GetUsersAsync(ct)).Select(u => u.Id);
-            // get the teams for this MSEL and loop through them
-            var teams = await blueprintContext.Teams
-                .Where(t => t.MselId == msel.Id)
-                .ToListAsync();
+            // use eager-loaded teams from the MSEL
+            var teams = msel.Teams.ToList();
             foreach (var team in teams)
             {
                 // create team in Player
@@ -70,11 +65,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 };
                 var playerTeam = await playerApiClient.CreateTeamAsync((Guid)msel.PlayerViewId, playerTeamForm, ct);
                 team.PlayerTeamId = playerTeam.Id;
-                // get all of the users for this team and loop through them
-                var users = await blueprintContext.TeamUsers
-                    .Where(tu => tu.TeamId == team.Id)
-                    .Select(tu => tu.User)
-                    .ToListAsync(ct);
+                // use eager-loaded users from the team
+                var users = team.TeamUsers.Select(tu => tu.User).ToList();
                 foreach (var user in users)
                 {
                     // if this user is not in Player, add it
@@ -85,6 +77,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             Name = user.Name
                         };
                         await playerApiClient.CreateUserAsync(newUser, ct);
+                        playerUserIds.Add(user.Id);
                     }
                     // create Player TeamUsers
                     await playerApiClient.AddUserToTeamAsync(playerTeam.Id, user.Id, ct);

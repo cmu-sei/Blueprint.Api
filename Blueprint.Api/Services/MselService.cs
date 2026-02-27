@@ -242,48 +242,17 @@ namespace Blueprint.Api.Services
         {
             // Validate required fields
             if (string.IsNullOrWhiteSpace(msel.Name))
-            {
-                _logger.LogWarning("CreateMsel failed: Name is required");
                 throw new ArgumentException("MSEL Name is required and cannot be empty.");
-            }
 
             msel.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
             msel.CreatedBy = _user.GetId();
             var mselEntity = _mapper.Map<MselEntity>(msel);
 
-            try
-            {
-                _context.Msels.Add(mselEntity);
-                await _context.SaveChangesAsync(ct);
+            _context.Msels.Add(mselEntity);
+            await _context.SaveChangesAsync(ct);
 
-                _logger.LogInformation($"Successfully created MSEL {mselEntity.Id} ('{msel.Name}')");
-
-                msel = await GetAsync(mselEntity.Id, true, ct);
-                return msel;
-            }
-            catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx)
-            {
-                _logger.LogError(ex, $"Database error creating MSEL '{msel.Name}': {pgEx.MessageText}");
-
-                // Handle specific PostgreSQL errors
-                switch (pgEx.SqlState)
-                {
-                    case "23505": // unique_violation
-                        throw new InvalidOperationException($"A MSEL with the ID '{mselEntity.Id}' already exists.", ex);
-                    case "23503": // foreign_key_violation
-                        var constraintName = pgEx.ConstraintName ?? "unknown";
-                        throw new InvalidOperationException($"Foreign key constraint violated: {constraintName}. Please verify all referenced entities exist.", ex);
-                    case "23514": // check_violation
-                        throw new InvalidOperationException($"Data validation failed: {pgEx.MessageText}", ex);
-                    default:
-                        throw new InvalidOperationException($"Database error creating MSEL: {pgEx.MessageText}", ex);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Unexpected error creating MSEL '{msel.Name}'");
-                throw new InvalidOperationException($"An unexpected error occurred while creating the MSEL: {ex.Message}", ex);
-            }
+            msel = await GetAsync(mselEntity.Id, true, ct);
+            return msel;
         }
 
         public async Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct)

@@ -103,63 +103,25 @@ namespace Blueprint.Api.Services
 
             // Validate required fields
             if (string.IsNullOrWhiteSpace(card.Name))
-            {
-                _logger.LogWarning("CreateCard failed: Name is required");
                 throw new ArgumentException("Card Name is required and cannot be empty.");
-            }
 
             // Validate MselId if provided
             if (card.MselId.HasValue && card.MselId.Value != Guid.Empty)
             {
                 var mselExists = await _context.Msels.AnyAsync(m => m.Id == card.MselId.Value, ct);
                 if (!mselExists)
-                {
-                    _logger.LogWarning($"CreateCard failed: MSEL {card.MselId} not found");
                     throw new EntityNotFoundException<Msel>($"Invalid MselId '{card.MselId}'. The MSEL does not exist.");
-                }
             }
 
             card.Id = card.Id != Guid.Empty ? card.Id : Guid.NewGuid();
             card.CreatedBy = _user.GetId();
             var cardEntity = _mapper.Map<CardEntity>(card);
 
-            try
-            {
-                _context.Cards.Add(cardEntity);
-                await _context.SaveChangesAsync(ct);
+            _context.Cards.Add(cardEntity);
+            await _context.SaveChangesAsync(ct);
 
-                _logger.LogInformation($"Successfully created Card {cardEntity.Id} ('{card.Name}')");
-
-                card = await GetAsync(cardEntity.Id, true, ct);
-                return card;
-            }
-            catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx)
-            {
-                _logger.LogError(ex, $"Database error creating Card '{card.Name}': {pgEx.MessageText}");
-
-                // Handle specific PostgreSQL errors
-                switch (pgEx.SqlState)
-                {
-                    case "23505": // unique_violation
-                        throw new InvalidOperationException($"A Card with the ID '{cardEntity.Id}' already exists.", ex);
-                    case "23503": // foreign_key_violation
-                        var constraintName = pgEx.ConstraintName ?? "unknown";
-                        if (constraintName.Contains("MselId", StringComparison.OrdinalIgnoreCase))
-                        {
-                            throw new InvalidOperationException($"Invalid MselId '{card.MselId}'. The MSEL does not exist.", ex);
-                        }
-                        throw new InvalidOperationException($"Foreign key constraint violated: {constraintName}. Please verify all referenced entities exist.", ex);
-                    case "23514": // check_violation
-                        throw new InvalidOperationException($"Data validation failed: {pgEx.MessageText}", ex);
-                    default:
-                        throw new InvalidOperationException($"Database error creating Card: {pgEx.MessageText}", ex);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Unexpected error creating Card '{card.Name}'");
-                throw new InvalidOperationException($"An unexpected error occurred while creating the Card: {ex.Message}", ex);
-            }
+            card = await GetAsync(cardEntity.Id, true, ct);
+            return card;
         }
 
         public async Task<ViewModels.Card> UpdateAsync(Guid id, ViewModels.Card card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct)

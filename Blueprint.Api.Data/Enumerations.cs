@@ -54,7 +54,8 @@ namespace Blueprint.Api.Data.Enumerations
         Checkbox = 130,    // used to track statuses about the inject.
         Url = 140,    // link to other information
         Move = 150,     // values will be filled from the MSEL moves
-        IntegrationTarget = 160     // values will currently be filled from Notification, Email, and Gallery
+        IntegrationTarget = 160,     // values will currently be filled from Notification, Email, and Gallery
+        Competency = 170    // competencies (e.g., NICE Framework tasks) for tracking and xAPI logging
     }
 
     public enum MselRole

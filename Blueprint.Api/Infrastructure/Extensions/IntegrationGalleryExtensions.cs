@@ -121,9 +121,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 .Where(cdt => cardIds.Contains(cdt.CardId))
                 .Include(cdt => cdt.Team)
                 .ToListAsync(ct);
-            foreach (var card in msel.Cards)
-            {
-                Card galleryCard = new Card() {
+
+            // Create cards in parallel batches
+            var cardTasks = msel.Cards.Select(async card => {
+                var galleryCard = new Card() {
                     CollectionId = (Guid)msel.GalleryCollectionId,
                     Name = card.Name,
                     Description = card.Description,
@@ -132,19 +133,29 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 };
                 galleryCard = await galleryApiClient.CreateCardAsync(galleryCard, ct);
                 card.GalleryId = galleryCard.Id;
-                // create the Gallery Team Cards
+
+                // create the Gallery Team Cards for this card
                 var cardTeams = allCardTeams.Where(cdt => cdt.CardId == card.Id).ToList();
-                foreach (var cardTeam in cardTeams)
-                {
+                var teamCardTasks = cardTeams.Select(cardTeam => {
                     var newTeamCard = new TeamCard() {
                         TeamId = (Guid)cardTeam.Team.GalleryTeamId,
                         CardId = (Guid)card.GalleryId,
                         IsShownOnWall = cardTeam.IsShownOnWall,
                         CanPostArticles = cardTeam.CanPostArticles
                     };
-                    await galleryApiClient.CreateTeamCardAsync(newTeamCard, ct);
-                }
+                    return galleryApiClient.CreateTeamCardAsync(newTeamCard, ct);
+                });
+                await Task.WhenAll(teamCardTasks);
+            }).ToList();
+
+            // Process cards in parallel batches
+            const int batchSize = 10;
+            for (int i = 0; i < cardTasks.Count; i += batchSize)
+            {
+                var batch = cardTasks.Skip(i).Take(batchSize);
+                await Task.WhenAll(batch);
             }
+
             // batch save all card GalleryId updates
             await blueprintContext.SaveChangesAsync(ct);
         }
@@ -160,10 +171,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
             var teams = msel.Teams.ToList();
             var movesAndInjects = await scenarioEventService.GetMovesAndInjects(msel.Id, ct);
 
-            foreach (var scenarioEvent in msel.ScenarioEvents)
-            {
-                if (scenarioEvent.IntegrationTarget.Contains("Gallery"))
-                {
+            // Create articles in parallel batches
+            var articleTasks = msel.ScenarioEvents
+                .Where(scenarioEvent => scenarioEvent.IntegrationTarget.Contains("Gallery"))
+                .Select(async scenarioEvent => {
                     object status = Gallery.Api.Client.ItemStatus.Unused;
                     object sourceType = SourceType.News;
                     DateTime datePosted;
@@ -206,24 +217,27 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         OpenInNewTab = openInNewTab
                     };
                     galleryArticle = await galleryApiClient.CreateArticleAsync(galleryArticle, ct);
-                    // create the Gallery Team Articles
+                    // create the Gallery Team Articles in parallel
                     var toOrgs = GetArticleValue(GalleryArticleParameter.ToOrg.ToString(), scenarioEvent.DataValues, msel.DataFields).Split(",", StringSplitOptions.TrimEntries);
-                    var teamIds = teams
-                        .Where(t => toOrgs.Contains("ALL") || toOrgs.Contains(t.ShortName))
-                        .Select(t => t.Id);
-                    foreach (var team in teams)
-                    {
-                        if (toOrgs.Contains("ALL") || toOrgs.Contains(team.ShortName))
-                        {
+                    var teamArticleTasks = teams
+                        .Where(team => toOrgs.Contains("ALL") || toOrgs.Contains(team.ShortName))
+                        .Select(team => {
                             var newArticleTeam = new TeamArticle() {
                                 ExhibitId = (Guid)msel.GalleryExhibitId,
                                 TeamId = (Guid)team.GalleryTeamId,
                                 ArticleId = galleryArticle.Id
                             };
-                            await galleryApiClient.CreateTeamArticleAsync(newArticleTeam, ct);
-                        }
-                    }
-                }
+                            return galleryApiClient.CreateTeamArticleAsync(newArticleTeam, ct);
+                        });
+                    await Task.WhenAll(teamArticleTasks);
+                }).ToList();
+
+            // Process articles in parallel batches
+            const int batchSize = 10;
+            for (int i = 0; i < articleTasks.Count; i += batchSize)
+            {
+                var batch = articleTasks.Skip(i).Take(batchSize);
+                await Task.WhenAll(batch);
             }
         }
 

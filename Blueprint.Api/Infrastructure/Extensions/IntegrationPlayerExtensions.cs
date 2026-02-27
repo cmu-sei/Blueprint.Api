@@ -67,8 +67,9 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 team.PlayerTeamId = playerTeam.Id;
                 // use eager-loaded users from the team
                 var users = team.TeamUsers.Select(tu => tu.User).ToList();
-                foreach (var user in users)
-                {
+
+                // Create users and add to team in parallel
+                var userTasks = users.Select(async user => {
                     // if this user is not in Player, add it
                     if (!playerUserIds.Contains(user.Id))
                     {
@@ -81,7 +82,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     }
                     // create Player TeamUsers
                     await playerApiClient.AddUserToTeamAsync(playerTeam.Id, user.Id, ct);
-                }
+                });
+                await Task.WhenAll(userTasks);
             }
             // save the teams PlayerTeamId values
             await blueprintContext.SaveChangesAsync(ct);
@@ -90,8 +92,15 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Create Player Applications for this MSEL
         public static async Task CreateApplicationsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            foreach (var application in msel.PlayerApplications)
-            {
+            // Pre-load all application teams to avoid per-application DB queries
+            var applicationIds = msel.PlayerApplications.Select(a => a.Id).ToList();
+            var allApplicationTeams = await blueprintContext.PlayerApplicationTeams
+                .Where(apt => applicationIds.Contains(apt.PlayerApplicationId))
+                .Include(apt => apt.Team)
+                .ToListAsync(ct);
+
+            // Create applications in parallel batches
+            var applicationTasks = msel.PlayerApplications.Select(async application => {
                 var urlString = application.Url
                     .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
                     .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
@@ -111,20 +120,26 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     LoadInBackground = application.LoadInBackground
                 };
                 playerApplication = await playerApiClient.CreateApplicationAsync((Guid)msel.PlayerViewId, playerApplication, ct);
-                // create the Player Team Applications
-                var applicationTeams = await blueprintContext.PlayerApplicationTeams
-                    .Where(ct => ct.PlayerApplicationId == application.Id)
-                    .Include(apt => apt.Team)
-                    .ToListAsync(ct);
-                foreach (var applicationTeam in applicationTeams)
-                {
+
+                // create the Player Team Applications in parallel
+                var applicationTeams = allApplicationTeams.Where(apt => apt.PlayerApplicationId == application.Id).ToList();
+                var instanceTasks = applicationTeams.Select(applicationTeam => {
                     var applicationInstanceForm = new ApplicationInstanceForm() {
                         TeamId = (Guid)applicationTeam.Team.PlayerTeamId,
                         ApplicationId = (Guid)playerApplication.Id,
                         DisplayOrder = applicationTeam.DisplayOrder
                     };
-                    await playerApiClient.CreateApplicationInstanceAsync(applicationInstanceForm.TeamId, applicationInstanceForm, ct);
-                }
+                    return playerApiClient.CreateApplicationInstanceAsync(applicationInstanceForm.TeamId, applicationInstanceForm, ct);
+                });
+                await Task.WhenAll(instanceTasks);
+            }).ToList();
+
+            // Process applications in parallel batches
+            const int batchSize = 5;
+            for (int i = 0; i < applicationTasks.Count; i += batchSize)
+            {
+                var batch = applicationTasks.Skip(i).Take(batchSize);
+                await Task.WhenAll(batch);
             }
         }
 

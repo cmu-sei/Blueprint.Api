@@ -12,6 +12,7 @@ using AutoMapper;
 using AutoMapper.QueryableExtensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
@@ -107,14 +108,67 @@ namespace Blueprint.Api.Services
                )
                 throw new ForbiddenException();
 
+            // Validate required fields
+            if (string.IsNullOrWhiteSpace(team.Name))
+            {
+                _logger.LogWarning("CreateTeam failed: Name is required");
+                throw new ArgumentException("Team Name is required and cannot be empty.");
+            }
+
+            if (team.MselId == Guid.Empty)
+            {
+                _logger.LogWarning("CreateTeam failed: MselId is required");
+                throw new ArgumentException("MselId is required and cannot be empty.");
+            }
+
+            // Validate MselId exists
+            var mselExists = await _context.Msels.AnyAsync(m => m.Id == team.MselId, ct);
+            if (!mselExists)
+            {
+                _logger.LogWarning($"CreateTeam failed: MSEL {team.MselId} not found");
+                throw new EntityNotFoundException<Msel>($"Invalid MselId '{team.MselId}'. The MSEL does not exist.");
+            }
+
             team.Id = team.Id != Guid.Empty ? team.Id : Guid.NewGuid();
             team.CreatedBy = _user.GetId();
             var teamEntity = _mapper.Map<TeamEntity>(team);
 
-            _context.Teams.Add(teamEntity);
-            await _context.SaveChangesAsync(ct);
-            _logger.LogWarning($"Team {team.Name} ({teamEntity.Id}) created by {_user.GetId()}");
-            return await GetAsync(teamEntity.Id, ct);
+            try
+            {
+                _context.Teams.Add(teamEntity);
+                await _context.SaveChangesAsync(ct);
+
+                _logger.LogInformation($"Team {team.Name} ({teamEntity.Id}) created by {_user.GetId()}");
+
+                return await GetAsync(teamEntity.Id, ct);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx)
+            {
+                _logger.LogError(ex, $"Database error creating Team '{team.Name}' in MSEL {team.MselId}: {pgEx.MessageText}");
+
+                // Handle specific PostgreSQL errors
+                switch (pgEx.SqlState)
+                {
+                    case "23505": // unique_violation
+                        throw new InvalidOperationException($"A Team with the ID '{teamEntity.Id}' already exists.", ex);
+                    case "23503": // foreign_key_violation
+                        var constraintName = pgEx.ConstraintName ?? "unknown";
+                        if (constraintName.Contains("MselId", StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new InvalidOperationException($"Invalid MselId '{team.MselId}'. The MSEL does not exist.", ex);
+                        }
+                        throw new InvalidOperationException($"Foreign key constraint violated: {constraintName}. Please verify all referenced entities exist.", ex);
+                    case "23514": // check_violation
+                        throw new InvalidOperationException($"Data validation failed: {pgEx.MessageText}", ex);
+                    default:
+                        throw new InvalidOperationException($"Database error creating Team: {pgEx.MessageText}", ex);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Unexpected error creating Team '{team.Name}' in MSEL {team.MselId}");
+                throw new InvalidOperationException($"An unexpected error occurred while creating the Team: {ex.Message}", ex);
+            }
         }
 
         public async Task<ViewModels.Team> CreateFromUnitAsync(Guid unitId, Guid mselId, bool hasSystemPermission, CancellationToken ct)

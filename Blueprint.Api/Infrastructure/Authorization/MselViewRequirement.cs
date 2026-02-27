@@ -21,16 +21,24 @@ namespace Blueprint.Api.Infrastructure.Authorization
             }
             else
             {
+                // Check if user is in a unit linked to this MSEL
                 var mselUnitIdList = await blueprintContext.MselUnits
                     .Where(t => t.MselId == mselId)
                     .Select(t => t.UnitId)
                     .ToListAsync();
-                var isSuccess = await blueprintContext.UnitUsers
+                var isInUnit = await blueprintContext.UnitUsers
                     .Where(tu => tu.UserId == userId && mselUnitIdList.Contains(tu.UnitId))
                     .AnyAsync();
-                if (isSuccess)
+
+                // Check if user is on a team in this MSEL
+                var isOnTeam = await blueprintContext.TeamUsers
+                    .Where(tu => tu.UserId == userId && tu.Team.MselId == mselId)
+                    .AnyAsync();
+
+                // User must be in a unit OR on a team, AND have a viewing role
+                if (isInUnit || isOnTeam)
                 {
-                    isSuccess = await blueprintContext.UserMselRoles
+                    var hasViewingRole = await blueprintContext.UserMselRoles
                         .Where(umr => umr.UserId == userId &&
                             umr.MselId == mselId &&
                             (
@@ -42,8 +50,9 @@ namespace Blueprint.Api.Infrastructure.Authorization
                             )
                         )
                         .AnyAsync();
+                    return hasViewingRole;
                 }
-                return isSuccess;
+                return false;
             }
         }
     }

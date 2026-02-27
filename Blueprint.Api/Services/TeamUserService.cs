@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
@@ -94,14 +95,49 @@ namespace Blueprint.Api.Services
             // make sure this would not add a duplicate user on any pending or active msels
             var requestedUser = await _context.Users.FindAsync(teamUser.UserId);
             var requestedTeam = await _context.Teams.FindAsync(teamUser.TeamId);
+
+            // Start a transaction to add the user to team and assign viewer role if needed
+            await _context.Database.BeginTransactionAsync();
+
             // okay to add this TeamUser
             teamUser.Id = teamUser.Id != Guid.Empty ? teamUser.Id : Guid.NewGuid();
-            teamUser.CreatedBy = _user.GetId();
+            var userId = _user.GetId();
+            teamUser.CreatedBy = userId;
             var teamUserEntity = _mapper.Map<TeamUserEntity>(teamUser);
 
             _context.TeamUsers.Add(teamUserEntity);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning($"User {teamUser.UserId} added to team {teamUser.TeamId} by {_user.GetId()}");
+
+            // Assign Viewer role to the user for the MSEL if they don't already have a role
+            var mselId = requestedTeam.MselId;
+            var now = DateTime.UtcNow;
+            var existingRole = await _context.UserMselRoles
+                .AnyAsync(umr => umr.UserId == teamUser.UserId && umr.MselId == mselId, ct);
+
+            if (!existingRole)
+            {
+                var userMselRole = new UserMselRoleEntity
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = teamUser.UserId,
+                    MselId = mselId,
+                    Role = MselRole.Viewer,
+                    DateCreated = now,
+                    CreatedBy = userId
+                };
+                _context.UserMselRoles.Add(userMselRole);
+                await _context.SaveChangesAsync(ct);
+
+                _logger.LogWarning($"User {teamUser.UserId} added to team {teamUser.TeamId} by {userId} and assigned Viewer role for MSEL {mselId}");
+            }
+            else
+            {
+                _logger.LogWarning($"User {teamUser.UserId} added to team {teamUser.TeamId} by {userId} (already has role for MSEL {mselId})");
+            }
+
+            // Commit the transaction
+            await _context.Database.CommitTransactionAsync(ct);
+
             return await GetAsync(teamUserEntity.Id, true, ct);
         }
 

@@ -71,6 +71,7 @@ namespace Blueprint.Api.Services
         private readonly IPlayerService _playerService;
         private readonly IJoinQueue _joinQueue;
         private readonly IXApiService _xApiService;
+        private readonly ITeamUserService _teamUserService;
 
         public MselService(
             BlueprintContext context,
@@ -82,7 +83,8 @@ namespace Blueprint.Api.Services
             IPrincipal user,
             ILogger<MselService> logger,
             IMapper mapper,
-            IXApiService xApiService)
+            IXApiService xApiService,
+            ITeamUserService teamUserService)
         {
             _context = context;
             _clientOptions = clientOptions;
@@ -94,6 +96,7 @@ namespace Blueprint.Api.Services
             _playerService = playerService;
             _joinQueue = joinQueue;
             _xApiService = xApiService;
+            _teamUserService = teamUserService;
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct)
@@ -1842,10 +1845,29 @@ namespace Blueprint.Api.Services
                     // increment the invitation use count
                     invitation.UserCount++;
                     await _context.SaveChangesAsync(ct);
+
+                    // Add user to Blueprint team (this will auto-assign Viewer role via TeamUserService)
+                    var userId = _user.GetId();
+                    var teamId = invitation.TeamId;
+
+                    // Check if user is already on the team
+                    var existingTeamUser = await _context.TeamUsers
+                        .AnyAsync(tu => tu.UserId == userId && tu.TeamId == teamId, ct);
+
+                    if (!existingTeamUser)
+                    {
+                        var teamUser = new ViewModels.TeamUser
+                        {
+                            UserId = userId,
+                            TeamId = teamId
+                        };
+                        await _teamUserService.CreateAsync(teamUser, ct);
+                    }
+
                     // add the join data to the join queue
                     var joinInformation = new JoinInformation
                     {
-                        UserId = _user.GetId(),
+                        UserId = userId,
                         PlayerTeamId = invitation.Team.PlayerTeamId,
                         GalleryTeamId = invitation.Team.GalleryTeamId,
                         CiteTeamId = invitation.Team.CiteTeamId

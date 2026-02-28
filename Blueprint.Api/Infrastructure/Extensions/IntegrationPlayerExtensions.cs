@@ -95,6 +95,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             // Pre-load all application teams to avoid per-application DB queries
             var applicationIds = msel.PlayerApplications.Select(a => a.Id).ToList();
             var allApplicationTeams = await blueprintContext.PlayerApplicationTeams
+                .AsNoTracking()
                 .Where(apt => applicationIds.Contains(apt.PlayerApplicationId))
                 .Include(apt => apt.Team)
                 .ToListAsync(ct);

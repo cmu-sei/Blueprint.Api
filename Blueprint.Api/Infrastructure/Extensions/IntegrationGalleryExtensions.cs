@@ -118,6 +118,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             // pre-load all CardTeams to avoid per-card DB queries
             var cardIds = msel.Cards.Select(c => c.Id).ToList();
             var allCardTeams = await blueprintContext.CardTeams
+                .AsNoTracking()
                 .Where(cdt => cardIds.Contains(cdt.CardId))
                 .Include(cdt => cdt.Team)
                 .ToListAsync(ct);

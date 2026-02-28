@@ -101,6 +101,9 @@ namespace Blueprint.Api.Services
                 using (var scope = _scopeFactory.CreateScope())
                 using (var blueprintContext = scope.ServiceProvider.GetRequiredService<BlueprintContext>())
                 {
+                    // Clear any tracked entities from previous operations
+                    blueprintContext.ChangeTracker.Clear();
+
                     currentProcessStep = "Getting the MSEL entity";
                     // get the MSEL and verify data state
                     var msel = await blueprintContext.Msels
@@ -202,6 +205,10 @@ namespace Blueprint.Api.Services
                             // set the MSEL status
                             msel.Status = Data.Enumerations.MselItemStatus.Deployed;
                             await blueprintContext.SaveChangesAsync(ct);
+
+                            // Clear tracked entities to prevent accumulation across operations
+                            blueprintContext.ChangeTracker.Clear();
+
                             // tell UI we are done
                             await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + "", null, ct);
                         }
@@ -290,6 +297,10 @@ namespace Blueprint.Api.Services
                                 msel.Status = integrationInformation.FinalStatus;
                                 await blueprintContext.SaveChangesAsync(ct);
                             }
+
+                            // Clear tracked entities to prevent accumulation across operations
+                            blueprintContext.ChangeTracker.Clear();
+
                             // send completion status
                             await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, mselId + "", null, ct);
                         }

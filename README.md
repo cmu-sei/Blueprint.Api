@@ -48,18 +48,16 @@ Higher batch sizes improve MSEL push performance but consume more database conne
 - Default batch sizes work well
 - PostgreSQL default: 100 max_connections
 
-**AWS RDS PostgreSQL**:
-- Connection limits based on instance memory: `LEAST({DBInstanceClassMemory/9531392}, 5000)`
-- Common limits:
-  - db.t3.micro (1GB): ~87 connections
-  - db.t3.medium (4GB): ~338 connections
-  - db.m5.large (8GB): ~677 connections
+**Production PostgreSQL**:
+- Connection limits vary by database configuration and available memory
+- Managed database services typically limit connections based on instance size
+- Common production limits range from ~80 connections (small instances) to 500+ (large instances)
 
 **Tuning Guidelines**:
-- **Small RDS instances (< 200 connections)**: Use default batch sizes (5/5/3)
-- **Medium RDS instances (200-500 connections)**: Can increase to 10/10/5
-- **Large RDS instances (> 500 connections)**: Can increase to 15-20
-- **Production with connection pooler (RDS Proxy/PgBouncer)**: Can increase to 20+
+- **Small instances (< 200 connections)**: Use default batch sizes (5/5/3)
+- **Medium instances (200-500 connections)**: Can increase to 10/10/5
+- **Large instances (> 500 connections)**: Can increase to 15-20
+- **Production with connection pooler (PgBouncer, etc.)**: Can increase to 20+
 
 **Connection Usage During MSEL Push**:
 - Batch operations run sequentially across APIs (Gallery → CITE → Steamfitter → Player)

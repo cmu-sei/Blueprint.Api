@@ -227,7 +227,7 @@ namespace Blueprint.Api.Services
                                 }
                                 catch (System.Exception)
                                 {
-                                    _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})");
+                                    _logger.LogError($"{currentProcessStep} ({msel.Id})");
                                 }
                             }
                             // Pull from CITE
@@ -245,7 +245,7 @@ namespace Blueprint.Api.Services
                                 }
                                 catch (System.Exception ex)
                                 {
-                                    _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                                    _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
                                 }
                             }
                             // Pull from Gallery
@@ -262,7 +262,7 @@ namespace Blueprint.Api.Services
                                 }
                                 catch (System.Exception ex)
                                 {
-                                    _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                                    _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
                                 }
                             }
                             // Pull from Player
@@ -280,7 +280,7 @@ namespace Blueprint.Api.Services
                                 }
                                 catch (System.Exception)
                                 {
-                                    _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})");
+                                    _logger.LogError($"{currentProcessStep} ({msel.Id})");
                                 }
                             }
                             // update the MSEL
@@ -308,14 +308,14 @@ namespace Blueprint.Api.Services
                     }
                     catch (System.Exception ex)
                     {
-                        _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                        _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
                     }
 
                 }
             }
             catch (System.Exception ex)
             {
-                _logger.LogError($"{currentProcessStep} {integrationInformation}", ex);
+                _logger.LogError(ex, $"{currentProcessStep} {integrationInformation}");
             }
         }
 
@@ -341,7 +341,7 @@ namespace Blueprint.Api.Services
             }
             catch (System.Exception ex)
             {
-                _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
                 throw;
             }
         }
@@ -380,7 +380,7 @@ namespace Blueprint.Api.Services
             }
             catch (System.Exception ex)
             {
-                _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
                 throw;
             }
         }
@@ -421,7 +421,7 @@ namespace Blueprint.Api.Services
             }
             catch (System.Exception ex)
             {
-                _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
                 throw;
             }
         }
@@ -494,7 +494,7 @@ namespace Blueprint.Api.Services
             }
             catch (System.Exception ex)
             {
-                _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
+                _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
                 throw;
             }
         }

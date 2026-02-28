@@ -133,7 +133,7 @@ namespace Blueprint.Api.Services
             }
             catch (System.Exception ex)
             {
-                _logger.LogError($"{currentProcessStep} {loggerInformation}", ex);
+                _logger.LogError(ex, $"{currentProcessStep} {loggerInformation}");
             }
         }
 

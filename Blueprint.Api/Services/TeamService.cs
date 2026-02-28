@@ -113,7 +113,7 @@ namespace Blueprint.Api.Services
 
             _context.Teams.Add(teamEntity);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning($"Team {team.Name} ({teamEntity.Id}) created by {_user.GetId()}");
+            _logger.LogWarning($"Team ({teamEntity.Id}) created by {_user.GetId()}");
             return await GetAsync(teamEntity.Id, ct);
         }
 
@@ -152,7 +152,7 @@ namespace Blueprint.Api.Services
             // save the team and return the result
             _context.Teams.Add(team);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning($"Team {team.Name} ({team.Id}) created by {_user.GetId()}");
+            _logger.LogWarning($"Team ({team.Id}) created by {_user.GetId()}");
 
             return await GetAsync(team.Id, ct);
         }
@@ -176,7 +176,7 @@ namespace Blueprint.Api.Services
 
             _context.Teams.Update(teamToUpdate);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning($"Team {teamToUpdate.Name} ({teamToUpdate.Id}) updated by {_user.GetId()}");
+            _logger.LogWarning($"Team ({teamToUpdate.Id}) updated by {_user.GetId()}");
             return await GetAsync(id, ct);
         }
 
@@ -194,7 +194,7 @@ namespace Blueprint.Api.Services
 
             _context.Teams.Remove(teamToDelete);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning($"Team {teamToDelete.Name} ({teamToDelete.Id}) deleted by {_user.GetId()}");
+            _logger.LogWarning($"Team ({teamToDelete.Id}) deleted by {_user.GetId()}");
             return true;
         }
 

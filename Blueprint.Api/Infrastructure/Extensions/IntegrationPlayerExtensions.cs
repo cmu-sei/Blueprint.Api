@@ -97,6 +97,12 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Create Player Applications for this MSEL
         public static async Task CreateApplicationsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
+            // Fetch all application teams upfront to avoid N+1 queries
+            var allApplicationTeams = await blueprintContext.PlayerApplicationTeams
+                .Where(apt => msel.PlayerApplications.Select(pa => pa.Id).Contains(apt.PlayerApplicationId))
+                .Include(apt => apt.Team)
+                .ToListAsync(ct);
+
             foreach (var application in msel.PlayerApplications)
             {
                 var urlString = application.Url
@@ -118,11 +124,12 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     LoadInBackground = application.LoadInBackground
                 };
                 playerApplication = await playerApiClient.CreateApplicationAsync((Guid)msel.PlayerViewId, playerApplication, ct);
+
                 // create the Player Team Applications
-                var applicationTeams = await blueprintContext.PlayerApplicationTeams
-                    .Where(ct => ct.PlayerApplicationId == application.Id)
-                    .Include(apt => apt.Team)
-                    .ToListAsync(ct);
+                var applicationTeams = allApplicationTeams
+                    .Where(apt => apt.PlayerApplicationId == application.Id)
+                    .ToList();
+
                 foreach (var applicationTeam in applicationTeams)
                 {
                     var applicationInstanceForm = new ApplicationInstanceForm() {

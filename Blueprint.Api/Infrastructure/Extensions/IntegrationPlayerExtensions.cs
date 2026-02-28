@@ -90,7 +90,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Player Applications for this MSEL
-        public static async Task CreateApplicationsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateApplicationsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {
             // Pre-load all application teams to avoid per-application DB queries
             var applicationIds = msel.PlayerApplications.Select(a => a.Id).ToList();
@@ -135,7 +135,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
             }).ToList();
 
             // Process applications in parallel batches
-            const int batchSize = 5;
             for (int i = 0; i < applicationTasks.Count; i += batchSize)
             {
                 var batch = applicationTasks.Skip(i).Take(batchSize);

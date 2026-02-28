@@ -113,7 +113,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Gallery Cards for this MSEL
-        public static async Task CreateCardsAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateCardsAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {
             // pre-load all CardTeams to avoid per-card DB queries
             var cardIds = msel.Cards.Select(c => c.Id).ToList();
@@ -149,7 +149,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
             }).ToList();
 
             // Process cards in parallel batches
-            const int batchSize = 10;
             for (int i = 0; i < cardTasks.Count; i += batchSize)
             {
                 var batch = cardTasks.Skip(i).Take(batchSize);
@@ -166,6 +165,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             GalleryApiClient galleryApiClient,
             BlueprintContext blueprintContext,
             IScenarioEventService scenarioEventService,
+            int batchSize,
             CancellationToken ct)
         {
             var teams = msel.Teams.ToList();
@@ -231,7 +231,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 }).ToList();
 
             // Process articles in parallel batches
-            const int batchSize = 10;
             for (int i = 0; i < articleTasks.Count; i += batchSize)
             {
                 var batch = articleTasks.Skip(i).Take(batchSize);

@@ -73,9 +73,9 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Cite Moves for this MSEL
-        public static async Task CreateMovesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateMovesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {
-            // Create moves in parallel (usually small number, so no batching needed)
+            // Create moves in parallel batches
             var moveTasks = msel.Moves.Select(move => {
                 var citeMove = new Move() {
                     EvaluationId = (Guid)msel.CiteEvaluationId,
@@ -85,9 +85,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     SituationDescription = move.SituationDescription
                 };
                 return citeApiClient.CreateMoveAsync(citeMove, ct);
-            });
+            }).ToList();
 
-            await Task.WhenAll(moveTasks);
+            // Process in parallel batches
+            for (int i = 0; i < moveTasks.Count; i += batchSize)
+            {
+                var batch = moveTasks.Skip(i).Take(batchSize);
+                await Task.WhenAll(batch);
+            }
         }
 
         // Create Cite Teams for this MSEL
@@ -147,7 +152,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Cite Duties for this MSEL
-        public static async Task CreateDutiesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateDutiesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {
             // Create duties in parallel batches to improve performance
             var dutyTasks = msel.CiteDuties
@@ -168,7 +173,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 .ToList();
 
             // Process in parallel batches to avoid overwhelming CITE API
-            const int batchSize = 10;
             for (int i = 0; i < dutyTasks.Count; i += batchSize)
             {
                 var batch = dutyTasks.Skip(i).Take(batchSize);
@@ -177,7 +181,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Cite Articles for this MSEL
-        public static async Task CreateActionsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateActionsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {
             // Create actions in parallel batches to improve performance (MSELs can have 100+ actions)
             var actionTasks = msel.CiteActions
@@ -201,7 +205,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 .ToList();
 
             // Process in parallel batches to avoid overwhelming CITE API
-            const int batchSize = 10;
             for (int i = 0; i < actionTasks.Count; i += batchSize)
             {
                 var batch = actionTasks.Skip(i).Take(batchSize);

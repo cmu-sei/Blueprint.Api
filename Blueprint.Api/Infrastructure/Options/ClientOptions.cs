@@ -14,6 +14,13 @@ namespace Blueprint.Api.Infrastructure.Options
         public string GalleryApiUrl { get; set; }
         public string PlayerApiUrl { get; set; }
         public string SteamfitterApiUrl { get; set; }
+
+        // Parallel batch sizes for MSEL push operations
+        // Higher values = faster but more database connections
+        // Lower values = slower but safer for limited connection pools
+        public int CiteBatchSize { get; set; } = 10;
+        public int GalleryBatchSize { get; set; } = 10;
+        public int PlayerBatchSize { get; set; } = 5;
     }
 }
 

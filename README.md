@@ -19,6 +19,53 @@ Then remove the migration
 
     dotnet ef migrations remove --project ../Blueprint.Api.Migrations.PostgreSQL/Blueprint.Api.Migrations.PostgreSQL.csproj
 
+# MSEL Push Performance and Database Connections
+
+## Batch Size Configuration
+
+When pushing MSELs to external systems (CITE, Gallery, Player, Steamfitter), Blueprint uses parallel batching to improve performance. Batch sizes can be configured in `appsettings.json` under the `ClientSettings` section:
+
+```json
+{
+  "ClientSettings": {
+    "CiteBatchSize": 10,      // Parallel batch size for CITE operations (actions, duties, moves)
+    "GalleryBatchSize": 10,   // Parallel batch size for Gallery operations (cards, articles)
+    "PlayerBatchSize": 5      // Parallel batch size for Player operations (applications)
+  }
+}
+```
+
+**Default values:**
+- CiteBatchSize: 10
+- GalleryBatchSize: 10
+- PlayerBatchSize: 5
+
+## Database Connection Pool Considerations
+
+Higher batch sizes improve MSEL push performance but consume more database connections. Consider your environment:
+
+**Development (local PostgreSQL)**:
+- Default batch sizes work well
+- PostgreSQL default: 100 max_connections
+
+**AWS RDS PostgreSQL**:
+- Connection limits based on instance memory: `LEAST({DBInstanceClassMemory/9531392}, 5000)`
+- Common limits:
+  - db.t3.micro (1GB): ~87 connections
+  - db.t3.medium (4GB): ~338 connections
+  - db.m5.large (8GB): ~677 connections
+
+**Tuning Guidelines**:
+- **Small RDS instances (< 200 connections)**: Reduce batch sizes to 5
+- **Medium RDS instances (200-500 connections)**: Use default batch sizes
+- **Large RDS instances (> 500 connections)**: Can increase batch sizes to 15-20
+- **Production with connection pooler (RDS Proxy/PgBouncer)**: Can increase batch sizes to 20+
+
+**Connection Usage During MSEL Push**:
+- Batch operations run sequentially across APIs (Gallery → CITE → Steamfitter → Player)
+- Within each API, operations run in parallel batches
+- Approximate peak connection usage: `BatchSize × NumberOfTeams` (for team-related operations)
+
 # Permissions
 
 ## System Roles

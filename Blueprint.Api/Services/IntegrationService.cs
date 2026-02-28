@@ -197,7 +197,7 @@ namespace Blueprint.Api.Services
                             {
                                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Push Player Applications", null, ct);
                                 currentProcessStep = "Player - push applications";
-                                await IntegrationPlayerExtensions.CreateApplicationsAsync(msel, playerApiClient, blueprintContext, ct);
+                                await IntegrationPlayerExtensions.CreateApplicationsAsync(msel, playerApiClient, blueprintContext, _clientOptions.CurrentValue.PlayerBatchSize, ct);
                             }
                             // set the MSEL status
                             msel.Status = Data.Enumerations.MselItemStatus.Deployed;
@@ -348,7 +348,7 @@ namespace Blueprint.Api.Services
                 // create the Cite Moves
                 currentProcessStep = "CITE - create moves";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Moves to CITE", null, ct);
-                await IntegrationCiteExtensions.CreateMovesAsync(msel, citeApiClient, blueprintContext, ct);
+                await IntegrationCiteExtensions.CreateMovesAsync(msel, citeApiClient, blueprintContext, _clientOptions.CurrentValue.CiteBatchSize, ct);
                 // create the Cite Teams
                 currentProcessStep = "CITE - create teams";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to CITE", null, ct);
@@ -356,11 +356,11 @@ namespace Blueprint.Api.Services
                 // create the Cite Duties
                 currentProcessStep = "CITE - create duties";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Duties to CITE", null, ct);
-                await IntegrationCiteExtensions.CreateDutiesAsync(msel, citeApiClient, blueprintContext, ct);
+                await IntegrationCiteExtensions.CreateDutiesAsync(msel, citeApiClient, blueprintContext, _clientOptions.CurrentValue.CiteBatchSize, ct);
                 // create the Cite Actions
                 currentProcessStep = "CITE - create actions";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Actions to CITE", null, ct);
-                await IntegrationCiteExtensions.CreateActionsAsync(msel, citeApiClient, blueprintContext, ct);
+                await IntegrationCiteExtensions.CreateActionsAsync(msel, citeApiClient, blueprintContext, _clientOptions.CurrentValue.CiteBatchSize, ct);
                 // update the evaluation, so that submissions get created
                 currentProcessStep = "CITE - advance";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Finishing Evaluation to CITE", null, ct);
@@ -398,11 +398,11 @@ namespace Blueprint.Api.Services
                 // create the Gallery Cards
                 currentProcessStep = "Gallery - Pushing Cards";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Cards to Gallery", null, ct);
-                await IntegrationGalleryExtensions.CreateCardsAsync(msel, galleryApiClient, blueprintContext, ct);
+                await IntegrationGalleryExtensions.CreateCardsAsync(msel, galleryApiClient, blueprintContext, _clientOptions.CurrentValue.GalleryBatchSize, ct);
                 // create the Gallery Articles
                 currentProcessStep = "Gallery - Pushing Articles";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Articles to Gallery", null, ct);
-                await IntegrationGalleryExtensions.CreateArticlesAsync(msel, galleryApiClient, blueprintContext, scenarioEventService, ct);
+                await IntegrationGalleryExtensions.CreateArticlesAsync(msel, galleryApiClient, blueprintContext, scenarioEventService, _clientOptions.CurrentValue.GalleryBatchSize, ct);
                 // commit the transaction
                 currentProcessStep = "Gallery - commit transaction";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Commit to Gallery", null, ct);

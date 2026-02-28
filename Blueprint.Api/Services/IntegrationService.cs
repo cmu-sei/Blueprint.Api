@@ -331,7 +331,7 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
-                throw ex;
+                throw;
             }
         }
 
@@ -370,7 +370,7 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
-                throw ex;
+                throw;
             }
         }
 
@@ -411,7 +411,7 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
-                throw ex;
+                throw;
             }
         }
 
@@ -484,7 +484,7 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError($"{currentProcessStep} {msel.Name} ({msel.Id})", ex);
-                throw ex;
+                throw;
             }
         }
 

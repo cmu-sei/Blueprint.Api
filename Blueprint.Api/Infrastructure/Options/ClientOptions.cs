@@ -18,9 +18,9 @@ namespace Blueprint.Api.Infrastructure.Options
         // Parallel batch sizes for MSEL push operations
         // Higher values = faster but more database connections
         // Lower values = slower but safer for limited connection pools
-        public int CiteBatchSize { get; set; } = 10;
-        public int GalleryBatchSize { get; set; } = 10;
-        public int PlayerBatchSize { get; set; } = 5;
+        public int CiteBatchSize { get; set; } = 5;
+        public int GalleryBatchSize { get; set; } = 5;
+        public int PlayerBatchSize { get; set; } = 3;
     }
 }
 

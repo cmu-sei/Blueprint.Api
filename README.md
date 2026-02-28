@@ -28,17 +28,17 @@ When pushing MSELs to external systems (CITE, Gallery, Player, Steamfitter), Blu
 ```json
 {
   "ClientSettings": {
-    "CiteBatchSize": 10,      // Parallel batch size for CITE operations (actions, duties, moves)
-    "GalleryBatchSize": 10,   // Parallel batch size for Gallery operations (cards, articles)
-    "PlayerBatchSize": 5      // Parallel batch size for Player operations (applications)
+    "CiteBatchSize": 5,      // Parallel batch size for CITE operations (actions, duties, moves)
+    "GalleryBatchSize": 5,   // Parallel batch size for Gallery operations (cards, articles)
+    "PlayerBatchSize": 3     // Parallel batch size for Player operations (applications)
   }
 }
 ```
 
-**Default values:**
-- CiteBatchSize: 10
-- GalleryBatchSize: 10
-- PlayerBatchSize: 5
+**Default values (conservative for small RDS instances):**
+- CiteBatchSize: 5
+- GalleryBatchSize: 5
+- PlayerBatchSize: 3
 
 ## Database Connection Pool Considerations
 
@@ -56,10 +56,10 @@ Higher batch sizes improve MSEL push performance but consume more database conne
   - db.m5.large (8GB): ~677 connections
 
 **Tuning Guidelines**:
-- **Small RDS instances (< 200 connections)**: Reduce batch sizes to 5
-- **Medium RDS instances (200-500 connections)**: Use default batch sizes
-- **Large RDS instances (> 500 connections)**: Can increase batch sizes to 15-20
-- **Production with connection pooler (RDS Proxy/PgBouncer)**: Can increase batch sizes to 20+
+- **Small RDS instances (< 200 connections)**: Use default batch sizes (5/5/3)
+- **Medium RDS instances (200-500 connections)**: Can increase to 10/10/5
+- **Large RDS instances (> 500 connections)**: Can increase to 15-20
+- **Production with connection pooler (RDS Proxy/PgBouncer)**: Can increase to 20+
 
 **Connection Usage During MSEL Push**:
 - Batch operations run sequentially across APIs (Gallery → CITE → Steamfitter → Player)

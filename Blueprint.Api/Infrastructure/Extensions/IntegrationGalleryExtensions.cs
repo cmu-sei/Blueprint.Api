@@ -217,19 +217,17 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         OpenInNewTab = openInNewTab
                     };
                     galleryArticle = await galleryApiClient.CreateArticleAsync(galleryArticle, ct);
-                    // create the Gallery Team Articles in parallel
+                    // create the Gallery Team Articles sequentially to avoid overwhelming the API
                     var toOrgs = GetArticleValue(GalleryArticleParameter.ToOrg.ToString(), scenarioEvent.DataValues, msel.DataFields).Split(",", StringSplitOptions.TrimEntries);
-                    var teamArticleTasks = teams
-                        .Where(team => toOrgs.Contains("ALL") || toOrgs.Contains(team.ShortName))
-                        .Select(team => {
-                            var newArticleTeam = new TeamArticle() {
-                                ExhibitId = (Guid)msel.GalleryExhibitId,
-                                TeamId = (Guid)team.GalleryTeamId,
-                                ArticleId = galleryArticle.Id
-                            };
-                            return galleryApiClient.CreateTeamArticleAsync(newArticleTeam, ct);
-                        });
-                    await Task.WhenAll(teamArticleTasks);
+                    foreach (var team in teams.Where(team => toOrgs.Contains("ALL") || toOrgs.Contains(team.ShortName)))
+                    {
+                        var newArticleTeam = new TeamArticle() {
+                            ExhibitId = (Guid)msel.GalleryExhibitId,
+                            TeamId = (Guid)team.GalleryTeamId,
+                            ArticleId = galleryArticle.Id
+                        };
+                        await galleryApiClient.CreateTeamArticleAsync(newArticleTeam, ct);
+                    }
                 }).ToList();
 
             // Process articles in parallel batches

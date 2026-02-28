@@ -121,17 +121,17 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 };
                 playerApplication = await playerApiClient.CreateApplicationAsync((Guid)msel.PlayerViewId, playerApplication, ct);
 
-                // create the Player Team Applications in parallel
+                // create the Player Team Applications sequentially to avoid overwhelming the API
                 var applicationTeams = allApplicationTeams.Where(apt => apt.PlayerApplicationId == application.Id).ToList();
-                var instanceTasks = applicationTeams.Select(applicationTeam => {
+                foreach (var applicationTeam in applicationTeams)
+                {
                     var applicationInstanceForm = new ApplicationInstanceForm() {
                         TeamId = (Guid)applicationTeam.Team.PlayerTeamId,
                         ApplicationId = (Guid)playerApplication.Id,
                         DisplayOrder = applicationTeam.DisplayOrder
                     };
-                    return playerApiClient.CreateApplicationInstanceAsync(applicationInstanceForm.TeamId, applicationInstanceForm, ct);
-                });
-                await Task.WhenAll(instanceTasks);
+                    await playerApiClient.CreateApplicationInstanceAsync(applicationInstanceForm.TeamId, applicationInstanceForm, ct);
+                }
             }).ToList();
 
             // Process applications in parallel batches

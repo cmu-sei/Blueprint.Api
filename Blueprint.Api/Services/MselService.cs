@@ -1627,12 +1627,6 @@ namespace Blueprint.Api.Services
                         StringComparer.OrdinalIgnoreCase);
                     var scoringModelIds = new HashSet<Guid>(scoringModels.Select(sm => sm.Id));
 
-                    // Get default scoring model: prefer "NCISS", otherwise use first available
-                    var defaultScoringModel = scoringModels.FirstOrDefault(sm => sm.Description.Equals("NCISS", StringComparison.OrdinalIgnoreCase))
-                                           ?? scoringModels.FirstOrDefault();
-                    var defaultScoringModelId = defaultScoringModel?.Id ?? Guid.Empty;
-                    var defaultScoringModelName = defaultScoringModel?.Description;
-
                     // Check if the scoring model ID exists in CITE
                     if (!scoringModelIds.Contains(mselEntity.CiteScoringModelId.Value))
                     {
@@ -1646,18 +1640,13 @@ namespace Blueprint.Api.Services
                             _logger.LogInformation("Auto-mapped MSEL {MselId} scoring model from {OldId} to {NewId}",
                                 mselEntity.Id, oldId, newId);
                         }
-                        else if (defaultScoringModelId != Guid.Empty)
-                        {
-                            // Fall back to default scoring model (NCISS preferred, or first available)
-                            mselEntity.CiteScoringModelId = defaultScoringModelId;
-                            mselEntity.CiteScoringModelName = defaultScoringModelName;
-                            _logger.LogWarning("MSEL {MselId} had invalid CITE scoring model ID {OldId}, defaulted to {NewId}",
-                                mselEntity.Id, oldId, defaultScoringModelId);
-                        }
                         else
                         {
-                            _logger.LogWarning("MSEL {MselId} has invalid CITE scoring model ID {ScoringModelId} and no scoring models found in CITE",
+                            // Invalid scoring model ID - set to null so user can select manually
+                            _logger.LogWarning("MSEL {MselId} has invalid CITE scoring model ID {ScoringModelId}, clearing for manual selection",
                                 mselEntity.Id, oldId);
+                            mselEntity.CiteScoringModelId = null;
+                            mselEntity.CiteScoringModelName = null;
                         }
                     }
                     else
@@ -1675,8 +1664,11 @@ namespace Blueprint.Api.Services
                 }
                 catch (System.Exception ex)
                 {
-                    _logger.LogWarning("Failed to validate CITE scoring model for MSEL {MselId}, continuing with import. Error: {ErrorMessage}", mselEntity.Id, ex.Message);
+                    _logger.LogWarning("Failed to validate CITE scoring model for MSEL {MselId}, setting to null. Error: {ErrorMessage}", mselEntity.Id, ex.Message);
                     // Don't block import on validation failure - CITE might be unavailable or client out of sync
+                    // Clear the scoring model ID so user can set it manually in the UI
+                    mselEntity.CiteScoringModelId = null;
+                    mselEntity.CiteScoringModelName = null;
                 }
             }
 

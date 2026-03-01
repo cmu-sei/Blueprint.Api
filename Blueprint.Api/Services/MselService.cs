@@ -1621,10 +1621,13 @@ namespace Blueprint.Api.Services
                 {
                     // Get scoring models from CITE API (uses user's auth token from HTTP context)
                     var scoringModels = await _citeApiClient.GetScoringModelsAsync(null, null, null, ct);
-                    var scoringModelMapping = scoringModels.ToDictionary(
-                        sm => sm.Description,
-                        sm => sm.Id,
-                        StringComparer.OrdinalIgnoreCase);
+                    // Group by description to handle duplicates - take first of each group
+                    var scoringModelMapping = scoringModels
+                        .GroupBy(sm => sm.Description, StringComparer.OrdinalIgnoreCase)
+                        .ToDictionary(
+                            g => g.Key,
+                            g => g.First().Id,
+                            StringComparer.OrdinalIgnoreCase);
                     var scoringModelIds = new HashSet<Guid>(scoringModels.Select(sm => sm.Id));
 
                     // Check if the scoring model ID exists in CITE

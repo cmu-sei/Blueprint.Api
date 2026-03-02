@@ -61,7 +61,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             await blueprintContext.SaveChangesAsync(ct);
             // delete the default move 0 that was created when the evaluation was created
             var defaultMoveId = newEvaluation.Moves.Single().Id;
-            await citeApiClient.DeleteMoveAsync(defaultMoveId);
+            await citeApiClient.DeleteMoveAsync(defaultMoveId, ct);
 
             return newEvaluation;
         }

@@ -21,31 +21,31 @@ Then remove the migration
 
 # MSEL Push Performance and Database Connections
 
-## Batch Size Configuration
+## Concurrent Request Configuration
 
-When pushing MSELs to external systems (CITE, Gallery, Player, Steamfitter), Blueprint uses parallel batching to improve performance. Batch sizes can be configured in `appsettings.json` under the `ClientSettings` section:
+When pushing MSELs to external systems (CITE, Gallery, Player, Steamfitter), Blueprint uses parallel processing to improve performance. The maximum concurrent requests can be configured in `appsettings.json` under the `ClientSettings` section:
 
 ```json
 {
   "ClientSettings": {
-    "CiteBatchSize": 5,      // Parallel batch size for CITE operations (actions, duties, moves)
-    "GalleryBatchSize": 5,   // Parallel batch size for Gallery operations (cards, articles)
-    "PlayerBatchSize": 3     // Parallel batch size for Player operations (applications)
+    "CiteMaxConcurrentRequests": 5,      // Max parallel requests for CITE operations (actions, duties, moves)
+    "GalleryMaxConcurrentRequests": 5,   // Max parallel requests for Gallery operations (cards, articles)
+    "PlayerMaxConcurrentRequests": 3     // Max parallel requests for Player operations (applications)
   }
 }
 ```
 
-**Default values (conservative for small RDS instances):**
-- CiteBatchSize: 5
-- GalleryBatchSize: 5
-- PlayerBatchSize: 3
+**Default values (conservative for small database instances):**
+- CiteMaxConcurrentRequests: 5
+- GalleryMaxConcurrentRequests: 5
+- PlayerMaxConcurrentRequests: 3
 
 ## Database Connection Pool Considerations
 
-Higher batch sizes improve MSEL push performance but consume more database connections. Consider your environment:
+Higher concurrency improves MSEL push performance but consumes more database connections. Each concurrent request holds a database connection. Consider your environment:
 
 **Development (local PostgreSQL)**:
-- Default batch sizes work well
+- Default settings work well
 - PostgreSQL default: 100 max_connections
 
 **Production PostgreSQL**:
@@ -54,15 +54,15 @@ Higher batch sizes improve MSEL push performance but consume more database conne
 - Common production limits range from ~80 connections (small instances) to 500+ (large instances)
 
 **Tuning Guidelines**:
-- **Small instances (< 200 connections)**: Use default batch sizes (5/5/3)
+- **Small instances (< 200 connections)**: Use default settings (5/5/3)
 - **Medium instances (200-500 connections)**: Can increase to 10/10/5
 - **Large instances (> 500 connections)**: Can increase to 15-20
 - **Production with connection pooler (PgBouncer, etc.)**: Can increase to 20+
 
 **Connection Usage During MSEL Push**:
-- Batch operations run sequentially across APIs (Gallery → CITE → Steamfitter → Player)
-- Within each API, operations run in parallel batches
-- Approximate peak connection usage: `BatchSize × NumberOfTeams` (for team-related operations)
+- Operations run sequentially across APIs (Gallery → CITE → Steamfitter → Player)
+- Within each API, operations run in parallel up to the configured limit
+- Approximate peak connection usage: `MaxConcurrentRequests × NumberOfTeams` (for team-related operations)
 
 # Permissions
 

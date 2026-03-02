@@ -61,7 +61,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             await blueprintContext.SaveChangesAsync(ct);
             // delete the default move 0 that was created when the evaluation was created
             var defaultMoveId = newEvaluation.Moves.Single().Id;
-            await citeApiClient.DeleteMoveAsync(defaultMoveId);
+            await citeApiClient.DeleteMoveAsync(defaultMoveId, ct);
 
             return newEvaluation;
         }
@@ -73,32 +73,33 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Cite Moves for this MSEL
-        public static async Task CreateMovesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateMovesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {
-            foreach (var move in msel.Moves)
+            // Build work items without starting execution
+            var moves = msel.Moves.ToList();
+
+            // Process in parallel batches
+            for (int i = 0; i < moves.Count; i += batchSize)
             {
-                Move citeMove = new Move() {
-                    EvaluationId = (Guid)msel.CiteEvaluationId,
-                    Description = move.Description,
-                    MoveNumber = move.MoveNumber,
-                    SituationTime = (DateTimeOffset)move.SituationTime,
-                    SituationDescription = move.SituationDescription
-                };
-                await citeApiClient.CreateMoveAsync(citeMove, ct);
-                await blueprintContext.SaveChangesAsync(ct);
+                var batch = moves.Skip(i).Take(batchSize);
+                await Task.WhenAll(batch.Select(move => {
+                    var citeMove = new Move() {
+                        EvaluationId = (Guid)msel.CiteEvaluationId,
+                        Description = move.Description,
+                        MoveNumber = move.MoveNumber,
+                        SituationTime = (DateTimeOffset)move.SituationTime,
+                        SituationDescription = move.SituationDescription
+                    };
+                    return citeApiClient.CreateMoveAsync(citeMove, ct);
+                }));
             }
         }
 
         // Create Cite Teams for this MSEL
-        public static async Task CreateTeamsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateTeamsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, HashSet<Guid> citeUserIds, CancellationToken ct)
         {
-            // get the Cite teams, Cite Users, and the Cite TeamUsers
-            var citeUserIds = (await citeApiClient.GetUsersAsync(ct)).Select(u => u.Id);
-            // get the teams for this MSEL and loop through them
-            var teams = await blueprintContext.Teams
-                .Where(t => t.MselId == msel.Id)
-                .Include(t => t.UserTeamRoles)
-                .ToListAsync();
+            // use eager-loaded teams from the MSEL
+            var teams = msel.Teams.ToList();
             foreach (var team in teams)
             {
                 if (team.CiteTeamTypeId != null)
@@ -114,11 +115,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     };
                     citeTeam = await citeApiClient.CreateTeamAsync(citeTeam, ct);
                     team.CiteTeamId = citeTeam.Id;
-                    // get all of the users for this team and loop through them
-                    var users = await blueprintContext.TeamUsers
-                        .Where(tu => tu.TeamId == team.Id)
-                        .Select(tu => tu.User)
-                        .ToListAsync(ct);
+                    // use eager-loaded users from the team
+                    var users = team.TeamUsers.Select(tu => tu.User).ToList();
                     foreach (var user in users)
                     {
                         // if this user is not in Cite, add it
@@ -129,6 +127,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                                 Name = user.Name
                             };
                             await citeApiClient.CreateUserAsync(newUser, ct);
+                            citeUserIds.Add(user.Id);
                         }
                         // create Cite TeamMemberships
                         var teamMembership = new TeamMembership() {
@@ -153,42 +152,52 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Cite Duties for this MSEL
-        public static async Task CreateDutiesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateDutiesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {
-            foreach (var duty in msel.CiteDuties)
+            // Build work items without starting execution
+            var duties = msel.CiteDuties
+                .Where(duty => msel.Teams.Any(t => t.Id == duty.TeamId && t.CiteTeamId != null))
+                .ToList();
+
+            // Process in parallel batches to avoid overwhelming CITE API
+            for (int i = 0; i < duties.Count; i += batchSize)
             {
-                var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == duty.TeamId)?.CiteTeamId;
-                if (citeTeamId != null)
-                {
-                    Duty citeDuty = new Duty() {
+                var batch = duties.Skip(i).Take(batchSize);
+                await Task.WhenAll(batch.Select(duty => {
+                    var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == duty.TeamId)?.CiteTeamId;
+                    var citeDuty = new Duty() {
                         EvaluationId = (Guid)msel.CiteEvaluationId,
                         Name = duty.Name,
                         TeamId = (Guid)citeTeamId
                     };
-                    await citeApiClient.CreateDutyAsync(citeDuty, ct);
-                    await blueprintContext.SaveChangesAsync(ct);
-                }
+                    return citeApiClient.CreateDutyAsync(citeDuty, ct);
+                }));
             }
         }
 
         // Create Cite Articles for this MSEL
-        public static async Task CreateActionsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateActionsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {
-            foreach (var action in msel.CiteActions)
+            // Build work items without starting execution
+            var actions = msel.CiteActions
+                .Where(action => action.TeamId != null && msel.Teams.Any(t => t.Id == action.TeamId && t.CiteTeamId != null))
+                .ToList();
+
+            // Process in parallel batches to avoid overwhelming CITE API
+            for (int i = 0; i < actions.Count; i += batchSize)
             {
-                var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == (Guid)action.TeamId)?.CiteTeamId;
-                if (citeTeamId != null)
-                {
-                    // create the action
-                    Cite.Api.Client.Action citeAction = new Cite.Api.Client.Action() {
+                var batch = actions.Skip(i).Take(batchSize);
+                await Task.WhenAll(batch.Select(action => {
+                    var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == action.TeamId)?.CiteTeamId;
+                    var citeAction = new Cite.Api.Client.Action() {
                         EvaluationId = (Guid)msel.CiteEvaluationId,
                         TeamId = (Guid)citeTeamId,
                         MoveNumber = action.MoveNumber,
                         InjectNumber = action.InjectNumber,
                         Description = action.Description
                     };
-                    await citeApiClient.CreateActionAsync(citeAction, ct);
-                }
+                    return citeApiClient.CreateActionAsync(citeAction, ct);
+                }));
             }
         }
 

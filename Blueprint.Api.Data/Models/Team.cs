@@ -18,6 +18,7 @@ namespace Blueprint.Api.Data.Models
         public Guid MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
         public Guid? CiteTeamTypeId { get; set; }
+        public string CiteTeamTypeName { get; set; }
         public string Email { get; set; }
         public Guid? PlayerTeamId { get; set; }
         public Guid? GalleryTeamId { get; set; }

@@ -67,14 +67,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Gallery Teams for this MSEL
-        public static async Task CreateTeamsAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateTeamsAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, HashSet<Guid> galleryUserIds, CancellationToken ct)
         {
-            // get the Gallery teams, Gallery Users, and the Gallery TeamUsers
-            var galleryUserIds = (await galleryApiClient.GetUsersAsync(ct)).Select(u => u.Id);
-            // get the teams for this MSEL and loop through them
-            var teams = await blueprintContext.Teams
-                .Where(t => t.MselId == msel.Id)
-                .ToListAsync();
+            // use eager-loaded teams from the MSEL
+            var teams = msel.Teams.ToList();
             foreach (var team in teams)
             {
                 var galleryTeamId = Guid.NewGuid();
@@ -88,11 +84,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 };
                 galleryTeam = await galleryApiClient.CreateTeamAsync(galleryTeam, ct);
                 team.GalleryTeamId = galleryTeam.Id;
-                // get all of the users for this team and loop through them
-                var users = await blueprintContext.TeamUsers
-                    .Where(tu => tu.TeamId == team.Id)
-                    .Select(tu => tu.User)
-                    .ToListAsync(ct);
+                // use eager-loaded users from the team
+                var users = team.TeamUsers.Select(tu => tu.User).ToList();
                 foreach (var user in users)
                 {
                     // if this user is not in Gallery, add it
@@ -103,10 +96,11 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             Name = user.Name
                         };
                         await galleryApiClient.CreateUserAsync(newUser, ct);
+                        galleryUserIds.Add(user.Id);
                     }
-                    // create Gallery TeamUsers
-                    var isObserverRole = await blueprintContext.UserTeamRoles
-                        .AnyAsync(umr => umr.UserId == user.Id && umr.TeamId == team.Id && umr.Role == TeamRole.Observer);
+                    // create Gallery TeamUsers, using eager-loaded role data
+                    var isObserverRole = team.UserTeamRoles
+                        .Any(umr => umr.UserId == user.Id && umr.Role == TeamRole.Observer);
                     var teamUser = new TeamUser() {
                         TeamId = galleryTeam.Id,
                         UserId = user.Id,
@@ -119,36 +113,51 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Gallery Cards for this MSEL
-        public static async Task CreateCardsAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        public static async Task CreateCardsAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {
-            foreach (var card in msel.Cards)
+            // pre-load all CardTeams to avoid per-card DB queries
+            var cardIds = msel.Cards.Select(c => c.Id).ToList();
+            var allCardTeams = await blueprintContext.CardTeams
+                .AsNoTracking()
+                .Where(cdt => cardIds.Contains(cdt.CardId))
+                .Include(cdt => cdt.Team)
+                .ToListAsync(ct);
+
+            // Build work items without starting execution
+            var cards = msel.Cards.ToList();
+
+            // Process cards in parallel batches
+            for (int i = 0; i < cards.Count; i += batchSize)
             {
-                Card galleryCard = new Card() {
-                    CollectionId = (Guid)msel.GalleryCollectionId,
-                    Name = card.Name,
-                    Description = card.Description,
-                    Move = card.Move,
-                    Inject = card.Inject
-                };
-                galleryCard = await galleryApiClient.CreateCardAsync(galleryCard, ct);
-                card.GalleryId = galleryCard.Id;
-                await blueprintContext.SaveChangesAsync(ct);
-                // create the Gallery Team Cards
-                var cardTeams = await blueprintContext.CardTeams
-                    .Where(ct => ct.CardId == card.Id)
-                    .Include(ct => ct.Team)
-                    .ToListAsync(ct);
-                foreach (var cardTeam in cardTeams)
-                {
-                    var newTeamCard = new TeamCard() {
-                        TeamId = (Guid)cardTeam.Team.GalleryTeamId,
-                        CardId = (Guid)card.GalleryId,
-                        IsShownOnWall = cardTeam.IsShownOnWall,
-                        CanPostArticles = cardTeam.CanPostArticles
+                var batch = cards.Skip(i).Take(batchSize);
+                await Task.WhenAll(batch.Select(async card => {
+                    var galleryCard = new Card() {
+                        CollectionId = (Guid)msel.GalleryCollectionId,
+                        Name = card.Name,
+                        Description = card.Description,
+                        Move = card.Move,
+                        Inject = card.Inject
                     };
-                    await galleryApiClient.CreateTeamCardAsync(newTeamCard, ct);
-                }
+                    galleryCard = await galleryApiClient.CreateCardAsync(galleryCard, ct);
+                    card.GalleryId = galleryCard.Id;
+
+                    // create the Gallery Team Cards for this card
+                    var cardTeams = allCardTeams.Where(cdt => cdt.CardId == card.Id).ToList();
+                    var teamCardTasks = cardTeams.Select(cardTeam => {
+                        var newTeamCard = new TeamCard() {
+                            TeamId = (Guid)cardTeam.Team.GalleryTeamId,
+                            CardId = (Guid)card.GalleryId,
+                            IsShownOnWall = cardTeam.IsShownOnWall,
+                            CanPostArticles = cardTeam.CanPostArticles
+                        };
+                        return galleryApiClient.CreateTeamCardAsync(newTeamCard, ct);
+                    });
+                    await Task.WhenAll(teamCardTasks);
+                }));
             }
+
+            // batch save all card GalleryId updates
+            await blueprintContext.SaveChangesAsync(ct);
         }
 
         // Create Gallery Articles for this MSEL
@@ -157,17 +166,22 @@ namespace Blueprint.Api.Infrastructure.Extensions
             GalleryApiClient galleryApiClient,
             BlueprintContext blueprintContext,
             IScenarioEventService scenarioEventService,
+            int batchSize,
             CancellationToken ct)
         {
-            var teams = await blueprintContext.Teams
-                .Where(t => t.MselId == msel.Id)
-                .ToListAsync(ct);
+            var teams = msel.Teams.ToList();
             var movesAndInjects = await scenarioEventService.GetMovesAndInjects(msel.Id, ct);
 
-            foreach (var scenarioEvent in msel.ScenarioEvents)
+            // Build work items without starting execution
+            var scenarioEvents = msel.ScenarioEvents
+                .Where(scenarioEvent => scenarioEvent.IntegrationTarget.Contains("Gallery"))
+                .ToList();
+
+            // Process articles in parallel batches
+            for (int i = 0; i < scenarioEvents.Count; i += batchSize)
             {
-                if (scenarioEvent.IntegrationTarget.Contains("Gallery"))
-                {
+                var batch = scenarioEvents.Skip(i).Take(batchSize);
+                await Task.WhenAll(batch.Select(async scenarioEvent => {
                     object status = Gallery.Api.Client.ItemStatus.Unused;
                     object sourceType = SourceType.News;
                     DateTime datePosted;
@@ -210,24 +224,18 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         OpenInNewTab = openInNewTab
                     };
                     galleryArticle = await galleryApiClient.CreateArticleAsync(galleryArticle, ct);
-                    // create the Gallery Team Articles
+                    // create the Gallery Team Articles sequentially to avoid overwhelming the API
                     var toOrgs = GetArticleValue(GalleryArticleParameter.ToOrg.ToString(), scenarioEvent.DataValues, msel.DataFields).Split(",", StringSplitOptions.TrimEntries);
-                    var teamIds = teams
-                        .Where(t => toOrgs.Contains("ALL") || toOrgs.Contains(t.ShortName))
-                        .Select(t => t.Id);
-                    foreach (var team in teams)
+                    foreach (var team in teams.Where(team => toOrgs.Contains("ALL") || toOrgs.Contains(team.ShortName)))
                     {
-                        if (toOrgs.Contains("ALL") || toOrgs.Contains(team.ShortName))
-                        {
-                            var newArticleTeam = new TeamArticle() {
-                                ExhibitId = (Guid)msel.GalleryExhibitId,
-                                TeamId = (Guid)team.GalleryTeamId,
-                                ArticleId = galleryArticle.Id
-                            };
-                            await galleryApiClient.CreateTeamArticleAsync(newArticleTeam, ct);
-                        }
+                        var newArticleTeam = new TeamArticle() {
+                            ExhibitId = (Guid)msel.GalleryExhibitId,
+                            TeamId = (Guid)team.GalleryTeamId,
+                            ArticleId = galleryArticle.Id
+                        };
+                        await galleryApiClient.CreateTeamArticleAsync(newArticleTeam, ct);
                     }
-                }
+                }));
             }
         }
 

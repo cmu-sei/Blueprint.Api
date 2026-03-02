@@ -123,37 +123,37 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 .Include(cdt => cdt.Team)
                 .ToListAsync(ct);
 
-            // Create cards in parallel batches
-            var cardTasks = msel.Cards.Select(async card => {
-                var galleryCard = new Card() {
-                    CollectionId = (Guid)msel.GalleryCollectionId,
-                    Name = card.Name,
-                    Description = card.Description,
-                    Move = card.Move,
-                    Inject = card.Inject
-                };
-                galleryCard = await galleryApiClient.CreateCardAsync(galleryCard, ct);
-                card.GalleryId = galleryCard.Id;
-
-                // create the Gallery Team Cards for this card
-                var cardTeams = allCardTeams.Where(cdt => cdt.CardId == card.Id).ToList();
-                var teamCardTasks = cardTeams.Select(cardTeam => {
-                    var newTeamCard = new TeamCard() {
-                        TeamId = (Guid)cardTeam.Team.GalleryTeamId,
-                        CardId = (Guid)card.GalleryId,
-                        IsShownOnWall = cardTeam.IsShownOnWall,
-                        CanPostArticles = cardTeam.CanPostArticles
-                    };
-                    return galleryApiClient.CreateTeamCardAsync(newTeamCard, ct);
-                });
-                await Task.WhenAll(teamCardTasks);
-            }).ToList();
+            // Build work items without starting execution
+            var cards = msel.Cards.ToList();
 
             // Process cards in parallel batches
-            for (int i = 0; i < cardTasks.Count; i += batchSize)
+            for (int i = 0; i < cards.Count; i += batchSize)
             {
-                var batch = cardTasks.Skip(i).Take(batchSize);
-                await Task.WhenAll(batch);
+                var batch = cards.Skip(i).Take(batchSize);
+                await Task.WhenAll(batch.Select(async card => {
+                    var galleryCard = new Card() {
+                        CollectionId = (Guid)msel.GalleryCollectionId,
+                        Name = card.Name,
+                        Description = card.Description,
+                        Move = card.Move,
+                        Inject = card.Inject
+                    };
+                    galleryCard = await galleryApiClient.CreateCardAsync(galleryCard, ct);
+                    card.GalleryId = galleryCard.Id;
+
+                    // create the Gallery Team Cards for this card
+                    var cardTeams = allCardTeams.Where(cdt => cdt.CardId == card.Id).ToList();
+                    var teamCardTasks = cardTeams.Select(cardTeam => {
+                        var newTeamCard = new TeamCard() {
+                            TeamId = (Guid)cardTeam.Team.GalleryTeamId,
+                            CardId = (Guid)card.GalleryId,
+                            IsShownOnWall = cardTeam.IsShownOnWall,
+                            CanPostArticles = cardTeam.CanPostArticles
+                        };
+                        return galleryApiClient.CreateTeamCardAsync(newTeamCard, ct);
+                    });
+                    await Task.WhenAll(teamCardTasks);
+                }));
             }
 
             // batch save all card GalleryId updates
@@ -172,10 +172,16 @@ namespace Blueprint.Api.Infrastructure.Extensions
             var teams = msel.Teams.ToList();
             var movesAndInjects = await scenarioEventService.GetMovesAndInjects(msel.Id, ct);
 
-            // Create articles in parallel batches
-            var articleTasks = msel.ScenarioEvents
+            // Build work items without starting execution
+            var scenarioEvents = msel.ScenarioEvents
                 .Where(scenarioEvent => scenarioEvent.IntegrationTarget.Contains("Gallery"))
-                .Select(async scenarioEvent => {
+                .ToList();
+
+            // Process articles in parallel batches
+            for (int i = 0; i < scenarioEvents.Count; i += batchSize)
+            {
+                var batch = scenarioEvents.Skip(i).Take(batchSize);
+                await Task.WhenAll(batch.Select(async scenarioEvent => {
                     object status = Gallery.Api.Client.ItemStatus.Unused;
                     object sourceType = SourceType.News;
                     DateTime datePosted;
@@ -229,13 +235,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         };
                         await galleryApiClient.CreateTeamArticleAsync(newArticleTeam, ct);
                     }
-                }).ToList();
-
-            // Process articles in parallel batches
-            for (int i = 0; i < articleTasks.Count; i += batchSize)
-            {
-                var batch = articleTasks.Skip(i).Take(batchSize);
-                await Task.WhenAll(batch);
+                }));
             }
         }
 

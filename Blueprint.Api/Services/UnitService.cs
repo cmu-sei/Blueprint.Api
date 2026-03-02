@@ -89,7 +89,7 @@ namespace Blueprint.Api.Services
 
             _context.Units.Add(unitEntity);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning($"Unit {unit.Name} ({unitEntity.Id}) created by {_user.GetId()}");
+            _logger.LogWarning($"Unit ({unitEntity.Id}) created by {_user.GetId()}");
             return await GetAsync(unitEntity.Id, ct);
         }
 
@@ -111,7 +111,7 @@ namespace Blueprint.Api.Services
 
             _context.Units.Update(unitToUpdate);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning($"Unit {unitToUpdate.Name} ({unitToUpdate.Id}) updated by {_user.GetId()}");
+            _logger.LogWarning($"Unit ({unitToUpdate.Id}) updated by {_user.GetId()}");
             return await GetAsync(id, ct);
         }
 
@@ -129,7 +129,7 @@ namespace Blueprint.Api.Services
 
             _context.Units.Remove(unitToDelete);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning($"Unit {unitToDelete.Name} ({unitToDelete.Id}) deleted by {_user.GetId()}");
+            _logger.LogWarning($"Unit ({unitToDelete.Id}) deleted by {_user.GetId()}");
             return true;
         }
 

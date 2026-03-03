@@ -1,25 +1,38 @@
-#
-#multi-stage target: dev
-#
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dev
+# Adapted from https://github.com/dotnet/dotnet-docker/blob/main/samples/aspnetapp/Dockerfile.chiseled
 
-ENV ASPNETCORE_HTTP_PORTS=4302
-ENV ASPNETCORE_ENVIRONMENT=DEVELOPMENT
+# Build stage
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+ARG TARGETARCH
+WORKDIR /source
 
-COPY . /app
-WORKDIR /app/Blueprint.Api
-RUN dotnet publish -c Release -o /app/dist
-CMD ["dotnet", "run"]
+# Copy project files and restore as distinct layers
+COPY --link Blueprint.Api/*.csproj ./Blueprint.Api/
+COPY --link Blueprint.Api.Data/*.csproj ./Blueprint.Api.Data/
+COPY --link Blueprint.Api.Migrations.PostgreSQL/*.csproj ./Blueprint.Api.Migrations.PostgreSQL/
+WORKDIR /source/Blueprint.Api
+RUN dotnet restore -a $TARGETARCH
 
-#
-#multi-stage target: prod
-#
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS prod
+# Copy source code and publish app
+WORKDIR /source
+COPY --link . .
+WORKDIR /source/Blueprint.Api
+RUN dotnet publish -a $TARGETARCH --no-restore -o /app
+
+# Debug Stage
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS debug
 ENV DOTNET_HOSTBUILDER__RELOADCONFIGCHANGE=false
-COPY --from=dev /app/dist /app
-
+EXPOSE 8080
 WORKDIR /app
-ENV ASPNETCORE_HTTP_PORTS=80
-EXPOSE 80
+COPY --link --from=build /app .
+USER $APP_UID
+ENTRYPOINT ["./Blueprint.Api"]
 
-CMD [ "dotnet", "Blueprint.Api.dll" ]
+# Production stage
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled AS prod
+ARG commit
+ENV COMMIT=$commit
+ENV DOTNET_HOSTBUILDER__RELOADCONFIGCHANGE=false
+EXPOSE 8080
+WORKDIR /app
+COPY --link --from=build /app .
+ENTRYPOINT ["./Blueprint.Api"]

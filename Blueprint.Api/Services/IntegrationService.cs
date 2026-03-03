@@ -150,15 +150,18 @@ namespace Blueprint.Api.Services
                             HashSet<Guid> playerUserIds = null, galleryUserIds = null, citeUserIds = null;
                             var userFetchTasks = new List<STT.Task>();
                             if (msel.UsePlayer)
-                                userFetchTasks.Add(STT.Task.Run(async () => {
+                                userFetchTasks.Add(STT.Task.Run(async () =>
+                                {
                                     playerUserIds = (await playerApiClient.GetUsersAsync(ct)).Select(u => u.Id).ToHashSet();
                                 }));
                             if (msel.UseGallery)
-                                userFetchTasks.Add(STT.Task.Run(async () => {
+                                userFetchTasks.Add(STT.Task.Run(async () =>
+                                {
                                     galleryUserIds = (await galleryApiClient.GetUsersAsync(ct)).Select(u => u.Id).ToHashSet();
                                 }));
                             if (msel.UseCite)
-                                userFetchTasks.Add(STT.Task.Run(async () => {
+                                userFetchTasks.Add(STT.Task.Run(async () =>
+                                {
                                     citeUserIds = (await citeApiClient.GetUsersAsync(ct)).Select(u => u.Id).ToHashSet();
                                 }));
                             await STT.Task.WhenAll(userFetchTasks);
@@ -476,20 +479,20 @@ namespace Blueprint.Api.Services
                             ct);
                     }
                     if (scenarioEvent.IntegrationTarget.Contains("Steamfitter") && scenarioEvent.SteamfitterTask != null)
-                        {
-                            currentProcessStep = "Steamfitter - pushing steamfitter task " + scenarioEvent.SteamfitterTaskId.ToString();
-                            triggerTask = await IntegrationSteamfitterExtensions.CreateScenarioTasksAsync(
-                                msel,
-                                scenarioEvent.SteamfitterTask,
-                                steamfitterApiClient,
-                                moveNumber,
-                                groupNumber,
-                                playerApiUrl,
-                                citeApiUrl,
-                                galleryApiUrl,
-                                triggerTask,
-                                ct);
-                        }
+                    {
+                        currentProcessStep = "Steamfitter - pushing steamfitter task " + scenarioEvent.SteamfitterTaskId.ToString();
+                        triggerTask = await IntegrationSteamfitterExtensions.CreateScenarioTasksAsync(
+                            msel,
+                            scenarioEvent.SteamfitterTask,
+                            steamfitterApiClient,
+                            moveNumber,
+                            groupNumber,
+                            playerApiUrl,
+                            citeApiUrl,
+                            galleryApiUrl,
+                            triggerTask,
+                            ct);
+                    }
                 }
             }
             catch (System.Exception ex)

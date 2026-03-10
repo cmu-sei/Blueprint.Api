@@ -25,6 +25,7 @@ using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.ViewModels;
+using Cite.Api.Client;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Packaging;
@@ -71,6 +72,7 @@ namespace Blueprint.Api.Services
         private readonly IPlayerService _playerService;
         private readonly IJoinQueue _joinQueue;
         private readonly IXApiService _xApiService;
+        private readonly ICiteApiClient _citeApiClient;
 
         public MselService(
             BlueprintContext context,
@@ -82,7 +84,8 @@ namespace Blueprint.Api.Services
             IPrincipal user,
             ILogger<MselService> logger,
             IMapper mapper,
-            IXApiService xApiService)
+            IXApiService xApiService,
+            ICiteApiClient citeApiClient)
         {
             _context = context;
             _clientOptions = clientOptions;
@@ -94,6 +97,7 @@ namespace Blueprint.Api.Services
             _playerService = playerService;
             _joinQueue = joinQueue;
             _xApiService = xApiService;
+            _citeApiClient = citeApiClient;
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct)
@@ -390,8 +394,8 @@ namespace Blueprint.Api.Services
                 if (addUser)
                 {
                     team.TeamUsers.Add(new TeamUserEntity { TeamId = team.Id, UserId = currentUserId });
-                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = TeamRole.Inviter });
-                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = TeamRole.Incrementer });
+                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = Data.Enumerations.TeamRole.Inviter });
+                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = Data.Enumerations.TeamRole.Incrementer });
                 }
             }
             // copy Organizations
@@ -1609,6 +1613,139 @@ namespace Blueprint.Api.Services
                 team.TeamUsers = [];
                 team.UserTeamRoles = [];
             }
+
+            // Validate and fix scoring model ID if MSEL uses CITE integration
+            if (mselEntity.UseCite && mselEntity.CiteScoringModelId.HasValue)
+            {
+                try
+                {
+                    // Get scoring models from CITE API (uses user's auth token from HTTP context)
+                    var scoringModels = await _citeApiClient.GetScoringModelsAsync(null, null, null, ct);
+                    // Group by description to handle duplicates - take first of each group
+                    var scoringModelMapping = scoringModels
+                        .GroupBy(sm => sm.Description, StringComparer.OrdinalIgnoreCase)
+                        .ToDictionary(
+                            g => g.Key,
+                            g => g.First().Id,
+                            StringComparer.OrdinalIgnoreCase);
+                    var scoringModelIds = new HashSet<Guid>(scoringModels.Select(sm => sm.Id));
+
+                    // Check if the scoring model ID exists in CITE
+                    if (!scoringModelIds.Contains(mselEntity.CiteScoringModelId.Value))
+                    {
+                        var oldId = mselEntity.CiteScoringModelId.Value;
+
+                        // Try to map by name first (if CiteScoringModelName is populated)
+                        if (!string.IsNullOrEmpty(mselEntity.CiteScoringModelName) &&
+                            scoringModelMapping.TryGetValue(mselEntity.CiteScoringModelName, out var newId))
+                        {
+                            mselEntity.CiteScoringModelId = newId;
+                            _logger.LogInformation("Auto-mapped MSEL {MselId} scoring model from {OldId} to {NewId}",
+                                mselEntity.Id, oldId, newId);
+                        }
+                        else
+                        {
+                            // Invalid scoring model ID - set to null so user can select manually
+                            _logger.LogWarning("MSEL {MselId} has invalid CITE scoring model ID {ScoringModelId}, clearing for manual selection",
+                                mselEntity.Id, oldId);
+                            mselEntity.CiteScoringModelId = null;
+                            mselEntity.CiteScoringModelName = null;
+                        }
+                    }
+                    else
+                    {
+                        // Valid ID - populate name from CITE if not already set
+                        if (string.IsNullOrEmpty(mselEntity.CiteScoringModelName))
+                        {
+                            var nameEntry = scoringModelMapping.FirstOrDefault(kvp => kvp.Value == mselEntity.CiteScoringModelId.Value);
+                            if (!string.IsNullOrEmpty(nameEntry.Key))
+                            {
+                                mselEntity.CiteScoringModelName = nameEntry.Key;
+                            }
+                        }
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    _logger.LogWarning("Failed to validate CITE scoring model for MSEL {MselId}, setting to null. Error: {ErrorMessage}", mselEntity.Id, ex.Message);
+                    // Don't block import on validation failure - CITE might be unavailable or client out of sync
+                    // Clear the scoring model ID so user can set it manually in the UI
+                    mselEntity.CiteScoringModelId = null;
+                    mselEntity.CiteScoringModelName = null;
+                }
+            }
+
+            // Validate and fix team type IDs if MSEL uses CITE integration
+            if (mselEntity.UseCite && mselEntity.Teams.Any(t => t.CiteTeamTypeId.HasValue))
+            {
+                try
+                {
+                    // Get team types from CITE API (uses user's auth token from HTTP context)
+                    var teamTypes = await _citeApiClient.GetTeamTypesAsync(ct);
+                    var teamTypeMapping = teamTypes.ToDictionary(
+                        tt => tt.Name,
+                        tt => tt.Id,
+                        StringComparer.OrdinalIgnoreCase);
+                    var teamTypeIds = new HashSet<Guid>(teamTypes.Select(tt => tt.Id));
+
+                    // Get default team type: prefer "Standard", otherwise use first available
+                    var defaultTeamType = teamTypes.FirstOrDefault(tt => tt.Name.Equals("Standard", StringComparison.OrdinalIgnoreCase))
+                                       ?? teamTypes.FirstOrDefault();
+                    var defaultTeamTypeId = defaultTeamType?.Id ?? Guid.Empty;
+                    var defaultTeamTypeName = defaultTeamType?.Name;
+
+                    foreach (var team in mselEntity.Teams.Where(t => t.CiteTeamTypeId.HasValue))
+                    {
+                        // Check if the team type ID exists in CITE
+                        if (!teamTypeIds.Contains(team.CiteTeamTypeId.Value))
+                        {
+                            var oldId = team.CiteTeamTypeId.Value;
+
+                            // Try to map by name first (if CiteTeamTypeName is populated)
+                            if (!string.IsNullOrEmpty(team.CiteTeamTypeName) &&
+                                teamTypeMapping.TryGetValue(team.CiteTeamTypeName, out var newId))
+                            {
+                                team.CiteTeamTypeId = newId;
+                                _logger.LogInformation("Auto-mapped team {TeamId} type from {OldId} to {NewId}",
+                                    team.Id, oldId, newId);
+                                continue;
+                            }
+
+                            // Fall back to default team type (Standard preferred, or first available)
+                            if (defaultTeamTypeId != Guid.Empty)
+                            {
+                                team.CiteTeamTypeId = defaultTeamTypeId;
+                                team.CiteTeamTypeName = defaultTeamTypeName;
+                                _logger.LogWarning("Team {TeamId} had invalid CITE team type ID {OldId}, defaulted to {NewId}",
+                                    team.Id, oldId, defaultTeamTypeId);
+                            }
+                            else
+                            {
+                                _logger.LogError("Team {TeamId} has invalid CITE team type ID {TeamTypeId} and no team types found in CITE",
+                                    team.Id, oldId);
+                            }
+                        }
+                        else
+                        {
+                            // Valid ID - populate name from CITE if not already set
+                            if (string.IsNullOrEmpty(team.CiteTeamTypeName))
+                            {
+                                var nameEntry = teamTypeMapping.FirstOrDefault(kvp => kvp.Value == team.CiteTeamTypeId.Value);
+                                if (!string.IsNullOrEmpty(nameEntry.Key))
+                                {
+                                    team.CiteTeamTypeName = nameEntry.Key;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    _logger.LogWarning("Failed to validate CITE team types for MSEL {MselId}, continuing with import. Error: {ErrorMessage}", mselEntity.Id, ex.Message);
+                    // Don't block import on validation failure - CITE might be unavailable
+                }
+            }
+
             // make a copy and add it to the database
             mselEntity = await privateMselCopyAsync(mselEntity, null, ct);
 

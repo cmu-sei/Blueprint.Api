@@ -19,6 +19,51 @@ Then remove the migration
 
     dotnet ef migrations remove --project ../Blueprint.Api.Migrations.PostgreSQL/Blueprint.Api.Migrations.PostgreSQL.csproj
 
+# MSEL Push Performance and Database Connections
+
+## Concurrent Request Configuration
+
+When pushing MSELs to external systems (CITE, Gallery, Player, Steamfitter), Blueprint uses parallel processing to improve performance. The maximum concurrent requests can be configured in `appsettings.json` under the `ClientSettings` section:
+
+```json
+{
+  "ClientSettings": {
+    "CiteMaxConcurrentRequests": 5,      // Max parallel requests for CITE operations (actions, duties, moves)
+    "GalleryMaxConcurrentRequests": 5,   // Max parallel requests for Gallery operations (cards, articles)
+    "PlayerMaxConcurrentRequests": 3     // Max parallel requests for Player operations (applications)
+  }
+}
+```
+
+**Default values (conservative for small database instances):**
+- CiteMaxConcurrentRequests: 5
+- GalleryMaxConcurrentRequests: 5
+- PlayerMaxConcurrentRequests: 3
+
+## Database Connection Pool Considerations
+
+Higher concurrency improves MSEL push performance but consumes more database connections. Each concurrent request holds a database connection. Consider your environment:
+
+**Development (local PostgreSQL)**:
+- Default settings work well
+- PostgreSQL default: 100 max_connections
+
+**Production PostgreSQL**:
+- Connection limits vary by database configuration and available memory
+- Managed database services typically limit connections based on instance size
+- Common production limits range from ~80 connections (small instances) to 500+ (large instances)
+
+**Tuning Guidelines**:
+- **Small instances (< 200 connections)**: Use default settings (5/5/3)
+- **Medium instances (200-500 connections)**: Can increase to 10/10/5
+- **Large instances (> 500 connections)**: Can increase to 15-20
+- **Production with connection pooler (PgBouncer, etc.)**: Can increase to 20+
+
+**Connection Usage During MSEL Push**:
+- Operations run sequentially across APIs (Gallery → CITE → Steamfitter → Player)
+- Within each API, operations run in parallel up to the configured limit
+- Approximate peak connection usage: `MaxConcurrentRequests × NumberOfTeams` (for team-related operations)
+
 # Permissions
 
 ## System Roles

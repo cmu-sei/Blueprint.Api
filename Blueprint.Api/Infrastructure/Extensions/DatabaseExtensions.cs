@@ -93,7 +93,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         private static void ProcessSeedDataOptions(SeedDataOptions options, BlueprintContext context)
         {
             // PERMISSIONS
-            if ((bool)options.Roles?.Any())
+            if (options.Roles?.Any() == true)
             {
                 var dbRoles = context.SystemRoles.ToHashSet();
 

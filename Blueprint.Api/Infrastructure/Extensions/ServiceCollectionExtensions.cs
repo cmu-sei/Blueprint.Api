@@ -116,11 +116,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
                 var citeUri = new Uri(clientOptions.CiteApiUrl);
 
-                string authHeader = httpContextAccessor.HttpContext.Request.Headers["Authorization"];
+                string authHeader = httpContextAccessor.HttpContext?.Request.Headers["Authorization"];
 
                 var httpClient = httpClientFactory.CreateClient();
                 httpClient.BaseAddress = citeUri;
-                httpClient.DefaultRequestHeaders.Add("Authorization", authHeader);
+                if (!string.IsNullOrEmpty(authHeader))
+                {
+                    httpClient.DefaultRequestHeaders.Add("Authorization", authHeader);
+                }
 
                 var apiClient = new CiteApiClient(httpClient);
                 return apiClient;

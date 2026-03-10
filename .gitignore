@@ -2,6 +2,6 @@ bin/
 obj/
 *.user
 .vs/
-appsettings.Development.json
+**/appsettings.*.json
 .vscode/
 Blueprint.Api.Client/node_modules

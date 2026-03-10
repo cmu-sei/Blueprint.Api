@@ -10,6 +10,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Npgsql;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
@@ -34,15 +36,18 @@ namespace Blueprint.Api.Services
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
+        private readonly ILogger<CardService> _logger;
 
         public CardService(
             BlueprintContext context,
             IPrincipal user,
-            IMapper mapper)
+            IMapper mapper,
+            ILogger<CardService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
+            _logger = logger;
         }
 
         public async Task<IEnumerable<ViewModels.Card>> GetTemplatesAsync(CancellationToken ct)
@@ -95,14 +100,27 @@ namespace Blueprint.Api.Services
                 if (!hasGalleryCardPermission)
                     throw new ForbiddenException();
             }
+
+            // Validate required fields
+            if (string.IsNullOrWhiteSpace(card.Name))
+                throw new ArgumentException("Card Name is required and cannot be empty.");
+
+            // Validate MselId if provided
+            if (card.MselId.HasValue && card.MselId.Value != Guid.Empty)
+            {
+                var mselExists = await _context.Msels.AnyAsync(m => m.Id == card.MselId.Value, ct);
+                if (!mselExists)
+                    throw new EntityNotFoundException<Msel>($"Invalid MselId '{card.MselId}'. The MSEL does not exist.");
+            }
+
             card.Id = card.Id != Guid.Empty ? card.Id : Guid.NewGuid();
             card.CreatedBy = _user.GetId();
             var cardEntity = _mapper.Map<CardEntity>(card);
 
             _context.Cards.Add(cardEntity);
             await _context.SaveChangesAsync(ct);
-            card = await GetAsync(cardEntity.Id, true, ct);
 
+            card = await GetAsync(cardEntity.Id, true, ct);
             return card;
         }
 

@@ -1985,18 +1985,18 @@ namespace Blueprint.Api.Services
 
                     // Add user to Blueprint team (this will auto-assign Viewer role via TeamUserService)
                     var userId = _user.GetId();
-                    var teamId = invitation.TeamId;
+                    var invitationTeamId = invitation.TeamId;
 
                     // Check if user is already on the team
                     var existingTeamUser = await _context.TeamUsers
-                        .AnyAsync(tu => tu.UserId == userId && tu.TeamId == teamId, ct);
+                        .AnyAsync(tu => tu.UserId == userId && tu.TeamId == invitationTeamId, ct);
 
                     if (!existingTeamUser)
                     {
                         var teamUser = new ViewModels.TeamUser
                         {
                             UserId = userId,
-                            TeamId = teamId
+                            TeamId = invitationTeamId
                         };
                         await _teamUserService.CreateAsync(teamUser, ct);
                     }

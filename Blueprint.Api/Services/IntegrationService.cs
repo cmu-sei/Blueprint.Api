@@ -37,6 +37,7 @@ namespace Blueprint.Api.Services
         private readonly IHubContext<MainHub> _hubContext;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IOptionsMonitor<Infrastructure.Options.ClientOptions> _clientOptions;
+        private readonly IOptionsMonitor<Infrastructure.Options.EmailOptions> _emailOptions;
 
         public IntegrationService(
             ILogger<IntegrationService> logger,
@@ -44,7 +45,8 @@ namespace Blueprint.Api.Services
             IIntegrationQueue integrationQueue,
             IHubContext<MainHub> mainHub,
             IHttpClientFactory httpClientFactory,
-            IOptionsMonitor<Infrastructure.Options.ClientOptions> clientOptions)
+            IOptionsMonitor<Infrastructure.Options.ClientOptions> clientOptions,
+            IOptionsMonitor<Infrastructure.Options.EmailOptions> emailOptions)
         {
             _logger = logger;
             _scopeFactory = scopeFactory;
@@ -52,6 +54,7 @@ namespace Blueprint.Api.Services
             _hubContext = mainHub;
             _httpClientFactory = httpClientFactory;
             _clientOptions = clientOptions;
+            _emailOptions = emailOptions;
         }
 
         public STT.Task StartAsync(CancellationToken cancellationToken)
@@ -408,7 +411,8 @@ namespace Blueprint.Api.Services
                 // create the Gallery Teams
                 currentProcessStep = "Gallery - Pushing Teams";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Teams to Gallery", null, ct);
-                await IntegrationGalleryExtensions.CreateTeamsAsync(msel, galleryApiClient, blueprintContext, galleryUserIds, ct);
+                var emailEnabled = _emailOptions.CurrentValue.Enabled && msel.EmailEnabled;
+                await IntegrationGalleryExtensions.CreateTeamsAsync(msel, galleryApiClient, blueprintContext, galleryUserIds, emailEnabled, ct);
                 // create the Gallery Cards
                 currentProcessStep = "Gallery - Pushing Cards";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Cards to Gallery", null, ct);
@@ -481,6 +485,7 @@ namespace Blueprint.Api.Services
                     if (scenarioEvent.IntegrationTarget.Contains("Steamfitter") && scenarioEvent.SteamfitterTask != null)
                     {
                         currentProcessStep = "Steamfitter - pushing steamfitter task " + scenarioEvent.SteamfitterTaskId.ToString();
+                        var emailEnabled = _emailOptions.CurrentValue.Enabled && msel.EmailEnabled;
                         triggerTask = await IntegrationSteamfitterExtensions.CreateScenarioTasksAsync(
                             msel,
                             scenarioEvent.SteamfitterTask,
@@ -491,6 +496,7 @@ namespace Blueprint.Api.Services
                             citeApiUrl,
                             galleryApiUrl,
                             triggerTask,
+                            emailEnabled,
                             ct);
                     }
                 }

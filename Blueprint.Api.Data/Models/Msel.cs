@@ -33,6 +33,7 @@ namespace Blueprint.Api.Data.Models
         public Guid? SteamfitterScenarioId { get; set; }
         public IntegrationType SteamfitterIntegrationType { get; set; }
         public bool IsTemplate { get; set; }
+        public bool EmailEnabled { get; set; }
         public DateTime StartTime { get; set; }
         public int DurationSeconds { get; set; }
         public bool ShowTimeOnScenarioEventList { get; set; }

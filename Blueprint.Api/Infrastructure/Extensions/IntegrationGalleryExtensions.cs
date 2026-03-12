@@ -67,7 +67,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Gallery Teams for this MSEL
-        public static async Task CreateTeamsAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, HashSet<Guid> galleryUserIds, CancellationToken ct)
+        public static async Task CreateTeamsAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, HashSet<Guid> galleryUserIds, bool emailEnabled, CancellationToken ct)
         {
             // use eager-loaded teams from the MSEL
             var teams = msel.Teams.ToList();
@@ -80,7 +80,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     Name = team.Name,
                     ShortName = team.ShortName,
                     ExhibitId = (Guid)msel.GalleryExhibitId,
-                    Email = team.Email
+                    Email = emailEnabled ? team.Email : null
                 };
                 galleryTeam = await galleryApiClient.CreateTeamAsync(galleryTeam, ct);
                 team.GalleryTeamId = galleryTeam.Id;

@@ -112,6 +112,10 @@ public class Startup
             .Configure<XApiOptions>(Configuration.GetSection("XApiOptions"))
             .AddScoped(config => config.GetService<IOptionsMonitor<XApiOptions>>().CurrentValue);
 
+        services
+            .Configure<EmailOptions>(Configuration.GetSection("EmailOptions"))
+            .AddScoped(config => config.GetService<IOptionsMonitor<EmailOptions>>().CurrentValue);
+
         services.AddScoped<IClaimsTransformation, AuthorizationClaimsTransformer>();
         services.AddScoped<IUserClaimsService, UserClaimsService>();
 

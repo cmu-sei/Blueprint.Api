@@ -81,6 +81,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             string citeApiUrl,
             string galleryApiUrl,
             Task triggerTask,
+            bool emailEnabled,
             CancellationToken ct)
         {
             var action = TaskAction.Http_post;
@@ -107,6 +108,11 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     apiUrl = "http";
                     break;
                 case SteamfitterIntegrationType.Email:
+                    if (!emailEnabled)
+                    {
+                        // Skip email tasks if email is disabled
+                        return triggerTask;
+                    }
                     action = TaskAction.Send_email;
                     apiUrl = "stackstorm";
                     break;

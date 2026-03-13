@@ -103,3 +103,28 @@ Roles for team participation during MSEL execution:
 * **Modifier** - Modify team settings
 * **Submitter** - Submit team responses
 
+## Testing
+
+This project uses [TUnit](https://tunit.dev/) as its test framework with FakeItEasy for mocking.
+
+### Test Projects
+
+| Project | Description |
+|---------|-------------|
+| `Blueprint.Api.Tests.Unit` | Unit tests for services using in-memory EF Core and FakeItEasy |
+| `Blueprint.Api.Tests.Integration` | Integration tests with WebApplicationFactory and Testcontainers PostgreSQL |
+| `Blueprint.Api.Tests.Shared` | Shared AutoFixture customizations for Blueprint entity types |
+
+### Running Tests
+
+```bash
+# Run all tests
+dotnet test
+
+# Run unit tests only
+dotnet test Blueprint.Api.Tests.Unit
+
+# Run integration tests (requires Docker)
+dotnet test Blueprint.Api.Tests.Integration
+```
+

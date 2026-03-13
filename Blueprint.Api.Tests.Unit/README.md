@@ -39,7 +39,7 @@ Unit tests for `MselService` CRUD operations:
 Example test structure:
 
 ```csharp
-[Fact]
+[Test]
 public async Task GetAsync_WithValidId_ReturnsMappedMsel()
 {
     // Arrange
@@ -59,8 +59,8 @@ public async Task GetAsync_WithValidId_ReturnsMappedMsel()
     var result = await service.GetAsync(mselEntity.Id, true, CancellationToken.None);
 
     // Assert
-    result.ShouldNotBeNull();
-    result.Id.ShouldBe(mselEntity.Id);
+    await Assert.That(result).IsNotNull();
+    await Assert.That(result.Id).IsEqualTo(mselEntity.Id);
 }
 ```
 
@@ -122,16 +122,16 @@ var mselEntity = _fixture.Create<MselEntity>();
 
 Combines AutoFakeItEasy (auto-mocking) with BlueprintCustomization (entity generation).
 
-### Shouldly Assertions
+### TUnit Assertions
 
 ```csharp
-result.ShouldNotBeNull();
-result.Id.ShouldBe(expectedId);
-result.Name.ShouldBe("Expected Name");
-collection.Count.ShouldBeGreaterThan(0);
+await Assert.That(result).IsNotNull();
+await Assert.That(result.Id).IsEqualTo(expectedId);
+await Assert.That(result.Name).IsEqualTo("Expected Name");
+await Assert.That(collection.Count).IsGreaterThan(0);
 ```
 
-Fluent assertion library with readable error messages.
+TUnit provides built-in fluent assertions with readable error messages.
 
 ### ClaimsPrincipal Setup
 
@@ -148,13 +148,12 @@ Services requiring user context receive a minimal ClaimsPrincipal.
 
 ## Dependencies
 
+- **TUnit** 1.19.22 - Test framework with built-in assertions
 - **FakeItEasy** 8.3.0 - Mocking framework
 - **MockQueryable.FakeItEasy** 7.0.3 - Queryable mock support
 - **Microsoft.EntityFrameworkCore.InMemory** 10.0.1 - In-memory database
-- **Shouldly** 4.2.1 - Assertion library
-- **xUnit** 2.9.3 - Test framework
-- **AutoFixture** 4.18.1 + AutoFakeItEasy, Xunit2 - Test data generation
-- **Microsoft.NET.Test.Sdk** 18.0.1 - Test execution
+- **AutoFixture** 4.18.1 + AutoFakeItEasy - Test data generation
+- **Microsoft.NET.Test.Sdk** 18.0.1 - Test execution (works with Microsoft.Testing.Platform)
 - **coverlet.collector** 6.0.2 - Code coverage
 
 ## Project References

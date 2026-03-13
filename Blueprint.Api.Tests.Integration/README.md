@@ -18,7 +18,7 @@ WebApplicationFactory-based test fixture that:
 - Replaces authentication with `TestAuthenticationHandler` (bypasses OIDC)
 - Replaces authorization with `TestAuthorizationService` (allows all operations)
 - Registers `HtmlSanitizer` for SanitizerInterceptor
-- Implements `IAsyncLifetime` for xUnit fixture lifecycle management
+- Implements `IAsyncInitializer` and `IAsyncDisposable` for TUnit fixture lifecycle management
 
 Key methods:
 
@@ -58,7 +58,7 @@ User API endpoint integration tests:
 Example test:
 
 ```csharp
-[Fact]
+[Test]
 public async Task GetUsers_ReturnsOk()
 {
     // Arrange
@@ -68,7 +68,7 @@ public async Task GetUsers_ReturnsOk()
     var response = await client.GetAsync("/api/users");
 
     // Assert
-    response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
 }
 ```
 
@@ -95,10 +95,11 @@ dotnet test Blueprint.Api.Tests.Integration --logger "console;verbosity=detailed
 
 ## Key Patterns
 
-### IClassFixture Setup
+### ClassDataSource Setup
 
 ```csharp
-public class UserControllerTests : IClassFixture<BlueprintTestContext>
+[ClassDataSource<BlueprintTestContext>(Shared = SharedType.PerTestSession)]
+public class UserControllerTests
 {
     private readonly BlueprintTestContext _testContext;
 
@@ -109,14 +110,14 @@ public class UserControllerTests : IClassFixture<BlueprintTestContext>
 }
 ```
 
-xUnit creates one BlueprintTestContext instance per test class, starting/stopping the PostgreSQL container once for all tests in the class.
+TUnit creates one BlueprintTestContext instance per test session, starting/stopping the PostgreSQL container once for all tests in the class.
 
 ### HTTP Client
 
 ```csharp
 var client = _testContext.CreateClient();
 var response = await client.GetAsync("/api/users");
-response.StatusCode.ShouldBe(HttpStatusCode.OK);
+await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
 ```
 
 `CreateClient()` returns an HttpClient configured to call the in-memory test server.
@@ -136,8 +137,8 @@ Uses System.Net.Http.Json extensions for automatic JSON serialization.
 await _testContext.ValidateDbStateAsync(async dbContext =>
 {
     var user = await dbContext.Users.FindAsync(userId);
-    user.ShouldNotBeNull();
-    user.Name.ShouldBe("Expected Name");
+    await Assert.That(user).IsNotNull();
+    await Assert.That(user.Name).IsEqualTo("Expected Name");
 });
 ```
 
@@ -179,14 +180,13 @@ Container starts before first test, stops after last test in class.
 
 ## Dependencies
 
+- **TUnit** 1.19.22 - Test framework with built-in assertions
 - **Microsoft.AspNetCore.Mvc.Testing** 10.0.1 - WebApplicationFactory
 - **Testcontainers.PostgreSql** 4.0.0 - PostgreSQL container management
 - **Npgsql.EntityFrameworkCore.PostgreSQL** 10.0.0 - PostgreSQL provider
 - **FakeItEasy** 8.3.0 - Mocking (minimal usage in integration tests)
-- **Shouldly** 4.2.1 - Assertions
-- **xUnit** 2.9.3 - Test framework with IAsyncLifetime support
-- **AutoFixture** 4.18.1 + AutoFakeItEasy, Xunit2 - Test data generation
-- **Microsoft.NET.Test.Sdk** 18.0.1 - Test execution
+- **AutoFixture** 4.18.1 + AutoFakeItEasy - Test data generation
+- **Microsoft.NET.Test.Sdk** 18.0.1 - Test execution (works with Microsoft.Testing.Platform)
 - **coverlet.collector** 6.0.2 - Code coverage
 
 ## Project References

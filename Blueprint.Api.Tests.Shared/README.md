@@ -68,7 +68,6 @@ dotnet test Blueprint.Api.Tests.Integration
 
 - **AutoFixture** 4.18.1 - Test data generation
 - **AutoFixture.AutoFakeItEasy** 4.18.1 - Integration with FakeItEasy mocking
-- **AutoFixture.Xunit2** 4.18.1 - xUnit integration attributes
 - **Blueprint.Api** - Main API project (entity definitions)
 - **Blueprint.Api.Data** - Data layer (DbContext, entities)
 - **Crucible.Common.Testing** - Shared Crucible test utilities

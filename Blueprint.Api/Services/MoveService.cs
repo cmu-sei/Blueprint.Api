@@ -16,6 +16,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Blueprint.Api.Services
 {
@@ -42,6 +43,20 @@ namespace Blueprint.Api.Services
             _context = context;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
+        }
+
+        private async Task PublishTransactionEventsAsync(CancellationToken ct)
+        {
+            if (_context.EntityEvents.Count > 0 && _context.ServiceProvider != null)
+            {
+                var mediator = _context.ServiceProvider.GetRequiredService<MediatR.IMediator>();
+                foreach (var evt in _context.EntityEvents.Cast<MediatR.INotification>())
+                {
+                    await mediator.Publish(evt, ct);
+                }
+                _context.EntityEvents.Clear();
+            }
+            _context.ClearPreservedEntries();
         }
 
         public async Task<IEnumerable<ViewModels.Move>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -88,6 +103,7 @@ namespace Blueprint.Api.Services
             move = await GetAsync(moveEntity.Id, true, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
+            await PublishTransactionEventsAsync(ct);
 
             return move;
         }
@@ -115,6 +131,7 @@ namespace Blueprint.Api.Services
             move = await GetAsync(moveToUpdate.Id, true, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
+            await PublishTransactionEventsAsync(ct);
 
             return move;
         }
@@ -139,6 +156,7 @@ namespace Blueprint.Api.Services
             await ServiceUtilities.SetMselModifiedAsync(moveToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
+            await PublishTransactionEventsAsync(ct);
 
             return true;
         }

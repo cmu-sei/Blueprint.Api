@@ -20,6 +20,7 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Unit.Services;
 
+[Trait("Category", "Unit")]
 public class MselServiceTests
 {
     private readonly IFixture _fixture;
@@ -80,7 +81,7 @@ public class MselServiceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_WithValidId_ReturnsTrue()
+    public async Task DeleteAsync_WithExistingId_ReturnsTrue()
     {
         // Arrange
         using var context = TestDbContextFactory.Create<BlueprintContext>();
@@ -119,7 +120,7 @@ public class MselServiceTests
     }
 
     [Fact]
-    public void FilterUserMselRolesByUser_FiltersCorrectly()
+    public void FilterUserMselRolesByUser_WithSpecificUserId_FiltersCorrectly()
     {
         // Arrange
         using var context = TestDbContextFactory.Create<BlueprintContext>();

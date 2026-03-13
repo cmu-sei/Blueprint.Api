@@ -21,6 +21,7 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Unit.Services;
 
+[Trait("Category", "Unit")]
 public class UserServiceTests
 {
     private readonly IFixture _fixture;
@@ -104,7 +105,7 @@ public class UserServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_CreatesAndReturnsUser()
+    public async Task CreateAsync_WithValidUser_CreatesAndReturnsUser()
     {
         // Arrange
         using var context = TestDbContextFactory.Create<BlueprintContext>();

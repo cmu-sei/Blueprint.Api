@@ -8,6 +8,7 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Integration.Tests.Controllers;
 
+[Trait("Category", "Integration")]
 public class HealthCheckTests : IClassFixture<BlueprintTestContext>
 {
     private readonly BlueprintTestContext _testContext;
@@ -18,7 +19,7 @@ public class HealthCheckTests : IClassFixture<BlueprintTestContext>
     }
 
     [Fact]
-    public async Task GetVersion_ReturnsOk()
+    public async Task GetVersion_WhenCalled_ReturnsOk()
     {
         // Arrange
         var client = _testContext.CreateClient();
@@ -33,7 +34,7 @@ public class HealthCheckTests : IClassFixture<BlueprintTestContext>
     }
 
     [Fact]
-    public async Task GetLiveliness_ReturnsHealthStatus()
+    public async Task GetLiveliness_WhenCalled_ReturnsHealthStatus()
     {
         // Arrange
         var client = _testContext.CreateClient();
@@ -49,7 +50,7 @@ public class HealthCheckTests : IClassFixture<BlueprintTestContext>
     }
 
     [Fact]
-    public async Task GetReadiness_ReturnsHealthStatus()
+    public async Task GetReadiness_WhenCalled_ReturnsHealthStatus()
     {
         // Arrange
         var client = _testContext.CreateClient();

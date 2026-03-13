@@ -10,6 +10,7 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Integration.Tests.Controllers;
 
+[Trait("Category", "Integration")]
 public class UserControllerTests : IClassFixture<BlueprintTestContext>
 {
     private readonly BlueprintTestContext _testContext;
@@ -20,7 +21,7 @@ public class UserControllerTests : IClassFixture<BlueprintTestContext>
     }
 
     [Fact]
-    public async Task GetUsers_ReturnsOk()
+    public async Task GetUsers_WhenCalled_ReturnsOk()
     {
         // Arrange
         var client = _testContext.CreateClient();
@@ -53,7 +54,7 @@ public class UserControllerTests : IClassFixture<BlueprintTestContext>
     }
 
     [Fact]
-    public async Task GetUser_ById_WithNonExistentId_ReturnsNotFound()
+    public async Task GetUser_WithNonExistentId_ReturnsNotFound()
     {
         // Arrange
         var client = _testContext.CreateClient();

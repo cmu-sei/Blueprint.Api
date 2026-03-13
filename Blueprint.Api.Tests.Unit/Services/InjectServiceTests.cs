@@ -20,6 +20,7 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Unit.Services;
 
+[Trait("Category", "Unit")]
 public class InjectServiceTests
 {
     private readonly IFixture _fixture;
@@ -69,7 +70,7 @@ public class InjectServiceTests
     }
 
     [Fact]
-    public async Task GetByInjectTypeAsync_ReturnsFilteredInjects()
+    public async Task GetByInjectTypeAsync_WithMatchingType_ReturnsFilteredInjects()
     {
         // Arrange
         using var context = TestDbContextFactory.Create<BlueprintContext>();
@@ -110,7 +111,7 @@ public class InjectServiceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_WithValidId_ReturnsTrue()
+    public async Task DeleteAsync_WithExistingId_ReturnsTrue()
     {
         // Arrange
         using var context = TestDbContextFactory.Create<BlueprintContext>();

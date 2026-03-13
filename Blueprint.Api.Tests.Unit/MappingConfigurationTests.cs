@@ -8,10 +8,11 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Unit;
 
+[Trait("Category", "Unit")]
 public class MappingConfigurationTests
 {
     [Fact]
-    public void AutoMapperConfiguration_IsValid()
+    public void CreateMapper_WithAllProfiles_ShouldSucceed()
     {
         // Arrange - create a mapper configuration using the same assembly as Startup
         var configuration = new MapperConfiguration(cfg =>
@@ -26,7 +27,7 @@ public class MappingConfigurationTests
     }
 
     [Fact]
-    public void AllProfiles_AreRegistered()
+    public void GetProfiles_FromAssembly_FindsAtLeast20()
     {
         // Arrange
         var configuration = new MapperConfiguration(cfg =>

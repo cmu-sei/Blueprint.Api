@@ -87,10 +87,23 @@ public class Startup
                     .AddHealthChecks().AddSqlServer(connectionString, tags: new[] { "ready", "live" });
                 break;
             case "PostgreSQL":
-                services.AddEventPublishingDbContextFactory<BlueprintContext>((serviceProvider, optionsBuilder) => optionsBuilder
-                    .AddInterceptors(serviceProvider.GetRequiredService<SanitizerInterceptor>())
-                    .UseConfiguredDatabase(Configuration))
-                    .AddHealthChecks().AddNpgSql(connectionString, tags: new[] { "ready", "live" });
+                services.AddTransient<Crucible.Common.EntityEvents.Interceptors.EntityEventInterceptor>();
+                services.AddTransient<SanitizerInterceptor>();
+                services.AddPooledDbContextFactory<BlueprintContext>((sp, builder) =>
+                {
+                    builder.AddInterceptors(
+                        sp.GetRequiredService<Crucible.Common.EntityEvents.Interceptors.EntityEventInterceptor>(),
+                        sp.GetRequiredService<SanitizerInterceptor>());
+                    builder.UseConfiguredDatabase(Configuration);
+                });
+                services.AddScoped(sp =>
+                {
+                    var factory = sp.GetRequiredService<IDbContextFactory<BlueprintContext>>();
+                    var context = factory.CreateDbContext();
+                    context.ServiceProvider = sp;
+                    return context;
+                });
+                services.AddHealthChecks().AddNpgSql(connectionString, tags: new[] { "ready", "live" });
                 break;
         }
 

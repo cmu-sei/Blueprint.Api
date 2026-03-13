@@ -19,6 +19,7 @@ using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
 using System.Data;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Blueprint.Api.Services
 {
@@ -52,6 +53,20 @@ namespace Blueprint.Api.Services
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
             _options = options;
+        }
+
+        private async Task PublishTransactionEventsAsync(CancellationToken ct)
+        {
+            if (_context.EntityEvents.Count > 0 && _context.ServiceProvider != null)
+            {
+                var mediator = _context.ServiceProvider.GetRequiredService<MediatR.IMediator>();
+                foreach (var evt in _context.EntityEvents.Cast<MediatR.INotification>())
+                {
+                    await mediator.Publish(evt, ct);
+                }
+                _context.EntityEvents.Clear();
+            }
+            _context.ClearPreservedEntries();
         }
 
         public async Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -129,6 +144,7 @@ namespace Blueprint.Api.Services
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventEntity.MselId, scenarioEventEntity.CreatedBy, DateTime.UtcNow, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
+            await PublishTransactionEventsAsync(ct);
 
             return  _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
@@ -577,6 +593,7 @@ namespace Blueprint.Api.Services
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventToUpdate.MselId, scenarioEventToUpdate.ModifiedBy, DateTime.UtcNow, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
+            await PublishTransactionEventsAsync(ct);
 
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
@@ -600,6 +617,7 @@ namespace Blueprint.Api.Services
             await ServiceUtilities.SetMselModifiedAsync(scenarioEventToDelete.MselId, _user.GetId(), DateTime.UtcNow, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
+            await PublishTransactionEventsAsync(ct);
 
             return true;
         }
@@ -642,6 +660,7 @@ namespace Blueprint.Api.Services
             await ServiceUtilities.SetMselModifiedAsync(mselId, _user.GetId(), DateTime.UtcNow, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
+            await PublishTransactionEventsAsync(ct);
 
             return true;
         }

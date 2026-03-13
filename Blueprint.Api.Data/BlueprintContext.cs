@@ -21,7 +21,6 @@ namespace Blueprint.Api.Data
     [GenerateEntityEventInterfaces(typeof(INotification))]
     public class BlueprintContext : EventPublishingDbContext
     {
-
         public BlueprintContext(DbContextOptions<BlueprintContext> options) : base(options) { }
 
         public DbSet<UserEntity> Users { get; set; }
@@ -83,11 +82,39 @@ namespace Blueprint.Api.Data
         public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
         {
             SaveEntries();
-            return await base.SaveChangesAsync(ct);
+
+            var hasTransaction = Database.CurrentTransaction != null;
+            var result = await base.SaveChangesAsync(ct);
+
+            // Restore preserved entries if we have a transaction
+            // The base class cleared TrackedEntries, but we need them for TransactionCommitted
+            if (hasTransaction && _preservedEntries.Count > 0)
+            {
+                TrackedEntries.Clear();
+                TrackedEntries.AddRange(_preservedEntries);
+            }
+
+            return result;
         }
+
+        // Override to clear preserved entries after transaction commits
+        public void ClearPreservedEntries()
+        {
+            _preservedEntries.Clear();
+        }
+
+        private List<Crucible.Common.EntityEvents.Abstractions.TrackedEntityEntry> _preservedEntries = new();
 
         protected override async Task PublishEventsAsync(CancellationToken cancellationToken)
         {
+            var hasTransaction = Database.CurrentTransaction != null;
+
+            // When we have a transaction, preserve TrackedEntries before base class clears them
+            if (hasTransaction && TrackedEntries.Count > 0)
+            {
+                _preservedEntries.AddRange(TrackedEntries);
+            }
+
             if (EntityEvents.Count > 0 && ServiceProvider is not null)
             {
                 var mediator = ServiceProvider.GetRequiredService<IMediator>();

@@ -5,3 +5,6 @@ obj/
 **/appsettings.*.json
 .vscode/
 Blueprint.Api.Client/node_modules
+
+# Claude Code artifacts
+.claude/

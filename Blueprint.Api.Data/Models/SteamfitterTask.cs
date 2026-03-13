@@ -49,5 +49,13 @@ namespace Blueprint.Api.Data.Models
         }
     }
 
+    public class SteamfitterTaskEntityTypeConfiguration : IEntityTypeConfiguration<SteamfitterTaskEntity>
+    {
+        public void Configure(EntityTypeBuilder<SteamfitterTaskEntity> builder)
+        {
+            // For InMemory testing: Ignore Dictionary property as it requires PostgreSQL hstore
+            builder.Ignore(t => t.ActionParameters);
+        }
+    }
 
 }

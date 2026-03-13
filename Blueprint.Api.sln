@@ -11,6 +11,12 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Blueprint.Api.Data", "Bluep
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Blueprint.Api.Migrations.PostgreSQL", "Blueprint.Api.Migrations.PostgreSQL\Blueprint.Api.Migrations.PostgreSQL.csproj", "{68E961A4-457A-4FE1-B79A-269722255D6C}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Blueprint.Api.Tests.Shared", "Blueprint.Api.Tests.Shared\Blueprint.Api.Tests.Shared.csproj", "{B1A2C3D4-E5F6-7890-ABCD-EF1234567890}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Blueprint.Api.Tests.Unit", "Blueprint.Api.Tests.Unit\Blueprint.Api.Tests.Unit.csproj", "{C2B3D4E5-F6A7-8901-BCDE-F12345678901}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Blueprint.Api.Tests.Integration", "Blueprint.Api.Tests.Integration\Blueprint.Api.Tests.Integration.csproj", "{D3C4E5F6-A7B8-9012-CDEF-123456789012}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +39,18 @@ Global
 		{68E961A4-457A-4FE1-B79A-269722255D6C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{68E961A4-457A-4FE1-B79A-269722255D6C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{68E961A4-457A-4FE1-B79A-269722255D6C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1A2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1A2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1A2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1A2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C2B3D4E5-F6A7-8901-BCDE-F12345678901}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C2B3D4E5-F6A7-8901-BCDE-F12345678901}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C2B3D4E5-F6A7-8901-BCDE-F12345678901}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C2B3D4E5-F6A7-8901-BCDE-F12345678901}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D3C4E5F6-A7B8-9012-CDEF-123456789012}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D3C4E5F6-A7B8-9012-CDEF-123456789012}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D3C4E5F6-A7B8-9012-CDEF-123456789012}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D3C4E5F6-A7B8-9012-CDEF-123456789012}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

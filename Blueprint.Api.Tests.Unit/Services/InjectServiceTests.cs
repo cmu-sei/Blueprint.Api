@@ -15,12 +15,11 @@ using Blueprint.Api.ViewModels;
 using Crucible.Common.Testing.Fixtures;
 using FakeItEasy;
 using Microsoft.EntityFrameworkCore;
-using Shouldly;
-using Xunit;
+using TUnit.Core;
 
 namespace Blueprint.Api.Tests.Unit.Services;
 
-[Trait("Category", "Unit")]
+[Category("Unit")]
 public class InjectServiceTests
 {
     private readonly IFixture _fixture;
@@ -42,7 +41,7 @@ public class InjectServiceTests
         _fakeUser = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
     }
 
-    [Fact]
+    [Test]
     public async Task GetAsync_WithValidId_ReturnsMappedInject()
     {
         // Arrange
@@ -65,11 +64,11 @@ public class InjectServiceTests
         var result = await service.GetAsync(injectEntity.Id, true, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Id.ShouldBe(injectEntity.Id);
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result.Id).IsEqualTo(injectEntity.Id);
     }
 
-    [Fact]
+    [Test]
     public async Task GetByInjectTypeAsync_WithMatchingType_ReturnsFilteredInjects()
     {
         // Arrange
@@ -106,11 +105,11 @@ public class InjectServiceTests
         var result = await service.GetByInjectTypeAsync(injectTypeId, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Count().ShouldBe(1);
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result.Count()).IsEqualTo(1);
     }
 
-    [Fact]
+    [Test]
     public async Task DeleteAsync_WithExistingId_ReturnsTrue()
     {
         // Arrange
@@ -130,8 +129,8 @@ public class InjectServiceTests
         var result = await service.DeleteAsync(injectEntity.Id, CancellationToken.None);
 
         // Assert
-        result.ShouldBeTrue();
+        await Assert.That(result).IsTrue();
         var deletedEntity = await context.Injects.FindAsync(injectEntity.Id);
-        deletedEntity.ShouldBeNull();
+        await Assert.That(deletedEntity).IsNull();
     }
 }

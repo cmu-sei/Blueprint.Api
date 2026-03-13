@@ -13,7 +13,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.PostgreSql;
-using Xunit;
+using TUnit.Core;
+using TUnit.Core.Interfaces;
 
 namespace Blueprint.Api.Tests.Integration.Fixtures;
 
@@ -21,7 +22,7 @@ namespace Blueprint.Api.Tests.Integration.Fixtures;
 /// WebApplicationFactory-based test context for Blueprint API integration tests.
 /// Uses Testcontainers to spin up a real PostgreSQL instance per test class.
 /// </summary>
-public class BlueprintTestContext : WebApplicationFactory<Program>, IAsyncLifetime
+public class BlueprintTestContext : WebApplicationFactory<Program>, IAsyncInitializer, IAsyncDisposable
 {
     private PostgreSqlContainer? _container;
 
@@ -108,7 +109,7 @@ public class BlueprintTestContext : WebApplicationFactory<Program>, IAsyncLifeti
         await _container.StartAsync();
     }
 
-    public new async Task DisposeAsync()
+    public new async ValueTask DisposeAsync()
     {
         if (_container is not null)
             await _container.DisposeAsync();

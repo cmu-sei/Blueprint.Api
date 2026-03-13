@@ -5,39 +5,32 @@ using System.Net;
 using System.Net.Http.Json;
 using Blueprint.Api.Tests.Integration.Fixtures;
 using Blueprint.Api.ViewModels;
-using Shouldly;
-using Xunit;
+using TUnit.Core;
 
 namespace Blueprint.Api.Tests.Integration.Tests.Controllers;
 
-[Trait("Category", "Integration")]
-public class UserControllerTests : IClassFixture<BlueprintTestContext>
+[Category("Integration")]
+[ClassDataSource<BlueprintTestContext>(Shared = SharedType.PerTestSession)]
+public class UserControllerTests(BlueprintTestContext context)
 {
-    private readonly BlueprintTestContext _testContext;
-
-    public UserControllerTests(BlueprintTestContext testContext)
-    {
-        _testContext = testContext;
-    }
-
-    [Fact]
+    [Test]
     public async Task GetUsers_WhenCalled_ReturnsOk()
     {
         // Arrange
-        var client = _testContext.CreateClient();
+        var client = context.CreateClient();
 
         // Act
         var response = await client.GetAsync("/api/users");
 
         // Assert
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
-    [Fact]
+    [Test]
     public async Task CreateUser_WithValidData_ReturnsCreatedUser()
     {
         // Arrange
-        var client = _testContext.CreateClient();
+        var client = context.CreateClient();
         var newUser = new User
         {
             Id = Guid.NewGuid(),
@@ -50,14 +43,14 @@ public class UserControllerTests : IClassFixture<BlueprintTestContext>
         // Assert
         // The endpoint may require specific permissions or return different codes
         // depending on auth configuration; at minimum it should not be a server error
-        ((int)response.StatusCode).ShouldBeLessThan(500);
+        await Assert.That((int)response.StatusCode).IsLessThan(500);
     }
 
-    [Fact]
+    [Test]
     public async Task GetUser_WithNonExistentId_ReturnsNotFound()
     {
         // Arrange
-        var client = _testContext.CreateClient();
+        var client = context.CreateClient();
         var nonExistentId = Guid.NewGuid();
 
         // Act
@@ -66,6 +59,6 @@ public class UserControllerTests : IClassFixture<BlueprintTestContext>
         // Assert
         // Should be NotFound or Forbidden depending on implementation
         var expected = new[] { HttpStatusCode.NotFound, HttpStatusCode.Forbidden };
-        expected.ShouldContain(response.StatusCode);
+        await Assert.That(expected).Contains(response.StatusCode);
     }
 }

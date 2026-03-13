@@ -16,12 +16,11 @@ using Crucible.Common.Testing.Fixtures;
 using FakeItEasy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Shouldly;
-using Xunit;
+using TUnit.Core;
 
 namespace Blueprint.Api.Tests.Unit.Services;
 
-[Trait("Category", "Unit")]
+[Category("Unit")]
 public class UserServiceTests
 {
     private readonly IFixture _fixture;
@@ -64,7 +63,7 @@ public class UserServiceTests
         _fakeLogger,
         _mapper);
 
-    [Fact]
+    [Test]
     public async Task GetAsync_ById_WithSystemPermission_ReturnsUser()
     {
         // Arrange
@@ -87,11 +86,11 @@ public class UserServiceTests
         var result = await service.GetAsync(userId, true, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Id.ShouldBe(userId);
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result.Id).IsEqualTo(userId);
     }
 
-    [Fact]
+    [Test]
     public async Task GetAsync_ById_WithoutPermission_ThrowsForbidden()
     {
         // Arrange
@@ -100,11 +99,11 @@ public class UserServiceTests
         var service = CreateService(context);
 
         // Act & Assert
-        await Should.ThrowAsync<ForbiddenException>(
-            service.GetAsync(otherUserId, false, CancellationToken.None));
+        await Assert.That(async () => await service.GetAsync(otherUserId, false, CancellationToken.None))
+            .Throws<ForbiddenException>();
     }
 
-    [Fact]
+    [Test]
     public async Task CreateAsync_WithValidUser_CreatesAndReturnsUser()
     {
         // Arrange
@@ -121,10 +120,10 @@ public class UserServiceTests
         var result = await service.CreateAsync(inputUser, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Name.ShouldBe("Test User");
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result.Name).IsEqualTo("Test User");
         var createdEntity = await context.Users.FindAsync(inputUser.Id);
-        createdEntity.ShouldNotBeNull();
-        createdEntity.Name.ShouldBe("Test User");
+        await Assert.That(createdEntity).IsNotNull();
+        await Assert.That(createdEntity!.Name).IsEqualTo("Test User");
     }
 }

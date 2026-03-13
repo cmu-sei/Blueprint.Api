@@ -3,41 +3,34 @@
 
 using System.Net;
 using Blueprint.Api.Tests.Integration.Fixtures;
-using Shouldly;
-using Xunit;
+using TUnit.Core;
 
 namespace Blueprint.Api.Tests.Integration.Tests.Controllers;
 
-[Trait("Category", "Integration")]
-public class HealthCheckTests : IClassFixture<BlueprintTestContext>
+[Category("Integration")]
+[ClassDataSource<BlueprintTestContext>(Shared = SharedType.PerTestSession)]
+public class HealthCheckTests(BlueprintTestContext context)
 {
-    private readonly BlueprintTestContext _testContext;
-
-    public HealthCheckTests(BlueprintTestContext testContext)
-    {
-        _testContext = testContext;
-    }
-
-    [Fact]
+    [Test]
     public async Task GetVersion_WhenCalled_ReturnsOk()
     {
         // Arrange
-        var client = _testContext.CreateClient();
+        var client = context.CreateClient();
 
         // Act
         var response = await client.GetAsync("/api/version");
 
         // Assert
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
-        content.ShouldNotBeNullOrWhiteSpace();
+        await Assert.That(string.IsNullOrWhiteSpace(content)).IsFalse();
     }
 
-    [Fact]
+    [Test]
     public async Task GetLiveliness_WhenCalled_ReturnsHealthStatus()
     {
         // Arrange
-        var client = _testContext.CreateClient();
+        var client = context.CreateClient();
 
         // Act
         var response = await client.GetAsync("/api/health/live");
@@ -46,20 +39,20 @@ public class HealthCheckTests : IClassFixture<BlueprintTestContext>
         // Health check may return OK or ServiceUnavailable depending on configured checks,
         // but it should respond without error
         var validStatuses = new[] { HttpStatusCode.OK, HttpStatusCode.ServiceUnavailable };
-        validStatuses.ShouldContain(response.StatusCode);
+        await Assert.That(validStatuses).Contains(response.StatusCode);
     }
 
-    [Fact]
+    [Test]
     public async Task GetReadiness_WhenCalled_ReturnsHealthStatus()
     {
         // Arrange
-        var client = _testContext.CreateClient();
+        var client = context.CreateClient();
 
         // Act
         var response = await client.GetAsync("/api/health/ready");
 
         // Assert
         var validStatuses = new[] { HttpStatusCode.OK, HttpStatusCode.ServiceUnavailable };
-        validStatuses.ShouldContain(response.StatusCode);
+        await Assert.That(validStatuses).Contains(response.StatusCode);
     }
 }

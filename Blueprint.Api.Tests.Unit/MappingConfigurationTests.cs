@@ -3,16 +3,15 @@
 
 using AutoMapper;
 using Blueprint.Api.Infrastructure.Mapping;
-using Shouldly;
-using Xunit;
+using TUnit.Core;
 
 namespace Blueprint.Api.Tests.Unit;
 
-[Trait("Category", "Unit")]
+[Category("Unit")]
 public class MappingConfigurationTests
 {
-    [Fact]
-    public void CreateMapper_WithAllProfiles_ShouldSucceed()
+    [Test]
+    public async Task CreateMapper_WithAllProfiles_ShouldSucceed()
     {
         // Arrange - create a mapper configuration using the same assembly as Startup
         var configuration = new MapperConfiguration(cfg =>
@@ -23,11 +22,11 @@ public class MappingConfigurationTests
         // Act - verify mapper can be created (weaker than AssertConfigurationIsValid
         // because the app has unmapped navigation properties populated elsewhere)
         var mapper = configuration.CreateMapper();
-        mapper.ShouldNotBeNull();
+        await Assert.That(mapper).IsNotNull();
     }
 
-    [Fact]
-    public void GetProfiles_FromAssembly_FindsAtLeast20()
+    [Test]
+    public async Task GetProfiles_FromAssembly_FindsAtLeast20()
     {
         // Arrange
         var configuration = new MapperConfiguration(cfg =>
@@ -43,8 +42,7 @@ public class MappingConfigurationTests
             .Where(t => typeof(Profile).IsAssignableFrom(t) && !t.IsAbstract)
             .ToList();
 
-        profileTypes.Count.ShouldBeGreaterThan(0, "Should have at least one AutoMapper profile");
-        profileTypes.Count.ShouldBeGreaterThanOrEqualTo(20,
-            "Blueprint has many entity mappings; expected at least 20 profiles");
+        await Assert.That(profileTypes.Count).IsGreaterThan(0);
+        await Assert.That(profileTypes.Count).IsGreaterThanOrEqualTo(20);
     }
 }

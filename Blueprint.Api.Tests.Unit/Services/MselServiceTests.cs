@@ -15,12 +15,11 @@ using Crucible.Common.Testing.Fixtures;
 using FakeItEasy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Shouldly;
-using Xunit;
+using TUnit.Core;
 
 namespace Blueprint.Api.Tests.Unit.Services;
 
-[Trait("Category", "Unit")]
+[Category("Unit")]
 public class MselServiceTests
 {
     private readonly IFixture _fixture;
@@ -34,7 +33,7 @@ public class MselServiceTests
         _fakeMapper = A.Fake<AutoMapper.IMapper>();
     }
 
-    [Fact]
+    [Test]
     public async Task GetAsync_WithValidId_ReturnsMappedMsel()
     {
         // Arrange
@@ -76,11 +75,11 @@ public class MselServiceTests
         var result = await service.GetAsync(mselEntity.Id, true, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Id.ShouldBe(mselEntity.Id);
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result.Id).IsEqualTo(mselEntity.Id);
     }
 
-    [Fact]
+    [Test]
     public async Task DeleteAsync_WithExistingId_ReturnsTrue()
     {
         // Arrange
@@ -114,13 +113,13 @@ public class MselServiceTests
         var result = await service.DeleteAsync(mselEntity.Id, true, CancellationToken.None);
 
         // Assert
-        result.ShouldBeTrue();
+        await Assert.That(result).IsTrue();
         var deletedEntity = await context.Msels.FindAsync(mselEntity.Id);
-        deletedEntity.ShouldBeNull();
+        await Assert.That(deletedEntity).IsNull();
     }
 
-    [Fact]
-    public void FilterUserMselRolesByUser_WithSpecificUserId_FiltersCorrectly()
+    [Test]
+    public async Task FilterUserMselRolesByUser_WithSpecificUserId_FiltersCorrectly()
     {
         // Arrange
         using var context = TestDbContextFactory.Create<BlueprintContext>();
@@ -168,7 +167,7 @@ public class MselServiceTests
         service.FilterUserMselRolesByUser(userId, mselEntity);
 
         // Assert
-        mselEntity.UserMselRoles.ShouldAllBe(r => r.UserId == userId);
-        mselEntity.UserMselRoles.Count.ShouldBe(1);
+        await Assert.That(mselEntity.UserMselRoles.All(r => r.UserId == userId)).IsTrue();
+        await Assert.That(mselEntity.UserMselRoles.Count).IsEqualTo(1);
     }
 }

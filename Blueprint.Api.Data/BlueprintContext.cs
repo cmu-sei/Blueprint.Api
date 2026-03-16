@@ -15,6 +15,7 @@ using Crucible.Common.EntityEvents;
 using Crucible.Common.EntityEvents.Abstractions;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Blueprint.Api.Data
 {
@@ -86,14 +87,23 @@ namespace Blueprint.Api.Data
             return await base.SaveChangesAsync(ct);
         }
 
-        protected override async Task PublishEventsAsync(CancellationToken cancellationToken)
+        public override async Task PublishEventsAsync(IReadOnlyList<IEntityEvent> events, CancellationToken cancellationToken)
         {
-            if (EntityEvents.Count > 0 && ServiceProvider is not null)
+            if (ServiceProvider is not null)
             {
                 var mediator = ServiceProvider.GetRequiredService<IMediator>();
-                foreach (var evt in EntityEvents.Cast<INotification>())
+                var logger = ServiceProvider.GetRequiredService<ILogger<BlueprintContext>>();
+
+                foreach (var evt in events.Cast<INotification>())
                 {
-                    await mediator.Publish(evt, cancellationToken);
+                    try
+                    {
+                        await mediator.Publish(evt, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Error publishing entity event {EventType}", evt.GetType().Name);
+                    }
                 }
             }
         }

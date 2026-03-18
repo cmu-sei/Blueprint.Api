@@ -103,9 +103,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
             // Create applications in parallel batches
             var applicationTasks = msel.PlayerApplications.Select(async application => {
                 var urlString = application.Url
+                    .Replace("{blueprintMselId}", msel.Id.ToString())
                     .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
                     .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
-                    .Replace("{steamFitterScenarioId}", msel.SteamfitterScenarioId.ToString())
+                    .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
                     .Replace("{playerViewId}", msel.PlayerViewId.ToString());
                 Uri applicationUrl;
                 if (!Uri.TryCreate(urlString, UriKind.Absolute, out applicationUrl) || !(applicationUrl.Scheme == Uri.UriSchemeHttp || applicationUrl.Scheme == Uri.UriSchemeHttps))

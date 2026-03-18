@@ -102,24 +102,17 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
             // Create applications in parallel batches
             var applicationTasks = msel.PlayerApplications.Select(async application => {
-                // Normalize URLs to ensure they end with /
-                var playerUrl = clientOptions.PlayerUiUrl?.EndsWith("/") == true ? clientOptions.PlayerUiUrl : clientOptions.PlayerUiUrl + "/";
-                var citeUrl = clientOptions.CiteUiUrl?.EndsWith("/") == true ? clientOptions.CiteUiUrl : clientOptions.CiteUiUrl + "/";
-                var galleryUrl = clientOptions.GalleryUiUrl?.EndsWith("/") == true ? clientOptions.GalleryUiUrl : clientOptions.GalleryUiUrl + "/";
-                var steamfitterUrl = clientOptions.SteamfitterUiUrl?.EndsWith("/") == true ? clientOptions.SteamfitterUiUrl : clientOptions.SteamfitterUiUrl + "/";
-                var blueprintUrl = clientOptions.BlueprintUiUrl?.EndsWith("/") == true ? clientOptions.BlueprintUiUrl : clientOptions.BlueprintUiUrl + "/";
-
                 var urlString = application.Url
                     .Replace("{blueprintMselId}", msel.Id.ToString())
                     .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
                     .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
                     .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
                     .Replace("{playerViewId}", msel.PlayerViewId.ToString())
-                    .Replace("{playerUrl}", playerUrl)
-                    .Replace("{citeUrl}", citeUrl)
-                    .Replace("{galleryUrl}", galleryUrl)
-                    .Replace("{steamfitterUrl}", steamfitterUrl)
-                    .Replace("{blueprintUrl}", blueprintUrl);
+                    .Replace("{playerUrl}", clientOptions.PlayerUiUrl ?? "")
+                    .Replace("{citeUrl}", clientOptions.CiteUiUrl ?? "")
+                    .Replace("{galleryUrl}", clientOptions.GalleryUiUrl ?? "")
+                    .Replace("{steamfitterUrl}", clientOptions.SteamfitterUiUrl ?? "")
+                    .Replace("{blueprintUrl}", clientOptions.BlueprintUiUrl ?? "");
                 Uri applicationUrl;
                 if (!Uri.TryCreate(urlString, UriKind.Absolute, out applicationUrl) || !(applicationUrl.Scheme == Uri.UriSchemeHttp || applicationUrl.Scheme == Uri.UriSchemeHttps))
                 {
@@ -132,11 +125,11 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
                     .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
                     .Replace("{playerViewId}", msel.PlayerViewId.ToString())
-                    .Replace("{playerUrl}", playerUrl)
-                    .Replace("{citeUrl}", citeUrl)
-                    .Replace("{galleryUrl}", galleryUrl)
-                    .Replace("{steamfitterUrl}", steamfitterUrl)
-                    .Replace("{blueprintUrl}", blueprintUrl);
+                    .Replace("{playerUrl}", clientOptions.PlayerUiUrl ?? "")
+                    .Replace("{citeUrl}", clientOptions.CiteUiUrl ?? "")
+                    .Replace("{galleryUrl}", clientOptions.GalleryUiUrl ?? "")
+                    .Replace("{steamfitterUrl}", clientOptions.SteamfitterUiUrl ?? "")
+                    .Replace("{blueprintUrl}", clientOptions.BlueprintUiUrl ?? "");
 
                 var playerApplication = new Application() {
                     Name = application.Name,

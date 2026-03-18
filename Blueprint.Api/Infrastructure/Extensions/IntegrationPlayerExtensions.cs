@@ -90,7 +90,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Player Applications for this MSEL
-        public static async Task CreateApplicationsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
+        public static async Task CreateApplicationsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, int batchSize, Infrastructure.Options.ClientOptions clientOptions, CancellationToken ct)
         {
             // Pre-load all application teams to avoid per-application DB queries
             var applicationIds = msel.PlayerApplications.Select(a => a.Id).ToList();
@@ -103,21 +103,40 @@ namespace Blueprint.Api.Infrastructure.Extensions
             // Create applications in parallel batches
             var applicationTasks = msel.PlayerApplications.Select(async application => {
                 var urlString = application.Url
+                    .Replace("{blueprintMselId}", msel.Id.ToString())
                     .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
                     .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
-                    .Replace("{steamFitterScenarioId}", msel.SteamfitterScenarioId.ToString())
-                    .Replace("{playerViewId}", msel.PlayerViewId.ToString());
+                    .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
+                    .Replace("{playerViewId}", msel.PlayerViewId.ToString())
+                    .Replace("{playerUrl}", clientOptions.PlayerUiUrl ?? "")
+                    .Replace("{citeUrl}", clientOptions.CiteUiUrl ?? "")
+                    .Replace("{galleryUrl}", clientOptions.GalleryUiUrl ?? "")
+                    .Replace("{steamfitterUrl}", clientOptions.SteamfitterUiUrl ?? "")
+                    .Replace("{blueprintUrl}", clientOptions.BlueprintUiUrl ?? "");
                 Uri applicationUrl;
                 if (!Uri.TryCreate(urlString, UriKind.Absolute, out applicationUrl) || !(applicationUrl.Scheme == Uri.UriSchemeHttp || applicationUrl.Scheme == Uri.UriSchemeHttps))
                 {
                     applicationUrl = null;
                 }
+
+                var iconString = application.Icon
+                    ?.Replace("{blueprintMselId}", msel.Id.ToString())
+                    .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
+                    .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
+                    .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
+                    .Replace("{playerViewId}", msel.PlayerViewId.ToString())
+                    .Replace("{playerUrl}", clientOptions.PlayerUiUrl ?? "")
+                    .Replace("{citeUrl}", clientOptions.CiteUiUrl ?? "")
+                    .Replace("{galleryUrl}", clientOptions.GalleryUiUrl ?? "")
+                    .Replace("{steamfitterUrl}", clientOptions.SteamfitterUiUrl ?? "")
+                    .Replace("{blueprintUrl}", clientOptions.BlueprintUiUrl ?? "");
+
                 var playerApplication = new Application() {
                     Name = application.Name,
                     Embeddable = application.Embeddable,
                     ViewId = (Guid)msel.PlayerViewId,
                     Url = applicationUrl,
-                    Icon = application.Icon,
+                    Icon = iconString,
                     LoadInBackground = application.LoadInBackground
                 };
                 playerApplication = await playerApiClient.CreateApplicationAsync((Guid)msel.PlayerViewId, playerApplication, ct);

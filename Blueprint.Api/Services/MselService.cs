@@ -1878,59 +1878,19 @@ namespace Blueprint.Api.Services
                 )
                 .Select(mt => mt.Msel)
                 .ToListAsync(ct);
-            // get deployed msels with an invitation
-            var emailClaim = _user.Claims.SingleOrDefault(c => c.Type == "email");
-            var email = emailClaim == null ? "" : emailClaim.Value;
-            var now = DateTime.UtcNow;
-            var invitationList = await _context.Invitations
-                .Where(i =>
-                    !i.WasDeactivated &&
-                    i.ExpirationDateTime > now &&
-                    i.UserCount < i.MaxUsersAllowed &&
-                    i.Msel.Status == MselItemStatus.Deployed)
-                .ToListAsync(ct);
-            var mselIdList = invitationList
-                .Where(i =>
-                    i.EmailDomain != null &&
-                    i.EmailDomain.Contains('@') &&
-                    email.EndsWith(i.EmailDomain)
-                )
-                .Select(i => i.MselId);
-            var inviteMselList = await _context.Msels
-                .Where(m => mselIdList.Contains(m.Id))
-                .ToListAsync(ct);
-            // combine lists
-            var mselList = teamMselList.Union(inviteMselList).OrderByDescending(m => m.DateCreated);
+            // DISABLED: Auto-discovery based on email domain matching
+            // Users must now use invitation links directly to join MSELs
+            // Only return MSELs where the user is already on a team
+            var mselList = teamMselList.OrderByDescending(m => m.DateCreated);
 
             return _mapper.Map<IEnumerable<Msel>>(mselList);
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct)
         {
-            var userId = _user.GetId();
-            // get template msels with an invitation
-            var emailClaim = _user.Claims.SingleOrDefault(c => c.Type == "email");
-            var email = emailClaim == null ? "" : emailClaim.Value;
-            var now = DateTime.UtcNow;
-            var invitationList = await _context.Invitations
-                .Where(i =>
-                    !i.WasDeactivated &&
-                    i.ExpirationDateTime > now &&
-                    i.UserCount < i.MaxUsersAllowed &&
-                    i.Msel.IsTemplate)
-                .ToListAsync(ct);
-            var mselIdList = invitationList
-                .Where(i =>
-                    i.EmailDomain != null &&
-                    i.EmailDomain.Contains('@') &&
-                    email.EndsWith(i.EmailDomain)
-                )
-                .Select(i => i.MselId);
-            var mselList = await _context.Msels
-                .Where(m => mselIdList.Contains(m.Id))
-                .ToListAsync(ct);
-
-            return _mapper.Map<IEnumerable<Msel>>(mselList);
+            // DISABLED: Auto-discovery based on email domain matching
+            // Users must now use invitation links directly to launch MSELs
+            return new List<ViewModels.Msel>();
         }
 
         /// <summary>
@@ -1958,6 +1918,19 @@ namespace Blueprint.Api.Services
                 // get deployed msels with an invitation
                 var email = _user.Claims.First(c => c.Type == "email")?.Value;
                 var now = DateTime.UtcNow;
+
+                // Debug: check all invitations for this MSEL first
+                var allInvitations = await _context.Invitations
+                    .Where(i => i.MselId == mselId)
+                    .Include(i => i.Msel)
+                    .Include(i => i.Team)
+                    .ToListAsync(ct);
+
+                if (!allInvitations.Any())
+                {
+                    throw new ForbiddenException($"No invitations exist for MSEL {mselId}.");
+                }
+
                 var invitationList = await _context.Invitations
                     .Where(i =>
                         !i.WasDeactivated &&
@@ -1968,6 +1941,19 @@ namespace Blueprint.Api.Services
                         (teamId == null || teamId == i.TeamId))
                     .Include(i => i.Team)
                     .ToListAsync(ct);
+
+                if (!invitationList.Any())
+                {
+                    var inv = allInvitations.First();
+                    var reasons = new List<string>();
+                    if (inv.WasDeactivated) reasons.Add("deactivated");
+                    if (inv.ExpirationDateTime <= now) reasons.Add($"expired (expiration: {inv.ExpirationDateTime}, now: {now})");
+                    if (inv.UserCount >= inv.MaxUsersAllowed) reasons.Add($"at capacity ({inv.UserCount}/{inv.MaxUsersAllowed})");
+                    if (inv.Msel.Status != MselItemStatus.Deployed) reasons.Add($"MSEL not deployed (status: {inv.Msel.Status})");
+                    if (teamId != null && inv.TeamId != teamId) reasons.Add($"team mismatch (invitation team: {inv.TeamId}, requested: {teamId})");
+                    throw new ForbiddenException($"Invitation is not valid: {string.Join(", ", reasons)}");
+                }
+
                 var invitation = invitationList
                     .SingleOrDefault(i =>
                         i.EmailDomain == null ||
@@ -1977,21 +1963,24 @@ namespace Blueprint.Api.Services
                             email.EndsWith(i.EmailDomain)
                         )
                     );
-                if (invitation != null)
+                if (invitation == null)
                 {
-                    // increment the invitation use count
-                    invitation.UserCount++;
-                    await _context.SaveChangesAsync(ct);
-                    // add the join data to the join queue
-                    var joinInformation = new JoinInformation
-                    {
-                        UserId = _user.GetId(),
-                        PlayerTeamId = invitation.Team.PlayerTeamId,
-                        GalleryTeamId = invitation.Team.GalleryTeamId,
-                        CiteTeamId = invitation.Team.CiteTeamId
-                    };
-                    _joinQueue.Add(joinInformation);
+                    var requiredDomains = string.Join(", ", invitationList.Select(i => i.EmailDomain).Distinct());
+                    throw new ForbiddenException($"Your email ({email}) does not match the invitation requirements. Required domain(s): {requiredDomains}");
                 }
+
+                // increment the invitation use count
+                invitation.UserCount++;
+                await _context.SaveChangesAsync(ct);
+                // add the join data to the join queue
+                var joinInformation = new JoinInformation
+                {
+                    UserId = _user.GetId(),
+                    PlayerTeamId = invitation.Team.PlayerTeamId,
+                    GalleryTeamId = invitation.Team.GalleryTeamId,
+                    CiteTeamId = invitation.Team.CiteTeamId
+                };
+                _joinQueue.Add(joinInformation);
             }
 
             // Track xAPI - MSEL Joined

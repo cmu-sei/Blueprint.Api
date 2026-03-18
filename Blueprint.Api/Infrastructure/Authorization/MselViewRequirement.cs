@@ -21,29 +21,14 @@ namespace Blueprint.Api.Infrastructure.Authorization
             }
             else
             {
-                // Check if user is on a team in the MSEL and has a UserMselRole
+                // Check if user is on a team in the MSEL - team membership grants view access
                 var isOnTeam = await blueprintContext.TeamUsers
                     .Where(tu => tu.UserId == userId && tu.Team.MselId == mselId)
                     .AnyAsync();
 
                 if (isOnTeam)
                 {
-                    var hasRole = await blueprintContext.UserMselRoles
-                        .Where(umr => umr.UserId == userId &&
-                            umr.MselId == mselId &&
-                            (
-                                umr.Role == Data.Enumerations.MselRole.Viewer ||
-                                umr.Role == Data.Enumerations.MselRole.Editor ||
-                                umr.Role == Data.Enumerations.MselRole.Approver ||
-                                umr.Role == Data.Enumerations.MselRole.MoveEditor ||
-                                umr.Role == Data.Enumerations.MselRole.Owner
-                            )
-                        )
-                        .AnyAsync();
-                    if (hasRole)
-                    {
-                        return true;
-                    }
+                    return true;
                 }
 
                 // Fallback to original unit-based authorization

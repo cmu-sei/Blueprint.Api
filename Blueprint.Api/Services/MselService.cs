@@ -1971,11 +1971,40 @@ namespace Blueprint.Api.Services
 
                 // increment the invitation use count
                 invitation.UserCount++;
+
+                // add user to Blueprint team if not already a member
+                var userId = _user.GetId();
+                var existingTeamUser = await _context.TeamUsers
+                    .AnyAsync(tu => tu.TeamId == invitation.TeamId && tu.UserId == userId, ct);
+                if (!existingTeamUser)
+                {
+                    var teamUser = new TeamUserEntity
+                    {
+                        TeamId = (Guid)invitation.TeamId,
+                        UserId = userId
+                    };
+                    _context.TeamUsers.Add(teamUser);
+                }
+
+                // add Viewer role to MSEL if user doesn't already have a role
+                var existingMselRole = await _context.UserMselRoles
+                    .AnyAsync(umr => umr.MselId == mselId && umr.UserId == userId, ct);
+                if (!existingMselRole)
+                {
+                    var userMselRole = new UserMselRoleEntity
+                    {
+                        MselId = mselId,
+                        UserId = userId,
+                        Role = MselRole.Viewer
+                    };
+                    _context.UserMselRoles.Add(userMselRole);
+                }
+
                 await _context.SaveChangesAsync(ct);
                 // add the join data to the join queue
                 var joinInformation = new JoinInformation
                 {
-                    UserId = _user.GetId(),
+                    UserId = userId,
                     PlayerTeamId = invitation.Team.PlayerTeamId,
                     GalleryTeamId = invitation.Team.GalleryTeamId,
                     CiteTeamId = invitation.Team.CiteTeamId

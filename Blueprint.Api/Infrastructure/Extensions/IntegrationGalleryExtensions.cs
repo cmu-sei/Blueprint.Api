@@ -249,6 +249,21 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Add User to Gallery Team
         public static async Task AddUserToTeamAsync(Guid userId, Guid teamId, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
+            // create user in Gallery if they don't exist
+            var user = await blueprintContext.Users.FindAsync(userId);
+            if (user != null)
+            {
+                try
+                {
+                    var galleryUser = new User() { Id = user.Id, Name = user.Name };
+                    await galleryApiClient.CreateUserAsync(galleryUser, ct);
+                }
+                catch (System.Exception)
+                {
+                    // User might already exist, continue
+                }
+            }
+
             // create Gallery TeamUsers
             var galleryTeamUser = new TeamUser(){TeamId = teamId, UserId = userId};
             await galleryApiClient.CreateTeamUserAsync(galleryTeamUser, ct);

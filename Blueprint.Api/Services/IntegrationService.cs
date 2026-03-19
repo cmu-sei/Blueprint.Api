@@ -203,7 +203,7 @@ namespace Blueprint.Api.Services
                             {
                                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Push Player Applications", null, ct);
                                 currentProcessStep = "Player - push applications";
-                                await IntegrationPlayerExtensions.CreateApplicationsAsync(msel, playerApiClient, blueprintContext, _clientOptions.CurrentValue.PlayerMaxConcurrentRequests, ct);
+                                await IntegrationPlayerExtensions.CreateApplicationsAsync(msel, playerApiClient, blueprintContext, _clientOptions.CurrentValue.PlayerMaxConcurrentRequests, _clientOptions.CurrentValue, ct);
                             }
                             // set the MSEL status
                             msel.Status = Data.Enumerations.MselItemStatus.Deployed;
@@ -444,9 +444,9 @@ namespace Blueprint.Api.Services
                 var sortedMoves = msel.Moves.OrderBy(m => m.MoveNumber).ToList();
                 var movesAndGroups = GetMovesAndGroups(sortedScenarioEvents, sortedMoves);
                 var clientOptions = _clientOptions.CurrentValue;
-                var playerApiUrl = clientOptions.PlayerApiUrl.EndsWith("/") ? clientOptions.PlayerApiUrl + "api/" : clientOptions.PlayerApiUrl + "/api/";
-                var citeApiUrl = clientOptions.CiteApiUrl.EndsWith("/") ? clientOptions.CiteApiUrl + "api/" : clientOptions.CiteApiUrl + "/api/";
-                var galleryApiUrl = clientOptions.GalleryApiUrl.EndsWith("/") ? clientOptions.GalleryApiUrl + "api/" : clientOptions.GalleryApiUrl + "/api/";
+                var playerApiUrlWithApi = clientOptions.PlayerApiUrl.EndsWith("/") ? clientOptions.PlayerApiUrl + "api/" : clientOptions.PlayerApiUrl + "/api/";
+                var citeApiUrlWithApi = clientOptions.CiteApiUrl.EndsWith("/") ? clientOptions.CiteApiUrl + "api/" : clientOptions.CiteApiUrl + "/api/";
+                var galleryApiUrlWithApi = clientOptions.GalleryApiUrl.EndsWith("/") ? clientOptions.GalleryApiUrl + "api/" : clientOptions.GalleryApiUrl + "/api/";
                 var moveNumber = -1;
                 var groupNumber = 0;
                 Task triggerTask = null;
@@ -460,8 +460,8 @@ namespace Blueprint.Api.Services
                             msel,
                             steamfitterApiClient,
                             moveNumber,
-                            citeApiUrl,
-                            galleryApiUrl,
+                            citeApiUrlWithApi,
+                            galleryApiUrlWithApi,
                             null,
                             ct);
                     }
@@ -473,8 +473,8 @@ namespace Blueprint.Api.Services
                             steamfitterApiClient,
                             moveNumber,
                             groupNumber,
-                            citeApiUrl,
-                            galleryApiUrl,
+                            citeApiUrlWithApi,
+                            galleryApiUrlWithApi,
                             null,
                             ct);
                     }
@@ -487,9 +487,9 @@ namespace Blueprint.Api.Services
                             steamfitterApiClient,
                             moveNumber,
                             groupNumber,
-                            playerApiUrl,
-                            citeApiUrl,
-                            galleryApiUrl,
+                            playerApiUrlWithApi,
+                            citeApiUrlWithApi,
+                            galleryApiUrlWithApi,
                             triggerTask,
                             ct);
                     }

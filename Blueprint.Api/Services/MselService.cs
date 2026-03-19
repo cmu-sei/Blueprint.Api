@@ -16,6 +16,7 @@ using System.Threading.Tasks;
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
@@ -243,6 +244,10 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct)
         {
+            // Validate required fields
+            if (string.IsNullOrWhiteSpace(msel.Name))
+                throw new ArgumentException("MSEL Name is required and cannot be empty.");
+
             msel.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
             msel.DateCreated = DateTime.UtcNow;
             msel.CreatedBy = _user.GetId();
@@ -252,8 +257,8 @@ namespace Blueprint.Api.Services
 
             _context.Msels.Add(mselEntity);
             await _context.SaveChangesAsync(ct);
-            msel = await GetAsync(mselEntity.Id, true, ct);
 
+            msel = await GetAsync(mselEntity.Id, true, ct);
             return msel;
         }
 

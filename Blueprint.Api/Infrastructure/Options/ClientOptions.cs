@@ -15,6 +15,12 @@ namespace Blueprint.Api.Infrastructure.Options
         public string PlayerApiUrl { get; set; }
         public string SteamfitterApiUrl { get; set; }
 
+        public string CiteUiUrl { get; set; }
+        public string GalleryUiUrl { get; set; }
+        public string PlayerUiUrl { get; set; }
+        public string SteamfitterUiUrl { get; set; }
+        public string BlueprintUiUrl { get; set; }
+
         // Maximum concurrent requests for MSEL push operations
         // Higher values = faster but more database connections
         // Lower values = slower but safer for limited connection pools

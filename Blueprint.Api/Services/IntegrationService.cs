@@ -228,9 +228,10 @@ namespace Blueprint.Api.Services
                                     var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
                                     await IntegrationSteamfitterExtensions.PullFromSteamfitterAsync((Guid)msel.SteamfitterScenarioId, steamfitterApiClient, ct);
                                 }
-                                catch (System.Exception)
+                                catch (System.Exception ex)
                                 {
-                                    _logger.LogError($"{currentProcessStep} ({msel.Id})");
+                                    _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
+                                    await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, $"{msel.Id},ERROR: {currentProcessStep} failed - {ex.Message}", null, ct);
                                 }
                             }
                             // Pull from CITE
@@ -249,6 +250,7 @@ namespace Blueprint.Api.Services
                                 catch (System.Exception ex)
                                 {
                                     _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
+                                    await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, $"{msel.Id},ERROR: {currentProcessStep} failed - {ex.Message}", null, ct);
                                 }
                             }
                             // Pull from Gallery
@@ -266,6 +268,7 @@ namespace Blueprint.Api.Services
                                 catch (System.Exception ex)
                                 {
                                     _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
+                                    await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, $"{msel.Id},ERROR: {currentProcessStep} failed - {ex.Message}", null, ct);
                                 }
                             }
                             // Pull from Player
@@ -281,9 +284,10 @@ namespace Blueprint.Api.Services
                                     await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, ct);
                                     await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, ct);
                                 }
-                                catch (System.Exception)
+                                catch (System.Exception ex)
                                 {
-                                    _logger.LogError($"{currentProcessStep} ({msel.Id})");
+                                    _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
+                                    await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, $"{msel.Id},ERROR: {currentProcessStep} failed - {ex.Message}", null, ct);
                                 }
                             }
                             // update the MSEL
@@ -312,6 +316,7 @@ namespace Blueprint.Api.Services
                     catch (System.Exception ex)
                     {
                         _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
+                        await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, $"{msel.Id},ERROR: {currentProcessStep} failed - {ex.Message}", null, ct);
                     }
 
                 }
@@ -319,6 +324,12 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError(ex, $"{currentProcessStep} {integrationInformation}");
+                var mselId = integrationInformation?.MselId ?? Guid.Empty;
+                if (mselId != Guid.Empty)
+                {
+                    var errorHubGroup = _hubContext.Clients.Group(mselId.ToString());
+                    await errorHubGroup.SendAsync(MainHubMethods.MselPushStatusChange, $"{mselId},ERROR: {currentProcessStep} failed - {ex.Message}", null, ct);
+                }
             }
         }
 
@@ -345,6 +356,7 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, $"{msel.Id},ERROR: {currentProcessStep} failed - {ex.Message}", null, ct);
                 throw;
             }
         }
@@ -352,9 +364,9 @@ namespace Blueprint.Api.Services
         private async STT.Task CiteProcess(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, HashSet<Guid> citeUserIds, CancellationToken ct)
         {
             var currentProcessStep = "CITE - get hubGroup";
+            var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
             try
             {
-                var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
                 // create the Cite Evaluation
                 currentProcessStep = "CITE - create evaluation";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Evaluation to CITE", null, ct);
@@ -384,6 +396,7 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, $"{msel.Id},ERROR: {currentProcessStep} failed - {ex.Message}", null, ct);
                 throw;
             }
         }
@@ -391,9 +404,9 @@ namespace Blueprint.Api.Services
         private async STT.Task GalleryProcess(MselEntity msel, IScenarioEventService scenarioEventService, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, HashSet<Guid> galleryUserIds, CancellationToken ct)
         {
             var currentProcessStep = "Gallery - get hubGroup";
+            var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
             try
             {
-                var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
                 // start a transaction, because we will modify many database items
                 currentProcessStep = "Gallery - begin transaction";
                 await blueprintContext.Database.BeginTransactionAsync();
@@ -425,6 +438,7 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, $"{msel.Id},ERROR: {currentProcessStep} failed - {ex.Message}", null, ct);
                 throw;
             }
         }
@@ -432,9 +446,9 @@ namespace Blueprint.Api.Services
         private async STT.Task SteamfitterProcess(MselEntity msel, SteamfitterApiClient steamfitterApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             var currentProcessStep = "Steamfitter - get hubGroup";
+            var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
             try
             {
-                var hubGroup = _hubContext.Clients.Group(msel.Id.ToString());
                 // create the Steamfitter Scenario
                 currentProcessStep = "Steamfitter - create scenario";
                 await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pushing Scenario to Steamfitter", null, ct);
@@ -498,6 +512,7 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex)
             {
                 _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
+                await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, $"{msel.Id},ERROR: {currentProcessStep} failed - {ex.Message}", null, ct);
                 throw;
             }
         }

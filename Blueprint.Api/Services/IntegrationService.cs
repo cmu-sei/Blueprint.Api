@@ -138,13 +138,13 @@ namespace Blueprint.Api.Services
                             CiteApiClient citeApiClient = null;
                             SteamfitterApiClient steamfitterApiClient = null;
                             if (msel.UsePlayer)
-                                playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
+                                playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse, _clientOptions.CurrentValue);
                             if (msel.UseGallery)
-                                galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse);
+                                galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse, _clientOptions.CurrentValue);
                             if (msel.UseCite)
-                                citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CurrentValue.CiteApiUrl, tokenResponse);
+                                citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CurrentValue.CiteApiUrl, tokenResponse, _clientOptions.CurrentValue);
                             if (msel.UseSteamfitter)
-                                steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
+                                steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse, _clientOptions.CurrentValue);
 
                             // Pre-fetch user lists from external services in parallel
                             HashSet<Guid> playerUserIds = null, galleryUserIds = null, citeUserIds = null;
@@ -225,7 +225,7 @@ namespace Blueprint.Api.Services
                                 {
                                     currentProcessStep = "Steamfitter - pull scenario";
                                     await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Steamfitter Scenario", null, ct);
-                                    var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
+                                    var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse, _clientOptions.CurrentValue);
                                     await IntegrationSteamfitterExtensions.PullFromSteamfitterAsync((Guid)msel.SteamfitterScenarioId, steamfitterApiClient, ct);
                                 }
                                 catch (System.Exception)
@@ -240,7 +240,7 @@ namespace Blueprint.Api.Services
                                 {
                                     // Get CITE API client
                                     currentProcessStep = "CITE - get API client";
-                                    var citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CurrentValue.CiteApiUrl, tokenResponse);
+                                    var citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CurrentValue.CiteApiUrl, tokenResponse, _clientOptions.CurrentValue);
 
                                     currentProcessStep = "CITE - pull evaluation";
                                     await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling CITE Evaluation", null, ct);
@@ -258,7 +258,7 @@ namespace Blueprint.Api.Services
                                 {
                                     // Get Gallery API client
                                     currentProcessStep = "Gallery - get API client";
-                                    var galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse);
+                                    var galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse, _clientOptions.CurrentValue);
                                     currentProcessStep = "Gallery - pull collection";
                                     await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Gallery Collection", null, ct);
                                     await IntegrationGalleryExtensions.PullFromGalleryAsync((Guid)msel.GalleryCollectionId, galleryApiClient, ct);
@@ -274,7 +274,7 @@ namespace Blueprint.Api.Services
                                 try
                                 {
                                     currentProcessStep = "Player - get API client with token: " + tokenResponse.AccessToken;
-                                    playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
+                                    playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse, _clientOptions.CurrentValue);
                                     currentProcessStep = "Player - pull view";
                                     await hubGroup.SendAsync(MainHubMethods.MselPushStatusChange, msel.Id + ",Pulling Player View", null, ct);
                                     // TODO:  Player requires two deletes?

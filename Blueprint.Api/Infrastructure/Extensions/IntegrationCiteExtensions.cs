@@ -19,9 +19,9 @@ namespace Blueprint.Api.Infrastructure.Extensions
 {
     public static class IntegrationCiteExtensions
     {
-        public static CiteApiClient GetCiteApiClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse)
+        public static CiteApiClient GetCiteApiClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse, Infrastructure.Options.ClientOptions clientOptions = null)
         {
-            var client = ApiClientsExtensions.GetHttpClient(httpClientFactory, apiUrl, tokenResponse);
+            var client = ApiClientsExtensions.GetHttpClient(httpClientFactory, apiUrl, tokenResponse, clientOptions);
             var apiClient = new CiteApiClient(client);
             return apiClient;
         }

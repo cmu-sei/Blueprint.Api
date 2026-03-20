@@ -19,9 +19,9 @@ namespace Blueprint.Api.Infrastructure.Extensions
 {
     public static class IntegrationGalleryExtensions
     {
-        public static GalleryApiClient GetGalleryApiClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse)
+        public static GalleryApiClient GetGalleryApiClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse, Infrastructure.Options.ClientOptions clientOptions = null)
         {
-            var client = ApiClientsExtensions.GetHttpClient(httpClientFactory, apiUrl, tokenResponse);
+            var client = ApiClientsExtensions.GetHttpClient(httpClientFactory, apiUrl, tokenResponse, clientOptions);
             var apiClient = new GalleryApiClient(client);
             return apiClient;
         }

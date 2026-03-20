@@ -27,6 +27,10 @@ namespace Blueprint.Api.Infrastructure.Options
         public int CiteMaxConcurrentRequests { get; set; } = 5;
         public int GalleryMaxConcurrentRequests { get; set; } = 5;
         public int PlayerMaxConcurrentRequests { get; set; } = 3;
+
+        // HTTP client timeout in seconds for integration API calls
+        // Default 300 seconds (5 minutes) - can be increased for large MSEL push operations
+        public int HttpClientTimeoutSeconds { get; set; } = 300;
     }
 }
 

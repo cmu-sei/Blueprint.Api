@@ -12,10 +12,17 @@ namespace Blueprint.Api.Infrastructure.Extensions
 {
     public static class ApiClientsExtensions
     {
-        public static HttpClient GetHttpClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse)
+        public static HttpClient GetHttpClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse, Options.ClientOptions clientOptions = null)
         {
             var client = httpClientFactory.CreateClient();
             client.BaseAddress = new Uri(apiUrl);
+
+            // Set timeout if ClientOptions provided, otherwise use default
+            if (clientOptions != null)
+            {
+                client.Timeout = TimeSpan.FromSeconds(clientOptions.HttpClientTimeoutSeconds);
+            }
+
             // Only add the header if the token was passed
             if (tokenResponse != null)
             {
@@ -24,10 +31,17 @@ namespace Blueprint.Api.Infrastructure.Extensions
             return client;
         }
 
-        public static HttpClient GetHttpClient(IHttpClientFactory httpClientFactory, string apiUrl)
+        public static HttpClient GetHttpClient(IHttpClientFactory httpClientFactory, string apiUrl, Options.ClientOptions clientOptions = null)
         {
             var client = httpClientFactory.CreateClient();
             client.BaseAddress = new Uri(apiUrl);
+
+            // Set timeout if ClientOptions provided, otherwise use default
+            if (clientOptions != null)
+            {
+                client.Timeout = TimeSpan.FromSeconds(clientOptions.HttpClientTimeoutSeconds);
+            }
+
             return client;
         }
 

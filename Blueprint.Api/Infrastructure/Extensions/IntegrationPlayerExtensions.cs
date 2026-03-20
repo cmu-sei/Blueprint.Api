@@ -17,9 +17,9 @@ namespace Blueprint.Api.Infrastructure.Extensions
 {
     public static class IntegrationPlayerExtensions
     {
-        public static PlayerApiClient GetPlayerApiClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse)
+        public static PlayerApiClient GetPlayerApiClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse, Infrastructure.Options.ClientOptions clientOptions = null)
         {
-            var client = ApiClientsExtensions.GetHttpClient(httpClientFactory, apiUrl, tokenResponse);
+            var client = ApiClientsExtensions.GetHttpClient(httpClientFactory, apiUrl, tokenResponse, clientOptions);
             var apiClient = new PlayerApiClient(client);
             return apiClient;
         }

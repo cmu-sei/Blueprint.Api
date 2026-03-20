@@ -24,9 +24,9 @@ namespace Blueprint.Api.Infrastructure.Extensions
         private const int _iterations = 1;
         private const int _intervalSeconds = 0;
 
-        public static SteamfitterApiClient GetSteamfitterApiClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse)
+        public static SteamfitterApiClient GetSteamfitterApiClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse, Infrastructure.Options.ClientOptions clientOptions = null)
         {
-            var client = ApiClientsExtensions.GetHttpClient(httpClientFactory, apiUrl, tokenResponse);
+            var client = ApiClientsExtensions.GetHttpClient(httpClientFactory, apiUrl, tokenResponse, clientOptions);
             var apiClient = new SteamfitterApiClient(client);
             return apiClient;
         }

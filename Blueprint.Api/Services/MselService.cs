@@ -372,6 +372,12 @@ namespace Blueprint.Api.Services
                 team.MselId = mselEntity.Id;
                 team.Msel = null;
                 team.CreatedBy = mselEntity.CreatedBy;
+                // reset integration team IDs to avoid conflicts with old IDs
+                team.CiteTeamId = null;
+                team.CiteTeamTypeId = null;
+                team.CiteTeamTypeName = null;
+                team.PlayerTeamId = null;
+                team.GalleryTeamId = null;
                 // copy TeamUsers
                 foreach (var teamUser in team.TeamUsers)
                 {

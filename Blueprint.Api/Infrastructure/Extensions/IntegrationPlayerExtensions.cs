@@ -90,7 +90,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create Player Applications for this MSEL
-        public static async Task CreateApplicationsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
+        public static async Task CreateApplicationsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, int batchSize, Infrastructure.Options.ClientOptions clientOptions, CancellationToken ct)
         {
             // Pre-load all application teams to avoid per-application DB queries
             var applicationIds = msel.PlayerApplications.Select(a => a.Id).ToList();
@@ -103,21 +103,40 @@ namespace Blueprint.Api.Infrastructure.Extensions
             // Create applications in parallel batches
             var applicationTasks = msel.PlayerApplications.Select(async application => {
                 var urlString = application.Url
+                    .Replace("{blueprintMselId}", msel.Id.ToString())
                     .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
                     .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
-                    .Replace("{steamFitterScenarioId}", msel.SteamfitterScenarioId.ToString())
-                    .Replace("{playerViewId}", msel.PlayerViewId.ToString());
+                    .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
+                    .Replace("{playerViewId}", msel.PlayerViewId.ToString())
+                    .Replace("{playerUrl}", clientOptions.PlayerUiUrl ?? "")
+                    .Replace("{citeUrl}", clientOptions.CiteUiUrl ?? "")
+                    .Replace("{galleryUrl}", clientOptions.GalleryUiUrl ?? "")
+                    .Replace("{steamfitterUrl}", clientOptions.SteamfitterUiUrl ?? "")
+                    .Replace("{blueprintUrl}", clientOptions.BlueprintUiUrl ?? "");
                 Uri applicationUrl;
                 if (!Uri.TryCreate(urlString, UriKind.Absolute, out applicationUrl) || !(applicationUrl.Scheme == Uri.UriSchemeHttp || applicationUrl.Scheme == Uri.UriSchemeHttps))
                 {
                     applicationUrl = null;
                 }
+
+                var iconString = application.Icon
+                    ?.Replace("{blueprintMselId}", msel.Id.ToString())
+                    .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
+                    .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
+                    .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
+                    .Replace("{playerViewId}", msel.PlayerViewId.ToString())
+                    .Replace("{playerUrl}", clientOptions.PlayerUiUrl ?? "")
+                    .Replace("{citeUrl}", clientOptions.CiteUiUrl ?? "")
+                    .Replace("{galleryUrl}", clientOptions.GalleryUiUrl ?? "")
+                    .Replace("{steamfitterUrl}", clientOptions.SteamfitterUiUrl ?? "")
+                    .Replace("{blueprintUrl}", clientOptions.BlueprintUiUrl ?? "");
+
                 var playerApplication = new Application() {
                     Name = application.Name,
                     Embeddable = application.Embeddable,
                     ViewId = (Guid)msel.PlayerViewId,
                     Url = applicationUrl,
-                    Icon = application.Icon,
+                    Icon = iconString,
                     LoadInBackground = application.LoadInBackground
                 };
                 playerApplication = await playerApiClient.CreateApplicationAsync((Guid)msel.PlayerViewId, playerApplication, ct);
@@ -146,6 +165,21 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Add User to Player Team
         public static async Task AddUserToTeamAsync(Guid userId, Guid teamId, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
+            // create user in Player if they don't exist
+            var user = await blueprintContext.Users.FindAsync(userId);
+            if (user != null)
+            {
+                try
+                {
+                    var playerUser = new User() { Id = user.Id, Name = user.Name };
+                    await playerApiClient.CreateUserAsync(playerUser, ct);
+                }
+                catch (System.Exception)
+                {
+                    // User might already exist, continue
+                }
+            }
+
             // create Player TeamUsers
             await playerApiClient.AddUserToTeamAsync(teamId, userId, ct);
         }

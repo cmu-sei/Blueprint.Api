@@ -21,6 +21,17 @@ namespace Blueprint.Api.Infrastructure.Authorization
             }
             else
             {
+                // Check if user is on a team in the MSEL - team membership grants view access
+                var isOnTeam = await blueprintContext.TeamUsers
+                    .Where(tu => tu.UserId == userId && tu.Team.MselId == mselId)
+                    .AnyAsync();
+
+                if (isOnTeam)
+                {
+                    return true;
+                }
+
+                // Fallback to original unit-based authorization
                 var mselUnitIdList = await blueprintContext.MselUnits
                     .Where(t => t.MselId == mselId)
                     .Select(t => t.UnitId)

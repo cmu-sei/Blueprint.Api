@@ -97,7 +97,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Creates a new TeamUser with the attributes specified
         /// <para />
-        /// Accessible only to a SuperUser
+        /// Accessible to a SuperUser or a MSEL Owner
         /// </remarks>
         /// <param name="team">The data to create the TeamUser with</param>
         /// <param name="ct"></param>
@@ -106,10 +106,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createTeamUser")]
         public async Task<IActionResult> Create([FromBody] TeamUser team, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
-                throw new ForbiddenException();
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct);
             team.CreatedBy = User.GetId();
-            var createdTeamUser = await _teamUserService.CreateAsync(team, ct);
+            var createdTeamUser = await _teamUserService.CreateAsync(team, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdTeamUser.Id }, createdTeamUser);
         }
 
@@ -119,7 +118,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Deletes a TeamUser with the specified id
         /// <para />
-        /// Accessible only to a SuperUser
+        /// Accessible to a SuperUser or a MSEL Owner
         /// </remarks>
         /// <param name="id">The id of the TeamUser to delete</param>
         /// <param name="ct"></param>
@@ -128,9 +127,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteTeamUser")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
-                throw new ForbiddenException();
-            await _teamUserService.DeleteAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct);
+            await _teamUserService.DeleteAsync(id, hasSystemPermission, ct);
             return NoContent();
         }
 
@@ -140,7 +138,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Deletes a TeamUser with the specified user ID and team ID
         /// <para />
-        /// Accessible only to a SuperUser
+        /// Accessible to a SuperUser or a MSEL Owner
         /// </remarks>
         /// <param name="userId">ID of a user.</param>
         /// <param name="teamId">ID of a team.</param>
@@ -150,9 +148,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "deleteTeamUserByIds")]
         public async Task<IActionResult> Delete(Guid teamId, Guid userId, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct))
-                throw new ForbiddenException();
-            await _teamUserService.DeleteByIdsAsync(teamId, userId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct);
+            await _teamUserService.DeleteByIdsAsync(teamId, userId, hasSystemPermission, ct);
             return NoContent();
         }
 

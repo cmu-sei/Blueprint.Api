@@ -105,7 +105,9 @@ namespace Blueprint.Api.Services
 
             if (dataField.MselId.HasValue)
             {
-                if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), dataField.MselId, _context))
+                if (!hasMselPermission &&
+                    !await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(_user.GetId(), dataField.MselId, _context))
                     throw new ForbiddenException();
             }
             else
@@ -137,7 +139,9 @@ namespace Blueprint.Api.Services
 
             if (dataField.MselId.HasValue)
             {
-                if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), dataField.MselId, _context))
+                if (!hasMselPermission &&
+                    !await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(_user.GetId(), dataField.MselId, _context))
                     throw new ForbiddenException();
             }
             else
@@ -178,7 +182,9 @@ namespace Blueprint.Api.Services
 
             if (dataField.MselId.HasValue)
             {
-                if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), dataField.MselId, _context))
+                if (!hasMselPermission &&
+                    !await MselOwnerRequirement.IsMet(_user.GetId(), dataField.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(_user.GetId(), dataField.MselId, _context))
                     throw new ForbiddenException();
             }
             else

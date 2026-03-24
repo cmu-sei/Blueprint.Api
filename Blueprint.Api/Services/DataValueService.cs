@@ -82,7 +82,9 @@ namespace Blueprint.Api.Services
                 .Select(df => df.MselId)
                 .FirstOrDefaultAsync(ct);
             // DataValues are always MSEL-specific (through ScenarioEvent)
-            if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context))
+            if (!hasMselPermission &&
+                !await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context) &&
+                !await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context))
                 throw new ForbiddenException();
 
             dataValue.Id = dataValue.Id != Guid.Empty ? dataValue.Id : Guid.NewGuid();
@@ -154,7 +156,9 @@ namespace Blueprint.Api.Services
                 .Select(df => df.MselId)
                 .FirstOrDefaultAsync();
             // DataValues are always MSEL-specific (through ScenarioEvent)
-            if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context))
+            if (!hasMselPermission &&
+                !await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context) &&
+                !await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context))
                 throw new ForbiddenException();
 
             _context.DataValues.Remove(dataValueToDelete);

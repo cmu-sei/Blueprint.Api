@@ -90,7 +90,9 @@ namespace Blueprint.Api.Services
         {
             if (organization.MselId.HasValue)
             {
-                if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), organization.MselId, _context))
+                if (!hasMselPermission &&
+                    !await MselOwnerRequirement.IsMet(_user.GetId(), organization.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(_user.GetId(), organization.MselId, _context))
                     throw new ForbiddenException();
             }
             else
@@ -122,7 +124,9 @@ namespace Blueprint.Api.Services
         {
             if (organization.MselId.HasValue)
             {
-                if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), organization.MselId, _context))
+                if (!hasMselPermission &&
+                    !await MselOwnerRequirement.IsMet(_user.GetId(), organization.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(_user.GetId(), organization.MselId, _context))
                     throw new ForbiddenException();
             }
             else
@@ -163,7 +167,9 @@ namespace Blueprint.Api.Services
 
             if (organizationToDelete.MselId.HasValue)
             {
-                if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), organizationToDelete.MselId, _context))
+                if (!hasMselPermission &&
+                    !await MselOwnerRequirement.IsMet(_user.GetId(), organizationToDelete.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(_user.GetId(), organizationToDelete.MselId, _context))
                     throw new ForbiddenException();
             }
             else

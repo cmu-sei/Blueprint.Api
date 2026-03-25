@@ -100,7 +100,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     }
                     // create Gallery TeamUsers, using eager-loaded role data
                     var isObserverRole = team.UserTeamRoles
-                        .Any(umr => umr.UserId == user.Id && umr.Role == TeamRole.Observer);
+                        .Any(umr => umr.UserId == user.Id && umr.Role == "Member");
                     var teamUser = new TeamUser() {
                         TeamId = galleryTeam.Id,
                         UserId = user.Id,

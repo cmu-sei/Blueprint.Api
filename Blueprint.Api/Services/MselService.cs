@@ -177,14 +177,19 @@ namespace Blueprint.Api.Services
                 .Include(mu => mu.Msel.UserMselRoles)
                 .Select(mu => mu.Msel)
                 .ToListAsync(ct);
-            // get msels created by user and all templates, if user is a content developer
-            var myMselList = new List<MselEntity>();
+            // always include msels created by user
+            var myMselList = await _context.Msels
+                .Where(m => m.CreatedBy == userId && m.Status != MselItemStatus.Archived)
+                .Include(m => m.UserMselRoles)
+                .ToListAsync(ct);
+            // also include all templates, if user is a content developer
             if (hasViewMselsPermission)
             {
-                myMselList = await _context.Msels
-                    .Where(m => (m.CreatedBy == userId || m.IsTemplate) && m.Status != MselItemStatus.Archived)
+                var templateList = await _context.Msels
+                    .Where(m => m.IsTemplate && m.CreatedBy != userId && m.Status != MselItemStatus.Archived)
                     .Include(m => m.UserMselRoles)
                     .ToListAsync(ct);
+                myMselList.AddRange(templateList);
             }
             // combine lists
             var mselList = unitMselList.Union(myMselList).OrderBy(m => m.Name).ToList();
@@ -397,8 +402,7 @@ namespace Blueprint.Api.Services
                 if (addUser)
                 {
                     team.TeamUsers.Add(new TeamUserEntity { TeamId = team.Id, UserId = currentUserId });
-                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = Data.Enumerations.TeamRole.Inviter });
-                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = Data.Enumerations.TeamRole.Incrementer });
+                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = "Submitter" });
                 }
             }
             // copy Organizations

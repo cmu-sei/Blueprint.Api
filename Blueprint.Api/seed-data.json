@@ -1,32 +1,4 @@
 {
-  "Permissions": [
-    {
-      "Id": "2f82cb36-4c0a-4b60-857f-c4f2a9e70817",
-      "Key": "SystemAdmin",
-      "Value": "true",
-      "Description": "Has Full Rights. Can access administration pages.",
-      "ReadOnly": true
-    },
-    {
-      "Id": "c881417e-02f1-4232-b06b-723901120e20",
-      "Key": "ContentDeveloper",
-      "Value": "true",
-      "Description": "Can create/edit/delete MSELs",
-      "ReadOnly": true
-    }
-  ],
-  "Users": [
-    {
-      "Id": "9fd3c38e-58b0-4af1-80d1-1895af91f1f9",
-      "Name": "Admin User"
-    }
-  ],
-  "UserPermissions": [
-    {
-      "UserId": "9fd3c38e-58b0-4af1-80d1-1895af91f1f9",
-      "PermissionId": "2f82cb36-4c0a-4b60-857f-c4f2a9e70817"
-    }
-  ],
   "Msels": [
     {
       "Id": "aa8dbeb0-c441-4b54-8e91-3716e3404d31",

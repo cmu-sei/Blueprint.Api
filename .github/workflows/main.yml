@@ -17,8 +17,6 @@ jobs:
     with:
       imageName: cmusei/blueprint-api
       additionalTarget: debug
-      versionMode: csproj
-      versionFiles: Blueprint.Api/Blueprint.Api.csproj
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}

@@ -402,8 +402,7 @@ namespace Blueprint.Api.Services
                 if (addUser)
                 {
                     team.TeamUsers.Add(new TeamUserEntity { TeamId = team.Id, UserId = currentUserId });
-                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = Data.Enumerations.TeamRole.Inviter });
-                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = Data.Enumerations.TeamRole.Incrementer });
+                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = "Submitter" });
                 }
             }
             // copy Organizations

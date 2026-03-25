@@ -6,15 +6,13 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Blueprint.Api.Data.Enumerations;
-
 namespace Blueprint.Api.Data.Models
 {
     public class UserTeamRoleEntity : BaseEntity
     {
         public UserTeamRoleEntity() { }
 
-        public UserTeamRoleEntity(Guid userId, Guid teamId, TeamRole role)
+        public UserTeamRoleEntity(Guid userId, Guid teamId, string role)
         {
             TeamId = teamId;
             UserId = userId;
@@ -28,7 +26,7 @@ namespace Blueprint.Api.Data.Models
         public TeamEntity Team { get; set; }
         public Guid UserId { get; set; }
         public UserEntity User { get; set; }
-        public TeamRole Role { get; set; }
+        public string Role { get; set; }
     }
 
     public class UserTeamRoleConfiguration : IEntityTypeConfiguration<UserTeamRoleEntity>

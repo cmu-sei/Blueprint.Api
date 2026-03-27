@@ -67,8 +67,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == mselEntity.Id, cancellationToken);
             var userId = mselEntity.ModifiedBy == null ? mselEntity.CreatedBy : mselEntity.ModifiedBy;
-            _mselService.FilterUserMselRolesByUser((Guid)userId, mselEntity);
             var msel = _mapper.Map<Msel>(mselEntity);
+            _mselService.FilterUserMselRolesByUser((Guid)userId, msel);
             if (msel != null)
             {
                 if (msel.UseGallery)

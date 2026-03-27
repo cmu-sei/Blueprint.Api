@@ -57,7 +57,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
         Task<Guid> JoinMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct);  // returns the Player View ID
         Task<Msel> LaunchMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct);  // returns the newly created MSEL
-        void FilterUserMselRolesByUser(Guid userId, MselEntity mselEntity);
+        void FilterUserMselRolesByUser(Guid userId, ViewModels.Msel msel);
     }
 
     public class MselService : IMselService
@@ -198,13 +198,14 @@ namespace Blueprint.Api.Services
             {
                 mselList = mselList.Where(m => !m.IsTemplate).ToList();
             }
+            var result = _mapper.Map<IEnumerable<Msel>>(mselList).ToList();
             // only return UserMselRoles for the requested user
-            foreach (var msel in mselList)
+            foreach (var msel in result)
             {
                 FilterUserMselRolesByUser(userId, msel);
             }
 
-            return _mapper.Map<IEnumerable<Msel>>(mselList);
+            return result;
         }
 
         public async Task<ViewModels.Msel> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -228,8 +229,8 @@ namespace Blueprint.Api.Services
                 .Include(m => m.UserMselRoles)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
-            FilterUserMselRolesByUser(_user.GetId(), mselEntity);
             var msel = _mapper.Map<Msel>(mselEntity);
+            FilterUserMselRolesByUser(_user.GetId(), msel);
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
             {
@@ -2085,16 +2086,11 @@ namespace Blueprint.Api.Services
             return myDeployedMselIds;
         }
 
-        public void FilterUserMselRolesByUser(Guid userId, MselEntity mselEntity)
+        public void FilterUserMselRolesByUser(Guid userId, ViewModels.Msel msel)
         {
-            var userMselRoles = mselEntity.UserMselRoles.ToArray();
-            for (var i = 0; i < userMselRoles.Count(); i++)
-            {
-                if (userMselRoles[i].UserId != userId)
-                {
-                    mselEntity.UserMselRoles.Remove(userMselRoles[i]);
-                }
-            }
+            msel.UserMselRoles = msel.UserMselRoles
+                .Where(r => r.UserId == userId)
+                .ToList();
         }
 
     }

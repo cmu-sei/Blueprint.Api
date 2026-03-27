@@ -57,18 +57,17 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(mselEntity);
+            var userId = (Guid)(mselEntity.ModifiedBy ?? mselEntity.CreatedBy);
             mselEntity = await _db.Msels
                 .Include(m => m.MselUnits)
                 .ThenInclude(t => t.Unit)
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
-                .Include(m => m.UserMselRoles)
+                .Include(m => m.UserMselRoles.Where(r => r.UserId == userId))
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == mselEntity.Id, cancellationToken);
-            var userId = mselEntity.ModifiedBy == null ? mselEntity.CreatedBy : mselEntity.ModifiedBy;
             var msel = _mapper.Map<Msel>(mselEntity);
-            _mselService.FilterUserMselRolesByUser((Guid)userId, msel);
             if (msel != null)
             {
                 if (msel.UseGallery)

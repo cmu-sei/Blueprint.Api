@@ -57,7 +57,6 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
         Task<Guid> JoinMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct);  // returns the Player View ID
         Task<Msel> LaunchMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct);  // returns the newly created MSEL
-        void FilterUserMselRolesByUser(Guid userId, ViewModels.Msel msel);
     }
 
     public class MselService : IMselService
@@ -174,20 +173,20 @@ namespace Blueprint.Api.Services
             // get the units' msels
             var unitMselList = await _context.MselUnits
                 .Where(mu => unitIdList.Contains(mu.UnitId) && mu.Msel.Status != MselItemStatus.Archived)
-                .Include(mu => mu.Msel.UserMselRoles)
+                .Include(mu => mu.Msel.UserMselRoles.Where(r => r.UserId == userId))
                 .Select(mu => mu.Msel)
                 .ToListAsync(ct);
             // always include msels created by user
             var myMselList = await _context.Msels
                 .Where(m => m.CreatedBy == userId && m.Status != MselItemStatus.Archived)
-                .Include(m => m.UserMselRoles)
+                .Include(m => m.UserMselRoles.Where(r => r.UserId == userId))
                 .ToListAsync(ct);
             // also include all templates, if user is a content developer
             if (hasViewMselsPermission)
             {
                 var templateList = await _context.Msels
                     .Where(m => m.IsTemplate && m.CreatedBy != userId && m.Status != MselItemStatus.Archived)
-                    .Include(m => m.UserMselRoles)
+                    .Include(m => m.UserMselRoles.Where(r => r.UserId == userId))
                     .ToListAsync(ct);
                 myMselList.AddRange(templateList);
             }
@@ -198,14 +197,7 @@ namespace Blueprint.Api.Services
             {
                 mselList = mselList.Where(m => !m.IsTemplate).ToList();
             }
-            var result = _mapper.Map<IEnumerable<Msel>>(mselList).ToList();
-            // only return UserMselRoles for the requested user
-            foreach (var msel in result)
-            {
-                FilterUserMselRolesByUser(userId, msel);
-            }
-
-            return result;
+            return _mapper.Map<IEnumerable<Msel>>(mselList);
         }
 
         public async Task<ViewModels.Msel> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -226,11 +218,10 @@ namespace Blueprint.Api.Services
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
-                .Include(m => m.UserMselRoles)
+                .Include(m => m.UserMselRoles.Where(r => r.UserId == _user.GetId()))
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
             var msel = _mapper.Map<Msel>(mselEntity);
-            FilterUserMselRolesByUser(_user.GetId(), msel);
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
             {
@@ -2084,13 +2075,6 @@ namespace Blueprint.Api.Services
                 .Select(umr => umr.Id)
                 .ToListAsync(ct);
             return myDeployedMselIds;
-        }
-
-        public void FilterUserMselRolesByUser(Guid userId, ViewModels.Msel msel)
-        {
-            msel.UserMselRoles = msel.UserMselRoles
-                .Where(r => r.UserId == userId)
-                .ToList();
         }
 
     }

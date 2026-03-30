@@ -738,9 +738,11 @@ namespace Blueprint.Api.Services
                     if (!String.IsNullOrEmpty(scenarioEventList[i].RowMetadata))
                     {
                         Double height;
-                        double.TryParse(scenarioEventList[i].RowMetadata.Split(",")[0], out height);
-                        newRow.Height = height;
-                        newRow.CustomHeight = true;
+                        if (double.TryParse(scenarioEventList[i].RowMetadata.Split(",")[0], out height) && height > 15)
+                        {
+                            newRow.Height = height;
+                            newRow.CustomHeight = true;
+                        }
                     }
                     newRow.RowIndex = (uint)(i + 2);  // the header row is RowIndex 1
                     // add the cells for this row

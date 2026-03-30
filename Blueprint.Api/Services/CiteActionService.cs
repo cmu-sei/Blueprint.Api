@@ -94,7 +94,9 @@ namespace Blueprint.Api.Services
         {
             if (citeAction.MselId.HasValue)
             {
-                if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), citeAction.MselId, _context))
+                if (!hasMselPermission &&
+                    !await MselOwnerRequirement.IsMet(_user.GetId(), citeAction.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(_user.GetId(), citeAction.MselId, _context))
                     throw new ForbiddenException();
             }
             else
@@ -117,7 +119,9 @@ namespace Blueprint.Api.Services
         {
             if (citeAction.MselId.HasValue)
             {
-                if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), citeAction.MselId, _context))
+                if (!hasMselPermission &&
+                    !await MselOwnerRequirement.IsMet(_user.GetId(), citeAction.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(_user.GetId(), citeAction.MselId, _context))
                     throw new ForbiddenException();
             }
             else
@@ -151,7 +155,9 @@ namespace Blueprint.Api.Services
 
             if (citeActionToDelete.MselId.HasValue)
             {
-                if (!hasMselPermission && !await MselEditorRequirement.IsMet(_user.GetId(), citeActionToDelete.MselId, _context))
+                if (!hasMselPermission &&
+                    !await MselOwnerRequirement.IsMet(_user.GetId(), citeActionToDelete.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(_user.GetId(), citeActionToDelete.MselId, _context))
                     throw new ForbiddenException();
             }
             else

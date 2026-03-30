@@ -57,7 +57,6 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
         Task<Guid> JoinMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct);  // returns the Player View ID
         Task<Msel> LaunchMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct);  // returns the newly created MSEL
-        void FilterUserMselRolesByUser(Guid userId, MselEntity mselEntity);
     }
 
     public class MselService : IMselService
@@ -174,17 +173,22 @@ namespace Blueprint.Api.Services
             // get the units' msels
             var unitMselList = await _context.MselUnits
                 .Where(mu => unitIdList.Contains(mu.UnitId) && mu.Msel.Status != MselItemStatus.Archived)
-                .Include(mu => mu.Msel.UserMselRoles)
+                .Include(mu => mu.Msel.UserMselRoles.Where(r => r.UserId == userId))
                 .Select(mu => mu.Msel)
                 .ToListAsync(ct);
-            // get msels created by user and all templates, if user is a content developer
-            var myMselList = new List<MselEntity>();
+            // always include msels created by user
+            var myMselList = await _context.Msels
+                .Where(m => m.CreatedBy == userId && m.Status != MselItemStatus.Archived)
+                .Include(m => m.UserMselRoles.Where(r => r.UserId == userId))
+                .ToListAsync(ct);
+            // also include all templates, if user is a content developer
             if (hasViewMselsPermission)
             {
-                myMselList = await _context.Msels
-                    .Where(m => (m.CreatedBy == userId || m.IsTemplate) && m.Status != MselItemStatus.Archived)
-                    .Include(m => m.UserMselRoles)
+                var templateList = await _context.Msels
+                    .Where(m => m.IsTemplate && m.CreatedBy != userId && m.Status != MselItemStatus.Archived)
+                    .Include(m => m.UserMselRoles.Where(r => r.UserId == userId))
                     .ToListAsync(ct);
+                myMselList.AddRange(templateList);
             }
             // combine lists
             var mselList = unitMselList.Union(myMselList).OrderBy(m => m.Name).ToList();
@@ -193,12 +197,6 @@ namespace Blueprint.Api.Services
             {
                 mselList = mselList.Where(m => !m.IsTemplate).ToList();
             }
-            // only return UserMselRoles for the requested user
-            foreach (var msel in mselList)
-            {
-                FilterUserMselRolesByUser(userId, msel);
-            }
-
             return _mapper.Map<IEnumerable<Msel>>(mselList);
         }
 
@@ -220,10 +218,9 @@ namespace Blueprint.Api.Services
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
-                .Include(m => m.UserMselRoles)
+                .Include(m => m.UserMselRoles.Where(r => r.UserId == _user.GetId()))
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
-            FilterUserMselRolesByUser(_user.GetId(), mselEntity);
             var msel = _mapper.Map<Msel>(mselEntity);
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
@@ -397,8 +394,7 @@ namespace Blueprint.Api.Services
                 if (addUser)
                 {
                     team.TeamUsers.Add(new TeamUserEntity { TeamId = team.Id, UserId = currentUserId });
-                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = Data.Enumerations.TeamRole.Inviter });
-                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = Data.Enumerations.TeamRole.Incrementer });
+                    team.UserTeamRoles.Add(new UserTeamRoleEntity { TeamId = team.Id, UserId = currentUserId, Role = "Submitter" });
                 }
             }
             // copy Organizations
@@ -2079,18 +2075,6 @@ namespace Blueprint.Api.Services
                 .Select(umr => umr.Id)
                 .ToListAsync(ct);
             return myDeployedMselIds;
-        }
-
-        public void FilterUserMselRolesByUser(Guid userId, MselEntity mselEntity)
-        {
-            var userMselRoles = mselEntity.UserMselRoles.ToArray();
-            for (var i = 0; i < userMselRoles.Count(); i++)
-            {
-                if (userMselRoles[i].UserId != userId)
-                {
-                    mselEntity.UserMselRoles.Remove(userMselRoles[i]);
-                }
-            }
         }
 
     }

@@ -11,7 +11,6 @@ using Microsoft.EntityFrameworkCore;
 using IdentityModel.Client;
 using Cite.Api.Client;
 using Blueprint.Api.Data;
-using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
@@ -98,6 +97,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Create Cite Teams for this MSEL
         public static async Task CreateTeamsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, HashSet<Guid> citeUserIds, CancellationToken ct)
         {
+            // Fetch CITE roles once for mapping Blueprint roles to CITE role IDs
+            var citeRoles = await citeApiClient.GetAllTeamRolesAsync(ct);
+            var roleNameToId = citeRoles.ToDictionary(r => r.Name, r => r.Id);
+
             // use eager-loaded teams from the MSEL
             var teams = msel.Teams.ToList();
             foreach (var team in teams)
@@ -129,10 +132,19 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             await citeApiClient.CreateUserAsync(newUser, ct);
                             citeUserIds.Add(user.Id);
                         }
+                        // Map Blueprint team role to CITE role ID
+                        var userTeamRole = team.UserTeamRoles
+                            .FirstOrDefault(utr => utr.UserId == user.Id);
+                        Guid? citeRoleId = null;
+                        if (userTeamRole != null && roleNameToId.TryGetValue(userTeamRole.Role, out var mappedId))
+                        {
+                            citeRoleId = mappedId;
+                        }
                         // create Cite TeamMemberships
                         var teamMembership = new TeamMembership() {
                             TeamId = citeTeam.Id,
-                            UserId = user.Id
+                            UserId = user.Id,
+                            RoleId = citeRoleId
                         };
                         try
                         {

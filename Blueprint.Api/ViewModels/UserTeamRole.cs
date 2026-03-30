@@ -2,7 +2,6 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using System;
-using Blueprint.Api.Data.Enumerations;
 
 namespace Blueprint.Api.ViewModels
 {
@@ -11,7 +10,7 @@ namespace Blueprint.Api.ViewModels
         public Guid Id { get; set; }
         public Guid TeamId { get; set; }
         public Guid UserId { get; set; }
-        public TeamRole Role { get; set; }
+        public string Role { get; set; }
     }
 
 }

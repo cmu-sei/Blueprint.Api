@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Blueprint.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    partial class BlueprintContextModelSnapshot : ModelSnapshot
+    [Migration("20260325153400_TeamRoleEnumToString")]
+    partial class TeamRoleEnumToString
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -859,10 +862,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<int>("DurationSeconds")
                         .HasColumnType("integer")
                         .HasColumnName("duration_seconds");
-
-                    b.Property<bool>("EmailEnabled")
-                        .HasColumnType("boolean")
-                        .HasColumnName("email_enabled");
 
                     b.Property<Guid?>("GalleryCollectionId")
                         .HasColumnType("uuid")

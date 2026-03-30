@@ -59,6 +59,23 @@ namespace Blueprint.Api.Controllers
             return Ok(list);
         }
 
+        /// <summary>
+        /// Gets all TeamRoles from CITE
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of all of the TeamRoles.
+        /// </remarks>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("teamroles")]
+        [ProducesResponseType(typeof(IEnumerable<TeamRole>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getTeamRoles")]
+        public async Task<IActionResult> GetTeamRoles(CancellationToken ct)
+        {
+            var list = await _citeService.GetTeamRolesAsync(ct);
+            return Ok(list);
+        }
+
     }
 
 }

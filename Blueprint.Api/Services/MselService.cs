@@ -1262,8 +1262,9 @@ namespace Blueprint.Api.Services
             boldFont.Append(new Bold());
             fonts.Append(font);
             fonts.Append(boldFont);
+            fonts.Count = (UInt32Value)(uint)fonts.ChildElements.Count;
 
-            Fills fills = new Fills() { Count = (UInt32Value)5U };
+            Fills fills = new Fills();
 
             // FillId = 0
             Fill fill1 = new Fill();
@@ -1292,6 +1293,7 @@ namespace Blueprint.Api.Services
                 newFill.Append(patternFill);
                 fills.Append(newFill);
             }
+            fills.Count = (UInt32Value)(uint)fills.ChildElements.Count;
 
             // borders
             Borders borders = new Borders();
@@ -1513,10 +1515,15 @@ namespace Blueprint.Api.Services
 
         private string GetCellReference(int columnIndex, int rowIndex)
         {
-            var firstLetter = columnIndex > 26 ? char.ConvertFromUtf32(64 + columnIndex / 26) : "";
-            var secondLetter = char.ConvertFromUtf32(64 + columnIndex % 26);
+            string columnRef = "";
+            while (columnIndex > 0)
+            {
+                columnIndex--;
+                columnRef = (char)('A' + columnIndex % 26) + columnRef;
+                columnIndex /= 26;
+            }
 
-            return firstLetter + secondLetter + rowIndex.ToString();
+            return columnRef + rowIndex.ToString();
         }
 
         private string GetTintedColor(string hexColor, double tint)

@@ -12417,8 +12417,7 @@
           "User",
           "Checkbox",
           "Url",
-          "Move",
-          "DeliveryMethod"
+          "Move"
         ],
         "type": "string"
       },

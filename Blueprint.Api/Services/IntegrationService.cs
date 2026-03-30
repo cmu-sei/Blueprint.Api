@@ -492,7 +492,7 @@ namespace Blueprint.Api.Services
                             null,
                             ct);
                     }
-                    if (scenarioEvent.IntegrationTarget.Contains("Steamfitter") && scenarioEvent.SteamfitterTask != null)
+                    if (scenarioEvent.IntegrationTarget != null && scenarioEvent.IntegrationTarget.Contains("Steamfitter") && scenarioEvent.SteamfitterTask != null)
                     {
                         currentProcessStep = "Steamfitter - pushing steamfitter task " + scenarioEvent.SteamfitterTaskId.ToString();
                         triggerTask = await IntegrationSteamfitterExtensions.CreateScenarioTasksAsync(

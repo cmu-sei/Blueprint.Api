@@ -26,6 +26,7 @@ using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.ViewModels;
 using Cite.Api.Client;
+using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Packaging;
@@ -789,8 +790,16 @@ namespace Blueprint.Api.Services
                                     cell.CellValue = new CellValue(stringValue);
                                     break;
                                 default:
-                                    cell.DataType = CellValues.String;
-                                    cell.CellValue = new CellValue(stringValue);
+                                    if (ContainsHtml(stringValue))
+                                    {
+                                        cell.DataType = CellValues.InlineString;
+                                        cell.Append(HtmlToInlineString(stringValue));
+                                    }
+                                    else
+                                    {
+                                        cell.DataType = CellValues.String;
+                                        cell.CellValue = new CellValue(stringValue);
+                                    }
                                     break;
                             }
                         }
@@ -1060,6 +1069,7 @@ namespace Blueprint.Api.Services
                 {
                     Id = Guid.NewGuid(),
                     MselId = mselId,
+                    ScenarioEventType = EventType.Inject,
                     DeltaSeconds = rowIndex * 60,    // value of seconds (1 minute) used to maintain the row order
                     RowMetadata = rowMetadata
                 };
@@ -1131,9 +1141,18 @@ namespace Blueprint.Api.Services
                                 currentCellValue = cell.CellValue.Text;
                                 break;
                             case CellValues.InlineString:
+                                if (cell.InlineString != null)
+                                {
+                                    currentCellValue = InlineStringToHtml(cell.InlineString);
+                                }
+                                else if (cell.CellValue != null)
+                                {
+                                    currentCellValue = cell.CellValue.Text;
+                                }
+                                break;
                             case CellValues.String:
                             default:
-                                currentCellValue = cell.CellValue.Text;
+                                currentCellValue = cell.CellValue != null ? cell.CellValue.Text : cell.InnerText;
                                 break;
                         }
                     }
@@ -1556,6 +1575,95 @@ namespace Blueprint.Api.Services
             var g = gint.ToString();
             var b = bint.ToString();
             return r + "," + g + "," + b;
+        }
+
+        private bool ContainsHtml(string value)
+        {
+            return Regex.IsMatch(value, @"<[a-zA-Z][^>]*>");
+        }
+
+        private InlineString HtmlToInlineString(string html)
+        {
+            var inlineString = new InlineString();
+
+            // Convert block-level elements to newlines
+            html = Regex.Replace(html, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
+            html = Regex.Replace(html, @"</(?:p|div|tr)>", "\n", RegexOptions.IgnoreCase);
+            html = Regex.Replace(html, @"<li[^>]*>", "\n\u2022 ", RegexOptions.IgnoreCase);
+
+            // Track bold/italic state
+            bool bold = false;
+            bool italic = false;
+
+            // Split into tags and text segments
+            var parts = Regex.Split(html, @"(<[^>]+>)");
+            foreach (var part in parts)
+            {
+                if (string.IsNullOrEmpty(part)) continue;
+
+                if (part.StartsWith("<"))
+                {
+                    var tagLower = part.ToLower();
+                    if (Regex.IsMatch(tagLower, @"^<b[\s>]") || Regex.IsMatch(tagLower, @"^<strong[\s>]"))
+                        bold = true;
+                    else if (tagLower.StartsWith("</b>") || tagLower.StartsWith("</strong>"))
+                        bold = false;
+                    else if (Regex.IsMatch(tagLower, @"^<i[\s>]") || Regex.IsMatch(tagLower, @"^<em[\s>]"))
+                        italic = true;
+                    else if (tagLower.StartsWith("</i>") || tagLower.StartsWith("</em>"))
+                        italic = false;
+                    continue;
+                }
+
+                var text = System.Net.WebUtility.HtmlDecode(part);
+                if (string.IsNullOrEmpty(text)) continue;
+
+                var run = new Run();
+                if (bold || italic)
+                {
+                    var runProps = new RunProperties();
+                    if (bold) runProps.Append(new Bold());
+                    if (italic) runProps.Append(new Italic());
+                    run.Append(runProps);
+                }
+                var textElement = new Text(text) { Space = SpaceProcessingModeValues.Preserve };
+                run.Append(textElement);
+                inlineString.Append(run);
+            }
+
+            if (!inlineString.Elements<Run>().Any())
+            {
+                var run = new Run();
+                run.Append(new Text(""));
+                inlineString.Append(run);
+            }
+
+            return inlineString;
+        }
+
+        private string InlineStringToHtml(InlineString inlineString)
+        {
+            var sb = new StringBuilder();
+            foreach (var run in inlineString.Elements<Run>())
+            {
+                var props = run.RunProperties;
+                bool isBold = props?.Elements<Bold>().Any() ?? false;
+                bool isItalic = props?.Elements<Italic>().Any() ?? false;
+
+                var text = run.Elements<Text>().FirstOrDefault()?.Text ?? "";
+
+                if (isBold) sb.Append("<b>");
+                if (isItalic) sb.Append("<i>");
+                sb.Append(System.Net.WebUtility.HtmlEncode(text));
+                if (isItalic) sb.Append("</i>");
+                if (isBold) sb.Append("</b>");
+            }
+            // Handle plain Text elements not inside runs
+            foreach (var text in inlineString.Elements<Text>())
+            {
+                sb.Append(System.Net.WebUtility.HtmlEncode(text.Text ?? ""));
+            }
+            return sb.ToString().Replace("\n", "<br>");
         }
 
         public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct)

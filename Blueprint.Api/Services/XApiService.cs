@@ -90,7 +90,7 @@ namespace Blueprint.Api.Services
 
             // configure Agent
             _agent = new TinCan.Agent();
-            _agent.name = _context.Users.AsNoTracking().FirstOrDefault(u => u.Id == _user.GetId())?.Name;
+            _agent.name = _context.Users.Where(u => u.Id == _user.GetId()).Select(u => u.Name).FirstOrDefault();
             _agent.account = _account;
 
             // Initialize the Context
@@ -439,12 +439,10 @@ namespace Blueprint.Api.Services
 
         private async Task<Guid?> GetUserTeamIdAsync(Guid mselId, CancellationToken ct)
         {
-            var teamUser = await _context.TeamUsers
-                .AsNoTracking()
+            return await _context.TeamUsers
                 .Where(tu => tu.UserId == _user.GetId() && tu.Team.MselId == mselId)
+                .Select(tu => (Guid?)tu.TeamId)
                 .FirstOrDefaultAsync(ct);
-
-            return teamUser?.TeamId;
         }
 
         private List<Dictionary<string, string>> BuildIntegrationGroupings(MselEntity msel)

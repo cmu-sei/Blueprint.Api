@@ -68,15 +68,6 @@ namespace Blueprint.Api.Data.Enumerations
         Evaluator = 60
     }
 
-    public enum TeamRole
-    {
-        Observer = 80,
-        Inviter = 90,
-        Incrementer = 100,
-        Modifier = 110,
-        Submitter = 120
-    }
-
     public enum GalleryArticleParameter
     {
         Name,

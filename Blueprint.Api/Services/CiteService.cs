@@ -21,6 +21,7 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ScoringModel>> GetScoringModelsAsync(CancellationToken ct);
         Task<IEnumerable<TeamType>> GetTeamTypesAsync(CancellationToken ct);
+        Task<IEnumerable<Cite.Api.Client.TeamRole>> GetTeamRolesAsync(CancellationToken ct);
     }
 
     public class CiteService : ICiteService
@@ -82,6 +83,20 @@ namespace Blueprint.Api.Services
             {
             }
             return (IEnumerable<TeamType>)teamTypes;
+
+        }
+
+        public async Task<IEnumerable<Cite.Api.Client.TeamRole>> GetTeamRolesAsync(CancellationToken ct)
+        {
+            var teamRoles = new List<Cite.Api.Client.TeamRole>();
+            try
+            {
+                teamRoles = (List<Cite.Api.Client.TeamRole>)await _citeApiClient.GetAllTeamRolesAsync(ct);
+            }
+            catch (System.Exception)
+            {
+            }
+            return (IEnumerable<Cite.Api.Client.TeamRole>)teamRoles;
 
         }
 

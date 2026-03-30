@@ -25,9 +25,9 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.TeamUser>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.TeamUser>> GetByTeamAsync(Guid teamId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.TeamUser> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.TeamUser> CreateAsync(ViewModels.TeamUser teamUser, CancellationToken ct);
-        Task<bool> DeleteAsync(Guid id, CancellationToken ct);
-        Task<bool> DeleteByIdsAsync(Guid teamId, Guid userId, CancellationToken ct);
+        Task<ViewModels.TeamUser> CreateAsync(ViewModels.TeamUser teamUser, bool hasSystemPermission, CancellationToken ct);
+        Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<bool> DeleteByIdsAsync(Guid teamId, Guid userId, bool hasSystemPermission, CancellationToken ct);
     }
 
     public class TeamUserService : ITeamUserService
@@ -89,11 +89,15 @@ namespace Blueprint.Api.Services
             return _mapper.Map<TeamUser>(item);
         }
 
-        public async Task<ViewModels.TeamUser> CreateAsync(ViewModels.TeamUser teamUser, CancellationToken ct)
+        public async Task<ViewModels.TeamUser> CreateAsync(ViewModels.TeamUser teamUser, bool hasSystemPermission, CancellationToken ct)
         {
-            // make sure this would not add a duplicate user on any pending or active msels
-            var requestedUser = await _context.Users.FindAsync(teamUser.UserId);
             var requestedTeam = await _context.Teams.FindAsync(teamUser.TeamId);
+            if (requestedTeam == null)
+                throw new EntityNotFoundException<TeamEntity>("Team not found");
+
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), requestedTeam.MselId, _context)))
+                throw new ForbiddenException();
+
             // okay to add this TeamUser
             teamUser.Id = teamUser.Id != Guid.Empty ? teamUser.Id : Guid.NewGuid();
             teamUser.CreatedBy = _user.GetId();
@@ -105,12 +109,17 @@ namespace Blueprint.Api.Services
             return await GetAsync(teamUserEntity.Id, true, ct);
         }
 
-        public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
+        public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
-            var teamUserToDelete = await _context.TeamUsers.SingleOrDefaultAsync(v => v.Id == id, ct);
+            var teamUserToDelete = await _context.TeamUsers
+                .Include(tu => tu.Team)
+                .SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (teamUserToDelete == null)
                 throw new EntityNotFoundException<TeamUser>();
+
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), teamUserToDelete.Team.MselId, _context)))
+                throw new ForbiddenException();
 
             _context.TeamUsers.Remove(teamUserToDelete);
             await _context.SaveChangesAsync(ct);
@@ -118,12 +127,17 @@ namespace Blueprint.Api.Services
             return true;
         }
 
-        public async Task<bool> DeleteByIdsAsync(Guid teamId, Guid userId, CancellationToken ct)
+        public async Task<bool> DeleteByIdsAsync(Guid teamId, Guid userId, bool hasSystemPermission, CancellationToken ct)
         {
-            var teamUserToDelete = await _context.TeamUsers.SingleOrDefaultAsync(v => (v.UserId == userId) && (v.TeamId == teamId), ct);
+            var teamUserToDelete = await _context.TeamUsers
+                .Include(tu => tu.Team)
+                .SingleOrDefaultAsync(v => (v.UserId == userId) && (v.TeamId == teamId), ct);
 
             if (teamUserToDelete == null)
                 throw new EntityNotFoundException<TeamUser>();
+
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), teamUserToDelete.Team.MselId, _context)))
+                throw new ForbiddenException();
 
             _context.TeamUsers.Remove(teamUserToDelete);
             await _context.SaveChangesAsync(ct);

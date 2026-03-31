@@ -151,12 +151,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasSystemPermission, CancellationToken ct)
         {
-            // Track xAPI - Build Page Viewed
-            if (_xApiService.IsConfigured())
-            {
-                await _xApiService.BuildPageViewedAsync(ct);
-            }
-
             var userId = _user.GetId();
             return await GetUserMselsAsync(userId, false, hasSystemPermission, ct);
         }

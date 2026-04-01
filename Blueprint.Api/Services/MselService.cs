@@ -1786,7 +1786,7 @@ namespace Blueprint.Api.Services
             }
 
             // Validate and fix team type IDs if MSEL uses CITE integration
-            if (mselEntity.UseCite && mselEntity.Teams.Any(t => t.CiteTeamTypeId.HasValue))
+            if (mselEntity.UseCite && mselEntity.Teams.Any())
             {
                 try
                 {
@@ -1804,10 +1804,20 @@ namespace Blueprint.Api.Services
                     var defaultTeamTypeId = defaultTeamType?.Id ?? Guid.Empty;
                     var defaultTeamTypeName = defaultTeamType?.Name;
 
-                    foreach (var team in mselEntity.Teams.Where(t => t.CiteTeamTypeId.HasValue))
+                    foreach (var team in mselEntity.Teams)
                     {
-                        // Check if the team type ID exists in CITE
-                        if (!teamTypeIds.Contains(team.CiteTeamTypeId.Value))
+                        if (!team.CiteTeamTypeId.HasValue)
+                        {
+                            // Assign default team type to teams missing one
+                            if (defaultTeamTypeId != Guid.Empty)
+                            {
+                                team.CiteTeamTypeId = defaultTeamTypeId;
+                                team.CiteTeamTypeName = defaultTeamTypeName;
+                                _logger.LogInformation("Team {TeamId} had no CITE team type, defaulted to {DefaultName} ({DefaultId})",
+                                    team.Id, defaultTeamTypeName, defaultTeamTypeId);
+                            }
+                        }
+                        else if (!teamTypeIds.Contains(team.CiteTeamTypeId.Value))
                         {
                             var oldId = team.CiteTeamTypeId.Value;
 

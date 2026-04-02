@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Blueprint.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    partial class BlueprintContextModelSnapshot : ModelSnapshot
+    [Migration("20260401200135_AddDataOptionDescription")]
+    partial class AddDataOptionDescription
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -346,112 +349,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasIndex("TeamId");
 
                     b.ToTable("cite_duties");
-                });
-
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyElementEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("uuid_generate_v4()");
-
-                    b.Property<Guid>("CompetencyFrameworkId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("competency_framework_id");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<DateTime>("DateCreated")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("date_created");
-
-                    b.Property<DateTime?>("DateModified")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("date_modified");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text")
-                        .HasColumnName("description");
-
-                    b.Property<string>("ElementIdentifier")
-                        .HasColumnType("text")
-                        .HasColumnName("element_identifier");
-
-                    b.Property<string>("ElementType")
-                        .HasColumnType("text")
-                        .HasColumnName("element_type");
-
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("modified_by");
-
-                    b.Property<string>("Name")
-                        .HasColumnType("text")
-                        .HasColumnName("name");
-
-                    b.Property<Guid?>("ParentId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("parent_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ParentId");
-
-                    b.HasIndex("CompetencyFrameworkId", "ElementIdentifier")
-                        .IsUnique();
-
-                    b.ToTable("competency_elements");
-                });
-
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyFrameworkEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("uuid_generate_v4()");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<DateTime>("DateCreated")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("date_created");
-
-                    b.Property<DateTime?>("DateModified")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("date_modified");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text")
-                        .HasColumnName("description");
-
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("modified_by");
-
-                    b.Property<string>("Name")
-                        .HasColumnType("text")
-                        .HasColumnName("name");
-
-                    b.Property<string>("Source")
-                        .HasColumnType("text")
-                        .HasColumnName("source");
-
-                    b.Property<string>("Version")
-                        .HasColumnType("text")
-                        .HasColumnName("version");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name", "Version")
-                        .IsUnique();
-
-                    b.ToTable("competency_frameworks");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataFieldEntity", b =>
@@ -1377,100 +1274,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.ToTable("player_application_teams");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.ProficiencyLevelEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("uuid_generate_v4()");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<DateTime>("DateCreated")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("date_created");
-
-                    b.Property<DateTime?>("DateModified")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("date_modified");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text")
-                        .HasColumnName("description");
-
-                    b.Property<int>("DisplayOrder")
-                        .HasColumnType("integer")
-                        .HasColumnName("display_order");
-
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("modified_by");
-
-                    b.Property<string>("Name")
-                        .HasColumnType("text")
-                        .HasColumnName("name");
-
-                    b.Property<Guid>("ProficiencyScaleId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("proficiency_scale_id");
-
-                    b.Property<int>("Value")
-                        .HasColumnType("integer")
-                        .HasColumnName("value");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProficiencyScaleId");
-
-                    b.ToTable("proficiency_levels");
-                });
-
-            modelBuilder.Entity("Blueprint.Api.Data.Models.ProficiencyScaleEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("uuid_generate_v4()");
-
-                    b.Property<Guid>("CompetencyFrameworkId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("competency_framework_id");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<DateTime>("DateCreated")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("date_created");
-
-                    b.Property<DateTime?>("DateModified")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("date_modified");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text")
-                        .HasColumnName("description");
-
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("modified_by");
-
-                    b.Property<string>("Name")
-                        .HasColumnType("text")
-                        .HasColumnName("name");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CompetencyFrameworkId");
-
-                    b.ToTable("proficiency_scales");
-                });
-
             modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1700,7 +1503,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                             Description = "Can view all MSELs, but cannot make any changes.",
                             Immutable = false,
                             Name = "Observer",
-                            Permissions = new[] { 2, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27 }
+                            Permissions = new[] { 2, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25 }
                         });
                 });
 
@@ -2222,24 +2025,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Team");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyElementEntity", b =>
-                {
-                    b.HasOne("Blueprint.Api.Data.Models.CompetencyFrameworkEntity", "CompetencyFramework")
-                        .WithMany("CompetencyElements")
-                        .HasForeignKey("CompetencyFrameworkId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Blueprint.Api.Data.Models.CompetencyElementEntity", "Parent")
-                        .WithMany("Children")
-                        .HasForeignKey("ParentId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("CompetencyFramework");
-
-                    b.Navigation("Parent");
-                });
-
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataFieldEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.InjectTypeEntity", "InjectType")
@@ -2448,28 +2233,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Team");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.ProficiencyLevelEntity", b =>
-                {
-                    b.HasOne("Blueprint.Api.Data.Models.ProficiencyScaleEntity", "ProficiencyScale")
-                        .WithMany("ProficiencyLevels")
-                        .HasForeignKey("ProficiencyScaleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ProficiencyScale");
-                });
-
-            modelBuilder.Entity("Blueprint.Api.Data.Models.ProficiencyScaleEntity", b =>
-                {
-                    b.HasOne("Blueprint.Api.Data.Models.CompetencyFrameworkEntity", "CompetencyFramework")
-                        .WithMany("ProficiencyScales")
-                        .HasForeignKey("CompetencyFrameworkId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CompetencyFramework");
-                });
-
             modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.InjectEntity", "Inject")
@@ -2625,18 +2388,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("CatalogUnits");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyElementEntity", b =>
-                {
-                    b.Navigation("Children");
-                });
-
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyFrameworkEntity", b =>
-                {
-                    b.Navigation("CompetencyElements");
-
-                    b.Navigation("ProficiencyScales");
-                });
-
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataFieldEntity", b =>
                 {
                     b.Navigation("DataOptions");
@@ -2696,11 +2447,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
             modelBuilder.Entity("Blueprint.Api.Data.Models.PlayerApplicationEntity", b =>
                 {
                     b.Navigation("PlayerApplicationTeams");
-                });
-
-            modelBuilder.Entity("Blueprint.Api.Data.Models.ProficiencyScaleEntity", b =>
-                {
-                    b.Navigation("ProficiencyLevels");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventEntity", b =>

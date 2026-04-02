@@ -184,6 +184,7 @@ public class Startup
 
         services.AddMemoryCache();
 
+        services.AddScoped<ICompetencyFrameworkService, CompetencyFrameworkService>();
         services.AddScoped<ICardService, CardService>();
         services.AddScoped<ICardTeamService, CardTeamService>();
         services.AddScoped<ICatalogService, CatalogService>();

@@ -79,7 +79,6 @@ namespace Blueprint.Api.Data.Enumerations
         DatePosted,
         OpenInNewTab,
         CardId,
-        DeliveryMethod,
         ToOrg,
         FromOrg,
         Summary

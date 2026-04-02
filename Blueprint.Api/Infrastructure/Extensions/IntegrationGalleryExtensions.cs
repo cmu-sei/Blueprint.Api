@@ -174,7 +174,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
             // Build work items without starting execution
             var scenarioEvents = msel.ScenarioEvents
-                .Where(scenarioEvent => scenarioEvent.IntegrationTarget.Contains("Gallery"))
+                .Where(scenarioEvent => scenarioEvent.IntegrationTarget != null && scenarioEvent.IntegrationTarget.Contains("Gallery"))
                 .ToList();
 
             // Process articles in parallel batches

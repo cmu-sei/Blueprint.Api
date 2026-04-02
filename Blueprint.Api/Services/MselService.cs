@@ -664,6 +664,15 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
 
+            // Track system columns (these don't have DataField/DataValue entities)
+            var systemColumns = new HashSet<string>();
+            if (msel.ShowTimeOnScenarioEventList)
+                systemColumns.Add("Time");
+            if (msel.ShowMoveOnScenarioEventList)
+                systemColumns.Add("Move");
+            if (msel.ShowGroupOnScenarioEventList)
+                systemColumns.Add("Group");
+
             // create the xlsx file in memory
             MemoryStream memoryStream = new MemoryStream();
             using (SpreadsheetDocument document = SpreadsheetDocument.Create(memoryStream, SpreadsheetDocumentType.Workbook))
@@ -700,12 +709,21 @@ namespace Blueprint.Api.Services
                 Columns columns = new Columns();
                 foreach (System.Data.DataColumn column in dataTable.Columns)
                 {
-                    var dataField = await _context.DataFields
-                        .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
-                        .FirstOrDefaultAsync();
-                    Double width;
-                    double.TryParse(dataField.ColumnMetadata, out width);
-                    var cellMetadata = dataField.CellMetadata;
+                    Double width = 10;
+                    string cellMetadata = null;
+
+                    if (!systemColumns.Contains(column.ColumnName))
+                    {
+                        var dataField = await _context.DataFields
+                            .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
+                            .FirstOrDefaultAsync();
+                        if (dataField != null)
+                        {
+                            double.TryParse(dataField.ColumnMetadata, out width);
+                            cellMetadata = dataField.CellMetadata;
+                        }
+                    }
+
                     columns.Append(new Column()
                     {
                         Min = (UInt32)(column.Ordinal + 1),
@@ -717,7 +735,7 @@ namespace Blueprint.Api.Services
                     Cell cell = new Cell();
                     cell.DataType = CellValues.String;
                     cell.CellValue = new CellValue(column.ColumnName);
-                    cell.CellReference = GetCellReference(dataField.DisplayOrder, (int)headerRow.RowIndex.Value);
+                    cell.CellReference = GetCellReference(column.Ordinal + 1, (int)headerRow.RowIndex.Value);
                     cell.StyleIndex = cellMetadata != null && cellMetadata.Length > 0 ? (UInt32)uniqueStyles[cellMetadata] : 0;
                     headerRow.AppendChild(cell);
                 }
@@ -745,13 +763,28 @@ namespace Blueprint.Api.Services
                     {
                         Cell cell = new Cell();
                         var stringValue = dsrow[column.ColumnName].ToString();
+
+                        if (systemColumns.Contains(column.ColumnName))
+                        {
+                            // System column - no DataField/DataValue entities
+                            cell.StyleIndex = 0;
+                            if (!string.IsNullOrWhiteSpace(stringValue))
+                            {
+                                cell.DataType = CellValues.String;
+                                cell.CellValue = new CellValue(stringValue);
+                            }
+                            cell.CellReference = GetCellReference(column.Ordinal + 1, (int)newRow.RowIndex.Value);
+                            newRow.AppendChild(cell);
+                            continue;
+                        }
+
                         var dataField = await _context.DataFields
                             .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
                             .FirstOrDefaultAsync();
                         var dataValue = await _context.DataValues
                             .Where(dv => dv.ScenarioEventId == scenarioEventList[i].Id && dv.DataFieldId == dataField.Id)
                             .FirstOrDefaultAsync();
-                        var cellMetadata = dataValue.CellMetadata;
+                        var cellMetadata = dataValue != null ? dataValue.CellMetadata : null;
                         cell.StyleIndex = String.IsNullOrEmpty(cellMetadata) ? 0 : (UInt32)uniqueStyles[cellMetadata];
                         // handle differences between data types
                         if (!string.IsNullOrWhiteSpace(stringValue))
@@ -797,7 +830,7 @@ namespace Blueprint.Api.Services
                                     break;
                             }
                         }
-                        cell.CellReference = GetCellReference(dataField.DisplayOrder, (int)newRow.RowIndex.Value);
+                        cell.CellReference = GetCellReference(column.Ordinal + 1, (int)newRow.RowIndex.Value);
                         newRow.AppendChild(cell);
                     }
                     sheetData.AppendChild(newRow);
@@ -1212,18 +1245,55 @@ namespace Blueprint.Api.Services
 
         private async Task<DataTable> GetMselDataAsync(Guid mselId, List<ScenarioEventEntity> scenarioEventList, CancellationToken ct)
         {
+            var msel = await _context.Msels
+                .Where(m => m.Id == mselId)
+                .SingleOrDefaultAsync(ct);
+
             // create data table to hold all of the scenarioEvent data
             DataTable dataTable = new DataTable();
             dataTable.Clear();
-            // add a column for each data field
+            // get all data fields
             var dataFieldList = await _context.DataFields
                 .Where(df => df.MselId == mselId)
                 .OrderBy(df => df.DisplayOrder)
                 .ToListAsync(ct);
-            foreach (var dataField in dataFieldList)
+
+            // Build combined list of columns (data fields + system fields) sorted by display order
+            var allColumns = new List<(string Name, int DisplayOrder, bool IsSystem)>();
+            foreach (var df in dataFieldList)
             {
-                dataTable.Columns.Add(dataField.Name);
+                allColumns.Add((df.Name, df.DisplayOrder, false));
             }
+            if (msel.ShowTimeOnScenarioEventList)
+                allColumns.Add(("Time", msel.TimeDisplayOrder, true));
+            if (msel.ShowMoveOnScenarioEventList)
+                allColumns.Add(("Move", msel.MoveDisplayOrder, true));
+            if (msel.ShowGroupOnScenarioEventList)
+                allColumns.Add(("Group", msel.GroupDisplayOrder, true));
+            allColumns = allColumns.OrderBy(c => c.DisplayOrder).ToList();
+
+            foreach (var col in allColumns)
+            {
+                dataTable.Columns.Add(col.Name);
+            }
+
+            // Load moves for move number calculation
+            var moves = await _context.Moves
+                .Where(m => m.MselId == mselId)
+                .OrderBy(m => m.DeltaSeconds)
+                .ToListAsync(ct);
+
+            // Load cards for GUID-to-name resolution
+            var cards = await _context.Cards
+                .Where(c => c.MselId == mselId)
+                .ToListAsync(ct);
+            var cardMap = cards.ToDictionary(c => c.Id.ToString(), c => c.Name);
+            var cardFieldIds = new HashSet<Guid>(
+                dataFieldList.Where(df => df.DataType == DataFieldType.Card).Select(df => df.Id));
+
+            // Compute move and group numbers (mirroring UI logic)
+            var moveAndGroupNumbers = ComputeMoveAndGroupNumbers(scenarioEventList, moves);
+
             // add a row for each scenarioEvent
             foreach (var scenarioEvent in scenarioEventList)
             {
@@ -1231,16 +1301,81 @@ namespace Blueprint.Api.Services
                 var dataValueList = await _context.DataValues
                     .Where(dv => dv.ScenarioEventId == scenarioEvent.Id)
                     .OrderBy(dv => dv.DataField.DisplayOrder)
-                    .Select(dv => new { Name = dv.DataField.Name, Value = dv.Value })
+                    .Select(dv => new { Name = dv.DataField.Name, Value = dv.Value, DataFieldId = dv.DataFieldId })
                     .ToListAsync(ct);
                 foreach (var dataValue in dataValueList)
                 {
-                    dataRow[dataValue.Name] = dataValue.Value;
+                    var displayValue = dataValue.Value;
+                    // Resolve Card GUIDs to card names
+                    if (cardFieldIds.Contains(dataValue.DataFieldId) &&
+                        !string.IsNullOrEmpty(displayValue) &&
+                        cardMap.ContainsKey(displayValue))
+                    {
+                        displayValue = cardMap[displayValue];
+                    }
+                    dataRow[dataValue.Name] = displayValue;
+                }
+                // Populate system columns
+                if (msel.ShowTimeOnScenarioEventList)
+                {
+                    dataRow["Time"] = FormatDeltaSeconds(scenarioEvent.DeltaSeconds);
+                }
+                if (msel.ShowMoveOnScenarioEventList && moveAndGroupNumbers.ContainsKey(scenarioEvent.Id))
+                {
+                    var moveNumber = moveAndGroupNumbers[scenarioEvent.Id].Item1;
+                    dataRow["Move"] = moveNumber >= 0 ? moveNumber.ToString() : "";
+                }
+                if (msel.ShowGroupOnScenarioEventList && moveAndGroupNumbers.ContainsKey(scenarioEvent.Id))
+                {
+                    dataRow["Group"] = moveAndGroupNumbers[scenarioEvent.Id].Item2.ToString();
                 }
                 dataTable.Rows.Add(dataRow);
             }
 
             return dataTable;
+        }
+
+        private string FormatDeltaSeconds(int deltaSeconds)
+        {
+            var prefix = deltaSeconds >= 0 ? "+ " : "- ";
+            var absDelta = Math.Abs(deltaSeconds);
+            var days = absDelta / 86400;
+            var remaining = absDelta % 86400;
+            var hours = remaining / 3600;
+            var minutes = (remaining % 3600) / 60;
+            var seconds = remaining % 60;
+            if (days > 0)
+                return $"{prefix}{days} {hours:D2}:{minutes:D2}:{seconds:D2}";
+            return $"{prefix}{hours:D2}:{minutes:D2}:{seconds:D2}";
+        }
+
+        private Dictionary<Guid, System.Tuple<int, int>> ComputeMoveAndGroupNumbers(
+            List<ScenarioEventEntity> scenarioEvents, List<MoveEntity> moves)
+        {
+            var result = new Dictionary<Guid, System.Tuple<int, int>>();
+            int m = -1;
+            int group = 0;
+            int groupSeconds = -1;
+
+            foreach (var se in scenarioEvents)
+            {
+                while (m + 1 < moves.Count && se.DeltaSeconds >= moves[m + 1].DeltaSeconds)
+                {
+                    m++;
+                    group = 0;
+                    groupSeconds = -1;
+                }
+                if (se.DeltaSeconds > groupSeconds)
+                {
+                    group++;
+                    groupSeconds = se.DeltaSeconds;
+                }
+
+                var moveNumber = m < 0 || moves.Count == 0 ? -1 : moves[m].MoveNumber;
+                result[se.Id] = System.Tuple.Create(moveNumber, group);
+            }
+
+            return result;
         }
 
         private async Task<Dictionary<string, int>> GetUniqueStylesAsync(Guid mselId, CancellationToken ct)

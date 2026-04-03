@@ -53,6 +53,7 @@ namespace Blueprint.Api.Services
         Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct);
+        Task CancelIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> ArchiveAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
@@ -69,6 +70,7 @@ namespace Blueprint.Api.Services
         private readonly ClientOptions _clientOptions;
         private readonly IScenarioEventService _scenarioEventService;
         private readonly IIntegrationQueue _integrationQueue;
+        private readonly IIntegrationService _integrationService;
         private readonly IPlayerService _playerService;
         private readonly IJoinQueue _joinQueue;
         private readonly IXApiService _xApiService;
@@ -79,6 +81,7 @@ namespace Blueprint.Api.Services
             ClientOptions clientOptions,
             IScenarioEventService scenarioEventService,
             IIntegrationQueue integrationQueue,
+            IIntegrationService integrationService,
             IPlayerService playerService,
             IJoinQueue joinQueue,
             IPrincipal user,
@@ -94,6 +97,7 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
             _logger = logger;
             _integrationQueue = integrationQueue;
+            _integrationService = integrationService;
             _playerService = playerService;
             _joinQueue = joinQueue;
             _xApiService = xApiService;
@@ -1891,7 +1895,9 @@ namespace Blueprint.Api.Services
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
                 throw new InvalidOperationException(userVerificationErrorMessage);
-            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, FinalStatus = MselItemStatus.Deployed });
+            msel.Status = MselItemStatus.Pushing;
+            await _context.SaveChangesAsync(ct);
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = true, FinalStatus = MselItemStatus.Deployed });
 
             // Track xAPI - Exercise Started
             if (_xApiService.IsConfigured())
@@ -1912,7 +1918,9 @@ namespace Blueprint.Api.Services
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found.");
             // add msel to process queue
-            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, FinalStatus = finalStatus });
+            msel.Status = MselItemStatus.Pulling;
+            await _context.SaveChangesAsync(ct);
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = false, FinalStatus = finalStatus });
 
             // Track xAPI - Exercise Stopped
             if (_xApiService.IsConfigured())
@@ -1921,6 +1929,14 @@ namespace Blueprint.Api.Services
             }
 
             return _mapper.Map<ViewModels.Msel>(msel);
+        }
+
+        public async Task CancelIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        {
+            // user must be a Content Developer or a MSEL owner
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+                throw new ForbiddenException();
+            _integrationService.CancelPush(mselId);
         }
 
         public async Task<ViewModels.Msel> ArchiveAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -2179,7 +2195,7 @@ namespace Blueprint.Api.Services
             // create the new player view ID, so that the UI will be able to look for it to be created
             var playerViewId = Guid.NewGuid();
             // add the launch data to the launch queue
-            _integrationQueue.Add(new IntegrationInformation { MselId = mselEntity.Id, PlayerViewId = playerViewId });
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselEntity.Id, PlayerViewId = playerViewId, IsPush = true });
             // get the MSEL to return with the new Player View ID
             var launchedMsel = _mapper.Map<Msel>(mselEntity);
             launchedMsel.PlayerViewId = playerViewId;

@@ -230,7 +230,9 @@ public class Startup
         services.AddHostedService<Services.XApiBackgroundService>();
 
         services.AddSingleton<IIntegrationQueue, IntegrationQueue>();
-        services.AddHostedService<IntegrationService>();
+        services.AddSingleton<IntegrationService>();
+        services.AddSingleton<IIntegrationService>(sp => sp.GetRequiredService<IntegrationService>());
+        services.AddHostedService(sp => sp.GetRequiredService<IntegrationService>());
         services.AddSingleton<IJoinQueue, JoinQueue>();
         services.AddHostedService<JoinService>();
         services.AddSingleton<IAddApplicationQueue, AddApplicationQueue>();

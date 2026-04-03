@@ -40,16 +40,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
         public static async Task CreateViewAsync(MselEntity msel, Guid? playerViewId, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             ViewForm viewForm = new ViewForm() {
+                Id = (Guid)msel.PlayerViewId,
                 Name = msel.Name,
                 Description = msel.Description,
                 Status = ViewStatus.Active,
                 CreateAdminTeam = true
             };
             if (playerViewId != null) viewForm.Id = (Guid)playerViewId;
-            var newView = await playerApiClient.CreateViewAsync(viewForm, ct);
-            // update the MSEL
-            msel.PlayerViewId = newView.Id;
-            await blueprintContext.SaveChangesAsync(ct);
+            await playerApiClient.CreateViewAsync(viewForm, ct);
         }
 
         // Create Player Teams for this MSEL
@@ -59,12 +57,12 @@ namespace Blueprint.Api.Infrastructure.Extensions
             var teams = msel.Teams.ToList();
             foreach (var team in teams)
             {
-                // create team in Player
+                // create team in Player using the Blueprint team ID
                 var playerTeamForm = new TeamForm() {
+                    Id = team.Id,
                     Name = team.Name
                 };
-                var playerTeam = await playerApiClient.CreateTeamAsync((Guid)msel.PlayerViewId, playerTeamForm, ct);
-                team.PlayerTeamId = playerTeam.Id;
+                await playerApiClient.CreateTeamAsync((Guid)msel.PlayerViewId, playerTeamForm, ct);
                 // use eager-loaded users from the team
                 var users = team.TeamUsers.Select(tu => tu.User).ToList();
 
@@ -81,11 +79,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         playerUserIds.Add(user.Id);
                     }
                     // create Player TeamUsers
-                    await playerApiClient.AddUserToTeamAsync(playerTeam.Id, user.Id, ct);
+                    await playerApiClient.AddUserToTeamAsync(team.Id, user.Id, ct);
                 });
                 await Task.WhenAll(userTasks);
             }
-            // save the teams PlayerTeamId values
             await blueprintContext.SaveChangesAsync(ct);
         }
 

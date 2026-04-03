@@ -418,6 +418,26 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Cancel pushing integrations and remove any partial integrations
+        /// </summary>
+        /// <remarks>
+        /// Cancels an in-progress integration push and removes any partially created integrations
+        /// <para />
+        /// Accessible only to a ContentDeveloper or MSEL owner
+        /// </remarks>
+        /// <param name="id">The id of the MSEL</param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{id}/integrations/cancel")]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "cancelIntegrations")]
+        public async Task<IActionResult> CancelIntegrations(Guid id, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
+            await _mselService.CancelIntegrationsAsync(id, hasSystemPermission, ct);
+            return Ok();
+        }
+
+        /// <summary>
         /// End the MSEL deployment and archive it
         /// </summary>
         /// <remarks>

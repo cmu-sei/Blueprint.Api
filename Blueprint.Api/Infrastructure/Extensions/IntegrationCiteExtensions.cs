@@ -42,6 +42,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         {
             var move0 = msel.Moves.SingleOrDefault(m => m.MoveNumber == 0);
             Evaluation newEvaluation = new Evaluation() {
+                Id = (Guid)msel.CiteEvaluationId,
                 Description = msel.Name,
                 Status = Cite.Api.Client.ItemStatus.Pending,
                 CurrentMoveNumber = 0,
@@ -55,9 +56,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 newEvaluation.SituationTime = (DateTimeOffset)move0.SituationTime;
             }
             newEvaluation = await citeApiClient.CreateEvaluationAsync(newEvaluation, ct);
-            // update the MSEL
-            msel.CiteEvaluationId = newEvaluation.Id;
-            await blueprintContext.SaveChangesAsync(ct);
             // delete the default move 0 that was created when the evaluation was created
             var defaultMoveId = newEvaluation.Moves.Single().Id;
             await citeApiClient.DeleteMoveAsync(defaultMoveId, ct);
@@ -107,7 +105,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             {
                 if (team.CiteTeamTypeId != null)
                 {
-                    var citeTeamId = Guid.NewGuid();
+                    var citeTeamId = team.Id;
                     // create team in Cite
                     var citeTeam = new Team() {
                         Id = citeTeamId,

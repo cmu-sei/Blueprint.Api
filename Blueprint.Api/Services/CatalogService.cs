@@ -141,7 +141,16 @@ namespace Blueprint.Api.Services
         public async Task<ViewModels.Catalog> CopyAsync(Guid catalogId, CancellationToken ct)
         {
             var newCatalogEntity = await _context.Catalogs
+                .Include(m => m.InjectType)
+                    .ThenInclude(m => m.DataFields)
+                        .ThenInclude(m => m.DataOptions)
                 .Include(m => m.CatalogInjects)
+                    .ThenInclude(m => m.Inject)
+                        .ThenInclude(m => m.InjectType)
+                .Include(m => m.CatalogInjects)
+                    .ThenInclude(m => m.Inject)
+                        .ThenInclude(m => m.DataValues)
+                .AsSplitQuery()
                 .AsNoTracking()
                 .SingleOrDefaultAsync(m => m.Id == catalogId);
             newCatalogEntity = await privateCatalogCopyAsync(newCatalogEntity, ct);

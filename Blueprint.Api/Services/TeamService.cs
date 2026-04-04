@@ -12,6 +12,7 @@ using AutoMapper;
 using AutoMapper.QueryableExtensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
@@ -106,6 +107,18 @@ namespace Blueprint.Api.Services
                     !(await MselOwnerRequirement.IsMet(_user.GetId(), team.MselId, _context))
                )
                 throw new ForbiddenException();
+
+            // Validate required fields
+            if (string.IsNullOrWhiteSpace(team.Name))
+                throw new ArgumentException("Team Name is required and cannot be empty.");
+
+            if (team.MselId == Guid.Empty)
+                throw new ArgumentException("MselId is required and cannot be empty.");
+
+            // Validate MselId exists
+            var mselExists = await _context.Msels.AnyAsync(m => m.Id == team.MselId, ct);
+            if (!mselExists)
+                throw new EntityNotFoundException<Msel>($"Invalid MselId '{team.MselId}'. The MSEL does not exist.");
 
             team.Id = team.Id != Guid.Empty ? team.Id : Guid.NewGuid();
             team.CreatedBy = _user.GetId();

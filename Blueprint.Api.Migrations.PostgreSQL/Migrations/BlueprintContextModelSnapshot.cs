@@ -348,7 +348,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.ToTable("cite_duties");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyElementEntity", b =>
+            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyEntity", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -376,34 +376,62 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("description");
 
-                    b.Property<string>("ElementIdentifier")
-                        .HasColumnType("text")
-                        .HasColumnName("element_identifier");
+                    b.Property<int>("DescriptionFormat")
+                        .HasColumnType("integer")
+                        .HasColumnName("description_format");
 
-                    b.Property<string>("ElementType")
+                    b.Property<string>("IdNumber")
                         .HasColumnType("text")
-                        .HasColumnName("element_type");
+                        .HasColumnName("id_number");
 
                     b.Property<Guid?>("ModifiedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("modified_by");
 
-                    b.Property<string>("Name")
-                        .HasColumnType("text")
-                        .HasColumnName("name");
-
                     b.Property<Guid?>("ParentId")
                         .HasColumnType("uuid")
                         .HasColumnName("parent_id");
+
+                    b.Property<string>("Path")
+                        .HasColumnType("text")
+                        .HasColumnName("path");
+
+                    b.Property<string>("RuleConfig")
+                        .HasColumnType("text")
+                        .HasColumnName("rule_config");
+
+                    b.Property<int>("RuleOutcome")
+                        .HasColumnType("integer")
+                        .HasColumnName("rule_outcome");
+
+                    b.Property<string>("RuleType")
+                        .HasColumnType("text")
+                        .HasColumnName("rule_type");
+
+                    b.Property<string>("ScaleConfiguration")
+                        .HasColumnType("text")
+                        .HasColumnName("scale_configuration");
+
+                    b.Property<string>("ScaleValues")
+                        .HasColumnType("text")
+                        .HasColumnName("scale_values");
+
+                    b.Property<string>("ShortName")
+                        .HasColumnType("text")
+                        .HasColumnName("short_name");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ParentId");
 
-                    b.HasIndex("CompetencyFrameworkId", "ElementIdentifier")
+                    b.HasIndex("CompetencyFrameworkId", "IdNumber")
                         .IsUnique();
 
-                    b.ToTable("competency_elements");
+                    b.ToTable("competencies");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyFrameworkEntity", b =>
@@ -426,9 +454,21 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("date_modified");
 
+                    b.Property<Guid?>("DefaultProficiencyScaleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("default_proficiency_scale_id");
+
                     b.Property<string>("Description")
                         .HasColumnType("text")
                         .HasColumnName("description");
+
+                    b.Property<int>("DescriptionFormat")
+                        .HasColumnType("integer")
+                        .HasColumnName("description_format");
+
+                    b.Property<string>("IdNumber")
+                        .HasColumnType("text")
+                        .HasColumnName("id_number");
 
                     b.Property<Guid?>("ModifiedBy")
                         .HasColumnType("uuid")
@@ -438,9 +478,21 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
+                    b.Property<string>("ScaleConfiguration")
+                        .HasColumnType("text")
+                        .HasColumnName("scale_configuration");
+
+                    b.Property<string>("ScaleValues")
+                        .HasColumnType("text")
+                        .HasColumnName("scale_values");
+
                     b.Property<string>("Source")
                         .HasColumnType("text")
                         .HasColumnName("source");
+
+                    b.Property<string>("Taxonomies")
+                        .HasColumnType("text")
+                        .HasColumnName("taxonomies");
 
                     b.Property<string>("Version")
                         .HasColumnType("text")
@@ -448,10 +500,54 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Name", "Version")
+                    b.HasIndex("DefaultProficiencyScaleId");
+
+                    b.HasIndex("IdNumber")
                         .IsUnique();
 
                     b.ToTable("competency_frameworks");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyRelationshipEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<Guid>("CompetencyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("competency_id");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<DateTime?>("DateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_modified");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modified_by");
+
+                    b.Property<Guid>("RelatedCompetencyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("related_competency_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RelatedCompetencyId");
+
+                    b.HasIndex("CompetencyId", "RelatedCompetencyId")
+                        .IsUnique();
+
+                    b.ToTable("competency_relationships");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataFieldEntity", b =>
@@ -1436,10 +1532,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("uuid_generate_v4()");
 
-                    b.Property<Guid>("CompetencyFrameworkId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("competency_framework_id");
-
                     b.Property<Guid>("CreatedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("created_by");
@@ -1466,7 +1558,8 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CompetencyFrameworkId");
+                    b.HasIndex("Name")
+                        .IsUnique();
 
                     b.ToTable("proficiency_scales");
                 });
@@ -2222,15 +2315,15 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Team");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyElementEntity", b =>
+            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.CompetencyFrameworkEntity", "CompetencyFramework")
-                        .WithMany("CompetencyElements")
+                        .WithMany("Competencies")
                         .HasForeignKey("CompetencyFrameworkId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Blueprint.Api.Data.Models.CompetencyElementEntity", "Parent")
+                    b.HasOne("Blueprint.Api.Data.Models.CompetencyEntity", "Parent")
                         .WithMany("Children")
                         .HasForeignKey("ParentId")
                         .OnDelete(DeleteBehavior.Restrict);
@@ -2238,6 +2331,35 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("CompetencyFramework");
 
                     b.Navigation("Parent");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyFrameworkEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.ProficiencyScaleEntity", "DefaultProficiencyScale")
+                        .WithMany()
+                        .HasForeignKey("DefaultProficiencyScaleId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("DefaultProficiencyScale");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyRelationshipEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.CompetencyEntity", "Competency")
+                        .WithMany("Relationships")
+                        .HasForeignKey("CompetencyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blueprint.Api.Data.Models.CompetencyEntity", "RelatedCompetency")
+                        .WithMany("InverseRelationships")
+                        .HasForeignKey("RelatedCompetencyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Competency");
+
+                    b.Navigation("RelatedCompetency");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataFieldEntity", b =>
@@ -2459,17 +2581,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("ProficiencyScale");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.ProficiencyScaleEntity", b =>
-                {
-                    b.HasOne("Blueprint.Api.Data.Models.CompetencyFrameworkEntity", "CompetencyFramework")
-                        .WithMany("ProficiencyScales")
-                        .HasForeignKey("CompetencyFrameworkId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CompetencyFramework");
-                });
-
             modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.InjectEntity", "Inject")
@@ -2625,16 +2736,18 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("CatalogUnits");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyElementEntity", b =>
+            modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyEntity", b =>
                 {
                     b.Navigation("Children");
+
+                    b.Navigation("InverseRelationships");
+
+                    b.Navigation("Relationships");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.CompetencyFrameworkEntity", b =>
                 {
-                    b.Navigation("CompetencyElements");
-
-                    b.Navigation("ProficiencyScales");
+                    b.Navigation("Competencies");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.DataFieldEntity", b =>

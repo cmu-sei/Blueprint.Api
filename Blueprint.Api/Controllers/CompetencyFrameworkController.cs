@@ -1,4 +1,4 @@
-// Copyright 2025 Carnegie Mellon University. All Rights Reserved.
+// Copyright 2024 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using System;
@@ -6,11 +6,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Authorization;
-using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -29,109 +29,191 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets all CompetencyFrameworks in the system
+        /// Gets all Competency Frameworks
         /// </summary>
         /// <remarks>
-        /// Returns a list of all of the CompetencyFrameworks in the system.
+        /// Returns a list of all competency frameworks (without competencies).
         /// </remarks>
-        /// <returns></returns>
-        [HttpGet("competencyFrameworks")]
+        [HttpGet("competencyframeworks")]
         [ProducesResponseType(typeof(IEnumerable<CompetencyFramework>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getCompetencyFrameworks")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewCompetencyFrameworks], ct))
-                throw new ForbiddenException();
-
             var list = await _competencyFrameworkService.GetAsync(ct);
             return Ok(list);
         }
 
         /// <summary>
-        /// Gets a specific CompetencyFramework by id
+        /// Gets a specific Competency Framework by id
         /// </summary>
         /// <remarks>
-        /// Returns the CompetencyFramework with the id specified, including its elements and proficiency scales.
+        /// Returns the framework with all competencies and relationships.
         /// </remarks>
-        /// <param name="id">The id of the CompetencyFramework</param>
+        /// <param name="id">The id of the Competency Framework</param>
         /// <param name="ct"></param>
-        /// <returns></returns>
-        [HttpGet("competencyFrameworks/{id}")]
+        [HttpGet("competencyframeworks/{id}")]
         [ProducesResponseType(typeof(CompetencyFramework), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getCompetencyFramework")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewCompetencyFrameworks], ct))
-                throw new ForbiddenException();
-
-            var competencyFramework = await _competencyFrameworkService.GetAsync(id, ct);
-
-            if (competencyFramework == null)
-                throw new EntityNotFoundException<CompetencyFramework>();
-
-            return Ok(competencyFramework);
+            var framework = await _competencyFrameworkService.GetAsync(id, ct);
+            return Ok(framework);
         }
 
         /// <summary>
-        /// Creates a new CompetencyFramework
+        /// Creates a new Competency Framework
         /// </summary>
-        /// <remarks>
-        /// Creates a new CompetencyFramework with the attributes specified.
-        /// Admin only.
-        /// </remarks>
         /// <param name="competencyFramework">The data to create the CompetencyFramework with</param>
         /// <param name="ct"></param>
-        [HttpPost("competencyFrameworks")]
+        [HttpPost("competencyframeworks")]
         [ProducesResponseType(typeof(CompetencyFramework), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createCompetencyFramework")]
         public async Task<IActionResult> Create([FromBody] CompetencyFramework competencyFramework, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
                 throw new ForbiddenException();
 
-            competencyFramework.CreatedBy = User.GetId();
-            var createdCompetencyFramework = await _competencyFrameworkService.CreateAsync(competencyFramework, ct);
-            return CreatedAtAction(nameof(this.Get), new { id = createdCompetencyFramework.Id }, createdCompetencyFramework);
+            var created = await _competencyFrameworkService.CreateAsync(competencyFramework, ct);
+            return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
         }
 
         /// <summary>
-        /// Updates a CompetencyFramework
+        /// Updates a Competency Framework
         /// </summary>
-        /// <remarks>
-        /// Updates a CompetencyFramework with the attributes specified.
-        /// Admin only.
-        /// </remarks>
-        /// <param name="id">The Id of the CompetencyFramework to update</param>
-        /// <param name="competencyFramework">The updated CompetencyFramework values</param>
+        /// <param name="id">The id of the CompetencyFramework to update</param>
+        /// <param name="competencyFramework">The updated data</param>
         /// <param name="ct"></param>
-        [HttpPut("competencyFrameworks/{id}")]
+        [HttpPut("competencyframeworks/{id}")]
         [ProducesResponseType(typeof(CompetencyFramework), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateCompetencyFramework")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CompetencyFramework competencyFramework, CancellationToken ct)
+        public async Task<IActionResult> Update(Guid id, [FromBody] CompetencyFramework competencyFramework, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
                 throw new ForbiddenException();
 
-            competencyFramework.ModifiedBy = User.GetId();
-            var updatedCompetencyFramework = await _competencyFrameworkService.UpdateAsync(id, competencyFramework, ct);
-            return Ok(updatedCompetencyFramework);
+            var updated = await _competencyFrameworkService.UpdateAsync(id, competencyFramework, ct);
+            return Ok(updated);
         }
 
         /// <summary>
-        /// Deletes a CompetencyFramework
+        /// Imports a Competency Framework from a Moodle-format CSV
         /// </summary>
         /// <remarks>
-        /// Deletes a CompetencyFramework with the specified id and all its elements and scales.
-        /// Admin only.
+        /// Accepts a CSV file in the Moodle lpimportcsv 14-column format.
+        /// Creates the framework, all competencies with hierarchy, and cross-reference relationships.
         /// </remarks>
-        /// <param name="id">The id of the CompetencyFramework to delete</param>
+        /// <param name="file">The CSV file</param>
+        /// <param name="source">Framework source (e.g. "NICE", "DCWF")</param>
+        /// <param name="version">Framework version (e.g. "5.1")</param>
         /// <param name="ct"></param>
-        [HttpDelete("competencyFrameworks/{id}")]
+        [HttpPost("competencyframeworks/import")]
+        [ProducesResponseType(typeof(CompetencyFramework), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "importCompetencyFramework")]
+        public async Task<IActionResult> Import(IFormFile file, [FromQuery] string source, [FromQuery] string version, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
+            if (file == null || file.Length == 0)
+                return BadRequest("No file provided.");
+
+            using var stream = file.OpenReadStream();
+            var framework = await _competencyFrameworkService.ImportFromMoodleCsvAsync(stream, source, version, ct);
+            return CreatedAtAction(nameof(Get), new { id = framework.Id }, framework);
+        }
+
+        /// <summary>
+        /// Imports a Competency Framework from a NICE-format JSON file
+        /// </summary>
+        /// <remarks>
+        /// Accepts a JSON file in the NICE/NIST CPRT format (response.elements with documents, elements, and relationships).
+        /// Creates the framework, all competencies with hierarchy, and work-role-to-TKSA relationships.
+        /// </remarks>
+        /// <param name="file">The JSON file</param>
+        /// <param name="ct"></param>
+        [HttpPost("competencyframeworks/import-json")]
+        [ProducesResponseType(typeof(CompetencyFramework), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "importCompetencyFrameworkJson")]
+        public async Task<IActionResult> ImportJson(IFormFile file, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
+            if (file == null || file.Length == 0)
+                return BadRequest("No file provided.");
+
+            using var stream = file.OpenReadStream();
+            var framework = await _competencyFrameworkService.ImportFromNiceJsonAsync(stream, ct);
+            return CreatedAtAction(nameof(Get), new { id = framework.Id }, framework);
+        }
+
+        /// <summary>
+        /// Creates a new Competency within a Framework
+        /// </summary>
+        /// <param name="frameworkId">The id of the parent CompetencyFramework</param>
+        /// <param name="competency">The data to create the Competency with</param>
+        /// <param name="ct"></param>
+        [HttpPost("competencyframeworks/{frameworkId}/competencies")]
+        [ProducesResponseType(typeof(Competency), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "createCompetency")]
+        public async Task<IActionResult> CreateCompetency(Guid frameworkId, [FromBody] Competency competency, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
+            var created = await _competencyFrameworkService.CreateCompetencyAsync(frameworkId, competency, ct);
+            return CreatedAtAction(nameof(Get), new { id = frameworkId }, created);
+        }
+
+        /// <summary>
+        /// Updates a Competency
+        /// </summary>
+        /// <param name="competencyId">The id of the Competency to update</param>
+        /// <param name="competency">The updated data</param>
+        /// <param name="ct"></param>
+        [HttpPut("competencies/{competencyId}")]
+        [ProducesResponseType(typeof(Competency), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "updateCompetency")]
+        public async Task<IActionResult> UpdateCompetency(Guid competencyId, [FromBody] Competency competency, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
+            var updated = await _competencyFrameworkService.UpdateCompetencyAsync(competencyId, competency, ct);
+            return Ok(updated);
+        }
+
+        /// <summary>
+        /// Deletes a Competency
+        /// </summary>
+        /// <param name="competencyId">The id of the Competency to delete</param>
+        /// <param name="ct"></param>
+        [HttpDelete("competencies/{competencyId}")]
+        [ProducesResponseType((int)HttpStatusCode.NoContent)]
+        [SwaggerOperation(OperationId = "deleteCompetency")]
+        public async Task<IActionResult> DeleteCompetency(Guid competencyId, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
+            await _competencyFrameworkService.DeleteCompetencyAsync(competencyId, ct);
+            return NoContent();
+        }
+
+        /// <summary>
+        /// Deletes a Competency Framework
+        /// </summary>
+        /// <remarks>
+        /// Deletes the framework and all associated competencies and relationships (cascade).
+        /// </remarks>
+        /// <param name="id">The id of the Competency Framework to delete</param>
+        /// <param name="ct"></param>
+        [HttpDelete("competencyframeworks/{id}")]
         [ProducesResponseType((int)HttpStatusCode.NoContent)]
         [SwaggerOperation(OperationId = "deleteCompetencyFramework")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
                 throw new ForbiddenException();
 
             await _competencyFrameworkService.DeleteAsync(id, ct);

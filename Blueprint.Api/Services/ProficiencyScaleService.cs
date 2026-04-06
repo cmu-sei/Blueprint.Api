@@ -20,7 +20,7 @@ namespace Blueprint.Api.Services
 {
     public interface IProficiencyScaleService
     {
-        Task<IEnumerable<ViewModels.ProficiencyScale>> GetByFrameworkAsync(Guid frameworkId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ProficiencyScale>> GetAllAsync(CancellationToken ct);
         Task<ViewModels.ProficiencyScale> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.ProficiencyScale> CreateAsync(ViewModels.ProficiencyScale proficiencyScale, CancellationToken ct);
         Task<ViewModels.ProficiencyScale> UpdateAsync(Guid id, ViewModels.ProficiencyScale proficiencyScale, CancellationToken ct);
@@ -40,11 +40,11 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
         }
 
-        public async Task<IEnumerable<ViewModels.ProficiencyScale>> GetByFrameworkAsync(Guid frameworkId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.ProficiencyScale>> GetAllAsync(CancellationToken ct)
         {
             var items = await _context.ProficiencyScales
-                .Where(x => x.CompetencyFrameworkId == frameworkId)
                 .Include(x => x.ProficiencyLevels)
+                .OrderBy(x => x.Name)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<ProficiencyScale>>(items);

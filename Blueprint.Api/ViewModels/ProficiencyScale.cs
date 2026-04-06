@@ -9,7 +9,6 @@ namespace Blueprint.Api.ViewModels
     public class ProficiencyScale : Base
     {
         public Guid Id { get; set; }
-        public Guid CompetencyFrameworkId { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
         public virtual ICollection<ProficiencyLevel> ProficiencyLevels { get; set; } = new HashSet<ProficiencyLevel>();

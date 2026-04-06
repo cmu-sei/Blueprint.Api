@@ -29,17 +29,17 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets ProficiencyScales by CompetencyFramework
+        /// Gets all ProficiencyScales
         /// </summary>
-        [HttpGet("competencyFrameworks/{frameworkId}/proficiencyScales")]
+        [HttpGet("proficiencyScales")]
         [ProducesResponseType(typeof(IEnumerable<ProficiencyScale>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getProficiencyScalesByFramework")]
-        public async Task<IActionResult> GetByFramework(Guid frameworkId, CancellationToken ct)
+        [SwaggerOperation(OperationId = "getProficiencyScales")]
+        public async Task<IActionResult> GetAll(CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewCompetencyFrameworks], ct))
                 throw new ForbiddenException();
 
-            var list = await _proficiencyScaleService.GetByFrameworkAsync(frameworkId, ct);
+            var list = await _proficiencyScaleService.GetAllAsync(ct);
             return Ok(list);
         }
 

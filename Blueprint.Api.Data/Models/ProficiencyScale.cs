@@ -15,8 +15,6 @@ namespace Blueprint.Api.Data.Models
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
-        public Guid CompetencyFrameworkId { get; set; }
-        public virtual CompetencyFrameworkEntity CompetencyFramework { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
         public virtual ICollection<ProficiencyLevelEntity> ProficiencyLevels { get; set; } = new HashSet<ProficiencyLevelEntity>();
@@ -26,10 +24,7 @@ namespace Blueprint.Api.Data.Models
     {
         public void Configure(EntityTypeBuilder<ProficiencyScaleEntity> builder)
         {
-            builder.HasOne(x => x.CompetencyFramework)
-                .WithMany(x => x.ProficiencyScales)
-                .HasForeignKey(x => x.CompetencyFrameworkId)
-                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasIndex(x => x.Name).IsUnique();
         }
     }
 }

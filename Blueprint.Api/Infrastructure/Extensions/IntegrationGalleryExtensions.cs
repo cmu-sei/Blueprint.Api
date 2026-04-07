@@ -79,7 +79,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     Email = team.Email
                 };
                 galleryTeam = await galleryApiClient.CreateTeamAsync(galleryTeam, ct);
-                team.GalleryTeamId = galleryTeam.Id;
                 // use eager-loaded users from the team
                 var users = team.TeamUsers.Select(tu => tu.User).ToList();
                 foreach (var user in users)
@@ -141,7 +140,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     var cardTeams = allCardTeams.Where(cdt => cdt.CardId == card.Id).ToList();
                     var teamCardTasks = cardTeams.Select(cardTeam => {
                         var newTeamCard = new TeamCard() {
-                            TeamId = (Guid)cardTeam.Team.GalleryTeamId,
+                            TeamId = cardTeam.Team.Id,
                             CardId = (Guid)card.GalleryId,
                             IsShownOnWall = cardTeam.IsShownOnWall,
                             CanPostArticles = cardTeam.CanPostArticles
@@ -226,7 +225,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     {
                         var newArticleTeam = new TeamArticle() {
                             ExhibitId = (Guid)msel.GalleryExhibitId,
-                            TeamId = (Guid)team.GalleryTeamId,
+                            TeamId = team.Id,
                             ArticleId = galleryArticle.Id
                         };
                         await galleryApiClient.CreateTeamArticleAsync(newArticleTeam, ct);

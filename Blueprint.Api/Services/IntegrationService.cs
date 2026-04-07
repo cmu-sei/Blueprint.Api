@@ -20,6 +20,8 @@ using Player.Api.Client;
 using Steamfitter.Api.Client;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.AspNetCore.SignalR;
+using Blueprint.Api.Hubs;
 
 
 namespace Blueprint.Api.Services
@@ -36,6 +38,7 @@ namespace Blueprint.Api.Services
         private readonly IIntegrationQueue _integrationQueue;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IOptionsMonitor<Infrastructure.Options.ClientOptions> _clientOptions;
+        private readonly IHubContext<MainHub> _mainHub;
         private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _cancellationTokenSources = new();
 
         public IntegrationService(
@@ -43,13 +46,15 @@ namespace Blueprint.Api.Services
             IServiceScopeFactory scopeFactory,
             IIntegrationQueue integrationQueue,
             IHttpClientFactory httpClientFactory,
-            IOptionsMonitor<Infrastructure.Options.ClientOptions> clientOptions)
+            IOptionsMonitor<Infrastructure.Options.ClientOptions> clientOptions,
+            IHubContext<MainHub> mainHub)
         {
             _logger = logger;
             _scopeFactory = scopeFactory;
             _integrationQueue = integrationQueue;
             _httpClientFactory = httpClientFactory;
             _clientOptions = clientOptions;
+            _mainHub = mainHub;
         }
 
         public STT.Task StartAsync(CancellationToken cancellationToken)
@@ -72,41 +77,128 @@ namespace Blueprint.Api.Services
                 _ = PerformCancelCleanupAsync(mselId);
         }
 
+        /// <summary>
+        /// Performs cancel cleanup using only ExecuteUpdateAsync and external API calls.
+        /// Never calls SaveChangesAsync, which avoids the EntityEventInterceptor → MediatR →
+        /// SignalR notification chain that can hang on slow/saturated browser connections.
+        /// </summary>
         private async STT.Task PerformCancelCleanupAsync(Guid mselId)
         {
             _logger.LogInformation($"Integration push cancelled for MSEL {mselId}. Starting cleanup.");
             var freshCt = new CancellationToken();
             try
             {
-                // Use a fresh scope and context - the original may be in a bad state after cancellation.
-                using var cleanupScope = _scopeFactory.CreateScope();
-                using var cleanupContext = cleanupScope.ServiceProvider.GetRequiredService<BlueprintContext>();
-                var freshMsel = await cleanupContext.Msels
-                    .Include(m => m.PlayerApplications).ThenInclude(pa => pa.PlayerApplicationTeams)
-                    .Include(m => m.Cards)
-                    .Include(m => m.DataFields)
-                    .Include(m => m.ScenarioEvents).ThenInclude(se => se.DataValues)
-                    .Include(m => m.ScenarioEvents).ThenInclude(se => se.SteamfitterTask)
-                    .Include(m => m.Moves)
-                    .Include(m => m.CiteActions)
-                    .Include(m => m.CiteDuties)
-                    .Include(m => m.Teams).ThenInclude(t => t.TeamUsers).ThenInclude(tu => tu.User)
-                    .Include(m => m.Teams).ThenInclude(t => t.UserTeamRoles)
-                    .AsSplitQuery()
+                using var scope = _scopeFactory.CreateScope();
+                using var dbContext = scope.ServiceProvider.GetRequiredService<BlueprintContext>();
+
+                // Step 1: Update status directly via ExecuteUpdateAsync (bypasses EF tracking/interceptor).
+                var cancelStatus = "Cancelling - removing partial integrations";
+                var updated = await dbContext.Msels
+                    .Where(m => m.Id == mselId)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(m => m.Status, Data.Enumerations.MselItemStatus.Pulling)
+                        .SetProperty(m => m.IntegrationStatus, cancelStatus),
+                        freshCt);
+                _logger.LogInformation($"Cancel cleanup: status update affected {updated} row(s) for MSEL {mselId}.");
+                // Send lightweight SignalR notification for cancel progress
+                await _mainHub.Clients.Group(mselId.ToString())
+                    .SendAsync(MainHubMethods.IntegrationStatusUpdated, mselId, cancelStatus, freshCt);
+                await _mainHub.Clients.Group(MainHub.ADMIN_DATA_GROUP)
+                    .SendAsync(MainHubMethods.IntegrationStatusUpdated, mselId, cancelStatus, freshCt);
+
+                // Step 2: Load MSEL AsNoTracking — we only need the integration IDs for API delete calls.
+                var msel = await dbContext.Msels
+                    .AsNoTracking()
                     .FirstOrDefaultAsync(m => m.Id == mselId, freshCt);
-                if (freshMsel != null)
+
+                if (msel == null)
                 {
-                    freshMsel.Status = Data.Enumerations.MselItemStatus.Pulling;
-                    await UpdateIntegrationStatusAsync(freshMsel, cleanupContext, "Cancelling - removing partial integrations", freshCt);
-                    var tokenResponse = await ApiClientsExtensions.GetToken(cleanupScope);
-                    var pullInfo = new IntegrationInformation
-                    {
-                        MselId = mselId,
-                        IsPush = false,
-                        FinalStatus = Data.Enumerations.MselItemStatus.Approved
-                    };
-                    await PullIntegrations(freshMsel, pullInfo, cleanupContext, tokenResponse, freshCt);
+                    _logger.LogWarning($"Cancel cleanup: MSEL {mselId} not found in database.");
+                    return;
                 }
+
+                _logger.LogInformation($"Cancel cleanup: MSEL {mselId} loaded. PlayerViewId={msel.PlayerViewId}, GalleryCollectionId={msel.GalleryCollectionId}, CiteEvaluationId={msel.CiteEvaluationId}, SteamfitterScenarioId={msel.SteamfitterScenarioId}");
+
+                // Step 3: Get auth token for external API calls.
+                var tokenResponse = await ApiClientsExtensions.GetToken(scope);
+                _logger.LogInformation($"Cancel cleanup: token acquired for MSEL {mselId}. Starting external pulls.");
+
+                // Step 4: Call external API deletes directly (no BlueprintContext/SaveChanges needed).
+                if (msel.SteamfitterScenarioId != null)
+                {
+                    try
+                    {
+                        _logger.LogInformation($"Cancel cleanup: pulling Steamfitter scenario for MSEL {mselId}.");
+                        var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
+                        await IntegrationSteamfitterExtensions.PullFromSteamfitterAsync((Guid)msel.SteamfitterScenarioId, steamfitterApiClient, freshCt);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        _logger.LogError(ex, $"Cancel cleanup: Steamfitter pull failed ({mselId})");
+                    }
+                }
+
+                if (msel.CiteEvaluationId != null)
+                {
+                    try
+                    {
+                        _logger.LogInformation($"Cancel cleanup: pulling CITE evaluation for MSEL {mselId}.");
+                        var citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CurrentValue.CiteApiUrl, tokenResponse);
+                        await IntegrationCiteExtensions.PullFromCiteAsync((Guid)msel.CiteEvaluationId, citeApiClient, freshCt);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        _logger.LogError(ex, $"Cancel cleanup: CITE pull failed ({mselId})");
+                    }
+                }
+
+                if (msel.GalleryCollectionId != null)
+                {
+                    try
+                    {
+                        _logger.LogInformation($"Cancel cleanup: pulling Gallery collection for MSEL {mselId}.");
+                        var galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse);
+                        await IntegrationGalleryExtensions.PullFromGalleryAsync((Guid)msel.GalleryCollectionId, galleryApiClient, freshCt);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        _logger.LogError(ex, $"Cancel cleanup: Gallery pull failed ({mselId})");
+                    }
+                }
+
+                if (msel.PlayerViewId != null)
+                {
+                    try
+                    {
+                        _logger.LogInformation($"Cancel cleanup: pulling Player view for MSEL {mselId}.");
+                        var playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
+                        await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, freshCt);
+                        await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, freshCt);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        _logger.LogError(ex, $"Cancel cleanup: Player pull failed ({mselId})");
+                    }
+                }
+
+                // Step 5: Use a fresh scope/context for completion so SaveChangesAsync triggers
+                // the full MselUpdated SignalR notification with minimal tracked entities.
+                _logger.LogInformation($"Cancel cleanup: clearing integration IDs for MSEL {mselId}.");
+                using (var finalScope = _scopeFactory.CreateScope())
+                using (var finalContext = finalScope.ServiceProvider.GetRequiredService<BlueprintContext>())
+                {
+                    var finalMsel = await finalContext.Msels.FindAsync(new object[] { mselId }, freshCt);
+                    finalMsel.PlayerViewId = null;
+                    finalMsel.GalleryExhibitId = null;
+                    finalMsel.GalleryCollectionId = null;
+                    finalMsel.CiteEvaluationId = null;
+                    finalMsel.SteamfitterScenarioId = null;
+                    finalMsel.IntegrationStatus = null;
+                    finalMsel.Status = Data.Enumerations.MselItemStatus.Approved;
+                    await finalContext.SaveChangesAsync(freshCt);
+                }
+
+                _logger.LogInformation($"Cancel cleanup: complete for MSEL {mselId}.");
             }
             catch (System.Exception cleanupEx)
             {
@@ -115,9 +207,16 @@ namespace Blueprint.Api.Services
                 {
                     using var errorScope = _scopeFactory.CreateScope();
                     using var errorContext = errorScope.ServiceProvider.GetRequiredService<BlueprintContext>();
-                    var errorMsel = await errorContext.Msels.FindAsync(mselId);
-                    if (errorMsel != null)
-                        await UpdateIntegrationStatusAsync(errorMsel, errorContext, $"ERROR: Cancellation cleanup failed - {cleanupEx.Message}", freshCt);
+                    var errorStatus = $"ERROR: Cancellation cleanup failed - {cleanupEx.Message}";
+                    await errorContext.Msels
+                        .Where(m => m.Id == mselId)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(m => m.IntegrationStatus, errorStatus),
+                            freshCt);
+                    await _mainHub.Clients.Group(mselId.ToString())
+                        .SendAsync(MainHubMethods.IntegrationStatusUpdated, mselId, errorStatus, freshCt);
+                    await _mainHub.Clients.Group(MainHub.ADMIN_DATA_GROUP)
+                        .SendAsync(MainHubMethods.IntegrationStatusUpdated, mselId, errorStatus, freshCt);
                 }
                 catch { /* best effort */ }
             }
@@ -161,6 +260,7 @@ namespace Blueprint.Api.Services
             var ct = cts.Token;
             var currentProcessStep = "Begin processing";
             _logger.LogDebug($"{currentProcessStep} {integrationInformation.MselId}");
+            Guid? cancelledMselId = null;
             try
             {
                 using (var scope = _scopeFactory.CreateScope())
@@ -207,14 +307,6 @@ namespace Blueprint.Api.Services
                                 msel.CiteEvaluationId = Guid.NewGuid();
                             if (msel.UseSteamfitter && msel.SteamfitterScenarioId == null)
                                 msel.SteamfitterScenarioId = Guid.NewGuid();
-
-                            // Pre-set team IDs to match Blueprint team IDs
-                            foreach (var team in msel.Teams)
-                            {
-                                if (msel.UsePlayer) team.PlayerTeamId = team.Id;
-                                if (msel.UseGallery) team.GalleryTeamId = team.Id;
-                                if (msel.UseCite && team.CiteTeamTypeId != null) team.CiteTeamId = team.Id;
-                            }
 
                             await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Integrations", ct);
                         }
@@ -291,17 +383,20 @@ namespace Blueprint.Api.Services
                             if (msel.UsePlayer)
                             {
                                 ct.ThrowIfCancellationRequested();
-                                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Player Applications", ct);
+                                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Player Applications", ct);
                                 currentProcessStep = "Player - push applications";
                                 await IntegrationPlayerExtensions.CreateApplicationsAsync(msel, playerApiClient, blueprintContext, _clientOptions.CurrentValue.PlayerMaxConcurrentRequests, _clientOptions.CurrentValue, ct);
                             }
-                            // set the MSEL status
-                            msel.IntegrationStatus = null;
-                            msel.Status = Data.Enumerations.MselItemStatus.Deployed;
-                            await blueprintContext.SaveChangesAsync(ct);
-
-                            // Clear tracked entities to prevent accumulation across operations
-                            blueprintContext.ChangeTracker.Clear();
+                            // Use a fresh scope/context for completion so SaveChangesAsync triggers
+                            // the full MselUpdated SignalR notification with minimal tracked entities.
+                            using (var finalScope = _scopeFactory.CreateScope())
+                            using (var finalContext = finalScope.ServiceProvider.GetRequiredService<BlueprintContext>())
+                            {
+                                var finalMsel = await finalContext.Msels.FindAsync(new object[] { msel.Id }, ct);
+                                finalMsel.Status = Data.Enumerations.MselItemStatus.Deployed;
+                                finalMsel.IntegrationStatus = null;
+                                await finalContext.SaveChangesAsync(ct);
+                            }
                         }
                         else
                         {
@@ -311,29 +406,35 @@ namespace Blueprint.Api.Services
                     }
                     catch (OperationCanceledException)
                     {
-                        // Rollback any open transaction to release DB row locks before cleanup.
-                        // GalleryProcess opens a transaction on blueprintContext; if cancelled mid-flight,
-                        // that transaction holds a lock on the msels row that PerformCancelCleanupAsync needs.
-                        if (blueprintContext.Database.CurrentTransaction != null)
-                        {
-                            try { await blueprintContext.Database.RollbackTransactionAsync(); }
-                            catch { /* best effort */ }
-                        }
-                        await PerformCancelCleanupAsync(msel.Id);
+                        // Capture the ID; cleanup runs after the using block disposes
+                        // blueprintContext (releasing any open transaction/row locks).
+                        cancelledMselId = msel.Id;
                     }
                     catch (System.Exception ex)
                     {
                         _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
                         var freshCt = new CancellationToken();
-                        await UpdateIntegrationStatusAsync(msel, blueprintContext, $"ERROR: {currentProcessStep} failed - {ex.Message}", freshCt);
+                        var errorStatus = $"ERROR: {currentProcessStep} failed - {ex.Message}";
+                        // Use ExecuteUpdateAsync + direct SignalR for error (don't risk SaveChangesAsync in error recovery)
+                        await blueprintContext.Msels
+                            .Where(m => m.Id == msel.Id)
+                            .ExecuteUpdateAsync(s => s.SetProperty(m => m.IntegrationStatus, errorStatus), freshCt);
+                        await _mainHub.Clients.Group(msel.Id.ToString())
+                            .SendAsync(MainHubMethods.IntegrationStatusUpdated, msel.Id, errorStatus, freshCt);
+                        await _mainHub.Clients.Group(MainHub.ADMIN_DATA_GROUP)
+                            .SendAsync(MainHubMethods.IntegrationStatusUpdated, msel.Id, errorStatus, freshCt);
                     }
 
                 }
+                // blueprintContext is fully disposed here — all DB locks released.
+                // Safe to run cleanup now without hitting a lock wait on msels.
+                if (cancelledMselId.HasValue)
+                    await PerformCancelCleanupAsync(cancelledMselId.Value);
             }
             catch (System.Exception ex)
             {
                 _logger.LogError(ex, $"{currentProcessStep} {integrationInformation}");
-                // Try to update integration status with error in a fresh context
+                // Try to update integration status with error via ExecuteUpdateAsync + direct SignalR
                 try
                 {
                     using var scope = _scopeFactory.CreateScope();
@@ -341,12 +442,15 @@ namespace Blueprint.Api.Services
                     var mselId = integrationInformation?.MselId ?? Guid.Empty;
                     if (mselId != Guid.Empty)
                     {
-                        var msel = await blueprintContext.Msels.FindAsync(mselId);
-                        if (msel != null)
-                        {
-                            msel.IntegrationStatus = $"ERROR: {currentProcessStep} failed - {ex.Message}";
-                            await blueprintContext.SaveChangesAsync();
-                        }
+                        var errorStatus = $"ERROR: {currentProcessStep} failed - {ex.Message}";
+                        await blueprintContext.Msels
+                            .Where(m => m.Id == mselId)
+                            .ExecuteUpdateAsync(s => s
+                                .SetProperty(m => m.IntegrationStatus, errorStatus));
+                        await _mainHub.Clients.Group(mselId.ToString())
+                            .SendAsync(MainHubMethods.IntegrationStatusUpdated, mselId, errorStatus);
+                        await _mainHub.Clients.Group(MainHub.ADMIN_DATA_GROUP)
+                            .SendAsync(MainHubMethods.IntegrationStatusUpdated, mselId, errorStatus);
                     }
                 }
                 catch (System.Exception innerEx)
@@ -361,11 +465,16 @@ namespace Blueprint.Api.Services
             }
         }
 
+        /// <summary>
+        /// Pulls (deletes) integrations from external services and clears integration IDs.
+        /// Uses ExecuteUpdateAsync for all DB writes to avoid the EntityEventInterceptor →
+        /// MediatR → SignalR chain that can hang on slow/saturated browser connections.
+        /// </summary>
         private async STT.Task PullIntegrations(MselEntity msel, IntegrationInformation integrationInformation, BlueprintContext blueprintContext, IdentityModel.Client.TokenResponse tokenResponse, CancellationToken ct)
         {
+            var mselId = msel.Id;
             var currentProcessStep = "Pulling Integrations";
-            await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pulling Integrations", ct);
-            PlayerApiClient playerApiClient = null;
+            await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Integrations", ct);
 
             // Pull from Steamfitter
             if (msel.SteamfitterScenarioId != null)
@@ -373,7 +482,7 @@ namespace Blueprint.Api.Services
                 try
                 {
                     currentProcessStep = "Steamfitter - pull scenario";
-                    await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pulling Steamfitter Scenario", ct);
+                    await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Steamfitter Scenario", ct);
                     var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
                     await IntegrationSteamfitterExtensions.PullFromSteamfitterAsync((Guid)msel.SteamfitterScenarioId, steamfitterApiClient, ct);
                 }
@@ -388,7 +497,7 @@ namespace Blueprint.Api.Services
                 try
                 {
                     currentProcessStep = "CITE - pull evaluation";
-                    await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pulling CITE Evaluation", ct);
+                    await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling CITE Evaluation", ct);
                     var citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CurrentValue.CiteApiUrl, tokenResponse);
                     await IntegrationCiteExtensions.PullFromCiteAsync((Guid)msel.CiteEvaluationId, citeApiClient, ct);
                 }
@@ -403,7 +512,7 @@ namespace Blueprint.Api.Services
                 try
                 {
                     currentProcessStep = "Gallery - pull collection";
-                    await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pulling Gallery Collection", ct);
+                    await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Gallery Collection", ct);
                     var galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse);
                     await IntegrationGalleryExtensions.PullFromGalleryAsync((Guid)msel.GalleryCollectionId, galleryApiClient, ct);
                 }
@@ -418,8 +527,8 @@ namespace Blueprint.Api.Services
                 try
                 {
                     currentProcessStep = "Player - pull view";
-                    await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pulling Player View", ct);
-                    playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
+                    await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Player View", ct);
+                    var playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
                     // TODO:  Player requires two deletes?
                     await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, ct);
                     await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, ct);
@@ -429,32 +538,42 @@ namespace Blueprint.Api.Services
                     _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
                 }
             }
-            // update the MSEL
+            // Use a fresh scope/context for completion so SaveChangesAsync triggers
+            // the full MselUpdated SignalR notification with minimal tracked entities.
             currentProcessStep = "MSEL update";
-            var mselId = msel.Id;
-            msel = await blueprintContext.Msels.FirstOrDefaultAsync(m => m.Id == mselId);
-            if (msel != null)
+            using (var finalScope = _scopeFactory.CreateScope())
+            using (var finalContext = finalScope.ServiceProvider.GetRequiredService<BlueprintContext>())
             {
-                msel.CiteEvaluationId = null;
-                msel.GalleryExhibitId = null;
-                msel.GalleryCollectionId = null;
-                msel.PlayerViewId = null;
-                msel.SteamfitterScenarioId = null;
-                // Clear team integration IDs
-                var teams = await blueprintContext.Teams.Where(t => t.MselId == mselId).ToListAsync(ct);
-                foreach (var team in teams)
-                {
-                    team.PlayerTeamId = null;
-                    team.GalleryTeamId = null;
-                    team.CiteTeamId = null;
-                }
-                msel.IntegrationStatus = null;
-                msel.Status = integrationInformation.FinalStatus;
-                await blueprintContext.SaveChangesAsync(ct);
+                var finalMsel = await finalContext.Msels.FindAsync(new object[] { mselId }, ct);
+                finalMsel.PlayerViewId = null;
+                finalMsel.GalleryExhibitId = null;
+                finalMsel.GalleryCollectionId = null;
+                finalMsel.CiteEvaluationId = null;
+                finalMsel.SteamfitterScenarioId = null;
+                finalMsel.IntegrationStatus = null;
+                finalMsel.Status = integrationInformation.FinalStatus;
+                await finalContext.SaveChangesAsync(ct);
             }
+        }
 
-            // Clear tracked entities to prevent accumulation across operations
-            blueprintContext.ChangeTracker.Clear();
+        /// <summary>
+        /// Updates the IntegrationStatus field via ExecuteUpdateAsync (bypasses EF tracking/interceptor)
+        /// and sends a lightweight SignalR notification directly to connected clients.
+        /// </summary>
+        private async STT.Task SendIntegrationStatusAsync(BlueprintContext blueprintContext, Guid mselId, string status, CancellationToken ct)
+        {
+            // Persist to DB (bypasses interceptor/SignalR)
+            await blueprintContext.Msels
+                .Where(m => m.Id == mselId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(m => m.IntegrationStatus, status),
+                    ct);
+
+            // Send lightweight SignalR notification directly
+            await _mainHub.Clients.Group(mselId.ToString())
+                .SendAsync(MainHubMethods.IntegrationStatusUpdated, mselId, status, ct);
+            await _mainHub.Clients.Group(MainHub.ADMIN_DATA_GROUP)
+                .SendAsync(MainHubMethods.IntegrationStatusUpdated, mselId, status, ct);
         }
 
         private bool CanMselBePushed(MselEntity mselToIntegrate)
@@ -469,11 +588,11 @@ namespace Blueprint.Api.Services
             try
             {
                 // create the Player View
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing View to Player", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing View to Player", ct);
                 await IntegrationPlayerExtensions.CreateViewAsync(msel, playerViewId, playerApiClient, blueprintContext, ct);
                 // create the Player Teams
                 currentProcessStep = "Player create teams";
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Teams to Player", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Teams to Player", ct);
                 await IntegrationPlayerExtensions.CreateTeamsAsync(msel, playerApiClient, blueprintContext, playerUserIds, ct);
             }
             catch (System.Exception ex)
@@ -489,27 +608,27 @@ namespace Blueprint.Api.Services
             try
             {
                 // create the Cite Evaluation
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Evaluation to CITE", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Evaluation to CITE", ct);
                 var evaluation = await IntegrationCiteExtensions.CreateEvaluationAsync(msel, citeApiClient, blueprintContext, ct);
                 // create the Cite Moves
                 currentProcessStep = "CITE - create moves";
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Moves to CITE", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Moves to CITE", ct);
                 await IntegrationCiteExtensions.CreateMovesAsync(msel, citeApiClient, blueprintContext, _clientOptions.CurrentValue.CiteMaxConcurrentRequests, ct);
                 // create the Cite Teams
                 currentProcessStep = "CITE - create teams";
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Teams to CITE", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Teams to CITE", ct);
                 await IntegrationCiteExtensions.CreateTeamsAsync(msel, citeApiClient, blueprintContext, citeUserIds, ct);
                 // create the Cite Duties
                 currentProcessStep = "CITE - create duties";
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Duties to CITE", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Duties to CITE", ct);
                 await IntegrationCiteExtensions.CreateDutiesAsync(msel, citeApiClient, blueprintContext, _clientOptions.CurrentValue.CiteMaxConcurrentRequests, ct);
                 // create the Cite Actions
                 currentProcessStep = "CITE - create actions";
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Actions to CITE", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Actions to CITE", ct);
                 await IntegrationCiteExtensions.CreateActionsAsync(msel, citeApiClient, blueprintContext, _clientOptions.CurrentValue.CiteMaxConcurrentRequests, ct);
                 // update the evaluation, so that submissions get created
                 currentProcessStep = "CITE - advance";
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Finishing Evaluation to CITE", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Finishing Evaluation to CITE", ct);
                 evaluation.Status = Cite.Api.Client.ItemStatus.Active;
                 await IntegrationCiteExtensions.ActivateAsync(evaluation, citeApiClient, blueprintContext, ct);
             }
@@ -522,34 +641,29 @@ namespace Blueprint.Api.Services
 
         private async STT.Task GalleryProcess(MselEntity msel, IScenarioEventService scenarioEventService, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, HashSet<Guid> galleryUserIds, CancellationToken ct)
         {
-            var currentProcessStep = "Gallery - begin transaction";
+            var currentProcessStep = "Gallery - Pushing Collection";
             try
             {
-                // start a transaction, because we will modify many database items
-                await blueprintContext.Database.BeginTransactionAsync();
                 // create the Gallery Collection
-                currentProcessStep = "Gallery - Pushing Collection";
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Collection to Gallery", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Collection to Gallery", ct);
                 await IntegrationGalleryExtensions.CreateCollectionAsync(msel, galleryApiClient, blueprintContext, ct);
                 // create the Gallery Exhibit
                 currentProcessStep = "Gallery - Pushing Exhibit";
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Exhibit to Gallery", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Exhibit to Gallery", ct);
                 await IntegrationGalleryExtensions.CreateExhibitAsync(msel, galleryApiClient, blueprintContext, ct);
                 // create the Gallery Teams
                 currentProcessStep = "Gallery - Pushing Teams";
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Teams to Gallery", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Teams to Gallery", ct);
                 await IntegrationGalleryExtensions.CreateTeamsAsync(msel, galleryApiClient, blueprintContext, galleryUserIds, ct);
                 // create the Gallery Cards
                 currentProcessStep = "Gallery - Pushing Cards";
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Cards to Gallery", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Cards to Gallery", ct);
                 await IntegrationGalleryExtensions.CreateCardsAsync(msel, galleryApiClient, blueprintContext, _clientOptions.CurrentValue.GalleryMaxConcurrentRequests, ct);
                 // create the Gallery Articles
                 currentProcessStep = "Gallery - Pushing Articles";
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Articles to Gallery", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Articles to Gallery", ct);
                 await IntegrationGalleryExtensions.CreateArticlesAsync(msel, galleryApiClient, blueprintContext, scenarioEventService, _clientOptions.CurrentValue.GalleryMaxConcurrentRequests, ct);
-                // commit the transaction
-                currentProcessStep = "Gallery - commit transaction";
-                await blueprintContext.Database.CommitTransactionAsync(ct);
+                currentProcessStep = "Gallery - done";
             }
             catch (System.Exception ex)
             {
@@ -564,7 +678,7 @@ namespace Blueprint.Api.Services
             try
             {
                 // create the Steamfitter Scenario
-                await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Scenario to Steamfitter", ct);
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Scenario to Steamfitter", ct);
                 var scenario = await IntegrationSteamfitterExtensions.CreateScenarioAsync(msel, steamfitterApiClient, blueprintContext, ct);
                 // create the scenario tasks
                 var sortedScenarioEvents = msel.ScenarioEvents.OrderBy(m => m.DeltaSeconds).ToList();

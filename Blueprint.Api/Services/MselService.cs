@@ -2138,9 +2138,10 @@ namespace Blueprint.Api.Services
                 var joinInformation = new JoinInformation
                 {
                     UserId = userId,
-                    PlayerTeamId = invitation.Team.PlayerTeamId,
-                    GalleryTeamId = invitation.Team.GalleryTeamId,
-                    CiteTeamId = invitation.Team.CiteTeamId
+                    TeamId = (Guid)invitation.TeamId,
+                    UsePlayer = msel.UsePlayer,
+                    UseGallery = msel.UseGallery,
+                    UseCite = msel.UseCite && invitation.Team.CiteTeamTypeId != null
                 };
                 _joinQueue.Add(joinInformation);
             }

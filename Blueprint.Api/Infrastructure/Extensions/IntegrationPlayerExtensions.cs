@@ -83,7 +83,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 });
                 await Task.WhenAll(userTasks);
             }
-            await blueprintContext.SaveChangesAsync(ct);
         }
 
         // Create Player Applications for this MSEL
@@ -143,7 +142,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 foreach (var applicationTeam in applicationTeams)
                 {
                     var applicationInstanceForm = new ApplicationInstanceForm() {
-                        TeamId = (Guid)applicationTeam.Team.PlayerTeamId,
+                        TeamId = applicationTeam.Team.Id,
                         ApplicationId = (Guid)playerApplication.Id,
                         DisplayOrder = applicationTeam.DisplayOrder
                     };

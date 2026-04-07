@@ -102,7 +102,7 @@ namespace Blueprint.Api.Services
                     var playerApplication = await playerApiClient.CreateApplicationAsync(addApplicationInformation.Application.ViewId, addApplicationInformation.Application, ct);
                     // create the Player Team Application
                     var applicationInstanceForm = new ApplicationInstanceForm() {
-                        TeamId = addApplicationInformation.PlayerTeamId,
+                        TeamId = addApplicationInformation.TeamId,
                         ApplicationId = playerApplication.Id,
                         DisplayOrder = addApplicationInformation.DisplayOrder
                     };

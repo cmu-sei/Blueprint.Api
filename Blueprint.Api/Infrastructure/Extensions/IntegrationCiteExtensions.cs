@@ -115,7 +115,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         TeamTypeId = (Guid)team.CiteTeamTypeId
                     };
                     citeTeam = await citeApiClient.CreateTeamAsync(citeTeam, ct);
-                    team.CiteTeamId = citeTeam.Id;
                     // use eager-loaded users from the team
                     var users = team.TeamUsers.Select(tu => tu.User).ToList();
                     foreach (var user in users)
@@ -152,13 +151,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         {}
                     }
                 }
-                else
-                {
-                    team.CiteTeamId = null;
-                }
             }
-            // save team CiteTeamIds
-            await blueprintContext.SaveChangesAsync(ct);
         }
 
         // Create Cite Duties for this MSEL
@@ -166,7 +159,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         {
             // Build work items without starting execution
             var duties = msel.CiteDuties
-                .Where(duty => msel.Teams.Any(t => t.Id == duty.TeamId && t.CiteTeamId != null))
+                .Where(duty => msel.Teams.Any(t => t.Id == duty.TeamId && t.CiteTeamTypeId != null))
                 .ToList();
 
             // Process in parallel batches to avoid overwhelming CITE API
@@ -174,11 +167,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
             {
                 var batch = duties.Skip(i).Take(batchSize);
                 await Task.WhenAll(batch.Select(duty => {
-                    var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == duty.TeamId)?.CiteTeamId;
                     var citeDuty = new Duty() {
                         EvaluationId = (Guid)msel.CiteEvaluationId,
                         Name = duty.Name,
-                        TeamId = (Guid)citeTeamId
+                        TeamId = (Guid)duty.TeamId
                     };
                     return citeApiClient.CreateDutyAsync(citeDuty, ct);
                 }));
@@ -190,7 +182,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         {
             // Build work items without starting execution
             var actions = msel.CiteActions
-                .Where(action => action.TeamId != null && msel.Teams.Any(t => t.Id == action.TeamId && t.CiteTeamId != null))
+                .Where(action => action.TeamId != null && msel.Teams.Any(t => t.Id == action.TeamId && t.CiteTeamTypeId != null))
                 .ToList();
 
             // Process in parallel batches to avoid overwhelming CITE API
@@ -198,10 +190,9 @@ namespace Blueprint.Api.Infrastructure.Extensions
             {
                 var batch = actions.Skip(i).Take(batchSize);
                 await Task.WhenAll(batch.Select(action => {
-                    var citeTeamId = msel.Teams.SingleOrDefault(t => t.Id == action.TeamId)?.CiteTeamId;
                     var citeAction = new Cite.Api.Client.Action() {
                         EvaluationId = (Guid)msel.CiteEvaluationId,
-                        TeamId = (Guid)citeTeamId,
+                        TeamId = (Guid)action.TeamId,
                         MoveNumber = action.MoveNumber,
                         InjectNumber = action.InjectNumber,
                         Description = action.Description

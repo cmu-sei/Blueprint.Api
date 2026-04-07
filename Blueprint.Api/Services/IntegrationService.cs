@@ -128,7 +128,7 @@ namespace Blueprint.Api.Services
                 {
                     try
                     {
-                        _logger.LogInformation($"Cancel cleanup: pulling Steamfitter scenario for MSEL {mselId}.");
+                        await SendIntegrationStatusAsync(dbContext, mselId, "Cancelling - pulling Steamfitter Scenario", freshCt);
                         var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
                         await IntegrationSteamfitterExtensions.PullFromSteamfitterAsync((Guid)msel.SteamfitterScenarioId, steamfitterApiClient, freshCt);
                     }
@@ -142,7 +142,7 @@ namespace Blueprint.Api.Services
                 {
                     try
                     {
-                        _logger.LogInformation($"Cancel cleanup: pulling CITE evaluation for MSEL {mselId}.");
+                        await SendIntegrationStatusAsync(dbContext, mselId, "Cancelling - pulling CITE Evaluation", freshCt);
                         var citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CurrentValue.CiteApiUrl, tokenResponse);
                         await IntegrationCiteExtensions.PullFromCiteAsync((Guid)msel.CiteEvaluationId, citeApiClient, freshCt);
                     }
@@ -156,7 +156,7 @@ namespace Blueprint.Api.Services
                 {
                     try
                     {
-                        _logger.LogInformation($"Cancel cleanup: pulling Gallery collection for MSEL {mselId}.");
+                        await SendIntegrationStatusAsync(dbContext, mselId, "Cancelling - pulling Gallery Collection", freshCt);
                         var galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse);
                         await IntegrationGalleryExtensions.PullFromGalleryAsync((Guid)msel.GalleryCollectionId, galleryApiClient, freshCt);
                     }
@@ -170,7 +170,7 @@ namespace Blueprint.Api.Services
                 {
                     try
                     {
-                        _logger.LogInformation($"Cancel cleanup: pulling Player view for MSEL {mselId}.");
+                        await SendIntegrationStatusAsync(dbContext, mselId, "Cancelling - pulling Player View", freshCt);
                         var playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
                         await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, freshCt);
                         await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, freshCt);

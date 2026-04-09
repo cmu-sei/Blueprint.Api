@@ -49,6 +49,13 @@ namespace Blueprint.Api.ViewModels
         public ICollection<Unit> Units { get; set; } = new List<Unit>();
         public ICollection<UserMselRole> UserMselRoles { get; set; } = new List<UserMselRole>();
         public string HeaderRowMetadata { get; set; }
+        // IEEE 2881 (LMT) metadata fields
+        public string EducationalLevel { get; set; }
+        public string Subject { get; set; }
+        public string Keywords { get; set; }
+        public string EducationalUse { get; set; }
+        public string CourseMode { get; set; }
+        public string Language { get; set; }
         public virtual ICollection<Organization> Organizations { get; set; } = new HashSet<Organization>();
         public ICollection<Card> Cards { get; set; } = new List<Card>();
         public List<string> GalleryArticleParameters { get; set; } = new List<string>(); // the parameters that must be sent to Gallery to define an Article
@@ -58,5 +65,6 @@ namespace Blueprint.Api.ViewModels
         public virtual ICollection<PlayerApplication> PlayerApplications { get; set; } = new HashSet<PlayerApplication>();
         public ICollection<MselPage> Pages { get; set; } = new List<MselPage>();
         public virtual ICollection<Invitation> Invitations { get; set; } = new HashSet<Invitation>();
+        public ICollection<MselCompetency> MselCompetencies { get; set; } = new List<MselCompetency>();
    }
 }

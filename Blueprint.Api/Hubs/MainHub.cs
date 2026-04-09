@@ -26,6 +26,7 @@ namespace Blueprint.Api.Hubs
         private readonly DatabaseOptions _options;
         private readonly CancellationToken _ct;
         private readonly IBlueprintAuthorizationService _blueprintAuthorizationService;
+        private readonly HubCache _hubCache;
         public const string ADMIN_DATA_GROUP = "AdminDataGroup";
         public const string GROUP_GROUP = "AdminGroupGroup";
         public const string ROLE_GROUP = "AdminRoleGroup";
@@ -36,7 +37,8 @@ namespace Blueprint.Api.Hubs
             IMselService mselService,
             BlueprintContext context,
             DatabaseOptions options,
-            IBlueprintAuthorizationService blueprintAuthorizationService
+            IBlueprintAuthorizationService blueprintAuthorizationService,
+            HubCache hubCache
         )
         {
             _teamService = teamService;
@@ -46,6 +48,7 @@ namespace Blueprint.Api.Hubs
             CancellationTokenSource source = new CancellationTokenSource();
             _ct = source.Token;
             _blueprintAuthorizationService = blueprintAuthorizationService;
+            _hubCache = hubCache;
         }
 
         public async Task Join()
@@ -63,19 +66,49 @@ namespace Blueprint.Api.Hubs
         public async Task Leave()
         {
             var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
+            var userName = Context.User.Identities.First().Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? "Unknown";
             var idList = await GetMselIdList(userId);
             idList.Add(userId);
             foreach (var id in idList)
             {
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, id.ToString());
             }
+
+            // broadcast departure if tracked
+            if (_hubCache.Connections.TryRemove(Context.ConnectionId, out var connection) && !string.IsNullOrEmpty(connection.MselId))
+            {
+                await Clients.OthersInGroup(connection.MselId).SendAsync(
+                    MainHubMethods.PresenceDeparted,
+                    new { id = userId, name = userName });
+            }
+        }
+
+        public override async Task OnDisconnectedAsync(Exception exception)
+        {
+            if (_hubCache.Connections.TryRemove(Context.ConnectionId, out var connection) && !string.IsNullOrEmpty(connection.MselId))
+            {
+                await Clients.OthersInGroup(connection.MselId).SendAsync(
+                    MainHubMethods.PresenceDeparted,
+                    new { id = connection.UserId, name = connection.UserName });
+            }
+            await base.OnDisconnectedAsync(exception);
         }
 
         public async Task SelectMsel(Guid[] args)
         {
             // leave all other MSELs
             var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
+            var userName = Context.User.Identities.First().Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? "Unknown";
             var idList = await GetMselIdList(userId);
+
+            // depart from previous MSEL presence if tracked
+            if (_hubCache.Connections.TryGetValue(Context.ConnectionId, out var previousConnection) && !string.IsNullOrEmpty(previousConnection.MselId))
+            {
+                await Clients.OthersInGroup(previousConnection.MselId).SendAsync(
+                    MainHubMethods.PresenceDeparted,
+                    new { id = userId, name = userName });
+            }
+
             foreach (var id in idList)
             {
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, id.ToString());
@@ -87,8 +120,45 @@ namespace Blueprint.Api.Hubs
                 if (idList.Contains(mselId))
                 {
                     await Groups.AddToGroupAsync(Context.ConnectionId, mselId);
+
+                    // track connection and broadcast arrival
+                    _hubCache.Connections[Context.ConnectionId] = new CachedConnection
+                    {
+                        ConnectionId = Context.ConnectionId,
+                        MselId = mselId,
+                        UserId = userId,
+                        UserName = userName
+                    };
+
+                    await Clients.OthersInGroup(mselId).SendAsync(
+                        MainHubMethods.PresenceArrived,
+                        new { id = userId, name = userName });
                 }
             }
+            else
+            {
+                // no MSEL selected, remove from cache
+                _hubCache.Connections.TryRemove(Context.ConnectionId, out _);
+            }
+        }
+
+        public async Task Greet(string mselId)
+        {
+            var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
+            var userName = Context.User.Identities.First().Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? "Unknown";
+            await Clients.OthersInGroup(mselId).SendAsync(
+                MainHubMethods.PresenceGreeted,
+                new { id = userId, name = userName });
+        }
+
+        public Task<List<object>> GetPresence(string mselId)
+        {
+            var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
+            var result = _hubCache.Connections.Values
+                .Where(c => c.MselId == mselId && c.UserId != userId)
+                .Select(c => (object)new { id = c.UserId, name = c.UserName })
+                .ToList();
+            return Task.FromResult(result);
         }
 
         public async Task JoinAdmin()
@@ -261,5 +331,8 @@ namespace Blueprint.Api.Hubs
         public const string SystemRoleCreated = "SystemRoleCreated";
         public const string SystemRoleUpdated = "SystemRoleUpdated";
         public const string SystemRoleDeleted = "SystemRoleDeleted";
+        public const string PresenceArrived = "PresenceArrived";
+        public const string PresenceDeparted = "PresenceDeparted";
+        public const string PresenceGreeted = "PresenceGreeted";
     }
 }

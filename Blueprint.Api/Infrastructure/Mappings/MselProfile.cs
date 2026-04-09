@@ -24,6 +24,7 @@ namespace Blueprint.Api.Infrastructure.Mappings
                 .ForMember(m => m.ScenarioEvents, opt => opt.Ignore())
                 .ForMember(m => m.Teams, opt => opt.Ignore())
                 .ForMember(m => m.MselUnits, opt => opt.Ignore())
+                .ForMember(m => m.MselCompetencies, opt => opt.Ignore())
                 .ForMember(m => m.UserMselRoles, opt => opt.Ignore())
                 .ForMember(m => m.DateCreated, opt => opt.Ignore());
 

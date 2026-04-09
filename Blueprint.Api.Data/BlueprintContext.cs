@@ -66,6 +66,7 @@ namespace Blueprint.Api.Data
         public DbSet<ProficiencyLevelEntity> ProficiencyLevels { get; set; }
         public DbSet<CompetencyEntity> Competencies { get; set; }
         public DbSet<CompetencyRelationshipEntity> CompetencyRelationships { get; set; }
+        public DbSet<MselCompetencyEntity> MselCompetencies { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

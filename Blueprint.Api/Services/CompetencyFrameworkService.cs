@@ -194,6 +194,7 @@ namespace Blueprint.Api.Services
             entity.Description = framework.Description;
             entity.Source = framework.Source;
             entity.Version = framework.Version;
+            entity.DefaultProficiencyScaleId = framework.DefaultProficiencyScaleId;
             entity.ModifiedBy = _user.GetId();
             await _context.SaveChangesAsync(ct);
             return await GetAsync(id, ct);

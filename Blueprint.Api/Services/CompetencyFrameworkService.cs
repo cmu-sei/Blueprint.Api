@@ -534,13 +534,46 @@ namespace Blueprint.Api.Services
             if (framework == null)
                 throw new EntityNotFoundException<ViewModels.CompetencyFramework>();
 
+            var userId = _user.GetId();
             var entity = _mapper.Map<CompetencyEntity>(competency);
             entity.Id = Guid.NewGuid();
             entity.CompetencyFrameworkId = frameworkId;
-            entity.CreatedBy = _user.GetId();
+            entity.CreatedBy = userId;
 
             _context.Competencies.Add(entity);
             await _context.SaveChangesAsync(ct);
+
+            // Create relationships from relatedIdNumbers
+            if (competency.RelatedIdNumbers != null && competency.RelatedIdNumbers.Count > 0)
+            {
+                var relatedIdNumbers = competency.RelatedIdNumbers
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Distinct()
+                    .ToList();
+
+                if (relatedIdNumbers.Count > 0)
+                {
+                    var idNumberToGuid = await _context.Competencies
+                        .Where(c => c.CompetencyFrameworkId == frameworkId
+                                    && relatedIdNumbers.Contains(c.IdNumber))
+                        .ToDictionaryAsync(c => c.IdNumber, c => c.Id, ct);
+
+                    foreach (var relatedId in relatedIdNumbers)
+                    {
+                        if (idNumberToGuid.TryGetValue(relatedId, out var destGuid))
+                        {
+                            _context.CompetencyRelationships.Add(new CompetencyRelationshipEntity
+                            {
+                                Id = Guid.NewGuid(),
+                                CompetencyId = entity.Id,
+                                RelatedCompetencyId = destGuid,
+                                CreatedBy = userId
+                            });
+                        }
+                    }
+                    await _context.SaveChangesAsync(ct);
+                }
+            }
 
             return _mapper.Map<ViewModels.Competency>(entity);
         }

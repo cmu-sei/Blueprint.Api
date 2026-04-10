@@ -207,6 +207,7 @@ public class Startup
         services.AddScoped<IMselPageService, MselPageService>();
         services.AddScoped<IMselUnitService, MselUnitService>();
         services.AddScoped<IMselCompetencyService, MselCompetencyService>();
+        services.AddScoped<ITeamCompetencyService, TeamCompetencyService>();
         services.AddScoped<IMoveService, MoveService>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IPlayerApplicationService, PlayerApplicationService>();

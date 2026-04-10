@@ -259,7 +259,7 @@ namespace Blueprint.Api.Services
                         Id = Guid.NewGuid(),
                         CompetencyFrameworkId = frameworkEntity.Id,
                         IdNumber = row.IdNumber,
-                        ShortName = row.ShortName,
+                        ShortName = StripIdPrefix(row.ShortName, row.IdNumber),
                         Description = row.Description,
                         DescriptionFormat = row.DescriptionFormat,
                         SortOrder = sortOrder++,
@@ -415,7 +415,7 @@ namespace Blueprint.Api.Services
 
                 var shortName = !string.IsNullOrWhiteSpace(title) && title != "N/A"
                     ? title
-                    : identifier;
+                    : !string.IsNullOrWhiteSpace(text) ? text : identifier;
 
                 var entity = new CompetencyEntity
                 {
@@ -677,6 +677,23 @@ namespace Blueprint.Api.Services
         private static int ParseInt(string value)
         {
             return int.TryParse(value, out var result) ? result : 0;
+        }
+
+        /// <summary>
+        /// If shortName starts with "idNumber - " or "idNumber- ", strips the prefix
+        /// so the name column shows the human-readable name without redundant ID.
+        /// </summary>
+        private static string StripIdPrefix(string shortName, string idNumber)
+        {
+            if (string.IsNullOrWhiteSpace(shortName) || string.IsNullOrWhiteSpace(idNumber))
+                return shortName;
+            var prefix = idNumber + " - ";
+            if (shortName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return shortName.Substring(prefix.Length).TrimStart();
+            prefix = idNumber + "- ";
+            if (shortName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return shortName.Substring(prefix.Length).TrimStart();
+            return shortName;
         }
 
         #region Moodle CSV Parsing

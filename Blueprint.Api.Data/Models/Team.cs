@@ -32,6 +32,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<UserTeamRoleEntity> UserTeamRoles { get; set; } = new HashSet<UserTeamRoleEntity>();
         public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();
         public virtual ICollection<CiteDutyEntity> CiteDuties { get; set; } = new HashSet<CiteDutyEntity>();
+        public virtual ICollection<TeamCompetencyEntity> TeamCompetencies { get; set; } = new HashSet<TeamCompetencyEntity>();
     }
 
     public class TeamConfiguration : IEntityTypeConfiguration<TeamEntity>

@@ -316,6 +316,12 @@ namespace Blueprint.Api.Hubs
         public const string TeamUserCreated = "TeamUserCreated";
         public const string TeamUserUpdated = "TeamUserUpdated";
         public const string TeamUserDeleted = "TeamUserDeleted";
+        public const string UnitCreated = "UnitCreated";
+        public const string UnitUpdated = "UnitUpdated";
+        public const string UnitDeleted = "UnitDeleted";
+        public const string UnitUserCreated = "UnitUserCreated";
+        public const string UnitUserUpdated = "UnitUserUpdated";
+        public const string UnitUserDeleted = "UnitUserDeleted";
         public const string UserCreated = "UserCreated";
         public const string UserUpdated = "UserUpdated";
         public const string UserDeleted = "UserDeleted";

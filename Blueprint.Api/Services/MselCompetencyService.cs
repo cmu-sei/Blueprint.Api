@@ -56,15 +56,42 @@ namespace Blueprint.Api.Services
             var items = await _context.MselCompetencies
                 .Where(mc => mc.MselId == mselId)
                 .Include(mc => mc.Competency)
+                    .ThenInclude(c => c.Relationships)
+                .Include(mc => mc.Competency)
+                    .ThenInclude(c => c.InverseRelationships)
+                .AsSplitQuery()
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<MselCompetency>>(items);
+            var result = _mapper.Map<IEnumerable<MselCompetency>>(items).ToList();
+
+            // Populate RelatedIdNumbers on each competency
+            var idNumberMap = items
+                .Where(mc => mc.Competency?.IdNumber != null)
+                .ToDictionary(mc => mc.CompetencyId, mc => mc.Competency.IdNumber);
+
+            foreach (var mc in result)
+            {
+                var entity = items.First(i => i.Id == mc.Id);
+                var outbound = (entity.Competency.Relationships ?? new HashSet<CompetencyRelationshipEntity>())
+                    .Select(r => idNumberMap.GetValueOrDefault(r.RelatedCompetencyId))
+                    .Where(n => n != null);
+                var inverse = (entity.Competency.InverseRelationships ?? new HashSet<CompetencyRelationshipEntity>())
+                    .Select(r => idNumberMap.GetValueOrDefault(r.CompetencyId))
+                    .Where(n => n != null);
+                mc.Competency.RelatedIdNumbers = outbound.Union(inverse).Distinct().ToList();
+            }
+
+            return result;
         }
 
         public async Task<ViewModels.MselCompetency> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var item = await _context.MselCompetencies
                 .Include(mc => mc.Competency)
+                    .ThenInclude(c => c.Relationships)
+                .Include(mc => mc.Competency)
+                    .ThenInclude(c => c.InverseRelationships)
+                .AsSplitQuery()
                 .SingleOrDefaultAsync(mc => mc.Id == id, ct);
 
             if (item == null)
@@ -73,7 +100,26 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, _context)))
                 throw new ForbiddenException();
 
-            return _mapper.Map<MselCompetency>(item);
+            var result = _mapper.Map<MselCompetency>(item);
+
+            // Populate RelatedIdNumbers — resolve IDs within same MSEL pool
+            var poolItems = await _context.MselCompetencies
+                .Where(mc => mc.MselId == item.MselId)
+                .Include(mc => mc.Competency)
+                .ToListAsync(ct);
+            var idNumberMap = poolItems
+                .Where(mc => mc.Competency?.IdNumber != null)
+                .ToDictionary(mc => mc.CompetencyId, mc => mc.Competency.IdNumber);
+
+            var outbound = (item.Competency.Relationships ?? new HashSet<CompetencyRelationshipEntity>())
+                .Select(r => idNumberMap.GetValueOrDefault(r.RelatedCompetencyId))
+                .Where(n => n != null);
+            var inverse = (item.Competency.InverseRelationships ?? new HashSet<CompetencyRelationshipEntity>())
+                .Select(r => idNumberMap.GetValueOrDefault(r.CompetencyId))
+                .Where(n => n != null);
+            result.Competency.RelatedIdNumbers = outbound.Union(inverse).Distinct().ToList();
+
+            return result;
         }
 
         public async Task<ViewModels.MselCompetency> CreateAsync(ViewModels.MselCompetency mselCompetency, bool hasSystemPermission, CancellationToken ct)

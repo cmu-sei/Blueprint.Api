@@ -196,7 +196,9 @@ namespace Blueprint.Api.Services
             {
                 mselList = mselList.Where(m => !m.IsTemplate).ToList();
             }
-            return _mapper.Map<IEnumerable<Msel>>(mselList);
+            var result = _mapper.Map<IEnumerable<Msel>>(mselList).ToList();
+            foreach (var m in result) EnsureCreatorOwnerRole(m);
+            return result;
         }
 
         public async Task<ViewModels.Msel> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -221,6 +223,7 @@ namespace Blueprint.Api.Services
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
             var msel = _mapper.Map<Msel>(mselEntity);
+            EnsureCreatorOwnerRole(msel);
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
             {
@@ -481,6 +484,26 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(sm => sm.Id == mselEntity.Id, ct);
 
             return mselEntity;
+        }
+
+        /// <summary>
+        /// Ensures the MSEL creator always has an Owner role in the view model,
+        /// without persisting a record that could be accidentally deleted.
+        /// </summary>
+        private void EnsureCreatorOwnerRole(ViewModels.Msel msel)
+        {
+            if (msel == null || msel.CreatedBy == Guid.Empty) return;
+            var creatorId = msel.CreatedBy;
+            if (!msel.UserMselRoles.Any(r => r.UserId == creatorId && r.Role == MselRole.Owner))
+            {
+                msel.UserMselRoles.Add(new ViewModels.UserMselRole
+                {
+                    Id = Guid.Empty,
+                    MselId = msel.Id,
+                    UserId = creatorId,
+                    Role = MselRole.Owner
+                });
+            }
         }
 
         private void ScenarioEventReplaceIds(

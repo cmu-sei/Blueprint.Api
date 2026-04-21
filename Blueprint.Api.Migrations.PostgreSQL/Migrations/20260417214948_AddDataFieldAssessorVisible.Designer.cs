@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Blueprint.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    partial class BlueprintContextModelSnapshot : ModelSnapshot
+    [Migration("20260417214948_AddDataFieldAssessorVisible")]
+    partial class AddDataFieldAssessorVisible
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1164,10 +1167,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("player_view_id");
 
-                    b.Property<bool>("ShowGroupOnAssessorView")
-                        .HasColumnType("boolean")
-                        .HasColumnName("show_group_on_assessor_view");
-
                     b.Property<bool>("ShowGroupOnExerciseView")
                         .HasColumnType("boolean")
                         .HasColumnName("show_group_on_exercise_view");
@@ -1175,10 +1174,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<bool>("ShowGroupOnScenarioEventList")
                         .HasColumnType("boolean")
                         .HasColumnName("show_group_on_scenario_event_list");
-
-                    b.Property<bool>("ShowIntegrationTargetOnAssessorView")
-                        .HasColumnType("boolean")
-                        .HasColumnName("show_integration_target_on_assessor_view");
 
                     b.Property<bool>("ShowIntegrationTargetOnExerciseView")
                         .HasColumnType("boolean")
@@ -1188,10 +1183,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("show_integration_target_on_scenario_event_list");
 
-                    b.Property<bool>("ShowMoveOnAssessorView")
-                        .HasColumnType("boolean")
-                        .HasColumnName("show_move_on_assessor_view");
-
                     b.Property<bool>("ShowMoveOnExerciseView")
                         .HasColumnType("boolean")
                         .HasColumnName("show_move_on_exercise_view");
@@ -1199,10 +1190,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<bool>("ShowMoveOnScenarioEventList")
                         .HasColumnType("boolean")
                         .HasColumnName("show_move_on_scenario_event_list");
-
-                    b.Property<bool>("ShowTimeOnAssessorView")
-                        .HasColumnType("boolean")
-                        .HasColumnName("show_time_on_assessor_view");
 
                     b.Property<bool>("ShowTimeOnExerciseView")
                         .HasColumnType("boolean")

@@ -47,6 +47,10 @@ namespace Blueprint.Api.Data.Models
         public bool ShowIntegrationTargetOnScenarioEventList { get; set; }
         public bool ShowIntegrationTargetOnExerciseView { get; set; }
         public int IntegrationTargetDisplayOrder { get; set; }
+        public bool ShowTimeOnAssessorView { get; set; }
+        public bool ShowMoveOnAssessorView { get; set; }
+        public bool ShowGroupOnAssessorView { get; set; }
+        public bool ShowIntegrationTargetOnAssessorView { get; set; }
         public virtual ICollection<MoveEntity> Moves { get; set; } = new HashSet<MoveEntity>();
         public virtual ICollection<DataFieldEntity> DataFields { get; set; } = new HashSet<DataFieldEntity>();
         public virtual ICollection<ScenarioEventEntity> ScenarioEvents { get; set; } = new HashSet<ScenarioEventEntity>();

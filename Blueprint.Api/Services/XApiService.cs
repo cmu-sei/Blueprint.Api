@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
@@ -36,6 +37,7 @@ namespace Blueprint.Api.Services
         Task<bool> ExerciseStoppedAsync(MselEntity msel, CancellationToken ct);
         Task<bool> JoinPageViewedAsync(CancellationToken ct);
         Task<bool> MselJoinedAsync(MselEntity msel, Guid? teamId, CancellationToken ct);
+        Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, CancellationToken ct);
     }
 
     public class XApiService : IXApiService
@@ -443,6 +445,39 @@ namespace Blueprint.Api.Services
                 .Where(tu => tu.UserId == _user.GetId() && tu.Team.MselId == mselId)
                 .Select(tu => (Guid?)tu.TeamId)
                 .FirstOrDefaultAsync(ct);
+        }
+
+        public async Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, CancellationToken ct)
+        {
+            if (!IsConfigured())
+            {
+                return "[]";
+            }
+
+            using var httpClient = new HttpClient();
+            var credentials = Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes($"{_xApiOptions.Username}:{_xApiOptions.Password}"));
+            httpClient.DefaultRequestHeaders.Add("Authorization", $"Basic {credentials}");
+            httpClient.DefaultRequestHeaders.Add("X-Experience-API-Version", "1.0.3");
+
+            var queryParams = new List<string>();
+            queryParams.Add($"activity={Uri.EscapeDataString(_xApiOptions.ApiUrl + "msel/" + mselId)}");
+            queryParams.Add("related_activities=true");
+            queryParams.Add($"limit={limit}");
+            if (since.HasValue)
+                queryParams.Add($"since={since.Value:O}");
+            if (until.HasValue)
+                queryParams.Add($"until={until.Value:O}");
+
+            var url = $"{_xApiOptions.Endpoint}/statements?{string.Join("&", queryParams)}";
+            var response = await httpClient.GetAsync(url, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to query LRS: HTTP {StatusCode}", response.StatusCode);
+                return "[]";
+            }
+
+            return await response.Content.ReadAsStringAsync(ct);
         }
 
         private List<Dictionary<string, string>> BuildIntegrationGroupings(MselEntity msel)

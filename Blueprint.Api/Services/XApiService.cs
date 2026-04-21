@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Security.Claims;
 using System.Security.Principal;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -37,7 +38,7 @@ namespace Blueprint.Api.Services
         Task<bool> ExerciseStoppedAsync(MselEntity msel, CancellationToken ct);
         Task<bool> JoinPageViewedAsync(CancellationToken ct);
         Task<bool> MselJoinedAsync(MselEntity msel, Guid? teamId, CancellationToken ct);
-        Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, CancellationToken ct);
+        Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, string source, CancellationToken ct);
     }
 
     public class XApiService : IXApiService
@@ -447,11 +448,23 @@ namespace Blueprint.Api.Services
                 .FirstOrDefaultAsync(ct);
         }
 
-        public async Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, CancellationToken ct)
+        public async Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, string source, CancellationToken ct)
         {
             if (!IsConfigured())
             {
-                return "[]";
+                return "{\"statements\":[]}";
+            }
+
+            var msel = await _context.Msels.FirstOrDefaultAsync(m => m.Id == mselId, ct);
+            if (msel == null)
+            {
+                return "{\"statements\":[]}";
+            }
+
+            var activityIds = BuildActivityIds(msel, source);
+            if (activityIds.Count == 0)
+            {
+                return "{\"statements\":[]}";
             }
 
             using var httpClient = new HttpClient();
@@ -459,25 +472,138 @@ namespace Blueprint.Api.Services
             httpClient.DefaultRequestHeaders.Add("Authorization", $"Basic {credentials}");
             httpClient.DefaultRequestHeaders.Add("X-Experience-API-Version", "1.0.3");
 
-            var queryParams = new List<string>();
-            queryParams.Add($"activity={Uri.EscapeDataString(_xApiOptions.ApiUrl + "msel/" + mselId)}");
-            queryParams.Add("related_activities=true");
-            queryParams.Add($"limit={limit}");
-            if (since.HasValue)
-                queryParams.Add($"since={since.Value:O}");
-            if (until.HasValue)
-                queryParams.Add($"until={until.Value:O}");
-
-            var url = $"{_xApiOptions.Endpoint}/statements?{string.Join("&", queryParams)}";
-            var response = await httpClient.GetAsync(url, ct);
-
-            if (!response.IsSuccessStatusCode)
+            var allStatements = new List<string>();
+            foreach (var activityId in activityIds)
             {
-                _logger.LogWarning("Failed to query LRS: HTTP {StatusCode}", response.StatusCode);
-                return "[]";
+                var queryParams = new List<string>();
+                queryParams.Add($"activity={Uri.EscapeDataString(activityId)}");
+                queryParams.Add("related_activities=true");
+                queryParams.Add($"limit={limit}");
+                if (since.HasValue)
+                    queryParams.Add($"since={since.Value:O}");
+                if (until.HasValue)
+                    queryParams.Add($"until={until.Value:O}");
+
+                var url = $"{_xApiOptions.Endpoint}/statements?{string.Join("&", queryParams)}";
+                var response = await httpClient.GetAsync(url, ct);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Failed to query LRS for activity {ActivityId}: HTTP {StatusCode}", activityId, response.StatusCode);
+                    continue;
+                }
+
+                var json = await response.Content.ReadAsStringAsync(ct);
+                allStatements.Add(json);
             }
 
-            return await response.Content.ReadAsStringAsync(ct);
+            return MergeStatementResponses(allStatements);
+        }
+
+        private List<string> BuildActivityIds(MselEntity msel, string source)
+        {
+            var activityIds = new List<string>();
+            var filterBySource = !string.IsNullOrWhiteSpace(source);
+
+            if ((!filterBySource || source.Equals("blueprint", StringComparison.OrdinalIgnoreCase))
+                && !string.IsNullOrEmpty(_xApiOptions.ApiUrl))
+            {
+                activityIds.Add(_xApiOptions.ApiUrl + "msel/" + msel.Id);
+            }
+
+            if ((!filterBySource || source.Equals("cite", StringComparison.OrdinalIgnoreCase))
+                && msel.CiteEvaluationId.HasValue && !string.IsNullOrEmpty(_clientOptions.CiteApiUrl))
+            {
+                var citeApiUrl = _clientOptions.CiteApiUrl.EndsWith("/")
+                    ? _clientOptions.CiteApiUrl + "api/"
+                    : _clientOptions.CiteApiUrl + "/api/";
+                activityIds.Add(citeApiUrl + "evaluations/" + msel.CiteEvaluationId.Value);
+            }
+
+            if ((!filterBySource || source.Equals("steamfitter", StringComparison.OrdinalIgnoreCase))
+                && msel.SteamfitterScenarioId.HasValue && !string.IsNullOrEmpty(_clientOptions.SteamfitterApiUrl))
+            {
+                var steamfitterApiUrl = _clientOptions.SteamfitterApiUrl.EndsWith("/")
+                    ? _clientOptions.SteamfitterApiUrl + "api/"
+                    : _clientOptions.SteamfitterApiUrl + "/api/";
+                activityIds.Add(steamfitterApiUrl + "scenarios/" + msel.SteamfitterScenarioId.Value);
+            }
+
+            if ((!filterBySource || source.Equals("player", StringComparison.OrdinalIgnoreCase))
+                && msel.PlayerViewId.HasValue && !string.IsNullOrEmpty(_clientOptions.PlayerApiUrl))
+            {
+                var playerApiUrl = _clientOptions.PlayerApiUrl.EndsWith("/")
+                    ? _clientOptions.PlayerApiUrl + "api/"
+                    : _clientOptions.PlayerApiUrl + "/api/";
+                activityIds.Add(playerApiUrl + "views/" + msel.PlayerViewId.Value);
+            }
+
+            if ((!filterBySource || source.Equals("gallery", StringComparison.OrdinalIgnoreCase))
+                && msel.GalleryExhibitId.HasValue && !string.IsNullOrEmpty(_clientOptions.GalleryApiUrl))
+            {
+                var galleryApiUrl = _clientOptions.GalleryApiUrl.EndsWith("/")
+                    ? _clientOptions.GalleryApiUrl + "api/"
+                    : _clientOptions.GalleryApiUrl + "/api/";
+                activityIds.Add(galleryApiUrl + "exhibits/" + msel.GalleryExhibitId.Value);
+            }
+
+            return activityIds;
+        }
+
+        private string MergeStatementResponses(List<string> responses)
+        {
+            if (responses.Count == 0)
+                return "{\"statements\":[]}";
+
+            if (responses.Count == 1)
+                return responses[0];
+
+            var seen = new HashSet<string>();
+            var merged = new List<JsonElement>();
+            foreach (var json in responses)
+            {
+                using var doc = JsonDocument.Parse(json);
+                JsonElement statementsArray;
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("statements", out statementsArray))
+                {
+                }
+                else if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    statementsArray = doc.RootElement;
+                }
+                else
+                {
+                    continue;
+                }
+
+                foreach (var stmt in statementsArray.EnumerateArray())
+                {
+                    var id = stmt.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+                    if (id != null && !seen.Add(id))
+                        continue;
+                    merged.Add(stmt.Clone());
+                }
+            }
+
+            merged.Sort((a, b) =>
+            {
+                var tsA = a.TryGetProperty("timestamp", out var tA) ? tA.GetString() : "";
+                var tsB = b.TryGetProperty("timestamp", out var tB) ? tB.GetString() : "";
+                return string.Compare(tsB, tsA, StringComparison.Ordinal);
+            });
+
+            using var ms = new System.IO.MemoryStream();
+            using (var writer = new Utf8JsonWriter(ms))
+            {
+                writer.WriteStartObject();
+                writer.WriteStartArray("statements");
+                foreach (var stmt in merged)
+                    stmt.WriteTo(writer);
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+            }
+            return System.Text.Encoding.UTF8.GetString(ms.ToArray());
         }
 
         private List<Dictionary<string, string>> BuildIntegrationGroupings(MselEntity msel)

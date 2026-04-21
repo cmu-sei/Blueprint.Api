@@ -23,6 +23,11 @@ namespace Blueprint.Api.Controllers
         /// <summary>
         /// Gets xAPI statements for an MSEL from the LRS
         /// </summary>
+        /// <remarks>
+        /// Queries the LRS for xAPI statements related to the MSEL's integrations.
+        /// When source is omitted, queries all configured integrations (Blueprint, CITE, Steamfitter, Player, Gallery).
+        /// When source is specified, queries only that integration's activity ID.
+        /// </remarks>
         [HttpGet("xapi/statements")]
         [ProducesResponseType(typeof(string), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getXApiStatements")]
@@ -31,9 +36,10 @@ namespace Blueprint.Api.Controllers
             [FromQuery] DateTime? since,
             [FromQuery] DateTime? until,
             [FromQuery] int limit = 100,
+            [FromQuery] string source = null,
             CancellationToken ct = default)
         {
-            var result = await _xApiService.GetStatementsAsync(mselId, since, until, limit, ct);
+            var result = await _xApiService.GetStatementsAsync(mselId, since, until, limit, source, ct);
             return Content(result, "application/json");
         }
     }

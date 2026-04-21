@@ -461,8 +461,8 @@ namespace Blueprint.Api.Services
                 return "{\"statements\":[]}";
             }
 
-            var activityIds = BuildActivityIds(msel, source);
-            if (activityIds.Count == 0)
+            var registrationIds = BuildRegistrationIds(msel, source);
+            if (registrationIds.Count == 0)
             {
                 return "{\"statements\":[]}";
             }
@@ -473,11 +473,10 @@ namespace Blueprint.Api.Services
             httpClient.DefaultRequestHeaders.Add("X-Experience-API-Version", "1.0.3");
 
             var allStatements = new List<string>();
-            foreach (var activityId in activityIds)
+            foreach (var registrationId in registrationIds)
             {
                 var queryParams = new List<string>();
-                queryParams.Add($"activity={Uri.EscapeDataString(activityId)}");
-                queryParams.Add("related_activities=true");
+                queryParams.Add($"registration={registrationId}");
                 queryParams.Add($"limit={limit}");
                 if (since.HasValue)
                     queryParams.Add($"since={since.Value:O}");
@@ -489,7 +488,7 @@ namespace Blueprint.Api.Services
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning("Failed to query LRS for activity {ActivityId}: HTTP {StatusCode}", activityId, response.StatusCode);
+                    _logger.LogWarning("Failed to query LRS for registration {RegistrationId}: HTTP {StatusCode}", registrationId, response.StatusCode);
                     continue;
                 }
 
@@ -500,54 +499,41 @@ namespace Blueprint.Api.Services
             return MergeStatementResponses(allStatements);
         }
 
-        private List<string> BuildActivityIds(MselEntity msel, string source)
+        private List<string> BuildRegistrationIds(MselEntity msel, string source)
         {
-            var activityIds = new List<string>();
+            var registrationIds = new List<string>();
             var filterBySource = !string.IsNullOrWhiteSpace(source);
 
-            if ((!filterBySource || source.Equals("blueprint", StringComparison.OrdinalIgnoreCase))
-                && !string.IsNullOrEmpty(_xApiOptions.ApiUrl))
+            if (!filterBySource || source.Equals("blueprint", StringComparison.OrdinalIgnoreCase))
             {
-                activityIds.Add(_xApiOptions.ApiUrl + "msel/" + msel.Id);
+                registrationIds.Add(msel.Id.ToString());
             }
 
             if ((!filterBySource || source.Equals("cite", StringComparison.OrdinalIgnoreCase))
-                && msel.CiteEvaluationId.HasValue && !string.IsNullOrEmpty(_clientOptions.CiteApiUrl))
+                && msel.CiteEvaluationId.HasValue)
             {
-                var citeApiUrl = _clientOptions.CiteApiUrl.EndsWith("/")
-                    ? _clientOptions.CiteApiUrl + "api/"
-                    : _clientOptions.CiteApiUrl + "/api/";
-                activityIds.Add(citeApiUrl + "evaluations/" + msel.CiteEvaluationId.Value);
+                registrationIds.Add(msel.CiteEvaluationId.Value.ToString());
             }
 
             if ((!filterBySource || source.Equals("steamfitter", StringComparison.OrdinalIgnoreCase))
-                && msel.SteamfitterScenarioId.HasValue && !string.IsNullOrEmpty(_clientOptions.SteamfitterApiUrl))
+                && msel.SteamfitterScenarioId.HasValue)
             {
-                var steamfitterApiUrl = _clientOptions.SteamfitterApiUrl.EndsWith("/")
-                    ? _clientOptions.SteamfitterApiUrl + "api/"
-                    : _clientOptions.SteamfitterApiUrl + "/api/";
-                activityIds.Add(steamfitterApiUrl + "scenarios/" + msel.SteamfitterScenarioId.Value);
+                registrationIds.Add(msel.SteamfitterScenarioId.Value.ToString());
             }
 
             if ((!filterBySource || source.Equals("player", StringComparison.OrdinalIgnoreCase))
-                && msel.PlayerViewId.HasValue && !string.IsNullOrEmpty(_clientOptions.PlayerApiUrl))
+                && msel.PlayerViewId.HasValue)
             {
-                var playerApiUrl = _clientOptions.PlayerApiUrl.EndsWith("/")
-                    ? _clientOptions.PlayerApiUrl + "api/"
-                    : _clientOptions.PlayerApiUrl + "/api/";
-                activityIds.Add(playerApiUrl + "views/" + msel.PlayerViewId.Value);
+                registrationIds.Add(msel.PlayerViewId.Value.ToString());
             }
 
             if ((!filterBySource || source.Equals("gallery", StringComparison.OrdinalIgnoreCase))
-                && msel.GalleryExhibitId.HasValue && !string.IsNullOrEmpty(_clientOptions.GalleryApiUrl))
+                && msel.GalleryExhibitId.HasValue)
             {
-                var galleryApiUrl = _clientOptions.GalleryApiUrl.EndsWith("/")
-                    ? _clientOptions.GalleryApiUrl + "api/"
-                    : _clientOptions.GalleryApiUrl + "/api/";
-                activityIds.Add(galleryApiUrl + "exhibits/" + msel.GalleryExhibitId.Value);
+                registrationIds.Add(msel.GalleryExhibitId.Value.ToString());
             }
 
-            return activityIds;
+            return registrationIds;
         }
 
         private string MergeStatementResponses(List<string> responses)

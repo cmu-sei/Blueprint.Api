@@ -9,6 +9,8 @@ namespace Blueprint.Api.Data.Enumerations
         Entered = 10,
         Approved = 20,
         Complete = 30,
+        Pushing = 35,
+        Pulling = 36,
         Deployed = 40,
         Archived = 50
     }

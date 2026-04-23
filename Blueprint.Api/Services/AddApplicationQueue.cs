@@ -34,7 +34,7 @@ namespace Blueprint.Api.Services
     public class AddApplicationInformation
     {
         public Application Application { get; set; }
-        public Guid PlayerTeamId { get; set; }
+        public Guid TeamId { get; set; }
         public int DisplayOrder { get; set; }
 
     }

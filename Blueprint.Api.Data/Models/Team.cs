@@ -20,9 +20,6 @@ namespace Blueprint.Api.Data.Models
         public Guid? CiteTeamTypeId { get; set; }
         public string CiteTeamTypeName { get; set; }
         public string Email { get; set; }
-        public Guid? PlayerTeamId { get; set; }
-        public Guid? GalleryTeamId { get; set; }
-        public Guid? CiteTeamId { get; set; }
         public bool canTeamLeaderInvite { get; set; }
         public bool canTeamMemberInvite { get; set; }
         public ICollection<TeamUserEntity> TeamUsers { get; set; } = new List<TeamUserEntity>();

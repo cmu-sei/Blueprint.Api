@@ -54,6 +54,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             startDate = msel.StartTime < startDate ? startDate : msel.StartTime;
             ScenarioForm scenarioForm = new ScenarioForm()
             {
+                Id = msel.SteamfitterScenarioId,
                 Name = msel.Name,
                 Description = msel.Description,
                 Status = ScenarioStatus.Active,
@@ -63,9 +64,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 View = msel.Name
             };
             var newScenario = await steamfitterApiClient.CreateScenarioAsync(scenarioForm, ct);
-            // update the MSEL
-            msel.SteamfitterScenarioId = newScenario.Id;
-            await blueprintContext.SaveChangesAsync(ct);
 
             return newScenario;
         }

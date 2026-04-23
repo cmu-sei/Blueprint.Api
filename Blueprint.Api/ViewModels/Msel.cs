@@ -13,6 +13,7 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
         public string Description { get; set; }
         public MselItemStatus Status { get; set; }
+        public string IntegrationStatus { get; set; }
         public bool UsePlayer { get; set; }
         public Guid? PlayerViewId { get; set; }
         public IntegrationType PlayerIntegrationType { get; set; }

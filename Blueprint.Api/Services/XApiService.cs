@@ -39,6 +39,7 @@ namespace Blueprint.Api.Services
         Task<bool> JoinPageViewedAsync(CancellationToken ct);
         Task<bool> MselJoinedAsync(MselEntity msel, Guid? teamId, CancellationToken ct);
         Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, string source, CancellationToken ct);
+        Task<bool> AssertCompetencyAsync(ViewModels.CompetencyAssertion assertion, CancellationToken ct);
     }
 
     public class XApiService : IXApiService
@@ -446,6 +447,215 @@ namespace Blueprint.Api.Services
                 .Where(tu => tu.UserId == _user.GetId() && tu.Team.MselId == mselId)
                 .Select(tu => (Guid?)tu.TeamId)
                 .FirstOrDefaultAsync(ct);
+        }
+
+        public async Task<bool> AssertCompetencyAsync(ViewModels.CompetencyAssertion assertion, CancellationToken ct)
+        {
+            if (!IsConfigured())
+            {
+                _logger.LogInformation("xAPI Service not configured");
+                return true;
+            }
+
+            EnsureAgentInitialized();
+
+            var msel = await _context.Msels.FirstOrDefaultAsync(m => m.Id == assertion.MselId, ct);
+            if (msel == null)
+                throw new ArgumentException($"MSEL {assertion.MselId} not found");
+
+            var competency = await _context.Competencies
+                .Include(c => c.CompetencyFramework)
+                .FirstOrDefaultAsync(c => c.Id == assertion.CompetencyId, ct);
+            if (competency == null)
+                throw new ArgumentException($"Competency {assertion.CompetencyId} not found");
+
+            var proficiencyLevel = await _context.ProficiencyLevels
+                .Include(pl => pl.ProficiencyScale)
+                .FirstOrDefaultAsync(pl => pl.Id == assertion.ProficiencyLevelId, ct);
+            if (proficiencyLevel == null)
+                throw new ArgumentException($"Proficiency level {assertion.ProficiencyLevelId} not found");
+
+            Data.Models.ScenarioEventEntity scenarioEvent = null;
+            if (assertion.ScenarioEventId.HasValue && assertion.ScenarioEventId.Value != Guid.Empty)
+            {
+                scenarioEvent = await _context.ScenarioEvents.FirstOrDefaultAsync(se => se.Id == assertion.ScenarioEventId.Value, ct);
+                if (scenarioEvent == null)
+                    throw new ArgumentException($"Scenario event {assertion.ScenarioEventId} not found");
+            }
+
+            var scale = proficiencyLevel.ProficiencyScale;
+            var allLevels = await _context.ProficiencyLevels
+                .Where(pl => pl.ProficiencyScaleId == scale.Id)
+                .ToListAsync(ct);
+            var minValue = allLevels.Min(pl => pl.Value);
+            var maxValue = allLevels.Max(pl => pl.Value);
+
+            var verb = new Verb();
+            verb.id = new Uri("https://w3id.org/xapi/dod-isd/verbs/asserted");
+            verb.display = new LanguageMap();
+            verb.display.Add("en-US", "asserted");
+
+            var competencyIri = competency.IdNumber;
+            if (!competencyIri.StartsWith("http"))
+            {
+                competencyIri = _xApiOptions.ApiUrl + "competencies/" + competency.Id;
+            }
+
+            var activity = new Activity();
+            activity.id = competencyIri;
+            activity.definition = new ActivityDefinition();
+            activity.definition.type = new Uri("http://adlnet.gov/expapi/activities/competency");
+            activity.definition.name = new LanguageMap();
+            activity.definition.name.Add("en-US", competency.ShortName ?? competency.IdNumber);
+            activity.definition.description = new LanguageMap();
+            activity.definition.description.Add("en-US", competency.Description ?? "");
+
+            var result = new TinCan.Result();
+            result.score = new TinCan.Score();
+            result.score.raw = proficiencyLevel.Value;
+            result.score.min = minValue;
+            result.score.max = maxValue;
+            if (maxValue > minValue)
+                result.score.scaled = (double)(proficiencyLevel.Value - minValue) / (maxValue - minValue);
+            result.completion = true;
+            if (!string.IsNullOrEmpty(assertion.Comment))
+            {
+                result.response = assertion.Comment;
+            }
+
+            var context = new Context();
+            context.platform = _xApiContext.platform;
+            context.language = "en-US";
+            context.registration = assertion.MselId;
+
+            if (assertion.TeamId.HasValue && assertion.TeamId.Value != Guid.Empty)
+            {
+                var team = _context.Teams.Find(assertion.TeamId.Value);
+                if (team != null)
+                {
+                    var group = new TinCan.Group();
+                    group.name = team.ShortName;
+                    if (!string.IsNullOrEmpty(_xApiOptions.EmailDomain))
+                    {
+                        group.mbox = "mailto:" + team.ShortName + "@" + _xApiOptions.EmailDomain;
+                    }
+                    group.account = new AgentAccount();
+                    group.account.homePage = new Uri(_xApiOptions.UiUrl);
+                    group.account.name = team.Id.ToString();
+                    group.member = new List<Agent> { _agent };
+                    context.team = group;
+                }
+            }
+
+            var contextActivities = new ContextActivities();
+            context.contextActivities = contextActivities;
+
+            // Parent: the MSEL
+            contextActivities.parent = new List<Activity>();
+            var parentActivity = new Activity();
+            parentActivity.id = _xApiOptions.ApiUrl + "msel/" + msel.Id;
+            parentActivity.definition = new ActivityDefinition();
+            parentActivity.definition.type = new Uri("http://adlnet.gov/expapi/activities/simulation");
+            parentActivity.definition.name = new LanguageMap();
+            parentActivity.definition.name.Add("en-US", msel.Name);
+            contextActivities.parent.Add(parentActivity);
+
+            // Grouping: scenario event + move/group + integration IDs + framework
+            contextActivities.grouping = new List<Activity>();
+
+            if (scenarioEvent != null)
+            {
+                var eventActivity = new Activity();
+                eventActivity.id = _xApiOptions.ApiUrl + "scenarioevents/" + scenarioEvent.Id;
+                eventActivity.definition = new ActivityDefinition();
+                eventActivity.definition.type = new Uri("http://id.tincanapi.com/activitytype/step");
+                contextActivities.grouping.Add(eventActivity);
+            }
+
+            if (assertion.MoveNumber.HasValue)
+            {
+                var moveActivity = new Activity();
+                moveActivity.id = _xApiOptions.ApiUrl + "msels/" + msel.Id + "/moves/" + assertion.MoveNumber.Value;
+                moveActivity.definition = new ActivityDefinition();
+                moveActivity.definition.type = new Uri("http://id.tincanapi.com/activitytype/phase");
+                moveActivity.definition.name = new LanguageMap();
+                moveActivity.definition.name.Add("en-US", "Move " + assertion.MoveNumber.Value);
+                contextActivities.grouping.Add(moveActivity);
+            }
+
+            if (assertion.GroupNumber.HasValue)
+            {
+                var groupActivity = new Activity();
+                groupActivity.id = _xApiOptions.ApiUrl + "msels/" + msel.Id + "/moves/" + (assertion.MoveNumber ?? 0) + "/groups/" + assertion.GroupNumber.Value;
+                groupActivity.definition = new ActivityDefinition();
+                groupActivity.definition.type = new Uri("http://id.tincanapi.com/activitytype/group-assignment");
+                groupActivity.definition.name = new LanguageMap();
+                groupActivity.definition.name.Add("en-US", "Group " + assertion.GroupNumber.Value);
+                contextActivities.grouping.Add(groupActivity);
+            }
+
+            // Framework grouping (same pattern as logstore_xapi)
+            var frameworkIri = competency.CompetencyFramework.IdNumber;
+            if (!string.IsNullOrEmpty(frameworkIri) && frameworkIri.StartsWith("http"))
+            {
+                var frameworkActivity = new Activity();
+                frameworkActivity.id = frameworkIri;
+                frameworkActivity.definition = new ActivityDefinition();
+                frameworkActivity.definition.type = new Uri("http://adlnet.gov/expapi/activities/competency");
+                frameworkActivity.definition.name = new LanguageMap();
+                frameworkActivity.definition.name.Add("en-US", competency.CompetencyFramework.Name);
+                contextActivities.grouping.Add(frameworkActivity);
+            }
+
+            // Integration groupings
+            foreach (var ig in BuildIntegrationGroupings(msel))
+            {
+                if (ig.Count > 0)
+                {
+                    var apiUrl = ig.ContainsKey("apiUrl") ? ig["apiUrl"] : _xApiOptions.ApiUrl;
+                    var igActivity = new Activity();
+                    igActivity.id = apiUrl + ig["type"] + "/" + ig["id"];
+                    igActivity.definition = new ActivityDefinition();
+                    igActivity.definition.name = new LanguageMap();
+                    igActivity.definition.name.Add("en-US", ig["name"]);
+                    igActivity.definition.type = new Uri(ig["activityType"]);
+                    contextActivities.grouping.Add(igActivity);
+                }
+            }
+
+            // Category: Crucible xAPI profile
+            contextActivities.category = new List<Activity>();
+            var profileActivity = new Activity();
+            profileActivity.id = "https://crucible.sei.cmu.edu/xapi/profile/v1";
+            profileActivity.definition = new ActivityDefinition();
+            profileActivity.definition.type = new Uri("http://adlnet.gov/expapi/activities/profile");
+            profileActivity.definition.name = new LanguageMap();
+            profileActivity.definition.name.Add("en-US", "Crucible xAPI Profile");
+            contextActivities.category.Add(profileActivity);
+
+            var statement = new Statement();
+            statement.actor = _agent;
+            statement.verb = verb;
+            statement.target = activity;
+            statement.result = result;
+            statement.context = context;
+
+            var statementJson = statement.ToJSON();
+
+            var queuedStatement = new XApiQueuedStatementEntity
+            {
+                Id = Guid.NewGuid(),
+                StatementJson = statementJson,
+                Verb = "asserted",
+                ActivityId = activity.id,
+                MselId = assertion.MselId,
+                TeamId = assertion.TeamId
+            };
+
+            await _queueService.EnqueueAsync(queuedStatement, ct);
+            _logger.LogInformation("Enqueued competency assertion for {CompetencyId} on MSEL {MselId}", assertion.CompetencyId, assertion.MselId);
+
+            return true;
         }
 
         public async Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, string source, CancellationToken ct)

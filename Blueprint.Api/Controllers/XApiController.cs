@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Blueprint.Api.Services;
+using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
 
 namespace Blueprint.Api.Controllers
@@ -41,6 +42,22 @@ namespace Blueprint.Api.Controllers
         {
             var result = await _xApiService.GetStatementsAsync(mselId, since, until, limit, source, ct);
             return Content(result, "application/json");
+        }
+
+        /// <summary>
+        /// Creates a competency assertion xAPI statement
+        /// </summary>
+        /// <remarks>
+        /// Writes an xAPI statement with the "asserted" verb to the LRS, recording an assessor's
+        /// competency rating for a participant/team on a specific scenario event.
+        /// </remarks>
+        [HttpPost("xapi/assertions")]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "createCompetencyAssertion")]
+        public async Task<IActionResult> CreateAssertion([FromBody] CompetencyAssertion assertion, CancellationToken ct)
+        {
+            await _xApiService.AssertCompetencyAsync(assertion, ct);
+            return Ok();
         }
     }
 }

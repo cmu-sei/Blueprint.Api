@@ -491,12 +491,12 @@ namespace Blueprint.Api.Services
             var maxValue = allLevels.Max(pl => pl.Value);
 
             var verb = new Verb();
-            verb.id = new Uri("https://w3id.org/xapi/dod-isd/verbs/asserted");
+            verb.id = new Uri("https://w3id.org/xapi/tla/verbs/asserted");
             verb.display = new LanguageMap();
             verb.display.Add("en-US", "asserted");
 
             var competencyIri = competency.IdNumber;
-            if (!competencyIri.StartsWith("http"))
+            if (string.IsNullOrEmpty(competencyIri) || !competencyIri.StartsWith("http"))
             {
                 competencyIri = _xApiOptions.ApiUrl + "competencies/" + competency.Id;
             }
@@ -504,11 +504,15 @@ namespace Blueprint.Api.Services
             var activity = new Activity();
             activity.id = competencyIri;
             activity.definition = new ActivityDefinition();
-            activity.definition.type = new Uri("http://adlnet.gov/expapi/activities/competency");
+            activity.definition.type = new Uri("https://w3id.org/xapi/tla/activity-types/competency");
             activity.definition.name = new LanguageMap();
             activity.definition.name.Add("en-US", competency.ShortName ?? competency.IdNumber);
             activity.definition.description = new LanguageMap();
             activity.definition.description.Add("en-US", competency.Description ?? "");
+            activity.definition.extensions = new TinCan.Extensions(
+                new Newtonsoft.Json.Linq.JObject {
+                    ["https://w3id.org/xapi/tla/extensions/competency-identifier"] = competency.IdNumber
+                });
 
             var result = new TinCan.Result();
             result.score = new TinCan.Score();
@@ -527,6 +531,10 @@ namespace Blueprint.Api.Services
             context.platform = _xApiContext.platform;
             context.language = "en-US";
             context.registration = assertion.MselId;
+            context.extensions = new TinCan.Extensions(
+                new Newtonsoft.Json.Linq.JObject {
+                    ["https://w3id.org/xapi/tla/extensions/confidence"] = 1.0
+                });
 
             if (assertion.TeamId.HasValue && assertion.TeamId.Value != Guid.Empty)
             {
@@ -594,14 +602,16 @@ namespace Blueprint.Api.Services
                 contextActivities.grouping.Add(groupActivity);
             }
 
-            // Framework grouping (same pattern as logstore_xapi)
-            var frameworkIri = competency.CompetencyFramework.IdNumber;
-            if (!string.IsNullOrEmpty(frameworkIri) && frameworkIri.StartsWith("http"))
+            // Framework grouping (TLA competency-framework activity type)
+            if (competency.CompetencyFramework != null)
             {
+                var frameworkIri = competency.CompetencyFramework.IdNumber;
+                if (string.IsNullOrEmpty(frameworkIri) || !frameworkIri.StartsWith("http"))
+                    frameworkIri = _xApiOptions.ApiUrl + "competency-frameworks/" + competency.CompetencyFrameworkId;
                 var frameworkActivity = new Activity();
                 frameworkActivity.id = frameworkIri;
                 frameworkActivity.definition = new ActivityDefinition();
-                frameworkActivity.definition.type = new Uri("http://adlnet.gov/expapi/activities/competency");
+                frameworkActivity.definition.type = new Uri("https://w3id.org/xapi/tla/activity-types/competency-framework");
                 frameworkActivity.definition.name = new LanguageMap();
                 frameworkActivity.definition.name.Add("en-US", competency.CompetencyFramework.Name);
                 contextActivities.grouping.Add(frameworkActivity);
@@ -625,13 +635,13 @@ namespace Blueprint.Api.Services
 
             // Category: Crucible xAPI profile
             contextActivities.category = new List<Activity>();
-            var profileActivity = new Activity();
-            profileActivity.id = "https://crucible.sei.cmu.edu/xapi/profile/v1";
-            profileActivity.definition = new ActivityDefinition();
-            profileActivity.definition.type = new Uri("http://adlnet.gov/expapi/activities/profile");
-            profileActivity.definition.name = new LanguageMap();
-            profileActivity.definition.name.Add("en-US", "Crucible xAPI Profile");
-            contextActivities.category.Add(profileActivity);
+            var crucibleProfile = new Activity();
+            crucibleProfile.id = "https://crucible.sei.cmu.edu/xapi/profile/v1";
+            crucibleProfile.definition = new ActivityDefinition();
+            crucibleProfile.definition.type = new Uri("http://adlnet.gov/expapi/activities/profile");
+            crucibleProfile.definition.name = new LanguageMap();
+            crucibleProfile.definition.name.Add("en-US", "Crucible xAPI Profile");
+            contextActivities.category.Add(crucibleProfile);
 
             var statement = new Statement();
             statement.actor = _agent;

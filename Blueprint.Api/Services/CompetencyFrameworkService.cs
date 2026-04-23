@@ -393,6 +393,7 @@ namespace Blueprint.Api.Services
             {
                 Id = Guid.NewGuid(),
                 Name = docName,
+                IdNumber = docSource,
                 Description = $"Imported from {docSource}",
                 Source = docSource,
                 Version = docVersion,

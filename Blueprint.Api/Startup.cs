@@ -230,6 +230,7 @@ public class Startup
         services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>()?.HttpContext?.User);
         services.AddScoped<IXApiService, XApiService>();
         services.AddScoped<IXApiQueueService, XApiQueueService>();
+        services.AddScoped<ILmtService, LmtService>();
         services.AddHttpClient();
 
         // Register xAPI Background Service

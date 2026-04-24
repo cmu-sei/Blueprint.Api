@@ -40,6 +40,7 @@ namespace Blueprint.Api.Services
         Task<bool> MselJoinedAsync(MselEntity msel, Guid? teamId, CancellationToken ct);
         Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, string source, CancellationToken ct);
         Task<bool> AssertCompetencyAsync(ViewModels.CompetencyAssertion assertion, CancellationToken ct);
+        Task<bool> RecordCheckboxChangeAsync(Guid mselId, Guid eventId, Guid dataFieldId, string dataFieldName, bool isChecked, CancellationToken ct);
     }
 
     public class XApiService : IXApiService
@@ -664,6 +665,137 @@ namespace Blueprint.Api.Services
 
             await _queueService.EnqueueAsync(queuedStatement, ct);
             _logger.LogInformation("Enqueued competency assertion for {CompetencyId} on MSEL {MselId}", assertion.CompetencyId, assertion.MselId);
+
+            return true;
+        }
+
+        public async Task<bool> RecordCheckboxChangeAsync(Guid mselId, Guid eventId, Guid dataFieldId, string dataFieldName, bool isChecked, CancellationToken ct)
+        {
+            if (!IsConfigured())
+            {
+                _logger.LogInformation("xAPI Service not configured");
+                return true;
+            }
+
+            EnsureAgentInitialized();
+
+            var msel = await _context.Msels.FirstOrDefaultAsync(m => m.Id == mselId, ct);
+            if (msel == null)
+                throw new ArgumentException($"MSEL {mselId} not found");
+
+            var scenarioEvent = await _context.ScenarioEvents.FirstOrDefaultAsync(se => se.Id == eventId, ct);
+            if (scenarioEvent == null)
+                throw new ArgumentException($"Scenario event {eventId} not found");
+
+            var verb = new Verb();
+            verb.id = new Uri("http://adlnet.gov/expapi/verbs/completed");
+            verb.display = new LanguageMap();
+            verb.display.Add("en-US", "completed");
+
+            var activity = new Activity();
+            activity.id = _xApiOptions.ApiUrl + "scenarioevents/" + eventId + "/datafields/" + dataFieldId;
+            activity.definition = new ActivityDefinition();
+            activity.definition.type = new Uri("http://id.tincanapi.com/activitytype/checklist-item");
+            activity.definition.name = new LanguageMap();
+            activity.definition.name.Add("en-US", dataFieldName);
+
+            var result = new TinCan.Result();
+            result.completion = isChecked;
+            result.success = isChecked;
+
+            var context = new Context();
+            context.platform = _xApiContext.platform;
+            context.language = "en-US";
+            context.registration = mselId;
+
+            // Build context activities
+            var contextActivities = new ContextActivities();
+
+            // Parent: MSEL
+            contextActivities.parent = new List<Activity>();
+            var mselActivity = new Activity();
+            mselActivity.id = _xApiOptions.ApiUrl + "msels/" + msel.Id;
+            mselActivity.definition = new ActivityDefinition();
+            mselActivity.definition.type = new Uri("http://adlnet.gov/expapi/activities/simulation");
+            mselActivity.definition.name = new LanguageMap();
+            mselActivity.definition.name.Add("en-US", msel.Name);
+            contextActivities.parent.Add(mselActivity);
+
+            // Grouping: Event
+            contextActivities.grouping = new List<Activity>();
+            var eventActivity = new Activity();
+            eventActivity.id = _xApiOptions.ApiUrl + "scenarioevents/" + scenarioEvent.Id;
+            eventActivity.definition = new ActivityDefinition();
+            eventActivity.definition.type = new Uri("http://id.tincanapi.com/activitytype/step");
+            eventActivity.definition.name = new LanguageMap();
+            eventActivity.definition.name.Add("en-US", "Scenario Event");
+            contextActivities.grouping.Add(eventActivity);
+
+            // Move grouping - find which move this event belongs to by comparing DeltaSeconds
+            var move = await _context.Moves
+                .Where(m => m.MselId == mselId && m.DeltaSeconds <= scenarioEvent.DeltaSeconds)
+                .OrderByDescending(m => m.DeltaSeconds)
+                .FirstOrDefaultAsync(ct);
+            if (move != null)
+            {
+                var moveActivity = new Activity();
+                moveActivity.id = _xApiOptions.ApiUrl + "moves/" + move.Id;
+                moveActivity.definition = new ActivityDefinition();
+                moveActivity.definition.type = new Uri("http://id.tincanapi.com/activitytype/collection-simple");
+                moveActivity.definition.name = new LanguageMap();
+                moveActivity.definition.name.Add("en-US", move.Description ?? "Move " + move.MoveNumber);
+                contextActivities.grouping.Add(moveActivity);
+            }
+
+            // Integration groupings
+            foreach (var ig in BuildIntegrationGroupings(msel))
+            {
+                if (ig.Count > 0)
+                {
+                    var apiUrl = ig.ContainsKey("apiUrl") ? ig["apiUrl"] : _xApiOptions.ApiUrl;
+                    var igActivity = new Activity();
+                    igActivity.id = apiUrl + ig["type"] + "/" + ig["id"];
+                    igActivity.definition = new ActivityDefinition();
+                    igActivity.definition.name = new LanguageMap();
+                    igActivity.definition.name.Add("en-US", ig["name"]);
+                    igActivity.definition.type = new Uri(ig["activityType"]);
+                    contextActivities.grouping.Add(igActivity);
+                }
+            }
+
+            // Category: Crucible xAPI profile
+            contextActivities.category = new List<Activity>();
+            var crucibleProfile = new Activity();
+            crucibleProfile.id = "https://crucible.sei.cmu.edu/xapi/profile/v1";
+            crucibleProfile.definition = new ActivityDefinition();
+            crucibleProfile.definition.type = new Uri("http://adlnet.gov/expapi/activities/profile");
+            crucibleProfile.definition.name = new LanguageMap();
+            crucibleProfile.definition.name.Add("en-US", "Crucible xAPI Profile");
+            contextActivities.category.Add(crucibleProfile);
+
+            context.contextActivities = contextActivities;
+
+            var statement = new Statement();
+            statement.actor = _agent;
+            statement.verb = verb;
+            statement.target = activity;
+            statement.result = result;
+            statement.context = context;
+
+            var statementJson = statement.ToJSON();
+
+            var queuedStatement = new XApiQueuedStatementEntity
+            {
+                Id = Guid.NewGuid(),
+                StatementJson = statementJson,
+                Verb = "completed",
+                ActivityId = activity.id,
+                MselId = mselId,
+                TeamId = null
+            };
+
+            await _queueService.EnqueueAsync(queuedStatement, ct);
+            _logger.LogInformation("Enqueued checkbox change for field {DataFieldId} on event {EventId}, checked={IsChecked}", dataFieldId, eventId, isChecked);
 
             return true;
         }

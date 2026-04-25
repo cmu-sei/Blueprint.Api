@@ -688,9 +688,18 @@ namespace Blueprint.Api.Services
                 throw new ArgumentException($"Scenario event {eventId} not found");
 
             var verb = new Verb();
-            verb.id = new Uri("http://adlnet.gov/expapi/verbs/completed");
-            verb.display = new LanguageMap();
-            verb.display.Add("en-US", "completed");
+            if (isChecked)
+            {
+                verb.id = new Uri("https://w3id.org/xapi/dod-isd/verbs/selected");
+                verb.display = new LanguageMap();
+                verb.display.Add("en-US", "selected");
+            }
+            else
+            {
+                verb.id = new Uri("https://w3id.org/xapi/dod-isd/verbs/reset");
+                verb.display = new LanguageMap();
+                verb.display.Add("en-US", "reset");
+            }
 
             var activity = new Activity();
             activity.id = _xApiOptions.ApiUrl + "scenarioevents/" + eventId + "/datafields/" + dataFieldId;

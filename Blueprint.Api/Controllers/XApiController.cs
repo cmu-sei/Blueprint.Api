@@ -59,5 +59,33 @@ namespace Blueprint.Api.Controllers
             await _xApiService.AssertCompetencyAsync(assertion, ct);
             return Ok();
         }
+
+        /// <summary>
+        /// Logs an MSEL viewed xAPI statement
+        /// </summary>
+        /// <remarks>
+        /// Writes an xAPI statement with the "viewed" verb to the LRS when a user views an MSEL.
+        /// This endpoint is called explicitly from the UI when viewing an MSEL, not when building.
+        /// </remarks>
+        [HttpPost("xapi/viewed/msel/{id}")]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "viewedMsel")]
+        public async Task<IActionResult> Viewed(Guid id, CancellationToken ct)
+        {
+            await _xApiService.MselViewedAsync(id, ct);
+            return Ok();
+        }
+
+        /// <summary>
+        /// Writes an xAPI statement when a user views the join page
+        /// </summary>
+        [HttpPost("xapi/viewed/joinpage")]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "viewedJoinPage")]
+        public async Task<IActionResult> ViewedJoinPage(CancellationToken ct)
+        {
+            await _xApiService.JoinPageViewedAsync(ct);
+            return Ok();
+        }
     }
 }

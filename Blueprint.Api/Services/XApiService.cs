@@ -34,6 +34,7 @@ namespace Blueprint.Api.Services
             Guid? teamId,
             CancellationToken ct);
         Task<bool> MselViewedAsync(MselEntity msel, CancellationToken ct);
+        Task<bool> MselViewedAsync(Guid id, CancellationToken ct);
         Task<bool> ExerciseStartedAsync(MselEntity msel, CancellationToken ct);
         Task<bool> ExerciseStoppedAsync(MselEntity msel, CancellationToken ct);
         Task<bool> JoinPageViewedAsync(CancellationToken ct);
@@ -314,6 +315,16 @@ namespace Blueprint.Api.Services
             var teamId = await GetUserTeamIdAsync(msel.Id, ct);
 
             return await CreateAsync(verb, activity, category, grouping, parent, other, msel.Id, teamId, ct);
+        }
+
+        public async Task<bool> MselViewedAsync(Guid id, CancellationToken ct)
+        {
+            var msel = await _context.Msels.FindAsync(id, ct);
+            if (msel == null)
+            {
+                return false;
+            }
+            return await MselViewedAsync(msel, ct);
         }
 
         public async Task<bool> ExerciseStartedAsync(MselEntity msel, CancellationToken ct)

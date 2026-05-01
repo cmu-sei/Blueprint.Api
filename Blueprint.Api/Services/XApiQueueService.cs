@@ -20,6 +20,9 @@ namespace Blueprint.Api.Services
         Task MarkCompletedAsync(Guid statementId, CancellationToken ct = default);
         Task MarkFailedAsync(Guid statementId, string errorMessage, CancellationToken ct = default);
         Task<int> GetQueueDepthAsync(CancellationToken ct = default);
+        Task<List<XApiQueuedStatementEntity>> GetOldCompletedStatementsAsync(DateTime cutoffDate, CancellationToken ct = default);
+        Task<List<XApiQueuedStatementEntity>> GetOldFailedStatementsAsync(DateTime cutoffDate, CancellationToken ct = default);
+        Task DeleteStatementsAsync(List<Guid> statementIds, CancellationToken ct = default);
     }
 
     public class XApiQueueService : IXApiQueueService
@@ -121,6 +124,32 @@ namespace Blueprint.Api.Services
         {
             return await _context.XApiQueuedStatements
                 .CountAsync(s => s.Status == XApiQueueStatus.Pending || s.Status == XApiQueueStatus.Processing, ct);
+        }
+
+        public async Task<List<XApiQueuedStatementEntity>> GetOldCompletedStatementsAsync(DateTime cutoffDate, CancellationToken ct = default)
+        {
+            return await _context.XApiQueuedStatements
+                .Where(s => s.Status == XApiQueueStatus.Completed && s.QueuedAt < cutoffDate)
+                .ToListAsync(ct);
+        }
+
+        public async Task<List<XApiQueuedStatementEntity>> GetOldFailedStatementsAsync(DateTime cutoffDate, CancellationToken ct = default)
+        {
+            return await _context.XApiQueuedStatements
+                .Where(s => s.Status == XApiQueueStatus.Failed && s.QueuedAt < cutoffDate)
+                .ToListAsync(ct);
+        }
+
+        public async Task DeleteStatementsAsync(List<Guid> statementIds, CancellationToken ct = default)
+        {
+            var statements = await _context.XApiQueuedStatements
+                .Where(s => statementIds.Contains(s.Id))
+                .ToListAsync(ct);
+
+            _context.XApiQueuedStatements.RemoveRange(statements);
+            await _context.SaveChangesAsync(ct);
+
+            _logger.LogInformation("Deleted {Count} xAPI statements from queue", statements.Count);
         }
     }
 }

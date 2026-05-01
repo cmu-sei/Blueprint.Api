@@ -13,5 +13,6 @@ namespace Blueprint.Api.Infrastructure.Options
         public string UiUrl { get; set; }
         public string Platform { get; set; }
         public string EmailDomain { get; set; }
+        public int RetentionDays { get; set; } = 7;
     }
 }

@@ -26,6 +26,7 @@ namespace Blueprint.Api.Services
         Task<ViewModels.UserMselRole> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.UserMselRole> CreateAsync(ViewModels.UserMselRole userMselRole, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.UserMselRole>> SetIntegrationRolesAsync(Guid mselId, Guid userId, string citeEvaluationRole, string galleryExhibitRole, string steamfitterScenarioRole, bool hasSystemPermission, CancellationToken ct);
     }
 
     public class UserMselRoleService : IUserMselRoleService
@@ -111,6 +112,29 @@ namespace Blueprint.Api.Services
             await _context.Database.CommitTransactionAsync(ct);
             _logger.LogWarning($"UserMselRole deleted by {_user.GetId()} = User: {userMselRoleToDelete.UserId}, Role: {userMselRoleToDelete.Role} on MSEL: {userMselRoleToDelete.MselId}");
             return true;
+        }
+
+        public async Task<IEnumerable<ViewModels.UserMselRole>> SetIntegrationRolesAsync(Guid mselId, Guid userId, string citeEvaluationRole, string galleryExhibitRole, string steamfitterScenarioRole, bool hasSystemPermission, CancellationToken ct)
+        {
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+                throw new ForbiddenException();
+
+            var rows = await _context.UserMselRoles
+                .Where(umr => umr.MselId == mselId && umr.UserId == userId)
+                .ToListAsync(ct);
+
+            if (rows.Count == 0)
+                throw new EntityNotFoundException<UserMselRole>();
+
+            foreach (var row in rows)
+            {
+                row.CiteEvaluationRole = citeEvaluationRole;
+                row.GalleryExhibitRole = galleryExhibitRole;
+                row.SteamfitterScenarioRole = steamfitterScenarioRole;
+            }
+            await _context.SaveChangesAsync(ct);
+            await ServiceUtilities.SetMselModifiedAsync(mselId, _user.GetId(), DateTime.UtcNow, _context, ct);
+            return _mapper.Map<IEnumerable<UserMselRole>>(rows);
         }
 
     }

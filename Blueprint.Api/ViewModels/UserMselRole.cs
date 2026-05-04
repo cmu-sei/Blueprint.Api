@@ -12,6 +12,9 @@ namespace Blueprint.Api.ViewModels
         public Guid MselId { get; set; }
         public Guid UserId { get; set; }
         public MselRole Role { get; set; }
+        public string CiteEvaluationRole { get; set; }
+        public string GalleryExhibitRole { get; set; }
+        public string SteamfitterScenarioRole { get; set; }
     }
 
 }

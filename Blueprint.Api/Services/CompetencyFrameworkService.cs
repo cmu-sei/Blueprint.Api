@@ -29,6 +29,7 @@ namespace Blueprint.Api.Services
         Task<ViewModels.CompetencyFramework> UpdateAsync(Guid id, ViewModels.CompetencyFramework framework, CancellationToken ct);
         Task<ViewModels.CompetencyFramework> ImportFromMoodleCsvAsync(Stream csvStream, string source, string version, CancellationToken ct);
         Task<ViewModels.CompetencyFramework> ImportFromNiceJsonAsync(Stream jsonStream, CancellationToken ct);
+        Task<ViewModels.FrameworkDeleteCheck> CheckCanDeleteAsync(Guid id, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<ViewModels.Competency> CreateCompetencyAsync(Guid frameworkId, ViewModels.Competency competency, CancellationToken ct);
         Task<ViewModels.Competency> UpdateCompetencyAsync(Guid competencyId, ViewModels.Competency competency, CancellationToken ct);
@@ -647,8 +648,55 @@ namespace Blueprint.Api.Services
             return true;
         }
 
+        public async Task<ViewModels.FrameworkDeleteCheck> CheckCanDeleteAsync(Guid id, CancellationToken ct)
+        {
+            var framework = await _context.CompetencyFrameworks
+                .AsNoTracking()
+                .SingleOrDefaultAsync(f => f.Id == id, ct);
+
+            if (framework == null)
+                throw new EntityNotFoundException<ViewModels.CompetencyFramework>();
+
+            var competencyIds = await _context.Competencies
+                .Where(c => c.CompetencyFrameworkId == id)
+                .Select(c => c.Id)
+                .ToListAsync(ct);
+
+            if (competencyIds.Count == 0)
+            {
+                return new ViewModels.FrameworkDeleteCheck
+                {
+                    CanDelete = true,
+                    AffectedMsels = new List<ViewModels.MselReference>()
+                };
+            }
+
+            // Check MselCompetency references (MSEL pool)
+            var affectedMsels = await _context.MselCompetencies
+                .Where(mc => competencyIds.Contains(mc.CompetencyId))
+                .Select(mc => new { mc.Msel.Id, mc.Msel.Name })
+                .Distinct()
+                .ToListAsync(ct);
+
+            return new ViewModels.FrameworkDeleteCheck
+            {
+                CanDelete = affectedMsels.Count == 0,
+                AffectedMsels = affectedMsels.Select(m => new ViewModels.MselReference { Id = m.Id, Name = m.Name }).ToList()
+            };
+        }
+
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
+            var check = await CheckCanDeleteAsync(id, ct);
+
+            if (!check.CanDelete)
+            {
+                var message = $"Cannot delete framework. It is being used by {check.AffectedMsels.Count} MSEL(s).\n\n";
+                message += "Remove competencies from these MSELs before deleting the framework.";
+
+                throw new ArgumentException(message);
+            }
+
             var framework = await _context.CompetencyFrameworks
                 .SingleOrDefaultAsync(f => f.Id == id, ct);
 

@@ -201,10 +201,28 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Checks if a Competency Framework can be deleted
+        /// </summary>
+        /// <remarks>
+        /// Returns dependency information showing which MSELs, data fields, and teams are using competencies from this framework.
+        /// </remarks>
+        /// <param name="id">The id of the Competency Framework to check</param>
+        /// <param name="ct"></param>
+        [HttpGet("competencyframeworks/{id}/can-delete")]
+        [ProducesResponseType(typeof(FrameworkDeleteCheck), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "checkCanDeleteCompetencyFramework")]
+        public async Task<IActionResult> CheckCanDelete(Guid id, CancellationToken ct)
+        {
+            var result = await _competencyFrameworkService.CheckCanDeleteAsync(id, ct);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Deletes a Competency Framework
         /// </summary>
         /// <remarks>
         /// Deletes the framework and all associated competencies and relationships (cascade).
+        /// Will fail with BadRequest if the framework is in use by any MSELs, data fields, or teams.
         /// </remarks>
         /// <param name="id">The id of the Competency Framework to delete</param>
         /// <param name="ct"></param>

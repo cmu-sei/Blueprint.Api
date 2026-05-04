@@ -226,7 +226,7 @@ namespace Blueprint.Api.Services
             var mselId = dataField.MselId ?? dataField.Msel?.Id;
             if (mselId.HasValue)
             {
-                if (!hasMselPermission && !(await MselEditRequirement.IsMet(_user.GetId(), mselId.Value, _context)))
+                if (!hasMselPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId.Value, _context)))
                     throw new ForbiddenException();
             }
             else if (!hasDataFieldPermission)

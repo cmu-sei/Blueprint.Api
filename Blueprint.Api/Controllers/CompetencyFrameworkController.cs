@@ -148,6 +148,33 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Imports a Competency Framework from a DCWF-format XLSX file
+        /// </summary>
+        /// <remarks>
+        /// Accepts an XLSX file with columns: ID, Name, Description, ParentID, RelatedIDs.
+        /// Creates the framework, all competencies with hierarchy, and cross-reference relationships.
+        /// </remarks>
+        /// <param name="file">The XLSX file</param>
+        /// <param name="source">Framework source (e.g. "DCWF")</param>
+        /// <param name="version">Framework version (e.g. "1.0")</param>
+        /// <param name="ct"></param>
+        [HttpPost("competencyframeworks/import-xlsx")]
+        [ProducesResponseType(typeof(CompetencyFramework), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "importCompetencyFrameworkXlsx")]
+        public async Task<IActionResult> ImportXlsx(IFormFile file, [FromQuery] string source, [FromQuery] string version, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
+            if (file == null || file.Length == 0)
+                return BadRequest("No file provided.");
+
+            using var stream = file.OpenReadStream();
+            var framework = await _competencyFrameworkService.ImportFromDcwfXlsxAsync(stream, source, version, ct);
+            return CreatedAtAction(nameof(Get), new { id = framework.Id }, framework);
+        }
+
+        /// <summary>
         /// Creates a new Competency within a Framework
         /// </summary>
         /// <param name="frameworkId">The id of the parent CompetencyFramework</param>
@@ -198,6 +225,73 @@ namespace Blueprint.Api.Controllers
 
             await _competencyFrameworkService.DeleteCompetencyAsync(competencyId, ct);
             return NoContent();
+        }
+
+        /// <summary>
+        /// Preview a Competency Framework from a Moodle CSV file
+        /// </summary>
+        /// <remarks>
+        /// Returns preview information: element counts, relationships, source/version.
+        /// </remarks>
+        /// <param name="file">The CSV file</param>
+        /// <param name="source">Framework source (e.g. "NICE", "DCWF")</param>
+        /// <param name="version">Framework version (e.g. "5.1")</param>
+        /// <param name="ct"></param>
+        [HttpPost("competencyframeworks/preview-csv")]
+        [ProducesResponseType(typeof(CompetencyFrameworkImportPreview), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "previewCompetencyFrameworkCsv")]
+        public async Task<IActionResult> PreviewCsv(IFormFile file, [FromQuery] string source, [FromQuery] string version, CancellationToken ct)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest("No file provided.");
+
+            using var stream = file.OpenReadStream();
+            var preview = await _competencyFrameworkService.PreviewCsvAsync(stream, source, version, ct);
+            return Ok(preview);
+        }
+
+        /// <summary>
+        /// Preview a Competency Framework from a NICE JSON file
+        /// </summary>
+        /// <remarks>
+        /// Returns preview information: element counts, relationships, source/version.
+        /// </remarks>
+        /// <param name="file">The JSON file</param>
+        /// <param name="ct"></param>
+        [HttpPost("competencyframeworks/preview-json")]
+        [ProducesResponseType(typeof(CompetencyFrameworkImportPreview), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "previewCompetencyFrameworkJson")]
+        public async Task<IActionResult> PreviewJson(IFormFile file, CancellationToken ct)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest("No file provided.");
+
+            using var stream = file.OpenReadStream();
+            var preview = await _competencyFrameworkService.PreviewJsonAsync(stream, ct);
+            return Ok(preview);
+        }
+
+        /// <summary>
+        /// Preview a Competency Framework from a DCWF XLSX file
+        /// </summary>
+        /// <remarks>
+        /// Returns preview information: element counts, relationships, source/version.
+        /// </remarks>
+        /// <param name="file">The XLSX file</param>
+        /// <param name="source">Framework source (e.g. "DCWF")</param>
+        /// <param name="version">Framework version (e.g. "1.0")</param>
+        /// <param name="ct"></param>
+        [HttpPost("competencyframeworks/preview-xlsx")]
+        [ProducesResponseType(typeof(CompetencyFrameworkImportPreview), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "previewCompetencyFrameworkXlsx")]
+        public async Task<IActionResult> PreviewXlsx(IFormFile file, [FromQuery] string source, [FromQuery] string version, CancellationToken ct)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest("No file provided.");
+
+            using var stream = file.OpenReadStream();
+            var preview = await _competencyFrameworkService.PreviewXlsxAsync(stream, source, version, ct);
+            return Ok(preview);
         }
 
         /// <summary>

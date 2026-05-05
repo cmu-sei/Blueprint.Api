@@ -224,6 +224,7 @@ public class Startup
         services.AddScoped<IBlueprintAuthorizationService, BlueprintAuthorizationService>();
         services.AddScoped<IIdentityResolver, IdentityResolver>();
         services.AddSingleton<IUserIdProvider, SubUserIdProvider>();
+        services.AddSingleton<Hubs.HubCache>();
         services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>()?.HttpContext?.User);
         services.AddScoped<IXApiService, XApiService>();
@@ -234,7 +235,9 @@ public class Startup
         services.AddHostedService<Services.XApiBackgroundService>();
 
         services.AddSingleton<IIntegrationQueue, IntegrationQueue>();
-        services.AddHostedService<IntegrationService>();
+        services.AddSingleton<IntegrationService>();
+        services.AddSingleton<IIntegrationService>(sp => sp.GetRequiredService<IntegrationService>());
+        services.AddHostedService(sp => sp.GetRequiredService<IntegrationService>());
         services.AddSingleton<IJoinQueue, JoinQueue>();
         services.AddHostedService<JoinService>();
         services.AddSingleton<IAddApplicationQueue, AddApplicationQueue>();

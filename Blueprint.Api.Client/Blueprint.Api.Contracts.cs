@@ -6390,9 +6390,6 @@ namespace Blueprint.Api.Client
         [System.Runtime.Serialization.EnumMember(Value = @"Move")]
         Move = 15,
 
-        [System.Runtime.Serialization.EnumMember(Value = @"DeliveryMethod")]
-        DeliveryMethod = 16,
-
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "13.20.0.0 (NJsonSchema v10.9.0.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -9711,21 +9708,6 @@ namespace Blueprint.Api.Client
 
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]   
         public string Email { get; set; }
-
-        [System.Text.Json.Serialization.JsonPropertyName("playerTeamId")]
-
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]   
-        public System.Guid? PlayerTeamId { get; set; }
-
-        [System.Text.Json.Serialization.JsonPropertyName("galleryTeamId")]
-
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]   
-        public System.Guid? GalleryTeamId { get; set; }
-
-        [System.Text.Json.Serialization.JsonPropertyName("citeTeamId")]
-
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]   
-        public System.Guid? CiteTeamId { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("canTeamLeaderInvite")]
 

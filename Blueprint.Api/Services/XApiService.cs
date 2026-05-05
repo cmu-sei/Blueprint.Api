@@ -35,7 +35,6 @@ namespace Blueprint.Api.Services
         Task<bool> ExerciseStartedAsync(MselEntity msel, CancellationToken ct);
         Task<bool> ExerciseStoppedAsync(MselEntity msel, CancellationToken ct);
         Task<bool> JoinPageViewedAsync(CancellationToken ct);
-        Task<bool> BuildPageViewedAsync(CancellationToken ct);
         Task<bool> MselJoinedAsync(MselEntity msel, Guid? teamId, CancellationToken ct);
     }
 
@@ -91,7 +90,7 @@ namespace Blueprint.Api.Services
 
             // configure Agent
             _agent = new TinCan.Agent();
-            _agent.name = _context.Users.Find(_user.GetId()).Name;
+            _agent.name = _context.Users.Where(u => u.Id == _user.GetId()).Select(u => u.Name).FirstOrDefault();
             _agent.account = _account;
 
             // Initialize the Context
@@ -407,37 +406,6 @@ namespace Blueprint.Api.Services
             return await CreateAsync(verb, activity, category, grouping, parent, other, null, null, ct);
         }
 
-        public async Task<bool> BuildPageViewedAsync(CancellationToken ct)
-        {
-            if (!IsConfigured())
-            {
-                return true;
-            }
-
-            var verb = new Uri("http://id.tincanapi.com/verb/viewed");
-
-            var activity = new Dictionary<string, string>();
-            activity.Add("id", "build-page");
-            activity.Add("name", "Manage Event Page");
-            activity.Add("description", "Manage an event landing page");
-            activity.Add("type", "page");
-            activity.Add("activityType", "http://activitystrea.ms/schema/1.0/page");
-            activity.Add("moreInfo", "/build");
-
-            var category = new Dictionary<string, string>();
-            category.Add("id", "navigation");
-            category.Add("name", "Navigation");
-            category.Add("description", "Page navigation and browsing activities");
-            category.Add("type", "category");
-            category.Add("activityType", "http://id.tincanapi.com/activitytype/category");
-
-            var parent = new Dictionary<string, string>();
-            var grouping = new List<Dictionary<string, string>>();
-            var other = new Dictionary<string, string>();
-
-            return await CreateAsync(verb, activity, category, grouping, parent, other, null, null, ct);
-        }
-
         public async Task<bool> MselJoinedAsync(MselEntity msel, Guid? teamId, CancellationToken ct)
         {
             if (!IsConfigured())
@@ -471,11 +439,10 @@ namespace Blueprint.Api.Services
 
         private async Task<Guid?> GetUserTeamIdAsync(Guid mselId, CancellationToken ct)
         {
-            var teamUser = await _context.TeamUsers
+            return await _context.TeamUsers
                 .Where(tu => tu.UserId == _user.GetId() && tu.Team.MselId == mselId)
+                .Select(tu => (Guid?)tu.TeamId)
                 .FirstOrDefaultAsync(ct);
-
-            return teamUser?.TeamId;
         }
 
         private List<Dictionary<string, string>> BuildIntegrationGroupings(MselEntity msel)

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Blueprint.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    partial class BlueprintContextModelSnapshot : ModelSnapshot
+    [Migration("20260402142340_AddMselIntegrationStatus")]
+    partial class AddMselIntegrationStatus
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -860,10 +863,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("duration_seconds");
 
-                    b.Property<bool>("EmailEnabled")
-                        .HasColumnType("boolean")
-                        .HasColumnName("email_enabled");
-
                     b.Property<Guid?>("GalleryCollectionId")
                         .HasColumnType("uuid")
                         .HasColumnName("gallery_collection_id");
@@ -1303,10 +1302,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("group_order");
 
-                    b.Property<string>("Information")
-                        .HasColumnType("text")
-                        .HasColumnName("information");
-
                     b.Property<Guid?>("InjectId")
                         .HasColumnType("uuid")
                         .HasColumnName("inject_id");
@@ -1520,6 +1515,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("uuid_generate_v4()");
 
+                    b.Property<Guid?>("CiteTeamId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cite_team_id");
+
                     b.Property<Guid?>("CiteTeamTypeId")
                         .HasColumnType("uuid")
                         .HasColumnName("cite_team_type_id");
@@ -1544,6 +1543,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("email");
 
+                    b.Property<Guid?>("GalleryTeamId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("gallery_team_id");
+
                     b.Property<Guid?>("ModifiedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("modified_by");
@@ -1555,6 +1558,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<string>("Name")
                         .HasColumnType("text")
                         .HasColumnName("name");
+
+                    b.Property<Guid?>("PlayerTeamId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("player_team_id");
 
                     b.Property<string>("ShortName")
                         .HasColumnType("text")

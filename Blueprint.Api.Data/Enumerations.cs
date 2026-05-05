@@ -9,6 +9,8 @@ namespace Blueprint.Api.Data.Enumerations
         Entered = 10,
         Approved = 20,
         Complete = 30,
+        Pushing = 35,
+        Pulling = 36,
         Deployed = 40,
         Archived = 50
     }
@@ -53,8 +55,7 @@ namespace Blueprint.Api.Data.Enumerations
         User = 120,    // user assigned to the inject.  For execution, etc.
         Checkbox = 130,    // used to track statuses about the inject.
         Url = 140,    // link to other information
-        Move = 150,     // values will be filled from the MSEL moves
-        IntegrationTarget = 160     // values will currently be filled from Notification, Email, and Gallery
+        Move = 150     // values will be filled from the MSEL moves
     }
 
     public enum MselRole
@@ -78,7 +79,6 @@ namespace Blueprint.Api.Data.Enumerations
         DatePosted,
         OpenInNewTab,
         CardId,
-        DeliveryMethod,
         ToOrg,
         FromOrg,
         Summary

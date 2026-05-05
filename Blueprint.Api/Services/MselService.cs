@@ -26,6 +26,7 @@ using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Infrastructure.QueryParameters;
 using Blueprint.Api.ViewModels;
 using Cite.Api.Client;
+using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Packaging;
@@ -52,6 +53,7 @@ namespace Blueprint.Api.Services
         Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct);
+        Task CancelIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> ArchiveAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct);
@@ -68,6 +70,7 @@ namespace Blueprint.Api.Services
         private readonly ClientOptions _clientOptions;
         private readonly IScenarioEventService _scenarioEventService;
         private readonly IIntegrationQueue _integrationQueue;
+        private readonly IIntegrationService _integrationService;
         private readonly IPlayerService _playerService;
         private readonly IJoinQueue _joinQueue;
         private readonly IXApiService _xApiService;
@@ -78,6 +81,7 @@ namespace Blueprint.Api.Services
             ClientOptions clientOptions,
             IScenarioEventService scenarioEventService,
             IIntegrationQueue integrationQueue,
+            IIntegrationService integrationService,
             IPlayerService playerService,
             IJoinQueue joinQueue,
             IPrincipal user,
@@ -93,6 +97,7 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
             _logger = logger;
             _integrationQueue = integrationQueue;
+            _integrationService = integrationService;
             _playerService = playerService;
             _joinQueue = joinQueue;
             _xApiService = xApiService;
@@ -150,12 +155,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasSystemPermission, CancellationToken ct)
         {
-            // Track xAPI - Build Page Viewed
-            if (_xApiService.IsConfigured())
-            {
-                await _xApiService.BuildPageViewedAsync(ct);
-            }
-
             var userId = _user.GetId();
             return await GetUserMselsAsync(userId, false, hasSystemPermission, ct);
         }
@@ -197,7 +196,9 @@ namespace Blueprint.Api.Services
             {
                 mselList = mselList.Where(m => !m.IsTemplate).ToList();
             }
-            return _mapper.Map<IEnumerable<Msel>>(mselList);
+            var result = _mapper.Map<IEnumerable<Msel>>(mselList).ToList();
+            foreach (var m in result) EnsureCreatorOwnerRole(m);
+            return result;
         }
 
         public async Task<ViewModels.Msel> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -222,6 +223,7 @@ namespace Blueprint.Api.Services
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
             var msel = _mapper.Map<Msel>(mselEntity);
+            EnsureCreatorOwnerRole(msel);
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
             {
@@ -484,6 +486,26 @@ namespace Blueprint.Api.Services
             return mselEntity;
         }
 
+        /// <summary>
+        /// Ensures the MSEL creator always has an Owner role in the view model,
+        /// without persisting a record that could be accidentally deleted.
+        /// </summary>
+        private void EnsureCreatorOwnerRole(ViewModels.Msel msel)
+        {
+            if (msel == null || msel.CreatedBy == Guid.Empty) return;
+            var creatorId = msel.CreatedBy;
+            if (!msel.UserMselRoles.Any(r => r.UserId == creatorId && r.Role == MselRole.Owner))
+            {
+                msel.UserMselRoles.Add(new ViewModels.UserMselRole
+                {
+                    Id = Guid.Empty,
+                    MselId = msel.Id,
+                    UserId = creatorId,
+                    Role = MselRole.Owner
+                });
+            }
+        }
+
         private void ScenarioEventReplaceIds(
             ScenarioEventEntity scenarioEventEntity,
             Guid mselId,
@@ -669,6 +691,15 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
 
+            // Track system columns (these don't have DataField/DataValue entities)
+            var systemColumns = new HashSet<string>();
+            if (msel.ShowTimeOnScenarioEventList)
+                systemColumns.Add("Time");
+            if (msel.ShowMoveOnScenarioEventList)
+                systemColumns.Add("Move");
+            if (msel.ShowGroupOnScenarioEventList)
+                systemColumns.Add("Group");
+
             // create the xlsx file in memory
             MemoryStream memoryStream = new MemoryStream();
             using (SpreadsheetDocument document = SpreadsheetDocument.Create(memoryStream, SpreadsheetDocumentType.Workbook))
@@ -705,12 +736,21 @@ namespace Blueprint.Api.Services
                 Columns columns = new Columns();
                 foreach (System.Data.DataColumn column in dataTable.Columns)
                 {
-                    var dataField = await _context.DataFields
-                        .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
-                        .FirstOrDefaultAsync();
-                    Double width;
-                    double.TryParse(dataField.ColumnMetadata, out width);
-                    var cellMetadata = dataField.CellMetadata;
+                    Double width = 10;
+                    string cellMetadata = null;
+
+                    if (!systemColumns.Contains(column.ColumnName))
+                    {
+                        var dataField = await _context.DataFields
+                            .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
+                            .FirstOrDefaultAsync();
+                        if (dataField != null)
+                        {
+                            double.TryParse(dataField.ColumnMetadata, out width);
+                            cellMetadata = dataField.CellMetadata;
+                        }
+                    }
+
                     columns.Append(new Column()
                     {
                         Min = (UInt32)(column.Ordinal + 1),
@@ -722,7 +762,7 @@ namespace Blueprint.Api.Services
                     Cell cell = new Cell();
                     cell.DataType = CellValues.String;
                     cell.CellValue = new CellValue(column.ColumnName);
-                    cell.CellReference = GetCellReference(dataField.DisplayOrder, (int)headerRow.RowIndex.Value);
+                    cell.CellReference = GetCellReference(column.Ordinal + 1, (int)headerRow.RowIndex.Value);
                     cell.StyleIndex = cellMetadata != null && cellMetadata.Length > 0 ? (UInt32)uniqueStyles[cellMetadata] : 0;
                     headerRow.AppendChild(cell);
                 }
@@ -738,9 +778,11 @@ namespace Blueprint.Api.Services
                     if (!String.IsNullOrEmpty(scenarioEventList[i].RowMetadata))
                     {
                         Double height;
-                        double.TryParse(scenarioEventList[i].RowMetadata.Split(",")[0], out height);
-                        newRow.Height = height;
-                        newRow.CustomHeight = true;
+                        if (double.TryParse(scenarioEventList[i].RowMetadata.Split(",")[0], out height) && height > 15)
+                        {
+                            newRow.Height = height;
+                            newRow.CustomHeight = true;
+                        }
                     }
                     newRow.RowIndex = (uint)(i + 2);  // the header row is RowIndex 1
                     // add the cells for this row
@@ -748,13 +790,28 @@ namespace Blueprint.Api.Services
                     {
                         Cell cell = new Cell();
                         var stringValue = dsrow[column.ColumnName].ToString();
+
+                        if (systemColumns.Contains(column.ColumnName))
+                        {
+                            // System column - no DataField/DataValue entities
+                            cell.StyleIndex = 0;
+                            if (!string.IsNullOrWhiteSpace(stringValue))
+                            {
+                                cell.DataType = CellValues.String;
+                                cell.CellValue = new CellValue(stringValue);
+                            }
+                            cell.CellReference = GetCellReference(column.Ordinal + 1, (int)newRow.RowIndex.Value);
+                            newRow.AppendChild(cell);
+                            continue;
+                        }
+
                         var dataField = await _context.DataFields
                             .Where(df => df.MselId == mselId && df.Name == column.ColumnName)
                             .FirstOrDefaultAsync();
                         var dataValue = await _context.DataValues
                             .Where(dv => dv.ScenarioEventId == scenarioEventList[i].Id && dv.DataFieldId == dataField.Id)
                             .FirstOrDefaultAsync();
-                        var cellMetadata = dataValue.CellMetadata;
+                        var cellMetadata = dataValue != null ? dataValue.CellMetadata : null;
                         cell.StyleIndex = String.IsNullOrEmpty(cellMetadata) ? 0 : (UInt32)uniqueStyles[cellMetadata];
                         // handle differences between data types
                         if (!string.IsNullOrWhiteSpace(stringValue))
@@ -787,12 +844,20 @@ namespace Blueprint.Api.Services
                                     cell.CellValue = new CellValue(stringValue);
                                     break;
                                 default:
-                                    cell.DataType = CellValues.String;
-                                    cell.CellValue = new CellValue(stringValue);
+                                    if (ContainsHtml(stringValue))
+                                    {
+                                        cell.DataType = CellValues.InlineString;
+                                        cell.Append(HtmlToInlineString(stringValue));
+                                    }
+                                    else
+                                    {
+                                        cell.DataType = CellValues.String;
+                                        cell.CellValue = new CellValue(stringValue);
+                                    }
                                     break;
                             }
                         }
-                        cell.CellReference = GetCellReference(dataField.DisplayOrder, (int)newRow.RowIndex.Value);
+                        cell.CellReference = GetCellReference(column.Ordinal + 1, (int)newRow.RowIndex.Value);
                         newRow.AppendChild(cell);
                     }
                     sheetData.AppendChild(newRow);
@@ -1058,6 +1123,7 @@ namespace Blueprint.Api.Services
                 {
                     Id = Guid.NewGuid(),
                     MselId = mselId,
+                    ScenarioEventType = EventType.Inject,
                     DeltaSeconds = rowIndex * 60,    // value of seconds (1 minute) used to maintain the row order
                     RowMetadata = rowMetadata
                 };
@@ -1129,9 +1195,18 @@ namespace Blueprint.Api.Services
                                 currentCellValue = cell.CellValue.Text;
                                 break;
                             case CellValues.InlineString:
+                                if (cell.InlineString != null)
+                                {
+                                    currentCellValue = InlineStringToHtml(cell.InlineString);
+                                }
+                                else if (cell.CellValue != null)
+                                {
+                                    currentCellValue = cell.CellValue.Text;
+                                }
+                                break;
                             case CellValues.String:
                             default:
-                                currentCellValue = cell.CellValue.Text;
+                                currentCellValue = cell.CellValue != null ? cell.CellValue.Text : cell.InnerText;
                                 break;
                         }
                     }
@@ -1197,18 +1272,55 @@ namespace Blueprint.Api.Services
 
         private async Task<DataTable> GetMselDataAsync(Guid mselId, List<ScenarioEventEntity> scenarioEventList, CancellationToken ct)
         {
+            var msel = await _context.Msels
+                .Where(m => m.Id == mselId)
+                .SingleOrDefaultAsync(ct);
+
             // create data table to hold all of the scenarioEvent data
             DataTable dataTable = new DataTable();
             dataTable.Clear();
-            // add a column for each data field
+            // get all data fields
             var dataFieldList = await _context.DataFields
                 .Where(df => df.MselId == mselId)
                 .OrderBy(df => df.DisplayOrder)
                 .ToListAsync(ct);
-            foreach (var dataField in dataFieldList)
+
+            // Build combined list of columns (data fields + system fields) sorted by display order
+            var allColumns = new List<(string Name, int DisplayOrder, bool IsSystem)>();
+            foreach (var df in dataFieldList)
             {
-                dataTable.Columns.Add(dataField.Name);
+                allColumns.Add((df.Name, df.DisplayOrder, false));
             }
+            if (msel.ShowTimeOnScenarioEventList)
+                allColumns.Add(("Time", msel.TimeDisplayOrder, true));
+            if (msel.ShowMoveOnScenarioEventList)
+                allColumns.Add(("Move", msel.MoveDisplayOrder, true));
+            if (msel.ShowGroupOnScenarioEventList)
+                allColumns.Add(("Group", msel.GroupDisplayOrder, true));
+            allColumns = allColumns.OrderBy(c => c.DisplayOrder).ToList();
+
+            foreach (var col in allColumns)
+            {
+                dataTable.Columns.Add(col.Name);
+            }
+
+            // Load moves for move number calculation
+            var moves = await _context.Moves
+                .Where(m => m.MselId == mselId)
+                .OrderBy(m => m.DeltaSeconds)
+                .ToListAsync(ct);
+
+            // Load cards for GUID-to-name resolution
+            var cards = await _context.Cards
+                .Where(c => c.MselId == mselId)
+                .ToListAsync(ct);
+            var cardMap = cards.ToDictionary(c => c.Id.ToString(), c => c.Name);
+            var cardFieldIds = new HashSet<Guid>(
+                dataFieldList.Where(df => df.DataType == DataFieldType.Card).Select(df => df.Id));
+
+            // Compute move and group numbers (mirroring UI logic)
+            var moveAndGroupNumbers = ComputeMoveAndGroupNumbers(scenarioEventList, moves);
+
             // add a row for each scenarioEvent
             foreach (var scenarioEvent in scenarioEventList)
             {
@@ -1216,16 +1328,81 @@ namespace Blueprint.Api.Services
                 var dataValueList = await _context.DataValues
                     .Where(dv => dv.ScenarioEventId == scenarioEvent.Id)
                     .OrderBy(dv => dv.DataField.DisplayOrder)
-                    .Select(dv => new { Name = dv.DataField.Name, Value = dv.Value })
+                    .Select(dv => new { Name = dv.DataField.Name, Value = dv.Value, DataFieldId = dv.DataFieldId })
                     .ToListAsync(ct);
                 foreach (var dataValue in dataValueList)
                 {
-                    dataRow[dataValue.Name] = dataValue.Value;
+                    var displayValue = dataValue.Value;
+                    // Resolve Card GUIDs to card names
+                    if (cardFieldIds.Contains(dataValue.DataFieldId) &&
+                        !string.IsNullOrEmpty(displayValue) &&
+                        cardMap.ContainsKey(displayValue))
+                    {
+                        displayValue = cardMap[displayValue];
+                    }
+                    dataRow[dataValue.Name] = displayValue;
+                }
+                // Populate system columns
+                if (msel.ShowTimeOnScenarioEventList)
+                {
+                    dataRow["Time"] = FormatDeltaSeconds(scenarioEvent.DeltaSeconds);
+                }
+                if (msel.ShowMoveOnScenarioEventList && moveAndGroupNumbers.ContainsKey(scenarioEvent.Id))
+                {
+                    var moveNumber = moveAndGroupNumbers[scenarioEvent.Id].Item1;
+                    dataRow["Move"] = moveNumber >= 0 ? moveNumber.ToString() : "";
+                }
+                if (msel.ShowGroupOnScenarioEventList && moveAndGroupNumbers.ContainsKey(scenarioEvent.Id))
+                {
+                    dataRow["Group"] = moveAndGroupNumbers[scenarioEvent.Id].Item2.ToString();
                 }
                 dataTable.Rows.Add(dataRow);
             }
 
             return dataTable;
+        }
+
+        private string FormatDeltaSeconds(int deltaSeconds)
+        {
+            var prefix = deltaSeconds >= 0 ? "+ " : "- ";
+            var absDelta = Math.Abs(deltaSeconds);
+            var days = absDelta / 86400;
+            var remaining = absDelta % 86400;
+            var hours = remaining / 3600;
+            var minutes = (remaining % 3600) / 60;
+            var seconds = remaining % 60;
+            if (days > 0)
+                return $"{prefix}{days} {hours:D2}:{minutes:D2}:{seconds:D2}";
+            return $"{prefix}{hours:D2}:{minutes:D2}:{seconds:D2}";
+        }
+
+        private Dictionary<Guid, System.Tuple<int, int>> ComputeMoveAndGroupNumbers(
+            List<ScenarioEventEntity> scenarioEvents, List<MoveEntity> moves)
+        {
+            var result = new Dictionary<Guid, System.Tuple<int, int>>();
+            int m = -1;
+            int group = 0;
+            int groupSeconds = -1;
+
+            foreach (var se in scenarioEvents)
+            {
+                while (m + 1 < moves.Count && se.DeltaSeconds >= moves[m + 1].DeltaSeconds)
+                {
+                    m++;
+                    group = 0;
+                    groupSeconds = -1;
+                }
+                if (se.DeltaSeconds > groupSeconds)
+                {
+                    group++;
+                    groupSeconds = se.DeltaSeconds;
+                }
+
+                var moveNumber = m < 0 || moves.Count == 0 ? -1 : moves[m].MoveNumber;
+                result[se.Id] = System.Tuple.Create(moveNumber, group);
+            }
+
+            return result;
         }
 
         private async Task<Dictionary<string, int>> GetUniqueStylesAsync(Guid mselId, CancellationToken ct)
@@ -1262,8 +1439,9 @@ namespace Blueprint.Api.Services
             boldFont.Append(new Bold());
             fonts.Append(font);
             fonts.Append(boldFont);
+            fonts.Count = (UInt32Value)(uint)fonts.ChildElements.Count;
 
-            Fills fills = new Fills() { Count = (UInt32Value)5U };
+            Fills fills = new Fills();
 
             // FillId = 0
             Fill fill1 = new Fill();
@@ -1292,6 +1470,7 @@ namespace Blueprint.Api.Services
                 newFill.Append(patternFill);
                 fills.Append(newFill);
             }
+            fills.Count = (UInt32Value)(uint)fills.ChildElements.Count;
 
             // borders
             Borders borders = new Borders();
@@ -1513,10 +1692,15 @@ namespace Blueprint.Api.Services
 
         private string GetCellReference(int columnIndex, int rowIndex)
         {
-            var firstLetter = columnIndex > 26 ? char.ConvertFromUtf32(64 + columnIndex / 26) : "";
-            var secondLetter = char.ConvertFromUtf32(64 + columnIndex % 26);
+            string columnRef = "";
+            while (columnIndex > 0)
+            {
+                columnIndex--;
+                columnRef = (char)('A' + columnIndex % 26) + columnRef;
+                columnIndex /= 26;
+            }
 
-            return firstLetter + secondLetter + rowIndex.ToString();
+            return columnRef + rowIndex.ToString();
         }
 
         private string GetTintedColor(string hexColor, double tint)
@@ -1547,6 +1731,95 @@ namespace Blueprint.Api.Services
             var g = gint.ToString();
             var b = bint.ToString();
             return r + "," + g + "," + b;
+        }
+
+        private bool ContainsHtml(string value)
+        {
+            return Regex.IsMatch(value, @"<[a-zA-Z][^>]*>");
+        }
+
+        private InlineString HtmlToInlineString(string html)
+        {
+            var inlineString = new InlineString();
+
+            // Convert block-level elements to newlines
+            html = Regex.Replace(html, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
+            html = Regex.Replace(html, @"</(?:p|div|tr)>", "\n", RegexOptions.IgnoreCase);
+            html = Regex.Replace(html, @"<li[^>]*>", "\n\u2022 ", RegexOptions.IgnoreCase);
+
+            // Track bold/italic state
+            bool bold = false;
+            bool italic = false;
+
+            // Split into tags and text segments
+            var parts = Regex.Split(html, @"(<[^>]+>)");
+            foreach (var part in parts)
+            {
+                if (string.IsNullOrEmpty(part)) continue;
+
+                if (part.StartsWith("<"))
+                {
+                    var tagLower = part.ToLower();
+                    if (Regex.IsMatch(tagLower, @"^<b[\s>]") || Regex.IsMatch(tagLower, @"^<strong[\s>]"))
+                        bold = true;
+                    else if (tagLower.StartsWith("</b>") || tagLower.StartsWith("</strong>"))
+                        bold = false;
+                    else if (Regex.IsMatch(tagLower, @"^<i[\s>]") || Regex.IsMatch(tagLower, @"^<em[\s>]"))
+                        italic = true;
+                    else if (tagLower.StartsWith("</i>") || tagLower.StartsWith("</em>"))
+                        italic = false;
+                    continue;
+                }
+
+                var text = System.Net.WebUtility.HtmlDecode(part);
+                if (string.IsNullOrEmpty(text)) continue;
+
+                var run = new Run();
+                if (bold || italic)
+                {
+                    var runProps = new RunProperties();
+                    if (bold) runProps.Append(new Bold());
+                    if (italic) runProps.Append(new Italic());
+                    run.Append(runProps);
+                }
+                var textElement = new Text(text) { Space = SpaceProcessingModeValues.Preserve };
+                run.Append(textElement);
+                inlineString.Append(run);
+            }
+
+            if (!inlineString.Elements<Run>().Any())
+            {
+                var run = new Run();
+                run.Append(new Text(""));
+                inlineString.Append(run);
+            }
+
+            return inlineString;
+        }
+
+        private string InlineStringToHtml(InlineString inlineString)
+        {
+            var sb = new StringBuilder();
+            foreach (var run in inlineString.Elements<Run>())
+            {
+                var props = run.RunProperties;
+                bool isBold = props?.Elements<Bold>().Any() ?? false;
+                bool isItalic = props?.Elements<Italic>().Any() ?? false;
+
+                var text = run.Elements<Text>().FirstOrDefault()?.Text ?? "";
+
+                if (isBold) sb.Append("<b>");
+                if (isItalic) sb.Append("<i>");
+                sb.Append(System.Net.WebUtility.HtmlEncode(text));
+                if (isItalic) sb.Append("</i>");
+                if (isBold) sb.Append("</b>");
+            }
+            // Handle plain Text elements not inside runs
+            foreach (var text in inlineString.Elements<Text>())
+            {
+                sb.Append(System.Net.WebUtility.HtmlEncode(text.Text ?? ""));
+            }
+            return sb.ToString().Replace("\n", "<br>");
         }
 
         public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct)
@@ -1675,7 +1948,7 @@ namespace Blueprint.Api.Services
             }
 
             // Validate and fix team type IDs if MSEL uses CITE integration
-            if (mselEntity.UseCite && mselEntity.Teams.Any(t => t.CiteTeamTypeId.HasValue))
+            if (mselEntity.UseCite && mselEntity.Teams.Any())
             {
                 try
                 {
@@ -1693,10 +1966,20 @@ namespace Blueprint.Api.Services
                     var defaultTeamTypeId = defaultTeamType?.Id ?? Guid.Empty;
                     var defaultTeamTypeName = defaultTeamType?.Name;
 
-                    foreach (var team in mselEntity.Teams.Where(t => t.CiteTeamTypeId.HasValue))
+                    foreach (var team in mselEntity.Teams)
                     {
-                        // Check if the team type ID exists in CITE
-                        if (!teamTypeIds.Contains(team.CiteTeamTypeId.Value))
+                        if (!team.CiteTeamTypeId.HasValue)
+                        {
+                            // Assign default team type to teams missing one
+                            if (defaultTeamTypeId != Guid.Empty)
+                            {
+                                team.CiteTeamTypeId = defaultTeamTypeId;
+                                team.CiteTeamTypeName = defaultTeamTypeName;
+                                _logger.LogInformation("Team {TeamId} had no CITE team type, defaulted to {DefaultName} ({DefaultId})",
+                                    team.Id, defaultTeamTypeName, defaultTeamTypeId);
+                            }
+                        }
+                        else if (!teamTypeIds.Contains(team.CiteTeamTypeId.Value))
                         {
                             var oldId = team.CiteTeamTypeId.Value;
 
@@ -1770,7 +2053,9 @@ namespace Blueprint.Api.Services
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
                 throw new InvalidOperationException(userVerificationErrorMessage);
-            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, FinalStatus = MselItemStatus.Deployed });
+            msel.Status = MselItemStatus.Pushing;
+            await _context.SaveChangesAsync(ct);
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = true, FinalStatus = MselItemStatus.Deployed });
 
             // Track xAPI - Exercise Started
             if (_xApiService.IsConfigured())
@@ -1791,7 +2076,9 @@ namespace Blueprint.Api.Services
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found.");
             // add msel to process queue
-            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, FinalStatus = finalStatus });
+            msel.Status = MselItemStatus.Pulling;
+            await _context.SaveChangesAsync(ct);
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = false, FinalStatus = finalStatus });
 
             // Track xAPI - Exercise Stopped
             if (_xApiService.IsConfigured())
@@ -1800,6 +2087,14 @@ namespace Blueprint.Api.Services
             }
 
             return _mapper.Map<ViewModels.Msel>(msel);
+        }
+
+        public async Task CancelIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        {
+            // user must be a Content Developer or a MSEL owner
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+                throw new ForbiddenException();
+            _integrationService.CancelPush(mselId);
         }
 
         public async Task<ViewModels.Msel> ArchiveAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -2001,9 +2296,10 @@ namespace Blueprint.Api.Services
                 var joinInformation = new JoinInformation
                 {
                     UserId = userId,
-                    PlayerTeamId = invitation.Team.PlayerTeamId,
-                    GalleryTeamId = invitation.Team.GalleryTeamId,
-                    CiteTeamId = invitation.Team.CiteTeamId
+                    TeamId = (Guid)invitation.TeamId,
+                    UsePlayer = msel.UsePlayer,
+                    UseGallery = msel.UseGallery,
+                    UseCite = msel.UseCite && invitation.Team.CiteTeamTypeId != null
                 };
                 _joinQueue.Add(joinInformation);
             }
@@ -2058,7 +2354,7 @@ namespace Blueprint.Api.Services
             // create the new player view ID, so that the UI will be able to look for it to be created
             var playerViewId = Guid.NewGuid();
             // add the launch data to the launch queue
-            _integrationQueue.Add(new IntegrationInformation { MselId = mselEntity.Id, PlayerViewId = playerViewId });
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselEntity.Id, PlayerViewId = playerViewId, IsPush = true });
             // get the MSEL to return with the new Player View ID
             var launchedMsel = _mapper.Map<Msel>(mselEntity);
             launchedMsel.PlayerViewId = playerViewId;

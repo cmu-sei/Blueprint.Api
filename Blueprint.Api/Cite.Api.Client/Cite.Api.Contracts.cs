@@ -897,6 +897,29 @@ namespace Cite.Api.Client
         System.Threading.Tasks.Task<System.Collections.Generic.ICollection<EvaluationRole>> GetAllEvaluationRolesAsync(System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
+        /// Get all EvaluationRoles as lightweight {Id, Name} lookups.
+        /// </summary>
+        /// <remarks>
+        /// Intended for clients that only need a name-to-id mapping and cannot consume the
+        /// <br/>full EvaluationRole shape (avoids deserialization issues with the Permissions enum collection).
+        /// </remarks>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<EvaluationRoleLookup>> GetAllEvaluationRoleLookupsAsync();
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Get all EvaluationRoles as lightweight {Id, Name} lookups.
+        /// </summary>
+        /// <remarks>
+        /// Intended for clients that only need a name-to-id mapping and cannot consume the
+        /// <br/>full EvaluationRole shape (avoids deserialization issues with the Permissions enum collection).
+        /// </remarks>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<EvaluationRoleLookup>> GetAllEvaluationRoleLookupsAsync(System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
         /// Gets the evaluation's unread article count for the requesting user
         /// </summary>
         /// <remarks>
@@ -3325,6 +3348,56 @@ namespace Cite.Api.Client
         /// <exception cref="ApiException">A server side error occurred.</exception>
         System.Threading.Tasks.Task DeleteUserAsync(System.Guid id, System.Threading.CancellationToken cancellationToken);
 
+        /// <summary>
+        /// Logs xAPI observed statement for Dashboard by Evaluation id and Team id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ObservedEvaluationDashboardAsync(System.Guid evaluationId, System.Guid teamId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI observed statement for Dashboard by Evaluation id and Team id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ObservedEvaluationDashboardAsync(System.Guid evaluationId, System.Guid teamId, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Logs xAPI observed statement for Scoresheet by Evaluation id and Team id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ObservedEvaluationScoresheetAsync(System.Guid evaluationId, System.Guid teamId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI observed statement for Scoresheet by Evaluation id and Team id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ObservedEvaluationScoresheetAsync(System.Guid evaluationId, System.Guid teamId, System.Threading.CancellationToken cancellationToken);
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -3700,6 +3773,9 @@ namespace Cite.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("galleryExhibitId")]
         public System.Guid? GalleryExhibitId { get; set; }
 
+        [System.Text.Json.Serialization.JsonPropertyName("showAdvanceButton")]
+        public bool ShowAdvanceButton { get; set; }
+
         [System.Text.Json.Serialization.JsonPropertyName("teams")]
         public System.Collections.Generic.ICollection<Team> Teams { get; set; }
 
@@ -3788,6 +3864,18 @@ namespace Cite.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("permissions")]
         // TODO(system.text.json): Add ItemConverterType with enum converter when supported
         public System.Collections.Generic.ICollection<EvaluationPermission> Permissions { get; set; }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class EvaluationRoleLookup
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("id")]
+        public System.Guid Id { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("name")]
+        public string Name { get; set; }
 
     }
 

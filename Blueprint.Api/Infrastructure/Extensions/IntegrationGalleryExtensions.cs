@@ -111,7 +111,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Create Gallery ExhibitMemberships for this MSEL based on UserMselRole.GalleryExhibitRole
         public static async Task CreateExhibitMembershipsAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            var exhibitRoles = await galleryApiClient.GetAllExhibitRolesAsync(ct);
+            var exhibitRoles = await galleryApiClient.GetAllExhibitRoleLookupsAsync(ct);
             var roleNameToId = exhibitRoles.ToDictionary(r => r.Name, r => r.Id);
             // Deduplicate by UserId since a user may have multiple UserMselRole rows (one per MselRole)
             var userRolePairs = msel.UserMselRoles

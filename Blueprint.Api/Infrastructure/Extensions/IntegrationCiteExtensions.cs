@@ -157,7 +157,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Create Cite EvaluationMemberships for this MSEL based on UserMselRole.CiteEvaluationRole
         public static async Task CreateEvaluationMembershipsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            var evaluationRoles = await citeApiClient.GetAllEvaluationRolesAsync(ct);
+            var evaluationRoles = await citeApiClient.GetAllEvaluationRoleLookupsAsync(ct);
             var roleNameToId = evaluationRoles.ToDictionary(r => r.Name, r => r.Id);
             // Deduplicate by UserId since a user may have multiple UserMselRole rows (one per MselRole)
             var userRolePairs = msel.UserMselRoles

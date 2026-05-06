@@ -35,7 +35,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Create Steamfitter ScenarioMemberships for this MSEL based on UserMselRole.SteamfitterScenarioRole
         public static async STT.Task CreateScenarioMembershipsAsync(MselEntity msel, SteamfitterApiClient steamfitterApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            var scenarioRoles = await steamfitterApiClient.GetAllScenarioRolesAsync(ct);
+            var scenarioRoles = await steamfitterApiClient.GetAllScenarioRoleLookupsAsync(ct);
             var roleNameToId = scenarioRoles.ToDictionary(r => r.Name, r => r.Id);
             // Deduplicate by UserId since a user may have multiple UserMselRole rows (one per MselRole)
             var userRolePairs = msel.UserMselRoles

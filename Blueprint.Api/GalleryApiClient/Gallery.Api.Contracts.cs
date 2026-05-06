@@ -1214,29 +1214,6 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task<System.Collections.Generic.ICollection<ExhibitRole>> GetAllExhibitRolesAsync(System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
-        /// Get all ExhibitRoles as lightweight {Id, Name} lookups.
-        /// </summary>
-        /// <remarks>
-        /// Intended for clients that only need a name-to-id mapping and cannot consume the
-        /// <br/>full ExhibitRole shape (avoids deserialization issues with the Permissions enum collection).
-        /// </remarks>
-        /// <returns>OK</returns>
-        /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<ExhibitRoleLookup>> GetAllExhibitRoleLookupsAsync();
-
-        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
-        /// <summary>
-        /// Get all ExhibitRoles as lightweight {Id, Name} lookups.
-        /// </summary>
-        /// <remarks>
-        /// Intended for clients that only need a name-to-id mapping and cannot consume the
-        /// <br/>full ExhibitRole shape (avoids deserialization issues with the Permissions enum collection).
-        /// </remarks>
-        /// <returns>OK</returns>
-        /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<System.Collections.Generic.ICollection<ExhibitRoleLookup>> GetAllExhibitRoleLookupsAsync(System.Threading.CancellationToken cancellationToken);
-
-        /// <summary>
         /// Gets all ExhibitTeams in the system
         /// </summary>
         /// <remarks>
@@ -3558,18 +3535,6 @@ namespace Gallery.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("permissions")]
         // TODO(system.text.json): Add ItemConverterType with enum converter when supported
         public System.Collections.Generic.ICollection<ExhibitPermission> Permissions { get; set; }
-
-    }
-
-    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
-    public partial class ExhibitRoleLookup
-    {
-
-        [System.Text.Json.Serialization.JsonPropertyName("id")]
-        public System.Guid Id { get; set; }
-
-        [System.Text.Json.Serialization.JsonPropertyName("name")]
-        public string Name { get; set; }
 
     }
 

@@ -892,8 +892,36 @@ namespace Blueprint.Api.Services
                     return preview;
                 }
 
+                // Skip HTML junk if present (Moodle exports sometimes prepend HTML/metadata)
+                // Look for the Moodle CSV header that contains "Parent ID number"
+                int headerIndex = -1;
+                int dataStartIndex = 0;
+
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    var currentLine = lines[i];
+                    if (currentLine.Contains("Parent ID number", StringComparison.OrdinalIgnoreCase))
+                    {
+                        headerIndex = i;
+                        dataStartIndex = i + 1;
+                        // If HTML junk precedes the header on the same line, strip everything before it
+                        var idx = currentLine.IndexOf("Parent ID number", StringComparison.OrdinalIgnoreCase);
+                        if (idx > 0)
+                        {
+                            lines[i] = currentLine.Substring(idx);
+                        }
+                        break;
+                    }
+                }
+
+                if (headerIndex < 0 || dataStartIndex >= lines.Count)
+                {
+                    preview.Error = "CSV file must contain a Moodle lpimportcsv header row with 'Parent ID number'.";
+                    return preview;
+                }
+
                 // Parse header
-                var headerCols = lines[0].Split(',');
+                var headerCols = lines[headerIndex].Split(',');
                 if (headerCols.Length < 14)
                 {
                     preview.Error = "CSV file must have 14 columns (Moodle lpimportcsv format).";
@@ -906,7 +934,7 @@ namespace Blueprint.Api.Services
                 var typeCounts = new Dictionary<string, int>();
                 int relationshipCount = 0;
 
-                for (int i = 1; i < lines.Count; i++)
+                for (int i = headerIndex + 1; i < lines.Count; i++)
                 {
                     var cols = lines[i].Split(',');
                     if (cols.Length < 2) continue;

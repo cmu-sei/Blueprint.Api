@@ -14,5 +14,7 @@ namespace Blueprint.Api.Infrastructure.Options
         public string Platform { get; set; }
         public string EmailDomain { get; set; }
         public int RetentionDays { get; set; } = 7;
+        public int ProcessingTimeoutMinutes { get; set; } = 10;
+        public int ProcessingDelaySeconds { get; set; } = 30;
     }
 }

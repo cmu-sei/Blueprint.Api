@@ -107,7 +107,7 @@ namespace Blueprint.Api.Services
 
         public bool IsConfigured()
         {
-            return !string.IsNullOrWhiteSpace(_xApiOptions.Username);
+            return _xApiOptions.Enabled && !string.IsNullOrWhiteSpace(_xApiOptions.Username);
         }
 
         public async Task<bool> CreateAsync(

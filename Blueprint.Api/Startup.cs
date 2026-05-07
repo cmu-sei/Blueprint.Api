@@ -184,6 +184,9 @@ public class Startup
 
         services.AddMemoryCache();
 
+        services.AddScoped<ICompetencyFrameworkService, CompetencyFrameworkService>();
+        services.AddScoped<IProficiencyScaleService, ProficiencyScaleService>();
+        services.AddScoped<IProficiencyLevelService, ProficiencyLevelService>();
         services.AddScoped<ICardService, CardService>();
         services.AddScoped<ICardTeamService, CardTeamService>();
         services.AddScoped<ICatalogService, CatalogService>();
@@ -203,6 +206,8 @@ public class Startup
         services.AddScoped<IMselService, MselService>();
         services.AddScoped<IMselPageService, MselPageService>();
         services.AddScoped<IMselUnitService, MselUnitService>();
+        services.AddScoped<IMselCompetencyService, MselCompetencyService>();
+        services.AddScoped<ITeamCompetencyService, TeamCompetencyService>();
         services.AddScoped<IMoveService, MoveService>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IPlayerApplicationService, PlayerApplicationService>();
@@ -225,6 +230,7 @@ public class Startup
         services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>()?.HttpContext?.User);
         services.AddScoped<IXApiService, XApiService>();
         services.AddScoped<IXApiQueueService, XApiQueueService>();
+        services.AddScoped<ILmtService, LmtService>();
         services.AddHttpClient();
 
         // Register xAPI Background Service

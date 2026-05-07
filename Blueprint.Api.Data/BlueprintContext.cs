@@ -61,6 +61,13 @@ namespace Blueprint.Api.Data
         public DbSet<GroupEntity> Groups { get; set; }
         public DbSet<GroupMembershipEntity> GroupMemberships { get; set; }
         public DbSet<XApiQueuedStatementEntity> XApiQueuedStatements { get; set; }
+        public DbSet<CompetencyFrameworkEntity> CompetencyFrameworks { get; set; }
+        public DbSet<ProficiencyScaleEntity> ProficiencyScales { get; set; }
+        public DbSet<ProficiencyLevelEntity> ProficiencyLevels { get; set; }
+        public DbSet<CompetencyEntity> Competencies { get; set; }
+        public DbSet<CompetencyRelationshipEntity> CompetencyRelationships { get; set; }
+        public DbSet<MselCompetencyEntity> MselCompetencies { get; set; }
+        public DbSet<TeamCompetencyEntity> TeamCompetencies { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

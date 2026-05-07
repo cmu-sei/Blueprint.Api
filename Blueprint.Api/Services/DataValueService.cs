@@ -34,15 +34,18 @@ namespace Blueprint.Api.Services
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
+        private readonly IXApiService _xApiService;
 
         public DataValueService(
             BlueprintContext context,
             IPrincipal user,
-            IMapper mapper)
+            IMapper mapper,
+            IXApiService xApiService)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
+            _xApiService = xApiService;
         }
 
         public async Task<IEnumerable<ViewModels.DataValue>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -133,12 +136,31 @@ namespace Blueprint.Api.Services
             }
 
             dataValue.ModifiedBy = _user.GetId();
+            var oldValue = dataValueToUpdate.Value;
             _mapper.Map(dataValue, dataValueToUpdate);
 
             _context.DataValues.Update(dataValueToUpdate);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataValue.ModifiedBy, DateTime.UtcNow, _context, ct);
+
+            // Emit xAPI statement for checkbox changes
+            if (dataField.DataType == DataFieldType.Checkbox && oldValue != dataValueToUpdate.Value &&
+                dataValueToUpdate.ScenarioEventId.HasValue && dataField.MselId.HasValue)
+            {
+                var scenarioEvent = await _context.ScenarioEvents.FindAsync(dataValueToUpdate.ScenarioEventId.Value);
+                if (scenarioEvent != null)
+                {
+                    var isChecked = dataValueToUpdate.Value?.ToLower() == "true";
+                    await _xApiService.RecordCheckboxChangeAsync(
+                        dataField.MselId.Value,
+                        scenarioEvent.Id,
+                        dataField.Id,
+                        dataField.Name,
+                        isChecked,
+                        ct);
+                }
+            }
 
             dataValue = await GetAsync(dataValueToUpdate.Id, true, ct);
 

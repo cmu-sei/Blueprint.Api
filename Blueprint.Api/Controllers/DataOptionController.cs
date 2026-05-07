@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Infrastructure.Authorization;
@@ -154,6 +155,34 @@ namespace Blueprint.Api.Controllers
             var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
             await _dataOptionService.DeleteAsync(id, hasMselPermission, hasDataFieldPermission, ct);
             return NoContent();
+        }
+
+        /// <summary>
+        /// Preview imported DataOptions from a file
+        /// </summary>
+        /// <remarks>
+        /// Parses a JSON, CSV, or XLSX file and returns a preview of data options that would be imported.
+        /// Shows which options already exist and which are new.
+        /// Supports formats: JSON (arrays or NICE Framework), CSV, XLSX/XLS.
+        /// <para />
+        /// Accessible only to a ContentDeveloper or an Administrator
+        /// </remarks>
+        /// <param name="dataFieldId">The id of the DataField to import options for</param>
+        /// <param name="file">The file to parse (JSON, CSV, or XLSX)</param>
+        /// <param name="ct"></param>
+        [HttpPost("datafields/{dataFieldId}/options/preview")]
+        [ProducesResponseType(typeof(DataOptionImportPreview), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "previewDataOptionImport")]
+        public async Task<IActionResult> PreviewImport(Guid dataFieldId, IFormFile file, CancellationToken ct)
+        {
+            var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
+
+            if (file == null || file.Length == 0)
+                return BadRequest("No file provided.");
+
+            var preview = await _dataOptionService.PreviewImportAsync(dataFieldId, file, hasMselPermission, hasDataFieldPermission, ct);
+            return Ok(preview);
         }
 
     }

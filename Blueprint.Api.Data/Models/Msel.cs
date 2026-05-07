@@ -48,6 +48,10 @@ namespace Blueprint.Api.Data.Models
         public bool ShowIntegrationTargetOnScenarioEventList { get; set; }
         public bool ShowIntegrationTargetOnExerciseView { get; set; }
         public int IntegrationTargetDisplayOrder { get; set; }
+        public bool ShowTimeOnAssessorView { get; set; }
+        public bool ShowMoveOnAssessorView { get; set; }
+        public bool ShowGroupOnAssessorView { get; set; }
+        public bool ShowIntegrationTargetOnAssessorView { get; set; }
         public virtual ICollection<MoveEntity> Moves { get; set; } = new HashSet<MoveEntity>();
         public virtual ICollection<DataFieldEntity> DataFields { get; set; } = new HashSet<DataFieldEntity>();
         public virtual ICollection<ScenarioEventEntity> ScenarioEvents { get; set; } = new HashSet<ScenarioEventEntity>();
@@ -56,11 +60,19 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<OrganizationEntity> Organizations { get; set; } = new HashSet<OrganizationEntity>();
         public virtual ICollection<UserMselRoleEntity> UserMselRoles { get; set; } = new HashSet<UserMselRoleEntity>();
         public string HeaderRowMetadata { get; set; }
+        // IEEE 2881 (LMT) metadata fields
+        public string EducationalLevel { get; set; }
+        public string Subject { get; set; }
+        public string Keywords { get; set; }
+        public string EducationalUse { get; set; }
+        public string CourseMode { get; set; }
+        public string Language { get; set; }
         public virtual ICollection<CardEntity> Cards { get; set; } = new HashSet<CardEntity>();
         public virtual ICollection<CiteDutyEntity> CiteDuties { get; set; } = new HashSet<CiteDutyEntity>();
         public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();
         public virtual ICollection<PlayerApplicationEntity> PlayerApplications { get; set; } = new HashSet<PlayerApplicationEntity>();
         public virtual ICollection<MselPageEntity> Pages { get; set; } = new HashSet<MselPageEntity>();
         public virtual ICollection<InvitationEntity> Invitations { get; set; } = new HashSet<InvitationEntity>();
+        public virtual ICollection<MselCompetencyEntity> MselCompetencies { get; set; } = new HashSet<MselCompetencyEntity>();
     }
 }

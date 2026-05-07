@@ -55,7 +55,9 @@ namespace Blueprint.Api.Data.Enumerations
         User = 120,    // user assigned to the inject.  For execution, etc.
         Checkbox = 130,    // used to track statuses about the inject.
         Url = 140,    // link to other information
-        Move = 150     // values will be filled from the MSEL moves
+        Move = 150,     // values will be filled from the MSEL moves
+        IntegrationTarget = 160,     // values will currently be filled from Notification, Email, and Gallery
+        Competency = 170    // competencies (e.g., NICE Framework tasks) for tracking and xAPI logging
     }
 
     public enum MselRole
@@ -160,7 +162,9 @@ namespace Blueprint.Api.Data.Enumerations
         ViewRoles = 23,
         ManageRoles = 24,
         ViewGroups = 25,
-        ManageGroups = 26
+        ManageGroups = 26,
+        ViewCompetencyFrameworks = 27,
+        ManageCompetencyFrameworks = 28
     }
 
 }

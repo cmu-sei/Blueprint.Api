@@ -41,6 +41,7 @@ namespace Blueprint.Api.Data.Models
         public bool IsTemplate { get; set; }
         public bool IsInformationField { get; set; }  // will be displayed for Information scenario event types
         public bool IsFacilitationField { get; set; }  // will be displayed for Facilitation scenario event types
+        public bool IsAssessorVisible { get; set; }
     }
 
     public class DataFieldEntityConfiguration : IEntityTypeConfiguration<DataFieldEntity>

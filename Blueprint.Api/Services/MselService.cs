@@ -231,12 +231,6 @@ namespace Blueprint.Api.Services
                 msel.GallerySourceTypes = Enum.GetNames(typeof(GallerySourceType)).ToList();
             }
 
-            // Track xAPI
-            if (_xApiService.IsConfigured())
-            {
-                await _xApiService.MselViewedAsync(mselEntity, ct);
-            }
-
             return msel;
         }
 
@@ -2148,12 +2142,6 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct)
         {
-            // Track xAPI - Join Page Viewed
-            if (_xApiService.IsConfigured())
-            {
-                await _xApiService.JoinPageViewedAsync(ct);
-            }
-
             var userId = _user.GetId();
             // get the user's teams
             var teamIdList = await _context.TeamUsers

@@ -19,6 +19,7 @@ namespace Blueprint.Api.Infrastructure.Options
         public string GalleryUiUrl { get; set; }
         public string PlayerUiUrl { get; set; }
         public string SteamfitterUiUrl { get; set; }
+        public string BlueprintApiUrl { get; set; }
         public string BlueprintUiUrl { get; set; }
 
         // Maximum concurrent requests for MSEL push operations

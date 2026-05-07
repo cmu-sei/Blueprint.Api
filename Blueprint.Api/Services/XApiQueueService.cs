@@ -18,10 +18,11 @@ namespace Blueprint.Api.Services
         Task EnqueueAsync(XApiQueuedStatementEntity statement, CancellationToken ct = default);
         Task<List<XApiQueuedStatementEntity>> DequeueAsync(int batchSize = 10, CancellationToken ct = default);
         Task MarkCompletedAsync(Guid statementId, CancellationToken ct = default);
-        Task MarkFailedAsync(Guid statementId, string errorMessage, CancellationToken ct = default);
+        Task MarkFailedAsync(Guid statementId, string errorMessage, bool isTransientError, CancellationToken ct = default);
         Task<int> GetQueueDepthAsync(CancellationToken ct = default);
         Task<List<XApiQueuedStatementEntity>> GetOldCompletedStatementsAsync(DateTime cutoffDate, CancellationToken ct = default);
         Task<List<XApiQueuedStatementEntity>> GetOldFailedStatementsAsync(DateTime cutoffDate, CancellationToken ct = default);
+        Task<List<XApiQueuedStatementEntity>> GetStuckProcessingStatementsAsync(DateTime stuckThreshold, CancellationToken ct = default);
         Task DeleteStatementsAsync(List<Guid> statementIds, CancellationToken ct = default);
     }
 
@@ -29,7 +30,6 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ILogger<XApiQueueService> _logger;
-        private const int MaxRetryCount = 5;
 
         public XApiQueueService(
             BlueprintContext context,
@@ -53,9 +53,9 @@ namespace Blueprint.Api.Services
 
         public async Task<List<XApiQueuedStatementEntity>> DequeueAsync(int batchSize = 10, CancellationToken ct = default)
         {
-            // Get pending statements that haven't exceeded retry count
+            // Get pending statements (no retry count limit - transient errors retry indefinitely)
             var statements = await _context.XApiQueuedStatements
-                .Where(s => s.Status == XApiQueueStatus.Pending && s.RetryCount < MaxRetryCount)
+                .Where(s => s.Status == XApiQueueStatus.Pending)
                 .OrderBy(s => s.QueuedAt)
                 .Take(batchSize)
                 .ToListAsync(ct);
@@ -92,7 +92,7 @@ namespace Blueprint.Api.Services
             _logger.LogDebug("Marked xAPI statement {StatementId} as completed", statementId);
         }
 
-        public async Task MarkFailedAsync(Guid statementId, string errorMessage, CancellationToken ct = default)
+        public async Task MarkFailedAsync(Guid statementId, string errorMessage, bool isTransientError, CancellationToken ct = default)
         {
             var statement = await _context.XApiQueuedStatements.FindAsync(new object[] { statementId }, ct);
             if (statement == null)
@@ -101,21 +101,28 @@ namespace Blueprint.Api.Services
                 return;
             }
 
-            statement.Status = statement.RetryCount >= MaxRetryCount
-                ? XApiQueueStatus.Failed
-                : XApiQueueStatus.Pending; // Will retry if under limit
-            statement.ErrorMessage = errorMessage;
-
-            await _context.SaveChangesAsync(ct);
-
-            if (statement.Status == XApiQueueStatus.Failed)
+            if (isTransientError)
             {
-                _logger.LogError("xAPI statement {StatementId} failed after {RetryCount} attempts: {Error}",
+                // Transient error - keep retrying indefinitely
+                statement.Status = XApiQueueStatus.Pending;
+                statement.ErrorMessage = $"[TRANSIENT] {errorMessage}";
+
+                await _context.SaveChangesAsync(ct);
+
+                _logger.LogWarning(
+                    "xAPI statement {StatementId} encountered transient error on attempt {RetryCount}, will retry: {Error}",
                     statementId, statement.RetryCount, errorMessage);
             }
             else
             {
-                _logger.LogWarning("xAPI statement {StatementId} failed attempt {RetryCount}, will retry: {Error}",
+                // Permanent error - mark as failed immediately
+                statement.Status = XApiQueueStatus.Failed;
+                statement.ErrorMessage = $"[PERMANENT] {errorMessage}";
+
+                await _context.SaveChangesAsync(ct);
+
+                _logger.LogError(
+                    "xAPI statement {StatementId} encountered permanent error after {RetryCount} attempts: {Error}",
                     statementId, statement.RetryCount, errorMessage);
             }
         }
@@ -137,6 +144,15 @@ namespace Blueprint.Api.Services
         {
             return await _context.XApiQueuedStatements
                 .Where(s => s.Status == XApiQueueStatus.Failed && s.QueuedAt < cutoffDate)
+                .ToListAsync(ct);
+        }
+
+        public async Task<List<XApiQueuedStatementEntity>> GetStuckProcessingStatementsAsync(DateTime stuckThreshold, CancellationToken ct = default)
+        {
+            return await _context.XApiQueuedStatements
+                .Where(s => s.Status == XApiQueueStatus.Processing
+                         && s.LastAttemptAt.HasValue
+                         && s.LastAttemptAt.Value < stuckThreshold)
                 .ToListAsync(ct);
         }
 

@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using System;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using STT = System.Threading.Tasks;
@@ -29,6 +30,34 @@ namespace Blueprint.Api.Infrastructure.Extensions
             var client = ApiClientsExtensions.GetHttpClient(httpClientFactory, apiUrl, tokenResponse);
             var apiClient = new SteamfitterApiClient(client);
             return apiClient;
+        }
+
+        // Create Steamfitter ScenarioMemberships for this MSEL based on UserMselRole.SteamfitterScenarioRole
+        public static async STT.Task CreateScenarioMembershipsAsync(MselEntity msel, SteamfitterApiClient steamfitterApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            var scenarioRoles = await steamfitterApiClient.GetAllScenarioRolesAsync(ct);
+            var roleNameToId = scenarioRoles.ToDictionary(r => r.Name, r => r.Id);
+            // Deduplicate by UserId since a user may have multiple UserMselRole rows (one per MselRole)
+            var userRolePairs = msel.UserMselRoles
+                .Where(umr => !string.IsNullOrEmpty(umr.SteamfitterScenarioRole))
+                .GroupBy(umr => umr.UserId)
+                .Select(g => new { UserId = g.Key, RoleName = g.First().SteamfitterScenarioRole });
+            foreach (var pair in userRolePairs)
+            {
+                if (!roleNameToId.TryGetValue(pair.RoleName, out var roleId))
+                    continue;
+                var membership = new ScenarioMembership() {
+                    ScenarioId = (Guid)msel.SteamfitterScenarioId,
+                    UserId = pair.UserId,
+                    RoleId = roleId
+                };
+                try
+                {
+                    await steamfitterApiClient.CreateScenarioMembershipAsync((Guid)msel.SteamfitterScenarioId, membership, ct);
+                }
+                catch (System.Exception)
+                {}
+            }
         }
 
         public static async STT.Task PullFromSteamfitterAsync(Guid SteamfitterScenarioId, SteamfitterApiClient SteamfitterApiClient, CancellationToken ct)

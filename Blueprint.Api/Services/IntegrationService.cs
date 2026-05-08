@@ -282,6 +282,7 @@ namespace Blueprint.Api.Services
                         .Include(m => m.CiteDuties)
                         .Include(m => m.Teams).ThenInclude(t => t.TeamUsers).ThenInclude(tu => tu.User)
                         .Include(m => m.Teams).ThenInclude(t => t.UserTeamRoles)
+                        .Include(m => m.UserMselRoles)
                         .AsSplitQuery()
                         .SingleOrDefaultAsync(m => m.Id == integrationInformation.MselId);
                     var isAPush = integrationInformation.IsPush;
@@ -618,6 +619,10 @@ namespace Blueprint.Api.Services
                 currentProcessStep = "CITE - create teams";
                 await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Teams to CITE", ct);
                 await IntegrationCiteExtensions.CreateTeamsAsync(msel, citeApiClient, blueprintContext, citeUserIds, ct);
+                // create the Cite EvaluationMemberships
+                currentProcessStep = "CITE - create evaluation memberships";
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Evaluation Memberships to CITE", ct);
+                await IntegrationCiteExtensions.CreateEvaluationMembershipsAsync(msel, citeApiClient, blueprintContext, ct);
                 // create the Cite Duties
                 currentProcessStep = "CITE - create duties";
                 await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Duties to CITE", ct);
@@ -655,6 +660,10 @@ namespace Blueprint.Api.Services
                 currentProcessStep = "Gallery - Pushing Teams";
                 await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Teams to Gallery", ct);
                 await IntegrationGalleryExtensions.CreateTeamsAsync(msel, galleryApiClient, blueprintContext, galleryUserIds, ct);
+                // create the Gallery ExhibitMemberships
+                currentProcessStep = "Gallery - Pushing Exhibit Memberships";
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Exhibit Memberships to Gallery", ct);
+                await IntegrationGalleryExtensions.CreateExhibitMembershipsAsync(msel, galleryApiClient, blueprintContext, ct);
                 // create the Gallery Cards
                 currentProcessStep = "Gallery - Pushing Cards";
                 await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Cards to Gallery", ct);
@@ -680,6 +689,10 @@ namespace Blueprint.Api.Services
                 // create the Steamfitter Scenario
                 await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Scenario to Steamfitter", ct);
                 var scenario = await IntegrationSteamfitterExtensions.CreateScenarioAsync(msel, steamfitterApiClient, blueprintContext, ct);
+                // create the Steamfitter ScenarioMemberships
+                currentProcessStep = "Steamfitter - create scenario memberships";
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Scenario Memberships to Steamfitter", ct);
+                await IntegrationSteamfitterExtensions.CreateScenarioMembershipsAsync(msel, steamfitterApiClient, blueprintContext, ct);
                 // create the scenario tasks
                 var sortedScenarioEvents = msel.ScenarioEvents.OrderBy(m => m.DeltaSeconds).ToList();
                 var sortedMoves = msel.Moves.OrderBy(m => m.MoveNumber).ToList();

@@ -154,6 +154,34 @@ namespace Blueprint.Api.Infrastructure.Extensions
             }
         }
 
+        // Create Cite EvaluationMemberships for this MSEL based on UserMselRole.CiteEvaluationRole
+        public static async Task CreateEvaluationMembershipsAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            var evaluationRoles = await citeApiClient.GetAllEvaluationRolesAsync(ct);
+            var roleNameToId = evaluationRoles.ToDictionary(r => r.Name, r => r.Id);
+            // Deduplicate by UserId since a user may have multiple UserMselRole rows (one per MselRole)
+            var userRolePairs = msel.UserMselRoles
+                .Where(umr => !string.IsNullOrEmpty(umr.CiteEvaluationRole))
+                .GroupBy(umr => umr.UserId)
+                .Select(g => new { UserId = g.Key, RoleName = g.First().CiteEvaluationRole });
+            foreach (var pair in userRolePairs)
+            {
+                if (!roleNameToId.TryGetValue(pair.RoleName, out var roleId))
+                    continue;
+                var membership = new EvaluationMembership() {
+                    EvaluationId = (Guid)msel.CiteEvaluationId,
+                    UserId = pair.UserId,
+                    RoleId = roleId
+                };
+                try
+                {
+                    await citeApiClient.CreateEvaluationMembershipAsync((Guid)msel.CiteEvaluationId, membership, ct);
+                }
+                catch (System.Exception)
+                {}
+            }
+        }
+
         // Create Cite Duties for this MSEL
         public static async Task CreateDutiesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {

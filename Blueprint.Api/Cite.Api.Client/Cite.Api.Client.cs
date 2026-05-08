@@ -14531,6 +14531,210 @@ namespace Cite.Api.Client
             }
         }
 
+        /// <summary>
+        /// Logs xAPI observed statement for Dashboard by Evaluation id and Team id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        public virtual System.Threading.Tasks.Task ObservedEvaluationDashboardAsync(System.Guid evaluationId, System.Guid teamId)
+        {
+            return ObservedEvaluationDashboardAsync(evaluationId, teamId, System.Threading.CancellationToken.None);
+        }
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI observed statement for Dashboard by Evaluation id and Team id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        public virtual async System.Threading.Tasks.Task ObservedEvaluationDashboardAsync(System.Guid evaluationId, System.Guid teamId, System.Threading.CancellationToken cancellationToken)
+        {
+            if (evaluationId == null)
+                throw new System.ArgumentNullException("evaluationId");
+
+            if (teamId == null)
+                throw new System.ArgumentNullException("teamId");
+
+            var client_ = _httpClient;
+            var disposeClient_ = false;
+            try
+            {
+                using (var request_ = new System.Net.Http.HttpRequestMessage())
+                {
+                    request_.Method = new System.Net.Http.HttpMethod("GET");
+
+                    var urlBuilder_ = new System.Text.StringBuilder();
+                
+                    // Operation Path: "api/xapi/observed/evaluation/{evaluationId}/team/{teamId}/dashboard"
+                    urlBuilder_.Append("api/xapi/observed/evaluation/");
+                    urlBuilder_.Append(System.Uri.EscapeDataString(ConvertToString(evaluationId, System.Globalization.CultureInfo.InvariantCulture)));
+                    urlBuilder_.Append("/team/");
+                    urlBuilder_.Append(System.Uri.EscapeDataString(ConvertToString(teamId, System.Globalization.CultureInfo.InvariantCulture)));
+                    urlBuilder_.Append("/dashboard");
+
+                    PrepareRequest(client_, request_, urlBuilder_);
+
+                    var url_ = urlBuilder_.ToString();
+                    request_.RequestUri = new System.Uri(url_, System.UriKind.RelativeOrAbsolute);
+
+                    PrepareRequest(client_, request_, url_);
+
+                    var response_ = await client_.SendAsync(request_, System.Net.Http.HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                    var disposeResponse_ = true;
+                    try
+                    {
+                        var headers_ = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.IEnumerable<string>>();
+                        foreach (var item_ in response_.Headers)
+                            headers_[item_.Key] = item_.Value;
+                        if (response_.Content != null && response_.Content.Headers != null)
+                        {
+                            foreach (var item_ in response_.Content.Headers)
+                                headers_[item_.Key] = item_.Value;
+                        }
+
+                        ProcessResponse(client_, response_);
+
+                        var status_ = (int)response_.StatusCode;
+                        if (status_ == 200)
+                        {
+                            return;
+                        }
+                        else
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            throw new ApiException<ProblemDetails>("Problem response", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
+                        }
+                    }
+                    finally
+                    {
+                        if (disposeResponse_)
+                            response_.Dispose();
+                    }
+                }
+            }
+            finally
+            {
+                if (disposeClient_)
+                    client_.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Logs xAPI observed statement for Scoresheet by Evaluation id and Team id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        public virtual System.Threading.Tasks.Task ObservedEvaluationScoresheetAsync(System.Guid evaluationId, System.Guid teamId)
+        {
+            return ObservedEvaluationScoresheetAsync(evaluationId, teamId, System.Threading.CancellationToken.None);
+        }
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI observed statement for Scoresheet by Evaluation id and Team id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        public virtual async System.Threading.Tasks.Task ObservedEvaluationScoresheetAsync(System.Guid evaluationId, System.Guid teamId, System.Threading.CancellationToken cancellationToken)
+        {
+            if (evaluationId == null)
+                throw new System.ArgumentNullException("evaluationId");
+
+            if (teamId == null)
+                throw new System.ArgumentNullException("teamId");
+
+            var client_ = _httpClient;
+            var disposeClient_ = false;
+            try
+            {
+                using (var request_ = new System.Net.Http.HttpRequestMessage())
+                {
+                    request_.Method = new System.Net.Http.HttpMethod("GET");
+
+                    var urlBuilder_ = new System.Text.StringBuilder();
+                
+                    // Operation Path: "api/xapi/observed/evaluation/{evaluationId}/team/{teamId}/scoresheet"
+                    urlBuilder_.Append("api/xapi/observed/evaluation/");
+                    urlBuilder_.Append(System.Uri.EscapeDataString(ConvertToString(evaluationId, System.Globalization.CultureInfo.InvariantCulture)));
+                    urlBuilder_.Append("/team/");
+                    urlBuilder_.Append(System.Uri.EscapeDataString(ConvertToString(teamId, System.Globalization.CultureInfo.InvariantCulture)));
+                    urlBuilder_.Append("/scoresheet");
+
+                    PrepareRequest(client_, request_, urlBuilder_);
+
+                    var url_ = urlBuilder_.ToString();
+                    request_.RequestUri = new System.Uri(url_, System.UriKind.RelativeOrAbsolute);
+
+                    PrepareRequest(client_, request_, url_);
+
+                    var response_ = await client_.SendAsync(request_, System.Net.Http.HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                    var disposeResponse_ = true;
+                    try
+                    {
+                        var headers_ = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.IEnumerable<string>>();
+                        foreach (var item_ in response_.Headers)
+                            headers_[item_.Key] = item_.Value;
+                        if (response_.Content != null && response_.Content.Headers != null)
+                        {
+                            foreach (var item_ in response_.Content.Headers)
+                                headers_[item_.Key] = item_.Value;
+                        }
+
+                        ProcessResponse(client_, response_);
+
+                        var status_ = (int)response_.StatusCode;
+                        if (status_ == 200)
+                        {
+                            return;
+                        }
+                        else
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            throw new ApiException<ProblemDetails>("Problem response", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
+                        }
+                    }
+                    finally
+                    {
+                        if (disposeResponse_)
+                            response_.Dispose();
+                    }
+                }
+            }
+            finally
+            {
+                if (disposeClient_)
+                    client_.Dispose();
+            }
+        }
+
         protected struct ObjectResponseResult<T>
         {
             public ObjectResponseResult(T responseObject, string responseText)

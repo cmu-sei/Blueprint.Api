@@ -1019,6 +1019,35 @@ namespace Gallery.Api.Client
         System.Threading.Tasks.Task<Exhibit> SetExhibitMoveAndInjectAsync(System.Guid id, int move, int inject, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
+        /// Advances an Exhibit to the next move/inject
+        /// </summary>
+        /// <remarks>
+        /// Looks at all articles for unique moves and injects, sorts by move then inject,
+        /// <br/>finds the current position, and advances to the next higher inject or
+        /// <br/>the next higher move if at the highest inject for the current move.
+        /// <br/>Returns an error if already at the last move/inject.
+        /// </remarks>
+        /// <param name="id">The Id of the Exhibit to advance</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<Exhibit> AdvanceExhibitAsync(System.Guid id);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Advances an Exhibit to the next move/inject
+        /// </summary>
+        /// <remarks>
+        /// Looks at all articles for unique moves and injects, sorts by move then inject,
+        /// <br/>finds the current position, and advances to the next higher inject or
+        /// <br/>the next higher move if at the highest inject for the current move.
+        /// <br/>Returns an error if already at the last move/inject.
+        /// </remarks>
+        /// <param name="id">The Id of the Exhibit to advance</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<Exhibit> AdvanceExhibitAsync(System.Guid id, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
         /// Upload a json Exhibit file
         /// </summary>
         /// <returns>OK</returns>
@@ -3423,6 +3452,9 @@ namespace Gallery.Api.Client
 
         [System.Text.Json.Serialization.JsonPropertyName("scenarioId")]
         public System.Guid? ScenarioId { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("showAdvanceButton")]
+        public bool ShowAdvanceButton { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("name")]
         public string Name { get; set; }

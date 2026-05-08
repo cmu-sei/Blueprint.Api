@@ -29,6 +29,9 @@ namespace Blueprint.Api.Data.Models
         public Guid UserId { get; set; }
         public UserEntity User { get; set; }
         public MselRole Role { get; set; }
+        public string CiteEvaluationRole { get; set; }
+        public string GalleryExhibitRole { get; set; }
+        public string SteamfitterScenarioRole { get; set; }
     }
 
     public class UserMselRoleConfiguration : IEntityTypeConfiguration<UserMselRoleEntity>

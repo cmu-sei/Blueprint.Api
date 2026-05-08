@@ -93,9 +93,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         await galleryApiClient.CreateUserAsync(newUser, ct);
                         galleryUserIds.Add(user.Id);
                     }
-                    // create Gallery TeamUsers, using eager-loaded role data
-                    var isObserverRole = team.UserTeamRoles
-                        .Any(umr => umr.UserId == user.Id && umr.Role == "Member");
+                    // create Gallery TeamUsers; IsObserver is driven by the user's GalleryExhibitRole on the MSEL
+                    var userMselRole = msel.UserMselRoles
+                        .FirstOrDefault(umr => umr.UserId == user.Id);
+                    var isObserverRole = userMselRole?.GalleryExhibitRole == "Observer";
                     var teamUser = new TeamUser() {
                         TeamId = galleryTeam.Id,
                         UserId = user.Id,
@@ -105,6 +106,34 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 }
             }
             await blueprintContext.SaveChangesAsync(ct);
+        }
+
+        // Create Gallery ExhibitMemberships for this MSEL based on UserMselRole.GalleryExhibitRole
+        public static async Task CreateExhibitMembershipsAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            var exhibitRoles = await galleryApiClient.GetAllExhibitRolesAsync(ct);
+            var roleNameToId = exhibitRoles.ToDictionary(r => r.Name, r => r.Id);
+            // Deduplicate by UserId since a user may have multiple UserMselRole rows (one per MselRole)
+            var userRolePairs = msel.UserMselRoles
+                .Where(umr => !string.IsNullOrEmpty(umr.GalleryExhibitRole))
+                .GroupBy(umr => umr.UserId)
+                .Select(g => new { UserId = g.Key, RoleName = g.First().GalleryExhibitRole });
+            foreach (var pair in userRolePairs)
+            {
+                if (!roleNameToId.TryGetValue(pair.RoleName, out var roleId))
+                    continue;
+                var membership = new ExhibitMembership() {
+                    ExhibitId = (Guid)msel.GalleryExhibitId,
+                    UserId = pair.UserId,
+                    RoleId = roleId
+                };
+                try
+                {
+                    await galleryApiClient.CreateExhibitMembershipAsync((Guid)msel.GalleryExhibitId, membership, ct);
+                }
+                catch (System.Exception)
+                {}
+            }
         }
 
         // Create Gallery Cards for this MSEL

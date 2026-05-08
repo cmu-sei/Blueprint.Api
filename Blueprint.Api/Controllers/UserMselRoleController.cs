@@ -109,6 +109,29 @@ namespace Blueprint.Api.Controllers
             return NoContent();
         }
 
+        /// <summary>
+        /// Sets the CITE Evaluation role and Gallery Exhibit role for a user on a MSEL
+        /// </summary>
+        /// <remarks>
+        /// Updates both integration role fields on every UserMselRole row for the given (MSEL, User) pair.
+        /// </remarks>
+        [HttpPut("msels/{mselId}/users/{userId}/integrationroles")]
+        [ProducesResponseType(typeof(IEnumerable<UserMselRole>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "setUserMselIntegrationRoles")]
+        public async Task<IActionResult> SetIntegrationRoles(Guid mselId, Guid userId, [FromBody] IntegrationRoleUpdate update, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
+            var updated = await _userUserMselRoleService.SetIntegrationRolesAsync(mselId, userId, update?.CiteEvaluationRole, update?.GalleryExhibitRole, update?.SteamfitterScenarioRole, hasSystemPermission, ct);
+            return Ok(updated);
+        }
+
+        public class IntegrationRoleUpdate
+        {
+            public string CiteEvaluationRole { get; set; }
+            public string GalleryExhibitRole { get; set; }
+            public string SteamfitterScenarioRole { get; set; }
+        }
+
     }
 }
 

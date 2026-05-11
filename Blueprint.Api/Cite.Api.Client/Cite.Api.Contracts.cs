@@ -3325,6 +3325,56 @@ namespace Cite.Api.Client
         /// <exception cref="ApiException">A server side error occurred.</exception>
         System.Threading.Tasks.Task DeleteUserAsync(System.Guid id, System.Threading.CancellationToken cancellationToken);
 
+        /// <summary>
+        /// Logs xAPI observed statement for Dashboard by Evaluation id and Team id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ObservedEvaluationDashboardAsync(System.Guid evaluationId, System.Guid teamId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI observed statement for Dashboard by Evaluation id and Team id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ObservedEvaluationDashboardAsync(System.Guid evaluationId, System.Guid teamId, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Logs xAPI observed statement for Scoresheet by Evaluation id and Team id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ObservedEvaluationScoresheetAsync(System.Guid evaluationId, System.Guid teamId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI observed statement for Scoresheet by Evaluation id and Team id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <param name="teamId">The id of the Team</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ObservedEvaluationScoresheetAsync(System.Guid evaluationId, System.Guid teamId, System.Threading.CancellationToken cancellationToken);
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -3699,6 +3749,9 @@ namespace Cite.Api.Client
 
         [System.Text.Json.Serialization.JsonPropertyName("galleryExhibitId")]
         public System.Guid? GalleryExhibitId { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("showAdvanceButton")]
+        public bool ShowAdvanceButton { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("teams")]
         public System.Collections.Generic.ICollection<Team> Teams { get; set; }

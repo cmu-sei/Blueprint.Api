@@ -20,9 +20,6 @@ namespace Blueprint.Api.Data.Models
         public Guid? CiteTeamTypeId { get; set; }
         public string CiteTeamTypeName { get; set; }
         public string Email { get; set; }
-        public Guid? PlayerTeamId { get; set; }
-        public Guid? GalleryTeamId { get; set; }
-        public Guid? CiteTeamId { get; set; }
         public bool canTeamLeaderInvite { get; set; }
         public bool canTeamMemberInvite { get; set; }
         public ICollection<TeamUserEntity> TeamUsers { get; set; } = new List<TeamUserEntity>();
@@ -32,6 +29,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<UserTeamRoleEntity> UserTeamRoles { get; set; } = new HashSet<UserTeamRoleEntity>();
         public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();
         public virtual ICollection<CiteDutyEntity> CiteDuties { get; set; } = new HashSet<CiteDutyEntity>();
+        public virtual ICollection<TeamCompetencyEntity> TeamCompetencies { get; set; } = new HashSet<TeamCompetencyEntity>();
     }
 
     public class TeamConfiguration : IEntityTypeConfiguration<TeamEntity>

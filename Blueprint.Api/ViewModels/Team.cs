@@ -14,9 +14,6 @@ namespace Blueprint.Api.ViewModels
         public Guid? MselId { get; set; }
         public Guid? CiteTeamTypeId { get; set; }
         public string Email { get; set; }
-        public Guid? PlayerTeamId { get; set; }
-        public Guid? GalleryTeamId { get; set; }
-        public Guid? CiteTeamId { get; set; }
         public bool canTeamLeaderInvite { get; set; }
         public bool canTeamMemberInvite { get; set; }
         public User[] Users { get; set; }

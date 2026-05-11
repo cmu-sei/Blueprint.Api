@@ -11,6 +11,7 @@ namespace Blueprint.Api.ViewModels
         public Guid DataFieldId { get; set; }
         public string OptionName {get; set; }
         public string OptionValue {get; set; }
+        public string OptionDescription {get; set; }
         public int DisplayOrder { get; set; }
     }
 

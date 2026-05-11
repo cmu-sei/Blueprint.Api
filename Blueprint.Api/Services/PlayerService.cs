@@ -104,13 +104,13 @@ namespace Blueprint.Api.Services
                 .Select(t => t.Id)
                 .ToListAsync(ct);
             var userId = _user.GetId();
-            var playerTeamId = await _context.TeamUsers
+            var teamId = await _context.TeamUsers
                 .Where(tu => tu.UserId == userId && mselTeamIds.Contains(tu.TeamId))
-                .Select(tu => tu.Team.PlayerTeamId)
+                .Select(tu => tu.TeamId)
                 .SingleOrDefaultAsync(ct);
             var addApplicationInformation = new AddApplicationInformation{
                 Application = playerApplication,
-                PlayerTeamId = (Guid)playerTeamId,
+                TeamId = teamId,
                 DisplayOrder = msel.PlayerApplications.Count + 1
             };
             _addApplicationQueue.Add(addApplicationInformation);

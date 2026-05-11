@@ -435,6 +435,7 @@ namespace Blueprint.Api.Services
                     DeltaSeconds = sourceScenarioEvent.DeltaSeconds,
                     ScenarioEventType = sourceScenarioEvent.ScenarioEventType,
                     InjectId = sourceScenarioEvent.InjectId,
+                    Information = sourceScenarioEvent.Information,
                     CreatedBy = userId,
                 };
                 if (sourceScenarioEvent.SteamfitterTaskId != null)

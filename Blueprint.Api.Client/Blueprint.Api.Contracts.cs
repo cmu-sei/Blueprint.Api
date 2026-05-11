@@ -9709,21 +9709,6 @@ namespace Blueprint.Api.Client
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]   
         public string Email { get; set; }
 
-        [System.Text.Json.Serialization.JsonPropertyName("playerTeamId")]
-
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]   
-        public System.Guid? PlayerTeamId { get; set; }
-
-        [System.Text.Json.Serialization.JsonPropertyName("galleryTeamId")]
-
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]   
-        public System.Guid? GalleryTeamId { get; set; }
-
-        [System.Text.Json.Serialization.JsonPropertyName("citeTeamId")]
-
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]   
-        public System.Guid? CiteTeamId { get; set; }
-
         [System.Text.Json.Serialization.JsonPropertyName("canTeamLeaderInvite")]
 
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]   

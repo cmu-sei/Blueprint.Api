@@ -16,6 +16,7 @@ namespace Blueprint.Api.Data.Models
         public virtual DataFieldEntity DataField { get; set; }
         public string OptionName {get; set; }
         public string OptionValue {get; set; }
+        public string OptionDescription {get; set; }
         public int DisplayOrder { get; set; }
     }
 

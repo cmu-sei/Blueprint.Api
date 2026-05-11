@@ -28,6 +28,7 @@ namespace Blueprint.Api.Data.Models
         public Guid? InjectId { get; set; }
         public InjectEntity Inject { get; set; }
         public string IntegrationTarget { get; set; }
+        public string Information { get; set; }
         public Guid? SteamfitterTaskId { get; set; }
         public SteamfitterTaskEntity SteamfitterTask { get; set; }
     }

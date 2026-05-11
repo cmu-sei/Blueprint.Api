@@ -13,6 +13,7 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
         public string Description { get; set; }
         public MselItemStatus Status { get; set; }
+        public string IntegrationStatus { get; set; }
         public bool UsePlayer { get; set; }
         public Guid? PlayerViewId { get; set; }
         public IntegrationType PlayerIntegrationType { get; set; }
@@ -42,6 +43,10 @@ namespace Blueprint.Api.ViewModels
         public bool ShowIntegrationTargetOnScenarioEventList { get; set; }
         public bool ShowIntegrationTargetOnExerciseView { get; set; }
         public int IntegrationTargetDisplayOrder { get; set; }
+        public bool ShowTimeOnAssessorView { get; set; }
+        public bool ShowMoveOnAssessorView { get; set; }
+        public bool ShowGroupOnAssessorView { get; set; }
+        public bool ShowIntegrationTargetOnAssessorView { get; set; }
         public virtual ICollection<Move> Moves { get; set; } = new HashSet<Move>();
         public virtual ICollection<DataField> DataFields { get; set; } = new HashSet<DataField>();
         public virtual ICollection<ScenarioEvent> ScenarioEvents { get; set; } = new HashSet<ScenarioEvent>();
@@ -49,6 +54,13 @@ namespace Blueprint.Api.ViewModels
         public ICollection<Unit> Units { get; set; } = new List<Unit>();
         public ICollection<UserMselRole> UserMselRoles { get; set; } = new List<UserMselRole>();
         public string HeaderRowMetadata { get; set; }
+        // IEEE 2881 (LMT) metadata fields
+        public string EducationalLevel { get; set; }
+        public string Subject { get; set; }
+        public string Keywords { get; set; }
+        public string EducationalUse { get; set; }
+        public string CourseMode { get; set; }
+        public string Language { get; set; }
         public virtual ICollection<Organization> Organizations { get; set; } = new HashSet<Organization>();
         public ICollection<Card> Cards { get; set; } = new List<Card>();
         public List<string> GalleryArticleParameters { get; set; } = new List<string>(); // the parameters that must be sent to Gallery to define an Article
@@ -58,5 +70,6 @@ namespace Blueprint.Api.ViewModels
         public virtual ICollection<PlayerApplication> PlayerApplications { get; set; } = new HashSet<PlayerApplication>();
         public ICollection<MselPage> Pages { get; set; } = new List<MselPage>();
         public virtual ICollection<Invitation> Invitations { get; set; } = new HashSet<Invitation>();
+        public ICollection<MselCompetency> MselCompetencies { get; set; } = new List<MselCompetency>();
    }
 }

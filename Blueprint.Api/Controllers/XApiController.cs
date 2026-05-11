@@ -1,0 +1,91 @@
+// Copyright 2024 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
+
+using System;
+using System.Net;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Services;
+using Blueprint.Api.ViewModels;
+using Swashbuckle.AspNetCore.Annotations;
+
+namespace Blueprint.Api.Controllers
+{
+    public class XApiController : BaseController
+    {
+        private readonly IXApiService _xApiService;
+
+        public XApiController(IXApiService xApiService)
+        {
+            _xApiService = xApiService;
+        }
+
+        /// <summary>
+        /// Gets xAPI statements for an MSEL from the LRS
+        /// </summary>
+        /// <remarks>
+        /// Queries the LRS for xAPI statements related to the MSEL's integrations.
+        /// When source is omitted, queries all configured integrations (Blueprint, CITE, Steamfitter, Player, Gallery).
+        /// When source is specified, queries only that integration's activity ID.
+        /// </remarks>
+        [HttpGet("xapi/statements")]
+        [ProducesResponseType(typeof(string), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getXApiStatements")]
+        public async Task<IActionResult> GetStatements(
+            [FromQuery] Guid mselId,
+            [FromQuery] DateTime? since,
+            [FromQuery] DateTime? until,
+            [FromQuery] int limit = 100,
+            [FromQuery] string source = null,
+            CancellationToken ct = default)
+        {
+            var result = await _xApiService.GetStatementsAsync(mselId, since, until, limit, source, ct);
+            return Content(result, "application/json");
+        }
+
+        /// <summary>
+        /// Creates a competency assertion xAPI statement
+        /// </summary>
+        /// <remarks>
+        /// Writes an xAPI statement with the "asserted" verb to the LRS, recording an assessor's
+        /// competency rating for a participant/team on a specific scenario event.
+        /// </remarks>
+        [HttpPost("xapi/assertions")]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "createCompetencyAssertion")]
+        public async Task<IActionResult> CreateAssertion([FromBody] CompetencyAssertion assertion, CancellationToken ct)
+        {
+            await _xApiService.AssertCompetencyAsync(assertion, ct);
+            return Ok();
+        }
+
+        /// <summary>
+        /// Logs an MSEL viewed xAPI statement
+        /// </summary>
+        /// <remarks>
+        /// Writes an xAPI statement with the "viewed" verb to the LRS when a user views an MSEL.
+        /// This endpoint is called explicitly from the UI when viewing an MSEL, not when building.
+        /// </remarks>
+        [HttpPost("xapi/viewed/msel/{id}")]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "viewedMsel")]
+        public async Task<IActionResult> Viewed(Guid id, CancellationToken ct)
+        {
+            await _xApiService.MselViewedAsync(id, ct);
+            return Ok();
+        }
+
+        /// <summary>
+        /// Writes an xAPI statement when a user views the join page
+        /// </summary>
+        [HttpPost("xapi/viewed/joinpage")]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "viewedJoinPage")]
+        public async Task<IActionResult> ViewedJoinPage(CancellationToken ct)
+        {
+            await _xApiService.JoinPageViewedAsync(ct);
+            return Ok();
+        }
+    }
+}

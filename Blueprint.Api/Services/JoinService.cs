@@ -86,7 +86,7 @@ namespace Blueprint.Api.Services
         {
             var ct = new CancellationToken();
             var joinInformation = (JoinInformation)joinInformationObject;
-            var loggerInformation = $"Join for User: {joinInformation.UserId}, PlayerTeam: {joinInformation.PlayerTeamId}";
+            var loggerInformation = $"Join for User: {joinInformation.UserId}, Team: {joinInformation.TeamId}";
             var currentProcessStep = "Begin processing";
             _logger.LogDebug($"{currentProcessStep} {loggerInformation}");
             try
@@ -97,7 +97,7 @@ namespace Blueprint.Api.Services
                     // get auth token
                     var tokenResponse = await ApiClientsExtensions.GetToken(scope);
                     // Join Player
-                    if (joinInformation.PlayerTeamId != null)
+                    if (joinInformation.UsePlayer)
                     {
                         // Get Player API client
                         currentProcessStep = "Player - get API client";
@@ -105,10 +105,10 @@ namespace Blueprint.Api.Services
 
                         // add user to team
                         currentProcessStep = "Player - add user to team";
-                        await IntegrationPlayerExtensions.AddUserToTeamAsync(joinInformation.UserId, (Guid)joinInformation.PlayerTeamId, playerApiClient, blueprintContext, ct);
+                        await IntegrationPlayerExtensions.AddUserToTeamAsync(joinInformation.UserId, joinInformation.TeamId, playerApiClient, blueprintContext, ct);
                     }
                     // Join Gallery
-                    if (joinInformation.GalleryTeamId != null)
+                    if (joinInformation.UseGallery)
                     {
                         // Get Gallery API client
                         currentProcessStep = "Gallery - get API client";
@@ -116,10 +116,10 @@ namespace Blueprint.Api.Services
 
                         // add user to team
                         currentProcessStep = "Gallery - add user to team";
-                        await IntegrationGalleryExtensions.AddUserToTeamAsync(joinInformation.UserId, (Guid)joinInformation.GalleryTeamId, galleryApiClient, blueprintContext, ct);
+                        await IntegrationGalleryExtensions.AddUserToTeamAsync(joinInformation.UserId, joinInformation.TeamId, galleryApiClient, blueprintContext, ct);
                     }
                     // Join Cite
-                    if (joinInformation.CiteTeamId != null)
+                    if (joinInformation.UseCite)
                     {
                         // Get Cite API client
                         currentProcessStep = "Cite - get API client";
@@ -127,7 +127,7 @@ namespace Blueprint.Api.Services
 
                         // add user to team
                         currentProcessStep = "Cite - add user to team";
-                        await IntegrationCiteExtensions.AddUserToTeamAsync(joinInformation.UserId, (Guid)joinInformation.CiteTeamId, citeApiClient, blueprintContext, ct);
+                        await IntegrationCiteExtensions.AddUserToTeamAsync(joinInformation.UserId, joinInformation.TeamId, citeApiClient, blueprintContext, ct);
                     }
                 }
             }

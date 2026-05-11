@@ -25,6 +25,7 @@ namespace Blueprint.Api.Data.Models
         public string Content { get; set; }
 
         public bool AllCanView { get; set; }
+        public bool IncludeInPlaybook { get; set; }
     }
 
     public class MselPageConfiguration : IEntityTypeConfiguration<MselPageEntity>

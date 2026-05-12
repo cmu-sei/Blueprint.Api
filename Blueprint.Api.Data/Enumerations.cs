@@ -92,7 +92,8 @@ namespace Blueprint.Api.Data.Enumerations
         Email,
         Phone,
         Intel,
-        Reporting
+        Reporting,
+        Orders
     }
 
     public enum SteamfitterTaskAction

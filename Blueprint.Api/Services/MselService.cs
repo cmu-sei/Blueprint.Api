@@ -467,7 +467,9 @@ namespace Blueprint.Api.Services
             }
 
             _context.Msels.Add(mselEntity);
+            _context.SkipEventPublishing = true;
             await _context.SaveChangesAsync(ct);
+            _context.SkipEventPublishing = false;
 
             // get the new MSEL to return
             mselEntity = await _context.Msels

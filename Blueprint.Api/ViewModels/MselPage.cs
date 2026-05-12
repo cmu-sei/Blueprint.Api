@@ -15,6 +15,7 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
         public string Content { get; set; }
         public bool AllCanView { get; set; }
+        public bool IncludeInPlaybook { get; set; }
     }
 
 }

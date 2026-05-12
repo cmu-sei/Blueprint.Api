@@ -22,6 +22,7 @@ namespace Blueprint.Api.Data
     [GenerateEntityEventInterfaces(typeof(INotification))]
     public class BlueprintContext : EventPublishingDbContext
     {
+        public bool SkipEventPublishing { get; set; }
 
         public BlueprintContext(DbContextOptions<BlueprintContext> options) : base(options) { }
 
@@ -96,6 +97,11 @@ namespace Blueprint.Api.Data
 
         public override async Task PublishEventsAsync(IReadOnlyList<IEntityEvent> events, CancellationToken cancellationToken)
         {
+            if (SkipEventPublishing)
+            {
+                return;
+            }
+
             if (ServiceProvider is not null)
             {
                 var mediator = ServiceProvider.GetRequiredService<IMediator>();

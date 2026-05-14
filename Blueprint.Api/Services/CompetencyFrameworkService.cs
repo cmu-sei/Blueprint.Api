@@ -80,6 +80,13 @@ namespace Blueprint.Api.Services
 
             // Populate RelatedIdNumbers on each competency view model
             var idNumberMap = framework.Competencies.ToDictionary(c => c.Id, c => c.IdNumber);
+
+            // Build inverse relationship lookup once: O(n) instead of O(n²)
+            var inverseRelationshipMap = framework.Competencies
+                .SelectMany(c => c.Relationships, (c, r) => new { CompetencyId = c.Id, r.RelatedCompetencyId })
+                .GroupBy(x => x.RelatedCompetencyId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.CompetencyId).ToList());
+
             foreach (var comp in result.Competencies)
             {
                 var entity = framework.Competencies.First(c => c.Id == comp.Id);
@@ -88,10 +95,8 @@ namespace Blueprint.Api.Services
                     .Where(n => n != null)
                     .ToList();
                 // Also include inverse relationships
-                var inverseRelated = framework.Competencies
-                    .SelectMany(c => c.Relationships)
-                    .Where(r => r.RelatedCompetencyId == comp.Id)
-                    .Select(r => idNumberMap.GetValueOrDefault(r.CompetencyId))
+                var inverseRelated = inverseRelationshipMap.GetValueOrDefault(comp.Id, new List<Guid>())
+                    .Select(id => idNumberMap.GetValueOrDefault(id))
                     .Where(n => n != null);
                 comp.RelatedIdNumbers = relatedIds.Union(inverseRelated).Distinct().ToList();
             }

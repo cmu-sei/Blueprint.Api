@@ -1,6 +1,7 @@
 bin/
 obj/
 *.user
+*.csproj.lscache
 .vs/
 **/appsettings.*.json
 .vscode/

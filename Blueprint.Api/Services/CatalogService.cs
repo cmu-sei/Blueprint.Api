@@ -104,12 +104,15 @@ namespace Blueprint.Api.Services
                 .Select(mu => mu.Catalog)
                 .ToListAsync(ct);
             // get catalogs created by user
-            var myCatalogList = new List<CatalogEntity>();
-            myCatalogList = await _context.Catalogs
+            var myCatalogList = await _context.Catalogs
                 .Where(m => m.CreatedBy == userId)
                 .ToListAsync(ct);
+            // get all public catalogs
+            var publicCatalogList = await _context.Catalogs
+                .Where(m => m.IsPublic)
+                .ToListAsync(ct);
             // combine lists
-            var catalogList = unitCatalogList.Union(myCatalogList).OrderBy(m => m.Name);
+            var catalogList = unitCatalogList.Union(myCatalogList).Union(publicCatalogList).OrderBy(m => m.Name);
 
             return _mapper.Map<IEnumerable<Catalog>>(catalogList);
         }

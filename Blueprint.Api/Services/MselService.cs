@@ -36,8 +36,8 @@ namespace Blueprint.Api.Services
     public interface IMselService
     {
         Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct);
-        Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasSystemPermission, CancellationToken ct);
-        Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasEditMselsPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct);
         Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct);
@@ -153,13 +153,13 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<Msel>>(await msels.ToListAsync());
         }
 
-        public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var userId = _user.GetId();
-            return await GetUserMselsAsync(userId, false, hasSystemPermission, ct);
+            return await GetUserMselsAsync(userId, false, hasViewMselsPermission, hasCreateMselsPermission, ct);
         }
 
-        public async Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasViewMselsPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var currentUserId = _user.GetId();
             if (currentUserId != userId && !hasManageUsersPermission)
@@ -180,8 +180,8 @@ namespace Blueprint.Api.Services
                 .Where(m => m.CreatedBy == userId && m.Status != MselItemStatus.Archived)
                 .Include(m => m.UserMselRoles.Where(r => r.UserId == userId))
                 .ToListAsync(ct);
-            // also include all templates, if user is a content developer
-            if (hasViewMselsPermission)
+            // also include all templates, if user can view all msels or can create msels (so they can copy from templates)
+            if (hasViewMselsPermission || hasCreateMselsPermission)
             {
                 var templateList = await _context.Msels
                     .Where(m => m.IsTemplate && m.CreatedBy != userId && m.Status != MselItemStatus.Archived)
@@ -191,8 +191,8 @@ namespace Blueprint.Api.Services
             }
             // combine lists
             var mselList = unitMselList.Union(myMselList).OrderBy(m => m.Name).ToList();
-            // clear the list, if the list only has templates and the user has no SystemPermission
-            if (!myMselList.Any(m => !m.IsTemplate) && !hasViewMselsPermission)
+            // clear the list, if the list only has templates and the user has neither view nor create msel permission
+            if (!myMselList.Any(m => !m.IsTemplate) && !hasViewMselsPermission && !hasCreateMselsPermission)
             {
                 mselList = mselList.Where(m => !m.IsTemplate).ToList();
             }

@@ -22,8 +22,8 @@ namespace Blueprint.Api.Services
 {
     public interface IMselUnitService
     {
-        Task<IEnumerable<ViewModels.MselUnit>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.MselUnit> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.MselUnit>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
+        Task<ViewModels.MselUnit> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.MselUnit> CreateAsync(ViewModels.MselUnit mselUnit, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.MselUnit> UpdateAsync(Guid id, ViewModels.MselUnit mselUnit, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
@@ -45,14 +45,14 @@ namespace Blueprint.Api.Services
             _logger = logger;
         }
 
-        public async Task<IEnumerable<ViewModels.MselUnit>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.MselUnit>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(v => v.Id == mselId, ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
 
             // user must have ViewMsels permission or be a MSEL viewer
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), msel.Id, _context)))
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), msel.Id, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
             var items = await _context.MselUnits
@@ -65,14 +65,14 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<MselUnit>>(items);
         }
 
-        public async Task<ViewModels.MselUnit> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.MselUnit> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var mselUnit = await _context.MselUnits.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (mselUnit == null)
                 throw new EntityNotFoundException<MselEntity>();
 
             // user must have ViewMsels permission or be a MSEL Viewer
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselUnit.MselId, _context)))
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselUnit.MselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
             var item = await _context.MselUnits
@@ -107,7 +107,7 @@ namespace Blueprint.Api.Services
             _context.MselUnits.Add(mselUnitEntity);
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"Unit {mselUnit.UnitId} added to MSEL {mselUnit.MselId} by {_user.GetId()}");
-            return await GetAsync(mselUnitEntity.Id, true, ct);
+            return await GetAsync(mselUnitEntity.Id, true, false, ct);
         }
 
         public async Task<ViewModels.MselUnit> UpdateAsync(Guid id, ViewModels.MselUnit mselUnit, bool hasSystemPermission, CancellationToken ct)
@@ -125,7 +125,7 @@ namespace Blueprint.Api.Services
             _context.MselUnits.Update(mselUnitToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            mselUnit = await GetAsync(mselUnitToUpdate.Id, true, ct);
+            mselUnit = await GetAsync(mselUnitToUpdate.Id, true, false, ct);
             return mselUnit;
         }
 

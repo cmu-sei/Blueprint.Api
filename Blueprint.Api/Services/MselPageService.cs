@@ -21,8 +21,8 @@ namespace Blueprint.Api.Services
 {
     public interface IMselPageService
     {
-        Task<IEnumerable<ViewModels.MselPage>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.MselPage> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.MselPage>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
+        Task<ViewModels.MselPage> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.MselPage> CreateAsync(ViewModels.MselPage mselPage, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.MselPage> UpdateAsync(Guid id, ViewModels.MselPage mselPage, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
@@ -41,14 +41,15 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
         }
 
-        public async Task<IEnumerable<ViewModels.MselPage>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.MselPage>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(v => v.Id == mselId, ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
 
-            // user must have ViewMsels permission or be a MSEL owner
-            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
+            // user must have ViewMsels permission, be a MSEL owner, or have CreateMsels permission for templates
+            var allowTemplateAccess = hasCreateMselsPermission && msel.IsTemplate;
+            if (!hasSystemPermission && !allowTemplateAccess && !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
                 throw new ForbiddenException();
 
             var items = await _context.MselPages
@@ -58,7 +59,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<MselPage>>(items);
         }
 
-        public async Task<ViewModels.MselPage> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.MselPage> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var mselPage = await _context.MselPages.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (mselPage == null)
@@ -71,7 +72,7 @@ namespace Blueprint.Api.Services
                 if (!(await MselUserRequirement.IsMet(_user.GetId(), mselPage.MselId, _context)))
                     throw new ForbiddenException();
             }
-            else if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselPage.MselId, _context)))
+            else if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselPage.MselId, hasCreateMselsPermission, _context)))
             {
                 throw new ForbiddenException();
             }
@@ -98,7 +99,7 @@ namespace Blueprint.Api.Services
             _context.MselPages.Add(mselPageEntity);
             await _context.SaveChangesAsync(ct);
 
-            return await GetAsync(mselPageEntity.Id, true, ct);
+            return await GetAsync(mselPageEntity.Id, true, false, ct);
         }
 
         public async Task<ViewModels.MselPage> UpdateAsync(Guid id, ViewModels.MselPage mselPage, bool hasSystemPermission, CancellationToken ct)
@@ -116,7 +117,7 @@ namespace Blueprint.Api.Services
             _context.MselPages.Update(mselPageToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            mselPage = await GetAsync(mselPageToUpdate.Id, true, ct);
+            mselPage = await GetAsync(mselPageToUpdate.Id, true, false, ct);
 
             return mselPage;
         }

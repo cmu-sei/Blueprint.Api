@@ -14,22 +14,27 @@ namespace Blueprint.Api.Infrastructure.Authorization
     {
         public static async Task<Boolean> IsMet(Guid userId, Guid? catalogId, BlueprintContext blueprintContext)
         {
-            var createdBy = (await blueprintContext.Catalogs.FirstOrDefaultAsync(m => m.Id == catalogId)).CreatedBy;
-            if (createdBy == userId)
+            var catalog = await blueprintContext.Catalogs.FirstOrDefaultAsync(m => m.Id == catalogId);
+            if (catalog == null)
+            {
+                return false;
+            }
+            if (catalog.IsPublic)
             {
                 return true;
             }
-            else
+            if (catalog.CreatedBy == userId)
             {
-                var unitIdList = await blueprintContext.UnitUsers
-                    .Where(m => m.UserId == userId)
-                    .Select(m => m.UnitId)
-                    .ToListAsync();
-                var isSuccess = await blueprintContext.CatalogUnits
-                    .Where(m => m.CatalogId == catalogId && unitIdList.Contains(m.UnitId))
-                    .AnyAsync();
-                return isSuccess;
+                return true;
             }
+            var unitIdList = await blueprintContext.UnitUsers
+                .Where(m => m.UserId == userId)
+                .Select(m => m.UnitId)
+                .ToListAsync();
+            var isSuccess = await blueprintContext.CatalogUnits
+                .Where(m => m.CatalogId == catalogId && unitIdList.Contains(m.UnitId))
+                .AnyAsync();
+            return isSuccess;
         }
     }
 }

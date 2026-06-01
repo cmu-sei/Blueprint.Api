@@ -44,7 +44,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var list = await _dataOptionService.GetByMselAsync(mselId, hasSystemPermission, ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var list = await _dataOptionService.GetByMselAsync(mselId, hasSystemPermission, hasCreateMselsPermission, ct);
             return Ok(list);
         }
 
@@ -63,7 +64,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> GetByDataField(Guid dataFieldId, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var list = await _dataOptionService.GetByDataFieldAsync(dataFieldId, hasSystemPermission, ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var list = await _dataOptionService.GetByDataFieldAsync(dataFieldId, hasSystemPermission, hasCreateMselsPermission, ct);
             return Ok(list);
         }
 
@@ -82,7 +84,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var dataOption = await _dataOptionService.GetAsync(id, hasSystemPermission, ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var dataOption = await _dataOptionService.GetAsync(id, hasSystemPermission, hasCreateMselsPermission, ct);
 
             if (dataOption == null)
                 throw new EntityNotFoundException<DataOption>();

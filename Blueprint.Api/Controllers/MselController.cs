@@ -69,8 +69,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getMyMsels")]
         public async Task<IActionResult> GetMine(CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var list = await _mselService.GetMineAsync(hasSystemPermission, ct);
+            var hasViewMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var list = await _mselService.GetMineAsync(hasViewMselsPermission, hasCreateMselsPermission, ct);
             return Ok(list);
         }
 
@@ -123,8 +124,9 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> GetUserMsels(Guid userId, CancellationToken ct)
         {
             var hasManageUsersPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageUsers], ct);
-            var hasEditMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var list = await _mselService.GetUserMselsAsync(userId, hasManageUsersPermission, hasEditMselsPermission, ct);
+            var hasViewMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var list = await _mselService.GetUserMselsAsync(userId, hasManageUsersPermission, hasViewMselsPermission, hasCreateMselsPermission, ct);
             return Ok(list);
         }
 

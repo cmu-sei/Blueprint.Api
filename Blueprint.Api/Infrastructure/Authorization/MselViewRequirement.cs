@@ -12,9 +12,23 @@ namespace Blueprint.Api.Infrastructure.Authorization
 {
     public static class MselViewRequirement
     {
-        public static async Task<Boolean> IsMet(Guid userId, Guid? mselId, BlueprintContext blueprintContext)
+        public static Task<Boolean> IsMet(Guid userId, Guid? mselId, BlueprintContext blueprintContext)
         {
-            var createdBy = (await blueprintContext.Msels.FirstOrDefaultAsync(m => m.Id == mselId)).CreatedBy;
+            return IsMet(userId, mselId, false, blueprintContext);
+        }
+
+        public static async Task<Boolean> IsMet(Guid userId, Guid? mselId, bool hasCreateMselsPermission, BlueprintContext blueprintContext)
+        {
+            var msel = await blueprintContext.Msels.FirstOrDefaultAsync(m => m.Id == mselId);
+            if (msel == null)
+            {
+                return false;
+            }
+            if (hasCreateMselsPermission && msel.IsTemplate)
+            {
+                return true;
+            }
+            var createdBy = msel.CreatedBy;
             if (createdBy == userId)
             {
                 return true;

@@ -24,8 +24,8 @@ namespace Blueprint.Api.Services
 {
     public interface IScenarioEventService
     {
-        Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.ScenarioEvent> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
+        Task<ViewModels.ScenarioEvent> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> CreateFromInjectsAsync(CreateFromInjectsForm createFromInjectsForm, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> CopyScenarioEventsToMselAsync(Guid mselId, List<Guid> scenarioEventIdList, bool hasSystemPermission, CancellationToken ct);
@@ -54,10 +54,10 @@ namespace Blueprint.Api.Services
             _options = options;
         }
 
-        public async Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             // user must have ViewMsels permission or be a MSEL viewer
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
             var scenarioEvents = await _context.ScenarioEvents
@@ -69,7 +69,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<ScenarioEvent>>(scenarioEvents);
         }
 
-        public async Task<ViewModels.ScenarioEvent> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.ScenarioEvent> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var item = await _context.ScenarioEvents
                 .Include(se => se.DataValues)
@@ -79,7 +79,7 @@ namespace Blueprint.Api.Services
             if (item == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>();
 
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, _context)))
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
             return _mapper.Map<ViewModels.ScenarioEvent>(item);

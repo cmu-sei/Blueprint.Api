@@ -21,8 +21,8 @@ namespace Blueprint.Api.Services
 {
     public interface IInvitationService
     {
-        Task<IEnumerable<ViewModels.Invitation>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.Invitation> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Invitation>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
+        Task<ViewModels.Invitation> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Invitation> CreateAsync(ViewModels.Invitation invitation, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Invitation> UpdateAsync(Guid id, ViewModels.Invitation invitation, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
@@ -41,14 +41,15 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
         }
 
-        public async Task<IEnumerable<ViewModels.Invitation>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Invitation>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(v => v.Id == mselId, ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
 
-            // user must have ViewMsels permission or be a MSEL owner
-            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
+            // user must have ViewMsels permission, be a MSEL owner, or have CreateMsels permission for templates
+            var allowTemplateAccess = hasCreateMselsPermission && msel.IsTemplate;
+            if (!hasSystemPermission && !allowTemplateAccess && !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
                 throw new ForbiddenException();
 
             var items = await _context.Invitations
@@ -58,14 +59,14 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<Invitation>>(items);
         }
 
-        public async Task<ViewModels.Invitation> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.Invitation> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var invitation = await _context.Invitations.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (invitation == null)
                 throw new EntityNotFoundException<MselEntity>();
 
             // the user must have ViewMsels permission or be a MSEL Viewer
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), invitation.MselId, _context)))
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), invitation.MselId, hasCreateMselsPermission, _context)))
             {
                 throw new ForbiddenException();
             }
@@ -92,7 +93,7 @@ namespace Blueprint.Api.Services
             _context.Invitations.Add(invitationEntity);
             await _context.SaveChangesAsync(ct);
 
-            return await GetAsync(invitationEntity.Id, true, ct);
+            return await GetAsync(invitationEntity.Id, true, false, ct);
         }
 
         public async Task<ViewModels.Invitation> UpdateAsync(Guid id, ViewModels.Invitation invitation, bool hasSystemPermission, CancellationToken ct)
@@ -110,7 +111,7 @@ namespace Blueprint.Api.Services
             _context.Invitations.Update(invitationToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            invitation = await GetAsync(invitationToUpdate.Id, true, ct);
+            invitation = await GetAsync(invitationToUpdate.Id, true, false, ct);
 
             return invitation;
         }

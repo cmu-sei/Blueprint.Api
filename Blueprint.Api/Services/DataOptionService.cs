@@ -27,9 +27,9 @@ namespace Blueprint.Api.Services
 {
     public interface IDataOptionService
     {
-        Task<IEnumerable<ViewModels.DataOption>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<IEnumerable<ViewModels.DataOption>> GetByDataFieldAsync(Guid dataFieldId, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.DataOption> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.DataOption>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.DataOption>> GetByDataFieldAsync(Guid dataFieldId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
+        Task<ViewModels.DataOption> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.DataOption> CreateAsync(ViewModels.DataOption dataOption, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
         Task<ViewModels.DataOption> UpdateAsync(Guid id, ViewModels.DataOption dataOption, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
@@ -52,9 +52,9 @@ namespace Blueprint.Api.Services
             _mapper = mapper;
         }
 
-        public async Task<IEnumerable<ViewModels.DataOption>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.DataOption>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
             var dataFieldIdList = await _context.DataFields
@@ -68,7 +68,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<DataOption>>(dataOptionEntities).ToList();;
         }
 
-        public async Task<IEnumerable<ViewModels.DataOption>> GetByDataFieldAsync(Guid dataFieldId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.DataOption>> GetByDataFieldAsync(Guid dataFieldId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var dataField = await _context.DataFields.SingleOrDefaultAsync(df => df.Id == dataFieldId, ct);
             if (dataField == null)
@@ -76,7 +76,7 @@ namespace Blueprint.Api.Services
 
             if (!(dataField.MselId == null) &&
                 !hasSystemPermission &&
-                !(await MselViewRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
+                !(await MselViewRequirement.IsMet(_user.GetId(), dataField.MselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
             var dataOptionEntities = await _context.DataOptions
@@ -86,7 +86,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<DataOption>>(dataOptionEntities).ToList();;
         }
 
-        public async Task<ViewModels.DataOption> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.DataOption> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var dataOption = await _context.DataOptions.SingleOrDefaultAsync(dopt => dopt.Id == id, ct);
             if (dataOption == null)
@@ -96,7 +96,7 @@ namespace Blueprint.Api.Services
             // Templates (null MselId) can be viewed by anyone
             if (dataField.MselId.HasValue)
             {
-                if (!hasSystemPermission && !await MselViewRequirement.IsMet(_user.GetId(), dataField.MselId, _context))
+                if (!hasSystemPermission && !await MselViewRequirement.IsMet(_user.GetId(), dataField.MselId, hasCreateMselsPermission, _context))
                     throw new ForbiddenException();
             }
 
@@ -132,7 +132,7 @@ namespace Blueprint.Api.Services
             var dataFieldEntity = await _context.DataFields.FindAsync(dataOption.DataFieldId);
             dataField.ModifiedBy = dataFieldEntity.CreatedBy;
             await _context.SaveChangesAsync(ct);
-            dataOption = await GetAsync(dataOptionEntity.Id, true, ct);
+            dataOption = await GetAsync(dataOptionEntity.Id, true, false, ct);
 
             return dataOption;
         }
@@ -171,7 +171,7 @@ namespace Blueprint.Api.Services
             dataField.ModifiedBy = dataFieldEntity.ModifiedBy;
             await _context.SaveChangesAsync(ct);
 
-            dataOption = await GetAsync(dataOptionToUpdate.Id, true, ct);
+            dataOption = await GetAsync(dataOptionToUpdate.Id, true, false, ct);
 
             return dataOption;
         }

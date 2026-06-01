@@ -41,7 +41,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var list = await _userUserTeamRoleService.GetByMselAsync(mselId, hasSystemPermission, ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var list = await _userUserTeamRoleService.GetByMselAsync(mselId, hasSystemPermission, hasCreateMselsPermission, ct);
             return Ok(list);
         }
 
@@ -60,7 +61,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var role = await _userUserTeamRoleService.GetAsync(id, hasSystemPermission, ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var role = await _userUserTeamRoleService.GetAsync(id, hasSystemPermission, hasCreateMselsPermission, ct);
 
             if (role == null)
                 throw new EntityNotFoundException<UserTeamRole>();

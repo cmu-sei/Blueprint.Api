@@ -22,8 +22,8 @@ namespace Blueprint.Api.Services
 {
     public interface IUserMselRoleService
     {
-        Task<IEnumerable<ViewModels.UserMselRole>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.UserMselRole> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.UserMselRole>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
+        Task<ViewModels.UserMselRole> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.UserMselRole> CreateAsync(ViewModels.UserMselRole userMselRole, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.UserMselRole>> SetIntegrationRolesAsync(Guid mselId, Guid userId, string citeEvaluationRole, string galleryExhibitRole, string steamfitterScenarioRole, bool hasSystemPermission, CancellationToken ct);
@@ -44,10 +44,10 @@ namespace Blueprint.Api.Services
             _logger = logger;
         }
 
-        public async Task<IEnumerable<ViewModels.UserMselRole>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.UserMselRole>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             // must be a MSEL viewer
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
             var items = await _context.UserMselRoles
@@ -57,13 +57,13 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<UserMselRole>>(items);
         }
 
-        public async Task<ViewModels.UserMselRole> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.UserMselRole> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var item = await _context.UserMselRoles
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
             // must be a MSEL viewer
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, _context)))
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
             return _mapper.Map<UserMselRole>(item);
@@ -88,7 +88,7 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
             _logger.LogWarning($"UserMselRole created by {_user.GetId()} = User: {userMselRole.UserId}, Role: {userMselRole.Role} on MSEL: {userMselRole.MselId}");
-            return await GetAsync(userMselRoleEntity.Id, true, ct);
+            return await GetAsync(userMselRoleEntity.Id, true, false, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)

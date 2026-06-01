@@ -87,7 +87,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var list = await _userService.GetByMselAsync(mselId, hasSystemPermission, ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var list = await _userService.GetByMselAsync(mselId, hasSystemPermission, hasCreateMselsPermission, ct);
             return Ok(list);
         }
 

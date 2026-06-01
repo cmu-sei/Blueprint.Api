@@ -26,7 +26,7 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.User>> GetAsync(bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.User> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<IEnumerable<ViewModels.User>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.User>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.User>> GetByUnitAsync(Guid unitId, CancellationToken ct);
         Task<ViewModels.User> CreateAsync(ViewModels.User user, CancellationToken ct);
@@ -81,11 +81,11 @@ namespace Blueprint.Api.Services
             return item;
         }
 
-        public async Task<IEnumerable<ViewModels.User>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.User>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             if (
                     !hasSystemPermission &&
-                    !await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)
+                    !await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)
                )
                 throw new ForbiddenException();
 

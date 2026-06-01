@@ -42,7 +42,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> GetByMsel(Guid mselId, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var list = await _invitationService.GetByMselAsync(mselId, hasSystemPermission, ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var list = await _invitationService.GetByMselAsync(mselId, hasSystemPermission, hasCreateMselsPermission, ct);
             return Ok(list);
         }
 
@@ -62,7 +63,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var invitation = await _invitationService.GetAsync(id, hasSystemPermission, ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var invitation = await _invitationService.GetAsync(id, hasSystemPermission, hasCreateMselsPermission, ct);
 
             if (invitation == null)
                 throw new EntityNotFoundException<Invitation>();

@@ -154,5 +154,34 @@ namespace Blueprint.Api.Controllers
             return NoContent();
         }
 
+        /// <summary> Upload a json file containing a list of Card templates </summary>
+        /// <param name="form"> The file to upload and its settings </param>
+        /// <param name="ct"></param>
+        [HttpPost("cards/json")]
+        [ProducesResponseType(typeof(IEnumerable<Card>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "uploadJsonCards")]
+        public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageGalleryCards], ct))
+                throw new ForbiddenException();
+            var result = await _cardService.UploadJsonAsync(form, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Download the selected Card templates as a json file </summary>
+        /// <param name="ids"> The ids of the Cards to download </param>
+        /// <param name="ct"></param>
+        [HttpPost("cards/json/download")]
+        [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "downloadJsonCards")]
+        public async Task<IActionResult> DownloadJsonAsync([FromBody] List<Guid> ids, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageGalleryCards], ct))
+                throw new ForbiddenException();
+            (var stream, var fileName) = await _cardService.DownloadJsonAsync(ids, ct);
+
+            return File(stream, "application/octet-stream", fileName);
+        }
+
     }
 }

@@ -3,9 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
@@ -27,6 +31,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.Card> CreateAsync(ViewModels.Card card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct);
         Task<ViewModels.Card> UpdateAsync(Guid id, ViewModels.Card card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Card>> UploadJsonAsync(FileForm form, CancellationToken ct);
+        Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
     }
 
     public class CardService : ICardService
@@ -163,6 +169,59 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
 
             return true;
+        }
+
+        public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct)
+        {
+            var idList = ids?.ToList() ?? new List<Guid>();
+            var cardEntities = await _context.Cards
+                .Where(c => idList.Contains(c.Id))
+                .ToListAsync(ct);
+            var cards = _mapper.Map<IEnumerable<ViewModels.Card>>(cardEntities).ToList();
+
+            var json = JsonSerializer.Serialize(cards, new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                WriteIndented = true,
+            });
+            var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+            return Tuple.Create(memoryStream, "card-templates.json");
+        }
+
+        public async Task<IEnumerable<ViewModels.Card>> UploadJsonAsync(FileForm form, CancellationToken ct)
+        {
+            var uploadItem = form.ToUpload;
+            string json;
+            using (var reader = new StreamReader(uploadItem.OpenReadStream()))
+            {
+                json = await reader.ReadToEndAsync();
+            }
+            var options = new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                PropertyNameCaseInsensitive = true,
+            };
+            var incoming = JsonSerializer.Deserialize<List<ViewModels.Card>>(json, options) ?? new List<ViewModels.Card>();
+
+            var created = new List<ViewModels.Card>();
+            var userId = _user.GetId();
+            foreach (var item in incoming)
+            {
+                item.Id = Guid.NewGuid();
+                item.IsTemplate = true;
+                item.MselId = null;
+                item.CreatedBy = userId;
+                item.DateCreated = DateTime.UtcNow;
+                item.ModifiedBy = null;
+                item.DateModified = null;
+                var entity = _mapper.Map<CardEntity>(item);
+                _context.Cards.Add(entity);
+                created.Add(_mapper.Map<ViewModels.Card>(entity));
+            }
+            await _context.SaveChangesAsync(ct);
+
+            return created;
         }
 
     }

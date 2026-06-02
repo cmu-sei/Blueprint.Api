@@ -3,9 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
@@ -27,6 +31,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.Organization> CreateAsync(ViewModels.Organization organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct);
         Task<ViewModels.Organization> UpdateAsync(Guid id, ViewModels.Organization organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Organization>> UploadJsonAsync(FileForm form, CancellationToken ct);
+        Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
     }
 
     public class OrganizationService : IOrganizationService
@@ -191,6 +197,59 @@ namespace Blueprint.Api.Services
             await _context.Database.CommitTransactionAsync(ct);
 
             return true;
+        }
+
+        public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct)
+        {
+            var idList = ids?.ToList() ?? new List<Guid>();
+            var organizationEntities = await _context.Organizations
+                .Where(o => idList.Contains(o.Id))
+                .ToListAsync(ct);
+            var organizations = _mapper.Map<IEnumerable<ViewModels.Organization>>(organizationEntities).ToList();
+
+            var json = JsonSerializer.Serialize(organizations, new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                WriteIndented = true,
+            });
+            var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+            return Tuple.Create(memoryStream, "organization-templates.json");
+        }
+
+        public async Task<IEnumerable<ViewModels.Organization>> UploadJsonAsync(FileForm form, CancellationToken ct)
+        {
+            var uploadItem = form.ToUpload;
+            string json;
+            using (var reader = new StreamReader(uploadItem.OpenReadStream()))
+            {
+                json = await reader.ReadToEndAsync();
+            }
+            var options = new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                PropertyNameCaseInsensitive = true,
+            };
+            var incoming = JsonSerializer.Deserialize<List<ViewModels.Organization>>(json, options) ?? new List<ViewModels.Organization>();
+
+            var created = new List<ViewModels.Organization>();
+            var userId = _user.GetId();
+            foreach (var item in incoming)
+            {
+                item.Id = Guid.NewGuid();
+                item.IsTemplate = true;
+                item.MselId = null;
+                item.CreatedBy = userId;
+                item.DateCreated = DateTime.UtcNow;
+                item.ModifiedBy = null;
+                item.DateModified = null;
+                var entity = _mapper.Map<OrganizationEntity>(item);
+                _context.Organizations.Add(entity);
+                created.Add(_mapper.Map<ViewModels.Organization>(entity));
+            }
+            await _context.SaveChangesAsync(ct);
+
+            return created;
         }
 
     }

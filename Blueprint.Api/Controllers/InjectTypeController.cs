@@ -145,5 +145,34 @@ namespace Blueprint.Api.Controllers
             return NoContent();
         }
 
+        /// <summary> Upload a json file containing a list of InjectTypes </summary>
+        /// <param name="form"> The file to upload and its settings </param>
+        /// <param name="ct"></param>
+        [HttpPost("injectTypes/json")]
+        [ProducesResponseType(typeof(IEnumerable<InjectType>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "uploadJsonInjectTypes")]
+        public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageInjectTypes], ct))
+                throw new ForbiddenException();
+            var result = await _injectTypeService.UploadJsonAsync(form, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Download the selected InjectTypes as a json file </summary>
+        /// <param name="ids"> The ids of the InjectTypes to download </param>
+        /// <param name="ct"></param>
+        [HttpPost("injectTypes/json/download")]
+        [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "downloadJsonInjectTypes")]
+        public async Task<IActionResult> DownloadJsonAsync([FromBody] List<Guid> ids, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageInjectTypes], ct))
+                throw new ForbiddenException();
+            (var stream, var fileName) = await _injectTypeService.DownloadJsonAsync(ids, ct);
+
+            return File(stream, "application/octet-stream", fileName);
+        }
+
     }
 }

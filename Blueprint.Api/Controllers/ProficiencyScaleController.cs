@@ -108,5 +108,30 @@ namespace Blueprint.Api.Controllers
             await _proficiencyScaleService.DeleteAsync(id, ct);
             return NoContent();
         }
+
+        /// <summary> Upload a json file containing a list of ProficiencyScales </summary>
+        [HttpPost("proficiencyScales/json")]
+        [ProducesResponseType(typeof(IEnumerable<ProficiencyScale>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "uploadJsonProficiencyScales")]
+        public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+            var result = await _proficiencyScaleService.UploadJsonAsync(form, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Download the selected ProficiencyScales as a json file </summary>
+        [HttpPost("proficiencyScales/json/download")]
+        [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "downloadJsonProficiencyScales")]
+        public async Task<IActionResult> DownloadJsonAsync([FromBody] List<Guid> ids, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+            (var stream, var fileName) = await _proficiencyScaleService.DownloadJsonAsync(ids, ct);
+
+            return File(stream, "application/octet-stream", fileName);
+        }
     }
 }

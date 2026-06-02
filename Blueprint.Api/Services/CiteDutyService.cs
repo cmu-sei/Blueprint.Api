@@ -3,9 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
@@ -28,6 +32,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.CiteDuty> CreateAsync(ViewModels.CiteDuty citeDuty, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct);
         Task<ViewModels.CiteDuty> UpdateAsync(Guid id, ViewModels.CiteDuty citeDuty, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.CiteDuty>> UploadJsonAsync(FileForm form, CancellationToken ct);
+        Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
     }
 
     public class CiteDutyService : ICiteDutyService
@@ -171,6 +177,66 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
 
             return true;
+        }
+
+        public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct)
+        {
+            var idList = ids?.ToList() ?? new List<Guid>();
+            var citeDutyEntities = await _context.CiteDuties
+                .Where(cd => idList.Contains(cd.Id))
+                .ToListAsync(ct);
+            var citeDuties = _mapper.Map<IEnumerable<ViewModels.CiteDuty>>(citeDutyEntities).ToList();
+            // Strip team navigation; templates have no team and the property pulls in extra context.
+            foreach (var cd in citeDuties)
+            {
+                cd.Team = null;
+            }
+
+            var json = JsonSerializer.Serialize(citeDuties, new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                WriteIndented = true,
+            });
+            var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+            return Tuple.Create(memoryStream, "cite-duty-templates.json");
+        }
+
+        public async Task<IEnumerable<ViewModels.CiteDuty>> UploadJsonAsync(FileForm form, CancellationToken ct)
+        {
+            var uploadItem = form.ToUpload;
+            string json;
+            using (var reader = new StreamReader(uploadItem.OpenReadStream()))
+            {
+                json = await reader.ReadToEndAsync();
+            }
+            var options = new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                PropertyNameCaseInsensitive = true,
+            };
+            var incoming = JsonSerializer.Deserialize<List<ViewModels.CiteDuty>>(json, options) ?? new List<ViewModels.CiteDuty>();
+
+            var created = new List<ViewModels.CiteDuty>();
+            var userId = _user.GetId();
+            foreach (var item in incoming)
+            {
+                item.Id = Guid.NewGuid();
+                item.IsTemplate = true;
+                item.MselId = null;
+                item.TeamId = null;
+                item.Team = null;
+                item.CreatedBy = userId;
+                item.DateCreated = DateTime.UtcNow;
+                item.ModifiedBy = null;
+                item.DateModified = null;
+                var entity = _mapper.Map<CiteDutyEntity>(item);
+                _context.CiteDuties.Add(entity);
+                created.Add(_mapper.Map<ViewModels.CiteDuty>(entity));
+            }
+            await _context.SaveChangesAsync(ct);
+
+            return created;
         }
 
     }

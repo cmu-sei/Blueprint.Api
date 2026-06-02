@@ -3,9 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
@@ -27,6 +31,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.CiteAction> CreateAsync(ViewModels.CiteAction citeAction, bool hasMselPermission, bool hasCiteActionPermission, CancellationToken ct);
         Task<ViewModels.CiteAction> UpdateAsync(Guid id, ViewModels.CiteAction citeAction, bool hasMselPermission, bool hasCiteActionPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasCiteActionPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.CiteAction>> UploadJsonAsync(FileForm form, CancellationToken ct);
+        Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
     }
 
     public class CiteActionService : ICiteActionService
@@ -170,6 +176,66 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
 
             return true;
+        }
+
+        public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct)
+        {
+            var idList = ids?.ToList() ?? new List<Guid>();
+            var citeActionEntities = await _context.CiteActions
+                .Where(ca => idList.Contains(ca.Id))
+                .ToListAsync(ct);
+            var citeActions = _mapper.Map<IEnumerable<ViewModels.CiteAction>>(citeActionEntities).ToList();
+            // Strip team navigation; templates have no team and the property pulls in extra context.
+            foreach (var ca in citeActions)
+            {
+                ca.Team = null;
+            }
+
+            var json = JsonSerializer.Serialize(citeActions, new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                WriteIndented = true,
+            });
+            var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+            return Tuple.Create(memoryStream, "cite-action-templates.json");
+        }
+
+        public async Task<IEnumerable<ViewModels.CiteAction>> UploadJsonAsync(FileForm form, CancellationToken ct)
+        {
+            var uploadItem = form.ToUpload;
+            string json;
+            using (var reader = new StreamReader(uploadItem.OpenReadStream()))
+            {
+                json = await reader.ReadToEndAsync();
+            }
+            var options = new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                PropertyNameCaseInsensitive = true,
+            };
+            var incoming = JsonSerializer.Deserialize<List<ViewModels.CiteAction>>(json, options) ?? new List<ViewModels.CiteAction>();
+
+            var created = new List<ViewModels.CiteAction>();
+            var userId = _user.GetId();
+            foreach (var item in incoming)
+            {
+                item.Id = Guid.NewGuid();
+                item.IsTemplate = true;
+                item.MselId = null;
+                item.TeamId = null;
+                item.Team = null;
+                item.CreatedBy = userId;
+                item.DateCreated = DateTime.UtcNow;
+                item.ModifiedBy = null;
+                item.DateModified = null;
+                var entity = _mapper.Map<CiteActionEntity>(item);
+                _context.CiteActions.Add(entity);
+                created.Add(_mapper.Map<ViewModels.CiteAction>(entity));
+            }
+            await _context.SaveChangesAsync(ct);
+
+            return created;
         }
 
     }

@@ -3,8 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
@@ -25,6 +30,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.InjectType> CreateAsync(ViewModels.InjectType injectType, CancellationToken ct);
         Task<ViewModels.InjectType> UpdateAsync(Guid id, ViewModels.InjectType injectType, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
+        Task<IEnumerable<ViewModels.InjectType>> UploadJsonAsync(FileForm form, CancellationToken ct);
+        Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
     }
 
     public class InjectTypeService : IInjectTypeService
@@ -95,6 +102,99 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
 
             return true;
+        }
+
+        public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct)
+        {
+            var idList = ids?.ToList() ?? new List<Guid>();
+            var injectTypeEntities = await _context.InjectTypes
+                .Where(it => idList.Contains(it.Id))
+                .Include(it => it.DataFields)
+                    .ThenInclude(df => df.DataOptions)
+                .AsSplitQuery()
+                .ToListAsync(ct);
+            var injectTypes = _mapper.Map<IEnumerable<ViewModels.InjectType>>(injectTypeEntities).ToList();
+
+            var json = JsonSerializer.Serialize(injectTypes, new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                WriteIndented = true,
+            });
+            var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+            return Tuple.Create(memoryStream, "inject-type-export.json");
+        }
+
+        public async Task<IEnumerable<ViewModels.InjectType>> UploadJsonAsync(FileForm form, CancellationToken ct)
+        {
+            var uploadItem = form.ToUpload;
+            string json;
+            using (var reader = new StreamReader(uploadItem.OpenReadStream()))
+            {
+                json = await reader.ReadToEndAsync();
+            }
+            var options = new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                PropertyNameCaseInsensitive = true,
+            };
+            var incoming = JsonSerializer.Deserialize<List<ViewModels.InjectType>>(json, options) ?? new List<ViewModels.InjectType>();
+
+            var created = new List<ViewModels.InjectType>();
+            var userId = _user.GetId();
+            var dateNow = DateTime.UtcNow;
+            foreach (var item in incoming)
+            {
+                var newInjectTypeId = Guid.NewGuid();
+                // Capture and detach the children before mapping; the DataField mapper ignores DataOptions,
+                // and we rebuild both child layers by hand to assign fresh GUIDs.
+                var incomingDataFields = item.DataFields?.ToList() ?? new List<ViewModels.DataField>();
+                item.Id = newInjectTypeId;
+                item.DataFields = new HashSet<ViewModels.DataField>();
+                item.CreatedBy = userId;
+                item.DateCreated = dateNow;
+                item.ModifiedBy = null;
+                item.DateModified = null;
+                var entity = _mapper.Map<InjectTypeEntity>(item);
+                _context.InjectTypes.Add(entity);
+
+                foreach (var df in incomingDataFields)
+                {
+                    var newDataFieldId = Guid.NewGuid();
+                    var incomingOptions = df.DataOptions?.ToList() ?? new List<ViewModels.DataOption>();
+                    df.Id = newDataFieldId;
+                    df.InjectTypeId = newInjectTypeId;
+                    df.MselId = null;
+                    df.IsTemplate = false;
+                    df.CreatedBy = userId;
+                    df.DateCreated = dateNow;
+                    df.ModifiedBy = null;
+                    df.DateModified = null;
+                    df.DataOptions = new HashSet<ViewModels.DataOption>();
+                    var dataFieldEntity = _mapper.Map<DataFieldEntity>(df);
+                    _context.DataFields.Add(dataFieldEntity);
+
+                    foreach (var opt in incomingOptions)
+                    {
+                        var optionEntity = new DataOptionEntity
+                        {
+                            Id = Guid.NewGuid(),
+                            DataFieldId = newDataFieldId,
+                            DisplayOrder = opt.DisplayOrder,
+                            OptionName = opt.OptionName,
+                            OptionValue = opt.OptionValue,
+                            CreatedBy = userId,
+                            DateCreated = dateNow,
+                        };
+                        _context.DataOptions.Add(optionEntity);
+                    }
+                }
+
+                created.Add(_mapper.Map<ViewModels.InjectType>(entity));
+            }
+            await _context.SaveChangesAsync(ct);
+
+            return created;
         }
 
     }

@@ -31,6 +31,7 @@ namespace Blueprint.Api.Services
         Task<ViewModels.CompetencyFramework> UpdateAsync(Guid id, ViewModels.CompetencyFramework framework, CancellationToken ct);
         Task<ViewModels.CompetencyFramework> ImportFromMoodleCsvAsync(Stream csvStream, string source, string version, CancellationToken ct);
         Task<ViewModels.CompetencyFramework> ImportFromNiceJsonAsync(Stream jsonStream, CancellationToken ct);
+        Task<ViewModels.CompetencyFramework> ImportFromJsonAsync(Stream jsonStream, CancellationToken ct);
         Task<ViewModels.CompetencyFramework> ImportFromDcwfXlsxAsync(Stream xlsxStream, string source, string version, CancellationToken ct);
         Task<ViewModels.CompetencyFrameworkImportPreview> PreviewCsvAsync(Stream csvStream, string source, string version, CancellationToken ct);
         Task<ViewModels.CompetencyFrameworkImportPreview> PreviewJsonAsync(Stream jsonStream, CancellationToken ct);
@@ -366,6 +367,46 @@ namespace Blueprint.Api.Services
             }
 
             return await GetAsync(frameworkEntity.Id, ct);
+        }
+
+        public async Task<ViewModels.CompetencyFramework> ImportFromJsonAsync(Stream jsonStream, CancellationToken ct)
+        {
+            // Buffer the stream so we can peek at the shape and rewind for the chosen importer.
+            var buffer = new MemoryStream();
+            await jsonStream.CopyToAsync(buffer, ct);
+            buffer.Position = 0;
+
+            using (var doc = await JsonDocument.ParseAsync(buffer, cancellationToken: ct))
+            {
+                if (LooksLikeNativeExport(doc.RootElement))
+                {
+                    var options = new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true,
+                        // Accept "1" as well as 1 for numeric fields so older or
+                        // string-typed exports round-trip cleanly.
+                        NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString,
+                    };
+                    var framework = doc.RootElement.Deserialize<ViewModels.CompetencyFramework>(options);
+                    if (framework == null)
+                        throw new ArgumentException("Unable to parse Competency Framework JSON.");
+                    return await CreateAsync(framework, ct);
+                }
+            }
+
+            buffer.Position = 0;
+            return await ImportFromNiceJsonAsync(buffer, ct);
+        }
+
+        private static bool LooksLikeNativeExport(JsonElement root)
+        {
+            // The native export is the CompetencyFramework view model serialized as an object
+            // with a `competencies` (or `Competencies`) array. NICE files put the array under
+            // `elements` / `response.elements` instead.
+            if (root.ValueKind != JsonValueKind.Object)
+                return false;
+            return (root.TryGetProperty("competencies", out var c) && c.ValueKind == JsonValueKind.Array)
+                || (root.TryGetProperty("Competencies", out var c2) && c2.ValueKind == JsonValueKind.Array);
         }
 
         public async Task<ViewModels.CompetencyFramework> ImportFromNiceJsonAsync(Stream jsonStream, CancellationToken ct)

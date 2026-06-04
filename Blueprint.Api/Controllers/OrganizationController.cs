@@ -154,5 +154,34 @@ namespace Blueprint.Api.Controllers
             return NoContent();
         }
 
+        /// <summary> Upload a json file containing a list of Organization templates </summary>
+        /// <param name="form"> The file to upload and its settings </param>
+        /// <param name="ct"></param>
+        [HttpPost("organizations/json")]
+        [ProducesResponseType(typeof(IEnumerable<Organization>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "uploadJsonOrganizations")]
+        public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageOrganizations], ct))
+                throw new ForbiddenException();
+            var result = await _organizationService.UploadJsonAsync(form, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Download the selected Organization templates as a json file </summary>
+        /// <param name="ids"> The ids of the Organizations to download </param>
+        /// <param name="ct"></param>
+        [HttpPost("organizations/json/download")]
+        [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "downloadJsonOrganizations")]
+        public async Task<IActionResult> DownloadJsonAsync([FromBody] List<Guid> ids, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageOrganizations], ct))
+                throw new ForbiddenException();
+            (var stream, var fileName) = await _organizationService.DownloadJsonAsync(ids, ct);
+
+            return File(stream, "application/octet-stream", fileName);
+        }
+
     }
 }

@@ -3,9 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
@@ -28,6 +32,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
         Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
         Task<Guid> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.DataField>> UploadJsonAsync(FileForm form, CancellationToken ct);
+        Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
     }
 
     public class DataFieldService : IDataFieldService
@@ -307,6 +313,79 @@ namespace Blueprint.Api.Services
                 }
             }
             await _context.SaveChangesAsync(ct);
+        }
+
+        public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct)
+        {
+            var idList = ids?.ToList() ?? new List<Guid>();
+            var dataFieldEntities = await _context.DataFields
+                .Where(df => idList.Contains(df.Id))
+                .Include(df => df.DataOptions)
+                .ToListAsync(ct);
+            var dataFields = _mapper.Map<IEnumerable<ViewModels.DataField>>(dataFieldEntities).ToList();
+
+            var json = JsonSerializer.Serialize(dataFields, new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                WriteIndented = true,
+            });
+            var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+            return Tuple.Create(memoryStream, "data-field-templates.json");
+        }
+
+        public async Task<IEnumerable<ViewModels.DataField>> UploadJsonAsync(FileForm form, CancellationToken ct)
+        {
+            var uploadItem = form.ToUpload;
+            string json;
+            using (var reader = new StreamReader(uploadItem.OpenReadStream()))
+            {
+                json = await reader.ReadToEndAsync();
+            }
+            var options = new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                PropertyNameCaseInsensitive = true,
+            };
+            var incoming = JsonSerializer.Deserialize<List<ViewModels.DataField>>(json, options) ?? new List<ViewModels.DataField>();
+
+            var created = new List<ViewModels.DataField>();
+            var userId = _user.GetId();
+            var dateNow = DateTime.UtcNow;
+            foreach (var item in incoming)
+            {
+                var newId = Guid.NewGuid();
+                item.Id = newId;
+                item.IsTemplate = true;
+                item.MselId = null;
+                item.InjectTypeId = null;
+                item.CreatedBy = userId;
+                item.DateCreated = dateNow;
+                item.ModifiedBy = null;
+                item.DateModified = null;
+                var incomingOptions = item.DataOptions?.ToList() ?? new List<ViewModels.DataOption>();
+                item.DataOptions = new HashSet<ViewModels.DataOption>();
+                var entity = _mapper.Map<DataFieldEntity>(item);
+                _context.DataFields.Add(entity);
+                foreach (var opt in incomingOptions)
+                {
+                    var optionEntity = new DataOptionEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        DataFieldId = newId,
+                        DisplayOrder = opt.DisplayOrder,
+                        OptionName = opt.OptionName,
+                        OptionValue = opt.OptionValue,
+                        CreatedBy = userId,
+                        DateCreated = dateNow,
+                    };
+                    _context.DataOptions.Add(optionEntity);
+                }
+                created.Add(_mapper.Map<ViewModels.DataField>(entity));
+            }
+            await _context.SaveChangesAsync(ct);
+
+            return created;
         }
 
         private async Task AddNewDataValues(DataFieldEntity dataFieldEntity, CancellationToken ct)

@@ -143,7 +143,7 @@ namespace Blueprint.Api.Controllers
                 return BadRequest("No file provided.");
 
             using var stream = file.OpenReadStream();
-            var framework = await _competencyFrameworkService.ImportFromNiceJsonAsync(stream, ct);
+            var framework = await _competencyFrameworkService.ImportFromJsonAsync(stream, ct);
             return CreatedAtAction(nameof(Get), new { id = framework.Id }, framework);
         }
 

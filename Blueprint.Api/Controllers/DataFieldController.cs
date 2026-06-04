@@ -172,5 +172,34 @@ namespace Blueprint.Api.Controllers
             return Ok(result);
         }
 
+        /// <summary> Upload a json file containing a list of DataField templates </summary>
+        /// <param name="form"> The file to upload and its settings </param>
+        /// <param name="ct"></param>
+        [HttpPost("dataFields/json")]
+        [ProducesResponseType(typeof(IEnumerable<DataField>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "uploadJsonDataFields")]
+        public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct))
+                throw new ForbiddenException();
+            var result = await _dataFieldService.UploadJsonAsync(form, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Download the selected DataField templates as a json file </summary>
+        /// <param name="ids"> The ids of the DataFields to download </param>
+        /// <param name="ct"></param>
+        [HttpPost("dataFields/json/download")]
+        [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "downloadJsonDataFields")]
+        public async Task<IActionResult> DownloadJsonAsync([FromBody] List<Guid> ids, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct))
+                throw new ForbiddenException();
+            (var stream, var fileName) = await _dataFieldService.DownloadJsonAsync(ids, ct);
+
+            return File(stream, "application/octet-stream", fileName);
+        }
+
     }
 }

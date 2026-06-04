@@ -3,9 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
@@ -29,6 +33,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.Unit> CreateAsync(ViewModels.Unit unit, CancellationToken ct);
         Task<ViewModels.Unit> UpdateAsync(Guid id, ViewModels.Unit unit, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Unit>> UploadJsonAsync(FileForm form, CancellationToken ct);
+        Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
     }
 
     public class UnitService : IUnitService
@@ -131,6 +137,64 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"Unit ({unitToDelete.Id}) deleted by {_user.GetId()}");
             return true;
+        }
+
+        public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct)
+        {
+            var idList = ids?.ToList() ?? new List<Guid>();
+            var unitEntities = await _context.Units
+                .Where(u => idList.Contains(u.Id))
+                .ToListAsync(ct);
+            var units = _mapper.Map<IEnumerable<ViewModels.Unit>>(unitEntities).ToList();
+            // Strip user assignments — the user explicitly asked Users be excluded from Unit exports.
+            foreach (var u in units)
+            {
+                u.Users = new List<User>();
+            }
+
+            var json = JsonSerializer.Serialize(units, new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                WriteIndented = true,
+            });
+            var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+            return Tuple.Create(memoryStream, "unit-export.json");
+        }
+
+        public async Task<IEnumerable<ViewModels.Unit>> UploadJsonAsync(FileForm form, CancellationToken ct)
+        {
+            var uploadItem = form.ToUpload;
+            string json;
+            using (var reader = new StreamReader(uploadItem.OpenReadStream()))
+            {
+                json = await reader.ReadToEndAsync();
+            }
+            var options = new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                PropertyNameCaseInsensitive = true,
+            };
+            var incoming = JsonSerializer.Deserialize<List<ViewModels.Unit>>(json, options) ?? new List<ViewModels.Unit>();
+
+            var created = new List<ViewModels.Unit>();
+            var userId = _user.GetId();
+            var dateNow = DateTime.UtcNow;
+            foreach (var item in incoming)
+            {
+                item.Id = Guid.NewGuid();
+                item.Users = new List<User>();
+                item.CreatedBy = userId;
+                item.DateCreated = dateNow;
+                item.ModifiedBy = null;
+                item.DateModified = null;
+                var entity = _mapper.Map<UnitEntity>(item);
+                _context.Units.Add(entity);
+                created.Add(_mapper.Map<ViewModels.Unit>(entity));
+            }
+            await _context.SaveChangesAsync(ct);
+
+            return created;
         }
 
     }

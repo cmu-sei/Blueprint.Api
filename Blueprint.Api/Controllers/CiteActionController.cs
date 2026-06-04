@@ -154,5 +154,34 @@ namespace Blueprint.Api.Controllers
             return NoContent();
         }
 
+        /// <summary> Upload a json file containing a list of CiteAction templates </summary>
+        /// <param name="form"> The file to upload and its settings </param>
+        /// <param name="ct"></param>
+        [HttpPost("citeActions/json")]
+        [ProducesResponseType(typeof(IEnumerable<CiteAction>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "uploadJsonCiteActions")]
+        public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCiteActions], ct))
+                throw new ForbiddenException();
+            var result = await _citeActionService.UploadJsonAsync(form, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Download the selected CiteAction templates as a json file </summary>
+        /// <param name="ids"> The ids of the CiteActions to download </param>
+        /// <param name="ct"></param>
+        [HttpPost("citeActions/json/download")]
+        [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "downloadJsonCiteActions")]
+        public async Task<IActionResult> DownloadJsonAsync([FromBody] List<Guid> ids, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCiteActions], ct))
+                throw new ForbiddenException();
+            (var stream, var fileName) = await _citeActionService.DownloadJsonAsync(ids, ct);
+
+            return File(stream, "application/octet-stream", fileName);
+        }
+
     }
 }

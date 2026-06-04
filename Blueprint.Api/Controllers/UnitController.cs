@@ -179,5 +179,34 @@ namespace Blueprint.Api.Controllers
             return NoContent();
         }
 
+        /// <summary> Upload a json file containing a list of Units </summary>
+        /// <param name="form"> The file to upload and its settings </param>
+        /// <param name="ct"></param>
+        [HttpPost("units/json")]
+        [ProducesResponseType(typeof(IEnumerable<Unit>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "uploadJsonUnits")]
+        public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUnits], ct))
+                throw new ForbiddenException();
+            var result = await _unitService.UploadJsonAsync(form, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Download the selected Units as a json file </summary>
+        /// <param name="ids"> The ids of the Units to download </param>
+        /// <param name="ct"></param>
+        [HttpPost("units/json/download")]
+        [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "downloadJsonUnits")]
+        public async Task<IActionResult> DownloadJsonAsync([FromBody] List<Guid> ids, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageUnits], ct))
+                throw new ForbiddenException();
+            (var stream, var fileName) = await _unitService.DownloadJsonAsync(ids, ct);
+
+            return File(stream, "application/octet-stream", fileName);
+        }
+
     }
 }

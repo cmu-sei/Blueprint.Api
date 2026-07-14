@@ -611,18 +611,20 @@ namespace Blueprint.Api.Services
                 Description = $"Imported from DCWF {version}",
                 Source = source,
                 Version = version,
+                Taxonomies = "Category,Work Role,Task,Knowledge,Skill,Ability",
                 CreatedBy = userId
             };
 
             var idNumberToEntity = new Dictionary<string, CompetencyEntity>();
             var idNumberToParent = new Dictionary<string, string>();
-            var idNumberToRelated = new Dictionary<string, List<string>>();
+            var idNumberToRelated = new Dictionary<string, HashSet<string>>();
             int sortOrder = 0;
 
             // Parse "DCWF Roles" sheet - categories and work roles
             var rolesSheetPart = (WorksheetPart)workbookPart.GetPartById(rolesSheet.Id);
             var rolesData = rolesSheetPart.Worksheet.Elements<SheetData>().First();
             var rolesRows = rolesData.Elements<Row>().ToList();
+            string currentCategoryCode = "";
 
             // Skip first 2 rows (empty + header), start at row 3
             if (rolesRows.Count > 2)
@@ -658,40 +660,34 @@ namespace Blueprint.Api.Services
                             catCode = codePart.Trim('(', ')');
                         }
 
-                        if (!string.IsNullOrWhiteSpace(catCode) && !idNumberToEntity.ContainsKey(catCode))
+                        if (!string.IsNullOrWhiteSpace(catCode))
                         {
-                            var catDesc = cellDict.GetValueOrDefault(2, "").Trim(); // Column C = category description
-                            idNumberToEntity[catCode] = new CompetencyEntity
+                            currentCategoryCode = catCode;
+
+                            if (!idNumberToEntity.ContainsKey(catCode))
                             {
-                                Id = Guid.NewGuid(),
-                                CompetencyFrameworkId = frameworkEntity.Id,
-                                IdNumber = catCode,
-                                ShortName = catName,
-                                Description = string.IsNullOrWhiteSpace(catDesc) ? catName : catDesc,
-                                SortOrder = sortOrder++,
-                                CreatedBy = userId
-                            };
+                                var catDesc = cellDict.GetValueOrDefault(2, "").Trim(); // Column C = category description
+                                idNumberToEntity[catCode] = new CompetencyEntity
+                                {
+                                    Id = Guid.NewGuid(),
+                                    CompetencyFrameworkId = frameworkEntity.Id,
+                                    IdNumber = catCode,
+                                    ShortName = catName,
+                                    Description = string.IsNullOrWhiteSpace(catDesc) ? catName : catDesc,
+                                    SortOrder = sortOrder++,
+                                    CreatedBy = userId
+                                };
+                            }
                         }
                     }
 
                     // Parse work role - need to combine category prefix with code number
                     if (!string.IsNullOrWhiteSpace(roleName) && !string.IsNullOrWhiteSpace(roleCodeNum))
                     {
-                        // Extract category code from categoryText to build full role code like "IT-411"
-                        string catPrefix = "";
-                        if (!string.IsNullOrWhiteSpace(categoryText) && categoryText.Contains("(") && categoryText.Contains(")"))
+                        // Category cells are only populated on the first row of each grouped section.
+                        if (!string.IsNullOrWhiteSpace(currentCategoryCode))
                         {
-                            var parts = categoryText.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-                            if (parts.Length > 1)
-                            {
-                                var codePart = parts[1].Trim();
-                                catPrefix = codePart.Trim('(', ')');
-                            }
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(catPrefix))
-                        {
-                            var roleCode = $"{catPrefix}-{roleCodeNum}";
+                            var roleCode = $"{currentCategoryCode}-{roleCodeNum}";
                             idNumberToEntity[roleCode] = new CompetencyEntity
                             {
                                 Id = Guid.NewGuid(),
@@ -704,7 +700,7 @@ namespace Blueprint.Api.Services
                             };
 
                             // Work role parent is the category
-                            idNumberToParent[roleCode] = catPrefix;
+                            idNumberToParent[roleCode] = currentCategoryCode;
                         }
                     }
                 }
@@ -830,7 +826,7 @@ namespace Blueprint.Api.Services
 
                         // Create relationship: role -> TKSA
                         if (!idNumberToRelated.ContainsKey(roleCode))
-                            idNumberToRelated[roleCode] = new List<string>();
+                            idNumberToRelated[roleCode] = new HashSet<string>();
 
                         // Only add if the TKSA exists in our dictionary
                         if (idNumberToEntity.ContainsKey(tksaId))

@@ -279,6 +279,8 @@ namespace Blueprint.Api.Services
                 .ThenInclude(t => t.TeamUsers)
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.UserTeamRoles)
+                .Include(m => m.Teams)
+                .ThenInclude(t => t.TeamCompetencies)
                 .Include(m => m.Moves)
                 .Include(m => m.Organizations)
                 .Include(m => m.Cards)
@@ -287,6 +289,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.CiteDuties)
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
+                .Include(m => m.MselCompetencies)
                 .Include(m => m.Pages)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
@@ -385,6 +388,13 @@ namespace Blueprint.Api.Services
                     userTeamRole.Team = null;
                     userTeamRole.User = null;
                 }
+                foreach (var teamCompetency in team.TeamCompetencies)
+                {
+                    teamCompetency.Id = Guid.NewGuid();
+                    teamCompetency.TeamId = team.Id;
+                    teamCompetency.Team = null;
+                    teamCompetency.Competency = null;
+                }
                 // add current user to the indicated team
                 // and give inviter role
                 if (addUser)
@@ -403,6 +413,14 @@ namespace Blueprint.Api.Services
                 organization.MselId = mselEntity.Id;
                 organization.Msel = null;
                 organization.CreatedBy = mselEntity.CreatedBy;
+            }
+            // copy MSEL competency assignments
+            foreach (var mselCompetency in mselEntity.MselCompetencies)
+            {
+                mselCompetency.Id = Guid.NewGuid();
+                mselCompetency.MselId = mselEntity.Id;
+                mselCompetency.Msel = null;
+                mselCompetency.Competency = null;
             }
             // copy Gallery Cards
             foreach (var card in mselEntity.Cards)
@@ -1832,6 +1850,8 @@ namespace Blueprint.Api.Services
                 .ThenInclude(t => t.TeamUsers)
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.UserTeamRoles)
+                .Include(m => m.Teams)
+                .ThenInclude(t => t.TeamCompetencies)
                 .Include(m => m.Moves)
                 .Include(m => m.Organizations)
                 .Include(m => m.Cards)
@@ -1840,6 +1860,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.CiteDuties)
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
+                .Include(m => m.MselCompetencies)
                 .Include(m => m.Pages)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
@@ -1880,6 +1901,16 @@ namespace Blueprint.Api.Services
             {
                 team.TeamUsers = [];
                 team.UserTeamRoles = [];
+                foreach (var teamCompetency in team.TeamCompetencies)
+                {
+                    teamCompetency.Team = null;
+                    teamCompetency.Competency = null;
+                }
+            }
+            foreach (var mselCompetency in mselEntity.MselCompetencies)
+            {
+                mselCompetency.Msel = null;
+                mselCompetency.Competency = null;
             }
 
             // Validate and fix scoring model ID if MSEL uses CITE integration

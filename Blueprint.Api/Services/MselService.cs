@@ -2081,6 +2081,7 @@ namespace Blueprint.Api.Services
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
                 throw new InvalidOperationException(userVerificationErrorMessage);
             msel.Status = MselItemStatus.Pushing;
+            msel.IntegrationStatus = "Pushing Integrations";
             await _context.SaveChangesAsync(ct);
             _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = true, FinalStatus = MselItemStatus.Deployed });
 
@@ -2104,6 +2105,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found.");
             // add msel to process queue
             msel.Status = MselItemStatus.Pulling;
+            msel.IntegrationStatus = "Pulling Integrations";
             await _context.SaveChangesAsync(ct);
             _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = false, FinalStatus = finalStatus });
 

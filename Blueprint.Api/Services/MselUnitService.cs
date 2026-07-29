@@ -12,6 +12,7 @@ using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
@@ -105,6 +106,28 @@ namespace Blueprint.Api.Services
             mselUnitEntity.Id = mselUnitEntity.Id != Guid.Empty ? mselUnitEntity.Id : Guid.NewGuid();
 
             _context.MselUnits.Add(mselUnitEntity);
+
+            // give each user in the unit the Viewer MSEL role, unless they already have a MSEL role.
+            // Skip the MSEL creator, who is given the Creator role in the UI.
+            var unitUserIds = await _context.UnitUsers
+                .Where(uu => uu.UnitId == unit.Id && uu.UserId != msel.CreatedBy)
+                .Select(uu => uu.UserId)
+                .ToListAsync(ct);
+            var existingRoleUserIds = await _context.UserMselRoles
+                .Where(umr => umr.MselId == msel.Id && unitUserIds.Contains(umr.UserId))
+                .Select(umr => umr.UserId)
+                .Distinct()
+                .ToListAsync(ct);
+            foreach (var userId in unitUserIds.Except(existingRoleUserIds))
+            {
+                var userMselRole = new UserMselRoleEntity(userId, msel.Id, MselRole.Viewer)
+                {
+                    Id = Guid.NewGuid(),
+                    CreatedBy = _user.GetId()
+                };
+                _context.UserMselRoles.Add(userMselRole);
+            }
+
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"Unit {mselUnit.UnitId} added to MSEL {mselUnit.MselId} by {_user.GetId()}");
             return await GetAsync(mselUnitEntity.Id, true, false, ct);

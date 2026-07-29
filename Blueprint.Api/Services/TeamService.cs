@@ -136,6 +136,7 @@ namespace Blueprint.Api.Services
                 Id = Guid.NewGuid(),
                 Name = unit.Name,
                 ShortName = unit.ShortName,
+                Description = unit.Description,
                 MselId = mselId,
                 CreatedBy = _user.GetId()
             };

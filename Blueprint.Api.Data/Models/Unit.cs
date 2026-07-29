@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using Blueprint.Api.Data.Attributes;
 
 namespace Blueprint.Api.Data.Models
 {
@@ -15,6 +16,9 @@ namespace Blueprint.Api.Data.Models
         public Guid Id { get; set; }
         public string Name { get; set; }
         public string ShortName { get; set; }
+
+        [SanitizeHtml]
+        public string Description { get; set; }
         public ICollection<UnitUserEntity> UnitUsers { get; set; } = new List<UnitUserEntity>();
         public virtual ICollection<MselUnitEntity> MselUnits { get; set; } = new HashSet<MselUnitEntity>();
         public virtual ICollection<CatalogUnitEntity> CatalogUnits { get; set; } = new HashSet<CatalogUnitEntity>();

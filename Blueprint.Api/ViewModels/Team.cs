@@ -11,6 +11,7 @@ namespace Blueprint.Api.ViewModels
         public Guid Id { get; set; }
         public string Name { get; set; }
         public string ShortName { get; set; }
+        public string Description { get; set; }
         public Guid? MselId { get; set; }
         public Guid? CiteTeamTypeId { get; set; }
         public string Email { get; set; }

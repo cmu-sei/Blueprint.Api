@@ -7,11 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
@@ -23,18 +23,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly IPlayerApplicationTeamService _PlayerApplicationTeamService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public PlayerApplicationTeamHandler(
             BlueprintContext db,
             IMapper mapper,
             IPlayerApplicationTeamService PlayerApplicationTeamService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _PlayerApplicationTeamService = PlayerApplicationTeamService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected async Task<string[]> GetGroups(PlayerApplicationTeamEntity playerApplicationTeamEntity)
@@ -59,14 +59,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         {
             var groupIds = await GetGroups(PlayerApplicationTeamEntity);
             var PlayerApplicationTeam = _mapper.Map<ViewModels.PlayerApplicationTeam>(PlayerApplicationTeamEntity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, PlayerApplicationTeam, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, PlayerApplicationTeam, modifiedProperties);
         }
     }
 
@@ -76,7 +69,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IPlayerApplicationTeamService PlayerApplicationTeamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, PlayerApplicationTeamService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, PlayerApplicationTeamService, broadcaster) { }
 
         public async Task Handle(EntityCreated<PlayerApplicationTeamEntity> notification, CancellationToken cancellationToken)
         {
@@ -90,7 +83,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IPlayerApplicationTeamService PlayerApplicationTeamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, PlayerApplicationTeamService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, PlayerApplicationTeamService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<PlayerApplicationTeamEntity> notification, CancellationToken cancellationToken)
         {
@@ -108,21 +101,14 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IPlayerApplicationTeamService PlayerApplicationTeamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, PlayerApplicationTeamService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, PlayerApplicationTeamService, broadcaster)
         {
         }
 
         public async Task Handle(EntityDeleted<PlayerApplicationTeamEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = await base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.PlayerApplicationTeamDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.PlayerApplicationTeamDeleted, notification.Entity.Id);
         }
     }
 }

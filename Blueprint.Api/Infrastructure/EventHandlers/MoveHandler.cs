@@ -7,11 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
 
@@ -22,18 +22,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly IMoveService _moveService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public MoveHandler(
             BlueprintContext db,
             IMapper mapper,
             IMoveService moveService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _moveService = moveService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected string[] GetGroups(MoveEntity moveEntity)
@@ -46,7 +46,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             return groupIds.ToArray();
         }
 
-        protected async Task HandleCreateOrUpdate(
+        protected Task HandleCreateOrUpdate(
             MoveEntity moveEntity,
             string method,
             string[] modifiedProperties,
@@ -54,14 +54,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         {
             var groupIds = GetGroups(moveEntity);
             var move = _mapper.Map<ViewModels.Move>(moveEntity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, move, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, move, modifiedProperties);
+            return Task.CompletedTask;
         }
     }
 
@@ -71,7 +65,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IMoveService moveService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, moveService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, moveService, broadcaster) { }
 
         public async Task Handle(EntityCreated<MoveEntity> notification, CancellationToken cancellationToken)
         {
@@ -85,7 +79,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IMoveService moveService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, moveService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, moveService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<MoveEntity> notification, CancellationToken cancellationToken)
         {
@@ -103,21 +97,15 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IMoveService moveService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, moveService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, moveService, broadcaster)
         {
         }
 
-        public async Task Handle(EntityDeleted<MoveEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityDeleted<MoveEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.MoveDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.MoveDeleted, notification.Entity.Id);
+            return Task.CompletedTask;
         }
     }
 }

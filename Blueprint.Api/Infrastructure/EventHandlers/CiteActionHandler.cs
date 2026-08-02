@@ -7,11 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
@@ -23,18 +23,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly ICiteActionService _CiteActionService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public CiteActionHandler(
             BlueprintContext db,
             IMapper mapper,
             ICiteActionService CiteActionService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _CiteActionService = CiteActionService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected string[] GetGroups(CiteActionEntity citeActionEntity)
@@ -59,14 +59,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 .SingleOrDefaultAsync(ca => ca.Id == citeActionEntity.Id, cancellationToken);
             citeActionEntity.Msel = null;
             var CiteAction = _mapper.Map<ViewModels.CiteAction>(citeActionEntity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, CiteAction, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, CiteAction, modifiedProperties);
         }
     }
 
@@ -76,7 +69,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ICiteActionService citeActionService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, citeActionService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, citeActionService, broadcaster) { }
 
         public async Task Handle(EntityCreated<CiteActionEntity> notification, CancellationToken cancellationToken)
         {
@@ -90,7 +83,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ICiteActionService citeActionService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, citeActionService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, citeActionService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<CiteActionEntity> notification, CancellationToken cancellationToken)
         {
@@ -108,21 +101,15 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ICiteActionService citeActionService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, citeActionService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, citeActionService, broadcaster)
         {
         }
 
-        public async Task Handle(EntityDeleted<CiteActionEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityDeleted<CiteActionEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.CiteActionDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.CiteActionDeleted, notification.Entity.Id);
+            return Task.CompletedTask;
         }
     }
 }

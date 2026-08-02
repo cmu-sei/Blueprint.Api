@@ -7,11 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
@@ -23,18 +23,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly ICiteDutyService _citeDutyService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public CiteDutyHandler(
             BlueprintContext db,
             IMapper mapper,
             ICiteDutyService citeDutyService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _citeDutyService = citeDutyService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected string[] GetGroups(CiteDutyEntity citeDutyEntity)
@@ -59,14 +59,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 .SingleOrDefaultAsync(cr => cr.Id == citeDutyEntity.Id, cancellationToken);
             citeDutyEntity.Msel = null;
             var citeDuty = _mapper.Map<ViewModels.CiteDuty>(citeDutyEntity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, citeDuty, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, citeDuty, modifiedProperties);
         }
     }
 
@@ -76,7 +69,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ICiteDutyService citeDutyService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, citeDutyService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, citeDutyService, broadcaster) { }
 
         public async Task Handle(EntityCreated<CiteDutyEntity> notification, CancellationToken cancellationToken)
         {
@@ -90,7 +83,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ICiteDutyService citeDutyService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, citeDutyService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, citeDutyService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<CiteDutyEntity> notification, CancellationToken cancellationToken)
         {
@@ -108,21 +101,15 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ICiteDutyService citeDutyService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, citeDutyService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, citeDutyService, broadcaster)
         {
         }
 
-        public async Task Handle(EntityDeleted<CiteDutyEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityDeleted<CiteDutyEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.CiteDutyDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.CiteDutyDeleted, notification.Entity.Id);
+            return Task.CompletedTask;
         }
     }
 }

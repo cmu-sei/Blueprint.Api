@@ -7,12 +7,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
 
@@ -23,18 +23,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly IDataFieldService _dataFieldService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public DataFieldHandler(
             BlueprintContext db,
             IMapper mapper,
             IDataFieldService dataFieldService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _dataFieldService = dataFieldService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected string[] GetGroups(DataFieldEntity dataFieldEntity)
@@ -58,14 +58,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 .Include(f => f.DataOptions)
                 .SingleOrDefaultAsync(f => f.Id == dataFieldEntity.Id);
             var dataField = _mapper.Map<ViewModels.DataField>(dataFieldEntity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, dataField, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, dataField, modifiedProperties);
         }
     }
 
@@ -75,7 +68,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IDataFieldService dataFieldService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, dataFieldService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, dataFieldService, broadcaster) { }
 
         public async Task Handle(EntityCreated<DataFieldEntity> notification, CancellationToken cancellationToken)
         {
@@ -89,7 +82,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IDataFieldService dataFieldService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, dataFieldService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, dataFieldService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<DataFieldEntity> notification, CancellationToken cancellationToken)
         {
@@ -107,21 +100,15 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IDataFieldService dataFieldService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, dataFieldService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, dataFieldService, broadcaster)
         {
         }
 
-        public async Task Handle(EntityDeleted<DataFieldEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityDeleted<DataFieldEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.DataFieldDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.DataFieldDeleted, notification.Entity.Id);
+            return Task.CompletedTask;
         }
     }
 }

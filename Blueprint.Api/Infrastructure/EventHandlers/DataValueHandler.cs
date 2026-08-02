@@ -7,12 +7,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
 
@@ -23,18 +23,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly IDataValueService _dataValueService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public DataValueHandler(
             BlueprintContext db,
             IMapper mapper,
             IDataValueService dataValueService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _dataValueService = dataValueService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected string[] GetGroups(DataValueEntity dataValueEntity)
@@ -51,7 +51,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             return groupIds.ToArray();
         }
 
-        protected async Task HandleCreateOrUpdate(
+        protected Task HandleCreateOrUpdate(
             DataValueEntity dataValueEntity,
             string method,
             string[] modifiedProperties,
@@ -59,14 +59,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         {
             var groupIds = GetGroups(dataValueEntity);
             var dataValue = _mapper.Map<ViewModels.DataValue>(dataValueEntity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, dataValue, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, dataValue, modifiedProperties);
+            return Task.CompletedTask;
         }
     }
 
@@ -76,7 +70,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IDataValueService dataValueService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, dataValueService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, dataValueService, broadcaster) { }
 
         public async Task Handle(EntityCreated<DataValueEntity> notification, CancellationToken cancellationToken)
         {
@@ -90,7 +84,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IDataValueService dataValueService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, dataValueService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, dataValueService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<DataValueEntity> notification, CancellationToken cancellationToken)
         {
@@ -108,21 +102,15 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IDataValueService dataValueService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, dataValueService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, dataValueService, broadcaster)
         {
         }
 
-        public async Task Handle(EntityDeleted<DataValueEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityDeleted<DataValueEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.DataValueDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.DataValueDeleted, notification.Entity.Id);
+            return Task.CompletedTask;
         }
     }
 }

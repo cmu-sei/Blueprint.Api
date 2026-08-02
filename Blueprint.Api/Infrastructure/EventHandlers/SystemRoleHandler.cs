@@ -5,72 +5,69 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Crucible.Common.EntityEvents.Events;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class SystemRoleCreatedSignalRHandler : INotificationHandler<EntityCreated<SystemRoleEntity>>
     {
-        private readonly IHubContext<MainHub> _mainHub;
+        private readonly IHubBroadcaster _broadcaster;
         private readonly IMapper _mapper;
 
         public SystemRoleCreatedSignalRHandler(
-            IHubContext<MainHub> mainHub,
+            IHubBroadcaster broadcaster,
             IMapper mapper)
         {
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
             _mapper = mapper;
         }
 
-        public async Task Handle(EntityCreated<SystemRoleEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityCreated<SystemRoleEntity> notification, CancellationToken cancellationToken)
         {
             var systemRole = _mapper.Map<ViewModels.SystemRole>(notification.Entity);
-            await _mainHub.Clients
-                .Groups(MainHub.ROLE_GROUP)
-                .SendAsync(MainHubMethods.SystemRoleCreated, systemRole, cancellationToken);
+            _broadcaster.Broadcast(new[] { MainHub.ROLE_GROUP }, MainHubMethods.SystemRoleCreated, systemRole);
+            return Task.CompletedTask;
         }
     }
 
     public class SystemRoleUpdatedSignalRHandler : INotificationHandler<EntityUpdated<SystemRoleEntity>>
     {
-        private readonly IHubContext<MainHub> _mainHub;
+        private readonly IHubBroadcaster _broadcaster;
         private readonly IMapper _mapper;
 
         public SystemRoleUpdatedSignalRHandler(
-            IHubContext<MainHub> mainHub,
+            IHubBroadcaster broadcaster,
             IMapper mapper)
         {
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
             _mapper = mapper;
         }
 
-        public async Task Handle(EntityUpdated<SystemRoleEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityUpdated<SystemRoleEntity> notification, CancellationToken cancellationToken)
         {
             var systemRole = _mapper.Map<ViewModels.SystemRole>(notification.Entity);
-            await _mainHub.Clients
-                .Groups(MainHub.ROLE_GROUP)
-                .SendAsync(MainHubMethods.SystemRoleUpdated, systemRole, cancellationToken);
+            _broadcaster.Broadcast(new[] { MainHub.ROLE_GROUP }, MainHubMethods.SystemRoleUpdated, systemRole);
+            return Task.CompletedTask;
         }
     }
 
     public class SystemRoleDeletedSignalRHandler : INotificationHandler<EntityDeleted<SystemRoleEntity>>
     {
-        private readonly IHubContext<MainHub> _mainHub;
+        private readonly IHubBroadcaster _broadcaster;
 
         public SystemRoleDeletedSignalRHandler(
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
-        public async Task Handle(EntityDeleted<SystemRoleEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityDeleted<SystemRoleEntity> notification, CancellationToken cancellationToken)
         {
-            await _mainHub.Clients
-                .Groups(MainHub.ROLE_GROUP)
-                .SendAsync(MainHubMethods.SystemRoleDeleted, notification.Entity.Id, cancellationToken);
+            _broadcaster.Broadcast(new[] { MainHub.ROLE_GROUP }, MainHubMethods.SystemRoleDeleted, notification.Entity.Id);
+            return Task.CompletedTask;
         }
     }
 }

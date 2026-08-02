@@ -5,72 +5,69 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Crucible.Common.EntityEvents.Events;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class GroupMembershipCreatedSignalRHandler : INotificationHandler<EntityCreated<GroupMembershipEntity>>
     {
-        private readonly IHubContext<MainHub> _mainHub;
+        private readonly IHubBroadcaster _broadcaster;
         private readonly IMapper _mapper;
 
         public GroupMembershipCreatedSignalRHandler(
-            IHubContext<MainHub> mainHub,
+            IHubBroadcaster broadcaster,
             IMapper mapper)
         {
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
             _mapper = mapper;
         }
 
-        public async Task Handle(EntityCreated<GroupMembershipEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityCreated<GroupMembershipEntity> notification, CancellationToken cancellationToken)
         {
             var groupMembership = _mapper.Map<ViewModels.GroupMembership>(notification.Entity);
-            await _mainHub.Clients
-                .Groups(MainHub.GROUP_GROUP)
-                .SendAsync(MainHubMethods.GroupMembershipCreated, groupMembership, cancellationToken);
+            _broadcaster.Broadcast(new[] { MainHub.GROUP_GROUP }, MainHubMethods.GroupMembershipCreated, groupMembership);
+            return Task.CompletedTask;
         }
     }
 
     public class GroupMembershipUpdatedSignalRHandler : INotificationHandler<EntityUpdated<GroupMembershipEntity>>
     {
-        private readonly IHubContext<MainHub> _mainHub;
+        private readonly IHubBroadcaster _broadcaster;
         private readonly IMapper _mapper;
 
         public GroupMembershipUpdatedSignalRHandler(
-            IHubContext<MainHub> mainHub,
+            IHubBroadcaster broadcaster,
             IMapper mapper)
         {
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
             _mapper = mapper;
         }
 
-        public async Task Handle(EntityUpdated<GroupMembershipEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityUpdated<GroupMembershipEntity> notification, CancellationToken cancellationToken)
         {
             var groupMembership = _mapper.Map<ViewModels.GroupMembership>(notification.Entity);
-            await _mainHub.Clients
-                .Groups(MainHub.GROUP_GROUP)
-                .SendAsync(MainHubMethods.GroupMembershipUpdated, groupMembership, cancellationToken);
+            _broadcaster.Broadcast(new[] { MainHub.GROUP_GROUP }, MainHubMethods.GroupMembershipUpdated, groupMembership);
+            return Task.CompletedTask;
         }
     }
 
     public class GroupMembershipDeletedSignalRHandler : INotificationHandler<EntityDeleted<GroupMembershipEntity>>
     {
-        private readonly IHubContext<MainHub> _mainHub;
+        private readonly IHubBroadcaster _broadcaster;
 
         public GroupMembershipDeletedSignalRHandler(
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
-        public async Task Handle(EntityDeleted<GroupMembershipEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityDeleted<GroupMembershipEntity> notification, CancellationToken cancellationToken)
         {
-            await _mainHub.Clients
-                .Groups(MainHub.GROUP_GROUP)
-                .SendAsync(MainHubMethods.GroupMembershipDeleted, notification.Entity.Id, cancellationToken);
+            _broadcaster.Broadcast(new[] { MainHub.GROUP_GROUP }, MainHubMethods.GroupMembershipDeleted, notification.Entity.Id);
+            return Task.CompletedTask;
         }
     }
 }

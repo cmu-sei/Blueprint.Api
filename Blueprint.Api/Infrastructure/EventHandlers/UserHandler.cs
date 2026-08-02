@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;

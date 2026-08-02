@@ -7,11 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
@@ -23,18 +23,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly IUnitUserService _unitUserService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public UnitUserHandler(
             BlueprintContext db,
             IMapper mapper,
             IUnitUserService unitUserService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _unitUserService = unitUserService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected async Task<string[]> GetGroupsAsync(UnitUserEntity unitUserEntity, CancellationToken cancellationToken)
@@ -70,14 +70,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 unitUser.Unit.UnitUsers = null;  // prevent object cycle
             if (unitUser.User != null)
                 unitUser.User.UnitUsers = null;  // prevent object cycle
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, unitUser, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, unitUser, modifiedProperties);
         }
     }
 
@@ -87,7 +80,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IUnitUserService unitUserService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, unitUserService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, unitUserService, broadcaster) { }
 
         public async Task Handle(EntityCreated<UnitUserEntity> notification, CancellationToken cancellationToken)
         {
@@ -101,7 +94,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IUnitUserService unitUserService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, unitUserService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, unitUserService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<UnitUserEntity> notification, CancellationToken cancellationToken)
         {
@@ -119,21 +112,14 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IUnitUserService unitUserService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, unitUserService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, unitUserService, broadcaster)
         {
         }
 
         public async Task Handle(EntityDeleted<UnitUserEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = await base.GetGroupsAsync(notification.Entity, CancellationToken.None);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.UnitUserDeleted, notification.Entity, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.UnitUserDeleted, notification.Entity);
         }
     }
 }

@@ -7,11 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
@@ -23,18 +23,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly ITeamUserService _TeamUserService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public TeamUserHandler(
             BlueprintContext db,
             IMapper mapper,
             ITeamUserService TeamUserService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _TeamUserService = TeamUserService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected string[] GetGroups(TeamUserEntity teamUserEntity)
@@ -64,14 +64,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             teamUser.Team.UserTeamRoles = null;  // prevent object cycle
             teamUser.Team.TeamUsers = null;  // prevent object cycle
             teamUser.User.TeamUsers = null;  // prevent object cycle
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, teamUser, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, teamUser, modifiedProperties);
         }
     }
 
@@ -81,7 +74,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ITeamUserService teamUserService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, teamUserService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, teamUserService, broadcaster) { }
 
         public async Task Handle(EntityCreated<TeamUserEntity> notification, CancellationToken cancellationToken)
         {
@@ -95,7 +88,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ITeamUserService teamUserService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, teamUserService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, teamUserService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<TeamUserEntity> notification, CancellationToken cancellationToken)
         {
@@ -113,21 +106,15 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ITeamUserService teamUserService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, teamUserService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, teamUserService, broadcaster)
         {
         }
 
-        public async Task Handle(EntityDeleted<TeamUserEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityDeleted<TeamUserEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.TeamUserDeleted, notification.Entity, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.TeamUserDeleted, notification.Entity);
+            return Task.CompletedTask;
         }
     }
 }

@@ -7,11 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
 
@@ -22,18 +22,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly IInjectTypeService _InjectTypeService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public InjectTypeHandler(
             BlueprintContext db,
             IMapper mapper,
             IInjectTypeService InjectTypeService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _InjectTypeService = InjectTypeService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected string[] GetGroups(InjectTypeEntity InjectTypeEntity)
@@ -45,7 +45,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             return groupIds.ToArray();
         }
 
-        protected async Task HandleCreateOrUpdate(
+        protected Task HandleCreateOrUpdate(
             InjectTypeEntity InjectTypeEntity,
             string method,
             string[] modifiedProperties,
@@ -53,14 +53,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         {
             var groupIds = GetGroups(InjectTypeEntity);
             var InjectType = _mapper.Map<ViewModels.InjectType>(InjectTypeEntity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, InjectType, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, InjectType, modifiedProperties);
+            return Task.CompletedTask;
         }
     }
 
@@ -70,7 +64,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IInjectTypeService InjectTypeService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, InjectTypeService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, InjectTypeService, broadcaster) { }
 
         public async Task Handle(EntityCreated<InjectTypeEntity> notification, CancellationToken cancellationToken)
         {
@@ -84,7 +78,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IInjectTypeService InjectTypeService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, InjectTypeService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, InjectTypeService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<InjectTypeEntity> notification, CancellationToken cancellationToken)
         {
@@ -102,21 +96,15 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IInjectTypeService InjectTypeService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, InjectTypeService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, InjectTypeService, broadcaster)
         {
         }
 
-        public async Task Handle(EntityDeleted<InjectTypeEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityDeleted<InjectTypeEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.InjectTypeDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.InjectTypeDeleted, notification.Entity.Id);
+            return Task.CompletedTask;
         }
     }
 }

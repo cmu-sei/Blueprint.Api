@@ -7,11 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
@@ -23,18 +23,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly ICardTeamService _CardTeamService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public CardTeamHandler(
             BlueprintContext db,
             IMapper mapper,
             ICardTeamService CardTeamService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _CardTeamService = CardTeamService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected async Task<string[]> GetGroups(CardTeamEntity cardTeamEntity)
@@ -59,14 +59,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         {
             var groupIds = await GetGroups(CardTeamEntity);
             var CardTeam = _mapper.Map<ViewModels.CardTeam>(CardTeamEntity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, CardTeam, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, CardTeam, modifiedProperties);
         }
     }
 
@@ -76,7 +69,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ICardTeamService CardTeamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CardTeamService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, CardTeamService, broadcaster) { }
 
         public async Task Handle(EntityCreated<CardTeamEntity> notification, CancellationToken cancellationToken)
         {
@@ -90,7 +83,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ICardTeamService CardTeamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CardTeamService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, CardTeamService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<CardTeamEntity> notification, CancellationToken cancellationToken)
         {
@@ -108,21 +101,14 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ICardTeamService CardTeamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CardTeamService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, CardTeamService, broadcaster)
         {
         }
 
         public async Task Handle(EntityDeleted<CardTeamEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = await base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.CardTeamDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.CardTeamDeleted, notification.Entity.Id);
         }
     }
 }

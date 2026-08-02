@@ -7,11 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
 
@@ -22,18 +22,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly IUserMselRoleService _userMselRoleService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public UserMselRoleHandler(
             BlueprintContext db,
             IMapper mapper,
             IUserMselRoleService userMselRoleService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _userMselRoleService = userMselRoleService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected string[] GetGroups(UserMselRoleEntity userMselRoleEntity)
@@ -46,7 +46,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             return groupIds.ToArray();
         }
 
-        protected async Task HandleCreateOrUpdate(
+        protected Task HandleCreateOrUpdate(
             UserMselRoleEntity userMselRoleEntity,
             string method,
             string[] modifiedProperties,
@@ -54,14 +54,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         {
             var groupIds = GetGroups(userMselRoleEntity);
             var userMselRole = _mapper.Map<ViewModels.UserMselRole>(userMselRoleEntity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, userMselRole, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, userMselRole, modifiedProperties);
+            return Task.CompletedTask;
         }
     }
 
@@ -71,7 +65,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IUserMselRoleService userMselRoleService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, userMselRoleService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, userMselRoleService, broadcaster) { }
 
         public async Task Handle(EntityCreated<UserMselRoleEntity> notification, CancellationToken cancellationToken)
         {
@@ -85,7 +79,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IUserMselRoleService userMselRoleService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, userMselRoleService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, userMselRoleService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<UserMselRoleEntity> notification, CancellationToken cancellationToken)
         {
@@ -103,21 +97,15 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IUserMselRoleService userMselRoleService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, userMselRoleService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, userMselRoleService, broadcaster)
         {
         }
 
-        public async Task Handle(EntityDeleted<UserMselRoleEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityDeleted<UserMselRoleEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.UserMselRoleDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.UserMselRoleDeleted, notification.Entity.Id);
+            return Task.CompletedTask;
         }
     }
 }

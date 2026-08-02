@@ -7,10 +7,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
@@ -21,16 +21,16 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public UnitHandler(
             BlueprintContext db,
             IMapper mapper,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected async Task<string[]> GetGroupsAsync(UnitEntity unitEntity, CancellationToken cancellationToken)
@@ -58,14 +58,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         {
             var groupIds = await GetGroupsAsync(unitEntity, cancellationToken);
             var unit = _mapper.Map<ViewModels.Unit>(unitEntity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, unit, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, unit, modifiedProperties);
         }
     }
 
@@ -74,7 +67,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         public UnitCreatedSignalRHandler(
             BlueprintContext db,
             IMapper mapper,
-            IHubContext<MainHub> mainHub) : base(db, mapper, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, broadcaster) { }
 
         public async Task Handle(EntityCreated<UnitEntity> notification, CancellationToken cancellationToken)
         {
@@ -87,7 +80,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         public UnitUpdatedSignalRHandler(
             BlueprintContext db,
             IMapper mapper,
-            IHubContext<MainHub> mainHub) : base(db, mapper, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, broadcaster) { }
 
         public async Task Handle(EntityUpdated<UnitEntity> notification, CancellationToken cancellationToken)
         {
@@ -104,21 +97,14 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         public UnitDeletedSignalRHandler(
             BlueprintContext db,
             IMapper mapper,
-            IHubContext<MainHub> mainHub) : base(db, mapper, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, broadcaster)
         {
         }
 
         public async Task Handle(EntityDeleted<UnitEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = await base.GetGroupsAsync(notification.Entity, CancellationToken.None);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.UnitDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.UnitDeleted, notification.Entity.Id);
         }
     }
 }

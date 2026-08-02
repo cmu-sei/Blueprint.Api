@@ -8,12 +8,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
 
@@ -24,18 +24,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly ICatalogService _CatalogService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public CatalogHandler(
             BlueprintContext db,
             IMapper mapper,
             ICatalogService CatalogService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _CatalogService = CatalogService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected async Task<string[]> GetGroups(CatalogEntity CatalogEntity)
@@ -58,14 +58,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         {
             var groupIds = await GetGroups(CatalogEntity);
             var Catalog = _mapper.Map<ViewModels.Catalog>(CatalogEntity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, Catalog, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, Catalog, modifiedProperties);
         }
     }
 
@@ -75,7 +68,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ICatalogService CatalogService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CatalogService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, CatalogService, broadcaster) { }
 
         public async Task Handle(EntityCreated<CatalogEntity> notification, CancellationToken cancellationToken)
         {
@@ -89,7 +82,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ICatalogService CatalogService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CatalogService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, CatalogService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<CatalogEntity> notification, CancellationToken cancellationToken)
         {
@@ -107,21 +100,14 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             ICatalogService CatalogService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CatalogService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, CatalogService, broadcaster)
         {
         }
 
         public async Task Handle(EntityDeleted<CatalogEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = await base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.CatalogDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.CatalogDeleted, notification.Entity.Id);
         }
     }
 }

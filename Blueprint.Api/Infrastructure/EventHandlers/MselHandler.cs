@@ -8,12 +8,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using MediatR;
-using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Infrastructure.SignalR;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.ViewModels;
@@ -26,18 +26,18 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected readonly BlueprintContext _db;
         protected readonly IMapper _mapper;
         protected readonly IMselService _mselService;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public BaseMselHandler(
             BlueprintContext db,
             IMapper mapper,
             IMselService mselService,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _db = db;
             _mapper = mapper;
             _mselService = mselService;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected string[] GetGroups(MselEntity mselEntity)
@@ -75,14 +75,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                     msel.GalleryArticleParameters = Enum.GetNames(typeof(GalleryArticleParameter)).ToList();
                     msel.GallerySourceTypes = Enum.GetNames(typeof(GallerySourceType)).ToList();
                 }
-                var tasks = new List<Task>();
-
-                foreach (var groupId in groupIds)
-                {
-                    tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, msel, modifiedProperties, cancellationToken));
-                }
-
-                await Task.WhenAll(tasks);
+                _broadcaster.Broadcast(groupIds, method, msel, modifiedProperties);
             }
         }
     }
@@ -93,7 +86,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IMselService mselService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, mselService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, mselService, broadcaster) { }
 
         public async Task Handle(EntityCreated<MselEntity> notification, CancellationToken cancellationToken)
         {
@@ -107,7 +100,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IMselService mselService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, mselService, mainHub) { }
+            IHubBroadcaster broadcaster) : base(db, mapper, mselService, broadcaster) { }
 
         public async Task Handle(EntityUpdated<MselEntity> notification, CancellationToken cancellationToken)
         {
@@ -125,21 +118,15 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             BlueprintContext db,
             IMapper mapper,
             IMselService mselService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, mselService, mainHub)
+            IHubBroadcaster broadcaster) : base(db, mapper, mselService, broadcaster)
         {
         }
 
-        public async Task Handle(EntityDeleted<MselEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityDeleted<MselEntity> notification, CancellationToken cancellationToken)
         {
             var groupIds = base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.MselDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, MainHubMethods.MselDeleted, notification.Entity.Id);
+            return Task.CompletedTask;
         }
     }
 }

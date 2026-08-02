@@ -245,6 +245,14 @@ public class Startup
         services.AddSingleton<IAddApplicationQueue, AddApplicationQueue>();
         services.AddHostedService<AddApplicationService>();
 
+        // Drains SignalR broadcasts off the HTTP request path. The entity event handlers
+        // queue into this rather than awaiting the fan-out, so a client that has stopped
+        // reading its socket cannot block a write. See HubBroadcaster for the details.
+        services.AddSingleton(_signalROptions);
+        services.AddSingleton<Infrastructure.SignalR.HubBroadcaster>();
+        services.AddSingleton<Infrastructure.SignalR.IHubBroadcaster>(sp => sp.GetRequiredService<Infrastructure.SignalR.HubBroadcaster>());
+        services.AddHostedService(sp => sp.GetRequiredService<Infrastructure.SignalR.HubBroadcaster>());
+
         ApplyPolicies(services);
 
         services.AddTransient<SanitizerInterceptor>();

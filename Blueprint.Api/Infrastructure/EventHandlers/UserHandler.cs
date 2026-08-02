@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
+using Blueprint.Api.Infrastructure.SignalR;
 using Crucible.Common.EntityEvents.Events;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
@@ -18,14 +19,14 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     public class UserHandler
     {
         protected readonly IMapper _mapper;
-        protected readonly IHubContext<MainHub> _mainHub;
+        protected readonly IHubBroadcaster _broadcaster;
 
         public UserHandler(
             IMapper mapper,
-            IHubContext<MainHub> mainHub)
+            IHubBroadcaster broadcaster)
         {
             _mapper = mapper;
-            _mainHub = mainHub;
+            _broadcaster = broadcaster;
         }
 
         protected string[] GetGroups(UserEntity userEntity)
@@ -38,22 +39,15 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             return groupIds.ToArray();
         }
 
-        protected async Task HandleCreateOrUpdate(
+        protected void HandleCreateOrUpdate(
             UserEntity userEntity,
             string method,
-            string[] modifiedProperties,
-            CancellationToken cancellationToken)
+            string[] modifiedProperties)
         {
             var groupIds = this.GetGroups(userEntity);
             var user = _mapper.Map<ViewModels.User>(userEntity);
-            var tasks = new List<Task>();
 
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(method, user, modifiedProperties, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(groupIds, method, user, modifiedProperties);
         }
     }
 
@@ -61,11 +55,12 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public UserCreatedSignalRHandler(
             IMapper mapper,
-            IHubContext<MainHub> mainHub) : base(mapper, mainHub) { }
+            IHubBroadcaster broadcaster) : base(mapper, broadcaster) { }
 
-        public async Task Handle(EntityCreated<UserEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityCreated<UserEntity> notification, CancellationToken cancellationToken)
         {
-            await base.HandleCreateOrUpdate(notification.Entity, MainHubMethods.UserCreated, null, cancellationToken);
+            base.HandleCreateOrUpdate(notification.Entity, MainHubMethods.UserCreated, null);
+            return Task.CompletedTask;
         }
     }
 
@@ -73,15 +68,15 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public UserUpdatedSignalRHandler(
             IMapper mapper,
-            IHubContext<MainHub> mainHub) : base(mapper, mainHub) { }
+            IHubBroadcaster broadcaster) : base(mapper, broadcaster) { }
 
-        public async Task Handle(EntityUpdated<UserEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityUpdated<UserEntity> notification, CancellationToken cancellationToken)
         {
-            await base.HandleCreateOrUpdate(
+            base.HandleCreateOrUpdate(
                 notification.Entity,
                 MainHubMethods.UserUpdated,
-                notification.ModifiedProperties.Select(x => x.TitleCaseToCamelCase()).ToArray(),
-                cancellationToken);
+                notification.ModifiedProperties.Select(x => x.TitleCaseToCamelCase()).ToArray());
+            return Task.CompletedTask;
         }
     }
 
@@ -89,21 +84,14 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public UserDeletedSignalRHandler(
             IMapper mapper,
-            IHubContext<MainHub> mainHub) : base(mapper, mainHub)
+            IHubBroadcaster broadcaster) : base(mapper, broadcaster)
         {
         }
 
-        public async Task Handle(EntityDeleted<UserEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityDeleted<UserEntity> notification, CancellationToken cancellationToken)
         {
-            var groupIds = base.GetGroups(notification.Entity);
-            var tasks = new List<Task>();
-
-            foreach (var groupId in groupIds)
-            {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.UserDeleted, notification.Entity.Id, cancellationToken));
-            }
-
-            await Task.WhenAll(tasks);
+            _broadcaster.Broadcast(base.GetGroups(notification.Entity), MainHubMethods.UserDeleted, notification.Entity.Id);
+            return Task.CompletedTask;
         }
     }
 }

@@ -1913,8 +1913,10 @@ namespace Blueprint.Api.Services
                 mselCompetency.Competency = null;
             }
 
-            // Validate and fix scoring model ID if MSEL uses CITE integration
-            if (mselEntity.UseCite && mselEntity.CiteScoringModelId.HasValue)
+            // Validate and fix scoring model linkage if MSEL uses CITE integration.
+            // Mirror team type handling by allowing plain-name remap when the ID is
+            // missing or stale after moving content between environments.
+            if (mselEntity.UseCite && (mselEntity.CiteScoringModelId.HasValue || !string.IsNullOrWhiteSpace(mselEntity.CiteScoringModelName)))
             {
                 try
                 {
@@ -1929,8 +1931,23 @@ namespace Blueprint.Api.Services
                             StringComparer.OrdinalIgnoreCase);
                     var scoringModelIds = new HashSet<Guid>(scoringModels.Select(sm => sm.Id));
 
+                    if (!mselEntity.CiteScoringModelId.HasValue)
+                    {
+                        if (!string.IsNullOrEmpty(mselEntity.CiteScoringModelName) &&
+                            scoringModelMapping.TryGetValue(mselEntity.CiteScoringModelName, out var newId))
+                        {
+                            mselEntity.CiteScoringModelId = newId;
+                            mselEntity.CiteScoringModelName = scoringModels.FirstOrDefault(sm => sm.Id == newId)?.Description ?? mselEntity.CiteScoringModelName;
+                            _logger.LogInformation("Auto-mapped MSEL {MselId} scoring model by name to {NewId}",
+                                mselEntity.Id, newId);
+                        }
+                        else
+                        {
+                            mselEntity.CiteScoringModelId = null;
+                        }
+                    }
                     // Check if the scoring model ID exists in CITE
-                    if (!scoringModelIds.Contains(mselEntity.CiteScoringModelId.Value))
+                    else if (!scoringModelIds.Contains(mselEntity.CiteScoringModelId.Value))
                     {
                         var oldId = mselEntity.CiteScoringModelId.Value;
 
@@ -1939,16 +1956,17 @@ namespace Blueprint.Api.Services
                             scoringModelMapping.TryGetValue(mselEntity.CiteScoringModelName, out var newId))
                         {
                             mselEntity.CiteScoringModelId = newId;
+                            mselEntity.CiteScoringModelName = scoringModels.FirstOrDefault(sm => sm.Id == newId)?.Description ?? mselEntity.CiteScoringModelName;
                             _logger.LogInformation("Auto-mapped MSEL {MselId} scoring model from {OldId} to {NewId}",
                                 mselEntity.Id, oldId, newId);
                         }
                         else
                         {
-                            // Invalid scoring model ID - set to null so user can select manually
+                            // Invalid scoring model ID - clear only the ID so user can
+                            // still see the intended scoring model name in the UI.
                             _logger.LogWarning("MSEL {MselId} has invalid CITE scoring model ID {ScoringModelId}, clearing for manual selection",
                                 mselEntity.Id, oldId);
                             mselEntity.CiteScoringModelId = null;
-                            mselEntity.CiteScoringModelName = null;
                         }
                     }
                     else
@@ -1966,11 +1984,11 @@ namespace Blueprint.Api.Services
                 }
                 catch (System.Exception ex)
                 {
-                    _logger.LogWarning("Failed to validate CITE scoring model for MSEL {MselId}, setting to null. Error: {ErrorMessage}", mselEntity.Id, ex.Message);
+                    _logger.LogWarning("Failed to validate CITE scoring model for MSEL {MselId}, clearing scoring model ID. Error: {ErrorMessage}", mselEntity.Id, ex.Message);
                     // Don't block import on validation failure - CITE might be unavailable or client out of sync
-                    // Clear the scoring model ID so user can set it manually in the UI
+                    // Clear the scoring model ID so user can set it manually in the UI.
+                    // Keep the imported name for context.
                     mselEntity.CiteScoringModelId = null;
-                    mselEntity.CiteScoringModelName = null;
                 }
             }
 

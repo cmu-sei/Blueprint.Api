@@ -124,7 +124,24 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
 
             if (rows.Count == 0)
-                throw new EntityNotFoundException<UserMselRole>();
+            {
+                var mselCreator = await _context.Msels.Where(v => v.Id == mselId).Select(m => m.CreatedBy).SingleOrDefaultAsync();
+                if (mselCreator != userId)
+                    throw new EntityNotFoundException<UserMselRole>();
+
+                // the MSEL creator doesn't have any integration roles set yet, so create a UserMselRole
+                var userMselRole = new UserMselRole()
+                {
+                    UserId = userId,
+                    MselId = mselId,
+                    CiteEvaluationRole = citeEvaluationRole,
+                    GalleryExhibitRole = galleryExhibitRole,
+                    SteamfitterScenarioRole = steamfitterScenarioRole
+                };
+                var newRows = new List<UserMselRole>();
+                newRows.Add(await CreateAsync(userMselRole, true, ct));
+                return newRows;
+            }
 
             foreach (var row in rows)
             {

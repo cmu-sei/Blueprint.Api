@@ -705,14 +705,13 @@ namespace Blueprint.Api.Services
                 .ToListAsync(ct);
             var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
 
-            // Track system columns (these don't have DataField/DataValue entities)
-            var systemColumns = new HashSet<string>();
-            if (msel.ShowTimeOnScenarioEventList)
-                systemColumns.Add("Time");
-            if (msel.ShowMoveOnScenarioEventList)
-                systemColumns.Add("Move");
-            if (msel.ShowGroupOnScenarioEventList)
-                systemColumns.Add("Group");
+            // Track system columns (these don't have DataField/DataValue entities). Derived from the
+            // same helper GetMselDataAsync used, so the two views of the sheet cannot disagree.
+            var dataFieldNames = await _context.DataFields
+                .Where(df => df.MselId == mselId)
+                .Select(df => df.Name)
+                .ToListAsync(ct);
+            var systemColumns = GetSystemColumns(msel, dataFieldNames).Select(c => c.Name).ToHashSet();
 
             // create the xlsx file in memory
             MemoryStream memoryStream = new MemoryStream();
@@ -940,24 +939,36 @@ namespace Blueprint.Api.Services
                     await _context.SaveChangesAsync(ct);
                 }
                 // create the data fields
-                CreateDataFields(msel, headerRow, workbookPart, columns);
+                var sheetLayout = CreateDataFields(msel, headerRow, workbookPart, columns);
                 await _context.SaveChangesAsync(ct);
                 // remove the header row from the sheet data before creating the scenario events
                 sheetData.RemoveChild<Row>(headerRow);
                 // create the sceanrio events and data values
-                await CreateScenarioEventsAsync(msel.Id, sheetData, workbookPart, msel.DataFields);
+                await CreateScenarioEventsAsync(msel.Id, sheetData, workbookPart, msel.DataFields, sheetLayout);
             }
             await _context.SaveChangesAsync(ct);
             return msel;
         }
 
-        private void CreateDataFields(MselEntity msel, Row headerRow, WorkbookPart workbookPart, Columns columns)
+        /// <summary>
+        /// Reads the header row, reconciling it with the MSEL's Data Fields, and returns where each
+        /// column ended up. The layout is needed because a sheet's columns are no longer guaranteed
+        /// to line up with Data Field display orders: the export also writes system columns, which
+        /// are part of the sheet but are not Data Fields.
+        /// </summary>
+        private SheetLayout CreateDataFields(MselEntity msel, Row headerRow, WorkbookPart workbookPart, Columns columns)
         {
-            var dataFields = msel.DataFields.ToList();
+            var layout = new SheetLayout();
+            var existingDataFields = msel.DataFields.ToList();
             var displayOrder = 1;
+            var headerColumnIndex = 0;
             var verifyDataFields = msel.DataFields.Count > 0;
             foreach (Cell thecurrentcell in headerRow)
             {
+                headerColumnIndex++;
+                var columnIndex = thecurrentcell.CellReference != null
+                    ? GetColumnIndex(thecurrentcell.CellReference.Value)
+                    : headerColumnIndex;
                 string currentcellvalue = string.Empty;
                 // All DataFields are initialized as String data types
                 // this DataType can changed based on the data values found in this column
@@ -991,6 +1002,21 @@ namespace Blueprint.Api.Services
                 else
                 {
                     currentcellvalue = thecurrentcell.InnerText;
+                }
+
+                // System columns are written by the export but are not Data Fields, so they must not
+                // be turned into one (nor rejected as an unknown heading). They are recognized by
+                // name unless the MSEL already has a Data Field of that name, in which case the
+                // user's own column wins — the export applies the same precedence.
+                var headingName = currentcellvalue.Trim();
+                if (IsSystemColumnName(headingName) && !existingDataFields.Any(df => df.Name.Trim() == headingName))
+                {
+                    if (headingName == SystemColumnTime)
+                    {
+                        layout.TimeColumnIndex = columnIndex;
+                    }
+                    // deliberately does not advance displayOrder — this column is not a Data Field
+                    continue;
                 }
 
                 // get the cell style and save it to the cell metadata and column metadata
@@ -1028,7 +1054,6 @@ namespace Blueprint.Api.Services
                     var columnMetadata = "0.0";
                     if (columns != null)
                     {
-                        var columnIndex = GetColumnIndex(thecurrentcell.CellReference.Value);
                         var column = (Column)columns.ChildElements.FirstOrDefault(ce => columnIndex >= ((Column)ce).Min.Value && columnIndex <= ((Column)ce).Max.Value);
                         columnMetadata = column == null || column.Width == null ? "0.0" : column.Width.Value.ToString();
                     }
@@ -1043,6 +1068,7 @@ namespace Blueprint.Api.Services
                         {
                             throw new DataException($"The xlsx file column heading '{currentcellvalue}' is not in the same order as in the current Data Fields.");
                         }
+                        layout.DataFieldColumns[dataField.Id] = columnIndex;
                     }
                     else
                     {
@@ -1061,10 +1087,13 @@ namespace Blueprint.Api.Services
                             ColumnMetadata = columnMetadata
                         };
                         msel.DataFields.Add(dataField);
+                        layout.DataFieldColumns[dataField.Id] = columnIndex;
                     }
                 }
                 displayOrder++;
             }
+
+            return layout;
         }
 
         private int GetColumnIndex(string columnRef)
@@ -1087,7 +1116,7 @@ namespace Blueprint.Api.Services
             return columnIndex;
         }
 
-        private async Task CreateScenarioEventsAsync(Guid mselId, SheetData dataRows, WorkbookPart workbookPart, ICollection<DataFieldEntity> dataFields)
+        private async Task CreateScenarioEventsAsync(Guid mselId, SheetData dataRows, WorkbookPart workbookPart, ICollection<DataFieldEntity> dataFields, SheetLayout layout)
         {
             foreach (Row dataRow in dataRows)
             {
@@ -1133,20 +1162,34 @@ namespace Blueprint.Api.Services
                 var rowMetadata = dataRow.Height != null ? dataRow.Height.Value.ToString() : "";
                 rowMetadata = rowMetadata + "," + GetTintedColor(cellColor, cellTint);
                 var rowIndex = (int)dataRow.RowIndex.Value - 1;     // header row was index 1
+                // The Time column holds the event's real schedule, so read it back rather than
+                // inventing one — an exported MSEL that is imported again must keep its timings.
+                // Only when the sheet has no usable Time value is there nothing to schedule from,
+                // and then one minute per row at least preserves the order of the rows.
+                var deltaSeconds = rowIndex * 60;
+                if (layout.TimeColumnIndex.HasValue)
+                {
+                    var timeCellReference = GetCellReference(layout.TimeColumnIndex.Value, (int)dataRow.RowIndex.Value);
+                    var timeCell = cells.FirstOrDefault(c => c.CellReference == timeCellReference);
+                    if (TryParseDeltaSeconds(GetCellText(timeCell, workbookPart), out var parsedDeltaSeconds))
+                    {
+                        deltaSeconds = parsedDeltaSeconds;
+                    }
+                }
                 var scenarioEvent = new ScenarioEventEntity()
                 {
                     Id = Guid.NewGuid(),
                     MselId = mselId,
                     ScenarioEventType = EventType.Inject,
-                    DeltaSeconds = rowIndex * 60,    // value of seconds (1 minute) used to maintain the row order
+                    DeltaSeconds = deltaSeconds,
                     RowMetadata = rowMetadata
                 };
                 await _context.ScenarioEvents.AddAsync(scenarioEvent);
-                await CreateDataValuesAsync(scenarioEvent, dataRow, workbookPart, dataFields);
+                await CreateDataValuesAsync(scenarioEvent, dataRow, workbookPart, dataFields, layout);
             }
         }
 
-        private async Task CreateDataValuesAsync(ScenarioEventEntity scenarioEvent, Row dataRow, WorkbookPart workbookPart, ICollection<DataFieldEntity> dataFields)
+        private async Task CreateDataValuesAsync(ScenarioEventEntity scenarioEvent, Row dataRow, WorkbookPart workbookPart, ICollection<DataFieldEntity> dataFields, SheetLayout layout)
         {
             // loop through each DataField
             var cells = dataRow.Elements<Cell>();
@@ -1154,8 +1197,16 @@ namespace Blueprint.Api.Services
             {
                 string currentCellValue = string.Empty;
                 string cellMetadata = ",0,normal," + (int)dataField.DataType;
-                var cellReference = GetCellReference(dataField.DisplayOrder, (int)dataRow.RowIndex.Value);
-                var cell = cells.FirstOrDefault(c => c.CellReference == cellReference);
+                // Use the column this field was actually found in. Its DisplayOrder is an ordering
+                // among Data Fields, which stops matching the spreadsheet column as soon as the
+                // sheet also carries a system column. A field with no column in the sheet keeps the
+                // same outcome as an empty cell: an empty DataValue.
+                Cell cell = null;
+                if (layout.DataFieldColumns.TryGetValue(dataField.Id, out var dataFieldColumnIndex))
+                {
+                    var cellReference = GetCellReference(dataFieldColumnIndex, (int)dataRow.RowIndex.Value);
+                    cell = cells.FirstOrDefault(c => c.CellReference == cellReference);
+                }
                 if (cell != null)
                 {
                     // get the cell format from the style index
@@ -1305,12 +1356,12 @@ namespace Blueprint.Api.Services
             {
                 allColumns.Add((df.Name, df.DisplayOrder, false));
             }
-            if (msel.ShowTimeOnScenarioEventList)
-                allColumns.Add(("Time", msel.TimeDisplayOrder, true));
-            if (msel.ShowMoveOnScenarioEventList)
-                allColumns.Add(("Move", msel.MoveDisplayOrder, true));
-            if (msel.ShowGroupOnScenarioEventList)
-                allColumns.Add(("Group", msel.GroupDisplayOrder, true));
+            var systemColumns = GetSystemColumns(msel, dataFieldList.Select(df => df.Name).ToList());
+            foreach (var systemColumn in systemColumns)
+            {
+                allColumns.Add((systemColumn.Name, systemColumn.DisplayOrder, true));
+            }
+            var systemColumnNames = systemColumns.Select(c => c.Name).ToHashSet();
             allColumns = allColumns.OrderBy(c => c.DisplayOrder).ToList();
 
             foreach (var col in allColumns)
@@ -1357,23 +1408,151 @@ namespace Blueprint.Api.Services
                     dataRow[dataValue.Name] = displayValue;
                 }
                 // Populate system columns
-                if (msel.ShowTimeOnScenarioEventList)
+                if (systemColumnNames.Contains(SystemColumnTime))
                 {
-                    dataRow["Time"] = FormatDeltaSeconds(scenarioEvent.DeltaSeconds);
+                    dataRow[SystemColumnTime] = FormatDeltaSeconds(scenarioEvent.DeltaSeconds);
                 }
-                if (msel.ShowMoveOnScenarioEventList && moveAndGroupNumbers.ContainsKey(scenarioEvent.Id))
+                if (systemColumnNames.Contains(SystemColumnMove) && moveAndGroupNumbers.ContainsKey(scenarioEvent.Id))
                 {
                     var moveNumber = moveAndGroupNumbers[scenarioEvent.Id].Item1;
-                    dataRow["Move"] = moveNumber >= 0 ? moveNumber.ToString() : "";
+                    dataRow[SystemColumnMove] = moveNumber >= 0 ? moveNumber.ToString() : "";
                 }
-                if (msel.ShowGroupOnScenarioEventList && moveAndGroupNumbers.ContainsKey(scenarioEvent.Id))
+                if (systemColumnNames.Contains(SystemColumnGroup) && moveAndGroupNumbers.ContainsKey(scenarioEvent.Id))
                 {
-                    dataRow["Group"] = moveAndGroupNumbers[scenarioEvent.Id].Item2.ToString();
+                    dataRow[SystemColumnGroup] = moveAndGroupNumbers[scenarioEvent.Id].Item2.ToString();
                 }
                 dataTable.Rows.Add(dataRow);
             }
 
             return dataTable;
+        }
+
+        // Columns the xlsx carries that are not Data Fields. Both the export and the import key off
+        // these names, so they have to agree — hence the constants.
+        private const string SystemColumnTime = "Time";
+        private const string SystemColumnMove = "Move";
+        private const string SystemColumnGroup = "Group";
+
+        private static bool IsSystemColumnName(string name) =>
+            name == SystemColumnTime || name == SystemColumnMove || name == SystemColumnGroup;
+
+        /// <summary>
+        /// The system columns to write into an exported sheet, with the display order each takes
+        /// among the Data Field columns.
+        /// </summary>
+        /// <remarks>
+        /// Time is always written. It is the only system column whose value cannot be recomputed
+        /// from the sheet — Move and Group are derived from the events' own ordering — so omitting
+        /// it makes an export/import round trip silently lose every event's schedule. Move and
+        /// Group stay opt-in, as before.
+        ///
+        /// A Data Field of the same name takes precedence: it is the user's own column, and
+        /// DataTable throws on a duplicate column name. The import applies the same precedence, so
+        /// a MSEL whose fields shadow a system name round-trips as plain Data Fields.
+        /// </remarks>
+        private static List<(string Name, int DisplayOrder)> GetSystemColumns(MselEntity msel, ICollection<string> dataFieldNames)
+        {
+            var takenNames = dataFieldNames.Select(n => n == null ? string.Empty : n.Trim()).ToHashSet();
+            var systemColumns = new List<(string Name, int DisplayOrder)>();
+            if (!takenNames.Contains(SystemColumnTime))
+                systemColumns.Add((SystemColumnTime, msel.TimeDisplayOrder));
+            if (msel.ShowMoveOnScenarioEventList && !takenNames.Contains(SystemColumnMove))
+                systemColumns.Add((SystemColumnMove, msel.MoveDisplayOrder));
+            if (msel.ShowGroupOnScenarioEventList && !takenNames.Contains(SystemColumnGroup))
+                systemColumns.Add((SystemColumnGroup, msel.GroupDisplayOrder));
+            return systemColumns;
+        }
+
+        /// <summary>
+        /// Reads a Time column value back into seconds — the inverse of <see cref="FormatDeltaSeconds"/>.
+        /// Anything that is not in that format is refused rather than guessed at, leaving the caller
+        /// to fall back to row order.
+        /// </summary>
+        private static bool TryParseDeltaSeconds(string value, out int deltaSeconds)
+        {
+            deltaSeconds = 0;
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            var text = value.Trim();
+            var sign = 1;
+            if (text.StartsWith("-"))
+            {
+                sign = -1;
+                text = text.Substring(1).Trim();
+            }
+            else if (text.StartsWith("+"))
+            {
+                text = text.Substring(1).Trim();
+            }
+
+            // an optional leading day count, as written for anything a day or more out
+            var days = 0;
+            var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 2)
+            {
+                if (!int.TryParse(parts[0], out days) || days < 0)
+                    return false;
+                text = parts[1];
+            }
+            else if (parts.Length == 1)
+            {
+                text = parts[0];
+            }
+            else
+            {
+                return false;
+            }
+
+            var hoursMinutesSeconds = text.Split(':');
+            if (hoursMinutesSeconds.Length != 3)
+                return false;
+            if (!int.TryParse(hoursMinutesSeconds[0], out var hours) || hours < 0)
+                return false;
+            if (!int.TryParse(hoursMinutesSeconds[1], out var minutes) || minutes < 0)
+                return false;
+            if (!int.TryParse(hoursMinutesSeconds[2], out var seconds) || seconds < 0)
+                return false;
+
+            var total = (long)days * 86400 + (long)hours * 3600 + (long)minutes * 60 + seconds;
+            if (total > int.MaxValue)
+                return false;
+
+            deltaSeconds = sign * (int)total;
+            return true;
+        }
+
+        /// <summary>
+        /// The text of a cell, resolving the shared string table. Enough for the system columns,
+        /// which are always written as plain strings.
+        /// </summary>
+        private static string GetCellText(Cell cell, WorkbookPart workbookPart)
+        {
+            if (cell == null)
+                return string.Empty;
+
+            if (cell.DataType != null && cell.DataType == CellValues.SharedString &&
+                int.TryParse(cell.InnerText, out var sharedStringId) &&
+                workbookPart.SharedStringTablePart != null)
+            {
+                var item = workbookPart.SharedStringTablePart.SharedStringTable
+                    .Elements<SharedStringItem>().ElementAtOrDefault(sharedStringId);
+                if (item == null)
+                    return string.Empty;
+                return item.Text != null ? item.Text.Text : item.InnerText;
+            }
+
+            return cell.CellValue != null ? cell.CellValue.Text : cell.InnerText;
+        }
+
+        /// <summary>
+        /// Where each column of an imported sheet ended up, so values can be read from the column a
+        /// heading was actually found in rather than from an assumed position.
+        /// </summary>
+        private sealed class SheetLayout
+        {
+            public Dictionary<Guid, int> DataFieldColumns { get; } = new Dictionary<Guid, int>();
+            public int? TimeColumnIndex { get; set; }
         }
 
         private string FormatDeltaSeconds(int deltaSeconds)

@@ -23,15 +23,18 @@ namespace Blueprint.Api.Controllers
     public class MselController : BaseController
     {
         private readonly IMselService _mselService;
+        private readonly IIntegrationNameService _integrationNameService;
         private readonly IBlueprintAuthorizationService _authorizationService;
 
         public MselController(
             IMselService mselService,
             ICiteService citeService,
             IPlayerService playerService,
+            IIntegrationNameService integrationNameService,
             IBlueprintAuthorizationService authorizationService)
         {
             _mselService = mselService;
+            _integrationNameService = integrationNameService;
             _authorizationService = authorizationService;
         }
 
@@ -378,6 +381,29 @@ namespace Blueprint.Api.Controllers
         //
         // Integration Section
         //
+
+        /// <summary>
+        /// Gets the names of the things a MSEL is integrated with
+        /// </summary>
+        /// <remarks>
+        /// Returns the display name of each of the MSEL's associations, read from the application that
+        /// owns it. The browser cannot read these itself — the other applications' APIs do not allow
+        /// the Blueprint UI's origin — so Blueprint reads them on the caller's behalf, forwarding the
+        /// caller's own token. A name is empty when there is no such association, or when the
+        /// application that owns it could not be reached.
+        /// </remarks>
+        /// <param name="id">The id of the Msel</param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("msels/{id}/integrations/names")]
+        [ProducesResponseType(typeof(MselIntegrationNames), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getMselIntegrationNames")]
+        public async Task<IActionResult> GetIntegrationNames(Guid id, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var names = await _integrationNameService.GetAsync(id, hasSystemPermission, ct);
+            return Ok(names);
+        }
 
         /// <summary>
         /// Push Integrations

@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using Blueprint.Api.Data.Enumerations;
 
 namespace Blueprint.Api.ViewModels
@@ -10,6 +11,11 @@ namespace Blueprint.Api.ViewModels
     public class Msel : Base
     {
         public Guid Id { get; set; }
+
+        // A MSEL must be named. Required rejects null, "" and whitespace-only values (it trims
+        // before testing), which ValidateModelStateFilter turns into a 400 for both createMsel
+        // and updateMsel — the only two endpoints that bind a Msel from the request body.
+        [Required]
         public string Name { get; set; }
         public string Description { get; set; }
         public MselItemStatus Status { get; set; }
@@ -30,6 +36,11 @@ namespace Blueprint.Api.ViewModels
         public IntegrationType SteamfitterIntegrationType { get; set; }
         public bool IsTemplate { get; set; }
         public DateTime StartTime { get; set; }
+
+        // The exercise window is stored as StartTime plus a duration, so an end time that precedes
+        // the start is exactly a negative DurationSeconds. Zero stays legal — it means no window
+        // has been set yet.
+        [Range(0, int.MaxValue, ErrorMessage = "The exercise duration cannot be negative; the end time must not precede the start time.")]
         public int DurationSeconds { get; set; }
         public bool ShowTimeOnScenarioEventList { get; set; }
         public bool ShowTimeOnExerciseView { get; set; }

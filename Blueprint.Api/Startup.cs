@@ -201,6 +201,7 @@ public class Startup
         services.AddScoped<IScenarioEventService, ScenarioEventService>();
         services.AddScoped<IInjectService, InjectService>();
         services.AddScoped<IInjectTypeService, InjectTypeService>();
+        services.AddScoped<IIntegrationNameService, IntegrationNameService>();
         services.AddScoped<IInvitationService, InvitationService>();
         services.AddScoped<IInjectTypeService, InjectTypeService>();
         services.AddScoped<IMselService, MselService>();

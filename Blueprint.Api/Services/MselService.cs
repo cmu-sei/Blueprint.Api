@@ -2527,7 +2527,7 @@ namespace Blueprint.Api.Services
             // Track xAPI - MSEL Joined
             if (_xApiService.IsConfigured())
             {
-                await _xApiService.MselJoinedAsync(msel, teamId, ct);
+                await _xApiService.MselJoinedAsync(msel, ct);
             }
 
             return (Guid)msel.PlayerViewId;

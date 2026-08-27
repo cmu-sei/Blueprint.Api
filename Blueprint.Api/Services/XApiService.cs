@@ -38,7 +38,7 @@ namespace Blueprint.Api.Services
         Task<bool> ExerciseStartedAsync(MselEntity msel, CancellationToken ct);
         Task<bool> ExerciseStoppedAsync(MselEntity msel, CancellationToken ct);
         Task<bool> JoinPageViewedAsync(CancellationToken ct);
-        Task<bool> MselJoinedAsync(MselEntity msel, Guid? teamId, CancellationToken ct);
+        Task<bool> MselJoinedAsync(MselEntity msel, CancellationToken ct);
         Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, string source, CancellationToken ct);
         Task<bool> AssertCompetencyAsync(ViewModels.CompetencyAssertion assertion, CancellationToken ct);
         Task<bool> RecordCheckboxChangeAsync(Guid mselId, Guid eventId, Guid dataFieldId, string dataFieldName, bool isChecked, CancellationToken ct);
@@ -422,7 +422,7 @@ namespace Blueprint.Api.Services
             return await CreateAsync(verb, activity, category, grouping, parent, other, null, null, ct);
         }
 
-        public async Task<bool> MselJoinedAsync(MselEntity msel, Guid? teamId, CancellationToken ct)
+        public async Task<bool> MselJoinedAsync(MselEntity msel, CancellationToken ct)
         {
             if (!IsConfigured())
             {
@@ -449,6 +449,7 @@ namespace Blueprint.Api.Services
             var parent = new Dictionary<string, string>();
             var grouping = BuildIntegrationGroupings(msel);
             var other = new Dictionary<string, string>();
+            var teamId = await GetUserTeamIdAsync(msel.Id, ct);
 
             return await CreateAsync(verb, activity, category, grouping, parent, other, msel.Id, teamId, ct);
         }

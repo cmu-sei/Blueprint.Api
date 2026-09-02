@@ -29,10 +29,10 @@ namespace Blueprint.Api.Services
         Task<ViewModels.CompetencyFramework> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.CompetencyFramework> CreateAsync(ViewModels.CompetencyFramework framework, CancellationToken ct);
         Task<ViewModels.CompetencyFramework> UpdateAsync(Guid id, ViewModels.CompetencyFramework framework, CancellationToken ct);
-        Task<ViewModels.CompetencyFramework> ImportFromMoodleCsvAsync(Stream csvStream, string source, string version, CancellationToken ct);
-        Task<ViewModels.CompetencyFramework> ImportFromNiceJsonAsync(Stream jsonStream, CancellationToken ct);
-        Task<ViewModels.CompetencyFramework> ImportFromJsonAsync(Stream jsonStream, CancellationToken ct);
-        Task<ViewModels.CompetencyFramework> ImportFromDcwfXlsxAsync(Stream xlsxStream, string source, string version, CancellationToken ct);
+        Task<ViewModels.CompetencyFramework> ImportFromMoodleCsvAsync(Stream csvStream, string source, string version, Guid importId, CancellationToken ct);
+        Task<ViewModels.CompetencyFramework> ImportFromNiceJsonAsync(Stream jsonStream, Guid importId, CancellationToken ct);
+        Task<ViewModels.CompetencyFramework> ImportFromJsonAsync(Stream jsonStream, Guid importId, CancellationToken ct);
+        Task<ViewModels.CompetencyFramework> ImportFromDcwfXlsxAsync(Stream xlsxStream, string source, string version, Guid importId, CancellationToken ct);
         Task<ViewModels.CompetencyFrameworkImportPreview> PreviewCsvAsync(Stream csvStream, string source, string version, CancellationToken ct);
         Task<ViewModels.CompetencyFrameworkImportPreview> PreviewJsonAsync(Stream jsonStream, CancellationToken ct);
         Task<ViewModels.CompetencyFrameworkImportPreview> PreviewXlsxAsync(Stream xlsxStream, string source, string version, CancellationToken ct);
@@ -48,12 +48,37 @@ namespace Blueprint.Api.Services
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
+        private readonly ICompetencyFrameworkImportProgressService _importProgress;
 
-        public CompetencyFrameworkService(BlueprintContext context, IPrincipal user, IMapper mapper)
+        /// <summary>
+        /// The import this service instance is reporting progress for, set by the import
+        /// entry points. Null for every other caller, which makes ReportPhase a no-op —
+        /// the service is scoped, so one instance only ever serves one request.
+        /// </summary>
+        private Guid? _importId;
+
+        public CompetencyFrameworkService(
+            BlueprintContext context,
+            IPrincipal user,
+            IMapper mapper,
+            ICompetencyFrameworkImportProgressService importProgress)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
+            _importProgress = importProgress;
+        }
+
+        /// <summary>
+        /// Every importer moves through the same phases, so the client can render a
+        /// consistent "step n of PhaseCount" regardless of the file format.
+        /// </summary>
+        private const int ImportPhaseCount = 6;
+
+        private void ReportPhase(string phase, int phaseNumber, int processed = 0, int total = 0)
+        {
+            if (_importId.HasValue)
+                _importProgress.ReportPhase(_importId.Value, phase, phaseNumber, ImportPhaseCount, processed, total);
         }
 
         public async Task<IEnumerable<ViewModels.CompetencyFramework>> GetAsync(CancellationToken ct)
@@ -81,6 +106,7 @@ namespace Blueprint.Api.Services
 
             // Populate RelatedIdNumbers on each competency view model
             var idNumberMap = framework.Competencies.ToDictionary(c => c.Id, c => c.IdNumber);
+            var entityMap = framework.Competencies.ToDictionary(c => c.Id);
 
             // Build inverse relationship lookup once: O(n) instead of O(n²)
             var inverseRelationshipMap = framework.Competencies
@@ -90,7 +116,7 @@ namespace Blueprint.Api.Services
 
             foreach (var comp in result.Competencies)
             {
-                var entity = framework.Competencies.First(c => c.Id == comp.Id);
+                var entity = entityMap[comp.Id];
                 var relatedIds = entity.Relationships
                     .Select(r => idNumberMap.GetValueOrDefault(r.RelatedCompetencyId))
                     .Where(n => n != null)
@@ -306,11 +332,14 @@ namespace Blueprint.Api.Services
             try
             {
                 // 1. Save framework only
+                ReportPhase("Saving framework", 2);
                 _context.CompetencyFrameworks.Add(entity);
                 await _context.SaveChangesAsync(ct);
 
                 // 2. Batch-insert competencies (without parents to avoid FK ordering issues)
                 var allRelationships = new List<CompetencyRelationshipEntity>();
+                var savedCompetencies = 0;
+                ReportPhase("Saving competencies", 3, 0, competencies.Count);
                 foreach (var batch in competencies.Chunk(BatchSize))
                 {
                     foreach (var comp in batch)
@@ -325,9 +354,12 @@ namespace Blueprint.Api.Services
                         _context.Competencies.Add(comp);
                     }
                     await _context.SaveChangesAsync(ct);
+                    savedCompetencies += batch.Length;
+                    ReportPhase("Saving competencies", 3, savedCompetencies, competencies.Count);
                 }
 
                 // 2b. Set parent references and build paths now that all competencies exist
+                ReportPhase("Building hierarchy", 4);
                 var competenciesById = competencies.ToDictionary(c => c.Id);
                 foreach (var comp in competencies)
                 {
@@ -339,14 +371,9 @@ namespace Blueprint.Api.Services
                 }
                 await _context.SaveChangesAsync(ct);
 
-                // 3. Batch-insert relationships from entity mappings
-                foreach (var batch in allRelationships.Chunk(BatchSize))
-                {
-                    _context.CompetencyRelationships.AddRange(batch);
-                    await _context.SaveChangesAsync(ct);
-                }
-
-                // 4. Resolve relatedIdNumbers from view model into relationship entities
+                // 3. Resolve relatedIdNumbers from view model into relationship entities.
+                // Done before the inserts so the total is known up front and both sets can
+                // be reported as one phase.
                 var idNumberToGuid = new Dictionary<string, Guid>();
                 foreach (var c in competencies.Where(c => c.IdNumber != null))
                 {
@@ -379,10 +406,17 @@ namespace Blueprint.Api.Services
                         }
                     }
                 }
-                foreach (var batch in resolvedRelationships.Chunk(BatchSize))
+
+                // 4. Batch-insert both sets of relationships
+                var totalRelationships = allRelationships.Count + resolvedRelationships.Count;
+                var savedRelationships = 0;
+                ReportPhase("Saving relationships", 5, 0, totalRelationships);
+                foreach (var batch in allRelationships.Concat(resolvedRelationships).Chunk(BatchSize))
                 {
                     _context.CompetencyRelationships.AddRange(batch);
                     await _context.SaveChangesAsync(ct);
+                    savedRelationships += batch.Length;
+                    ReportPhase("Saving relationships", 5, savedRelationships, totalRelationships);
                 }
 
                 await transaction.CommitAsync(ct);
@@ -392,6 +426,7 @@ namespace Blueprint.Api.Services
                 throw TranslateDbUpdateException(ex, "creating framework", frameworkIdNumber: entity.IdNumber);
             }
 
+            ReportPhase("Loading framework", 6);
             return await GetAsync(entity.Id, ct);
         }
 
@@ -413,9 +448,11 @@ namespace Blueprint.Api.Services
             return await GetAsync(id, ct);
         }
 
-        public async Task<ViewModels.CompetencyFramework> ImportFromMoodleCsvAsync(Stream csvStream, string source, string version, CancellationToken ct)
+        public async Task<ViewModels.CompetencyFramework> ImportFromMoodleCsvAsync(Stream csvStream, string source, string version, Guid importId, CancellationToken ct)
         {
+            _importId = importId;
             var userId = _user.GetId();
+            ReportPhase("Reading file", 1);
             var rows = ParseMoodleCsv(csvStream);
 
             if (rows.Count == 0)
@@ -449,6 +486,7 @@ namespace Blueprint.Api.Services
             try
             {
                 // 1. Save framework first
+                ReportPhase("Saving framework", 2);
                 _context.CompetencyFrameworks.Add(frameworkEntity);
                 await _context.SaveChangesAsync(ct);
 
@@ -486,13 +524,18 @@ namespace Blueprint.Api.Services
                 }
 
                 // 2. Batch-insert competencies (without parents to avoid FK ordering issues)
+                var savedCompetencies = 0;
+                ReportPhase("Saving competencies", 3, 0, idNumberToEntity.Count);
                 foreach (var batch in idNumberToEntity.Values.Chunk(BatchSize))
                 {
                     _context.Competencies.AddRange(batch);
                     await _context.SaveChangesAsync(ct);
+                    savedCompetencies += batch.Length;
+                    ReportPhase("Saving competencies", 3, savedCompetencies, idNumberToEntity.Count);
                 }
 
                 // 2b. Set parent references and build paths now that all competencies exist
+                ReportPhase("Building hierarchy", 4);
                 foreach (var row in competencyRows)
                 {
                     if (!idNumberToEntity.ContainsKey(row.IdNumber))
@@ -550,10 +593,14 @@ namespace Blueprint.Api.Services
                 }
 
                 // 3. Batch-insert relationships
+                var savedRelationships = 0;
+                ReportPhase("Saving relationships", 5, 0, relationships.Count);
                 foreach (var batch in relationships.Chunk(BatchSize))
                 {
                     _context.CompetencyRelationships.AddRange(batch);
                     await _context.SaveChangesAsync(ct);
+                    savedRelationships += batch.Length;
+                    ReportPhase("Saving relationships", 5, savedRelationships, relationships.Count);
                 }
 
                 await transaction.CommitAsync(ct);
@@ -563,11 +610,14 @@ namespace Blueprint.Api.Services
                 throw TranslateDbUpdateException(ex, "importing framework", frameworkIdNumber: frameworkEntity.IdNumber);
             }
 
+            ReportPhase("Loading framework", 6);
             return await GetAsync(frameworkEntity.Id, ct);
         }
 
-        public async Task<ViewModels.CompetencyFramework> ImportFromJsonAsync(Stream jsonStream, CancellationToken ct)
+        public async Task<ViewModels.CompetencyFramework> ImportFromJsonAsync(Stream jsonStream, Guid importId, CancellationToken ct)
         {
+            _importId = importId;
+            ReportPhase("Reading file", 1);
             // Buffer the stream so we can peek at the shape and rewind for the chosen importer.
             var buffer = new MemoryStream();
             await jsonStream.CopyToAsync(buffer, ct);
@@ -592,7 +642,7 @@ namespace Blueprint.Api.Services
             }
 
             buffer.Position = 0;
-            return await ImportFromNiceJsonAsync(buffer, ct);
+            return await ImportFromNiceJsonAsync(buffer, importId, ct);
         }
 
         private static bool LooksLikeNativeExport(JsonElement root)
@@ -606,9 +656,11 @@ namespace Blueprint.Api.Services
                 || (root.TryGetProperty("Competencies", out var c2) && c2.ValueKind == JsonValueKind.Array);
         }
 
-        public async Task<ViewModels.CompetencyFramework> ImportFromNiceJsonAsync(Stream jsonStream, CancellationToken ct)
+        public async Task<ViewModels.CompetencyFramework> ImportFromNiceJsonAsync(Stream jsonStream, Guid importId, CancellationToken ct)
         {
+            _importId = importId;
             var userId = _user.GetId();
+            ReportPhase("Reading file", 1);
             var jsonDoc = await JsonSerializer.DeserializeAsync<JsonElement>(jsonStream, cancellationToken: ct);
 
             // Navigate to the container with {documents, elements, relationships}
@@ -722,17 +774,23 @@ namespace Blueprint.Api.Services
             try
             {
                 // 1. Save framework
+                ReportPhase("Saving framework", 2);
                 _context.CompetencyFrameworks.Add(frameworkEntity);
                 await _context.SaveChangesAsync(ct);
 
                 // 2. Batch-insert competencies (without parents to avoid FK ordering issues)
+                var savedCompetencies = 0;
+                ReportPhase("Saving competencies", 3, 0, idNumberToEntity.Count);
                 foreach (var batch in idNumberToEntity.Values.Chunk(BatchSize))
                 {
                     _context.Competencies.AddRange(batch);
                     await _context.SaveChangesAsync(ct);
+                    savedCompetencies += batch.Length;
+                    ReportPhase("Saving competencies", 3, savedCompetencies, idNumberToEntity.Count);
                 }
 
                 // 3. Set parent relationships and build paths now that all competencies exist
+                ReportPhase("Building hierarchy", 4);
                 foreach (var (child, parentId) in parentLinks)
                 {
                     child.ParentId = parentId;
@@ -761,10 +819,14 @@ namespace Blueprint.Api.Services
                     }
                 }
 
+                var savedRelationships = 0;
+                ReportPhase("Saving relationships", 5, 0, relationshipEntities.Count);
                 foreach (var batch in relationshipEntities.Chunk(BatchSize))
                 {
                     _context.CompetencyRelationships.AddRange(batch);
                     await _context.SaveChangesAsync(ct);
+                    savedRelationships += batch.Length;
+                    ReportPhase("Saving relationships", 5, savedRelationships, relationshipEntities.Count);
                 }
 
                 await transaction.CommitAsync(ct);
@@ -774,12 +836,15 @@ namespace Blueprint.Api.Services
                 throw TranslateDbUpdateException(ex, "importing framework", frameworkIdNumber: frameworkEntity.IdNumber);
             }
 
+            ReportPhase("Loading framework", 6);
             return await GetAsync(frameworkEntity.Id, ct);
         }
 
-        public async Task<ViewModels.CompetencyFramework> ImportFromDcwfXlsxAsync(Stream xlsxStream, string source, string version, CancellationToken ct)
+        public async Task<ViewModels.CompetencyFramework> ImportFromDcwfXlsxAsync(Stream xlsxStream, string source, string version, Guid importId, CancellationToken ct)
         {
+            _importId = importId;
             var userId = _user.GetId();
+            ReportPhase("Reading file", 1);
 
             // Check for duplicate
             await EnsureSourceAndVersionAvailableAsync(source, version, ct);
@@ -1038,17 +1103,23 @@ namespace Blueprint.Api.Services
             try
             {
                 // 1. Save framework
+                ReportPhase("Saving framework", 2);
                 _context.CompetencyFrameworks.Add(frameworkEntity);
                 await _context.SaveChangesAsync(ct);
 
                 // 2. Batch-insert competencies (without parents)
+                var savedCompetencies = 0;
+                ReportPhase("Saving competencies", 3, 0, idNumberToEntity.Count);
                 foreach (var batch in idNumberToEntity.Values.Chunk(BatchSize))
                 {
                     _context.Competencies.AddRange(batch);
                     await _context.SaveChangesAsync(ct);
+                    savedCompetencies += batch.Length;
+                    ReportPhase("Saving competencies", 3, savedCompetencies, idNumberToEntity.Count);
                 }
 
                 // 3. Set parent relationships and build paths
+                ReportPhase("Building hierarchy", 4);
                 foreach (var (childId, parentId) in idNumberToParent)
                 {
                     if (idNumberToEntity.TryGetValue(childId, out var child) &&
@@ -1086,10 +1157,14 @@ namespace Blueprint.Api.Services
                     }
                 }
 
+                var savedRelationships = 0;
+                ReportPhase("Saving relationships", 5, 0, relationshipEntities.Count);
                 foreach (var batch in relationshipEntities.Chunk(BatchSize))
                 {
                     _context.CompetencyRelationships.AddRange(batch);
                     await _context.SaveChangesAsync(ct);
+                    savedRelationships += batch.Length;
+                    ReportPhase("Saving relationships", 5, savedRelationships, relationshipEntities.Count);
                 }
 
                 await transaction.CommitAsync(ct);
@@ -1099,6 +1174,7 @@ namespace Blueprint.Api.Services
                 throw TranslateDbUpdateException(ex, "importing framework", frameworkIdNumber: frameworkEntity.IdNumber);
             }
 
+            ReportPhase("Loading framework", 6);
             return await GetAsync(frameworkEntity.Id, ct);
         }
 
@@ -1710,26 +1786,50 @@ namespace Blueprint.Api.Services
             entity.SortOrder = competency.SortOrder;
             entity.ModifiedBy = userId;
 
-            // Update relationships if relatedIdNumbers provided
+            // Update relationships if relatedIdNumbers provided.
+            // GetAsync reports a competency's related list as the union of its outbound and
+            // its inbound relationships, so an update has to act on both directions. Only
+            // deleting outbound rows meant dropping a link that existed solely inbound
+            // returned 200 and changed nothing, and re-creating every outbound row from the
+            // union added a duplicate reverse row for each inbound link that was left alone.
             if (competency.RelatedIdNumbers != null)
             {
-                // Remove existing outbound relationships
-                _context.CompetencyRelationships.RemoveRange(entity.Relationships);
-
-                // Resolve new relatedIdNumbers to entity IDs
-                var relatedIdNumbers = competency.RelatedIdNumbers
+                var desiredIdNumbers = competency.RelatedIdNumbers
                     .Where(s => !string.IsNullOrWhiteSpace(s))
                     .Distinct()
-                    .ToList();
+                    .ToHashSet();
 
-                if (relatedIdNumbers.Count > 0)
+                var inbound = await _context.CompetencyRelationships
+                    .Where(r => r.RelatedCompetencyId == entity.Id)
+                    .ToListAsync(ct);
+
+                // Id numbers of everything currently linked, in either direction
+                var linkedIds = entity.Relationships.Select(r => r.RelatedCompetencyId)
+                    .Concat(inbound.Select(r => r.CompetencyId))
+                    .Distinct()
+                    .ToList();
+                var idNumberById = await _context.Competencies
+                    .Where(c => linkedIds.Contains(c.Id))
+                    .ToDictionaryAsync(c => c.Id, c => c.IdNumber, ct);
+
+                // Drop the links the caller left out, whichever way round they are stored
+                _context.CompetencyRelationships.RemoveRange(entity.Relationships
+                    .Where(r => !desiredIdNumbers.Contains(idNumberById.GetValueOrDefault(r.RelatedCompetencyId))));
+                _context.CompetencyRelationships.RemoveRange(inbound
+                    .Where(r => !desiredIdNumbers.Contains(idNumberById.GetValueOrDefault(r.CompetencyId))));
+
+                // Add the ones not linked in either direction yet
+                var alreadyLinked = idNumberById.Values.Where(n => n != null).ToHashSet();
+                var toAdd = desiredIdNumbers.Where(n => !alreadyLinked.Contains(n)).ToList();
+
+                if (toAdd.Count > 0)
                 {
                     var idNumberToGuid = await _context.Competencies
                         .Where(c => c.CompetencyFrameworkId == entity.CompetencyFrameworkId
-                                    && relatedIdNumbers.Contains(c.IdNumber))
+                                    && toAdd.Contains(c.IdNumber))
                         .ToDictionaryAsync(c => c.IdNumber, c => c.Id, ct);
 
-                    foreach (var relatedId in relatedIdNumbers)
+                    foreach (var relatedId in toAdd)
                     {
                         if (idNumberToGuid.TryGetValue(relatedId, out var destGuid))
                         {

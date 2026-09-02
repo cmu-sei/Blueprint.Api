@@ -2417,111 +2417,46 @@ namespace Blueprint.Api.Services
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to join.");
 
-            Guid? playerViewId;
+            var userId = _user.GetId();
+            // A user who is already in this MSEL's Player View has joined before. They must not be
+            // locked out of their own event by an invitation that has since expired or filled up, so
+            // the invitation is optional for them - but their Blueprint team membership is still
+            // reconciled below, because that is the one thing the Player View does not prove.
             var myDeployedMselIds = await GetMyDeployedMselIdsAsync(ct);
-            if (myDeployedMselIds.Contains(mselId))
+            var isAlreadyInPlayerView = myDeployedMselIds.Contains(mselId);
+
+            var invitation = await GetValidInvitationAsync(mselId, teamId, !isAlreadyInPlayerView, ct);
+            if (invitation != null)
             {
-                // Note: invitations cannot be used to add a user to multiple teams
-                playerViewId = (Guid)msel.PlayerViewId;
-            }
-            else
-            {
-                // get deployed msels with an invitation
-                var email = _user.Claims.First(c => c.Type == "email")?.Value;
-                var now = DateTime.UtcNow;
+                // Add the user to the Blueprint team on every join, not just a first one. The
+                // Player/Gallery/Cite joins below are queued only for a first join, so a user who
+                // reached the Player View some other way would otherwise be a member of every
+                // application except Blueprint, with no way for the invitation link to fix it.
+                await AddUserToMselTeamAsync(mselId, invitation.TeamId, userId, ct);
 
-                // Debug: check all invitations for this MSEL first
-                var allInvitations = await _context.Invitations
-                    .Where(i => i.MselId == mselId)
-                    .Include(i => i.Msel)
-                    .Include(i => i.Team)
-                    .ToListAsync(ct);
-
-                if (!allInvitations.Any())
+                // Only a first join consumes an invitation seat and needs the other applications
+                // updated - a returning user is already counted and already on those teams.
+                if (!isAlreadyInPlayerView)
                 {
-                    throw new ForbiddenException($"No invitations exist for MSEL {mselId}.");
-                }
-
-                var invitationList = await _context.Invitations
-                    .Where(i =>
-                        !i.WasDeactivated &&
-                        i.ExpirationDateTime > now &&
-                        i.UserCount < i.MaxUsersAllowed &&
-                        i.Msel.Status == MselItemStatus.Deployed &&
-                        i.MselId == mselId &&
-                        (teamId == null || teamId == i.TeamId))
-                    .Include(i => i.Team)
-                    .ToListAsync(ct);
-
-                if (!invitationList.Any())
-                {
-                    var inv = allInvitations.First();
-                    var reasons = new List<string>();
-                    if (inv.WasDeactivated) reasons.Add("deactivated");
-                    if (inv.ExpirationDateTime <= now) reasons.Add($"expired (expiration: {inv.ExpirationDateTime}, now: {now})");
-                    if (inv.UserCount >= inv.MaxUsersAllowed) reasons.Add($"at capacity ({inv.UserCount}/{inv.MaxUsersAllowed})");
-                    if (inv.Msel.Status != MselItemStatus.Deployed) reasons.Add($"MSEL not deployed (status: {inv.Msel.Status})");
-                    if (teamId != null && inv.TeamId != teamId) reasons.Add($"team mismatch (invitation team: {inv.TeamId}, requested: {teamId})");
-                    throw new ForbiddenException($"Invitation is not valid: {string.Join(", ", reasons)}");
-                }
-
-                var invitation = invitationList
-                    .SingleOrDefault(i =>
-                        i.EmailDomain == null ||
-                        i.EmailDomain.Length == 0 ||
-                        (
-                            i.EmailDomain.Contains('@') &&
-                            email.EndsWith(i.EmailDomain)
-                        )
-                    );
-                if (invitation == null)
-                {
-                    var requiredDomains = string.Join(", ", invitationList.Select(i => i.EmailDomain).Distinct());
-                    throw new ForbiddenException($"Your email ({email}) does not match the invitation requirements. Required domain(s): {requiredDomains}");
-                }
-
-                // increment the invitation use count
-                invitation.UserCount++;
-
-                // add user to Blueprint team if not already a member
-                var userId = _user.GetId();
-                var existingTeamUser = await _context.TeamUsers
-                    .AnyAsync(tu => tu.TeamId == invitation.TeamId && tu.UserId == userId, ct);
-                if (!existingTeamUser)
-                {
-                    var teamUser = new TeamUserEntity
-                    {
-                        TeamId = (Guid)invitation.TeamId,
-                        UserId = userId
-                    };
-                    _context.TeamUsers.Add(teamUser);
-                }
-
-                // add Viewer role to MSEL if user doesn't already have a role
-                var existingMselRole = await _context.UserMselRoles
-                    .AnyAsync(umr => umr.MselId == mselId && umr.UserId == userId, ct);
-                if (!existingMselRole)
-                {
-                    var userMselRole = new UserMselRoleEntity
-                    {
-                        MselId = mselId,
-                        UserId = userId,
-                        Role = MselRole.Viewer
-                    };
-                    _context.UserMselRoles.Add(userMselRole);
+                    // increment the invitation use count
+                    invitation.UserCount++;
                 }
 
                 await _context.SaveChangesAsync(ct);
-                // add the join data to the join queue
-                var joinInformation = new JoinInformation
+
+                if (!isAlreadyInPlayerView)
                 {
-                    UserId = userId,
-                    TeamId = (Guid)invitation.TeamId,
-                    UsePlayer = msel.UsePlayer,
-                    UseGallery = msel.UseGallery,
-                    UseCite = msel.UseCite && invitation.Team.CiteTeamTypeId != null
-                };
-                _joinQueue.Add(joinInformation);
+                    // add the join data to the join queue
+                    var joinInformation = new JoinInformation
+                    {
+                        UserId = userId,
+                        TeamId = invitation.TeamId,
+                        UsePlayer = msel.UsePlayer,
+                        UseGallery = msel.UseGallery,
+                        UseCite = msel.UseCite && invitation.Team.CiteTeamTypeId != null
+                    };
+                    _joinQueue.Add(joinInformation);
+                }
             }
 
             // Track xAPI - MSEL Joined
@@ -2531,6 +2466,107 @@ namespace Blueprint.Api.Services
             }
 
             return (Guid)msel.PlayerViewId;
+        }
+
+        /// <summary>
+        /// Finds the invitation that entitles the current user to join a MSEL, optionally restricted to
+        /// one team. When <paramref name="isRequired"/> is false, an unusable invitation returns null
+        /// instead of throwing.
+        /// </summary>
+        private async Task<InvitationEntity> GetValidInvitationAsync(Guid mselId, Guid? teamId, bool isRequired, CancellationToken ct)
+        {
+            var emailClaim = _user.Claims.FirstOrDefault(c => c.Type == "email");
+            var email = emailClaim == null ? "" : emailClaim.Value;
+            var now = DateTime.UtcNow;
+
+            var allInvitations = await _context.Invitations
+                .Where(i => i.MselId == mselId)
+                .Include(i => i.Msel)
+                .Include(i => i.Team)
+                .ToListAsync(ct);
+
+            if (!allInvitations.Any())
+            {
+                if (!isRequired) return null;
+                throw new ForbiddenException($"No invitations exist for MSEL {mselId}.");
+            }
+
+            var invitationList = allInvitations
+                .Where(i =>
+                    !i.WasDeactivated &&
+                    i.ExpirationDateTime > now &&
+                    i.UserCount < i.MaxUsersAllowed &&
+                    i.Msel.Status == MselItemStatus.Deployed &&
+                    (teamId == null || teamId == i.TeamId))
+                .ToList();
+
+            if (!invitationList.Any())
+            {
+                if (!isRequired) return null;
+                var inv = allInvitations.First();
+                var reasons = new List<string>();
+                if (inv.WasDeactivated) reasons.Add("deactivated");
+                if (inv.ExpirationDateTime <= now) reasons.Add($"expired (expiration: {inv.ExpirationDateTime}, now: {now})");
+                if (inv.UserCount >= inv.MaxUsersAllowed) reasons.Add($"at capacity ({inv.UserCount}/{inv.MaxUsersAllowed})");
+                if (inv.Msel.Status != MselItemStatus.Deployed) reasons.Add($"MSEL not deployed (status: {inv.Msel.Status})");
+                if (teamId != null && inv.TeamId != teamId) reasons.Add($"team mismatch (invitation team: {inv.TeamId}, requested: {teamId})");
+                throw new ForbiddenException($"Invitation is not valid: {string.Join(", ", reasons)}");
+            }
+
+            var invitation = invitationList
+                .SingleOrDefault(i =>
+                    i.EmailDomain == null ||
+                    i.EmailDomain.Length == 0 ||
+                    (
+                        i.EmailDomain.Contains('@') &&
+                        email.EndsWith(i.EmailDomain)
+                    )
+                );
+            if (invitation == null)
+            {
+                if (!isRequired) return null;
+                var requiredDomains = string.Join(", ", invitationList.Select(i => i.EmailDomain).Distinct());
+                throw new ForbiddenException($"Your email ({email}) does not match the invitation requirements. Required domain(s): {requiredDomains}");
+            }
+
+            return invitation;
+        }
+
+        /// <summary>
+        /// Makes the user a member of the invited Blueprint team and gives them a MSEL role, if they do
+        /// not have those already. Membership is checked across every team of the MSEL, because an
+        /// invitation must not put a user on a second team of the same MSEL. Changes are staged only -
+        /// the caller saves them.
+        /// </summary>
+        private async Task AddUserToMselTeamAsync(Guid mselId, Guid teamId, Guid userId, CancellationToken ct)
+        {
+            var mselTeamIds = await _context.Teams
+                .Where(t => t.MselId == mselId)
+                .Select(t => t.Id)
+                .ToListAsync(ct);
+            var isOnAMselTeam = await _context.TeamUsers
+                .AnyAsync(tu => mselTeamIds.Contains(tu.TeamId) && tu.UserId == userId, ct);
+            if (!isOnAMselTeam)
+            {
+                _context.TeamUsers.Add(new TeamUserEntity
+                {
+                    TeamId = teamId,
+                    UserId = userId
+                });
+            }
+
+            // add Viewer role to MSEL if user doesn't already have a role
+            var hasMselRole = await _context.UserMselRoles
+                .AnyAsync(umr => umr.MselId == mselId && umr.UserId == userId, ct);
+            if (!hasMselRole)
+            {
+                _context.UserMselRoles.Add(new UserMselRoleEntity
+                {
+                    MselId = mselId,
+                    UserId = userId,
+                    Role = MselRole.Viewer
+                });
+            }
         }
 
         public async Task<Msel> LaunchMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct)

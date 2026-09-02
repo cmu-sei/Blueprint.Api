@@ -107,16 +107,200 @@ namespace Blueprint.Api.Services
 
         private const int BatchSize = 500;
 
+        /// <summary>
+        /// A blank ID number is not a value, and blanks collide with each other in the
+        /// unique index, so they are stored as null (Postgres treats nulls as distinct).
+        /// </summary>
+        private static string NormalizeIdNumber(string idNumber)
+        {
+            return string.IsNullOrWhiteSpace(idNumber) ? null : idNumber.Trim();
+        }
+
+        /// <summary>
+        /// Builds the framework ID number for importers that derive it from source and
+        /// version. The version is included so successive versions of the same framework
+        /// do not collide, unless the source already carries the version.
+        /// </summary>
+        private static string BuildFrameworkIdNumber(string source, string version)
+        {
+            var idNumber = NormalizeIdNumber(source);
+            var normalizedVersion = NormalizeIdNumber(version);
+
+            if (idNumber == null || normalizedVersion == null)
+                return idNumber;
+
+            return idNumber.Contains(normalizedVersion, StringComparison.OrdinalIgnoreCase)
+                ? idNumber
+                : $"{idNumber}-{normalizedVersion}";
+        }
+
+        /// <summary>
+        /// Rejects an import up front when its framework ID number is already taken,
+        /// rather than letting it fail on the unique index mid-transaction.
+        /// </summary>
+        private async Task EnsureFrameworkIdNumberAvailableAsync(string idNumber, CancellationToken ct)
+        {
+            var conflict = await GetFrameworkIdNumberConflictAsync(idNumber, ct);
+
+            if (conflict != null)
+                throw new ConflictException(conflict);
+        }
+
+        /// <summary>
+        /// Returns the message describing the framework already using this ID number,
+        /// or null when the ID number is available. Used by the preview endpoints so a
+        /// duplicate can be reported before the file is uploaded for import.
+        /// </summary>
+        private async Task<string> GetFrameworkIdNumberConflictAsync(string idNumber, CancellationToken ct)
+        {
+            if (idNumber == null)
+                return null;
+
+            var existing = await _context.CompetencyFrameworks
+                .AsNoTracking()
+                .Where(f => f.IdNumber == idNumber)
+                .Select(f => new { f.Name, f.Version })
+                .FirstOrDefaultAsync(ct);
+
+            return existing == null
+                ? null
+                : DuplicateIdNumberMessage(idNumber, existing.Name, existing.Version);
+        }
+
+        /// <summary>
+        /// Rejects an import of a source and version that has already been imported.
+        /// </summary>
+        private async Task EnsureSourceAndVersionAvailableAsync(string source, string version, CancellationToken ct)
+        {
+            // Without either value there is nothing that identifies the framework
+            if (string.IsNullOrWhiteSpace(source) && string.IsNullOrWhiteSpace(version))
+                return;
+
+            var existing = await _context.CompetencyFrameworks
+                .AsNoTracking()
+                .Where(f => f.Source == source && f.Version == version)
+                .Select(f => new { f.Name })
+                .FirstOrDefaultAsync(ct);
+
+            if (existing != null)
+                throw new ConflictException(
+                    $"A competency framework for source '{source}' version '{version}' has already been imported as '{existing.Name}'. " +
+                    "Delete that framework first, or import this file under a different version.");
+        }
+
+        /// <summary>
+        /// Rejects a competency whose ID number is already used by a sibling in the same
+        /// framework, rather than letting it fail on the unique index. The competency being
+        /// edited is excluded so saving it without changing its ID number is not a conflict.
+        /// </summary>
+        private async Task EnsureCompetencyIdNumberAvailableAsync(
+            Guid frameworkId, string idNumber, Guid? excludeCompetencyId, CancellationToken ct)
+        {
+            if (idNumber == null)
+                return;
+
+            var query = _context.Competencies
+                .AsNoTracking()
+                .Where(c => c.CompetencyFrameworkId == frameworkId && c.IdNumber == idNumber);
+
+            if (excludeCompetencyId.HasValue)
+                query = query.Where(c => c.Id != excludeCompetencyId.Value);
+
+            var existing = await query
+                .Select(c => new { c.ShortName })
+                .FirstOrDefaultAsync(ct);
+
+            if (existing != null)
+                throw new ConflictException(DuplicateCompetencyIdNumberMessage(idNumber, existing.ShortName));
+        }
+
+        private static string DuplicateCompetencyIdNumberMessage(string idNumber, string existingShortName)
+        {
+            var existing = string.IsNullOrWhiteSpace(existingShortName)
+                ? "another competency"
+                : $"'{existingShortName}'";
+
+            return $"Competency ID number '{idNumber}' is already used by {existing} in this framework. " +
+                "Competency ID numbers must be unique within a framework.";
+        }
+
+        private static string DuplicateIdNumberMessage(string idNumber, string existingName, string existingVersion)
+        {
+            var existing = string.IsNullOrWhiteSpace(existingVersion)
+                ? $"'{existingName}'"
+                : $"'{existingName}' (version {existingVersion})";
+
+            return $"A competency framework with ID number '{idNumber}' already exists: {existing}. " +
+                "Delete the existing framework first, or change the ID number in the file being imported.";
+        }
+
+        /// <summary>
+        /// Turns unique index violations into a 409 with an actionable message so the raw
+        /// database error does not surface to the caller as a 500.
+        /// </summary>
+        private static Exception TranslateDbUpdateException(
+            DbUpdateException ex, string action, string frameworkIdNumber = null, string competencyIdNumber = null)
+        {
+            var message = ex.GetBaseException().Message;
+
+            if (message.Contains("IX_competency_frameworks_id_number"))
+                return new ConflictException(
+                    $"A competency framework with ID number '{frameworkIdNumber}' already exists. " +
+                    "Delete the existing framework first, or change the ID number in the file being imported.");
+
+            if (message.Contains("IX_competencies_competency_framework_id_id_number"))
+                return new ConflictException(competencyIdNumber == null
+                    ? "The framework being imported contains more than one competency with the same ID number. " +
+                      "Competency ID numbers must be unique within a framework."
+                    : DuplicateCompetencyIdNumberMessage(competencyIdNumber, null));
+
+            return new ArgumentException($"Database error {action}: {message}");
+        }
+
         public async Task<ViewModels.CompetencyFramework> CreateAsync(ViewModels.CompetencyFramework framework, CancellationToken ct)
         {
             var userId = _user.GetId();
             var entity = _mapper.Map<CompetencyFrameworkEntity>(framework);
             entity.Id = Guid.NewGuid();
+            entity.IdNumber = NormalizeIdNumber(entity.IdNumber);
             entity.CreatedBy = userId;
+
+            await EnsureFrameworkIdNumberAvailableAsync(entity.IdNumber, ct);
 
             // Detach competencies and relationships so we can batch them separately
             var competencies = entity.Competencies?.ToList() ?? new List<CompetencyEntity>();
             entity.Competencies = new HashSet<CompetencyEntity>();
+
+            // The ids in the payload belong to whatever framework it was exported from, so
+            // every competency gets a fresh id and parent references are remapped onto it.
+            // Without this, re-importing an export while the original still exists collides
+            // on the competency primary key.
+            var oldIdToNewId = new Dictionary<Guid, Guid>();
+            var keptCompetencies = new List<CompetencyEntity>();
+            var seenIdNumbers = new HashSet<string>();
+            foreach (var comp in competencies)
+            {
+                comp.IdNumber = NormalizeIdNumber(comp.IdNumber);
+
+                // Duplicate id numbers within a framework are not allowed; the other
+                // importers skip them rather than failing the whole upload.
+                if (comp.IdNumber != null && !seenIdNumbers.Add(comp.IdNumber))
+                    continue;
+
+                var newId = Guid.NewGuid();
+                oldIdToNewId[comp.Id] = newId;
+                comp.Id = newId;
+                comp.CreatedBy = userId;
+                keptCompetencies.Add(comp);
+            }
+            competencies = keptCompetencies;
+
+            // Parents are applied after the inserts, so hold the remapped values aside.
+            var remappedParentIds = competencies.ToDictionary(
+                c => c.Id,
+                c => c.ParentId.HasValue && oldIdToNewId.TryGetValue(c.ParentId.Value, out var newParentId)
+                    ? (Guid?)newParentId
+                    : null);
 
             using var transaction = await _context.Database.BeginTransactionAsync(ct);
             try
@@ -125,13 +309,14 @@ namespace Blueprint.Api.Services
                 _context.CompetencyFrameworks.Add(entity);
                 await _context.SaveChangesAsync(ct);
 
-                // 2. Batch-insert competencies
+                // 2. Batch-insert competencies (without parents to avoid FK ordering issues)
                 var allRelationships = new List<CompetencyRelationshipEntity>();
                 foreach (var batch in competencies.Chunk(BatchSize))
                 {
                     foreach (var comp in batch)
                     {
                         comp.CompetencyFrameworkId = entity.Id;
+                        comp.ParentId = null;
                         if (comp.Relationships != null)
                         {
                             allRelationships.AddRange(comp.Relationships);
@@ -141,6 +326,18 @@ namespace Blueprint.Api.Services
                     }
                     await _context.SaveChangesAsync(ct);
                 }
+
+                // 2b. Set parent references and build paths now that all competencies exist
+                var competenciesById = competencies.ToDictionary(c => c.Id);
+                foreach (var comp in competencies)
+                {
+                    comp.ParentId = remappedParentIds[comp.Id];
+                }
+                foreach (var comp in competencies)
+                {
+                    comp.Path = BuildPath(comp, competenciesById);
+                }
+                await _context.SaveChangesAsync(ct);
 
                 // 3. Batch-insert relationships from entity mappings
                 foreach (var batch in allRelationships.Chunk(BatchSize))
@@ -160,12 +357,16 @@ namespace Blueprint.Api.Services
                 var seenPairs = new HashSet<(Guid, Guid)>();
                 foreach (var vm in vmCompetencies)
                 {
-                    if (vm.RelatedIdNumbers == null || vm.RelatedIdNumbers.Count == 0 || string.IsNullOrEmpty(vm.IdNumber))
+                    var vmIdNumber = NormalizeIdNumber(vm.IdNumber);
+                    if (vm.RelatedIdNumbers == null || vm.RelatedIdNumbers.Count == 0 || vmIdNumber == null)
                         continue;
-                    if (!idNumberToGuid.TryGetValue(vm.IdNumber, out var sourceGuid))
+                    if (!idNumberToGuid.TryGetValue(vmIdNumber, out var sourceGuid))
                         continue;
-                    foreach (var relatedId in vm.RelatedIdNumbers)
+                    foreach (var relatedIdNumber in vm.RelatedIdNumbers)
                     {
+                        var relatedId = NormalizeIdNumber(relatedIdNumber);
+                        if (relatedId == null)
+                            continue;
                         if (idNumberToGuid.TryGetValue(relatedId, out var destGuid) && seenPairs.Add((sourceGuid, destGuid)))
                         {
                             resolvedRelationships.Add(new CompetencyRelationshipEntity
@@ -188,8 +389,7 @@ namespace Blueprint.Api.Services
             }
             catch (DbUpdateException ex)
             {
-                throw new ArgumentException(
-                    $"Database error creating framework: {ex.InnerException?.Message ?? ex.Message}");
+                throw TranslateDbUpdateException(ex, "creating framework", frameworkIdNumber: entity.IdNumber);
             }
 
             return await GetAsync(entity.Id, ct);
@@ -227,16 +427,14 @@ namespace Blueprint.Api.Services
                 throw new ArgumentException("CSV does not contain a framework row (Is Framework = 1).");
 
             // Check for duplicate framework
-            var existingFramework = await _context.CompetencyFrameworks
-                .FirstOrDefaultAsync(f => f.IdNumber == frameworkRow.IdNumber, ct);
-            if (existingFramework != null)
-                throw new ArgumentException($"A framework with ID number '{frameworkRow.IdNumber}' already exists.");
+            var frameworkIdNumber = NormalizeIdNumber(frameworkRow.IdNumber);
+            await EnsureFrameworkIdNumberAvailableAsync(frameworkIdNumber, ct);
 
             var frameworkEntity = new CompetencyFrameworkEntity
             {
                 Id = Guid.NewGuid(),
                 Name = frameworkRow.ShortName,
-                IdNumber = frameworkRow.IdNumber,
+                IdNumber = frameworkIdNumber,
                 Description = frameworkRow.Description,
                 DescriptionFormat = frameworkRow.DescriptionFormat,
                 Source = source ?? "",
@@ -362,8 +560,7 @@ namespace Blueprint.Api.Services
             }
             catch (DbUpdateException ex)
             {
-                throw new ArgumentException(
-                    $"Database error importing framework: {ex.InnerException?.Message ?? ex.Message}");
+                throw TranslateDbUpdateException(ex, "importing framework", frameworkIdNumber: frameworkEntity.IdNumber);
             }
 
             return await GetAsync(frameworkEntity.Id, ct);
@@ -433,10 +630,9 @@ namespace Blueprint.Api.Services
             var docSource = doc.TryGetProperty("doc_identifier", out var d) ? d.GetString() : "";
 
             // Check for duplicate
-            var existingFramework = await _context.CompetencyFrameworks
-                .FirstOrDefaultAsync(f => f.Source == docSource && f.Version == docVersion, ct);
-            if (existingFramework != null)
-                throw new ArgumentException($"A framework with source '{docSource}' version '{docVersion}' already exists.");
+            await EnsureSourceAndVersionAvailableAsync(docSource, docVersion, ct);
+            var frameworkIdNumber = BuildFrameworkIdNumber(docSource, docVersion);
+            await EnsureFrameworkIdNumberAvailableAsync(frameworkIdNumber, ct);
 
             // Parse elements
             var elements = root.GetProperty("elements");
@@ -446,7 +642,7 @@ namespace Blueprint.Api.Services
             {
                 Id = Guid.NewGuid(),
                 Name = docName,
-                IdNumber = docSource,
+                IdNumber = frameworkIdNumber,
                 Description = $"Imported from {docSource}",
                 Source = docSource,
                 Version = docVersion,
@@ -575,8 +771,7 @@ namespace Blueprint.Api.Services
             }
             catch (DbUpdateException ex)
             {
-                throw new ArgumentException(
-                    $"Database error importing framework: {ex.InnerException?.Message ?? ex.Message}");
+                throw TranslateDbUpdateException(ex, "importing framework", frameworkIdNumber: frameworkEntity.IdNumber);
             }
 
             return await GetAsync(frameworkEntity.Id, ct);
@@ -587,10 +782,9 @@ namespace Blueprint.Api.Services
             var userId = _user.GetId();
 
             // Check for duplicate
-            var existingFramework = await _context.CompetencyFrameworks
-                .FirstOrDefaultAsync(f => f.Source == source && f.Version == version, ct);
-            if (existingFramework != null)
-                throw new ArgumentException($"A framework with source '{source}' version '{version}' already exists.");
+            await EnsureSourceAndVersionAvailableAsync(source, version, ct);
+            var frameworkIdNumber = BuildFrameworkIdNumber(source, version);
+            await EnsureFrameworkIdNumberAvailableAsync(frameworkIdNumber, ct);
 
             using var document = SpreadsheetDocument.Open(xlsxStream, false);
             var workbookPart = document.WorkbookPart;
@@ -607,7 +801,7 @@ namespace Blueprint.Api.Services
             {
                 Id = Guid.NewGuid(),
                 Name = $"{source} {version}",
-                IdNumber = source,
+                IdNumber = frameworkIdNumber,
                 Description = $"Imported from DCWF {version}",
                 Source = source,
                 Version = version,
@@ -902,8 +1096,7 @@ namespace Blueprint.Api.Services
             }
             catch (DbUpdateException ex)
             {
-                throw new ArgumentException(
-                    $"Database error importing framework: {ex.InnerException?.Message ?? ex.Message}");
+                throw TranslateDbUpdateException(ex, "importing framework", frameworkIdNumber: frameworkEntity.IdNumber);
             }
 
             return await GetAsync(frameworkEntity.Id, ct);
@@ -972,6 +1165,20 @@ namespace Blueprint.Api.Services
 
                 preview.FrameworkName = $"{source} {version}";
 
+                // Report a framework ID number that is already taken before the user imports
+                for (int i = headerIndex + 1; i < lines.Count; i++)
+                {
+                    var fields = ParseCsvLine(lines[i]);
+                    if (fields.Count < 14 || fields[12].Trim() != "1")
+                        continue;
+
+                    preview.Error = await GetFrameworkIdNumberConflictAsync(NormalizeIdNumber(fields[1]), ct);
+                    break;
+                }
+
+                if (preview.Error != null)
+                    return preview;
+
                 // Count competencies and relationships
                 var typeCounts = new Dictionary<string, int>();
                 int relationshipCount = 0;
@@ -1027,6 +1234,10 @@ namespace Blueprint.Api.Services
             {
                 var jsonDoc = await JsonSerializer.DeserializeAsync<JsonElement>(jsonStream, cancellationToken: ct);
 
+                // A native export carries its own name, ID number and competencies
+                if (LooksLikeNativeExport(jsonDoc))
+                    return await PreviewNativeExportAsync(jsonDoc, preview, ct);
+
                 // Navigate to the container
                 var root = jsonDoc;
                 if (root.TryGetProperty("response", out var response))
@@ -1043,6 +1254,12 @@ namespace Blueprint.Api.Services
                     preview.Version = doc.TryGetProperty("version", out var v) ? v.GetString() : "";
                     preview.Source = doc.TryGetProperty("doc_identifier", out var d) ? d.GetString() : "";
                 }
+
+                // Report a framework ID number that is already taken before the user imports
+                preview.Error = await GetFrameworkIdNumberConflictAsync(
+                    BuildFrameworkIdNumber(preview.Source, preview.Version), ct);
+                if (preview.Error != null)
+                    return preview;
 
                 // Parse elements
                 if (root.TryGetProperty("elements", out var elements) && elements.ValueKind == JsonValueKind.Array)
@@ -1083,6 +1300,63 @@ namespace Blueprint.Api.Services
             return preview;
         }
 
+        /// <summary>
+        /// Previews a framework exported from Blueprint itself, which is the
+        /// CompetencyFramework view model rather than a NICE document.
+        /// </summary>
+        private async Task<ViewModels.CompetencyFrameworkImportPreview> PreviewNativeExportAsync(
+            JsonElement root, ViewModels.CompetencyFrameworkImportPreview preview, CancellationToken ct)
+        {
+            preview.FrameworkName = GetStringProperty(root, "name");
+            preview.Source = GetStringProperty(root, "source");
+            preview.Version = GetStringProperty(root, "version");
+
+            // Report a framework ID number that is already taken before the user imports
+            preview.Error = await GetFrameworkIdNumberConflictAsync(
+                NormalizeIdNumber(GetStringProperty(root, "idNumber")), ct);
+            if (preview.Error != null)
+                return preview;
+
+            if (!TryGetArrayProperty(root, "competencies", out var competencies))
+                return preview;
+
+            preview.TotalElements = competencies.GetArrayLength();
+            preview.TotalRelationships = competencies.EnumerateArray()
+                .Sum(c => TryGetArrayProperty(c, "relatedIdNumbers", out var related) ? related.GetArrayLength() : 0);
+
+            return preview;
+        }
+
+        private static string GetStringProperty(JsonElement element, string name)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                    return property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString() : null;
+            }
+
+            return null;
+        }
+
+        private static bool TryGetArrayProperty(JsonElement element, string name, out JsonElement array)
+        {
+            if (element.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase) &&
+                        property.Value.ValueKind == JsonValueKind.Array)
+                    {
+                        array = property.Value;
+                        return true;
+                    }
+                }
+            }
+
+            array = default;
+            return false;
+        }
+
         public async Task<ViewModels.CompetencyFrameworkImportPreview> PreviewXlsxAsync(Stream xlsxStream, string source, string version, CancellationToken ct)
         {
             var preview = new ViewModels.CompetencyFrameworkImportPreview
@@ -1094,6 +1368,11 @@ namespace Blueprint.Api.Services
 
             try
             {
+                // Report a framework ID number that is already taken before the user imports
+                preview.Error = await GetFrameworkIdNumberConflictAsync(BuildFrameworkIdNumber(source, version), ct);
+                if (preview.Error != null)
+                    return preview;
+
                 using var document = SpreadsheetDocument.Open(xlsxStream, false);
                 var workbookPart = document.WorkbookPart;
                 var sheets = workbookPart.Workbook.Sheets.Elements<Sheet>().ToList();
@@ -1360,10 +1639,21 @@ namespace Blueprint.Api.Services
             var entity = _mapper.Map<CompetencyEntity>(competency);
             entity.Id = Guid.NewGuid();
             entity.CompetencyFrameworkId = frameworkId;
+            entity.IdNumber = NormalizeIdNumber(entity.IdNumber);
             entity.CreatedBy = userId;
 
+            await EnsureCompetencyIdNumberAvailableAsync(frameworkId, entity.IdNumber, null, ct);
+
             _context.Competencies.Add(entity);
-            await _context.SaveChangesAsync(ct);
+            try
+            {
+                await _context.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex)
+            {
+                // A concurrent create can still take the ID number after the check above
+                throw TranslateDbUpdateException(ex, "creating competency", competencyIdNumber: entity.IdNumber);
+            }
 
             // Create relationships from relatedIdNumbers
             if (competency.RelatedIdNumbers != null && competency.RelatedIdNumbers.Count > 0)
@@ -1409,7 +1699,11 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<ViewModels.Competency>();
 
             var userId = _user.GetId();
-            entity.IdNumber = competency.IdNumber;
+            var idNumber = NormalizeIdNumber(competency.IdNumber);
+
+            await EnsureCompetencyIdNumberAvailableAsync(entity.CompetencyFrameworkId, idNumber, entity.Id, ct);
+
+            entity.IdNumber = idNumber;
             entity.ShortName = competency.ShortName;
             entity.Description = competency.Description;
             entity.ParentId = competency.ParentId;
@@ -1451,7 +1745,16 @@ namespace Blueprint.Api.Services
                 }
             }
 
-            await _context.SaveChangesAsync(ct);
+            try
+            {
+                await _context.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex)
+            {
+                // A concurrent edit can still take the ID number after the check above
+                throw TranslateDbUpdateException(ex, "saving competency", competencyIdNumber: entity.IdNumber);
+            }
+
             return _mapper.Map<ViewModels.Competency>(entity);
         }
 
@@ -1531,8 +1834,10 @@ namespace Blueprint.Api.Services
         private string BuildPath(CompetencyEntity entity, Dictionary<Guid, CompetencyEntity> byId)
         {
             var parts = new List<string>();
+            // An uploaded file can contain a parent cycle, so stop if one is walked into
+            var visited = new HashSet<Guid>();
             var current = entity;
-            while (current != null)
+            while (current != null && visited.Add(current.Id))
             {
                 parts.Insert(0, current.Id.ToString());
                 current = current.ParentId.HasValue && byId.ContainsKey(current.ParentId.Value)

@@ -21,11 +21,64 @@ namespace Blueprint.Api.Controllers
     {
         private readonly ICompetencyFrameworkService _competencyFrameworkService;
         private readonly IBlueprintAuthorizationService _authorizationService;
+        private readonly ICompetencyFrameworkImportProgressService _importProgressService;
 
-        public CompetencyFrameworkController(ICompetencyFrameworkService competencyFrameworkService, IBlueprintAuthorizationService authorizationService)
+        public CompetencyFrameworkController(
+            ICompetencyFrameworkService competencyFrameworkService,
+            IBlueprintAuthorizationService authorizationService,
+            ICompetencyFrameworkImportProgressService importProgressService)
         {
             _competencyFrameworkService = competencyFrameworkService;
             _authorizationService = authorizationService;
+            _importProgressService = importProgressService;
+        }
+
+        /// <summary>
+        /// Runs an import, recording its progress against importId so it can be polled.
+        /// </summary>
+        /// <remarks>
+        /// The import itself stays synchronous — the response is still the finished
+        /// framework — but a client that supplied an importId can watch it get there.
+        /// </remarks>
+        private async Task<IActionResult> RunImportAsync(Guid? importId, Func<Guid, Task<CompetencyFramework>> import)
+        {
+            // An absent importId means the caller does not care about progress; track it
+            // anyway so the code path is the same either way.
+            var id = importId ?? Guid.NewGuid();
+            _importProgressService.Begin(id);
+            try
+            {
+                var framework = await import(id);
+                _importProgressService.Succeed(id, framework.Id, framework.Name);
+                return CreatedAtAction(nameof(Get), new { id = framework.Id }, framework);
+            }
+            catch (Exception ex)
+            {
+                _importProgressService.Fail(id, ex.Message);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Gets the progress of a framework import
+        /// </summary>
+        /// <remarks>
+        /// Returns the phase and item counts of the import started with this importId, so a
+        /// client can show real progress for the many seconds a large framework takes to
+        /// import. Terminal states stay readable for 30 minutes; unknown ids return 404.
+        /// </remarks>
+        /// <param name="importId">The importId passed on the import request</param>
+        [HttpGet("competencyframeworks/imports/{importId}")]
+        [ProducesResponseType(typeof(CompetencyFrameworkImportStatus), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getCompetencyFrameworkImportStatus")]
+        public IActionResult GetImportStatus(Guid importId)
+        {
+            var status = _importProgressService.Get(importId);
+
+            if (status == null)
+                return NotFound();
+
+            return Ok(status);
         }
 
         /// <summary>
@@ -105,11 +158,12 @@ namespace Blueprint.Api.Controllers
         /// <param name="file">The CSV file</param>
         /// <param name="source">Framework source (e.g. "NICE", "DCWF")</param>
         /// <param name="version">Framework version (e.g. "5.1")</param>
+        /// <param name="importId">Optional client-generated id for polling import progress</param>
         /// <param name="ct"></param>
         [HttpPost("competencyframeworks/import")]
         [ProducesResponseType(typeof(CompetencyFramework), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "importCompetencyFramework")]
-        public async Task<IActionResult> Import(IFormFile file, [FromQuery] string source, [FromQuery] string version, CancellationToken ct)
+        public async Task<IActionResult> Import(IFormFile file, [FromQuery] string source, [FromQuery] string version, [FromQuery] Guid? importId, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
                 throw new ForbiddenException();
@@ -118,8 +172,8 @@ namespace Blueprint.Api.Controllers
                 return BadRequest("No file provided.");
 
             using var stream = file.OpenReadStream();
-            var framework = await _competencyFrameworkService.ImportFromMoodleCsvAsync(stream, source, version, ct);
-            return CreatedAtAction(nameof(Get), new { id = framework.Id }, framework);
+            return await RunImportAsync(importId, id =>
+                _competencyFrameworkService.ImportFromMoodleCsvAsync(stream, source, version, id, ct));
         }
 
         /// <summary>
@@ -130,11 +184,12 @@ namespace Blueprint.Api.Controllers
         /// Creates the framework, all competencies with hierarchy, and work-role-to-TKSA relationships.
         /// </remarks>
         /// <param name="file">The JSON file</param>
+        /// <param name="importId">Optional client-generated id for polling import progress</param>
         /// <param name="ct"></param>
         [HttpPost("competencyframeworks/import-json")]
         [ProducesResponseType(typeof(CompetencyFramework), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "importCompetencyFrameworkJson")]
-        public async Task<IActionResult> ImportJson(IFormFile file, CancellationToken ct)
+        public async Task<IActionResult> ImportJson(IFormFile file, [FromQuery] Guid? importId, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
                 throw new ForbiddenException();
@@ -143,8 +198,8 @@ namespace Blueprint.Api.Controllers
                 return BadRequest("No file provided.");
 
             using var stream = file.OpenReadStream();
-            var framework = await _competencyFrameworkService.ImportFromJsonAsync(stream, ct);
-            return CreatedAtAction(nameof(Get), new { id = framework.Id }, framework);
+            return await RunImportAsync(importId, id =>
+                _competencyFrameworkService.ImportFromJsonAsync(stream, id, ct));
         }
 
         /// <summary>
@@ -157,11 +212,12 @@ namespace Blueprint.Api.Controllers
         /// <param name="file">The XLSX file</param>
         /// <param name="source">Framework source (e.g. "DCWF")</param>
         /// <param name="version">Framework version (e.g. "1.0")</param>
+        /// <param name="importId">Optional client-generated id for polling import progress</param>
         /// <param name="ct"></param>
         [HttpPost("competencyframeworks/import-xlsx")]
         [ProducesResponseType(typeof(CompetencyFramework), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "importCompetencyFrameworkXlsx")]
-        public async Task<IActionResult> ImportXlsx(IFormFile file, [FromQuery] string source, [FromQuery] string version, CancellationToken ct)
+        public async Task<IActionResult> ImportXlsx(IFormFile file, [FromQuery] string source, [FromQuery] string version, [FromQuery] Guid? importId, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
                 throw new ForbiddenException();
@@ -170,8 +226,8 @@ namespace Blueprint.Api.Controllers
                 return BadRequest("No file provided.");
 
             using var stream = file.OpenReadStream();
-            var framework = await _competencyFrameworkService.ImportFromDcwfXlsxAsync(stream, source, version, ct);
-            return CreatedAtAction(nameof(Get), new { id = framework.Id }, framework);
+            return await RunImportAsync(importId, id =>
+                _competencyFrameworkService.ImportFromDcwfXlsxAsync(stream, source, version, id, ct));
         }
 
         /// <summary>

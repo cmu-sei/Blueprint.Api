@@ -60,6 +60,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 c.IncludeXmlComments(commentsFile);
                 c.EnableAnnotations();
                 c.OperationFilter<DefaultResponseOperationFilter>();
+                c.OperationFilter<RequestBodyNameOperationFilter>();
                 c.MapType<Optional<Guid?>>(() => new OpenApiSchema
                 {
                     OneOf = new List<IOpenApiSchema>

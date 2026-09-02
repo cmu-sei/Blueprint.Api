@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,6 +12,7 @@ using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
+using Blueprint.Api.Infrastructure.OperationFilters;
 using Blueprint.Api.Services;
 using Swashbuckle.AspNetCore.Annotations;
 
@@ -123,7 +125,8 @@ namespace Blueprint.Api.Controllers
         [HttpPost("msels/{mselId}/scenarioEvents/copy")]
         [ProducesResponseType(typeof(IEnumerable<ViewModels.ScenarioEvent>), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "copyScenarioEventsToMsel")]
-        public async Task<IActionResult> CreateFromInjects([FromRoute] Guid mselId, [FromBody] List<Guid> scenarioEventIdList, CancellationToken ct)
+        [RequestBodyName("scenarioEventIdList")]
+        public async Task<IActionResult> CreateFromInjects([FromRoute] Guid mselId, [FromBody, Required] List<Guid> scenarioEventIdList, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var list = await _scenarioEventService.CopyScenarioEventsToMselAsync(mselId, scenarioEventIdList, hasSystemPermission, ct);

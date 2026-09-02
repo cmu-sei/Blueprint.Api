@@ -3,12 +3,14 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
+using Blueprint.Api.Infrastructure.OperationFilters;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Services;
@@ -165,7 +167,8 @@ namespace Blueprint.Api.Controllers
         [HttpPost("injectTypes/json/download")]
         [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "downloadJsonInjectTypes")]
-        public async Task<IActionResult> DownloadJsonAsync([FromBody] List<Guid> ids, CancellationToken ct)
+        [RequestBodyName("ids")]
+        public async Task<IActionResult> DownloadJsonAsync([FromBody, Required] List<Guid> ids, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageInjectTypes], ct))
                 throw new ForbiddenException();

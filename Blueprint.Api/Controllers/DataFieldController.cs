@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,6 +12,7 @@ using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
+using Blueprint.Api.Infrastructure.OperationFilters;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -192,7 +194,8 @@ namespace Blueprint.Api.Controllers
         [HttpPost("dataFields/json/download")]
         [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "downloadJsonDataFields")]
-        public async Task<IActionResult> DownloadJsonAsync([FromBody] List<Guid> ids, CancellationToken ct)
+        [RequestBodyName("ids")]
+        public async Task<IActionResult> DownloadJsonAsync([FromBody, Required] List<Guid> ids, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct))
                 throw new ForbiddenException();

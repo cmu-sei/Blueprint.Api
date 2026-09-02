@@ -14,6 +14,7 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -46,7 +47,7 @@ namespace Blueprint.Api.Services
         Task<ViewModels.Msel> RemoveUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<Msel> UploadXlsxAsync(FileForm form, CancellationToken ct);
-        Task<Msel> ReplaceAsync(FileForm form, Guid mselId, bool hasSystemPermission, CancellationToken ct);
+        Task<Msel> ReplaceAsync(MselFileForm form, Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, CancellationToken ct);
         Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
@@ -660,12 +661,12 @@ namespace Blueprint.Api.Services
 
         public async Task<Msel> UploadXlsxAsync(FileForm form, CancellationToken ct)
         {
-            var mselEntity = await createMselFromXlsxFile(form, null, ct);
+            var mselEntity = await createMselFromXlsxFile(form.ToUpload, null, ct);
 
             return _mapper.Map<Msel>(mselEntity);
         }
 
-        public async Task<Msel> ReplaceAsync(FileForm form, Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<Msel> ReplaceAsync(MselFileForm form, Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
             if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
@@ -683,7 +684,7 @@ namespace Blueprint.Api.Services
             // start a transaction, because we will make changes as we go that may need rolled back
             await _context.Database.BeginTransactionAsync();
             // update the existing MSEL
-            mselEntity = await createMselFromXlsxFile(form, mselEntity, ct);
+            mselEntity = await createMselFromXlsxFile(form.ToUpload, mselEntity, ct);
             await _context.Database.CommitTransactionAsync(ct);
 
             return _mapper.Map<Msel>(mselEntity);
@@ -900,9 +901,8 @@ namespace Blueprint.Api.Services
             return dataTable;
         }
 
-        private async Task<MselEntity> createMselFromXlsxFile(FileForm form, MselEntity msel, CancellationToken ct)
+        private async Task<MselEntity> createMselFromXlsxFile(IFormFile uploadItem, MselEntity msel, CancellationToken ct)
         {
-            var uploadItem = form.ToUpload;
             using (SpreadsheetDocument doc = SpreadsheetDocument.Open(uploadItem.OpenReadStream(), false))
             {
                 //create the object for workbook part

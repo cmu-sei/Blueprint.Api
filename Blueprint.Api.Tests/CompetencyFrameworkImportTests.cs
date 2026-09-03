@@ -17,6 +17,7 @@ using Blueprint.Api.Tests.Infrastructure;
 using Blueprint.Api.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
+using static Blueprint.Api.Tests.Infrastructure.Frameworks;
 
 namespace Blueprint.Api.Tests;
 
@@ -68,8 +69,10 @@ namespace Blueprint.Api.Tests;
 /// <see cref="CompetencyFrameworkImportProgressServiceTests"/>.
 /// </para>
 /// <para>
-/// The DCWF XLSX importer and the three preview endpoints are not here: they need a workbook builder in
-/// <c>Infrastructure/</c>, and they follow separately.
+/// The third importer is in <see cref="CompetencyFrameworkDcwfImportTests"/>, and the three preview
+/// endpoints that read the same three formats are in <see cref="CompetencyFrameworkPreviewTests"/>. The
+/// file builders all three share are <see cref="Frameworks"/>, so a preview test can hand the preview and
+/// the importer the same bytes and compare what they say.
 /// </para>
 /// </remarks>
 public class CompetencyFrameworkImportTests(DatabaseFixture fixture, BlueprintAppFactory factory)
@@ -1781,87 +1784,6 @@ public class CompetencyFrameworkImportTests(DatabaseFixture fixture, BlueprintAp
 
     private Task<TestActor> Manager() =>
         Actor().WithSystemPermissions(SystemPermission.ManageCompetencyFrameworks).SeedAsync();
-
-    /// <summary>The 14 columns of Moodle's lpimportcsv format, in order.</summary>
-    private const string Header =
-        "Parent ID number,ID number,Short name,Description,Description format,Scale values," +
-        "Scale configuration,Rule type,Rule outcome,Rule config," +
-        "Cross referenced competency ID numbers,Export ID,Is framework,Taxonomy";
-
-    private static string Csv(params string[] rows) =>
-        string.Join("\n", new[] { Header }.Concat(rows));
-
-    /// <summary>
-    /// One CSV line, quoted where quoting is required. Built rather than written out so a test can name
-    /// the two or three columns it cares about instead of counting commas, and so the quoting is produced
-    /// the way an exporter would produce it.
-    /// </summary>
-    private static string Row(
-        string parentIdNumber = "",
-        string idNumber = "",
-        string shortName = "",
-        string description = "",
-        string descriptionFormat = "",
-        string scaleValues = "",
-        string scaleConfiguration = "",
-        string ruleType = "",
-        string ruleOutcome = "",
-        string ruleConfig = "",
-        string relatedIdNumbers = "",
-        string exportId = "",
-        string isFramework = "",
-        string taxonomy = "") =>
-        string.Join(",", new[]
-        {
-            parentIdNumber, idNumber, shortName, description, descriptionFormat, scaleValues,
-            scaleConfiguration, ruleType, ruleOutcome, ruleConfig, relatedIdNumbers, exportId,
-            isFramework, taxonomy
-        }.Select(Quote));
-
-    private static string Quote(string field) =>
-        field.Contains(',') || field.Contains('"')
-            ? $"\"{field.Replace("\"", "\"\"")}\""
-            : field;
-
-    private static string FrameworkRow(string idNumber, string shortName = "Framework") =>
-        Row(idNumber: idNumber, shortName: shortName, isFramework: "1");
-
-    private static string CompetencyRow(
-        string idNumber, string shortName = null, string parent = "", string related = "") =>
-        Row(
-            parentIdNumber: parent,
-            idNumber: idNumber,
-            shortName: shortName ?? $"competency {idNumber}",
-            relatedIdNumbers: related);
-
-    /// <summary>
-    /// A NICE file in its flat form: the container with the three arrays the importer needs. Wrap it in
-    /// <c>{"response":{"elements": ... }}</c> for the form NICE's own download produces.
-    /// </summary>
-    private static string Nice(
-        string[] elements,
-        string[] relationships = null,
-        string name = "NICE Framework",
-        string identifier = "NICE",
-        string version = "1.0") =>
-        $$"""
-        {"documents":[{"name":{{Str(name)}},"version":{{Str(version)}},"doc_identifier":{{Str(identifier)}}}],
-         "elements":[{{string.Join(",", elements)}}],
-         "relationships":[{{string.Join(",", relationships ?? [])}}]}
-        """;
-
-    private static string Element(string identifier, string elementType, string title = "", string text = "") =>
-        $$"""
-        {"element_identifier":{{Str(identifier)}},"element_type":{{Str(elementType)}},
-         "title":{{Str(title)}},"text":{{Str(text)}}}
-        """;
-
-    private static string Link(string source, string dest) =>
-        $$"""
-        {"source_element_identifier":{{Str(source)}},"dest_element_identifier":{{Str(dest)}}}
-        """;
-
-    private static string Str(string value) => JsonSerializer.Serialize(value);
 
     private async Task<HttpResponseMessage> ImportCsv(
         HttpClient client, string csv, string source = null, string version = null, Guid? importId = null)

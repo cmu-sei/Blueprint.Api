@@ -453,7 +453,7 @@ public class CompetencyFrameworkEndpointTests(DatabaseFixture fixture, Blueprint
         var response = await Create(Client(actor), new CompetencyFramework { Name = "n", IdNumber = "TAKEN" });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        var error = await Read<ApiError>(response);
+        var error = await ReadError(response);
         Assert.Contains("'TAKEN'", error.Title);
         Assert.Contains("'The first one' (version 3.1)", error.Title);
     }
@@ -1190,7 +1190,7 @@ public class CompetencyFrameworkEndpointTests(DatabaseFixture fixture, Blueprint
         var response = await Client(actor).DeleteAsync($"api/competencyframeworks/{framework.Id}", Ct);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Contains("Cannot delete framework", (await Read<ApiError>(response)).Title);
+        Assert.Contains("Cannot delete framework", (await ReadError(response)).Title);
     }
 
     [Fact]
@@ -1377,8 +1377,27 @@ public class CompetencyFrameworkEndpointTests(DatabaseFixture fixture, Blueprint
     private async Task<HttpResponseMessage> Update(HttpClient client, Guid id, CompetencyFramework framework) =>
         await client.PutAsJsonAsync($"api/competencyframeworks/{id}", framework, JsonOptions, Ct);
 
-    private async Task<T> Read<T>(HttpResponseMessage response) =>
-        await response.Content.ReadFromJsonAsync<T>(JsonOptions, Ct);
+    /// <summary>
+    /// The response body, having first insisted the request succeeded. Use <see cref="ReadError"/> for
+    /// the failure cases.
+    /// </summary>
+    /// <remarks>
+    /// An <c>ApiError</c> body shares no property names with a framework, so deserializing one into a
+    /// <c>CompetencyFramework</c> yields defaults throughout - which is what some of the assertions here
+    /// are looking for. Without this check a refusal can pass for the answer the test wanted.
+    /// </remarks>
+    private async Task<T> Read<T>(HttpResponseMessage response)
+    {
+        Assert.True(
+            response.IsSuccessStatusCode,
+            $"Expected a success status, got {(int)response.StatusCode}: " +
+            await response.Content.ReadAsStringAsync(Ct));
+
+        return await response.Content.ReadFromJsonAsync<T>(JsonOptions, Ct);
+    }
+
+    private async Task<ApiError> ReadError(HttpResponseMessage response) =>
+        await response.Content.ReadFromJsonAsync<ApiError>(JsonOptions, Ct);
 
     /// <summary>
     /// Asserts a server-stamped audit timestamp: present, and inside the window the test bracketed.

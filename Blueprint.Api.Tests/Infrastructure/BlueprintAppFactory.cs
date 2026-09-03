@@ -327,6 +327,45 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
         };
     }
 
+    /// <summary>
+    /// An inject type. Every catalog needs one - <c>CatalogEntity.InjectTypeId</c> is a non-nullable
+    /// foreign key - so seed this before <see cref="Catalog"/>.
+    /// </summary>
+    public static InjectTypeEntity InjectType(Guid? createdBy = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new InjectTypeEntity
+        {
+            Id = id,
+            Name = $"injectType-{id}",
+            Description = "Seeded by BlueprintAppFactory.InjectType",
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
+    /// A private catalog by default, so an actor's units are what decide whether they can see it.
+    /// <c>CatalogViewRequirement</c> grants any caller a public one.
+    /// </summary>
+    public static CatalogEntity Catalog(
+        Guid injectTypeId,
+        Guid? createdBy = null,
+        bool isPublic = false)
+    {
+        var id = Guid.NewGuid();
+
+        return new CatalogEntity
+        {
+            Id = id,
+            Name = $"catalog-{id}",
+            Description = "Seeded by BlueprintAppFactory.Catalog",
+            InjectTypeId = injectTypeId,
+            IsPublic = isPublic,
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
     public override async ValueTask DisposeAsync()
     {
         // The host first: it holds pooled connections to the database the session is about to drop.

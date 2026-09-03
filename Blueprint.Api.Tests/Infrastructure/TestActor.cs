@@ -168,7 +168,9 @@ public sealed class TestActorBuilder(BlueprintContext db, CancellationToken ct)
     /// Four rows, and all four are needed: a <see cref="UnitEntity"/>, a <see cref="UnitUserEntity"/>
     /// putting the actor in it, a <see cref="MselUnitEntity"/> assigning the unit to the MSEL, and a
     /// <see cref="UserMselRoleEntity"/> naming the role. Every requirement helper reads the unit path and
-    /// the role, so three of the four would satisfy none of them.
+    /// the role, so three of the four would satisfy none of them. A reused <paramref name="unit"/> may
+    /// already carry the membership or the assignment, in which case that row is left alone - all three
+    /// join tables are uniquely indexed.
     /// </para>
     /// <para>
     /// Note what this deliberately does <em>not</em> do: it does not make the actor the MSEL's creator.
@@ -237,20 +239,39 @@ public sealed class TestActorBuilder(BlueprintContext db, CancellationToken ct)
 
         List<TestActorMselRole> mselRoles = [];
 
+        // A passed-in unit may already carry some of these rows - from an earlier actor, or from an
+        // earlier OnMsel call on this one. All three join tables are uniquely indexed, so writing a
+        // duplicate surfaces as a Postgres constraint violation raised from inside this method, which
+        // says nothing about the test that caused it. The sets cover rows this call is about to write and
+        // the queries cover rows already saved.
+        HashSet<Guid> memberships = [];
+        HashSet<(Guid UnitId, Guid MselId)> assignments = [];
+
         foreach (var pending in _mselRoles)
         {
             // A unit per call unless one was passed. Two roles on two MSELs are then independent, which
             // is what a test declaring them separately means; sharing a unit would silently make an
             // actor's membership of one MSEL's unit reach the other.
             var unit = pending.Unit ?? NewUnit();
+            var mselId = pending.MselId;
 
             if (db.Entry(unit).State == EntityState.Detached)
             {
                 db.Units.Add(unit);
             }
 
-            db.UnitUsers.Add(new UnitUserEntity(_id, unit.Id));
-            db.MselUnits.Add(new MselUnitEntity(unit.Id, pending.MselId));
+            if (memberships.Add(unit.Id) &&
+                !await db.UnitUsers.AnyAsync(x => x.UserId == _id && x.UnitId == unit.Id, ct))
+            {
+                db.UnitUsers.Add(new UnitUserEntity(_id, unit.Id));
+            }
+
+            if (assignments.Add((unit.Id, mselId)) &&
+                !await db.MselUnits.AnyAsync(x => x.UnitId == unit.Id && x.MselId == mselId, ct))
+            {
+                db.MselUnits.Add(new MselUnitEntity(unit.Id, mselId));
+            }
+
             db.UserMselRoles.Add(new UserMselRoleEntity(_id, pending.MselId, pending.Role)
             {
                 CreatedBy = _id

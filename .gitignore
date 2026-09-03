@@ -6,3 +6,8 @@ obj/
 **/appsettings.*.json
 .vscode/
 Blueprint.Api.Client/node_modules
+
+# Test and coverage output. TestResults is what `dotnet test --logger trx` writes; coverage/ is
+# scripts/coverage.sh's working directory and report.
+TestResults/
+coverage/

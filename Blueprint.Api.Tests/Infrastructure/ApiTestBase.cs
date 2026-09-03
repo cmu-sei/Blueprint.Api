@@ -150,6 +150,7 @@ public abstract class ApiTestBase(DatabaseFixture fixture, BlueprintAppFactory f
         Factory.Gallery.ClearSubstitute();
         Factory.PlayerApi.ClearSubstitute();
         Factory.Steamfitter.ClearSubstitute();
+        Factory.XApi.ClearSubstitute();
     }
 
     public override async ValueTask DisposeAsync()

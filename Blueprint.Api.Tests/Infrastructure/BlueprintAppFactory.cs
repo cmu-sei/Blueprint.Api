@@ -8,6 +8,7 @@ using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Services;
 using Cite.Api.Client;
 using Gallery.Api.Client;
 using Microsoft.AspNetCore.Authentication;
@@ -43,6 +44,11 @@ namespace Blueprint.Api.Tests.Infrastructure;
 ///     of the three dereference HttpContext.Request without a null check.
 ///   IHubContext&lt;MainHub&gt; - the notification seam, replaced with <see cref="HubRecorder"/> rather
 ///     than removed, because it is the only place a broadcast is observable without a live connection.
+///   IXApiService - the learning-record store, reached over HTTP through TinCan. Substituted for
+///     observability rather than for safety: XApiOptions:Enabled is false, so the real service returns
+///     early from every method and a test could not tell a statement it should have recorded from one it
+///     should not. Note the real one is what MselService's three IsConfigured() guards consult, and a
+///     substitute answers those the same way an unconfigured service does - false.
 ///
 /// Removed: every IHostedService. XApiBackgroundService, IntegrationService, JoinService and
 /// AddApplicationService each start a `while(true)` over a blocking queue in StartAsync, and three of
@@ -119,6 +125,12 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     public ISteamfitterApiClient Steamfitter { get; } = Substitute.For<ISteamfitterApiClient>();
 
     /// <summary>
+    /// The xAPI statement seam. <c>IsConfigured()</c> answers <c>false</c> unless a test says otherwise,
+    /// which is what the shipped configuration does too.
+    /// </summary>
+    public IXApiService XApi { get; } = Substitute.For<IXApiService>();
+
+    /// <summary>
     /// Everything the application broadcast over SignalR. Blueprint's notifications all flow
     /// SaveChanges → EntityEventInterceptor → MediatR → an <c>EventHandlers</c> handler →
     /// <c>IHubContext&lt;MainHub&gt;</c>, so this records the far end of the real pipeline.
@@ -166,6 +178,7 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
             services.Replace(ServiceDescriptor.Singleton(Gallery));
             services.Replace(ServiceDescriptor.Singleton(PlayerApi));
             services.Replace(ServiceDescriptor.Singleton(Steamfitter));
+            services.Replace(ServiceDescriptor.Singleton(XApi));
             services.Replace(ServiceDescriptor.Singleton<IHubContext<MainHub>>(Hub));
 
             AddPerTestDatabase(services);
@@ -458,6 +471,44 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
             Id = Guid.NewGuid(),
             DataFieldId = dataFieldId,
             ScenarioEventId = scenarioEventId,
+            Value = value,
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+
+    /// <summary>
+    /// An inject of <paramref name="injectTypeId"/> - the reusable half of the data model, where a
+    /// scenario event is the MSEL-specific half.
+    /// </summary>
+    public static InjectEntity Inject(Guid injectTypeId, Guid? createdBy = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new InjectEntity
+        {
+            Id = id,
+            Name = $"inject-{id}",
+            Description = "Seeded by BlueprintAppFactory.Inject",
+            InjectTypeId = injectTypeId,
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
+    /// The other kind of cell: the value of <paramref name="dataFieldId"/> on
+    /// <paramref name="injectId"/>. Separate from <see cref="DataValue"/> rather than an optional
+    /// parameter on it because the check constraint makes the two mutually exclusive - a row with both
+    /// ids, or neither, is rejected by the database rather than by the API.
+    /// </summary>
+    public static DataValueEntity DataValueOnInject(
+        Guid dataFieldId,
+        Guid injectId,
+        string value = null,
+        Guid? createdBy = null) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            DataFieldId = dataFieldId,
+            InjectId = injectId,
             Value = value,
             CreatedBy = createdBy ?? Guid.NewGuid()
         };

@@ -112,6 +112,23 @@ public abstract class ApiTestBase(DatabaseFixture fixture, BlueprintAppFactory f
         return client;
     }
 
+    /// <summary>
+    /// A client whose requests authenticate as <paramref name="actor"/> and additionally carry an
+    /// <c>email</c> claim.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Client(TestActor)"/>, and not cached, because the email address is a
+    /// property of the request rather than of the actor: an invitation restricted to a domain is matched
+    /// against whatever the token happens to carry, so a test may need one actor to arrive with two
+    /// different addresses. Only <c>MselService</c>'s join and launch paths read the claim.
+    /// </remarks>
+    protected HttpClient ClientWithEmail(TestActor actor, string email)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        return Track(Factory.CreateClientFor(actor.Id, actor.Name, email));
+    }
+
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();

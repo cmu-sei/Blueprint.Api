@@ -244,7 +244,7 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     /// A client whose requests authenticate as <paramref name="userId"/>. Use <c>CreateClient()</c>
     /// directly for the anonymous case.
     /// </summary>
-    public HttpClient CreateClientFor(Guid userId, string name = null)
+    public HttpClient CreateClientFor(Guid userId, string name = null, string email = null)
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.UserIdHeader, userId.ToString());
@@ -252,6 +252,11 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
         if (name is not null)
         {
             client.DefaultRequestHeaders.Add(TestAuthHandler.UserNameHeader, name);
+        }
+
+        if (email is not null)
+        {
+            client.DefaultRequestHeaders.Add(TestAuthHandler.EmailHeader, email);
         }
 
         return client;

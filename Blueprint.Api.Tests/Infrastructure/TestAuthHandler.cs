@@ -62,6 +62,13 @@ public class TestAuthHandler(
     /// </summary>
     public const string UserNameHeader = "X-Test-Name";
 
+    /// <summary>
+    /// The <c>email</c> claim, optional. Two places in the application read it, both in
+    /// <c>MselService</c>: an invitation may be restricted to an email domain, and the join and launch
+    /// paths match the caller's address against it. Nothing else in the codebase looks at it.
+    /// </summary>
+    public const string EmailHeader = "X-Test-Email";
+
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         if (!Request.Headers.TryGetValue(UserIdHeader, out var userId))
@@ -74,6 +81,11 @@ public class TestAuthHandler(
         if (Request.Headers.TryGetValue(UserNameHeader, out var name))
         {
             claims.Add(new Claim("name", name.ToString()));
+        }
+
+        if (Request.Headers.TryGetValue(EmailHeader, out var email))
+        {
+            claims.Add(new Claim("email", email.ToString()));
         }
 
         claims.AddRange(Options.Scopes.Select(x => new Claim("scope", x)));

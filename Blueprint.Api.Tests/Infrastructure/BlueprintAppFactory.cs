@@ -371,6 +371,57 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
         };
     }
 
+    /// <summary>
+    /// A competency framework. <paramref name="idNumber"/> defaults to a fresh value rather than to null
+    /// because the column is uniquely indexed, and two frameworks sharing an ID number is the one thing
+    /// the create and import paths are supposed to refuse.
+    /// </summary>
+    public static CompetencyFrameworkEntity CompetencyFramework(
+        Guid? createdBy = null,
+        string idNumber = null,
+        string source = null,
+        string version = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new CompetencyFrameworkEntity
+        {
+            Id = id,
+            Name = $"framework-{id}",
+            IdNumber = idNumber ?? $"FW-{id}",
+            Description = "Seeded by BlueprintAppFactory.CompetencyFramework",
+            Source = source ?? "SEEDED",
+            Version = version ?? "1.0",
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
+    /// A competency in <paramref name="frameworkId"/>. <c>IdNumber</c> is what every relationship in this
+    /// area is expressed in - the service resolves related competencies by ID number, never by id - so a
+    /// test that cares about relationships should name it.
+    /// </summary>
+    public static CompetencyEntity Competency(
+        Guid frameworkId,
+        string idNumber = null,
+        Guid? createdBy = null,
+        Guid? parentId = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new CompetencyEntity
+        {
+            Id = id,
+            CompetencyFrameworkId = frameworkId,
+            IdNumber = idNumber ?? $"C-{id}",
+            ShortName = $"competency-{id}",
+            Description = "Seeded by BlueprintAppFactory.Competency",
+            ParentId = parentId,
+            Path = $"/{id}",
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
     public override async ValueTask DisposeAsync()
     {
         // The host first: it holds pooled connections to the database the session is about to drop.

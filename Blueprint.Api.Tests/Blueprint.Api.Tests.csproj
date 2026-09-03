@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- xunit v3 test projects are executables and supply their own entry point, so the test SDK's
+         generated Program must be suppressed or the two collide. -->
+    <OutputType>Exe</OutputType>
+    <GenerateProgramFile>false</GenerateProgramFile>
+  </PropertyGroup>
+  <!-- Versions live in Directory.Packages.props. -->
+  <ItemGroup>
+    <!-- The four external Crucible API clients are interfaces with hundreds of members between them,
+         and a test reaches a handful. A substitute beats hand-writing stubs that would need editing
+         every time NSwag regenerates one of them. -->
+    <PackageReference Include="NSubstitute" />
+    <!-- Hosts the real Startup in-process so tests can exercise routing, model binding,
+         authorization, the claims transformer, MediatR, AutoMapper and the EF pipeline without
+         Keycloak, Player, Gallery, CITE or Steamfitter. -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="xunit.v3" />
+    <!-- Coverage, opt-in. Nothing here changes what a normal run does: the collector is only loaded
+         when `dotnet test` is asked for XPlat Code Coverage, which only `scripts/coverage.sh` and the
+         manually triggered coverage workflow do. Settings and exclusions live in coverlet.runsettings
+         at the repository root. -->
+    <PackageReference Include="coverlet.collector">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <!-- PostgreSQL is the only database the tests run against, and this starts and disposes it. There
+         is deliberately no in-memory or SQLite fallback: a fallback that quietly replaces the
+         production provider reports a green run that never touched what production uses. -->
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Blueprint.Api.Data is referenced directly even though it flows transitively through
+         Blueprint.Api. The entities and BlueprintContext are what most of these tests are written
+         against, so the dependency is real and saying so keeps it from disappearing if the API's own
+         reference is ever restructured. -->
+    <ProjectReference Include="..\Blueprint.Api\Blueprint.Api.csproj" />
+    <ProjectReference Include="..\Blueprint.Api.Data\Blueprint.Api.Data.csproj" />
+  </ItemGroup>
+</Project>

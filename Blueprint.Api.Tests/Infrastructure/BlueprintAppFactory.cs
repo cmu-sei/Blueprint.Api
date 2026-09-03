@@ -350,6 +350,119 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     }
 
     /// <summary>
+    /// A data field on an MSEL, or - given an <paramref name="injectTypeId"/> - on an inject type. Never
+    /// both: the table carries a check constraint saying one of the two columns must be null. With
+    /// neither it is a template, which is the only kind <c>GET dataFields/templates</c> is meant to
+    /// return.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="isTemplate"/> is separate from the two ids rather than derived from them because
+    /// nothing in the API keeps them consistent: <c>DataFieldService.CreateAsync</c> maps
+    /// <c>IsTemplate</c> straight off the request body, so a field can be both scoped to an MSEL and
+    /// flagged a template. Leave it unset to get the honest default.
+    /// </remarks>
+    public static DataFieldEntity DataField(
+        Guid? mselId = null,
+        Guid? injectTypeId = null,
+        DataFieldType dataType = DataFieldType.String,
+        int displayOrder = 1,
+        string name = null,
+        bool? isTemplate = null,
+        Guid? createdBy = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new DataFieldEntity
+        {
+            Id = id,
+            Name = name ?? $"dataField-{id}",
+            Description = "Seeded by BlueprintAppFactory.DataField",
+            MselId = mselId,
+            InjectTypeId = injectTypeId,
+            DataType = dataType,
+            DisplayOrder = displayOrder,
+            IsTemplate = isTemplate ?? (mselId is null && injectTypeId is null),
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
+    /// One choice in a data field's dropdown. <c>DataOptionEntity.DataFieldId</c> is a required foreign
+    /// key, so an option always belongs to a field.
+    /// </summary>
+    public static DataOptionEntity DataOption(
+        Guid dataFieldId,
+        string optionName = null,
+        string optionValue = null,
+        int displayOrder = 1,
+        Guid? createdBy = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new DataOptionEntity
+        {
+            Id = id,
+            DataFieldId = dataFieldId,
+            OptionName = optionName ?? $"option-{id}",
+            OptionValue = optionValue ?? optionName ?? $"value-{id}",
+            OptionDescription = "Seeded by BlueprintAppFactory.DataOption",
+            DisplayOrder = displayOrder,
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
+    /// A scenario event - one row of an MSEL's timeline. <c>ScenarioEventEntity.MselId</c> is a
+    /// non-nullable foreign key, so an event always belongs to one.
+    /// </summary>
+    /// <remarks>
+    /// <c>EventType</c> is spelled out because <c>Player.Api.Client</c> declares one too, and this file
+    /// has both namespaces in scope.
+    /// </remarks>
+    public static ScenarioEventEntity ScenarioEvent(
+        Guid mselId,
+        int deltaSeconds = 0,
+        int groupOrder = 1,
+        Data.Enumerations.EventType scenarioEventType = Data.Enumerations.EventType.Inject,
+        Guid? createdBy = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new ScenarioEventEntity
+        {
+            Id = id,
+            MselId = mselId,
+            DeltaSeconds = deltaSeconds,
+            GroupOrder = groupOrder,
+            ScenarioEventType = scenarioEventType,
+            Information = $"scenarioEvent-{id}",
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
+    /// One cell: the value of <paramref name="dataFieldId"/> on <paramref name="scenarioEventId"/>.
+    /// </summary>
+    /// <remarks>
+    /// The table requires exactly one of a scenario event and an inject - a check constraint, not a
+    /// convention - and is uniquely indexed on the three ids together, so two values for one field on one
+    /// event is a constraint violation rather than a last-one-wins.
+    /// </remarks>
+    public static DataValueEntity DataValue(
+        Guid dataFieldId,
+        Guid scenarioEventId,
+        string value = null,
+        Guid? createdBy = null) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            DataFieldId = dataFieldId,
+            ScenarioEventId = scenarioEventId,
+            Value = value,
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+
+    /// <summary>
     /// A private catalog by default, so an actor's units are what decide whether they can see it.
     /// <c>CatalogViewRequirement</c> grants any caller a public one.
     /// </summary>

@@ -454,6 +454,45 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     }
 
     /// <summary>
+    /// The Steamfitter work one scenario event triggers. One per event: the foreign key lives on this
+    /// side and is uniquely constrained by the one-to-one relationship.
+    /// </summary>
+    /// <remarks>
+    /// <c>ScenarioEventEntity.SteamfitterTaskId</c> is <em>not</em> the foreign key - the relationship is
+    /// configured with <c>HasForeignKey&lt;SteamfitterTaskEntity&gt;(t => t.ScenarioEventId)</c> - so that
+    /// column is a denormalized copy that nothing keeps current. Set it yourself when a test needs the
+    /// branches that read it.
+    /// </remarks>
+    public static SteamfitterTaskEntity SteamfitterTask(
+        Guid scenarioEventId,
+        string name = null,
+        Guid? createdBy = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new SteamfitterTaskEntity
+        {
+            Id = id,
+            ScenarioEventId = scenarioEventId,
+            Name = name ?? $"steamfitterTask-{id}",
+            Description = "Seeded by BlueprintAppFactory.SteamfitterTask",
+            TaskType = SteamfitterIntegrationType.Notification,
+            Action = SteamfitterTaskAction.http_post,
+            TriggerCondition = SteamfitterTaskTrigger.Time,
+            VmMask = "vm-mask",
+            ApiUrl = "https://steamfitter.example/api",
+            ExpectedOutput = "expected",
+            ExpirationSeconds = 60,
+            DelaySeconds = 5,
+            IntervalSeconds = 10,
+            Iterations = 2,
+            UserExecutable = true,
+            Repeatable = false,
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
     /// One cell: the value of <paramref name="dataFieldId"/> on <paramref name="scenarioEventId"/>.
     /// </summary>
     /// <remarks>

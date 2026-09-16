@@ -4,6 +4,8 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.ResponseCompression;
+using System.IO.Compression;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.AspNetCore.Authentication;
@@ -117,6 +119,27 @@ public class Startup
 
         services.AddCors(options => options.UseConfiguredCors(Configuration.GetSection("CorsPolicy")));
 
+        // Some responses are large and highly compressible — a competency framework with
+        // its full competency tree runs to well over a megabyte of JSON.
+        services.AddResponseCompression(options =>
+        {
+            options.EnableForHttps = true;
+            // gzip first, deliberately. .NET only exposes Fastest/Optimal for Brotli, and
+            // Fastest is Brotli quality 1, which on a 1.5 MB framework is both bigger and
+            // slower than gzip at the same setting (410 kB / 105 ms vs 294 kB / 55 ms);
+            // Optimal is quality 11, far too slow for a response generated per request.
+            // Brotli stays registered for the rare client that accepts only br.
+            options.Providers.Add<GzipCompressionProvider>();
+            options.Providers.Add<BrotliCompressionProvider>();
+            // Only the JSON payloads, deliberately not the defaults: those include
+            // text/plain, which is what SignalR long polling uses, and compressing a
+            // long-lived poll response buffers it.
+            options.MimeTypes = ["application/json", "text/json", "application/problem+json"];
+        });
+        // Fastest, not Optimal: at these payload sizes the extra ratio is not worth the CPU.
+        services.Configure<BrotliCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
+        services.Configure<GzipCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
+
         services.AddSignalR(o => o.StatefulReconnectBufferSize = _signalROptions.StatefulReconnectBufferSizeBytes)
             .AddJsonProtocol(options =>
             {
@@ -185,6 +208,8 @@ public class Startup
         services.AddMemoryCache();
 
         services.AddScoped<ICompetencyFrameworkService, CompetencyFrameworkService>();
+        // Singleton: the import POST and the progress GET are separate requests.
+        services.AddSingleton<ICompetencyFrameworkImportProgressService, CompetencyFrameworkImportProgressService>();
         services.AddScoped<IProficiencyScaleService, ProficiencyScaleService>();
         services.AddScoped<IProficiencyLevelService, ProficiencyLevelService>();
         services.AddScoped<ICardService, CardService>();
@@ -282,6 +307,7 @@ public class Startup
             app.UseDeveloperExceptionPage();
         }
         app.UsePathBase(_pathbase);
+        app.UseResponseCompression();
         app.UseRouting();
         app.UseCors("default");
 

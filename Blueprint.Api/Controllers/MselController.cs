@@ -325,7 +325,7 @@ namespace Blueprint.Api.Controllers
         [HttpPut("msels/{id}/xlsx")]
         [ProducesResponseType(typeof(Guid), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "replaceWithXlsxFile")]
-        public async Task<IActionResult> ReplaceAsync([FromForm] FileForm form, Guid id, CancellationToken ct)
+        public async Task<IActionResult> ReplaceAsync([FromForm] MselFileForm form, Guid id, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var result = await _mselService.ReplaceAsync(form, id, hasSystemPermission, ct);

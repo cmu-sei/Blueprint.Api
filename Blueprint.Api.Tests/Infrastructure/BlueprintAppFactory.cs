@@ -346,6 +346,44 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     }
 
     /// <summary>
+    /// One of the applications a MSEL asks Player to create in its view.
+    /// </summary>
+    /// <remarks>
+    /// <c>Url</c> defaults to something absolute and <c>http</c>, because that is what
+    /// <c>IntegrationPlayerExtensions.CreateApplicationsAsync</c> requires to send a url at all - anything
+    /// else it silently sends as null. Pass a url holding <c>{playerViewId}</c> and friends to exercise the
+    /// placeholder substitution.
+    /// </remarks>
+    public static PlayerApplicationEntity PlayerApplication(
+        Guid mselId,
+        string name = null,
+        string url = "http://application.example/",
+        string icon = null,
+        Guid? createdBy = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new PlayerApplicationEntity
+        {
+            Id = id,
+            MselId = mselId,
+            Name = name ?? $"application-{id}",
+            Url = url,
+            Icon = icon,
+            Embeddable = true,
+            LoadInBackground = false,
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
+    /// The join row that puts an application on one team's dashboard, and carries the order it appears in.
+    /// </summary>
+    public static PlayerApplicationTeamEntity PlayerApplicationTeam(
+        Guid playerApplicationId, Guid teamId, int displayOrder = 0) =>
+        new(playerApplicationId, teamId) { DisplayOrder = displayOrder };
+
+    /// <summary>
     /// An inject type. Every catalog needs one - <c>CatalogEntity.InjectTypeId</c> is a non-nullable
     /// foreign key - so seed this before <see cref="Catalog"/>.
     /// </summary>

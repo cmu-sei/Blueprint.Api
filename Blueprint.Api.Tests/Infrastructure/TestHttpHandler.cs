@@ -44,8 +44,15 @@ namespace Blueprint.Api.Tests.Infrastructure;
 public sealed class TestHttpHandler : HttpMessageHandler
 {
     private readonly List<Rule> _rules = [];
+    private readonly Lock _sent = new();
+    private bool _yields;
 
     /// <summary>Every request that reached the transport, in order, with what it carried.</summary>
+    /// <remarks>
+    /// Appended under a lock. Several of the things this handler stands under fan out with
+    /// <c>Task.WhenAll</c>, and a <c>List&lt;T&gt;</c> torn by two concurrent adds would surface as an
+    /// assertion failure somewhere else entirely.
+    /// </remarks>
     public List<SentRequest> Sent { get; } = [];
 
     /// <summary>The path of each request, in order. The usual assertion about how often a token is fetched.</summary>
@@ -81,6 +88,26 @@ public sealed class TestHttpHandler : HttpMessageHandler
         return this;
     }
 
+    /// <summary>
+    /// Makes every response complete asynchronously, so work started in parallel really is in flight at
+    /// once.
+    /// </summary>
+    /// <remarks>
+    /// Off by default, and worth understanding before reaching for it. A real socket never answers
+    /// synchronously, but this handler does: the whole of <see cref="SendAsync"/> can run to completion
+    /// without yielding, so a fan-out written as <c>items.Select(async x => ...)</c> executes one item at a
+    /// time and looks orderly. That hides any defect in code meaning to limit its own concurrency - which is
+    /// exactly what blueprint's <c>batchSize</c> parameters claim to do - so a test about concurrency has to
+    /// ask for this and a test about anything else should not, since it is the cheaper and more predictable
+    /// arrangement.
+    /// </remarks>
+    public TestHttpHandler Yields()
+    {
+        _yields = true;
+
+        return this;
+    }
+
     /// <summary>A status and nothing else, for the refusals.</summary>
     public TestHttpHandler Answers(string path, HttpStatusCode status) =>
         Add(path, status, string.Empty, once: false);
@@ -108,15 +135,26 @@ public sealed class TestHttpHandler : HttpMessageHandler
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var path = Path(request);
+        var body = request.Content is null
+            ? null
+            : await request.Content.ReadAsStringAsync(cancellationToken);
 
-        Sent.Add(new SentRequest(
-            request.Method,
-            path,
-            request.RequestUri.Query,
-            request.Headers.TryGetValues("authorization", out var authorization)
-                ? string.Join(", ", authorization)
-                : null,
-            request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken)));
+        lock (_sent)
+        {
+            Sent.Add(new SentRequest(
+                request.Method,
+                path,
+                request.RequestUri.Query,
+                request.Headers.TryGetValues("authorization", out var authorization)
+                    ? string.Join(", ", authorization)
+                    : null,
+                body));
+        }
+
+        if (_yields)
+        {
+            await Task.Yield();
+        }
 
         var rule = _rules.FirstOrDefault(x => !x.Used && x.Matches(request.Method, path));
         rule?.Use();
@@ -129,16 +167,16 @@ public sealed class TestHttpHandler : HttpMessageHandler
         }
 
         // Read once: a lazily computed body may not answer the same way twice.
-        var body = rule.Body;
+        var answer = rule.Body;
 
-        if (body is null)
+        if (answer is null)
         {
             throw new HttpRequestException($"TestHttpHandler was told to fail {path}.");
         }
 
         return new HttpResponseMessage(rule.Status)
         {
-            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            Content = new StringContent(answer, Encoding.UTF8, "application/json"),
             RequestMessage = request,
         };
     }

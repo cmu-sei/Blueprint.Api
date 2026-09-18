@@ -145,6 +145,27 @@ public sealed class TestHttpHandler : HttpMessageHandler
         return this;
     }
 
+    /// <summary>
+    /// Holds every response for as long as the caller's token allows, so <see cref="MaxInFlight"/> ends up
+    /// being the high-water mark of requests the code under test was willing to have open at once.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the primitive for asking "how many at a time", where <see cref="HoldsUntil"/> answers "were
+    /// there ever this many together". The difference matters: once <see cref="HoldsUntil"/>'s gate opens,
+    /// every later request completes freely, so a caller that starts four requests two at a time and one
+    /// that starts all four look identical after the second arrives. With nothing ever released, they do
+    /// not.
+    /// </para>
+    /// <para>
+    /// The call under test never finishes, so a test using this expects an
+    /// <c>OperationCanceledException</c> and passes a token that cancels after a second or two. That is not
+    /// a shortcoming - the assertion is about the requests, and a batched implementation would deadlock on a
+    /// real server too.
+    /// </para>
+    /// </remarks>
+    public TestHttpHandler Holds() => HoldsUntil(int.MaxValue);
+
     /// <summary>The most requests that were ever in flight at once.</summary>
     public int MaxInFlight { get; private set; }
 

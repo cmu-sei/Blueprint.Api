@@ -344,13 +344,54 @@ public sealed class TestHttpHandler : HttpMessageHandler
         public void Use() => Used = _once;
 
         /// <summary>
-        /// The path, or a prefix of it when the rule ends in <c>*</c> - which is what an arrangement that
-        /// does not care about the id in the route wants - and the method when the rule named one.
+        /// The method, when the rule named one, and the path - where <c>*</c> stands for any run of
+        /// characters, anywhere in the pattern.
         /// </summary>
-        public bool Matches(HttpMethod method, string requested) =>
-            (Method is null || Method == method) &&
-            (Path.EndsWith('*')
-                ? requested.StartsWith(Path.TrimEnd('*'), StringComparison.Ordinal)
-                : string.Equals(requested, Path.TrimStart('/'), StringComparison.Ordinal));
+        /// <remarks>
+        /// A wildcard in the middle is the case that matters: the sibling APIs' routes are mostly
+        /// <c>api/views/{id}/teams</c> shaped, so <c>player/api/views/*/teams</c> has to match. A pattern
+        /// with no <c>*</c> is an exact match, and one ending in <c>*</c> is a prefix match, which is what
+        /// they meant before this understood the middle case.
+        /// </remarks>
+        public bool Matches(HttpMethod method, string requested)
+        {
+            if (Method is not null && Method != method)
+            {
+                return false;
+            }
+
+            var pattern = Path.TrimStart('/');
+
+            if (!pattern.Contains('*'))
+            {
+                return string.Equals(requested, pattern, StringComparison.Ordinal);
+            }
+
+            var parts = pattern.Split('*');
+
+            if (!requested.StartsWith(parts[0], StringComparison.Ordinal) ||
+                !requested.EndsWith(parts[^1], StringComparison.Ordinal) ||
+                requested.Length < parts.Sum(x => x.Length))
+            {
+                return false;
+            }
+
+            // Walk the middle parts in order, so a/*/b/*/c cannot be satisfied out of sequence.
+            var at = parts[0].Length;
+
+            for (var i = 1; i < parts.Length - 1; i++)
+            {
+                var found = requested.IndexOf(parts[i], at, StringComparison.Ordinal);
+
+                if (found < 0)
+                {
+                    return false;
+                }
+
+                at = found + parts[i].Length;
+            }
+
+            return true;
+        }
     }
 }

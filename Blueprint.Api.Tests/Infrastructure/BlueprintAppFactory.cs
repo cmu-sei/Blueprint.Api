@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Blueprint.Api.Data;
@@ -504,7 +505,8 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     public static SteamfitterTaskEntity SteamfitterTask(
         Guid scenarioEventId,
         string name = null,
-        Guid? createdBy = null)
+        Guid? createdBy = null,
+        Dictionary<string, string> actionParameters = null)
     {
         var id = Guid.NewGuid();
 
@@ -526,6 +528,10 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
             Iterations = 2,
             UserExecutable = true,
             Repeatable = false,
+            // Left null by default, because that is how a row arrives from the database unless something
+            // set it - and it is the shape that makes IntegrationSteamfitterExtensions throw for the two
+            // task types that write into it.
+            ActionParameters = actionParameters,
             CreatedBy = createdBy ?? Guid.NewGuid()
         };
     }

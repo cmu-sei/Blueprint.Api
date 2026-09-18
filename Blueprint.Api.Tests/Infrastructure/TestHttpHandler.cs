@@ -46,6 +46,10 @@ public sealed class TestHttpHandler : HttpMessageHandler
     private readonly List<Rule> _rules = [];
     private readonly Lock _sent = new();
     private bool _yields;
+    private TaskCompletionSource _gate;
+    private int _gateCount;
+    private int _arrived;
+    private int _inFlight;
 
     /// <summary>Every request that reached the transport, in order, with what it carried.</summary>
     /// <remarks>
@@ -69,9 +73,17 @@ public sealed class TestHttpHandler : HttpMessageHandler
 
     /// <summary>A body written out as it arrives on the wire, with the status the sender gave it.</summary>
     /// <remarks>
+    /// <para>
     /// For the identity provider, whose discovery document and token response are not types this
     /// repository has: what IdentityModel parses is the OAuth JSON, so that is what a test of it should be
     /// handing over.
+    /// </para>
+    /// <para>
+    /// Rules are matched in the order they were added and a rule with <paramref name="once"/> false answers
+    /// <em>every</em> request for its path, so registering two of them does not make a queue - the first
+    /// answers both. To give two calls to one route different answers, mark the earlier one
+    /// <paramref name="once"/>.
+    /// </para>
     /// </remarks>
     public TestHttpHandler AnswersJson(
         string path, string json, HttpStatusCode status = HttpStatusCode.OK, bool once = false) =>
@@ -108,6 +120,34 @@ public sealed class TestHttpHandler : HttpMessageHandler
         return this;
     }
 
+    /// <summary>
+    /// Holds every response until <paramref name="count"/> requests have arrived, then releases them all
+    /// together.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The deterministic way to ask whether code that claims to limit its own concurrency does. If it does,
+    /// fewer than <paramref name="count"/> requests are ever in flight, the gate never opens and the work
+    /// never finishes - so a test built on this asserts concurrency by <em>completing at all</em>, which no
+    /// interleaving can fake. <see cref="Yields"/> alone is not enough: it makes responses asynchronous but
+    /// does not make the requests overlap, so the order they are recorded in is up to the thread pool.
+    /// </para>
+    /// <para>
+    /// Give the call under test a token that cancels after a few seconds. Without one, code that batches
+    /// correctly hangs here rather than failing, which is a worse way to learn the same thing.
+    /// </para>
+    /// </remarks>
+    public TestHttpHandler HoldsUntil(int count)
+    {
+        _gateCount = count;
+        _gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        return this;
+    }
+
+    /// <summary>The most requests that were ever in flight at once.</summary>
+    public int MaxInFlight { get; private set; }
+
     /// <summary>A status and nothing else, for the refusals.</summary>
     public TestHttpHandler Answers(string path, HttpStatusCode status) =>
         Add(path, status, string.Empty, once: false);
@@ -139,6 +179,8 @@ public sealed class TestHttpHandler : HttpMessageHandler
             ? null
             : await request.Content.ReadAsStringAsync(cancellationToken);
 
+        var inFlight = Interlocked.Increment(ref _inFlight);
+
         lock (_sent)
         {
             Sent.Add(new SentRequest(
@@ -149,11 +191,29 @@ public sealed class TestHttpHandler : HttpMessageHandler
                     ? string.Join(", ", authorization)
                     : null,
                 body));
+
+            MaxInFlight = Math.Max(MaxInFlight, inFlight);
         }
 
-        if (_yields)
+        try
         {
-            await Task.Yield();
+            if (_gate is not null)
+            {
+                if (Interlocked.Increment(ref _arrived) >= _gateCount)
+                {
+                    _gate.TrySetResult();
+                }
+
+                await _gate.Task.WaitAsync(cancellationToken);
+            }
+            else if (_yields)
+            {
+                await Task.Yield();
+            }
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _inFlight);
         }
 
         var rule = _rules.FirstOrDefault(x => !x.Used && x.Matches(request.Method, path));

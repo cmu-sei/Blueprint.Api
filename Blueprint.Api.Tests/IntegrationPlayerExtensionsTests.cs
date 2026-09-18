@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
@@ -110,14 +111,14 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
     {
         var handler = Handler().Answers("api/views/*", HttpStatusCode.NoContent);
         var client = IntegrationPlayerExtensions.GetPlayerApiClient(
-            handler.AsFactory(), "http://player.example/", await BearerToken());
+            handler.AsFactory(), "http://player.example/", await Tokens.Bearer());
 
         await IntegrationPlayerExtensions.PullFromPlayerAsync(ViewId, client, Ct);
 
         var sent = Assert.Single(handler.Sent);
 
         Assert.Equal($"api/views/{ViewId}", sent.Path);
-        Assert.Equal("Bearer abc123", sent.Authorization);
+        Assert.Equal(Tokens.Header, sent.Authorization);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -292,9 +293,7 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         var second = BlueprintAppFactory.Team(msel.Id);
         await Seed(first, second);
 
-        var handler = Handler()
-            .AnswersJson($"api/views/{ViewId}/teams", TeamJson, HttpStatusCode.Created)
-            .AnswersJson($"api/views/{ViewId}/teams", TeamJson, HttpStatusCode.Created);
+        var handler = Handler().AnswersJson($"api/views/{ViewId}/teams", TeamJson, HttpStatusCode.Created);
 
         await IntegrationPlayerExtensions.CreateTeamsAsync(
             await Reload(msel.Id), Client(handler), null, [], Ct);
@@ -368,7 +367,6 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         var actor = await Actor().OnTeam(first).OnTeam(second).SeedAsync();
 
         var handler = Handler()
-            .AnswersJson($"api/views/{ViewId}/teams", TeamJson, HttpStatusCode.Created)
             .AnswersJson($"api/views/{ViewId}/teams", TeamJson, HttpStatusCode.Created)
             .AnswersJson("api/users", UserJson, HttpStatusCode.Created)
             .AnswersJson($"api/teams/{first.Id}/users/{actor.Id}", UserJson)
@@ -649,15 +647,20 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
 
     /// <remarks>
     /// <para>
-    /// The defect in this class's remarks, and the reason <see cref="TestHttpHandler.Yields"/> exists. Three
-    /// applications, one team each, <c>batchSize: 1</c> - which should mean one application finished before
-    /// the next begins. What happens instead is that all three creates go out before any instance does,
-    /// because <c>Select(async ...)</c> starts each task as the list is materialized and the batching loop
-    /// only awaits what is already running.
+    /// The defect in this class's remarks, and the reason <see cref="TestHttpHandler.HoldsUntil"/> exists.
+    /// Three applications, one team each, <c>batchSize: 1</c> - which should mean one application finished
+    /// before the next begins. What happens instead is that all three start at once, because
+    /// <c>Select(async ...)</c> starts each task as the list is materialized and the batching loop only
+    /// awaits what is already running.
     /// </para>
     /// <para>
-    /// The instances are asserted as a set, not a sequence: they are genuinely concurrent, so their order
-    /// varies between runs. That variation is itself the finding.
+    /// The handler holds every response until three requests have arrived, so the call can only complete if
+    /// three were in flight together. Code that honoured <c>batchSize: 1</c> would have one in flight, the
+    /// gate would never open, and this test would fail by cancellation after ten seconds - which is why the
+    /// token below is a bounded one rather than the test's own. Asserting the order the requests were
+    /// recorded in would be simpler and wrong: it passed five times in isolation and failed once under a
+    /// full-suite run, because whether the three creates are recorded before the first instance is up to the
+    /// thread pool.
     /// </para>
     /// <para>
     /// Deferring the work - <c>Select(application =&gt; async () =&gt; ...)</c> and invoking a slice at a
@@ -678,23 +681,18 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
             await Seed(BlueprintAppFactory.PlayerApplicationTeam(application.Id, team.Id, displayOrder: i));
         }
 
-        // Yields() so the requests are really in flight at once; without it this handler answers
-        // synchronously and the fan-out runs one application at a time whatever the code says.
-        var handler = new TestHttpHandler().Yields()
+        var handler = new TestHttpHandler().HoldsUntil(3)
             .AnswersJson($"api/views/{ViewId}/applications", ApplicationJson, HttpStatusCode.Created)
-            .AnswersJson($"api/views/{ViewId}/applications", ApplicationJson, HttpStatusCode.Created)
-            .AnswersJson($"api/views/{ViewId}/applications", ApplicationJson, HttpStatusCode.Created)
-            .AnswersJson($"api/teams/{team.Id}/application-instances", InstanceJson, HttpStatusCode.Created)
-            .AnswersJson($"api/teams/{team.Id}/application-instances", InstanceJson, HttpStatusCode.Created)
             .AnswersJson($"api/teams/{team.Id}/application-instances", InstanceJson, HttpStatusCode.Created);
 
-        await CreateApplications(msel.Id, handler, batchSize: 1);
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        bounded.CancelAfter(TimeSpan.FromSeconds(10));
 
-        var paths = handler.Paths.ToList();
+        await IntegrationPlayerExtensions.CreateApplicationsAsync(
+            await Reload(msel.Id), Client(handler), Db, batchSize: 1, Options(), bounded.Token);
 
-        Assert.Equal(6, paths.Count);
-        Assert.All(paths.Take(3), x => Assert.EndsWith("/applications", x));
-        Assert.All(paths.Skip(3), x => Assert.EndsWith("/application-instances", x));
+        Assert.Equal(3, handler.MaxInFlight);
+        Assert.Equal(6, handler.Sent.Count);
     }
 
     [Fact]
@@ -858,40 +856,6 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         SteamfitterUiUrl = "http://steamfitter.ui",
         BlueprintUiUrl = "http://blueprint.ui"
     };
-
-    /// <summary>A real token, so the authorization header is one production could have produced.</summary>
-    private static async Task<IdentityModel.Client.TokenResponse> BearerToken()
-    {
-        var idp = new TestHttpHandler()
-            .AnswersJson("realms/crucible/.well-known/openid-configuration", """
-                {
-                  "issuer": "http://localhost:8080/realms/crucible",
-                  "authorization_endpoint": "http://localhost:8080/realms/crucible/protocol/openid-connect/auth",
-                  "token_endpoint": "http://localhost:8080/realms/crucible/protocol/openid-connect/token",
-                  "jwks_uri": "http://localhost:8080/realms/crucible/protocol/openid-connect/certs",
-                  "response_types_supported": ["code"],
-                  "subject_types_supported": ["public"],
-                  "id_token_signing_alg_values_supported": ["RS256"]
-                }
-                """)
-            .AnswersJson("realms/crucible/protocol/openid-connect/certs", """{"keys":[]}""")
-            .AnswersJson(
-                "realms/crucible/protocol/openid-connect/token",
-                """{"access_token":"abc123","token_type":"Bearer","expires_in":300}""");
-
-        using var client = new HttpClient(idp, disposeHandler: false);
-
-        return await ApiClientsExtensions.RequestTokenAsync(
-            new Blueprint.Api.Infrastructure.Options.ResourceOwnerAuthorizationOptions
-            {
-                Authority = "http://localhost:8080/realms/crucible",
-                ClientId = "blueprint-admin",
-                UserName = "blueprint-admin",
-                Password = string.Empty,
-                Scope = "player"
-            },
-            client);
-    }
 
     /// <summary>
     /// A MSEL already pushed as far as having a Player view, since every method here but the pull needs one.

@@ -617,8 +617,12 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
 
     /// <remarks>
     /// The application id in the instance form is <c>(Guid)playerApplication.Id</c> - the id Player answered
-    /// with, not the blueprint row's - so an instance is created against whatever Player named. Player
-    /// answering without an id is an <c>InvalidOperationException</c> from that cast.
+    /// with, not the blueprint row's - so an instance is created against whatever Player named. The cast
+    /// reads like a guard and is not one: Player's <c>Application.Id</c> is a non-nullable <c>Guid</c>, so
+    /// an answer without an id is <c>Guid.Empty</c> and the instance points at nothing. Same shape as
+    /// <c>CreateCardsAsync</c>'s <c>CardId = (Guid)card.GalleryId</c>; pinned in
+    /// <c>AddApplicationServiceTests.AddApplication_WhenPlayerAnswersWithoutAnId_UsesTheAllZerosGuid</c>,
+    /// which drives the same form through the other implementation.
     /// </remarks>
     [Fact]
     public async Task CreateApplications_UsesTheApplicationIdPlayerAnsweredWith()

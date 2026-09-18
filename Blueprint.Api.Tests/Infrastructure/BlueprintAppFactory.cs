@@ -347,6 +347,36 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     }
 
     /// <summary>
+    /// One move of a MSEL's timeline: the coarse division that scenario events are grouped into.
+    /// </summary>
+    /// <remarks>
+    /// <c>DeltaSeconds</c> is what everything orders and groups by; <c>MoveNumber</c> is what CITE, Gallery
+    /// and Steamfitter are told. The two are independent, and nothing constrains either - there is no unique
+    /// index on <c>(MselId, MoveNumber)</c>, which is why a MSEL can have two move zeroes.
+    /// </remarks>
+    public static MoveEntity Move(
+        Guid mselId,
+        int moveNumber = 0,
+        int deltaSeconds = 0,
+        DateTime? situationTime = null,
+        Guid? createdBy = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new MoveEntity
+        {
+            Id = id,
+            MselId = mselId,
+            MoveNumber = moveNumber,
+            DeltaSeconds = deltaSeconds,
+            Description = $"move-{moveNumber}",
+            SituationDescription = $"situation for move {moveNumber}",
+            SituationTime = situationTime ?? new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
     /// One of the applications a MSEL asks Player to create in its view.
     /// </summary>
     /// <remarks>

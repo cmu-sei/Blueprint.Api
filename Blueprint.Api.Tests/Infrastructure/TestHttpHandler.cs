@@ -211,7 +211,8 @@ public sealed class TestHttpHandler : HttpMessageHandler
                 request.Headers.TryGetValues("authorization", out var authorization)
                     ? string.Join(", ", authorization)
                     : null,
-                body));
+                body,
+                request.Headers.ToDictionary(x => x.Key, x => string.Join(", ", x.Value))));
 
             MaxInFlight = Math.Max(MaxInFlight, inFlight);
         }
@@ -292,13 +293,26 @@ public sealed class TestHttpHandler : HttpMessageHandler
 
     /// <summary>What one request carried. The body is read here because the content is disposed later.</summary>
     /// <remarks>
+    /// <para>
     /// <c>Authorization</c> is read out of the raw header collection rather than
     /// <c>request.Headers.Authorization</c>, because <c>ApiClientsExtensions.GetHttpClient</c> writes the
     /// header by name and can write a value that is not a well-formed credential - which is a thing these
-    /// tests assert, and which the typed property would refuse to hand back.
+    /// tests assert, and which the typed property would refuse to hand back. It is also in
+    /// <paramref name="Headers"/>; it keeps its own property because nearly every test wants it and none of
+    /// the others did until the LRS's <c>X-Experience-API-Version</c> had to be pinned.
+    /// </para>
+    /// <para>
+    /// <paramref name="Headers"/> holds the request headers only, not the content's - a
+    /// <c>Content-Type</c> belongs to the body and is not on this collection.
+    /// </para>
     /// </remarks>
     public sealed record SentRequest(
-        HttpMethod Method, string Path, string Query, string Authorization, string Body);
+        HttpMethod Method,
+        string Path,
+        string Query,
+        string Authorization,
+        string Body,
+        IReadOnlyDictionary<string, string> Headers = null);
 
     private sealed class Rule
     {

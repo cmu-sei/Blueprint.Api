@@ -191,6 +191,11 @@ public sealed class IntegrationServiceHarness
     public Task<MselEntity> WaitForDeployment(Guid mselId, CancellationToken ct = default) =>
         WaitFor(mselId, x => x.Status == Data.Enumerations.MselItemStatus.Deployed, ct);
 
+    /// <summary>Waits for the worker to bring the MSEL to a given status, which is how a pull finishes.</summary>
+    public Task<MselEntity> WaitForFinalStatus(
+        Guid mselId, Data.Enumerations.MselItemStatus status, CancellationToken ct = default) =>
+        WaitFor(mselId, x => x.Status == status && x.IntegrationStatus is null, ct);
+
     /// <summary>Waits for the worker to give up, which it announces by writing an <c>ERROR:</c> status.</summary>
     public Task<MselEntity> WaitForError(Guid mselId, CancellationToken ct = default) =>
         WaitFor(mselId, x => x.IntegrationStatus is not null && x.IntegrationStatus.StartsWith("ERROR"), ct);

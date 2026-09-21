@@ -26,8 +26,9 @@ public class TestAuthOptions : AuthenticationSchemeOptions
 /// </summary>
 /// <remarks>
 /// <para>
-/// This mints only what a real access token would carry - <c>sub</c>, optionally <c>name</c>, and the
-/// scopes. Everything that decides what the caller may *do* still comes from the database, because
+/// This mints only what a real access token would carry - <c>sub</c>, <c>iss</c>, optionally <c>name</c>
+/// and <c>email</c>, and the scopes. Everything that decides what the caller may *do* still comes from
+/// the database, because
 /// <c>AuthorizationClaimsTransformer</c> is an <c>IClaimsTransformation</c> and so runs for whatever
 /// scheme authenticated the request: the real <c>UserClaimsService</c> reads the user's
 /// <c>SystemRoleEntity</c> and adds the permission claims. See <see cref="TestActorBuilder"/>.
@@ -57,6 +58,19 @@ public class TestAuthHandler(
     public const string UserIdHeader = "X-Test-User";
 
     /// <summary>
+    /// The <c>iss</c> claim every authenticated test request carries, matching what Keycloak puts in a
+    /// real token.
+    /// </summary>
+    /// <remarks>
+    /// Not optional, and not decoration: <c>XApiService.EnsureAgentInitialized</c> reads it with
+    /// <c>Claims.First(c => c.Type == "iss")</c> — unconditionally, even when
+    /// <c>XApiOptions.IssuerUrl</c> is configured — so a principal without it cannot produce an xAPI
+    /// statement. Without this claim an xAPI-enabled host would answer 500 on every write route for a
+    /// purely harness reason. Nothing else in blueprint reads <c>iss</c>.
+    /// </remarks>
+    public const string Issuer = "https://localhost:8443/realms/crucible";
+
+    /// <summary>
     /// The <c>name</c> claim, optional. Present because it is not inert: <c>UserClaimsService.ValidateUser</c>
     /// writes it back to the user row, and falls back to "Anonymous" for a user it has to create.
     /// </summary>
@@ -76,7 +90,11 @@ public class TestAuthHandler(
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        var claims = new List<Claim> { new("sub", userId.ToString()) };
+        var claims = new List<Claim>
+        {
+            new("sub", userId.ToString()),
+            new("iss", Issuer),
+        };
 
         if (Request.Headers.TryGetValue(UserNameHeader, out var name))
         {

@@ -703,6 +703,34 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     }
 
     /// <summary>
+    /// The join row that puts an inject in a catalog. Every route that reads a catalog's injects reads this
+    /// table, and <c>InjectService.CreateAsync</c> is the only thing in the API that writes it.
+    /// </summary>
+    /// <remarks>
+    /// <c>CatalogInjectEntity</c> is <b>not</b> a <c>BaseEntity</c>, so nothing records who added an inject to
+    /// a catalog or when. <c>(InjectId, CatalogId)</c> is uniquely indexed and both foreign keys cascade.
+    /// Neither <c>IsNew</c> nor <c>DisplayOrder</c> appears on <c>ViewModels.Injectm</c>, so neither reaches
+    /// the wire on any inject route - the create path leaves both at their defaults and no inject route can
+    /// show or change them.
+    /// </remarks>
+    public static CatalogInjectEntity CatalogInject(
+        Guid catalogId, Guid injectId, bool isNew = false, int displayOrder = 0) =>
+        new(catalogId, injectId) { Id = Guid.NewGuid(), IsNew = isNew, DisplayOrder = displayOrder };
+
+    /// <summary>
+    /// The join row that makes a private catalog visible to a unit's members - the only thing
+    /// <c>CatalogViewRequirement</c> reads beyond the catalog's own <c>IsPublic</c> and <c>CreatedBy</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>Id</c> is settable on purpose. It is the row's own primary key and nothing in the API should care
+    /// what it is - but <c>InjectService.GetAsync</c> compares it against a <em>user</em> id, so a test for
+    /// that defect has to be able to choose it. See
+    /// <c>InjectEndpointTests.Get_ForACatalogUnitRowWhosePrimaryKeyEqualsTheCallersId_ReadsAnyInject</c>.
+    /// </remarks>
+    public static CatalogUnitEntity CatalogUnit(Guid unitId, Guid catalogId, Guid? id = null) =>
+        new(unitId, catalogId) { Id = id ?? Guid.NewGuid() };
+
+    /// <summary>
     /// A competency framework. <paramref name="idNumber"/> defaults to a fresh value rather than to null
     /// because the column is uniquely indexed, and two frameworks sharing an ID number is the one thing
     /// the create and import paths are supposed to refuse.

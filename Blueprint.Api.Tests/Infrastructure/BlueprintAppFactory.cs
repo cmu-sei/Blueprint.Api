@@ -347,6 +347,57 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     }
 
     /// <summary>
+    /// One Gallery card: the topic heading that a MSEL's articles are filed under.
+    /// </summary>
+    /// <remarks>
+    /// <c>MselId</c> is nullable and is the whole of the permission story, because <c>CardService</c> has two
+    /// permission branches and picks between them on whether it is set: a card with a MSEL is the MSEL
+    /// owner's or editor's, and a card without one is <c>ManageGalleryCards</c>'. <c>IsTemplate</c> is a
+    /// separate flag that nothing keeps in step with it, so all four combinations are reachable - and a card
+    /// with no MSEL and no template flag is reachable by no list route at all
+    /// (<c>CardEndpointTests.Update_ThatOmitsTheMselId_WithManageGalleryCardsOnly_DetachesTheCard</c>).
+    /// Pass <paramref name="mselId"/> null and <paramref name="isTemplate"/> true for a template.
+    /// <para />
+    /// Nothing is unique here: two cards may share a MSEL, a <c>Move</c> and an <c>Inject</c>.
+    /// </remarks>
+    public static CardEntity Card(
+        Guid? mselId,
+        int move = 0,
+        int inject = 0,
+        bool isTemplate = false,
+        string description = null,
+        Guid? galleryId = null,
+        Guid? createdBy = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new CardEntity
+        {
+            Id = id,
+            MselId = mselId,
+            Name = $"card-{id}",
+            Description = description ?? $"description of card {id}",
+            Move = move,
+            Inject = inject,
+            GalleryId = galleryId,
+            IsTemplate = isTemplate,
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
+    /// The join row that puts a card in front of one team, and says what that team may do with it.
+    /// </summary>
+    /// <remarks>
+    /// <c>CardTeamEntity</c> is <b>not</b> a <c>BaseEntity</c>, so a card team row carries no audit fields at
+    /// all - there is no record of who showed a card to a team or when. <c>(TeamId, CardId)</c> is uniquely
+    /// indexed, so a second row for one pair is a 500. Nothing requires the team to belong to the card's MSEL.
+    /// </remarks>
+    public static CardTeamEntity CardTeam(
+        Guid cardId, Guid teamId, bool isShownOnWall = false, bool canPostArticles = false) =>
+        new(cardId, teamId) { Id = Guid.NewGuid(), IsShownOnWall = isShownOnWall, CanPostArticles = canPostArticles };
+
+    /// <summary>
     /// One move of a MSEL's timeline: the coarse division that scenario events are grouped into.
     /// </summary>
     /// <remarks>

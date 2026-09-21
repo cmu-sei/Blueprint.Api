@@ -347,6 +347,36 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     }
 
     /// <summary>
+    /// The join row that puts a user on a team - the membership every <c>MselViewRequirement</c> and
+    /// <c>MselUserRequirement</c> check looks for once the unit-and-role path has failed.
+    /// </summary>
+    /// <remarks>
+    /// <c>TeamUserEntity</c> is <b>not</b> a <c>BaseEntity</c>, so nothing records who put a user on a team
+    /// or when - although <c>ViewModels.TeamUser</c> derives from <c>Base</c> and does carry the four audit
+    /// fields, so every team-user route answers an all-zeros <c>createdBy</c> and a null <c>dateCreated</c>.
+    /// <c>(UserId, TeamId)</c> is uniquely indexed, so a second row for one pair is a 500. Nothing requires
+    /// the user to be in a unit the team's MSEL is assigned to.
+    /// </remarks>
+    public static TeamUserEntity TeamUser(Guid userId, Guid teamId) =>
+        new(userId, teamId) { Id = Guid.NewGuid() };
+
+    /// <summary>
+    /// A role held by one user on one team - what CITE's team memberships are built from when a MSEL is
+    /// pushed.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="role"/> is a <b>free-text string</b>, not the <c>MselRole</c> enum: nothing validates
+    /// it, and its only consumer is <c>IntegrationCiteExtensions.cs:133</c>, which matches it by name against
+    /// CITE's own role names and silently creates a membership with no role when the name is unknown.
+    /// <c>MselService.cs:404</c> writes the literal <c>"Submitter"</c>, which is why that is the default here.
+    /// <c>(TeamId, UserId, Role)</c> is uniquely indexed, so one user may hold several roles on one team - and
+    /// CITE takes whichever the database returns first.
+    /// </remarks>
+    public static UserTeamRoleEntity UserTeamRole(
+        Guid userId, Guid teamId, string role = "Submitter", Guid? createdBy = null) =>
+        new(userId, teamId, role) { Id = Guid.NewGuid(), CreatedBy = createdBy ?? Guid.NewGuid() };
+
+    /// <summary>
     /// One Gallery card: the topic heading that a MSEL's articles are filed under.
     /// </summary>
     /// <remarks>

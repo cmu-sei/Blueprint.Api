@@ -867,6 +867,87 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
         };
     }
 
+    /// <summary>
+    /// A user who is nobody in particular: no system role, no team, no unit. Use
+    /// <see cref="TestActorBuilder"/> for a user whose permissions or MSEL roles matter - this helper is for
+    /// the <i>subject</i> of a user route rather than its caller.
+    /// </summary>
+    /// <remarks>
+    /// <c>UserConfiguration</c> declares nothing but a unique index on the primary key, so <c>Name</c> is not
+    /// unique and two users may be called the same thing. <c>RoleId</c> is an optional foreign key to
+    /// <c>SystemRoleEntity</c> with no explicit <c>OnDelete</c>, which is why deleting a role that users
+    /// reference behaves differently from deleting an unused one
+    /// (<c>SystemRoleEndpointTests.Delete_ForARoleAUserHolds_Is500</c>).
+    /// <para />
+    /// <c>UserEntity</c> is a <c>BaseEntity</c> and <c>ViewModels.User</c> derives from <c>Base</c>, so unlike
+    /// <see cref="TeamUser"/> and <see cref="UnitUser"/> the audit fields here are real columns.
+    /// </remarks>
+    public static UserEntity User(Guid? createdBy = null, string name = null, Guid? roleId = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new UserEntity
+        {
+            Id = id,
+            Name = name ?? $"user-{id}",
+            RoleId = roleId,
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
+    /// A role held by one user on one MSEL directly - the row <c>MselUnitService</c> grants on an assignment
+    /// and <c>UnitUserService</c> orphans on a removal.
+    /// </summary>
+    /// <remarks>
+    /// <b>A row here grants nothing on its own.</b> Every <c>Msel*Requirement</c> reaches the role query only
+    /// once the unit query has already found the user, so a <c>UserMselRoleEntity</c> without a matching
+    /// <c>UnitUserEntity</c> and <c>MselUnitEntity</c> is a no-op - the Phase 2 finding, and the reason
+    /// <c>TestActorBuilder.OnMsel</c> writes all three. Use this helper for the row itself as a route's
+    /// subject; use the builder when the caller needs the role to work.
+    /// <para />
+    /// <c>(MselId, UserId, Role)</c> is uniquely indexed - the <i>role</i> is part of the key - so one user may
+    /// hold several roles on one MSEL, and a second row for the same three values is a 500. The row cascades
+    /// from the MSEL only; deleting the <i>user</i> is what the FK refuses.
+    /// </remarks>
+    public static UserMselRoleEntity UserMselRole(
+        Guid userId, Guid mselId, MselRole role = MselRole.Viewer, Guid? createdBy = null) =>
+        new(userId, mselId, role) { Id = Guid.NewGuid(), CreatedBy = createdBy ?? Guid.NewGuid() };
+
+    /// <summary>
+    /// A system role - the row that decides a user's 28 <c>SystemPermission</c>s. The three the migrations
+    /// seed (<c>SystemRoleDefaults</c>) are already in every test database; this is for a fourth.
+    /// </summary>
+    /// <remarks>
+    /// <c>SystemRoleEntity</c> is <b>not</b> a <c>BaseEntity</c>, so nothing records who created a role or
+    /// when - which is the audit trail for granting somebody every permission in the installation.
+    /// <c>Name</c> is uniquely indexed, hence the generated default.
+    /// <para />
+    /// <paramref name="immutable"/> is stored and read by nothing: <c>Immutable</c> has no reader anywhere in
+    /// production, so a <c>ManageRoles</c> holder may rename, re-permission or delete the seeded Administrator
+    /// role (<c>SystemRoleEndpointTests.Update_MayRewriteTheSeededAdministratorRole</c>).
+    /// <c>AllPermissions</c> has exactly one reader, <c>UserClaimsService.cs:209</c>, where it expands to every
+    /// value of the enum.
+    /// </remarks>
+    public static SystemRoleEntity SystemRole(
+        string name = null,
+        bool allPermissions = false,
+        bool immutable = false,
+        params Data.Enumerations.SystemPermission[] permissions)
+    {
+        var id = Guid.NewGuid();
+
+        return new SystemRoleEntity
+        {
+            Id = id,
+            Name = name ?? $"role-{id}",
+            Description = "Seeded by BlueprintAppFactory.SystemRole",
+            AllPermissions = allPermissions,
+            Immutable = immutable,
+            Permissions = [.. permissions]
+        };
+    }
+
     public override async ValueTask DisposeAsync()
     {
         // The host first: it holds pooled connections to the database the session is about to drop.

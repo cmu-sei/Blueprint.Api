@@ -39,9 +39,10 @@ public sealed record HubSend(string Group, string Method, object[] Args)
 /// from a test consumes the pending-call state inside the stubbing lambda.
 /// </para>
 /// <para>
-/// Only <see cref="IHubClients.Group"/> and <see cref="IHubClients{T}.All"/> are implemented. The other
-/// seven members throw and say so: a handler that starts addressing clients by connection or by user
-/// should fail loudly here rather than quietly record nothing.
+/// Only <see cref="IHubClients.Group"/>, <see cref="IHubClients.Groups"/> and
+/// <see cref="IHubClients{T}.All"/> are implemented. The other six members throw and say so: a handler
+/// that starts addressing clients by connection or by user should fail loudly here rather than quietly
+/// record nothing.
 /// </para>
 /// </remarks>
 public sealed class HubRecorder : IHubContext<MainHub>
@@ -91,9 +92,9 @@ public sealed class HubRecorder : IHubContext<MainHub>
 
     private sealed class RecordingClients(HubRecorder recorder) : IHubClients
     {
-        public IClientProxy All => new RecordingProxy(recorder, Everyone);
+        public IClientProxy All => new RecordingProxy(recorder, [Everyone]);
 
-        public IClientProxy Group(string groupName) => new RecordingProxy(recorder, groupName);
+        public IClientProxy Group(string groupName) => new RecordingProxy(recorder, [groupName]);
 
         public IClientProxy AllExcept(IReadOnlyList<string> excludedConnectionIds) => Unsupported();
 
@@ -101,7 +102,18 @@ public sealed class HubRecorder : IHubContext<MainHub>
 
         public IClientProxy Clients(IReadOnlyList<string> connectionIds) => Unsupported();
 
-        public IClientProxy Groups(IReadOnlyList<string> groupNames) => Unsupported();
+        /// <remarks>
+        /// Three of the 25 handlers address their group this way rather than through
+        /// <see cref="Group"/>: <c>SystemRoleHandler</c>, <c>GroupHandler</c> and
+        /// <c>GroupMembershipHandler</c> all call <c>Clients.Groups(MainHub.ROLE_GROUP)</c> or
+        /// <c>Clients.Groups(MainHub.GROUP_GROUP)</c>, binding to the <c>params string[]</c> extension
+        /// over this member. A real hub sends one message per named group, so this records one
+        /// <see cref="HubSend"/> per name, and a caller asking <see cref="Recipients"/> cannot tell
+        /// which of the two overloads a handler reached for - which is the right answer, because the
+        /// difference is invisible to a client.
+        /// </remarks>
+        public IClientProxy Groups(IReadOnlyList<string> groupNames) =>
+            new RecordingProxy(recorder, [.. groupNames]);
 
         public IClientProxy GroupExcept(string groupName, IReadOnlyList<string> excludedConnectionIds) =>
             Unsupported();
@@ -115,12 +127,16 @@ public sealed class HubRecorder : IHubContext<MainHub>
             "event handlers do. Addressing clients any other way needs a recorder that models it.");
     }
 
-    private sealed class RecordingProxy(HubRecorder recorder, string group) : IClientProxy
+    private sealed class RecordingProxy(HubRecorder recorder, string[] groups) : IClientProxy
     {
         public Task SendCoreAsync(
             string method, object[] args, CancellationToken cancellationToken = default)
         {
-            recorder.Record(group, method, args);
+            foreach (var group in groups)
+            {
+                recorder.Record(group, method, args);
+            }
+
             return Task.CompletedTask;
         }
     }

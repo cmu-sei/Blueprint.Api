@@ -78,3 +78,79 @@ name the duty test that pins each one rather than repeating the reasoning.
 | `GetByMselAsync`'s template fall-through dereferences an unguarded, token-less `FindAsync`. | `CiteDutyEndpointTests.GetByMsel_ForAMselThatIsNotThere_Is500_Or200ForAViewMselsHolder` |
 | Nothing validates the MSEL the body names. | `CiteDutyEndpointTests.Create_ForAMselThatIsNotThere_Is500` |
 | `GET citeDuties/templates` asks the caller for nothing at all. | `CiteDutyEndpointTests.Templates_WithNoPermissions_ReturnsOnlyTheTemplates` |
+
+## PlayerApplication
+
+The push route is not covered here — `PlayerServiceTests` (`ff5bdad`) characterized it, including the
+display order that is always 2.
+
+| Defect | Pinned by |
+| --- | --- |
+| `GetAsync` is `SingleAsync` plus a dead null check naming `DataValueEntity` — the seventh copy of that line — so an unknown id is a 500. | `PlayerApplicationEndpointTests.Get_ForAnIdThatIsNotThere_Is500` |
+| The single read asks `MselUserRequirement` where the list asks `MselViewRequirement`, so a unit member holding no role may read a row they cannot list. | `PlayerApplicationEndpointTests.Get_ForAUnitMemberWithNoRole_Is200_ThoughTheyMayNotListTheSameRow` |
+| `UpdateAsync` decides from the request body's `MselId` and the profile maps it back, so an owner of any MSEL may edit and steal every other MSEL's applications. Eleventh instance of the shape. | `PlayerApplicationEndpointTests.Update_DecidesFromTheRequestBodyAndStealsTheRow` |
+| `DeleteAsync` dereferences `.MselId` (`:131`) before its null check (`:134`), so the status for an unknown id depends on the caller's permission. | `PlayerApplicationEndpointTests.Delete_ForAnIdThatIsNotThere_Is404WithEditMselsAnd500ForAnOwner` |
+| `GetByMselAsync`'s template fall-through dereferences an unguarded, token-less `FindAsync`. | `PlayerApplicationEndpointTests.GetByMsel_ForAMselThatIsNotThere_Is500_Or200ForAViewMselsHolder` |
+| Nothing validates the MSEL the body names, so an unknown one is a 500 from the foreign key. | `PlayerApplicationEndpointTests.Create_ForAMselThatIsNotThere_Is500` |
+
+## PlayerApplicationTeam
+
+| Defect | Pinned by |
+| --- | --- |
+| `DELETE teams/{teamId}/playerApplications/{playerApplicationId}` deletes nothing: `PlayerApplicationTeamController.cs:192` passes the two ids to `DeleteByIdsAsync` transposed, so the route is a 404 for every well-formed request and a 204 only when the caller swaps them. Second instance after `CardTeamController.cs:192`. | `PlayerApplicationTeamEndpointTests.DeleteByIds_Is404ForAWellFormedRequest_AndDeletesTheRowWhenTheIdsAreSwapped` |
+| `GET teamplayerApplications` has no filter at all, so one `ViewMsels` holder reads every row in the installation. | `PlayerApplicationTeamEndpointTests.GetAll_WithViewMsels_ReturnsEveryRowInTheInstallation` |
+| No write path consults a MSEL role or takes a permission argument, so the MSEL's own owner may not decide which team sees an application and any `EditMsels` holder may. | `PlayerApplicationTeamEndpointTests.NoWriteConsultsAMselRole_SoAnOwnerIsRefusedAndAStrangerIsNot` |
+| `UpdateAsync` refuses an out-of-range display order with an `InvalidDataException`, which is a 500 — and a body that omits `displayOrder` binds to 0 and always trips it, so a PUT is unusable by any client that does not echo the row back. `CreateAsync` silently clamps instead. | `PlayerApplicationTeamEndpointTests.Update_WithoutADisplayOrder_Is500`, `…Create_WithEditMsels_Is201_AndClampsTheDisplayOrderIntoRange` |
+| The three scoped reads dereference an unchecked lookup, so the status for an id that is not there depends on the caller's permission. | `PlayerApplicationTeamEndpointTests.Get_ForAnIdThatIsNotThere_Is404WithViewMselsAnd500ForEverybodyElse`, `…GetByPlayerApplication_ForAnIdThatIsNotThere_Is500_Or200ForAViewMselsHolder` |
+| The update route is spelled `playerApplicationteams/{id}` while the create's `Location` header points at `teamplayerApplications/{id}`, so a client following the header to update what it just created gets a 405. | `PlayerApplicationTeamEndpointTests.Create_WithEditMsels_Is201_AndClampsTheDisplayOrderIntoRange` |
+
+## MselPage
+
+| Defect | Pinned by |
+| --- | --- |
+| The `AllCanView` branch (`MselPageService.cs:70-74`) ignores `hasSystemPermission`, so marking a page "all can view" makes it unreadable by a `ViewMsels` holder who is not on the MSEL — the opposite of what the flag says. | `MselPageEndpointTests.Get_ForAnAllCanViewPage_Is403ForAViewMselsHolderWhoIsNotOnTheMsel` |
+| `CreateAsync` and `UpdateAsync` return through `GetAsync`, so creating or editing an `allCanView` page as an `EditMsels` holder is a 403 with the row already saved and already broadcast, and the caller has no id for it. | `MselPageEndpointTests.Create_OfAnAllCanViewPage_WithEditMsels_Is403_WithTheRowAlreadySaved` |
+| Both reads report a missing page as `EntityNotFoundException<MselEntity>`, indistinguishable from the MSEL being gone; the service's own update and delete name it correctly. | `MselPageEndpointTests.Get_ForAnIdThatIsNotThere_Is404_ThatNamesTheMselRatherThanThePage` |
+| `GetByMselAsync` demands `MselOwnerRequirement` where the single read demands `MselViewRequirement`, so an ordinary viewer cannot discover that a MSEL has pages and may read every one of them by id. | `MselPageEndpointTests.GetByMsel_ForAViewerOfTheMsel_Is403_ThoughTheyMayReadTheSamePageById` |
+| `UpdateAsync` decides from the request body's `MselId` and steals the row. Twelfth instance of the shape. | `MselPageEndpointTests.Update_DecidesFromTheRequestBodyAndStealsTheRow` |
+
+## MselCompetency
+
+Largely a positive control: both writes validate both parents with correctly-named 404s, there is no
+update method, and both deletes check existence first.
+
+| Defect | Pinned by |
+| --- | --- |
+| A pair that is already there is refused by a bare `ArgumentException`, so the answer is a 500 where the case deserves a 409. | `MselCompetencyEndpointTests.Create_ForAPairThatIsAlreadyThere_Is500` |
+| Both reads resolve a competency's relationships against the MSEL's own pool alone and drop the rest silently, so the same competency answers a different relationship list per MSEL and "these are related" is indistinguishable from "one of them is not on this MSEL". | `MselCompetencyEndpointTests.Get_AnswersOnlyTheRelationshipsWhoseOtherEndIsOnTheSameMsel` |
+
+## TeamCompetency
+
+| Defect | Pinned by |
+| --- | --- |
+| A pair that is already there is refused by a bare `ArgumentException`, so the answer is a 500 where the case deserves a 409 — and `(TeamId, CompetencyId)` is uniquely indexed, so the guard is a courtesy rather than the protection. | `TeamCompetencyEndpointTests.Create_ForAPairThatIsAlreadyThere_Is500` |
+| A missing row is reported as `EntityNotFoundException<TeamCompetency>` — the view model — where the same service's other routes name `TeamEntity`, `MselEntity` and `CompetencyEntity`. | `TeamCompetencyEndpointTests.Get_ForAnIdThatIsNotThere_Is404_ThatNamesTheViewModel` |
+| The team-level read resolves no `RelatedIdNumbers` where the MSEL-level read does, so a client showing a team's competencies cannot draw the relationships it draws one level up and nothing in the surface says so. | `TeamCompetencyEndpointTests.Get_ForAViewerOfTheMsel_Is200` |
+
+## ProficiencyLevel
+
+| Defect | Pinned by |
+| --- | --- |
+| The service checks no permission at all, so `ProficiencyLevelController`'s five `ForbiddenException` throws are the whole guard. | `RouteAuthorizationTests.EveryRoute_WithNoPermissions_Is403` |
+| `GetByScaleAsync` validates no scale, so an unknown one is an empty 200 — indistinguishable from a scale that exists and has no levels yet. | `ProficiencyLevelEndpointTests.GetByScale_ForAScaleThatIsNotThere_IsAnEmpty200` |
+| `CreateAsync` validates no foreign key, so a body naming an unknown scale is a 500 where the caller deserves a 404. | `ProficiencyLevelEndpointTests.Create_ForAScaleThatIsNotThere_Is500` |
+| All three routes taking an id report a missing level as `EntityNotFoundException<ProficiencyLevel>` — the view model. | `ProficiencyLevelEndpointTests.Update_ForAnIdThatIsNotThere_Is404_ThatNamesTheViewModel` |
+| The profile maps `ProficiencyScaleId` and nothing compares the body's to the stored row's, so a PUT moves a level from one scale to another with nothing recorded either side. | `ProficiencyLevelEndpointTests.Update_MovesTheLevelToWhicheverScaleTheBodyNames` |
+
+## ProficiencyScale
+
+| Defect | Pinned by |
+| --- | --- |
+| The service checks no permission at all, so `ProficiencyScaleController`'s seven `ForbiddenException` throws are the whole guard. | `RouteAuthorizationTests.EveryRoute_WithNoPermissions_Is403` |
+| A duplicate `Name` is a 500 from the unique index rather than a 409; nothing checks the name first. | `ProficiencyScaleEndpointTests.Create_WithANameThatIsAlreadyTaken_Is500` |
+| Deleting a scale cascades to every level on it with no dependent count and no 409, so an assessment scale in use is removed by one request. | `ProficiencyScaleEndpointTests.Delete_WithManageCompetencyFrameworks_Is204_TakingTheLevelsWithIt` |
+| The download and upload pair build their own `JsonSerializerOptions`, so the file is PascalCase with raw integers behind `ReferenceHandler.Preserve` where every response is camelCase with `int` as a JSON string — and a file this installation exported is a 500 when uploaded back, the unique `Name` index refusing it. | `ProficiencyScaleEndpointTests.DownloadJson_WithManageCompetencyFrameworks_IsAFileNamingOnlyTheRequestedScales`, `…UploadJson_OfAFileThisInstallationExported_Is500FromTheNameIndex` |
+| `UploadJsonAsync` mints fresh ids for the scale and every level and ignores any id in the file, so an import cannot round-trip and nothing links the two copies. | `ProficiencyScaleEndpointTests.UploadJson_OfARenamedExport_CreatesASecondScaleWithFreshIds` |
+| The PUT answers an empty `proficiencyLevels` where the GET answers them, the update never loading the collection it returns. | `ProficiencyScaleEndpointTests.Update_WithManageCompetencyFrameworks_Is200_AnsweringNoLevelsAndKeepingThem` |
+| The download requires `ManageCompetencyFrameworks` though it writes nothing, where its two GET siblings want `ViewCompetencyFrameworks`. | `ProficiencyScaleEndpointTests.DownloadJson_WithManageCompetencyFrameworks_IsAFileNamingOnlyTheRequestedScales` |
+| An id that is not there is an empty export rather than a 404, so a client cannot tell an empty scale from a scale that is gone. | `ProficiencyScaleEndpointTests.DownloadJson_ForAnIdThatIsNotThere_IsAnEmptyExport` |

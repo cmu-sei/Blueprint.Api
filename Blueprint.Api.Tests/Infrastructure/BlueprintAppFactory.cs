@@ -868,6 +868,24 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     }
 
     /// <summary>
+    /// A directed relationship from <paramref name="competencyId"/> to
+    /// <paramref name="relatedCompetencyId"/>. Both ends are navigations on <c>CompetencyEntity</c> -
+    /// <c>Relationships</c> for the outbound side and <c>InverseRelationships</c> for the inbound one - and
+    /// <c>MselCompetencyService</c> reads both, so one row is visible from either competency.
+    /// </summary>
+    public static CompetencyRelationshipEntity CompetencyRelationship(
+        Guid competencyId,
+        Guid relatedCompetencyId,
+        Guid? createdBy = null) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            CompetencyId = competencyId,
+            RelatedCompetencyId = relatedCompetencyId,
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+
+    /// <summary>
     /// A user who is nobody in particular: no system role, no team, no unit. Use
     /// <see cref="TestActorBuilder"/> for a user whose permissions or MSEL roles matter - this helper is for
     /// the <i>subject</i> of a user route rather than its caller.
@@ -1056,6 +1074,94 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
             TeamId = teamId,
             Name = name ?? $"duty-{id}",
             IsTemplate = mselId is null
+        };
+    }
+
+    /// <summary>
+    /// A page of an exercise's playbook - free HTML attached to a MSEL.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="allCanView"/> is not the widening it reads as: <c>MselPageService.GetAsync</c>
+    /// answers an <c>AllCanView</c> page only to a member of one of the MSEL's teams and ignores
+    /// <c>hasSystemPermission</c> in that branch, so setting it <i>narrows</i> who may read the page
+    /// (<c>MselPageEndpointTests.Get_OfAnAllCanViewPage_RefusesAViewMselsHolder</c>). Seed it false for a
+    /// row a <c>ViewMsels</c> holder has to reach.
+    /// <para />
+    /// <c>MselPageEntity</c> is not a <c>BaseEntity</c> and <c>ViewModels.MselPage</c> does not derive from
+    /// <c>Base</c>, so nothing records who wrote a page or when. <c>Content</c> carries
+    /// <c>[SanitizeHtml]</c>; the row cascades from the MSEL.
+    /// </remarks>
+    public static MselPageEntity MselPage(
+        Guid mselId,
+        string name = null,
+        string content = null,
+        bool allCanView = false,
+        bool includeInPlaybook = false)
+    {
+        var id = Guid.NewGuid();
+
+        return new MselPageEntity
+        {
+            Id = id,
+            MselId = mselId,
+            Name = name ?? $"page-{id}",
+            Content = content ?? "<p>Seeded by BlueprintAppFactory.MselPage</p>",
+            AllCanView = allCanView,
+            IncludeInPlaybook = includeInPlaybook
+        };
+    }
+
+    /// <summary>
+    /// A competency assigned to a team - the team-level twin of <see cref="MselCompetency"/>.
+    /// <c>(TeamId, CompetencyId)</c> is uniquely indexed, so a duplicate pair is a 500.
+    /// </summary>
+    /// <remarks>
+    /// Not a <c>BaseEntity</c>, and <c>ViewModels.TeamCompetency</c> does not derive from <c>Base</c>, so
+    /// nothing records who assigned a competency to a team. The row cascades from both the team and the
+    /// competency.
+    /// </remarks>
+    public static TeamCompetencyEntity TeamCompetency(Guid teamId, Guid competencyId) =>
+        new(teamId, competencyId) { Id = Guid.NewGuid() };
+
+    /// <summary>
+    /// A proficiency scale - the named set of levels a competency assessment is scored against. Reference
+    /// data, global rather than MSEL-scoped, and <c>Name</c> is uniquely indexed.
+    /// </summary>
+    public static ProficiencyScaleEntity ProficiencyScale(Guid? createdBy = null, string name = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new ProficiencyScaleEntity
+        {
+            Id = id,
+            Name = name ?? $"scale-{id}",
+            Description = "Seeded by BlueprintAppFactory.ProficiencyScale",
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
+    /// One level of <paramref name="proficiencyScaleId"/>. <c>Value</c> and <c>DisplayOrder</c> are
+    /// <c>int</c>, so they cross the wire as JSON strings; neither is constrained or uniquely indexed.
+    /// </summary>
+    public static ProficiencyLevelEntity ProficiencyLevel(
+        Guid proficiencyScaleId,
+        string name = null,
+        int value = 1,
+        int displayOrder = 1,
+        Guid? createdBy = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new ProficiencyLevelEntity
+        {
+            Id = id,
+            ProficiencyScaleId = proficiencyScaleId,
+            Name = name ?? $"level-{id}",
+            Value = value,
+            Description = "Seeded by BlueprintAppFactory.ProficiencyLevel",
+            DisplayOrder = displayOrder,
+            CreatedBy = createdBy ?? Guid.NewGuid()
         };
     }
 

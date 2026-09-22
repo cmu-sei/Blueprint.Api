@@ -28,7 +28,11 @@ namespace Blueprint.Api.Tests;
 /// the route and the body: <c>{msel}</c>, <c>{team}</c>, <c>{invitation}</c>, <c>{group}</c>,
 /// <c>{membership}</c>, <c>{user}</c>, <c>{injectType}</c>, <c>{catalog}</c>, <c>{inject}</c>,
 /// <c>{spareInject}</c>, <c>{cataloginject}</c>, <c>{unit}</c>, <c>{spareUnit}</c>, <c>{catalogunit}</c>,
-/// <c>{citeaction}</c>, <c>{citeduty}</c>, and <c>{unique}</c> for a name that has to clear a unique index.
+/// <c>{citeaction}</c>, <c>{citeduty}</c>, <c>{playerapplication}</c>,
+/// <c>{sparePlayerApplication}</c>, <c>{playerapplicationteam}</c>, <c>{mselpage}</c>,
+/// <c>{competency}</c>, <c>{spareCompetency}</c>, <c>{mselcompetency}</c>, <c>{teamcompetency}</c>,
+/// <c>{proficiencyscale}</c>, <c>{proficiencylevel}</c>, and <c>{unique}</c> for a name that has to clear
+/// a unique index.
 /// So a row exercises the real object rather than an id nothing matches, and the 403 it asserts is the
 /// permission check answering rather than a 404 arriving first. The spares exist so a row that creates a
 /// join row does not collide with the one already seeded.
@@ -39,12 +43,17 @@ namespace Blueprint.Api.Tests;
 /// action's authorization check, so a JSON body would assert nothing. Add a row per route as each
 /// remaining service is covered; do not add per-service 401/403 tests.
 /// <para />
-/// Four routes are deliberately absent, each because it resolves no authorization at all and so cannot
+/// Four routes are deliberately absent because each resolves no authorization at all and so cannot
 /// satisfy <see cref="EveryRoute_WithNoPermissions_Is403"/>: <c>GET lmt/resource/{mselId}</c>
 /// (<c>LmtController</c> is <c>[AllowAnonymous]</c> - see <see cref="LmtEndpointTests"/>),
 /// <c>GET my-catalogs</c>, <c>GET citeActions/templates</c> and <c>GET citeDuties/templates</c>. The
 /// latter three are covered by the happy-path test in their own files, which is where the absence of a
 /// check is recorded.
+/// <para />
+/// A fifth is absent for a different reason: <c>POST playerApplications/push</c> does resolve
+/// <c>EditMsels</c>, but it is covered end to end by <see cref="PlayerServiceTests"/>, including its
+/// refusals, and a row here would both duplicate that and push an application as a side effect of an
+/// authorization assertion.
 /// </remarks>
 public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
@@ -144,7 +153,108 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         },
         { "DELETE", "api/citeDuties/{citeduty}", "EditMsels", null },
         { "POST", "api/citeDuties/json", "ManageCiteDuties", "@file" },
-        { "POST", "api/citeDuties/json/download", "ManageCiteDuties", "[]" }
+        { "POST", "api/citeDuties/json/download", "ManageCiteDuties", "[]" },
+
+        // PlayerApplicationService / PlayerApplicationController - reads want ViewMsels, writes EditMsels.
+        // POST playerApplications/push is absent, see above.
+        { "GET", "api/msels/{msel}/playerApplications", "ViewMsels", null },
+        { "GET", "api/playerApplications/{playerapplication}", "ViewMsels", null },
+        {
+            "POST", "api/playerApplications", "EditMsels",
+            """{"mselId":"{msel}","name":"{unique}","url":"http://application.example/"}"""
+        },
+        {
+            "PUT", "api/playerApplications/{playerapplication}", "EditMsels",
+            """{"id":"{playerapplication}","mselId":"{msel}","name":"{unique}","url":"http://application.example/"}"""
+        },
+        { "DELETE", "api/playerApplications/{playerapplication}", "EditMsels", null },
+
+        // PlayerApplicationTeamService / PlayerApplicationTeamController - reads want ViewMsels, writes
+        // EditMsels, every one of them a hard guard in the controller: the service checks nothing.
+        { "GET", "api/teamplayerApplications", "ViewMsels", null },
+        { "GET", "api/msels/{msel}/teamplayerApplications", "ViewMsels", null },
+        {
+            "GET", "api/playerApplications/{playerapplication}/teamplayerApplications", "ViewMsels", null
+        },
+        { "GET", "api/teamplayerApplications/{playerapplicationteam}", "ViewMsels", null },
+        {
+            "POST", "api/teamplayerApplications", "EditMsels",
+            """{"playerApplicationId":"{sparePlayerApplication}","teamId":"{team}","displayOrder":1}"""
+        },
+        {
+            "PUT", "api/playerApplicationteams/{playerapplicationteam}", "EditMsels",
+            """{"id":"{playerapplicationteam}","playerApplicationId":"{playerapplication}","teamId":"{team}","displayOrder":1}"""
+        },
+        { "DELETE", "api/teamplayerApplications/{playerapplicationteam}", "EditMsels", null },
+        {
+            "DELETE", "api/teams/{team}/playerApplications/{playerapplication}", "EditMsels", null
+        },
+
+        // MselPageService / MselPageController - reads resolve ViewMsels and CreateMsels, writes EditMsels.
+        // No body here sets allCanView: that branch ignores every system permission, so a row that set it
+        // would be a 403 after the write (see MselPageEndpointTests).
+        { "GET", "api/msels/{msel}/mselpages", "ViewMsels", null },
+        { "GET", "api/mselpages/{mselpage}", "ViewMsels", null },
+        {
+            "POST", "api/mselpages", "EditMsels",
+            """{"mselId":"{msel}","name":"{unique}","content":"<p>seeded</p>"}"""
+        },
+        {
+            "PUT", "api/mselpages/{mselpage}", "EditMsels",
+            """{"id":"{mselpage}","mselId":"{msel}","name":"{unique}","content":"<p>seeded</p>"}"""
+        },
+        { "DELETE", "api/mselpages/{mselpage}", "EditMsels", null },
+
+        // MselCompetencyService / MselCompetencyController - reads want ViewMsels, writes ManageMsels.
+        { "GET", "api/msels/{msel}/mselcompetencies", "ViewMsels", null },
+        { "GET", "api/mselcompetencies/{mselcompetency}", "ViewMsels", null },
+        {
+            "POST", "api/mselcompetencies", "ManageMsels",
+            """{"mselId":"{msel}","competencyId":"{spareCompetency}"}"""
+        },
+        { "DELETE", "api/mselcompetencies/{mselcompetency}", "ManageMsels", null },
+        { "DELETE", "api/msels/{msel}/competencies/{competency}", "ManageMsels", null },
+
+        // TeamCompetencyService / TeamCompetencyController - the twin of the above, one level down.
+        { "GET", "api/teams/{team}/teamcompetencies", "ViewMsels", null },
+        { "GET", "api/msels/{msel}/teamcompetencies", "ViewMsels", null },
+        { "GET", "api/teamcompetencies/{teamcompetency}", "ViewMsels", null },
+        {
+            "POST", "api/teamcompetencies", "ManageMsels",
+            """{"teamId":"{team}","competencyId":"{spareCompetency}"}"""
+        },
+        { "DELETE", "api/teamcompetencies/{teamcompetency}", "ManageMsels", null },
+        { "DELETE", "api/teams/{team}/competencies/{competency}", "ManageMsels", null },
+
+        // ProficiencyLevelService / ProficiencyLevelController - reads want ViewCompetencyFrameworks,
+        // writes ManageCompetencyFrameworks, and the controller's five throws are the whole guard.
+        {
+            "GET", "api/proficiencyScales/{proficiencyscale}/proficiencyLevels",
+            "ViewCompetencyFrameworks", null
+        },
+        { "GET", "api/proficiencyLevels/{proficiencylevel}", "ViewCompetencyFrameworks", null },
+        {
+            "POST", "api/proficiencyLevels", "ManageCompetencyFrameworks",
+            """{"proficiencyScaleId":"{proficiencyscale}","name":"{unique}","value":1,"displayOrder":1}"""
+        },
+        {
+            "PUT", "api/proficiencyLevels/{proficiencylevel}", "ManageCompetencyFrameworks",
+            """{"id":"{proficiencylevel}","proficiencyScaleId":"{proficiencyscale}","name":"{unique}","value":1,"displayOrder":1}"""
+        },
+        { "DELETE", "api/proficiencyLevels/{proficiencylevel}", "ManageCompetencyFrameworks", null },
+
+        // ProficiencyScaleService / ProficiencyScaleController - the same split, and the download wants
+        // ManageCompetencyFrameworks though it writes nothing.
+        { "GET", "api/proficiencyScales", "ViewCompetencyFrameworks", null },
+        { "GET", "api/proficiencyScales/{proficiencyscale}", "ViewCompetencyFrameworks", null },
+        { "POST", "api/proficiencyScales", "ManageCompetencyFrameworks", """{"name":"{unique}"}""" },
+        {
+            "PUT", "api/proficiencyScales/{proficiencyscale}", "ManageCompetencyFrameworks",
+            """{"id":"{proficiencyscale}","name":"{unique}"}"""
+        },
+        { "DELETE", "api/proficiencyScales/{proficiencyscale}", "ManageCompetencyFrameworks", null },
+        { "POST", "api/proficiencyScales/json", "ManageCompetencyFrameworks", "@file" },
+        { "POST", "api/proficiencyScales/json/download", "ManageCompetencyFrameworks", "[]" }
     };
 
     [Theory]
@@ -240,11 +350,21 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         var group = BlueprintAppFactory.Group();
         var member = BlueprintAppFactory.User();
         var spare = BlueprintAppFactory.User();
-        await Seed(msel, group, member, spare);
+        var framework = BlueprintAppFactory.CompetencyFramework();
+        var proficiencyScale = BlueprintAppFactory.ProficiencyScale();
+        await Seed(msel, group, member, spare, framework, proficiencyScale);
 
         var team = BlueprintAppFactory.Team(msel.Id);
         var membership = BlueprintAppFactory.GroupMembership(group.Id, member.Id);
-        await Seed(team, membership);
+        var competency = BlueprintAppFactory.Competency(framework.Id);
+        var spareCompetency = BlueprintAppFactory.Competency(framework.Id);
+        var proficiencyLevel = BlueprintAppFactory.ProficiencyLevel(proficiencyScale.Id);
+        var mselPage = BlueprintAppFactory.MselPage(msel.Id);
+        var playerApplication = BlueprintAppFactory.PlayerApplication(msel.Id);
+        var sparePlayerApplication = BlueprintAppFactory.PlayerApplication(msel.Id);
+        await Seed(
+            team, membership, competency, spareCompetency, proficiencyLevel, mselPage,
+            playerApplication, sparePlayerApplication);
 
         var invitation = BlueprintAppFactory.Invitation(msel.Id, team.Id);
         var injectType = BlueprintAppFactory.InjectType();
@@ -261,7 +381,12 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
 
         var catalogInject = BlueprintAppFactory.CatalogInject(catalog.Id, inject.Id);
         var catalogUnit = BlueprintAppFactory.CatalogUnit(unit.Id, catalog.Id);
-        await Seed(catalogInject, catalogUnit);
+        var mselCompetency = BlueprintAppFactory.MselCompetency(msel.Id, competency.Id);
+        var teamCompetency = BlueprintAppFactory.TeamCompetency(team.Id, competency.Id);
+        var playerApplicationTeam =
+            BlueprintAppFactory.PlayerApplicationTeam(playerApplication.Id, team.Id);
+        await Seed(
+            catalogInject, catalogUnit, mselCompetency, teamCompetency, playerApplicationTeam);
 
         return new Dictionary<string, string>
         {
@@ -281,6 +406,16 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             ["catalogunit"] = catalogUnit.Id.ToString(),
             ["citeaction"] = citeAction.Id.ToString(),
             ["citeduty"] = citeDuty.Id.ToString(),
+            ["playerapplication"] = playerApplication.Id.ToString(),
+            ["sparePlayerApplication"] = sparePlayerApplication.Id.ToString(),
+            ["playerapplicationteam"] = playerApplicationTeam.Id.ToString(),
+            ["mselpage"] = mselPage.Id.ToString(),
+            ["competency"] = competency.Id.ToString(),
+            ["spareCompetency"] = spareCompetency.Id.ToString(),
+            ["mselcompetency"] = mselCompetency.Id.ToString(),
+            ["teamcompetency"] = teamCompetency.Id.ToString(),
+            ["proficiencyscale"] = proficiencyScale.Id.ToString(),
+            ["proficiencylevel"] = proficiencyLevel.Id.ToString(),
             ["unique"] = $"row-{Guid.NewGuid()}"
         };
     }

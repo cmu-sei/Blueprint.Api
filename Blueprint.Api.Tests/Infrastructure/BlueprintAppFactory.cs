@@ -377,6 +377,62 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
         new(userId, teamId, role) { Id = Guid.NewGuid(), CreatedBy = createdBy ?? Guid.NewGuid() };
 
     /// <summary>
+    /// A unit: the reusable group of people that gets assigned to a MSEL, as against a team, which belongs
+    /// to one MSEL and cannot be reused.
+    /// </summary>
+    /// <remarks>
+    /// <c>UnitConfiguration</c> declares nothing but a unique index on the primary key, so neither
+    /// <c>Name</c> nor <c>ShortName</c> is unique - two units may be called the same thing, and nothing in
+    /// the API disambiguates them. Only <c>Description</c> carries <c>[SanitizeHtml]</c>.
+    /// <para />
+    /// A unit has no MSEL of its own: it reaches one through a <see cref="MselUnit"/> row, which is the join
+    /// every <c>Msel*Requirement</c> walks. <c>MselUnitConfiguration</c> cascades from here, so deleting a
+    /// unit drops it from every MSEL it was assigned to.
+    /// </remarks>
+    public static UnitEntity Unit(Guid? createdBy = null, string name = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new UnitEntity
+        {
+            Id = id,
+            Name = name ?? $"unit-{id}",
+            ShortName = "unit",
+            Description = "Seeded by BlueprintAppFactory.Unit",
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
+    /// The join row that puts a user in a unit - the half of every <c>Msel*Requirement</c> conjunction that
+    /// has to match before the role query is ever reached.
+    /// </summary>
+    /// <remarks>
+    /// <c>UnitUserEntity</c> is <b>not</b> a <c>BaseEntity</c>, so nothing records who put a user in a unit
+    /// or when - although <c>ViewModels.UnitUser</c> derives from <c>Base</c> and does carry the four audit
+    /// fields, so every unit-user route answers an all-zeros <c>createdBy</c> and a <c>dateCreated</c> of
+    /// <c>0001-01-01</c>. The same defect as <see cref="TeamUser"/>, one level up.
+    /// <c>(UserId, UnitId)</c> is uniquely indexed, so a second row for one pair is a 500.
+    /// </remarks>
+    public static UnitUserEntity UnitUser(Guid userId, Guid unitId) =>
+        new(userId, unitId) { Id = Guid.NewGuid() };
+
+    /// <summary>
+    /// The join row that assigns a unit to a MSEL.
+    /// </summary>
+    /// <remarks>
+    /// Note the argument order: <c>MselUnitEntity(Guid unitId, Guid mselId)</c> takes the unit first while
+    /// <c>ViewModels.MselUnit(Guid mselId, Guid unitId)</c> takes the MSEL first - two same-typed ids in
+    /// opposite orders, which no compiler can check. This helper follows the entity's order.
+    /// <para />
+    /// <c>(UnitId, MselId)</c> is uniquely indexed and the row cascades from <b>both</b> sides, so deleting
+    /// either the unit or the MSEL takes the assignment with it. Unlike its two siblings this pair is
+    /// consistent: neither the entity nor the view model carries audit fields.
+    /// </remarks>
+    public static MselUnitEntity MselUnit(Guid unitId, Guid mselId) =>
+        new(unitId, mselId) { Id = Guid.NewGuid() };
+
+    /// <summary>
     /// One Gallery card: the topic heading that a MSEL's articles are filed under.
     /// </summary>
     /// <remarks>

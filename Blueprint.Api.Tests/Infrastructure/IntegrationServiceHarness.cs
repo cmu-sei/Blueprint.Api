@@ -158,14 +158,18 @@ public sealed class IntegrationServiceHarness
     /// whose delegate is <c>private async void</c>, so there is nothing to await.
     /// </summary>
     /// <remarks>
-    /// Ten seconds, which is twenty times what a full push against this transport takes. The deadline is
-    /// deliberately tight: during a mutation check most of the tests in a file are expected to time out, and
-    /// a generous deadline turns one batch into several minutes of waiting.
+    /// Thirty seconds. A full push against this transport takes well under one, so the deadline is not
+    /// measuring the worker - it is absorbing how little of the machine this thread gets when the whole
+    /// suite is running. It was ten, chosen so that a mutation batch whose tests are all expected to time
+    /// out finished in seconds rather than minutes; that programme is over, and at ten seconds
+    /// <c>Push_WhenAnApplicationFails_BroadcastsTheError</c> failed one full-suite run in a slow
+    /// invocation and passed alone. Raising it costs nothing a test suite cares about: a genuinely stuck
+    /// worker still fails, twenty seconds later, with the same message naming the requests it made.
     /// </remarks>
     public async Task<MselEntity> WaitFor(
         Guid mselId, Func<MselEntity, bool> done, CancellationToken ct = default)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = DateTime.UtcNow.AddSeconds(30);
 
         while (DateTime.UtcNow < deadline)
         {
@@ -181,7 +185,7 @@ public sealed class IntegrationServiceHarness
         }
 
         throw new TimeoutException(
-            $"The integration worker did not bring MSEL {mselId} to the expected state within ten " +
+            $"The integration worker did not bring MSEL {mselId} to the expected state within thirty " +
             $"seconds. Its last integration status was " +
             $"'{(await LastStatus(mselId, ct)) ?? "<null>"}'. Requests made: " +
             $"{string.Join(", ", Handler.Paths)}.");

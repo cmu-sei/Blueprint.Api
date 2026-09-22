@@ -948,6 +948,63 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
         };
     }
 
+    /// <summary>
+    /// A group - a named set of users, global rather than MSEL-scoped. <c>Name</c> is uniquely indexed.
+    /// </summary>
+    /// <remarks>
+    /// Group membership grants nothing: <c>UserClaimsService</c>'s <c>groupIds</c> is dead code (Phase 2),
+    /// so these rows are read by no authorization path in the API.
+    /// </remarks>
+    public static GroupEntity Group(string name = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new GroupEntity
+        {
+            Id = id,
+            Name = name ?? $"group-{id}",
+            Description = "Seeded by BlueprintAppFactory.Group"
+        };
+    }
+
+    /// <summary>
+    /// A user's membership of a group. <c>(GroupId, UserId)</c> is uniquely indexed; no audit columns.
+    /// </summary>
+    public static GroupMembershipEntity GroupMembership(Guid groupId, Guid userId) =>
+        new(groupId, userId) { Id = Guid.NewGuid() };
+
+    /// <summary>
+    /// An invitation - the row that lets somebody join a MSEL's team by link rather than by assignment.
+    /// </summary>
+    /// <remarks>
+    /// No audit columns on either side, and <c>MaxUsersAllowed</c>/<c>UserCount</c> are <c>int</c>, so they
+    /// cross the wire as JSON strings.
+    /// </remarks>
+    public static InvitationEntity Invitation(
+        Guid mselId,
+        Guid teamId,
+        string emailDomain = null,
+        int maxUsersAllowed = 10) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            MselId = mselId,
+            TeamId = teamId,
+            EmailDomain = emailDomain,
+            ExpirationDateTime = DateTime.UtcNow.AddDays(7),
+            MaxUsersAllowed = maxUsersAllowed,
+            UserCount = 0,
+            IsTeamLeader = false,
+            WasDeactivated = false
+        };
+
+    /// <summary>
+    /// A competency assigned to a MSEL - what <c>GET lmt/resource/{mselId}</c> publishes as
+    /// <c>assesses</c>. <c>(MselId, CompetencyId)</c> is uniquely indexed.
+    /// </summary>
+    public static MselCompetencyEntity MselCompetency(Guid mselId, Guid competencyId) =>
+        new(mselId, competencyId) { Id = Guid.NewGuid() };
+
     public override async ValueTask DisposeAsync()
     {
         // The host first: it holds pooled connections to the database the session is about to drop.

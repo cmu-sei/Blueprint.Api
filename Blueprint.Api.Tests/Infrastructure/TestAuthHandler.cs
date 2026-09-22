@@ -21,8 +21,9 @@ public class TestAuthOptions : AuthenticationSchemeOptions
 
 /// <summary>
 /// Stands in for the JWT bearer handler so tests do not need Keycloak. A request carrying the
-/// <see cref="UserIdHeader"/> header authenticates as that user; a request without it presents no
-/// credentials at all, which keeps the 401 path testable.
+/// <see cref="UserIdHeader"/> header - or an <c>Authorization: Bearer &lt;user id&gt;</c> header, which
+/// is what makes <c>Startup</c>'s query-string promotion observable - authenticates as that user; a
+/// request carrying neither presents no credentials at all, which keeps the 401 path testable.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -85,14 +86,16 @@ public class TestAuthHandler(
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        if (!Request.Headers.TryGetValue(UserIdHeader, out var userId))
+        var user = UserFromHeaders();
+
+        if (user is null)
         {
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
         var claims = new List<Claim>
         {
-            new("sub", userId.ToString()),
+            new("sub", user),
             new("iss", Issuer),
         };
 
@@ -112,5 +115,31 @@ public class TestAuthHandler(
 
         return Task.FromResult(AuthenticateResult.Success(
             new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName)));
+    }
+
+    /// <summary>
+    /// The user this request claims to be, or null when it presents no credentials.
+    /// <see cref="UserIdHeader"/> first, then <c>Authorization: Bearer &lt;user id&gt;</c>.
+    /// </summary>
+    /// <remarks>
+    /// The second form exists for one reason: <c>Startup.Configure</c> promotes a <c>?bearer=…</c> query
+    /// parameter into the <c>Authorization</c> header, and nothing could observe that it had until this
+    /// handler read the header. It is a fallback rather than the primary form because a header a test
+    /// sets deliberately should win over one the pipeline synthesized, and because every other test in
+    /// the suite addresses itself with <see cref="UserIdHeader"/> - none sends an inbound
+    /// <c>Authorization</c> header at all, so nothing existing changes meaning.
+    /// </remarks>
+    private string UserFromHeaders()
+    {
+        if (Request.Headers.TryGetValue(UserIdHeader, out var userId))
+        {
+            return userId.ToString();
+        }
+
+        var authorization = Request.Headers.Authorization.ToString();
+
+        return authorization.StartsWith("Bearer ", System.StringComparison.Ordinal)
+            ? authorization["Bearer ".Length..]
+            : null;
     }
 }

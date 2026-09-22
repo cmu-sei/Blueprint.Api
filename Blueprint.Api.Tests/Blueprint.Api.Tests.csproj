@@ -19,6 +19,11 @@
          Keycloak, Player, Gallery, CITE or Steamfitter. -->
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="xunit.v3" />
+    <!-- Dials MainHub over a real HubConnection the way blueprint.ui does, so the hub's negotiate,
+         transport and authorization endpoints are exercised as endpoints rather than as a class. The
+         hub's own group and presence behaviour is driven by direct invocation instead - see
+         Infrastructure/HubHarness.cs for why both halves are needed. -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
     <!-- Coverage, opt-in. Nothing here changes what a normal run does: the collector is only loaded
          when `dotnet test` is asked for XPlat Code Coverage, which only `scripts/coverage.sh` and the
          manually triggered coverage workflow do. Settings and exclusions live in coverlet.runsettings

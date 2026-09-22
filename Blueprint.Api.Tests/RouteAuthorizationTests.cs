@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Enumerations;
@@ -25,15 +26,25 @@ namespace Blueprint.Api.Tests;
 /// <para />
 /// Each case seeds the same small graph, all of it created by somebody else, and substitutes its ids into
 /// the route and the body: <c>{msel}</c>, <c>{team}</c>, <c>{invitation}</c>, <c>{group}</c>,
-/// <c>{membership}</c>, <c>{user}</c>, and <c>{unique}</c> for a name that has to clear a unique index.
+/// <c>{membership}</c>, <c>{user}</c>, <c>{injectType}</c>, <c>{catalog}</c>, <c>{inject}</c>,
+/// <c>{spareInject}</c>, <c>{cataloginject}</c>, <c>{unit}</c>, <c>{spareUnit}</c>, <c>{catalogunit}</c>,
+/// <c>{citeaction}</c>, <c>{citeduty}</c>, and <c>{unique}</c> for a name that has to clear a unique index.
 /// So a row exercises the real object rather than an id nothing matches, and the 403 it asserts is the
-/// permission check answering rather than a 404 arriving first.
+/// permission check answering rather than a 404 arriving first. The spares exist so a row that creates a
+/// join row does not collide with the one already seeded.
 /// <para />
-/// Rows are strings so xUnit can serialize them and name the cases readably. Add a row per route as each
+/// Rows are strings so xUnit can serialize them and name the cases readably. A body of <c>"@file"</c> is
+/// the sentinel for a multipart upload: the route takes a <c>[FromForm] FileForm</c> whose
+/// <c>ToUpload</c> is <c>[Required]</c>, and <c>ValidateModelStateFilter</c> answers 400 before the
+/// action's authorization check, so a JSON body would assert nothing. Add a row per route as each
 /// remaining service is covered; do not add per-service 401/403 tests.
 /// <para />
-/// <c>GET lmt/resource/{mselId}</c> is deliberately absent: <c>LmtController</c> is
-/// <c>[AllowAnonymous]</c> and has no authorization to assert. See <see cref="LmtEndpointTests"/>.
+/// Four routes are deliberately absent, each because it resolves no authorization at all and so cannot
+/// satisfy <see cref="EveryRoute_WithNoPermissions_Is403"/>: <c>GET lmt/resource/{mselId}</c>
+/// (<c>LmtController</c> is <c>[AllowAnonymous]</c> - see <see cref="LmtEndpointTests"/>),
+/// <c>GET my-catalogs</c>, <c>GET citeActions/templates</c> and <c>GET citeDuties/templates</c>. The
+/// latter three are covered by the happy-path test in their own files, which is where the absence of a
+/// check is recorded.
 /// </remarks>
 public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
@@ -63,7 +74,77 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             "PUT", "api/invitations/{invitation}", "EditMsels",
             """{"id":"{invitation}","mselId":"{msel}","teamId":"{team}","maxUsersAllowed":10}"""
         },
-        { "DELETE", "api/invitations/{invitation}", "EditMsels", null }
+        { "DELETE", "api/invitations/{invitation}", "EditMsels", null },
+
+        // CatalogService / CatalogController - reads want ViewCatalogs, writes ManageCatalogs, and the
+        // one route scoped to another user wants ManageUsers. GET my-catalogs is absent, see above.
+        { "GET", "api/catalogs", "ViewCatalogs", null },
+        { "GET", "api/catalogs/{catalog}", "ViewCatalogs", null },
+        { "GET", "api/users/{user}/catalogs", "ManageUsers", null },
+        { "POST", "api/catalogs", "ManageCatalogs", """{"name":"{unique}","injectTypeId":"{injectType}"}""" },
+        { "POST", "api/catalogs/{catalog}/copy", "ManageCatalogs", null },
+        {
+            "PUT", "api/catalogs/{catalog}", "ManageCatalogs",
+            """{"id":"{catalog}","name":"{unique}","injectTypeId":"{injectType}"}"""
+        },
+        { "DELETE", "api/catalogs/{catalog}", "ManageCatalogs", null },
+        { "GET", "api/catalogs/{catalog}/json", "ManageCatalogs", null },
+        { "POST", "api/catalogs/json", "ManageCatalogs", "@file" },
+
+        // CatalogInjectService / CatalogInjectController - reads want ViewCatalogs or a unit the catalog
+        // is assigned to, writes ManageCatalogs.
+        { "GET", "api/catalogs/{catalog}/cataloginjects", "ViewCatalogs", null },
+        { "GET", "api/cataloginjects/{cataloginject}", "ViewCatalogs", null },
+        {
+            "POST", "api/cataloginjects", "ManageCatalogs",
+            """{"catalogId":"{catalog}","injectId":"{spareInject}"}"""
+        },
+        {
+            "POST", "api/cataloginjects/multiple", "ManageCatalogs",
+            """[{"catalogId":"{catalog}","injectId":"{spareInject}"}]"""
+        },
+        { "DELETE", "api/cataloginjects/{cataloginject}", "ManageCatalogs", null },
+        { "DELETE", "api/catalogs/{catalog}/injects/{inject}", "ManageCatalogs", null },
+
+        // CatalogUnitService / CatalogUnitController - every route wants ManageCatalogs, except the single
+        // read, which the service also grants to a member of the unit.
+        { "GET", "api/catalogs/{catalog}/catalogunits", "ManageCatalogs", null },
+        { "GET", "api/catalogunits/{catalogunit}", "ManageCatalogs", null },
+        {
+            "POST", "api/catalogunits", "ManageCatalogs",
+            """{"catalogId":"{catalog}","unitId":"{spareUnit}"}"""
+        },
+        {
+            "PUT", "api/catalogunits/{catalogunit}", "ManageCatalogs",
+            """{"id":"{catalogunit}","catalogId":"{catalog}","unitId":"{spareUnit}"}"""
+        },
+        { "DELETE", "api/catalogunits/{catalogunit}", "ManageCatalogs", null },
+        { "DELETE", "api/catalogs/{catalog}/units/{unit}", "ManageCatalogs", null },
+
+        // CiteActionService / CiteActionController - reads want ViewMsels, writes EditMsels because every
+        // body here names a MSEL, and the two file routes ManageCiteActions. templates is absent, above.
+        { "GET", "api/msels/{msel}/citeActions", "ViewMsels", null },
+        { "GET", "api/citeActions/{citeaction}", "ViewMsels", null },
+        { "POST", "api/citeActions", "EditMsels", """{"mselId":"{msel}","teamId":"{team}"}""" },
+        {
+            "PUT", "api/citeActions/{citeaction}", "EditMsels",
+            """{"id":"{citeaction}","mselId":"{msel}","teamId":"{team}"}"""
+        },
+        { "DELETE", "api/citeActions/{citeaction}", "EditMsels", null },
+        { "POST", "api/citeActions/json", "ManageCiteActions", "@file" },
+        { "POST", "api/citeActions/json/download", "ManageCiteActions", "[]" },
+
+        // CiteDutyService / CiteDutyController - the twin of the above, permission for permission.
+        { "GET", "api/msels/{msel}/citeDuties", "ViewMsels", null },
+        { "GET", "api/citeDuties/{citeduty}", "ViewMsels", null },
+        { "POST", "api/citeDuties", "EditMsels", """{"mselId":"{msel}","teamId":"{team}"}""" },
+        {
+            "PUT", "api/citeDuties/{citeduty}", "EditMsels",
+            """{"id":"{citeduty}","mselId":"{msel}","teamId":"{team}"}"""
+        },
+        { "DELETE", "api/citeDuties/{citeduty}", "EditMsels", null },
+        { "POST", "api/citeDuties/json", "ManageCiteDuties", "@file" },
+        { "POST", "api/citeDuties/json/download", "ManageCiteDuties", "[]" }
     };
 
     [Theory]
@@ -112,15 +193,37 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <remarks>
+    /// The content is owned by the returned request, so it outlives this method and is still readable when
+    /// the caller awaits <c>SendAsync</c> - which is the constraint that makes the multipart branch work
+    /// (see <c>OrganizationEndpointTests.UploadJson</c>).
+    /// </remarks>
     private static HttpRequestMessage Request(
         string method, string route, string body, Dictionary<string, string> graph)
     {
         var request = new HttpRequestMessage(new HttpMethod(method), Substitute(route, graph));
 
-        if (body is not null)
+        if (body == "@file")
+            request.Content = FilePart();
+        else if (body is not null)
             request.Content = new StringContent(Substitute(body, graph), Encoding.UTF8, "application/json");
 
         return request;
+    }
+
+    /// <summary>
+    /// A multipart body carrying the <c>ToUpload</c> part the <c>[FromForm] FileForm</c> routes require.
+    /// The file need not be valid JSON: the authorization check these theories are about runs before the
+    /// service reads it.
+    /// </summary>
+    private static MultipartFormDataContent FilePart()
+    {
+        var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(Encoding.UTF8.GetBytes("[]"));
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Add(file, "ToUpload", "upload.json");
+
+        return content;
     }
 
     private static string Substitute(string text, Dictionary<string, string> graph)
@@ -144,7 +247,21 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         await Seed(team, membership);
 
         var invitation = BlueprintAppFactory.Invitation(msel.Id, team.Id);
-        await Seed(invitation);
+        var injectType = BlueprintAppFactory.InjectType();
+        var unit = BlueprintAppFactory.Unit();
+        var spareUnit = BlueprintAppFactory.Unit();
+        await Seed(invitation, injectType, unit, spareUnit);
+
+        var catalog = BlueprintAppFactory.Catalog(injectType.Id);
+        var inject = BlueprintAppFactory.Inject(injectType.Id);
+        var spareInject = BlueprintAppFactory.Inject(injectType.Id);
+        var citeAction = BlueprintAppFactory.CiteAction(msel.Id, team.Id);
+        var citeDuty = BlueprintAppFactory.CiteDuty(msel.Id, team.Id);
+        await Seed(catalog, inject, spareInject, citeAction, citeDuty);
+
+        var catalogInject = BlueprintAppFactory.CatalogInject(catalog.Id, inject.Id);
+        var catalogUnit = BlueprintAppFactory.CatalogUnit(unit.Id, catalog.Id);
+        await Seed(catalogInject, catalogUnit);
 
         return new Dictionary<string, string>
         {
@@ -154,6 +271,16 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             ["group"] = group.Id.ToString(),
             ["membership"] = membership.Id.ToString(),
             ["user"] = spare.Id.ToString(),
+            ["injectType"] = injectType.Id.ToString(),
+            ["catalog"] = catalog.Id.ToString(),
+            ["inject"] = inject.Id.ToString(),
+            ["spareInject"] = spareInject.Id.ToString(),
+            ["cataloginject"] = catalogInject.Id.ToString(),
+            ["unit"] = unit.Id.ToString(),
+            ["spareUnit"] = spareUnit.Id.ToString(),
+            ["catalogunit"] = catalogUnit.Id.ToString(),
+            ["citeaction"] = citeAction.Id.ToString(),
+            ["citeduty"] = citeDuty.Id.ToString(),
             ["unique"] = $"row-{Guid.NewGuid()}"
         };
     }

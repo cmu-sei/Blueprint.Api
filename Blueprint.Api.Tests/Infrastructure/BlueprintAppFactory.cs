@@ -1005,6 +1005,60 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     public static MselCompetencyEntity MselCompetency(Guid mselId, Guid competencyId) =>
         new(mselId, competencyId) { Id = Guid.NewGuid() };
 
+    /// <summary>
+    /// A CITE action - what a team is told to do at one point in an exercise, pushed to cite.api. With no
+    /// <paramref name="mselId"/> it is a template, which is the only kind <c>GET citeActions/templates</c>
+    /// returns and the only kind the upload route can produce.
+    /// </summary>
+    /// <remarks>
+    /// Both foreign keys cascade (from the MSEL and from the team), and neither is indexed, so nothing
+    /// stops two identical actions. <c>MoveNumber</c>, <c>InjectNumber</c> and <c>ActionNumber</c> are
+    /// <c>int</c>, so they cross the wire as JSON strings.
+    /// </remarks>
+    public static CiteActionEntity CiteAction(
+        Guid? mselId = null,
+        Guid? teamId = null,
+        int moveNumber = 0,
+        int injectNumber = 0,
+        int actionNumber = 0,
+        string description = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new CiteActionEntity
+        {
+            Id = id,
+            MselId = mselId,
+            TeamId = teamId,
+            MoveNumber = moveNumber,
+            InjectNumber = injectNumber,
+            ActionNumber = actionNumber,
+            Description = description ?? $"action-{id}",
+            IsTemplate = mselId is null
+        };
+    }
+
+    /// <summary>
+    /// A CITE duty - the named role a team holds in an exercise, pushed to cite.api. Same shape as
+    /// <see cref="CiteAction"/>, which its service and controller are a line-for-line copy of.
+    /// </summary>
+    /// <remarks>
+    /// Both foreign keys cascade and neither is indexed, as for <see cref="CiteAction"/>.
+    /// </remarks>
+    public static CiteDutyEntity CiteDuty(Guid? mselId = null, Guid? teamId = null, string name = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new CiteDutyEntity
+        {
+            Id = id,
+            MselId = mselId,
+            TeamId = teamId,
+            Name = name ?? $"duty-{id}",
+            IsTemplate = mselId is null
+        };
+    }
+
     public override async ValueTask DisposeAsync()
     {
         // The host first: it holds pooled connections to the database the session is about to drop.

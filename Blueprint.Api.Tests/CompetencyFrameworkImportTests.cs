@@ -61,12 +61,14 @@ namespace Blueprint.Api.Tests;
 /// (<see cref="Import_DoesNotDeriveTheFrameworkIdNumberFromSourceAndVersion"/>).
 /// </para>
 /// <para>
-/// Progress is host-wide and unauthorized. <c>CompetencyFrameworkImportProgressService</c> is a singleton
-/// keyed only by the client-supplied import id, and <c>GetImportStatus</c> is the one action in this
-/// controller with no permission check at all - so any account that can sign in can poll any import it can
-/// guess the id of, and read the name of the framework being imported
-/// (<see cref="GetImportStatus_ReportsAnotherAccountsImport"/>). Its own logic is covered without a host in
-/// <see cref="CompetencyFrameworkImportProgressServiceTests"/>.
+/// Progress is host-wide but owned. <c>CompetencyFrameworkImportProgressService</c> is a singleton keyed by
+/// the client-supplied import id, so it records the user who started each import: polling needs
+/// <c>ManageCompetencyFrameworks</c> (<see cref="GetImportStatus_WithNoSystemPermission_Is403"/>) and reads
+/// another importer's id as unknown (<see cref="GetImportStatus_ForAnotherAccountsImport_Is404"/>), and an id
+/// already inside the retention window cannot be started again
+/// (<see cref="Import_ForAnImportIdAlreadyUsed_Is409AndKeepsTheFirstAttempt"/>). Because the id is
+/// client-supplied, those three are what keep one caller out of another's import. Its own logic is covered
+/// without a host in <see cref="CompetencyFrameworkImportProgressServiceTests"/>.
 /// </para>
 /// <para>
 /// The third importer is in <see cref="CompetencyFrameworkDcwfImportTests"/>, and the three preview
@@ -1653,21 +1655,28 @@ public class CompetencyFrameworkImportTests(DatabaseFixture fixture, BlueprintAp
     }
 
     /// <summary>
-    /// Reusing an id after a failure starts the record over, which is what makes a client-generated id
-    /// safe to retry with.
+    /// An id is not reusable, even by the account that failed with it and even for the thirty minutes
+    /// after the first attempt finished. A retry has to send a fresh id.
     /// </summary>
+    /// <remarks>
+    /// The alternative - letting the second attempt replace the first - is what makes a client-supplied
+    /// id a way to take over somebody else's progress, since an id inside the retention window belongs to
+    /// an import that is either running or recently finished and nothing can tell which one a poller
+    /// meant. So the refusal is the point, and the first attempt's failure stays readable behind it.
+    /// </remarks>
     [Fact]
-    public async Task GetImportStatus_ForAnImportIdReusedAfterAFailure_ReportsTheSecondAttempt()
+    public async Task Import_ForAnImportIdAlreadyUsed_Is409AndKeepsTheFirstAttempt()
     {
         var client = Client(await Manager());
         var importId = Guid.NewGuid();
         await ImportCsv(client, Csv(CompetencyRow("C1")), importId: importId);
 
-        await ImportCsv(client, Csv(FrameworkRow("FW-1")), importId: importId);
+        var response = await ImportCsv(client, Csv(FrameworkRow("FW-1")), importId: importId);
 
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var status = await Read<CompetencyFrameworkImportStatus>(await Status(client, importId));
-        Assert.Equal(CompetencyFrameworkImportState.Succeeded, status.State);
-        Assert.Null(status.Error);
+        Assert.Equal(CompetencyFrameworkImportState.Failed, status.State);
+        Assert.Equal("CSV does not contain a framework row (Is Framework = 1).", status.Error);
     }
 
     /// <summary>
@@ -1686,15 +1695,29 @@ public class CompetencyFrameworkImportTests(DatabaseFixture fixture, BlueprintAp
     }
 
     /// <summary>
-    /// Characterizes a leak. <c>GetImportStatus</c> is the only action in this controller with no
-    /// permission check at all, and progress is keyed on nothing but the client-supplied id - so any
-    /// account that can sign in can read the state, the phase and the <em>name</em> of a framework another
-    /// account is importing. Reads elsewhere in this controller are equally open
-    /// (<c>CompetencyFrameworkEndpointTests</c> characterizes those), but this one is not even scoped to
-    /// the caller who started the work.
+    /// An import is readable only by the account that started it. The framework's name, the phase and the
+    /// error message all belong to whoever uploaded the file, and an importId is client-supplied, so
+    /// without the ownership check any signed-in account could read them by guessing.
     /// </summary>
+    /// <remarks>
+    /// Another importer's poll is a 404 rather than a 403, deliberately: a 403 would confirm that the
+    /// guessed importId exists.
+    /// </remarks>
     [Fact]
-    public async Task GetImportStatus_ReportsAnotherAccountsImport()
+    public async Task GetImportStatus_ForAnotherAccountsImport_Is404()
+    {
+        var importId = Guid.NewGuid();
+        await ImportCsv(
+            Client(await Manager()), Csv(FrameworkRow("FW-1", "Someone else's framework")),
+            importId: importId);
+
+        var response = await Status(Client(await Manager()), importId);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetImportStatus_WithNoSystemPermission_Is403()
     {
         var importId = Guid.NewGuid();
         await ImportCsv(
@@ -1703,9 +1726,7 @@ public class CompetencyFrameworkImportTests(DatabaseFixture fixture, BlueprintAp
 
         var response = await Status(Client(await Actor().SeedAsync()), importId);
 
-        var status = await Read<CompetencyFrameworkImportStatus>(response);
-        Assert.Equal(CompetencyFrameworkImportState.Succeeded, status.State);
-        Assert.Equal("Someone else's framework", status.FrameworkName);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]

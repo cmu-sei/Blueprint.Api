@@ -42,10 +42,12 @@ namespace Blueprint.Api.Controllers
         /// </remarks>
         private async Task<IActionResult> RunImportAsync(Guid? importId, Func<Guid, Task<CompetencyFramework>> import)
         {
-            // An absent importId means the caller does not care about progress; track it
-            // anyway so the code path is the same either way.
-            var id = importId ?? Guid.NewGuid();
-            _importProgressService.Begin(id);
+            // An absent (or empty) importId means the caller does not care about progress;
+            // track it anyway so the code path is the same either way. Begin rejects an
+            // importId that is already in use, so a caller cannot take over another
+            // caller's progress by reusing its id.
+            var id = importId.GetValueOrDefault() == Guid.Empty ? Guid.NewGuid() : importId.Value;
+            _importProgressService.Begin(id, User.GetId());
             try
             {
                 var framework = await import(id);
@@ -65,15 +67,23 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Returns the phase and item counts of the import started with this importId, so a
         /// client can show real progress for the many seconds a large framework takes to
-        /// import. Terminal states stay readable for 30 minutes; unknown ids return 404.
+        /// import. Terminal states stay readable for 30 minutes; an id that is unknown, has
+        /// expired, or belongs to another user returns 404.
         /// </remarks>
         /// <param name="importId">The importId passed on the import request</param>
+        /// <param name="ct"></param>
         [HttpGet("competencyframeworks/imports/{importId}")]
         [ProducesResponseType(typeof(CompetencyFrameworkImportStatus), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getCompetencyFrameworkImportStatus")]
-        public IActionResult GetImportStatus(Guid importId)
+        public async Task<IActionResult> GetImportStatus(Guid importId, CancellationToken ct)
         {
-            var status = _importProgressService.Get(importId);
+            // Only an importer can poll an import, and only its own: importIds are
+            // client-supplied, so ownership is what keeps a caller from reading the
+            // framework name, progress and error message of someone else's import.
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
+            var status = _importProgressService.Get(importId, User.GetId());
 
             if (status == null)
                 return NotFound();
@@ -86,6 +96,9 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Returns a list of all competency frameworks (without competencies).
+        /// <para />
+        /// Readable by any authenticated user: frameworks are global reference data loaded by
+        /// every MSEL screen.
         /// </remarks>
         [HttpGet("competencyframeworks")]
         [ProducesResponseType(typeof(IEnumerable<CompetencyFramework>), (int)HttpStatusCode.OK)]
@@ -101,6 +114,8 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Returns the framework with all competencies and relationships.
+        /// <para />
+        /// Readable by any authenticated user, for the same reason as the list above.
         /// </remarks>
         /// <param name="id">The id of the Competency Framework</param>
         /// <param name="ct"></param>
@@ -298,6 +313,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "previewCompetencyFrameworkCsv")]
         public async Task<IActionResult> PreviewCsv(IFormFile file, [FromQuery] string source, [FromQuery] string version, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
             if (file == null || file.Length == 0)
                 return BadRequest("No file provided.");
 
@@ -319,6 +337,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "previewCompetencyFrameworkJson")]
         public async Task<IActionResult> PreviewJson(IFormFile file, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
             if (file == null || file.Length == 0)
                 return BadRequest("No file provided.");
 
@@ -342,6 +363,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "previewCompetencyFrameworkXlsx")]
         public async Task<IActionResult> PreviewXlsx(IFormFile file, [FromQuery] string source, [FromQuery] string version, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
             if (file == null || file.Length == 0)
                 return BadRequest("No file provided.");
 
@@ -363,6 +387,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "checkCanDeleteCompetencyFramework")]
         public async Task<IActionResult> CheckCanDelete(Guid id, CancellationToken ct)
         {
+            if (!await _authorizationService.AuthorizeAsync([Data.Enumerations.SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
             var result = await _competencyFrameworkService.CheckCanDeleteAsync(id, ct);
             return Ok(result);
         }

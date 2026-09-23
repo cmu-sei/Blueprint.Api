@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Xunit;
@@ -38,7 +39,7 @@ public class CompetencyFrameworkImportProgressServiceTests
     [Fact]
     public void Get_ForAnUnknownId_IsNull()
     {
-        Assert.Null(Service().Get(Guid.NewGuid()));
+        Assert.Null(Service().Get(Guid.NewGuid(), User));
     }
 
     [Fact]
@@ -48,9 +49,9 @@ public class CompetencyFrameworkImportProgressServiceTests
         var id = Guid.NewGuid();
         var before = DateTime.UtcNow;
 
-        var returned = service.Begin(id);
+        var returned = service.Begin(id, User);
 
-        var status = service.Get(id);
+        var status = service.Get(id, User);
         Assert.Equal(id, status.Id);
         Assert.Equal(CompetencyFrameworkImportState.Running, status.State);
         Assert.Equal("Starting", status.Phase);
@@ -68,23 +69,42 @@ public class CompetencyFrameworkImportProgressServiceTests
     }
 
     /// <summary>
-    /// A second import under the same id starts over rather than being refused, which is what makes a
-    /// client-generated id safe to reuse after a failure.
+    /// A second import under the same id is refused rather than starting over. importIds are
+    /// client-supplied, so reuse is how one caller would take over another caller's progress - and an id
+    /// still inside the retention window belongs to an import that is either running or recently
+    /// finished, so there is no way to tell which one a poller meant.
     /// </summary>
     [Fact]
-    public void Begin_ForAnIdAlreadyUsed_ReplacesTheEarlierImport()
+    public void Begin_ForAnIdAlreadyUsed_IsRefused()
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
         service.Fail(id, "the first attempt");
 
-        service.Begin(id);
+        var refused = Assert.Throws<ConflictException>(() => service.Begin(id, User));
+        Assert.Contains(id.ToString(), refused.Message);
 
-        var status = service.Get(id);
-        Assert.Equal(CompetencyFrameworkImportState.Running, status.State);
-        Assert.Null(status.Error);
-        Assert.Null(status.CompletedAt);
+        // The refused call leaves the earlier import exactly as it was.
+        var status = service.Get(id, User);
+        Assert.Equal(CompetencyFrameworkImportState.Failed, status.State);
+        Assert.Equal("the first attempt", status.Error);
+    }
+
+    /// <summary>
+    /// An import belongs to whoever started it. Another user's poll reads as unknown rather than
+    /// forbidden, because a 403 would confirm that a guessed importId exists.
+    /// </summary>
+    [Fact]
+    public void Get_ForAnotherUsersImport_IsNull()
+    {
+        var service = Service();
+        var id = Guid.NewGuid();
+        service.Begin(id, User);
+        service.ReportPhase(id, "Saving competencies", 3, 6);
+
+        Assert.Null(service.Get(id, Guid.NewGuid()));
+        Assert.NotNull(service.Get(id, User));
     }
 
     [Fact]
@@ -92,12 +112,12 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var first = Guid.NewGuid();
-        service.Begin(first);
+        service.Begin(first, User);
         service.Succeed(first, Guid.NewGuid(), "done");
 
-        service.Begin(Guid.NewGuid());
+        service.Begin(Guid.NewGuid(), User);
 
-        Assert.NotNull(service.Get(first));
+        Assert.NotNull(service.Get(first, User));
     }
 
     [Fact]
@@ -105,12 +125,12 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
         var before = DateTime.UtcNow;
 
         service.ReportPhase(id, "Saving competencies", 3, 6, 250, 1000);
 
-        var status = service.Get(id);
+        var status = service.Get(id, User);
         Assert.Equal("Saving competencies", status.Phase);
         Assert.Equal(3, status.PhaseNumber);
         Assert.Equal(6, status.PhaseCount);
@@ -129,7 +149,7 @@ public class CompetencyFrameworkImportProgressServiceTests
         service.ReportPhase(id, "Saving competencies", 3, 6);
 
         // Not created on the way past: only Begin registers an import.
-        Assert.Null(service.Get(id));
+        Assert.Null(service.Get(id, User));
     }
 
     /// <summary>
@@ -155,11 +175,11 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
 
         service.ReportPhase(id, "phase", phaseNumber, phaseCount, processed, total);
 
-        Assert.Equal(expected, service.Get(id).PercentComplete);
+        Assert.Equal(expected, service.Get(id, User).PercentComplete);
     }
 
     /// <summary>
@@ -171,11 +191,11 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
 
         service.ReportPhase(id, "Building hierarchy", 4, 6, processed: 900, total: 0);
 
-        Assert.Equal(50, service.Get(id).PercentComplete);
+        Assert.Equal(50, service.Get(id, User).PercentComplete);
     }
 
     [Theory]
@@ -187,11 +207,11 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
 
         service.ReportPhase(id, "phase", phaseNumber, phaseCount);
 
-        Assert.Equal(0, service.Get(id).PercentComplete);
+        Assert.Equal(0, service.Get(id, User).PercentComplete);
     }
 
     /// <summary>
@@ -210,15 +230,15 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
         service.ReportPhase(id, "Saving competencies", 3, 6, 1000, 1000);
 
         service.ReportPhase(id, "Building hierarchy", 4, 6, 0, 0);
 
         // Phase 4 on its own computes 50, which is what phase 3 already reached.
-        Assert.Equal(50, service.Get(id).PercentComplete);
-        Assert.Equal("Building hierarchy", service.Get(id).Phase);
-        Assert.Equal(4, service.Get(id).PhaseNumber);
+        Assert.Equal(50, service.Get(id, User).PercentComplete);
+        Assert.Equal("Building hierarchy", service.Get(id, User).Phase);
+        Assert.Equal(4, service.Get(id, User).PhaseNumber);
     }
 
     /// <summary>
@@ -230,12 +250,12 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
         service.ReportPhase(id, "Saving relationships", 5, 6, 10, 10);
 
         service.ReportPhase(id, "Reading file", 1, 6);
 
-        var status = service.Get(id);
+        var status = service.Get(id, User);
         Assert.Equal(83, status.PercentComplete);
         Assert.Equal("Reading file", status.Phase);
         Assert.Equal(1, status.PhaseNumber);
@@ -251,11 +271,11 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
 
         service.ReportPhase(id, "Loading framework", 6, 6, 1000, 1000);
 
-        Assert.Equal(99, service.Get(id).PercentComplete);
+        Assert.Equal(99, service.Get(id, User).PercentComplete);
     }
 
     [Fact]
@@ -263,11 +283,11 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
 
         service.ReportPhase(id, "Saving competencies", 3, 6, processed: 5000, total: 1000);
 
-        Assert.Equal(50, service.Get(id).PercentComplete);
+        Assert.Equal(50, service.Get(id, User).PercentComplete);
     }
 
     [Fact]
@@ -276,13 +296,13 @@ public class CompetencyFrameworkImportProgressServiceTests
         var service = Service();
         var id = Guid.NewGuid();
         var frameworkId = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
         service.ReportPhase(id, "Saving competencies", 3, 6);
         var before = DateTime.UtcNow;
 
         service.Succeed(id, frameworkId, "NICE Framework");
 
-        var status = service.Get(id);
+        var status = service.Get(id, User);
         Assert.Equal(CompetencyFrameworkImportState.Succeeded, status.State);
         Assert.Equal("Complete", status.Phase);
         Assert.Equal(100, status.PercentComplete);
@@ -309,11 +329,11 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
 
         service.Succeed(id, Guid.NewGuid(), "framework");
 
-        var status = service.Get(id);
+        var status = service.Get(id, User);
         Assert.Equal(0, status.PhaseCount);
         Assert.Equal(0, status.PhaseNumber);
         Assert.Equal(100, status.PercentComplete);
@@ -327,7 +347,7 @@ public class CompetencyFrameworkImportProgressServiceTests
 
         service.Succeed(id, Guid.NewGuid(), "framework");
 
-        Assert.Null(service.Get(id));
+        Assert.Null(service.Get(id, User));
     }
 
     [Fact]
@@ -335,12 +355,12 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
         var before = DateTime.UtcNow;
 
         service.Fail(id, "CSV file is empty or has no data rows.");
 
-        var status = service.Get(id);
+        var status = service.Get(id, User);
         Assert.Equal(CompetencyFrameworkImportState.Failed, status.State);
         Assert.Equal("CSV file is empty or has no data rows.", status.Error);
         Assert.NotNull(status.CompletedAt);
@@ -358,12 +378,12 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
         service.ReportPhase(id, "Saving competencies", 3, 6, 250, 1000);
 
         service.Fail(id, "Database error importing framework");
 
-        var status = service.Get(id);
+        var status = service.Get(id, User);
         Assert.Equal("Saving competencies", status.Phase);
         Assert.Equal(3, status.PhaseNumber);
         Assert.Equal(38, status.PercentComplete);
@@ -377,7 +397,7 @@ public class CompetencyFrameworkImportProgressServiceTests
 
         service.Fail(id, "went wrong");
 
-        Assert.Null(service.Get(id));
+        Assert.Null(service.Get(id, User));
     }
 
     /// <summary>
@@ -392,7 +412,7 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
         service.ReportPhase(id, "Saving competencies", 3, 6);
 
         if (state == CompetencyFrameworkImportState.Succeeded)
@@ -402,7 +422,7 @@ public class CompetencyFrameworkImportProgressServiceTests
 
         service.ReportPhase(id, "Saving relationships", 5, 6);
 
-        var status = service.Get(id);
+        var status = service.Get(id, User);
         Assert.Equal(state, status.State);
         Assert.NotEqual("Saving relationships", status.Phase);
     }
@@ -418,12 +438,12 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
         service.Succeed(id, Guid.NewGuid(), "framework");
 
         service.Fail(id, "too late");
 
-        var status = service.Get(id);
+        var status = service.Get(id, User);
         Assert.Equal(CompetencyFrameworkImportState.Failed, status.State);
         Assert.Equal("too late", status.Error);
 
@@ -441,15 +461,15 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
         service.ReportPhase(id, "Saving competencies", 3, 6);
 
-        var polled = service.Get(id);
+        var polled = service.Get(id, User);
         service.ReportPhase(id, "Saving relationships", 5, 6);
 
         Assert.Equal("Saving competencies", polled.Phase);
         Assert.Equal(3, polled.PhaseNumber);
-        Assert.Equal("Saving relationships", service.Get(id).Phase);
+        Assert.Equal("Saving relationships", service.Get(id, User).Phase);
     }
 
     [Fact]
@@ -457,9 +477,9 @@ public class CompetencyFrameworkImportProgressServiceTests
     {
         var service = Service();
         var id = Guid.NewGuid();
-        service.Begin(id);
+        service.Begin(id, User);
 
-        Assert.NotSame(service.Get(id), service.Get(id));
+        Assert.NotSame(service.Get(id, User), service.Get(id, User));
     }
 
     /// <summary>
@@ -471,17 +491,23 @@ public class CompetencyFrameworkImportProgressServiceTests
         var service = Service();
         var mine = Guid.NewGuid();
         var theirs = Guid.NewGuid();
-        service.Begin(mine);
-        service.Begin(theirs);
+        service.Begin(mine, User);
+        service.Begin(theirs, User);
 
         service.ReportPhase(mine, "Saving competencies", 3, 6);
         service.Succeed(theirs, Guid.NewGuid(), "theirs");
 
-        Assert.Equal(CompetencyFrameworkImportState.Running, service.Get(mine).State);
-        Assert.Equal("Saving competencies", service.Get(mine).Phase);
-        Assert.Equal(CompetencyFrameworkImportState.Succeeded, service.Get(theirs).State);
-        Assert.Equal("theirs", service.Get(theirs).FrameworkName);
+        Assert.Equal(CompetencyFrameworkImportState.Running, service.Get(mine, User).State);
+        Assert.Equal("Saving competencies", service.Get(mine, User).Phase);
+        Assert.Equal(CompetencyFrameworkImportState.Succeeded, service.Get(theirs, User).State);
+        Assert.Equal("theirs", service.Get(theirs, User).FrameworkName);
     }
+
+    /// <summary>
+    /// The user every import below is started by. Ownership is checked on every read, so a test that does
+    /// not care about it still has to name somebody.
+    /// </summary>
+    private static readonly Guid User = Guid.NewGuid();
 
     private static ICompetencyFrameworkImportProgressService Service() =>
         new CompetencyFrameworkImportProgressService();

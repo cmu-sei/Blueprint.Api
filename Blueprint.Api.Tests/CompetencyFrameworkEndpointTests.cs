@@ -30,9 +30,12 @@ namespace Blueprint.Api.Tests;
 /// permission, <c>ManageCompetencyFrameworks</c>, and only on the writes.
 /// </para>
 /// <para>
-/// So the reads are open to <em>any</em> account that can sign in - see
-/// <see cref="Get_WithNoSystemPermission_Is200"/>, <see cref="GetById_WithNoSystemPermission_Is200"/> and
-/// <see cref="CanDelete_WithNoSystemPermission_Is200"/>. That is characterized rather than fixed, and the
+/// So the two framework reads are open to <em>any</em> account that can sign in - see
+/// <see cref="Get_WithNoSystemPermission_Is200"/> and
+/// <see cref="GetById_WithNoSystemPermission_Is200"/>. <c>can-delete</c> is not: its conflict check names
+/// the framework holding a competency, so it demands <c>ManageCompetencyFrameworks</c>
+/// (<see cref="CanDelete_WithNoSystemPermission_Is403"/>). That the two reads are open is characterized
+/// rather than fixed, and the
 /// sharp end of it is that <c>SystemPermission.ViewCompetencyFrameworks</c> exists, is assignable, and is
 /// read by <em>nothing</em> in this controller: the only actions that demand it are
 /// <c>ProficiencyScaleController</c>'s and <c>ProficiencyLevelController</c>'s reads. An administrator
@@ -1053,21 +1056,20 @@ public class CompetencyFrameworkEndpointTests(DatabaseFixture fixture, Blueprint
     }
 
     /// <summary>
-    /// Characterization: <c>can-delete</c> has no authorization check, so any signed-in account can
-    /// enumerate which MSELs draw on a framework - MSEL names included.
+    /// <c>can-delete</c> requires <c>ManageCompetencyFrameworks</c>. Its answer names the MSELs drawing on
+    /// the framework (<see cref="CanDelete_WhenACompetencyIsOnAMsel_IsFalse_AndNamesTheMsel"/>), so without
+    /// the check
+    /// any signed-in account could enumerate them.
     /// </summary>
     [Fact]
-    public async Task CanDelete_WithNoSystemPermission_Is200()
+    public async Task CanDelete_WithNoSystemPermission_Is403()
     {
         var framework = await SeedFramework();
-        var competency = await SeedCompetency(framework, "A");
-        var msel = await SeedMselUsing(competency);
         var actor = await Nobody();
 
         var response = await Client(actor).GetAsync($"api/competencyframeworks/{framework.Id}/can-delete", Ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(msel.Name, Assert.Single((await Read<FrameworkDeleteCheck>(response)).AffectedMsels).Name);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>

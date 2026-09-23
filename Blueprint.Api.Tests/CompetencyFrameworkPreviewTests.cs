@@ -56,11 +56,11 @@ namespace Blueprint.Api.Tests;
 /// is a hierarchy link the import turns into a parent rather than a relationship.
 /// </para>
 /// <para>
-/// <strong>None of the three checks any permission.</strong> The two importers beside them require
-/// <c>ManageCompetencyFrameworks</c>; these require only that the caller be signed in. So any account can
-/// upload a file, have the server parse it, and - because the conflict check runs first and reports the
-/// name and version of whatever framework already holds that ID number - read back the name of a framework
-/// it cannot otherwise see (<see cref="PreviewCsv_WithNoPermission_RevealsAnExistingFrameworksName"/>).
+/// All three require <c>ManageCompetencyFrameworks</c>, the same permission as the two importers beside
+/// them (<see cref="EveryPreview_WithNoSystemPermission_Is403"/>). That matters because the conflict check
+/// runs first and reports the name and version of whatever framework already holds the ID number, so an
+/// unguarded preview would let any signed-in account read back the name of a framework it cannot otherwise
+/// see by uploading a file naming an ID number to probe.
 /// </para>
 /// <para>
 /// All three declare only <c>200</c> in their <c>ProducesResponseType</c> while also answering 400, which
@@ -1098,41 +1098,26 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// None of the three previews checks a permission, so an account holding nothing at all can upload a
-    /// file and have the server parse it. The two importers beside them require
-    /// <c>ManageCompetencyFrameworks</c>.
+    /// All three previews require <c>ManageCompetencyFrameworks</c>, the same permission as the two
+    /// importers beside them.
     /// </summary>
     /// <remarks>
-    /// It turns red when the previews are given the permission check they should have, which is the fix.
+    /// What the permission protects is not the parse but the conflict check, which runs before anything
+    /// else and names the framework holding the ID number and its version
+    /// (<see cref="PreviewCsv_ReportsAFrameworkIdNumberAlreadyTaken"/>). Without it, a caller who cannot
+    /// list frameworks could learn that one exists and what it is called by uploading a two-line file
+    /// naming an ID number to probe.
     /// </remarks>
     [Theory]
     [InlineData("preview-csv")]
     [InlineData("preview-json")]
     [InlineData("preview-xlsx")]
-    public async Task EveryPreview_WithNoSystemPermission_Is200(string route)
+    public async Task EveryPreview_WithNoSystemPermission_Is403(string route)
     {
         var response = await Post(
             Client(await Actor().SeedAsync()), route, Encoding.UTF8.GetBytes(Csv(FrameworkRow("FW-1"))));
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    /// <summary>
-    /// What that costs, concretely: the conflict check runs before anything else and names the framework
-    /// holding the ID number, so a caller who cannot list frameworks learns one exists, what it is called
-    /// and which version it is - by uploading a two-line file naming an ID number to probe.
-    /// </summary>
-    [Fact]
-    public async Task PreviewCsv_WithNoPermission_RevealsAnExistingFrameworksName()
-    {
-        var existing = BlueprintAppFactory.CompetencyFramework(idNumber: "FW-1", version: "2.0");
-        existing.Name = "Confidential Exercise 2026";
-        await Seed(existing);
-
-        var preview = await PreviewCsv(Client(await Actor().SeedAsync()), Csv(FrameworkRow("FW-1")));
-
-        Assert.Contains("Confidential Exercise 2026", preview.Error);
-        Assert.Contains("version 2.0", preview.Error);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Theory]

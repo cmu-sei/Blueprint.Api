@@ -4,14 +4,19 @@
 using System;
 using System.Collections.Concurrent;
 using System.Linq;
+using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Services
 {
     public interface ICompetencyFrameworkImportProgressService
     {
-        /// <summary>Registers a new import and returns its initial status.</summary>
-        CompetencyFrameworkImportStatus Begin(Guid importId);
+        /// <summary>
+        /// Registers a new import owned by userId and returns its initial status. Throws
+        /// ConflictException if importId is already in use, so one import can never take
+        /// over the progress of another.
+        /// </summary>
+        CompetencyFrameworkImportStatus Begin(Guid importId, Guid userId);
 
         /// <summary>
         /// Records the phase an import has reached. Pass total = 0 for a phase whose work
@@ -23,8 +28,11 @@ namespace Blueprint.Api.Services
 
         void Fail(Guid importId, string error);
 
-        /// <summary>Returns the status of an import, or null if it is unknown or has expired.</summary>
-        CompetencyFrameworkImportStatus Get(Guid importId);
+        /// <summary>
+        /// Returns the status of an import owned by userId, or null if it is unknown, has
+        /// expired, or belongs to another user.
+        /// </summary>
+        CompetencyFrameworkImportStatus Get(Guid importId, Guid userId);
     }
 
     /// <summary>
@@ -41,32 +49,54 @@ namespace Blueprint.Api.Services
         /// </summary>
         private static readonly TimeSpan Retention = TimeSpan.FromMinutes(30);
 
-        private readonly ConcurrentDictionary<Guid, CompetencyFrameworkImportStatus> _statuses = new();
+        /// <summary>
+        /// An import's progress plus the user who started it. importIds are client-supplied,
+        /// so the owner is recorded to keep one caller from reading — or clobbering —
+        /// another caller's import.
+        /// </summary>
+        private sealed class ImportProgress
+        {
+            public Guid UserId { get; init; }
+            public CompetencyFrameworkImportStatus Status { get; init; }
+        }
 
-        public CompetencyFrameworkImportStatus Begin(Guid importId)
+        private readonly ConcurrentDictionary<Guid, ImportProgress> _imports = new();
+
+        public CompetencyFrameworkImportStatus Begin(Guid importId, Guid userId)
         {
             Prune();
             var now = DateTime.UtcNow;
-            var status = new CompetencyFrameworkImportStatus
+            var progress = new ImportProgress
             {
-                Id = importId,
-                State = CompetencyFrameworkImportState.Running,
-                Phase = "Starting",
-                PhaseNumber = 0,
-                PhaseCount = 0,
-                PercentComplete = 0,
-                StartedAt = now,
-                UpdatedAt = now
+                UserId = userId,
+                Status = new CompetencyFrameworkImportStatus
+                {
+                    Id = importId,
+                    State = CompetencyFrameworkImportState.Running,
+                    Phase = "Starting",
+                    PhaseNumber = 0,
+                    PhaseCount = 0,
+                    PercentComplete = 0,
+                    StartedAt = now,
+                    UpdatedAt = now
+                }
             };
-            _statuses[importId] = status;
-            return status;
+
+            // An id still within the retention window belongs to an import that is either
+            // running or recently finished. Make the caller pick a new one rather than guess which
+            // import the poller meant.
+            if (!_imports.TryAdd(importId, progress))
+                throw new ConflictException($"An import with importId {importId} is already in progress or has recently run. Use a new importId.");
+
+            return Copy(progress.Status);
         }
 
         public void ReportPhase(Guid importId, string phase, int phaseNumber, int phaseCount, int processed = 0, int total = 0)
         {
-            if (!_statuses.TryGetValue(importId, out var status))
+            if (!_imports.TryGetValue(importId, out var progress))
                 return;
 
+            var status = progress.Status;
             lock (status)
             {
                 // A terminal status is final — a late report must not resurrect it.
@@ -85,9 +115,10 @@ namespace Blueprint.Api.Services
 
         public void Succeed(Guid importId, Guid frameworkId, string frameworkName)
         {
-            if (!_statuses.TryGetValue(importId, out var status))
+            if (!_imports.TryGetValue(importId, out var progress))
                 return;
 
+            var status = progress.Status;
             lock (status)
             {
                 status.State = CompetencyFrameworkImportState.Succeeded;
@@ -103,9 +134,10 @@ namespace Blueprint.Api.Services
 
         public void Fail(Guid importId, string error)
         {
-            if (!_statuses.TryGetValue(importId, out var status))
+            if (!_imports.TryGetValue(importId, out var progress))
                 return;
 
+            var status = progress.Status;
             lock (status)
             {
                 status.State = CompetencyFrameworkImportState.Failed;
@@ -115,13 +147,23 @@ namespace Blueprint.Api.Services
             }
         }
 
-        public CompetencyFrameworkImportStatus Get(Guid importId)
+        public CompetencyFrameworkImportStatus Get(Guid importId, Guid userId)
         {
-            if (!_statuses.TryGetValue(importId, out var status))
+            // Another user's import reads as unknown rather than forbidden: the framework
+            // name, progress and error message of an import belong to whoever started it,
+            // and a 403 would confirm that the guessed importId exists.
+            if (!_imports.TryGetValue(importId, out var progress) || progress.UserId != userId)
                 return null;
 
-            // Hand back a copy: the import keeps mutating the stored instance while the
-            // caller is serializing it.
+            return Copy(progress.Status);
+        }
+
+        /// <summary>
+        /// Hand back a copy: the import keeps mutating the stored instance while the caller
+        /// is serializing it.
+        /// </summary>
+        private static CompetencyFrameworkImportStatus Copy(CompetencyFrameworkImportStatus status)
+        {
             lock (status)
             {
                 return new CompetencyFrameworkImportStatus
@@ -162,14 +204,14 @@ namespace Blueprint.Api.Services
         private void Prune()
         {
             var cutoff = DateTime.UtcNow - Retention;
-            foreach (var key in _statuses
-                .Where(kvp => kvp.Value.CompletedAt.HasValue
-                    ? kvp.Value.CompletedAt.Value < cutoff
-                    : kvp.Value.UpdatedAt < cutoff)
+            foreach (var key in _imports
+                .Where(kvp => kvp.Value.Status.CompletedAt.HasValue
+                    ? kvp.Value.Status.CompletedAt.Value < cutoff
+                    : kvp.Value.Status.UpdatedAt < cutoff)
                 .Select(kvp => kvp.Key)
                 .ToList())
             {
-                _statuses.TryRemove(key, out _);
+                _imports.TryRemove(key, out _);
             }
         }
     }

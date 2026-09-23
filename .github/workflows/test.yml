@@ -11,19 +11,11 @@ on:
   push:
   pull_request:
 
-# A same-repo pull request fires both triggers above, and each new push supersedes the run before it,
-# so cancel anything still in flight for the same branch.
+# Supersede a run that a later push to the same branch has already made stale. Each trigger only ever
+# supersedes its own earlier runs.
 #
-# Keyed on the branch name, because no single ref context identifies a branch across both triggers:
-# github.ref is refs/heads/<branch> on push but refs/pull/<n>/merge on pull_request, and github.ref_name
-# is <branch> then <n>/merge. Either on its own puts the two triggers in separate groups, which is how
-# a same-repo pull request ends up running the whole suite twice at once instead of once. Taking the
-# pull request's head ref first and falling back to github.ref_name gives <branch> in both cases.
-#
-# The one thing this conflates is a fork's pull request with a local branch of the same name. Cancelling
-# a stale run for that name is the wanted behaviour anyway, so it is not worth disambiguating.
 concurrency:
-  group: test-${{ github.event.pull_request.head.ref || github.ref_name }}
+  group: test-${{ github.event_name }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -33,6 +25,12 @@ jobs:
   tests:
     name: Tests
     runs-on: ubuntu-latest
+
+    # This deduplicates the work. It does not stop the runs cancelling each other - see the concurrency
+    # key above, which is what does that, and which this is useless without.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name != github.repository
 
     steps:
       - uses: actions/checkout@v6

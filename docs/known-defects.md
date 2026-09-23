@@ -5,7 +5,8 @@ test that pins the current behaviour; that test turns red when the defect is fix
 signal to delete the line.
 
 Units covered before this file existed recorded their findings in their commit messages instead;
-`git log task/api-tests` is the fuller list, and Phase 5's `docs/Testing.md` will consolidate both.
+`git log task/api-tests` is the fuller list. **`docs/fix-list.md` consolidates both and ranks them**,
+and `docs/Testing.md` explains the convention this file exists to serve.
 
 ## Group
 
@@ -188,7 +189,7 @@ update method, and both deletes check existence first.
 | 24 families against `BlueprintContext`'s 43 entities, all of which raise events: 19 entity types are handled by nothing, including `InvitationEntity` (how a unit joins an exercise), `MselPageEntity` (exercise content with its own editor) and `UserTeamRoleEntity` (what CITE is pushed from). | `EventHandlerTests.NineteenOfTheFortyThreeEntities_RaiseEventsNoHandlerReceives` |
 | `MainHubMethods` declares `MselTeamCreated`/`Updated`/`Deleted` for an entity no handler serves, so a client may subscribe and wait for a message nothing sends — while `MselUnitEntity`, which is what actually assigns a unit to an exercise, has neither a handler nor a method name. | `EventHandlerTests.ThreeBroadcastMethodNames_AreDeclaredForAnEntityNoHandlerServes` |
 | `DataValueHandler.GetGroups` runs a **synchronous** database query inside a handler, blocking whichever thread the save completed on; `CardTeamHandler`, `PlayerApplicationTeamHandler`, `CatalogHandler` and `DataFieldHandler` drop the `CancellationToken`, and `UnitHandler`/`UnitUserHandler` pass `CancellationToken.None` on delete. | `EventHandlerTests.TheFamiliesThatLookTheMselUp_TellTheGroupTheyFound` remarks |
-| Every one of the 24 families injects a service it never reads. | `EventHandlerTests.Construct` passes null for it; every test in the file is the assertion |
+| Every one of the 24 families injects a service it never reads. | `EventHandlerTests`' private `Construct` helper passes null for it; every test in the file is the assertion |
 
 ## SanitizerInterceptor
 
@@ -219,3 +220,29 @@ update method, and both deletes check existence first.
 | Every `int` in the API crosses the wire as a JSON **string** (`JsonIntegerConverter`), which the OpenAPI document still declares `type: integer` — so a generated client that types them as numbers does not parse a blueprint response. Reading accepts both forms, so nothing fails on the way in. | `JsonConverterTests.AnInteger_IsWrittenAsAString` |
 | `DatabaseExtensions.InitializeDatabase` wraps its whole body in one `catch` that logs and continues, so an application whose migration or seed failed starts and serves requests. A seed file that fails part way through keeps what it already saved, with no transaction and no second attempt; an unreadable one is a single logged line; a camelCase one is silently seeded as nothing, the seed reader being the one deserializer in blueprint with case-sensitive matching. | `DatabaseInitializationTests.Initialize_WithAnUnreadableSeedFile_LogsOneErrorAndStartsAnyway`, `.Initialize_WhenSeedingFailsPartWayThrough_KeepsWhatItAlreadySaved`, `.Initialize_WithACamelCaseSeedFile_SeedsNothingAndSaysNothing` |
 | The same catch reports a missing `DatabaseOptions` as a `NullReferenceException` and runs an inner exception's message together with its outer one, so the log line a failed start leaves does not say what was misconfigured. | `DatabaseInitializationTests.Initialize_WithNoDatabaseOptions_BlamesANullReference`, `.Initialize_WithAnInnerException_RunsTheTwoMessagesTogether` |
+
+## Contract surface
+
+What the OpenAPI document and the view models promise against what the API answers. These were
+collected as the units were written; the contract-snapshot phase that would have pinned them
+mechanically was struck, so the ones marked *unpinned* are recorded here and nowhere else. `int` as a
+JSON string, and the two error dialects neither of which appears in the document, are under
+*Startup and middleware* above.
+
+| Defect | Pinned by |
+| --- | --- |
+| `updateMselUnit` declares `[ProducesResponseType(typeof(Unit), OK)]` and returns a `MselUnit` - the one outright wrong *type* in the surface, so a generated client's method signature is wrong rather than its status handling. | unpinned; `MselUnitController.cs` |
+| `ViewModels.User.Permissions` is declared and populated by no map, so every user route answers null for a property the generated client types as an array. | `UserEndpointTests.GetAll_AnswersNoPermissions` |
+| `ViewModels.TeamUser` and `ViewModels.UnitUser` derive from `Base` while `TeamUserEntity` and `UnitUserEntity` have no audit columns, so the surface promises `createdBy` and `dateCreated` on every one of those routes and the API answers all-zeros and `0001-01-01`. | `TeamUserEndpointTests.Get_AnswersAuditFieldsTheEntityDoesNotHave`, `UnitUserEndpointTests.Get_AnswersAuditFieldsTheEntityDoesNotHave` |
+| `ViewModels.SystemRole` carries `Immutable`, which nothing in production reads, so a client that greys out the Administrator role is the only thing protecting it. | unpinned; `SystemRoleEntity.Immutable` |
+| Every download file is PascalCase with raw integers and numeric enums behind `ReferenceHandler.Preserve`'s `$id`/`$values` wrapper, against responses that are camelCase with `int` as a JSON string and enums as names. The same type therefore crosses two of blueprint's own boundaries in two dialects, and a file assembled from a GET is a 500 on upload. | `CardEndpointTests.DownloadJson_WritesPascalCaseNamesAndRawIntegers`, `UnitEndpointTests.DownloadJson_WrapsThePascalCaseListForReferencePreservation`, `OrganizationEndpointTests.DownloadJson_WrapsTheListForReferencePreservation` |
+| `createCardTeam`'s `Location` points at `teamcards/{id}` while the update route is `cardteams/{id}`, so a client following the header to edit what it just created gets a 405. `createPlayerApplicationTeam` is the second instance. | `CardTeamEndpointTests.Create_AnswersALocationHeaderNamingTheRow`, `.Update_AtTheRouteTheOtherSevenImply_Is405` |
+| `createTeam`'s `Location` names `getTeam`, which requires `ViewMsels` outright, so the MSEL owner who just created the team is answered 403 by the header they were handed. All three unit-membership creates have the same shape through `ManageUnits` not implying `ViewUnits`. | `TeamEndpointTests.Get_ForTheMselsOwnerWithoutViewMsels_Is403` |
+| `createUser`'s `Location` is handed back by the one create that answers 500, so the row it names exists and the caller has no id for it. | `UserEndpointTests.Create_ThatOmitsTheId_CreatesTheUserAndAnswers500` |
+| `createInject` declares 201 and returns `Ok`, so there is no `Location` - and the route it would have named is the one route a caller without `ViewMsels` cannot use. | `InjectEndpointTests.Create_DeclaresCreatedAndAnswers200WithNoLocationHeader` |
+| `deleteInject` declares 204 and answers 200 with the JSON literal `true`; `deleteScenarioEvent` and `batchDeleteScenarioEvents` do the same. | `InjectEndpointTests.Delete_WithEditMsels_Is200WithTrueAndRemovesTheInject` |
+| `createDataField` declares 201 and returns `Ok`; `deleteDataField` declares `[ProducesResponseType(typeof(Guid), 204)]`, a pair no response can satisfy, and answers 200 with the id. | unpinned as a declaration; the answers are pinned throughout `DataFieldEndpointTests` |
+| `createScenarioEvent`, `createScenarioEventsFromInjects` and `copyScenarioEventsToMsel` all declare 201 and answer 200 with no `Location`. The list body is right - a create renumbers siblings - the declaration is not. | unpinned as a declaration; the answers are pinned throughout `ScenarioEventEndpointTests` |
+| The three `CiteController` routes and `GET applicationTemplates` return the sibling APIs' generated DTOs straight through blueprint's own surface, so regenerating `Cite.Api.Client` or `Player.Api.Client` changes blueprint's contract without any blueprint file changing. | `CiteServiceTests.ScoringModels_ReturnsWhatCiteAnswered`, `IntegrationNamesEndpointTests` |
+| `POST playerApplications/push` is declared and answered correctly, but its `Location` is the *create's*, and nothing in the surface says the push is asynchronous or offers anywhere to poll it. | `PlayerApplicationEndpointTests.Create_ForAnOwnerOfTheMsel_Is201` |
+| `previewDataOptionImport`'s 400 for a missing file part is undeclared and is a bare string rather than either of the API's two error shapes; the inferred `Consumes` on the same route makes a wrong content type a 415 *before* authentication. | `DataOptionEndpointTests.Preview_WithNoFilePart_Is400`, `.Preview_WithTheWrongContentType_Is415BeforeItIs401` |

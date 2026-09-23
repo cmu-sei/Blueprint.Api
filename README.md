@@ -4,6 +4,28 @@ This project provides a RESTful API for Blueprint, the Crucible scenario design 
 
 By default, blueprint.api is available at localhost:4724, with the swagger page at localhost:4724/api/index.html.
 
+# Testing
+
+`Blueprint.Api.Tests` holds the test suite.  Run it from the repository root:
+
+    dotnet test
+
+**Docker must be running.** The suite uses Testcontainers PostgreSQL and gives every test its own
+database, cloned from a migrated template.  Nothing else is needed — no Keycloak, no Player, Gallery,
+CITE or Steamfitter, and no network.
+
+To run one class or one test:
+
+    dotnet test --filter "FullyQualifiedName~Tests.OrganizationEndpointTests"
+    dotnet test --filter "FullyQualifiedName~Create_ForAnOwnerOfTheMsel_Is201"
+
+`--filter FullyQualifiedName~X` is a substring match on the whole name, so prefix the namespace when a
+class name is a suffix of another (`~Tests.TeamEndpointTests`, not `~TeamEndpointTests`).
+
+See `docs/Testing.md` for the harness, the conventions a new test has to respect, and coverage.
+Defects the suite characterizes rather than fixes are listed in `docs/known-defects.md`, ranked for a
+follow-up branch in `docs/fix-list.md`.
+
 # Database Migrations
 
 When the data model is changed, a new database migration must be created.  From the Blueprint.Api directory, run this command to create the new migration:

@@ -1020,6 +1020,28 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task Update_WithABlankName_Is400AndLeavesTheNameAlone(string name)
+    {
+        var msel = BlueprintAppFactory.Msel();
+        await Seed(msel);
+
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var body = Body(msel);
+        body.Name = name;
+        var response = await Client(actor).PutAsJsonAsync(
+            $"/api/msels/{msel.Id}", body, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(
+            msel.Name,
+            (await NewContext().Msels.SingleAsync(x => x.Id == msel.Id, Ct)).Name);
+    }
+
     [Fact]
     public async Task Update_ForAnUnknownMsel_WithEditMselsPermission_Is404()
     {

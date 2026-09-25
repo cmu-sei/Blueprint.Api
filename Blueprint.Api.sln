@@ -11,6 +11,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Blueprint.Api.Data", "Bluep
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Blueprint.Api.Migrations.PostgreSQL", "Blueprint.Api.Migrations.PostgreSQL\Blueprint.Api.Migrations.PostgreSQL.csproj", "{68E961A4-457A-4FE1-B79A-269722255D6C}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Blueprint.Api.Tests", "Blueprint.Api.Tests\Blueprint.Api.Tests.csproj", "{6101BFD5-3113-4F1B-964E-0F79C2D8073F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +35,10 @@ Global
 		{68E961A4-457A-4FE1-B79A-269722255D6C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{68E961A4-457A-4FE1-B79A-269722255D6C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{68E961A4-457A-4FE1-B79A-269722255D6C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6101BFD5-3113-4F1B-964E-0F79C2D8073F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6101BFD5-3113-4F1B-964E-0F79C2D8073F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6101BFD5-3113-4F1B-964E-0F79C2D8073F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6101BFD5-3113-4F1B-964E-0F79C2D8073F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -6,7 +6,10 @@ ARG TARGETARCH
 ARG VERSION
 WORKDIR /source
 
-# Copy project files and restore as distinct layers
+# Copy project files and restore as distinct layers. The two props files are part of that set: with
+# central package management every PackageReference takes its version from Directory.Packages.props,
+# so a restore that cannot see it fails with NU1015 for each one.
+COPY --link Directory.Build.props Directory.Packages.props ./
 COPY --link Blueprint.Api/*.csproj ./Blueprint.Api/
 COPY --link Blueprint.Api.Data/*.csproj ./Blueprint.Api.Data/
 COPY --link Blueprint.Api.Migrations.PostgreSQL/*.csproj ./Blueprint.Api.Migrations.PostgreSQL/

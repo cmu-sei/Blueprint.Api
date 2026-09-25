@@ -1,0 +1,145 @@
+// Copyright 2026 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
+
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace Blueprint.Api.Tests.Infrastructure;
+
+public class TestAuthOptions : AuthenticationSchemeOptions
+{
+    /// <summary>Scopes granted to every authenticated test request.</summary>
+    public IEnumerable<string> Scopes { get; set; } = [];
+}
+
+/// <summary>
+/// Stands in for the JWT bearer handler so tests do not need Keycloak. A request carrying the
+/// <see cref="UserIdHeader"/> header - or an <c>Authorization: Bearer &lt;user id&gt;</c> header, which
+/// is what makes <c>Startup</c>'s query-string promotion observable - authenticates as that user; a
+/// request carrying neither presents no credentials at all, which keeps the 401 path testable.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This mints only what a real access token would carry - <c>sub</c>, <c>iss</c>, optionally <c>name</c>
+/// and <c>email</c>, and the scopes. Everything that decides what the caller may *do* still comes from
+/// the database, because
+/// <c>AuthorizationClaimsTransformer</c> is an <c>IClaimsTransformation</c> and so runs for whatever
+/// scheme authenticated the request: the real <c>UserClaimsService</c> reads the user's
+/// <c>SystemRoleEntity</c> and adds the permission claims. See <see cref="TestActorBuilder"/>.
+/// </para>
+/// <para>
+/// The scheme is named <c>Bearer</c>, and that is not cosmetic. It is <c>Startup</c>'s default scheme,
+/// and <c>MainHub</c> carries <c>[Authorize(AuthenticationSchemes = "Bearer")]</c> - the only such
+/// attribute in the codebase - so a scheme named anything else would leave every hub request
+/// unauthenticated. <see cref="BlueprintAppFactory"/> has to unpick the JWT registration to claim the
+/// name, because <c>AuthenticationOptions.AddScheme</c> throws when two handlers register one.
+/// </para>
+/// <para>
+/// The scopes come from <see cref="BlueprintAppFactory"/> rather than being hardcoded here, because
+/// <c>Startup</c> builds its MVC-wide authorization filter out of
+/// <c>Authorization:AuthorizationScope</c> and requires <em>every</em> scope in it - a principal missing
+/// any one of the six blueprint ships with never reaches a controller.
+/// </para>
+/// </remarks>
+public class TestAuthHandler(
+    IOptionsMonitor<TestAuthOptions> options,
+    ILoggerFactory logger,
+    UrlEncoder encoder) : AuthenticationHandler<TestAuthOptions>(options, logger, encoder)
+{
+    public const string SchemeName = JwtBearerDefaults.AuthenticationScheme;
+
+    /// <summary>Set to the user's guid. Absent means "no credentials presented".</summary>
+    public const string UserIdHeader = "X-Test-User";
+
+    /// <summary>
+    /// The <c>iss</c> claim every authenticated test request carries, matching what Keycloak puts in a
+    /// real token.
+    /// </summary>
+    /// <remarks>
+    /// Not optional, and not decoration: <c>XApiService.EnsureAgentInitialized</c> reads it with
+    /// <c>Claims.First(c => c.Type == "iss")</c> — unconditionally, even when
+    /// <c>XApiOptions.IssuerUrl</c> is configured — so a principal without it cannot produce an xAPI
+    /// statement. Without this claim an xAPI-enabled host would answer 500 on every write route for a
+    /// purely harness reason. Nothing else in blueprint reads <c>iss</c>.
+    /// </remarks>
+    public const string Issuer = "https://localhost:8443/realms/crucible";
+
+    /// <summary>
+    /// The <c>name</c> claim, optional. Present because it is not inert: <c>UserClaimsService.ValidateUser</c>
+    /// writes it back to the user row, and falls back to "Anonymous" for a user it has to create.
+    /// </summary>
+    public const string UserNameHeader = "X-Test-Name";
+
+    /// <summary>
+    /// The <c>email</c> claim, optional. Two places in the application read it, both in
+    /// <c>MselService</c>: an invitation may be restricted to an email domain, and the join and launch
+    /// paths match the caller's address against it. Nothing else in the codebase looks at it.
+    /// </summary>
+    public const string EmailHeader = "X-Test-Email";
+
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        var user = UserFromHeaders();
+
+        if (user is null)
+        {
+            return Task.FromResult(AuthenticateResult.NoResult());
+        }
+
+        var claims = new List<Claim>
+        {
+            new("sub", user),
+            new("iss", Issuer),
+        };
+
+        if (Request.Headers.TryGetValue(UserNameHeader, out var name))
+        {
+            claims.Add(new Claim("name", name.ToString()));
+        }
+
+        if (Request.Headers.TryGetValue(EmailHeader, out var email))
+        {
+            claims.Add(new Claim("email", email.ToString()));
+        }
+
+        claims.AddRange(Options.Scopes.Select(x => new Claim("scope", x)));
+
+        var identity = new ClaimsIdentity(claims, SchemeName);
+
+        return Task.FromResult(AuthenticateResult.Success(
+            new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName)));
+    }
+
+    /// <summary>
+    /// The user this request claims to be, or null when it presents no credentials.
+    /// <see cref="UserIdHeader"/> first, then <c>Authorization: Bearer &lt;user id&gt;</c>.
+    /// </summary>
+    /// <remarks>
+    /// The second form exists for one reason: <c>Startup.Configure</c> promotes a <c>?bearer=…</c> query
+    /// parameter into the <c>Authorization</c> header, and nothing could observe that it had until this
+    /// handler read the header. It is a fallback rather than the primary form because a header a test
+    /// sets deliberately should win over one the pipeline synthesized, and because every other test in
+    /// the suite addresses itself with <see cref="UserIdHeader"/> - none sends an inbound
+    /// <c>Authorization</c> header at all, so nothing existing changes meaning.
+    /// </remarks>
+    private string UserFromHeaders()
+    {
+        if (Request.Headers.TryGetValue(UserIdHeader, out var userId))
+        {
+            return userId.ToString();
+        }
+
+        var authorization = Request.Headers.Authorization.ToString();
+
+        return authorization.StartsWith("Bearer ", System.StringComparison.Ordinal)
+            ? authorization["Bearer ".Length..]
+            : null;
+    }
+}

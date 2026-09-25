@@ -5,10 +5,18 @@
     <AspNetCoreHostingModel>InProcess</AspNetCoreHostingModel>
     <ProjectGuid>{94A7F5B1-E6D5-465C-B07F-2573ACCD0236}</ProjectGuid>
     <LangVersion>latest</LangVersion>
+    <!--
+      CS8981, "the type name only contains lower-cased ascii characters". Every file here is generated
+      by `dotnet ef migrations add`, which derives the class name from the migration name, so a name
+      given with hyphens - `player-app-order`, `steamfitter-integration` - becomes an all-lowercase
+      identifier. Renaming the classes by hand would fix the warning until the next such migration
+      and leaves a hand-edited file among generated ones, which is worse than the warning.
+    -->
+    <NoWarn>CS8981</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
 
   <ItemGroup>

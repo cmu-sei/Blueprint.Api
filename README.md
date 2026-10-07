@@ -16,15 +16,16 @@ CITE or Steamfitter, and no network.
 
 To run one class or one test:
 
-    dotnet test --filter "FullyQualifiedName~Tests.OrganizationEndpointTests"
+    dotnet test --filter "FullyQualifiedName~.OrganizationEndpointTests"
     dotnet test --filter "FullyQualifiedName~Create_ForAnOwnerOfTheMsel_Is201"
 
 `--filter FullyQualifiedName~X` is a substring match on the whole name, so prefix the namespace when a
-class name is a suffix of another (`~Tests.TeamEndpointTests`, not `~TeamEndpointTests`).
+class name is a suffix of another (`~.TeamEndpointTests`, not `~TeamEndpointTests`; the classes now sit in
+sub-namespaces such as `Blueprint.Api.Tests.Controllers`, so `~Tests.X` no longer matches).
 
 See `docs/Testing.md` for the harness, the conventions a new test has to respect, and coverage.
-Defects the suite characterizes rather than fixes are listed in `docs/known-defects.md`, ranked for a
-follow-up branch in `docs/fix-list.md`.
+Defects the suite characterizes rather than fixes are described in the workspace's
+`agent-docs/api-test-bugs/blueprint.api.md`, outside this repository (see `docs/Testing.md`).
 
 # Database Migrations
 

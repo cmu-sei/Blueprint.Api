@@ -9,7 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Blueprint.Api.Data;
 using Blueprint.Api.Services;
-using Blueprint.Api.Tests.Infrastructure;
+using Blueprint.Api.Tests.Support;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,34 +18,9 @@ using Xunit;
 
 namespace Blueprint.Api.Tests;
 
-/// <summary>
-/// What the application composes, rather than what it answers: every service resolves, every controller
-/// activates, the serializer carries the converters <c>Startup</c> gave it, and four background workers
-/// are asked for.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The endpoint tests prove the composition works for the ~230 routes they drive. This file is for the
-/// parts of it nothing drives: a service registered and resolved nowhere, a controller whose constructor
-/// gained a dependency the container cannot supply, a duplicate registration. Those are startup failures
-/// in a deployment and silence in a test suite.
-/// </para>
-/// <para>
-/// Everything here reads <see cref="CompositionFactory"/>'s two views of the service collection, and the
-/// difference between them is load-bearing: <c>Registrations</c> is what <c>Startup</c> left, which is
-/// what a deployment runs, and <c>Descriptors</c> is that plus the harness' substitutions, which is what
-/// can actually be resolved here. <see cref="TheApplication_RegistersTheContextTwoWays"/> is the canary
-/// for that distinction - if the snapshot were taken too late, it is the test that says so.
-/// </para>
-/// <para>
-/// BUG, recorded here rather than tested because nothing can observe it: the provider <c>switch</c> at
-/// <c>Startup.cs:72-97</c> has no <c>default</c> arm, and it is what registers the health checks as well
-/// as the context. A deployment whose <c>Database:Provider</c> is misspelled therefore starts with no
-/// database registered at all and with <c>/api/health/ready</c> answering Healthy, having nothing to
-/// check. It cannot be tested from here because the harness replaces the context registration anyway, so
-/// a host built with a bogus provider behaves exactly like one built correctly.
-/// </para>
-/// </remarks>
+/// <summary>What the application composes, rather than what it answers: every service resolves, every
+/// controller activates, the serializer carries the converters <c>Startup</c> gave it, and four background
+/// workers are asked for.</summary>
 public class CompositionTests(DatabaseFixture fixture, CompositionFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<CompositionFactory>
 {
@@ -59,12 +34,7 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
     private static bool IsBlueprints(Type type) =>
         type.Assembly == typeof(Startup).Assembly || type.Assembly == typeof(BlueprintContext).Assembly;
 
-    /// <remarks>
-    /// The test the plan called for, and the one that would have caught the duplicate below on the day it
-    /// was written. A registration whose implementation asks for something unregistered throws on first
-    /// resolution, which for most of these is the first request that happens to need them - so a service
-    /// used by one route can break a deployment nobody exercises that route on.
-    /// </remarks>
+    /// <summary>Every service blueprint registers resolves.</summary>
     [Fact]
     public void EveryServiceTheApplicationRegisters_CanBeResolved()
     {
@@ -132,26 +102,7 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
         Assert.Empty(failures);
     }
 
-    /// <remarks>
-    /// <para>
-    /// BUG: <c>services.AddScoped&lt;IInjectTypeService, InjectTypeService&gt;();</c> appears verbatim at
-    /// both <c>Startup.cs:228</c> and <c>Startup.cs:231</c> - the same line, three apart. It is the only
-    /// duplicate blueprint writes for itself, and it is harmless (see below) because both descriptors
-    /// name the same implementation.
-    /// </para>
-    /// <para>
-    /// <c>BlueprintContext</c> is the other, and it is not blueprint's mistake: EF's
-    /// <c>AddPooledDbContextFactory&lt;TContext&gt;</c> registers the context scoped from a pool lease so
-    /// it can be injected directly, and <c>AddEventPublishingDbContextFactory</c> then adds its own
-    /// scoped registration - the one that sets <c>ServiceProvider</c> and clears <c>TrackedEntries</c>.
-    /// Two scoped factory descriptors, and the container resolves the last, so the extension's wins and
-    /// every injected context is the event-publishing one. That is an order dependence rather than a
-    /// defect, and this assertion is what would notice if the order ever changed.
-    /// </para>
-    /// <para>
-    /// A list rather than a count, so a third duplicate reddens it rather than passing unnoticed.
-    /// </para>
-    /// </remarks>
+    /// <summary>Two service types are registered twice.</summary>
     [Fact]
     public void TwoServiceTypes_AreRegisteredTwice()
     {
@@ -167,12 +118,7 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
         Assert.Equal(["BlueprintContext", "IInjectTypeService"], duplicates);
     }
 
-    /// <remarks>
-    /// Which is why it has never been noticed: the container keeps both descriptors and resolves the last
-    /// one, and both name the same implementation, so the only cost is a wasted descriptor. That is worth
-    /// pinning rather than assuming - a duplicate naming two *different* implementations would be a
-    /// silent last-wins, and is the shape this line makes easy to write.
-    /// </remarks>
+    /// <summary>The duplicate registration resolves the same implementation.</summary>
     [Fact]
     public void TheDuplicateRegistration_IsHarmless()
     {
@@ -235,28 +181,8 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
         Assert.Null(scope.ServiceProvider.GetService<IPrincipal>());
     }
 
-    /// <remarks>
-    /// <para>
-    /// Four, and the harness removes all four - which is the whole reason the suite can run at all, each
-    /// of them being a <c>while(true)</c> that dials the IdP and then a sibling API. The fourth is
-    /// <c>IntegrationService</c>, whose hosted registration is a factory lambda with no
-    /// <c>ImplementationType</c>; it is therefore invisible to the name filter and only the count sees
-    /// it. Adding a fifth worker and forgetting it here means the suite starts dialing something.
-    /// </para>
-    /// <para>
-    /// The framework registers four of its own alongside them - <c>DataProtectionHostedService</c>,
-    /// <c>GenericWebHostService</c>, <c>HealthCheckPublisherHostedService</c> and
-    /// <c>TelemetryHostedService</c> - so a bare count of <c>IHostedService</c> descriptors is eight and
-    /// is a statement about the framework's version rather than about blueprint. Hence the filter.
-    /// </para>
-    /// <para>
-    /// The second half is deliberately narrow for the same reason.
-    /// <c>RemoveAll&lt;IHostedService&gt;()</c> does remove all eight, but it cannot be checked by
-    /// asserting that none survives: <c>DataProtectionHostedService</c> and
-    /// <c>GenericWebHostService</c> are registered again after the test callbacks run, so two always do.
-    /// What matters is that none of blueprint's is among them.
-    /// </para>
-    /// </remarks>
+    /// <summary>The application registers four background workers of its own, and the harness removes
+    /// them.</summary>
     [Fact]
     public void TheApplication_StartsFourBackgroundWorkers()
     {
@@ -282,15 +208,8 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
         Assert.Empty(surviving);
     }
 
-    /// <remarks>
-    /// The canary for <see cref="CompositionFactory"/>'s ordering assumption, and the reason the two views
-    /// exist. <c>AddEventPublishingDbContextFactory</c> registers a pooled
-    /// <c>IDbContextFactory&lt;BlueprintContext&gt;</c> *and* a scoped <c>BlueprintContext</c>; the
-    /// harness removes both and adds back only the context, per test. So the factory's presence in one
-    /// view and absence from the other is exactly the difference between what a deployment runs and what
-    /// this suite runs - and if the snapshot were taken after the substitutions, this is the assertion
-    /// that fails rather than the three tests above quietly measuring the wrong collection.
-    /// </remarks>
+    /// <summary>The deployment registers a pooled context factory and a scoped context; the harness keeps only
+    /// the context.</summary>
     [Fact]
     public void TheApplication_RegistersTheContextTwoWays()
     {

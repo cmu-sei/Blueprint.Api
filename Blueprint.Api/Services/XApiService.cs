@@ -14,6 +14,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Infrastructure.Authorization;
+using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Infrastructure.Extensions;
 using TinCan;
@@ -34,13 +36,13 @@ namespace Blueprint.Api.Services
             Guid? teamId,
             CancellationToken ct);
         Task<bool> MselViewedAsync(MselEntity msel, CancellationToken ct);
-        Task<bool> MselViewedAsync(Guid id, CancellationToken ct);
+        Task<bool> MselViewedAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<bool> ExerciseStartedAsync(MselEntity msel, CancellationToken ct);
         Task<bool> ExerciseStoppedAsync(MselEntity msel, CancellationToken ct);
         Task<bool> JoinPageViewedAsync(CancellationToken ct);
         Task<bool> MselJoinedAsync(MselEntity msel, CancellationToken ct);
-        Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, string source, CancellationToken ct);
-        Task<bool> AssertCompetencyAsync(ViewModels.CompetencyAssertion assertion, CancellationToken ct);
+        Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, string source, bool hasSystemPermission, CancellationToken ct);
+        Task<bool> AssertCompetencyAsync(ViewModels.CompetencyAssertion assertion, bool hasSystemPermission, CancellationToken ct);
         Task<bool> RecordCheckboxChangeAsync(Guid mselId, Guid eventId, Guid dataFieldId, string dataFieldName, bool isChecked, CancellationToken ct);
     }
 
@@ -317,13 +319,16 @@ namespace Blueprint.Api.Services
             return await CreateAsync(verb, activity, category, grouping, parent, other, msel.Id, teamId, ct);
         }
 
-        public async Task<bool> MselViewedAsync(Guid id, CancellationToken ct)
+        public async Task<bool> MselViewedAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var msel = await _context.Msels.FindAsync(id, ct);
             if (msel == null)
             {
                 return false;
             }
+            if (!hasSystemPermission && !await MselUserRequirement.IsMet(_user.GetId(), msel.Id, _context))
+                throw new ForbiddenException();
+
             return await MselViewedAsync(msel, ct);
         }
 
@@ -462,7 +467,7 @@ namespace Blueprint.Api.Services
                 .FirstOrDefaultAsync(ct);
         }
 
-        public async Task<bool> AssertCompetencyAsync(ViewModels.CompetencyAssertion assertion, CancellationToken ct)
+        public async Task<bool> AssertCompetencyAsync(ViewModels.CompetencyAssertion assertion, bool hasSystemPermission, CancellationToken ct)
         {
             if (!IsConfigured())
             {
@@ -475,6 +480,16 @@ namespace Blueprint.Api.Services
             var msel = await _context.Msels.FirstOrDefaultAsync(m => m.Id == assertion.MselId, ct);
             if (msel == null)
                 throw new ArgumentException($"MSEL {assertion.MselId} not found");
+
+            // only MSEL owners and evaluators can assert competencies
+            if (!hasSystemPermission &&
+                !await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context) &&
+                !await EvaluatorRequirement.IsMet(_user.GetId(), msel.Id, _context))
+                throw new ForbiddenException();
+
+            if (assertion.TeamId.HasValue && assertion.TeamId.Value != Guid.Empty &&
+                !await _context.Teams.AnyAsync(t => t.Id == assertion.TeamId.Value && t.MselId == msel.Id, ct))
+                throw new ArgumentException($"Team {assertion.TeamId} not found on MSEL {assertion.MselId}");
 
             var competency = await _context.Competencies
                 .Include(c => c.CompetencyFramework)
@@ -491,9 +506,9 @@ namespace Blueprint.Api.Services
             Data.Models.ScenarioEventEntity scenarioEvent = null;
             if (assertion.ScenarioEventId.HasValue && assertion.ScenarioEventId.Value != Guid.Empty)
             {
-                scenarioEvent = await _context.ScenarioEvents.FirstOrDefaultAsync(se => se.Id == assertion.ScenarioEventId.Value, ct);
+                scenarioEvent = await _context.ScenarioEvents.FirstOrDefaultAsync(se => se.Id == assertion.ScenarioEventId.Value && se.MselId == msel.Id, ct);
                 if (scenarioEvent == null)
-                    throw new ArgumentException($"Scenario event {assertion.ScenarioEventId} not found");
+                    throw new ArgumentException($"Scenario event {assertion.ScenarioEventId} not found on MSEL {assertion.MselId}");
             }
 
             var scale = proficiencyLevel.ProficiencyScale;
@@ -821,7 +836,7 @@ namespace Blueprint.Api.Services
             return true;
         }
 
-        public async Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, string source, CancellationToken ct)
+        public async Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, string source, bool hasSystemPermission, CancellationToken ct)
         {
             if (!IsConfigured())
             {
@@ -833,6 +848,14 @@ namespace Blueprint.Api.Services
             {
                 return "{\"statements\":[]}";
             }
+
+            // the same MSEL roles that can open the Assessor View
+            if (!hasSystemPermission &&
+                !await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context) &&
+                !await MselEditorRequirement.IsMet(_user.GetId(), msel.Id, _context) &&
+                !await MselApproverRequirement.IsMet(_user.GetId(), msel.Id, _context) &&
+                !await EvaluatorRequirement.IsMet(_user.GetId(), msel.Id, _context))
+                throw new ForbiddenException();
 
             var registrationIds = BuildRegistrationIds(msel, source);
             if (registrationIds.Count == 0)

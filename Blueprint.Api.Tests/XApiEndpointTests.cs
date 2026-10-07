@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Tests.Infrastructure;
 using Blueprint.Api.ViewModels;
@@ -31,15 +32,12 @@ namespace Blueprint.Api.Tests;
 /// followed all the way to the queued row in <see cref="XApiLiveEndpointTests"/>.
 /// </para>
 /// <para>
-/// <strong>Not one of the four is authorized beyond being signed in.</strong> The controller carries only
-/// <c>BaseController</c>'s bare <c>[Authorize]</c> and neither it nor <c>XApiService</c> consults
-/// <c>IBlueprintAuthorizationService</c> or any of the eight <c>Msel*Requirement</c> helpers - the only
-/// controller family in the API where a MSEL id in the query string or the body is taken on trust. So any
-/// authenticated caller may assert any competency about any MSEL and read every statement the LRS holds
-/// for one, including exercises they have no role on and cannot otherwise see. See
-/// <see cref="EveryRoute_ForACallerWithNoPermissions_Is200"/>, and
-/// <see cref="XApiLiveEndpointTests.CreateAssertion_ByACallerWithNoRoleOnTheMsel_IsRecordedAnyway"/> for
-/// the same thing with a statement at the end of it.
+/// <strong>Authorization is decided in two places, as everywhere else in blueprint.</strong> The controller
+/// resolves the system permission - <c>ViewMsels</c> for the statements and the viewed statement,
+/// <c>EditMsels</c> for an assertion - and <c>XApiService</c> checks the caller's role on the MSEL. The
+/// service is substituted here, so this class pins only the first half (see
+/// <see cref="TheMselRoutes_TellTheServiceWhetherTheCallerHoldsTheSystemPermission"/>); the role checks
+/// are driven over the real service in <see cref="XApiLiveEndpointTests"/>.
 /// </para>
 /// <para>
 /// <strong>Three of the four throw the answer away.</strong> Every <c>IXApiService</c> method returns
@@ -75,31 +73,65 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// A caller with no system role, no team and no role on any MSEL, naming a MSEL that is not there -
-    /// and all four routes answer <c>200</c>. Requiring any permission at all, or asking
-    /// <c>MselViewRequirement</c> about the MSEL in the query string, turns this red on three of the four;
-    /// the join-page statement names no MSEL and is the one that genuinely needs nothing.
+    /// The join-page statement names no MSEL, so it is the one route that needs nothing beyond being
+    /// signed in.
+    /// </remarks>
+    [Fact]
+    public async Task ViewedJoinPage_ForACallerWithNoPermissions_Is200()
+    {
+        var response = await Client(await Actor().SeedAsync()).PostAsync(ViewedJoinPage, null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <remarks>
+    /// The three routes that name a MSEL each resolve one system permission and hand the answer to the
+    /// service, which skips its MSEL role check when it is <c>true</c>. Holding the other permission does
+    /// not count: <c>ViewMsels</c> alone does not let a caller assert.
     /// </remarks>
     [Theory]
-    [InlineData("GET", Statements)]
-    [InlineData("POST", Assertions)]
-    [InlineData("POST", ViewedSomeMsel)]
-    [InlineData("POST", ViewedJoinPage)]
-    public async Task EveryRoute_ForACallerWithNoPermissions_Is200(string method, string route)
+    [InlineData("GET", Statements, SystemPermission.ViewMsels, SystemPermission.EditMsels)]
+    [InlineData("POST", Assertions, SystemPermission.EditMsels, SystemPermission.ViewMsels)]
+    [InlineData("POST", ViewedSomeMsel, SystemPermission.ViewMsels, SystemPermission.EditMsels)]
+    public async Task TheMselRoutes_TellTheServiceWhetherTheCallerHoldsTheSystemPermission(
+        string method, string route, SystemPermission required, SystemPermission other)
     {
         StatementsAre("{\"statements\":[]}");
 
-        var actor = await Actor().SeedAsync();
+        var withRequired = await Actor().WithSystemPermissions(required).SeedAsync();
+        var withOther = await Actor().WithSystemPermissions(other).SeedAsync();
+        var withNothing = await Actor().SeedAsync();
 
-        using var request = new HttpRequestMessage(new HttpMethod(method), route);
-        if (method == "POST")
+        foreach (var (actor, expected) in new[] { (withRequired, true), (withOther, false), (withNothing, false) })
         {
-            request.Content = EmptyJsonObject();
+            Factory.XApi.ClearReceivedCalls();
+
+            using var request = new HttpRequestMessage(new HttpMethod(method), route);
+            if (method == "POST")
+            {
+                request.Content = EmptyJsonObject();
+            }
+
+            var response = await Client(actor).SendAsync(request, Ct);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            switch (route)
+            {
+                case Statements:
+                    await Factory.XApi.Received(1).GetStatementsAsync(
+                        Arg.Any<Guid>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>(), Arg.Any<int>(),
+                        Arg.Any<string>(), expected, Arg.Any<CancellationToken>());
+                    break;
+                case Assertions:
+                    await Factory.XApi.Received(1).AssertCompetencyAsync(
+                        Arg.Any<CompetencyAssertion>(), expected, Arg.Any<CancellationToken>());
+                    break;
+                default:
+                    await Factory.XApi.Received(1).MselViewedAsync(
+                        Arg.Any<Guid>(), expected, Arg.Any<CancellationToken>());
+                    break;
+            }
         }
-
-        var response = await Client(actor).SendAsync(request, Ct);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     /// <remarks>
@@ -127,10 +159,11 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             Arg.Any<DateTime?>(),
             Arg.Any<int>(),
             Arg.Any<string>(),
+            Arg.Any<bool>(),
             Cancellable);
         await Factory.XApi.Received(1)
-            .AssertCompetencyAsync(Arg.Any<CompetencyAssertion>(), Cancellable);
-        await Factory.XApi.Received(1).MselViewedAsync(mselId, Cancellable);
+            .AssertCompetencyAsync(Arg.Any<CompetencyAssertion>(), Arg.Any<bool>(), Cancellable);
+        await Factory.XApi.Received(1).MselViewedAsync(mselId, Arg.Any<bool>(), Cancellable);
         await Factory.XApi.Received(1).JoinPageViewedAsync(Cancellable);
     }
 
@@ -167,6 +200,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             Utc(new DateTime(2026, 1, 2, 9, 45, 0, DateTimeKind.Utc)),
             Arg.Is(7),
             Arg.Is("cite"),
+            Arg.Any<bool>(),
             Cancellable);
     }
 
@@ -184,7 +218,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         await Client(await Actor().SeedAsync()).GetAsync($"{Statements}?mselId={mselId}", Ct);
 
         await Factory.XApi.Received(1).GetStatementsAsync(
-            Arg.Is(mselId), Missing, Missing, Arg.Is(100), NoSource, Cancellable);
+            Arg.Is(mselId), Missing, Missing, Arg.Is(100), NoSource, Arg.Any<bool>(), Cancellable);
     }
 
     /// <remarks>
@@ -203,7 +237,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         await Factory.XApi.Received(1).GetStatementsAsync(
-            Arg.Is(Guid.Empty), Missing, Missing, Arg.Is(100), NoSource, Cancellable);
+            Arg.Is(Guid.Empty), Missing, Missing, Arg.Is(100), NoSource, Arg.Any<bool>(), Cancellable);
     }
 
     /// <remarks>
@@ -258,6 +292,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
                 x.Comment == assertion.comment &&
                 x.MoveNumber == assertion.moveNumber &&
                 x.GroupNumber == assertion.groupNumber),
+            Arg.Any<bool>(),
             Cancellable);
     }
 
@@ -275,7 +310,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         await Factory.XApi.DidNotReceiveWithAnyArgs()
-            .AssertCompetencyAsync(Arg.Any<CompetencyAssertion>(), Arg.Any<CancellationToken>());
+            .AssertCompetencyAsync(Arg.Any<CompetencyAssertion>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
     }
 
     /// <remarks>
@@ -303,6 +338,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
                 x.Comment == null &&
                 x.MoveNumber == null &&
                 x.GroupNumber == null),
+            Arg.Any<bool>(),
             Cancellable);
     }
 
@@ -313,14 +349,14 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     [Fact]
     public async Task Viewed_ForwardsTheIdFromTheRoute()
     {
-        Factory.XApi.MselViewedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+        Factory.XApi.MselViewedAsync(Arg.Any<Guid>(), Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(true);
 
         var mselId = Guid.NewGuid();
 
         var response = await Client(await Actor().SeedAsync()).PostAsync(Viewed(mselId), null, Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        await Factory.XApi.Received(1).MselViewedAsync(mselId, Cancellable);
+        await Factory.XApi.Received(1).MselViewedAsync(mselId, Arg.Any<bool>(), Cancellable);
     }
 
     /// <remarks>
@@ -333,7 +369,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     [Fact]
     public async Task Viewed_ForAMselTheServiceCouldNotFind_IsStill200()
     {
-        Factory.XApi.MselViewedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(false);
+        Factory.XApi.MselViewedAsync(Arg.Any<Guid>(), Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(false);
 
         var response = await Client(await Actor().SeedAsync())
             .PostAsync(Viewed(Guid.NewGuid()), null, Ct);
@@ -382,6 +418,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
                 Arg.Any<DateTime?>(),
                 Arg.Any<int>(),
                 Arg.Any<string>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>())
             .Returns(document);
 
@@ -422,9 +459,9 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
     [Fact]
     public async Task Viewed_QueuesAViewedStatementNamingTheMselAndTheCaller()
     {
-        var actor = await Actor().SeedAsync();
         var msel = BlueprintAppFactory.Msel();
         await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
 
         var response = await Client(actor)
             .PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
@@ -463,6 +500,24 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
     }
 
     /// <remarks>
+    /// A caller who did not create the MSEL, is on none of its teams and in none of its units has no
+    /// business recording that they viewed it - the statement would be participation evidence for an
+    /// exercise they were never part of.
+    /// </remarks>
+    [Fact]
+    public async Task Viewed_ByACallerWithNoPartInTheMsel_Is403AndQueuesNothing()
+    {
+        var msel = BlueprintAppFactory.Msel();
+        await Seed(msel);
+
+        var response = await Client(await Actor().SeedAsync())
+            .PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    /// <remarks>
     /// The one statement in the codebase that names no MSEL, so the queued row's <c>MselId</c> is null and
     /// the statement carries no <c>context.registration</c> - which is what the LRS query in
     /// <c>GetStatementsAsync</c> filters on. A join-page view is therefore written and can never be read
@@ -490,8 +545,8 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
     [Fact]
     public async Task CreateAssertion_QueuesAnAssertedStatement()
     {
-        var actor = await Actor().SeedAsync();
         var graph = await SeedAssertionGraph();
+        var actor = await Actor().OnMsel(graph.Msel, MselRole.Evaluator).SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync(
             XApiEndpointTests.Assertions,
@@ -520,25 +575,114 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
     }
 
     /// <remarks>
-    /// The assertion names a MSEL this caller has no role on, is not a member of a team on, and did not
-    /// create, and the statement is written anyway - a rating attributed to them, against somebody else's
-    /// exercise, that the LRS will hold permanently. Asking <c>MselViewRequirement</c> or
-    /// <c>EvaluatorRequirement</c> about <c>assertion.MselId</c>, which is the only MSEL id in play, turns
-    /// this red and is the fix.
+    /// Only the MSEL's owners and evaluators may rate anyone on it - the same two roles the Assessor View
+    /// lets edit. A Viewer, an Editor and an Approver can open that view but not submit from it, and a
+    /// participant on one of the MSEL's teams, who is who an assertion is about, cannot assert at all.
     /// </remarks>
-    [Fact]
-    public async Task CreateAssertion_ByACallerWithNoRoleOnTheMsel_IsRecordedAnyway()
+    [Theory]
+    [InlineData(null)]
+    [InlineData(MselRole.Viewer)]
+    [InlineData(MselRole.Editor)]
+    [InlineData(MselRole.Approver)]
+    [InlineData(MselRole.MoveEditor)]
+    public async Task CreateAssertion_ByACallerWhoIsNeitherOwnerNorEvaluator_Is403AndRecordsNothing(MselRole? role)
     {
         var graph = await SeedAssertionGraph();
-        var stranger = await Actor().SeedAsync();
+        var builder = Actor();
+        if (role.HasValue)
+        {
+            builder = builder.OnMsel(graph.Msel, role.Value);
+        }
 
-        var response = await Client(stranger).PostAsJsonAsync(
+        var response = await Client(await builder.SeedAsync()).PostAsJsonAsync(
+            XApiEndpointTests.Assertions,
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    [Fact]
+    public async Task CreateAssertion_ByAParticipantOnTheMselsTeam_Is403AndRecordsNothing()
+    {
+        var graph = await SeedAssertionGraph();
+        var team = BlueprintAppFactory.Team(graph.MselId);
+        await Seed(team);
+
+        var response = await Client(await Actor().OnTeam(team).SeedAsync()).PostAsJsonAsync(
+            XApiEndpointTests.Assertions,
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId, teamId = team.Id },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    [Theory]
+    [InlineData(MselRole.Owner)]
+    [InlineData(MselRole.Evaluator)]
+    public async Task CreateAssertion_ByAnOwnerOrEvaluator_IsRecorded(MselRole role)
+    {
+        var graph = await SeedAssertionGraph();
+
+        var response = await Client(await Actor().OnMsel(graph.Msel, role).SeedAsync()).PostAsJsonAsync(
             XApiEndpointTests.Assertions,
             new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(1, await QueuedCount());
+    }
+
+    [Fact]
+    public async Task CreateAssertion_WithEditMselsAndNoRoleOnTheMsel_IsRecorded()
+    {
+        var graph = await SeedAssertionGraph();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            XApiEndpointTests.Assertions,
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, await QueuedCount());
+    }
+
+    /// <remarks>
+    /// An evaluator on one MSEL naming a team, or a scenario event, that belongs to another. The
+    /// statement would carry the other exercise's team as its <c>context.team</c>, so the rating would be
+    /// read as evidence about people the evaluator has no part in assessing.
+    /// </remarks>
+    [Theory]
+    [InlineData("team")]
+    [InlineData("scenarioEvent")]
+    public async Task CreateAssertion_NamingSomethingFromAnotherMsel_IsRefusedAndRecordsNothing(string what)
+    {
+        var graph = await SeedAssertionGraph();
+        var otherMsel = BlueprintAppFactory.Msel();
+        await Seed(otherMsel);
+        var otherTeam = BlueprintAppFactory.Team(otherMsel.Id);
+        var otherEvent = BlueprintAppFactory.ScenarioEvent(otherMsel.Id);
+        await Seed(otherTeam, otherEvent);
+        var actor = await Actor().OnMsel(graph.Msel, MselRole.Evaluator).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            XApiEndpointTests.Assertions,
+            new
+            {
+                mselId = graph.MselId,
+                competencyId = graph.CompetencyId,
+                proficiencyLevelId = graph.LevelId,
+                teamId = what == "team" ? otherTeam.Id : (Guid?)null,
+                scenarioEventId = what == "scenarioEvent" ? otherEvent.Id : (Guid?)null,
+            },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Contains($"not found on MSEL {graph.MselId}", await Title(response));
+        Assert.Equal(0, await QueuedCount());
     }
 
     /// <remarks>
@@ -595,7 +739,7 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
         var msel = BlueprintAppFactory.Msel();
         await Seed(msel);
 
-        var response = await Client(await Actor().SeedAsync()).GetAsync(
+        var response = await Client(await Actor().OnMsel(msel, MselRole.Evaluator).SeedAsync()).GetAsync(
             $"{XApiEndpointTests.Statements}?mselId={msel.Id}&source=cite", Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -623,11 +767,84 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
         var msel = BlueprintAppFactory.Msel();
         await Seed(msel);
 
-        var response = await Client(await Actor().SeedAsync())
+        var response = await Client(await Actor().OnMsel(msel, MselRole.Evaluator).SeedAsync())
             .GetAsync($"{XApiEndpointTests.Statements}?mselId={msel.Id}", Ct);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.Contains("127.0.0.1:1", await Title(response));
+    }
+
+    /// <remarks>
+    /// The statements are every other user's activity in the exercise - names, accounts, scores and
+    /// comments from every integrated application - read with blueprint's own LRS credentials. So they go
+    /// to the roles that can open the Assessor View, and to nobody else on the MSEL: not a Viewer, not a
+    /// Move Editor, and not a participant on one of its teams.
+    /// </remarks>
+    [Theory]
+    [InlineData(null)]
+    [InlineData(MselRole.Viewer)]
+    [InlineData(MselRole.MoveEditor)]
+    public async Task GetStatements_ByACallerOutsideTheAssessorRoles_Is403(MselRole? role)
+    {
+        var msel = BlueprintAppFactory.Msel();
+        await Seed(msel);
+        var builder = Actor();
+        if (role.HasValue)
+        {
+            builder = builder.OnMsel(msel, role.Value);
+        }
+
+        var response = await Client(await builder.SeedAsync())
+            .GetAsync($"{XApiEndpointTests.Statements}?mselId={msel.Id}&source=cite", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetStatements_ByAParticipantOnTheMselsTeam_Is403()
+    {
+        var msel = BlueprintAppFactory.Msel();
+        await Seed(msel);
+        var team = BlueprintAppFactory.Team(msel.Id);
+        await Seed(team);
+
+        var response = await Client(await Actor().OnTeam(team).SeedAsync())
+            .GetAsync($"{XApiEndpointTests.Statements}?mselId={msel.Id}&source=cite", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <remarks>
+    /// <c>source=cite</c> on a MSEL never pushed to CITE produces no registrations, so a <c>200</c> here
+    /// means authorization passed without the request ever reaching the (unreachable) LRS.
+    /// </remarks>
+    [Theory]
+    [InlineData(MselRole.Owner)]
+    [InlineData(MselRole.Editor)]
+    [InlineData(MselRole.Approver)]
+    [InlineData(MselRole.Evaluator)]
+    public async Task GetStatements_ByAnAssessorRole_IsAllowed(MselRole role)
+    {
+        var msel = BlueprintAppFactory.Msel();
+        await Seed(msel);
+
+        var response = await Client(await Actor().OnMsel(msel, role).SeedAsync())
+            .GetAsync($"{XApiEndpointTests.Statements}?mselId={msel.Id}&source=cite", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetStatements_WithViewMselsAndNoRoleOnTheMsel_IsAllowed()
+    {
+        var msel = BlueprintAppFactory.Msel();
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Client(actor)
+            .GetAsync($"{XApiEndpointTests.Statements}?mselId={msel.Id}&source=cite", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     // -------------------------------------------------------------------------------------------------
@@ -690,7 +907,10 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
     }
 
     /// <summary>The ids of everything an assertion has to name: a MSEL, a competency and a scale.</summary>
-    private sealed record AssertionGraph(Guid MselId, Guid CompetencyId, Guid LevelId);
+    private sealed record AssertionGraph(MselEntity Msel, Guid CompetencyId, Guid LevelId)
+    {
+        public Guid MselId => Msel.Id;
+    }
 
     /// <summary>
     /// Seeds a MSEL, a framework, a competency and a three-point scale, and returns the ids an assertion
@@ -729,6 +949,6 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
         await Seed(msel, framework, competency, scale);
         await Seed(levels);
 
-        return new AssertionGraph(msel.Id, competency.Id, levels[1].Id);
+        return new AssertionGraph(msel, competency.Id, levels[1].Id);
     }
 }

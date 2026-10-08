@@ -267,6 +267,7 @@ public class CompetencyFrameworkDcwfImportTests(DatabaseFixture fixture, Bluepri
     /// Anything else is not a category - and, because the cell is also not an error, the rows beneath it
     /// inherit whichever category came before.
     /// </summary>
+    // Same case as Import_WithNoReadableRows_Is500.
     [Theory]
     [InlineData("Information Technology")]
     [InlineData("Information Technology\nIT")]
@@ -826,7 +827,7 @@ public class CompetencyFrameworkDcwfImportTests(DatabaseFixture fixture, Bluepri
     {
         var response = await ImportXlsx(Client(await Manager()), Encoding.UTF8.GetBytes("not a workbook"));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.StartsWith("The Position must be within the length of the Stream: 14 (Parameter 'value')", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.Equal(0, await ReadBack(rb => rb.CompetencyFrameworks.CountAsync(Ct)));
     }
 
@@ -837,6 +838,15 @@ public class CompetencyFrameworkDcwfImportTests(DatabaseFixture fixture, Bluepri
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("No file provided.", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    [Fact]
+    public async Task ImportXlsx_with_ManageCompetencyFrameworks_creates_the_framework()
+    {
+        var response = await ImportXlsx(Client(await Manager()), Dcwf(roles: [RoleRow(category: AnyCategory)]), "DCWF", "1.0");
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(1, await ReadBack(rb => rb.CompetencyFrameworks.CountAsync(Ct)));
     }
 
     [Fact]

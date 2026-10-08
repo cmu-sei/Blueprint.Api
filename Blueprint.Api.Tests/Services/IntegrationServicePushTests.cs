@@ -163,18 +163,7 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
         Assert.Contains(harness.Handler.Paths, x => x.StartsWith("steamfitter/"));
     }
 
-    /// <remarks>
-    /// <para>
-    /// No ids, no clients, no user lists, nothing contacted - and the MSEL is <c>Deployed</c>. So the status
-    /// says a deployment exists when nothing anywhere does, and the only clue is that every integration id
-    /// is null.
-    /// </para>
-    /// <para>
-    /// Refusing a push with no integrations selected - which is what <c>CanMselBePushed</c> looks like it was
-    /// meant for, being a method that returns <c>true</c> behind a <c>// TODO: build this out!!!</c> and is
-    /// called from nowhere - turns this test red.
-    /// </para>
-    /// </remarks>
+    /// <summary>A push of a MSEL using no integration contacts nothing and marks the MSEL deployed.</summary>
     [Fact]
     public async Task Push_ForAMselUsingNothing_DeploysWithoutContactingAnything()
     {

@@ -157,6 +157,23 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     }
 
     [Fact]
+    public async Task GetByMsel_OnATemplateMsel_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var msel = TestData.Msel(isTemplate: true);
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+        await Seed(TestData.DataOption(field.Id, "starting-point"));
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/dataOptions", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task GetByMsel_WithViewMsels_Is200()
     {
         var msel = TestData.Msel();
@@ -294,6 +311,74 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal("exposed", Assert.Single(returned).OptionName);
     }
 
+    [Fact]
+    public async Task GetByDataField_OnAMselsField_with_ViewMsels_and_no_role_returns_its_options()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+        await Seed(TestData.DataOption(field.Id, "visible"));
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var returned = await GetOptions(Client(actor), $"/api/datafields/{field.Id}/dataOptions");
+
+        Assert.Equal("visible", Assert.Single(returned).OptionName);
+    }
+
+    [Fact]
+    public async Task GetByDataField_OnATemplateMselsField_with_CreateMsels_returns_its_options()
+    {
+        var msel = TestData.Msel(isTemplate: true);
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+        await Seed(TestData.DataOption(field.Id, "starting-point"));
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var returned = await GetOptions(Client(actor), $"/api/datafields/{field.Id}/dataOptions");
+
+        Assert.Equal("starting-point", Assert.Single(returned).OptionName);
+    }
+
+    [Fact]
+    public async Task GetByDataField_OnATemplateMselsField_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var msel = TestData.Msel(isTemplate: true);
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+        await Seed(TestData.DataOption(field.Id, "starting-point"));
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/datafields/{field.Id}/dataOptions", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetByDataField_OnAMselsField_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+        await Seed(TestData.DataOption(field.Id, "secret"));
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/datafields/{field.Id}/dataOptions", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // GET dataOptions/{id}
     // ---------------------------------------------------------------------------------------------
@@ -412,6 +497,82 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal("3", displayOrder.GetString());
     }
 
+    [Fact]
+    public async Task Get_OnAMselsField_with_ViewMsels_and_no_role_returns_it()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+
+        var option = TestData.DataOption(field.Id, "visible");
+        await Seed(option);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var returned = await GetOption(Client(actor), option.Id);
+
+        Assert.Equal(option.Id, returned.Id);
+    }
+
+    [Fact]
+    public async Task Get_OnATemplateMselsField_with_CreateMsels_returns_it()
+    {
+        var msel = TestData.Msel(isTemplate: true);
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+
+        var option = TestData.DataOption(field.Id, "starting-point");
+        await Seed(option);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var returned = await GetOption(Client(actor), option.Id);
+
+        Assert.Equal(option.Id, returned.Id);
+    }
+
+    [Fact]
+    public async Task Get_OnATemplateMselsField_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var msel = TestData.Msel(isTemplate: true);
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+
+        var option = TestData.DataOption(field.Id, "starting-point");
+        await Seed(option);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/dataOptions/{option.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_OnAMselsField_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+
+        var option = TestData.DataOption(field.Id, "secret");
+        await Seed(option);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/dataOptions/{option.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // POST dataOptions
     // ---------------------------------------------------------------------------------------------
@@ -512,12 +673,7 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <remarks>
-    /// There is no <c>IEntityTypeConfiguration</c> for <c>DataOptionEntity</c> at all, so nothing forbids
-    /// two options on one field sharing a name - and because <c>OptionName</c> is what a
-    /// <c>DataValue</c> stores, a duplicated name makes the stored value ambiguous. Adding a unique index
-    /// on <c>(DataFieldId, OptionName)</c> turns this test red.
-    /// </remarks>
+    /// <summary>A second option with a name the field already has is stored.</summary>
     [Fact]
     public async Task Create_WithADuplicateOptionName_Succeeds()
     {
@@ -559,11 +715,7 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         AssertStampedBetween(stored.DateModified, before, DateTime.UtcNow);
     }
 
-    /// <remarks>
-    /// Every other write in the graph calls <c>ServiceUtilities.SetMselModifiedAsync</c> so the MSEL's own
-    /// <c>DateModified</c> tracks changes anywhere beneath it; none of the three data-option writes does,
-    /// and none of them opens a transaction either. Adding the call turns this test red.
-    /// </remarks>
+    /// <summary>Creating an option leaves the MSEL's modification fields unset.</summary>
     [Fact]
     public async Task Create_DoesNotMarkTheMselModified()
     {
@@ -809,7 +961,7 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             option.Id,
             BodyFor(option) with { Id = empty ? Guid.Empty : Guid.NewGuid() });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'DataOptionEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     [Fact]
@@ -932,6 +1084,29 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    // Same case as Create_DoesNotMarkTheMselModified.
+    [Fact]
+    public async Task Update_DoesNotMarkTheMselModified()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+
+        var option = TestData.DataOption(field.Id, "before");
+        await Seed(option);
+
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), option.Id, BodyFor(option) with { OptionName = "after" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct));
+        Assert.Null(stored.ModifiedBy);
+        Assert.Null(stored.DateModified);
+    }
+
     /// <summary>Update does not mark the data field modified.</summary>
     [Fact]
     public async Task Update_DoesNotMarkTheDataFieldModified()
@@ -1023,6 +1198,26 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Update_OnAMselsField_with_EditMsels_and_no_role_stores_the_change()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+
+        var option = TestData.DataOption(field.Id, "before");
+        await Seed(option);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Put(Client(actor), option.Id, BodyFor(option) with { OptionName = "after" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("after", (await ReadBack(rb => rb.DataOptions.SingleAsync(x => x.Id == option.Id, Ct))).OptionName);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // DELETE dataOptions/{id}
     // ---------------------------------------------------------------------------------------------
@@ -1057,6 +1252,29 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var response = await Client(actor).DeleteAsync($"/api/dataOptions/{Guid.NewGuid()}", Ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    // Same case as Create_DoesNotMarkTheMselModified.
+    [Fact]
+    public async Task Delete_DoesNotMarkTheMselModified()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+
+        var option = TestData.DataOption(field.Id, "before");
+        await Seed(option);
+
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"/api/dataOptions/{option.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct));
+        Assert.Null(stored.ModifiedBy);
+        Assert.Null(stored.DateModified);
     }
 
     /// <remarks>
@@ -1197,6 +1415,26 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Empty(await context.DataOptions.ToListAsync(Ct));
     }
 
+    [Fact]
+    public async Task Delete_OnAMselsField_with_EditMsels_and_no_role_removes_the_option()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+
+        var option = TestData.DataOption(field.Id, "doomed");
+        await Seed(option);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"/api/dataOptions/{option.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Empty(await ReadBack(rb => rb.DataOptions.Where(x => x.Id == option.Id).ToListAsync(Ct)));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // POST datafields/{dataFieldId}/options/preview - the route
     // ---------------------------------------------------------------------------------------------
@@ -1261,14 +1499,7 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Empty(Hub.Sent(field.Id));
     }
 
-    /// <remarks>
-    /// <c>PreviewImportAsync</c> line 231 calls the <em>three</em>-argument
-    /// <c>MselViewRequirement.IsMet(userId, mselId, context)</c>, which hardcodes
-    /// <c>hasCreateMselsPermission: false</c>. The reads all use the four-argument overload. So a
-    /// <c>CreateMsels</c> holder browsing a template MSEL can list every option on this very field - see
-    /// <see cref="GetByMsel_OnATemplateMsel_WithCreateMsels_Is200"/> - and cannot preview a file against
-    /// it. Passing the flag through turns this test red.
-    /// </remarks>
+    /// <summary><c>CreateMsels</c> does not preview a file against a template MSEL's field, though it lists the field's options.</summary>
     [Fact]
     public async Task Preview_OnATemplateMselsField_WithCreateMsels_Is403()
     {
@@ -1356,6 +1587,22 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         await Seed(field);
 
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageDataFields).SeedAsync();
+
+        var response = await Preview(Client(actor), field.Id, "options.json", "[{\"id\":\"a\"}]");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Preview_OnAMselsField_with_EditMsels_and_no_role_is_200()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
         var response = await Preview(Client(actor), field.Id, "options.json", "[{\"id\":\"a\"}]");
 
@@ -1594,13 +1841,7 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal("T0001", Assert.Single(preview.Items).OptionName);
     }
 
-    /// <remarks>
-    /// The object-with-an-array-property branch <c>break</c>s after the first array property it finds,
-    /// whether or not that array yielded anything. So a document whose first array is metadata - a
-    /// <c>"warnings": []</c> that an exporter puts before the payload - is reported as containing no
-    /// options at all, though the options are right there in the next property. Moving the
-    /// <c>break</c> inside a "did this array produce items" test turns this test red.
-    /// </remarks>
+    /// <summary>An object whose first array property is empty previews no options, whatever the later properties hold.</summary>
     [Fact]
     public async Task PreviewJson_GivesUpAfterTheFirstArrayPropertyEvenWhenItIsEmpty()
     {

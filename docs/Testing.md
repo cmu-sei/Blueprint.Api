@@ -44,7 +44,7 @@ The root `Directory.Build.props` sets `TreatWarningsAsErrors` for every project,
 
 Restore-time warnings stay warnings, through `WarningsNotAsErrors`: NU1901 to NU1904 are the NuGet audit (AutoMapper 13 and MediatR 12 are pinned deliberately, and the rest is transitive), NU1701 reports TinCan's .NET Framework assets, and NU1510 names three `PackageReference`s of `Blueprint.Api` the framework already provides.
 
-Package versions live in `Directory.Packages.props` (central package management); the test packages are pinned by the standard (`agent-docs/api-testing/test-packages.props`) and `sync.sh` checks them. `Microsoft.AspNetCore.SignalR.Client` is the one test package beyond the standard's list: `MainHubConnectionTests` dials the hub the way blueprint.ui does.
+Package versions live in `Directory.Packages.props` (central package management); the test packages are pinned by the standard (`agent-docs/api-testing/test-packages.props`) and `sync.sh` checks them. `Microsoft.AspNetCore.SignalR.Client` is the standard's optional pin (10.0.1): `MainHubConnectionTests` dials the hub over a real connection, as an `Actor()`, over WebSockets.
 
 # How the harness works
 
@@ -92,7 +92,7 @@ Both fixtures arrive by constructor injection: `DatabaseFixture` from `[assembly
 
 - **Token validation.** The shared `TestAuthHandler` mints the identity a validated token would have produced, from `X-Test-User`. Blueprint registers it under the scheme name `Bearer` rather than the standard's `Test`, because `MainHub` carries `[Authorize(AuthenticationSchemes = "Bearer")]`: under any other name every hub request is unauthenticated. The factory removes the application's `IConfigureOptions<AuthenticationOptions>` first, since `AddJwtBearer` already claims the name. `TestConfiguration` switches on two of the shared handler's opt-ins: `TestAuthentication:UserFromBearer`, which reads the user from an `Authorization: Bearer <user id>` header when `X-Test-User` is absent, so `Startup`'s `?bearer=` query-string promotion is observable (`MiddlewareTests`), and `TestAuthentication:Issuer`, the `iss` claim a Keycloak token carries and `XApiService` reads. The `email` claim the invitation endpoints read comes from the shared `X-Test-Email` header (`ClientWithEmail`).
 - **Permissions come from rows.** `TestActor` seeds a user, a system role with exactly the permissions named, and the MSEL, unit, team and group rows the requirement helpers read, so the real claims transformer and the real `Msel*Requirement` helpers decide every request.
-- **The database.** A request resolves the database of the test that sent it, by the `X-Test-Session` header through the shared `TestDatabaseScope`. A context resolved outside a request (a hub invocation, `Program.Main`'s initialization) uses the host's own session.
+- **The database.** A request resolves the database of the test that sent it, by the `X-Test-Session` header through the shared `TestDatabaseScope`. A hub invocation over a real connection does too: `MainHubConnectionTests` connects over WebSockets (`Factory.Server.CreateWebSocketClient()`, negotiate skipped), so the invocation runs inside the upgrade request and its headers. A context resolved outside any request (`Program.Main`'s initialization, `CompositionTests` resolving services off `Factory.Services`, a hub invocation under long polling) uses the host's own session.
 - **Configuration.** The content root is `Blueprint.Api/`, so its `appsettings.json` is loaded; `TestConfiguration` overrides only the keys that break or weaken a test run (claims caching, and the shared handler's `UserFromBearer` and `Issuer` opt-ins), and the factory supplies the database through `TestDatabaseScope`. The environment is `Development`, so a 500 carries its message.
 
 ## The host database (step 1B)
@@ -112,7 +112,8 @@ The host is shared by every test in a class, and the tests of a class run in ord
 3. Seed with the `TestData` object mothers and add a mother there if one is missing. Seed a caller with `Actor()`.
 4. Name the method as a sentence, and pass `Ct` to anything awaited.
 5. Assert on the database through `NewContext()`, not on the seeded objects, and on broadcasts through `Hub` keyed on a group the test owns.
-6. For an endpoint, test authorization first: allowed at the minimum permission, and denied with a near miss (a close but wrong permission, or the right role on another MSEL through `OnNewMsel`), never an actor holding nothing. Where the gate is a data row rather than a permission (the invitation endpoints), the denied test names the row on a line of its own: `// Data-row gate: <the row>.`
+6. For an endpoint, test authorization first: allowed at the minimum permission, and denied with a near miss (a close but wrong permission, or the right role on another MSEL through `OnNewMsel`), never an actor holding nothing. Where the gate is a data row rather than a permission (the invitation endpoints, a MSEL's `CreatedBy`), the denied test names the row on a line of its own: `// Data-row gate: <the row>.`
+7. Most controllers here ask two system permissions and pass both to the service, which checks one tier or the other (`EditMsels` for a MSEL's row and `Manage<Thing>` for a template; `ViewMsels`, or `CreateMsels` on a template MSEL, for a read). Each call site is a gate of its own, so each needs an allowed case holding exactly that permission (never `Root`) and a near miss. `node agent-docs/api-testing/check-repo.js gates <repo> --app blueprint.api` (run by `verify.sh`) lists any gate without them; it must report `0 missing`. Where the check cannot link a test that does cover a gate (`CompetencyFrameworkDcwfImportTests` builds its url in a helper), the test carries `// Gate: <id>`.
 
 # Layout
 
@@ -124,7 +125,7 @@ Blueprint.Api.Tests/
   Services/          services and background workers driven directly or through their routes
   Infrastructure/    Authorization, EventHandlers, Extensions, Filters, Identity, JsonConverters, Mappings
   Hubs/              MainHub by direct invocation (HubHarness) and over a real HubConnection
-  CompositionTests.cs, MiddlewareTests.cs   Startup's composition and pipeline
+  CompositionTests.cs, MiddlewareTests.cs, AuthorizationScopeTests.cs   Startup's composition, pipeline and required token scopes (X-Test-Scope)
   Support/           the harness: Blueprint's own files, the self-tests and the extras
     Shared/          the standard's shared files, copied by sync.sh and never edited here
 ```

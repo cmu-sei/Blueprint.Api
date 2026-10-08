@@ -187,7 +187,7 @@ public class TeamCompetencyEndpointTests(DatabaseFixture fixture, BlueprintAppFa
         var response = await Client(actor).PostAsJsonAsync(
             "api/teamcompetencies", Body(graph.Team.Id, graph.Competency.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("Team Competency already exists.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.Single(await ReadBack(rb => rb.TeamCompetencies.ToListAsync(Ct)));
     }
 

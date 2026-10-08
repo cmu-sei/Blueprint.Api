@@ -31,7 +31,7 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
     [Fact]
     public async Task PreviewCsv_EchoesTheSourceAndVersionFromTheQueryString()
     {
-        var csv = Csv(FrameworkRow("FW-1", "The name in the file"), CompetencyRow("C2", parent: "C1"));
+        var csv = NamedCsv();
         var client = Client(await Manager());
 
         var preview = await PreviewCsv(client, csv, "NICE", "5.1");
@@ -39,9 +39,14 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
         Assert.Equal("NICE", preview.Source);
         Assert.Equal("5.1", preview.Version);
         Assert.Equal("NICE 5.1", preview.FrameworkName);
+    }
 
-        // The name the import will actually use comes from the file, so the preview shows one the import
-        // does not.
+    [Fact]
+    public async Task ImportCsv_NamesTheFrameworkFromTheFileRatherThanTheQueryString()
+    {
+        var csv = NamedCsv();
+        var client = Client(await Manager());
+
         var imported = await Read<CompetencyFramework>(await ImportCsv(client, csv, "NICE", "5.1"));
         Assert.Equal("The name in the file", imported.Name);
     }
@@ -61,7 +66,7 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
     [Fact]
     public async Task PreviewCsv_CountsNoElementsForAFlatFile()
     {
-        var csv = Csv(FrameworkRow("FW-1"), CompetencyRow("C1"), CompetencyRow("C2"));
+        var csv = FlatCsv();
         var client = Client(await Manager());
 
         var preview = await PreviewCsv(client, csv);
@@ -69,6 +74,13 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
         Assert.Null(preview.Error);
         Assert.Empty(preview.ElementTypeCounts);
         Assert.Equal(0, preview.TotalElements);
+    }
+
+    [Fact]
+    public async Task ImportCsv_OfAFlatFile_ImportsEveryCompetency()
+    {
+        var csv = FlatCsv();
+        var client = Client(await Manager());
 
         var imported = await Read<CompetencyFramework>(await ImportCsv(client, csv));
         Assert.Equal(2, imported.Competencies.Count);
@@ -93,45 +105,47 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
         Assert.Equal(1, Count(preview, expected));
     }
 
-    /// <summary>Preview CSV counts rows by their parent so its total is not the imports.</summary>
+    /// <summary>Preview CSV counts rows by their parent.</summary>
     [Fact]
     public async Task PreviewCsv_CountsRowsByTheirParentSoItsTotalIsNotTheImports()
     {
-        var csv = Csv(
-            FrameworkRow("FW-1"),
-            CompetencyRow("T-1"),
-            CompetencyRow("K-1", parent: "T-1"),
-            CompetencyRow("K-2", parent: "T-1"));
+        var csv = ParentedCsv();
         var client = Client(await Manager());
 
         var preview = await PreviewCsv(client, csv);
 
         Assert.Equal(2, preview.TotalElements);
         Assert.Equal(2, Count(preview, "task"));
+        Assert.Equal(0, Count(preview, "knowledge"));
+    }
+
+    [Fact]
+    public async Task ImportCsv_ImportsEveryRowWhateverItsParent()
+    {
+        var csv = ParentedCsv();
+        var client = Client(await Manager());
 
         var imported = await Read<CompetencyFramework>(await ImportCsv(client, csv));
         Assert.Equal(3, imported.Competencies.Count);
-        Assert.Equal(0, Count(preview, "knowledge"));
     }
 
     /// <summary>Preview CSV reads the export id column as the cross references.</summary>
     [Fact]
     public async Task PreviewCsv_ReadsTheExportIdColumnAsTheCrossReferences()
     {
-        var csv = Csv(
-            FrameworkRow("FW-1"),
-            CompetencyRow("C1"),
-            Row(
-                parentIdNumber: "C1",
-                idNumber: "C2",
-                shortName: "two",
-                relatedIdNumbers: "C1",
-                exportId: "X5|X6|X7"));
+        var csv = ExportIdCsv();
         var client = Client(await Manager());
 
         var preview = await PreviewCsv(client, csv);
 
         Assert.Equal(3, preview.TotalRelationships);
+    }
+
+    [Fact]
+    public async Task ImportCsv_CreatesOnlyTheCrossReferenceTheFileDeclares()
+    {
+        var csv = ExportIdCsv();
+        var client = Client(await Manager());
 
         // The file declares exactly one cross-reference, and that is what the import creates.
         await ImportCsv(client, csv);
@@ -372,18 +386,11 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
         Assert.Equal(1, preview.TotalElements);
     }
 
-    /// <summary>
-    /// An element with no <c>element_type</c> is not counted at all, and no error is reported - while the
-    /// importer reads the same property with <c>GetProperty</c> and throws, so the file previews as empty
-    /// and imports as a 500.
-    /// </summary>
+    /// <summary>An element with no <c>element_type</c> is not counted, and no error is reported.</summary>
     [Fact]
     public async Task PreviewJson_DoesNotCountAnElementWithoutAType()
     {
-        var json = """
-            {"documents":[{"name":"F","version":"1","doc_identifier":"D"}],
-             "elements":[{"element_identifier":"T1"}],"relationships":[]}
-            """;
+        var json = UntypedElementJson();
         var client = Client(await Manager());
 
         var preview = await PreviewJson(client, json);
@@ -391,45 +398,58 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
         Assert.Null(preview.Error);
         Assert.Empty(preview.ElementTypeCounts);
         Assert.Equal(0, preview.TotalElements);
-
-        var response = await ImportJson(client, json);
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
     }
 
-    /// <summary>
-    /// The relationship total is the length of the array, so a link naming an element the file does not
-    /// contain is counted as one the import will create. It will not.
-    /// </summary>
+    // Same case as CompetencyFrameworkImportTests.ImportJson_WithANiceFileMissingARequiredPart_Is500.
+    [Fact]
+    public async Task ImportJson_OfAnElementWithoutAType_Is500()
+    {
+        var json = UntypedElementJson();
+        var client = Client(await Manager());
+
+        var response = await ImportJson(client, json);
+        Assert.Equal("The given key was not present in the dictionary.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
+    }
+
+    /// <summary>The relationship total is the length of the array, so a link naming an element the file does not contain is counted.</summary>
     [Fact]
     public async Task PreviewJson_CountsEveryRelationshipWithoutCheckingIt()
     {
-        var json = Nice(
-            [Element("W1", "work_role"), Element("T1", "task")],
-            [Link("W1", "T1"), Link("W1", "MISSING"), Link("MISSING", "T1")]);
+        var json = DanglingLinksJson();
         var client = Client(await Manager());
 
         var preview = await PreviewJson(client, json);
 
         Assert.Equal(3, preview.TotalRelationships);
+    }
+
+    [Fact]
+    public async Task ImportJson_CreatesOnlyTheRelationshipsBetweenElementsInTheFile()
+    {
+        var json = DanglingLinksJson();
+        var client = Client(await Manager());
 
         await ImportJson(client, json);
         Assert.Equal(1, await ReadBack(rb => rb.CompetencyRelationships.CountAsync(Ct)));
     }
 
-    /// <summary>
-    /// A link between two structural types is the hierarchy, not a relationship - the import sets a parent
-    /// and stores no relationship row, while the preview counts it as one.
-    /// </summary>
+    /// <summary>A link between two structural types is counted as a relationship.</summary>
     [Fact]
     public async Task PreviewJson_CountsAHierarchyLinkTheImportTurnsIntoAParent()
     {
-        var json = Nice(
-            [Element("C1", "category"), Element("W1", "work_role")], [Link("C1", "W1")]);
+        var json = HierarchyLinkJson();
         var client = Client(await Manager());
 
         var preview = await PreviewJson(client, json);
 
         Assert.Equal(1, preview.TotalRelationships);
+    }
+
+    [Fact]
+    public async Task ImportJson_TurnsALinkBetweenStructuralTypesIntoAParent()
+    {
+        var json = HierarchyLinkJson();
+        var client = Client(await Manager());
 
         var imported = await Read<CompetencyFramework>(await ImportJson(client, json));
         Assert.Equal(0, await ReadBack(rb => rb.CompetencyRelationships.CountAsync(Ct)));
@@ -542,30 +562,32 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
         Assert.Empty(preview.ElementTypeCounts);
     }
 
-    /// <summary>
-    /// The fields are matched without regard to case, while the <c>competencies</c> property that decides
-    /// whether the file is a native export at all is matched against exactly two spellings. So a file
-    /// written with <c>COMPETENCIES</c> is previewed as a NICE document and one written with
-    /// <c>Competencies</c> is not.
-    /// </summary>
+    /// <summary>A native export's fields are matched without regard to case.</summary>
     [Fact]
     public async Task PreviewJson_ForANativeExport_MatchesTheOtherFieldsWithoutRegardToCase()
     {
-        var client = Client(await Manager());
-
-        var native = await PreviewJson(
-            client,
+        var preview = await PreviewJson(
+            Client(await Manager()),
             """{"NAME":"Shouted","SOURCE":"SEI","VERSION":"3.0","IDNUMBER":"EX-1","Competencies":[]}""");
-        var notNative = await PreviewJson(
-            client,
+
+        Assert.Equal("Shouted", preview.FrameworkName);
+        Assert.Equal("SEI", preview.Source);
+        Assert.Equal("3.0", preview.Version);
+    }
+
+    /// <summary>
+    /// The <c>competencies</c> property that decides whether the file is a native export is matched against
+    /// exactly two spellings, so a file written with <c>COMPETENCIES</c> is previewed as a NICE document.
+    /// </summary>
+    [Fact]
+    public async Task PreviewJson_WithACompetenciesPropertyInCapitals_IsNotPreviewedAsANativeExport()
+    {
+        var preview = await PreviewJson(
+            Client(await Manager()),
             """{"NAME":"Shouted","SOURCE":"SEI","VERSION":"3.0","IDNUMBER":"EX-1","COMPETENCIES":[]}""");
 
-        Assert.Equal("Shouted", native.FrameworkName);
-        Assert.Equal("SEI", native.Source);
-        Assert.Equal("3.0", native.Version);
-
-        Assert.Null(notNative.FrameworkName);
-        Assert.Null(notNative.Source);
+        Assert.Null(preview.FrameworkName);
+        Assert.Null(preview.Source);
     }
 
     [Fact]
@@ -626,19 +648,11 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
         Assert.Equal(" ", preview.FrameworkName);
     }
 
-    /// <summary>
-    /// The ordinary case, where preview and import agree: distinct categories and distinct work roles are
-    /// counted once each.
-    /// </summary>
+    /// <summary>Distinct categories and distinct work roles are counted once each.</summary>
     [Fact]
     public async Task PreviewXlsx_CountsTheCategoriesAndWorkRoles()
     {
-        var xlsx = Dcwf(roles:
-        [
-            RoleRow(category: Category("Information Technology", "IT"), roleName: "A", roleCode: "411"),
-            RoleRow(roleName: "B", roleCode: "412"),
-            RoleRow(category: Category("Securely Provision", "SP"), roleName: "C", roleCode: "141")
-        ]);
+        var xlsx = CategoriesAndRolesXlsx();
         var client = Client(await Manager());
 
         var preview = await PreviewXlsx(client, xlsx);
@@ -646,6 +660,13 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
         Assert.Equal(2, Count(preview, "category"));
         Assert.Equal(3, Count(preview, "work_role"));
         Assert.Equal(5, preview.TotalElements);
+    }
+
+    [Fact]
+    public async Task ImportXlsx_ImportsEachCategoryAndWorkRoleOnce()
+    {
+        var xlsx = CategoriesAndRolesXlsx();
+        var client = Client(await Manager());
 
         var imported = await Read<CompetencyFramework>(await ImportXlsx(client, xlsx));
         Assert.Equal(5, imported.Competencies.Count);
@@ -655,40 +676,42 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
     [Fact]
     public async Task PreviewXlsx_CountsAWorkRoleRowTwiceWhenItRepeatsACode()
     {
-        var xlsx = Dcwf(roles:
-        [
-            RoleRow(category: AnyCategory, roleName: "First", roleCode: "411"),
-            RoleRow(roleName: "Second", roleCode: "411")
-        ]);
+        var xlsx = RepeatedRoleCodeXlsx();
         var client = Client(await Manager());
 
         var preview = await PreviewXlsx(client, xlsx);
 
         Assert.Equal(2, Count(preview, "work_role"));
         Assert.Equal(3, preview.TotalElements);
+    }
+
+    [Fact]
+    public async Task ImportXlsx_ImportsARepeatedWorkRoleCodeOnce()
+    {
+        var xlsx = RepeatedRoleCodeXlsx();
+        var client = Client(await Manager());
 
         var imported = await Read<CompetencyFramework>(await ImportXlsx(client, xlsx));
         Assert.Equal(2, imported.Competencies.Count);
     }
 
-    /// <summary>
-    /// A category cell whose brackets are empty is counted as a category, because the count only requires
-    /// the cell to have a second line - while the importer requires the code inside the brackets to be
-    /// non-blank and creates nothing.
-    /// </summary>
+    /// <summary>A category cell whose brackets are empty is counted as a category.</summary>
     [Fact]
     public async Task PreviewXlsx_CountsACategoryWhoseCodeIsBlank()
     {
-        var xlsx = Dcwf(roles:
-        [
-            RoleRow(category: Category("Nameless", "")),
-            RoleRow(category: Category("Information Technology", "IT"))
-        ]);
+        var xlsx = BlankCategoryCodeXlsx();
         var client = Client(await Manager());
 
         var preview = await PreviewXlsx(client, xlsx);
 
         Assert.Equal(2, Count(preview, "category"));
+    }
+
+    [Fact]
+    public async Task ImportXlsx_DropsACategoryWhoseCodeIsBlank()
+    {
+        var xlsx = BlankCategoryCodeXlsx();
+        var client = Client(await Manager());
 
         var imported = await Read<CompetencyFramework>(await ImportXlsx(client, xlsx));
         Assert.Equal(["IT"], imported.Competencies.Select(c => c.IdNumber));
@@ -749,13 +772,20 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
     [Fact]
     public async Task PreviewXlsx_CountsATksaWithNoDescriptionThatTheImportDrops()
     {
-        var xlsx = Dcwf(roles: [RoleRow(category: AnyCategory)], tksas: [Tksa("1", "Task", null)]);
+        var xlsx = UndescribedTksaXlsx();
         var client = Client(await Manager());
 
         var preview = await PreviewXlsx(client, xlsx);
 
         Assert.Equal(1, Count(preview, "task"));
         Assert.Equal(2, preview.TotalElements);
+    }
+
+    [Fact]
+    public async Task ImportXlsx_DropsATksaWithNoDescription()
+    {
+        var xlsx = UndescribedTksaXlsx();
+        var client = Client(await Manager());
 
         var imported = await Read<CompetencyFramework>(await ImportXlsx(client, xlsx));
         Assert.Equal(["IT"], imported.Competencies.Select(c => c.IdNumber));
@@ -790,19 +820,19 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
     [Fact]
     public async Task PreviewXlsx_CountsEveryRoleSheetRowAsARelationship()
     {
-        var xlsx = Dcwf(
-            roles: [RoleRow(category: AnyCategory, roleName: "Support", roleCode: "411")],
-            tksas: [Tksa("1", "Task", "a")],
-            RoleSheet("IT-411", "Support",
-                Requires("1", "Task"),
-                Requires("999", "Task"),
-                Requires("1", "Competency")),
-            RoleSheet("IT-999", "No such role", Requires("1", "Task")));
+        var xlsx = RoleSheetRelationshipsXlsx();
         var client = Client(await Manager());
 
         var preview = await PreviewXlsx(client, xlsx);
 
         Assert.Equal(4, preview.TotalRelationships);
+    }
+
+    [Fact]
+    public async Task ImportXlsx_CreatesOneRelationshipForTheRoleSheet()
+    {
+        var xlsx = RoleSheetRelationshipsXlsx();
+        var client = Client(await Manager());
 
         await ImportXlsx(client, xlsx);
         Assert.Equal(1, await ReadBack(rb => rb.CompetencyRelationships.CountAsync(Ct)));
@@ -816,15 +846,19 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
     [Fact]
     public async Task PreviewXlsx_CountsARoleSheetRowWhoseFirstCellIsNotInColumnA()
     {
-        var xlsx = Dcwf(
-            roles: [RoleRow(category: AnyCategory, roleName: "Support", roleCode: "411")],
-            tksas: [Tksa("1", "Task", "a")],
-            RoleSheet("IT-411", "Support", Requires(null, "Task")));
+        var xlsx = OffsetRoleRowXlsx();
         var client = Client(await Manager());
 
         var preview = await PreviewXlsx(client, xlsx);
 
         Assert.Equal(1, preview.TotalRelationships);
+    }
+
+    [Fact]
+    public async Task ImportXlsx_CreatesNoRelationshipForARoleSheetRowWhoseFirstCellIsNotInColumnA()
+    {
+        var xlsx = OffsetRoleRowXlsx();
+        var client = Client(await Manager());
 
         await ImportXlsx(client, xlsx);
         Assert.Equal(0, await ReadBack(rb => rb.CompetencyRelationships.CountAsync(Ct)));
@@ -844,30 +878,31 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
         Assert.Null(preview.Error);
         Assert.Equal(["category"], Types(preview));
         Assert.Equal(0, preview.TotalElements);
-
-        var response = await ImportXlsx(client, Dcwf());
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------
     // preview-xlsx, the single-sheet shape no importer accepts
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>
-    /// A workbook that is not DCWF falls back to a one-sheet shape - an ID number in column A and related
-    /// IDs in column E - which none of the three importers can read. So this half of the endpoint previews
-    /// files that cannot be imported at all.
-    /// </summary>
+    /// <summary>A workbook that is not DCWF falls back to a one-sheet shape, an ID number in column A and related IDs in column E, and is previewed.</summary>
     [Fact]
     public async Task PreviewXlsx_PreviewsASingleSheetFileTheImporterRefuses()
     {
-        var xlsx = SingleSheet(["ID number"], SimpleRow("T-1"), SimpleRow("K-1"));
+        var xlsx = SingleSheetXlsx();
         var client = Client(await Manager());
 
         var preview = await PreviewXlsx(client, xlsx);
 
         Assert.Null(preview.Error);
         Assert.Equal(2, preview.TotalElements);
+    }
+
+    // Same case as CompetencyFrameworkDcwfImportTests.Import_WithoutTheTwoRequiredSheetNames_Is500.
+    [Fact]
+    public async Task ImportXlsx_OfASingleSheetFile_Is500()
+    {
+        var xlsx = SingleSheetXlsx();
+        var client = Client(await Manager());
 
         var response = await ImportXlsx(client, xlsx);
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
@@ -951,8 +986,7 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
     [Fact]
     public async Task PreviewXlsx_WithOnlyOneOfTheTwoRequiredSheets_FallsBackAndFindsNothing()
     {
-        var xlsx = Workbooks.Build(
-            RolesSheet(RoleRow(category: AnyCategory, roleName: "Support", roleCode: "411")));
+        var xlsx = OneRequiredSheetXlsx();
         var client = Client(await Manager());
 
         var preview = await PreviewXlsx(client, xlsx);
@@ -960,8 +994,17 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
         Assert.Null(preview.Error);
         Assert.Empty(preview.ElementTypeCounts);
         Assert.Equal(0, preview.TotalElements);
+    }
 
-        Assert.Equal(HttpStatusCode.InternalServerError, (await ImportXlsx(client, xlsx)).StatusCode);
+    // Same case as CompetencyFrameworkDcwfImportTests.Import_WithoutTheTwoRequiredSheetNames_Is500.
+    [Fact]
+    public async Task ImportXlsx_WithOnlyOneOfTheTwoRequiredSheets_Is500()
+    {
+        var xlsx = OneRequiredSheetXlsx();
+        var client = Client(await Manager());
+
+        var response = await ImportXlsx(client, xlsx);
+        Assert.Equal("DCWF XLSX must have 'DCWF Roles' and 'Master Task & KSA List' sheets.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     /// <summary>
@@ -993,13 +1036,10 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
     }
 
     // ---------------------------------------------------------------------------------------------
-    // What the three of them ask of the caller
+    // What the three previews ask of the caller
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>
-    /// All three previews require <c>ManageCompetencyFrameworks</c>, the same permission as the two
-    /// importers beside them.
-    /// </summary>
+    /// <summary>The CSV preview requires <c>ManageCompetencyFrameworks</c>, as the importers beside it do.</summary>
     /// <remarks>
     /// What the permission protects is not the parse but the conflict check, which runs before anything
     /// else and names the framework holding the ID number and its version
@@ -1007,14 +1047,29 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
     /// list frameworks could learn that one exists and what it is called by uploading a two-line file
     /// naming an ID number to probe.
     /// </remarks>
-    [Theory]
-    [InlineData("preview-csv")]
-    [InlineData("preview-json")]
-    [InlineData("preview-xlsx")]
-    public async Task EveryPreview_is_forbidden_for_a_caller_holding_only_ViewCompetencyFrameworks(string route)
+    [Fact]
+    public async Task PreviewCsv_is_forbidden_for_a_caller_holding_only_ViewCompetencyFrameworks()
     {
         var response = await Post(
-            Client(await Actor().WithSystemPermissions(SystemPermission.ViewCompetencyFrameworks).SeedAsync()), route, Encoding.UTF8.GetBytes(Csv(FrameworkRow("FW-1"))));
+            Client(await Viewer()), "preview-csv", Encoding.UTF8.GetBytes(Csv(FrameworkRow("FW-1"))));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PreviewJson_is_forbidden_for_a_caller_holding_only_ViewCompetencyFrameworks()
+    {
+        var response = await Post(
+            Client(await Viewer()), "preview-json", Encoding.UTF8.GetBytes(Csv(FrameworkRow("FW-1"))));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PreviewXlsx_is_forbidden_for_a_caller_holding_only_ViewCompetencyFrameworks()
+    {
+        var response = await Post(
+            Client(await Viewer()), "preview-xlsx", Encoding.UTF8.GetBytes(Csv(FrameworkRow("FW-1"))));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -1046,6 +1101,96 @@ public class CompetencyFrameworkPreviewTests(DatabaseFixture fixture, BlueprintA
     // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------
+
+    private static string NamedCsv() =>
+        Csv(FrameworkRow("FW-1", "The name in the file"), CompetencyRow("C2", parent: "C1"));
+
+    private static string FlatCsv() =>
+        Csv(FrameworkRow("FW-1"), CompetencyRow("C1"), CompetencyRow("C2"));
+
+    private static string ParentedCsv() =>
+        Csv(
+            FrameworkRow("FW-1"),
+            CompetencyRow("T-1"),
+            CompetencyRow("K-1", parent: "T-1"),
+            CompetencyRow("K-2", parent: "T-1"));
+
+    private static string ExportIdCsv() =>
+        Csv(
+            FrameworkRow("FW-1"),
+            CompetencyRow("C1"),
+            Row(
+                parentIdNumber: "C1",
+                idNumber: "C2",
+                shortName: "two",
+                relatedIdNumbers: "C1",
+                exportId: "X5|X6|X7"));
+
+    private static string UntypedElementJson() =>
+        """
+            {"documents":[{"name":"F","version":"1","doc_identifier":"D"}],
+             "elements":[{"element_identifier":"T1"}],"relationships":[]}
+            """;
+
+    private static string DanglingLinksJson() =>
+        Nice(
+            [Element("W1", "work_role"), Element("T1", "task")],
+            [Link("W1", "T1"), Link("W1", "MISSING"), Link("MISSING", "T1")]);
+
+    private static string HierarchyLinkJson() =>
+        Nice(
+            [Element("C1", "category"), Element("W1", "work_role")], [Link("C1", "W1")]);
+
+    private static byte[] CategoriesAndRolesXlsx() =>
+        Dcwf(roles:
+        [
+            RoleRow(category: Category("Information Technology", "IT"), roleName: "A", roleCode: "411"),
+            RoleRow(roleName: "B", roleCode: "412"),
+            RoleRow(category: Category("Securely Provision", "SP"), roleName: "C", roleCode: "141")
+        ]);
+
+    private static byte[] RepeatedRoleCodeXlsx() =>
+        Dcwf(roles:
+        [
+            RoleRow(category: AnyCategory, roleName: "First", roleCode: "411"),
+            RoleRow(roleName: "Second", roleCode: "411")
+        ]);
+
+    private static byte[] BlankCategoryCodeXlsx() =>
+        Dcwf(roles:
+        [
+            RoleRow(category: Category("Nameless", "")),
+            RoleRow(category: Category("Information Technology", "IT"))
+        ]);
+
+    private static byte[] UndescribedTksaXlsx() =>
+        Dcwf(roles: [RoleRow(category: AnyCategory)], tksas: [Tksa("1", "Task", null)]);
+
+    private static byte[] RoleSheetRelationshipsXlsx() =>
+        Dcwf(
+            roles: [RoleRow(category: AnyCategory, roleName: "Support", roleCode: "411")],
+            tksas: [Tksa("1", "Task", "a")],
+            RoleSheet("IT-411", "Support",
+                Requires("1", "Task"),
+                Requires("999", "Task"),
+                Requires("1", "Competency")),
+            RoleSheet("IT-999", "No such role", Requires("1", "Task")));
+
+    private static byte[] OffsetRoleRowXlsx() =>
+        Dcwf(
+            roles: [RoleRow(category: AnyCategory, roleName: "Support", roleCode: "411")],
+            tksas: [Tksa("1", "Task", "a")],
+            RoleSheet("IT-411", "Support", Requires(null, "Task")));
+
+    private static byte[] SingleSheetXlsx() =>
+        SingleSheet(["ID number"], SimpleRow("T-1"), SimpleRow("K-1"));
+
+    private static byte[] OneRequiredSheetXlsx() =>
+        Workbooks.Build(
+            RolesSheet(RoleRow(category: AnyCategory, roleName: "Support", roleCode: "411")));
+
+    private Task<TestActor> Viewer() =>
+        Actor().WithSystemPermissions(SystemPermission.ViewCompetencyFrameworks).SeedAsync();
 
     private Task<TestActor> Manager() =>
         Actor().WithSystemPermissions(SystemPermission.ManageCompetencyFrameworks).SeedAsync();

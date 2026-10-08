@@ -174,7 +174,7 @@ public class MselCompetencyEndpointTests(DatabaseFixture fixture, BlueprintAppFa
         var response = await Client(actor).PostAsJsonAsync(
             "api/mselcompetencies", Body(graph.Msel.Id, graph.Competency.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("MSEL Competency already exists.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.Single(await ReadBack(rb => rb.MselCompetencies.ToListAsync(Ct)));
     }
 
@@ -303,6 +303,76 @@ public class MselCompetencyEndpointTests(DatabaseFixture fixture, BlueprintAppFa
         Assert.Equal(1, await ReadBack(rb => rb.MselCompetencies.CountAsync(x => x.Id == graph.Row.Id, Ct)));
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // CreateMsels: the reads of a template MSEL
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetByMsel_of_a_template_with_CreateMsels_returns_its_competencies()
+    {
+        var graph = await SeedGraph(isTemplate: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var list = await Get<List<ViewModels.MselCompetency>>(Client(actor), $"api/msels/{graph.Msel.Id}/mselcompetencies");
+
+        Assert.Equal(graph.Row.Id, Assert.Single(list).Id);
+    }
+
+    [Fact]
+    public async Task GetByMsel_of_a_template_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var graph = await SeedGraph(isTemplate: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/msels/{graph.Msel.Id}/mselcompetencies", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetByMsel_of_a_msel_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/msels/{graph.Msel.Id}/mselcompetencies", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_of_a_template_row_with_CreateMsels_returns_it()
+    {
+        var graph = await SeedGraph(isTemplate: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var row = await Get<ViewModels.MselCompetency>(Client(actor), $"api/mselcompetencies/{graph.Row.Id}");
+
+        Assert.Equal(graph.Row.Id, row.Id);
+    }
+
+    [Fact]
+    public async Task Get_of_a_template_row_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var graph = await SeedGraph(isTemplate: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/mselcompetencies/{graph.Row.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_of_a_row_on_a_msel_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/mselcompetencies/{graph.Row.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     private async Task<T> Get<T>(System.Net.Http.HttpClient client, string url)
     {
         var response = await client.GetAsync(url, Ct);
@@ -312,9 +382,9 @@ public class MselCompetencyEndpointTests(DatabaseFixture fixture, BlueprintAppFa
     }
 
     private async Task<(MselEntity Msel, CompetencyFrameworkEntity Framework,
-        CompetencyEntity Competency, MselCompetencyEntity Row)> SeedGraph()
+        CompetencyEntity Competency, MselCompetencyEntity Row)> SeedGraph(bool isTemplate = false)
     {
-        var msel = TestData.Msel();
+        var msel = TestData.Msel(isTemplate: isTemplate);
         var framework = TestData.CompetencyFramework();
         await Seed(msel, framework);
         var competency = TestData.Competency(framework.Id);

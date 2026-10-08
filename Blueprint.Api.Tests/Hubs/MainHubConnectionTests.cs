@@ -46,19 +46,15 @@ public class MainHubConnectionTests(DatabaseFixture fixture, BlueprintAppFactory
     /// <remarks>
     /// The hub is mapped at the site root, not under <c>PathBase</c> or the <c>api</c> prefix every
     /// controller sits behind, so the path is spelt here and in blueprint.ui with nothing keeping the
-    /// two copies honest. Both halves are asserted: a negotiate at the path answers, and the same
-    /// negotiate under the prefix is a 404.
+    /// two copies honest. <see cref="Negotiate_WhenAuthenticated_HandsOutAConnection"/> negotiates at the
+    /// path; this negotiates under the prefix.
     /// </remarks>
     [Fact]
-    public async Task TheHub_IsMappedWhereClientsDialIt_AndNotUnderTheApiPrefix()
+    public async Task TheHub_IsNotMappedUnderTheApiPrefix()
     {
-        var client = ClientFor(Guid.NewGuid(), null);
+        var response = await Negotiate(ClientFor(Guid.NewGuid(), null), $"/api{HubPath}");
 
-        var found = await Negotiate(client, HubPath);
-        var notFound = await Negotiate(client, $"/api{HubPath}");
-
-        Assert.Equal(HttpStatusCode.OK, found.StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, notFound.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -128,7 +124,7 @@ public class MainHubConnectionTests(DatabaseFixture fixture, BlueprintAppFactory
     // An invocation over the wire
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Over a real connection, a caller with no rows is answered the occupants of any MSEL.</summary>
+    /// <summary>Over a real connection, a caller holding no role is answered the occupants of any MSEL.</summary>
     [Fact]
     public async Task GetPresence_OverARealConnection_AnswersAStrangerTheOccupantsOfAnyMsel()
     {
@@ -140,7 +136,8 @@ public class MainHubConnectionTests(DatabaseFixture fixture, BlueprintAppFactory
             UserId = Guid.NewGuid().ToString(),
             UserName = "working-on-it"
         };
-        await using var connection = Connect(Guid.NewGuid(), "a-stranger");
+        var stranger = await Actor().WithName("a-stranger").SeedAsync();
+        await using var connection = Connect(stranger);
         await connection.StartAsync(Ct);
 
         var presence = await connection.InvokeAsync<List<JsonElement>>(
@@ -159,29 +156,41 @@ public class MainHubConnectionTests(DatabaseFixture fixture, BlueprintAppFactory
             .ToList();
 
     /// <summary>
-    /// A connection to the in-memory host, authenticated as <paramref name="userId"/> and routed to
-    /// this test's database.
+    /// A connection to the in-memory host over a WebSocket, authenticated as <paramref name="actor"/> and
+    /// routed to this test's database.
     /// </summary>
     /// <remarks>
-    /// Long polling because it is the one transport <c>TestServer</c> serves without a socket, and it
-    /// is what <c>Startup</c>'s response-compression configuration deliberately leaves unbuffered.
-    /// The session header goes on every request the connection makes, so a hub method that does reach
-    /// a database reaches this test's - see <c>BlueprintAppFactory</c>, whose context registration falls back to
-    /// the host's session for an invocation that arrives outside a request.
+    /// WebSockets, with the negotiate skipped, because the hub invocation then runs inside the upgrade
+    /// request, which carries the actor's and the session's headers, so <c>TestDatabaseScope</c> resolves this
+    /// test's database for anything the hub reads. Under long polling an invocation arrives outside any
+    /// request, where <c>BlueprintAppFactory</c>'s registration falls back to the host's own database.
     /// </remarks>
-    private HubConnection Connect(Guid userId, string userName) =>
-        new HubConnectionBuilder()
+    private HubConnection Connect(TestActor actor)
+    {
+        var session = SessionHeader();
+
+        return new HubConnectionBuilder()
             .WithUrl(
                 new Uri(Factory.Server.BaseAddress, HubPath.TrimStart('/')),
                 options =>
                 {
-                    options.Transports = HttpTransportType.LongPolling;
-                    options.HttpMessageHandlerFactory = _ => Factory.Server.CreateHandler();
-                    options.Headers[TestAuthHandler.UserHeader] = userId.ToString();
-                    options.Headers[TestAuthHandler.NameHeader] = userName;
-                    options.Headers[TestDatabaseScope.HeaderName] = SessionHeader();
+                    options.Transports = HttpTransportType.WebSockets;
+                    options.SkipNegotiation = true;
+                    options.WebSocketFactory = async (context, ct) =>
+                    {
+                        var client = Factory.Server.CreateWebSocketClient();
+                        client.ConfigureRequest = request =>
+                        {
+                            request.Headers[TestAuthHandler.UserHeader] = actor.Id.ToString();
+                            request.Headers[TestAuthHandler.NameHeader] = actor.Name;
+                            request.Headers[TestDatabaseScope.HeaderName] = session;
+                        };
+
+                        return await client.ConnectAsync(context.Uri, ct);
+                    };
                 })
             .Build();
+    }
 
     /// <remarks>
     /// <see cref="ApiTestBase"/> keeps the session id private and stamps it on the clients it hands

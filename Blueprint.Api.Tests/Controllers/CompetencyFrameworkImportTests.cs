@@ -188,6 +188,7 @@ public class CompetencyFrameworkImportTests(DatabaseFixture fixture, BlueprintAp
     /// true reads as false and the row becomes a competency instead - leaving the file with no framework
     /// row at all.
     /// </summary>
+    // Same case as Import_WithAFileThatHasNoHeaderLine_Is500.
     [Theory]
     [InlineData("true")]
     [InlineData("TRUE")]
@@ -857,6 +858,7 @@ public class CompetencyFrameworkImportTests(DatabaseFixture fixture, BlueprintAp
         Assert.Contains("CSV file is empty or has no data rows.", (await ReadError(response)).Title);
     }
 
+    // Same case as Import_WithAFileThatHasNoHeaderLine_Is500.
     [Fact]
     public async Task Import_WithOnlyAHeaderLine_Is500()
     {
@@ -866,6 +868,7 @@ public class CompetencyFrameworkImportTests(DatabaseFixture fixture, BlueprintAp
         Assert.Contains("CSV file is empty or has no data rows.", (await ReadError(response)).Title);
     }
 
+    // Same case as Import_WithAFileThatHasNoHeaderLine_Is500.
     [Fact]
     public async Task Import_WithNoFrameworkRow_Is500()
     {
@@ -983,12 +986,13 @@ public class CompetencyFrameworkImportTests(DatabaseFixture fixture, BlueprintAp
     /// Same for a file whose root is an array rather than an object: not a native export, so it goes to
     /// NICE and fails there.
     /// </summary>
+    // Same case as ImportJson_WithANiceFileMissingARequiredPart_Is500.
     [Fact]
     public async Task ImportJson_WithAnArrayAtTheRoot_IsHandedToTheNiceParser()
     {
         var response = await ImportJson(Client(await Manager()), """[{"idNumber":"C1"}]""");
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The requested operation requires an element of type 'Object', but the target element has type 'Array'.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     [Fact]
@@ -996,7 +1000,7 @@ public class CompetencyFrameworkImportTests(DatabaseFixture fixture, BlueprintAp
     {
         var response = await ImportJson(Client(await Manager()), "{not json");
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.StartsWith("'n' is an invalid start of a property name.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     [Fact]
@@ -1396,16 +1400,18 @@ public class CompetencyFrameworkImportTests(DatabaseFixture fixture, BlueprintAp
 
     /// <summary>Import JSON with a nice file missing a required part is answered with a 500.</summary>
     [Theory]
-    [InlineData("""{"elements":[],"relationships":[]}""")]
-    [InlineData("""{"documents":[],"elements":[],"relationships":[]}""")]
-    [InlineData("""{"documents":[{"name":"N"}],"relationships":[]}""")]
-    [InlineData("""{"documents":[{"name":"N"}],"elements":[]}""")]
-    [InlineData("""{"documents":[{"name":"N"}],"elements":[{"element_identifier":"T1"}],"relationships":[]}""")]
-    public async Task ImportJson_WithANiceFileMissingARequiredPart_Is500(string json)
+    [InlineData("""{"elements":[],"relationships":[]}""", "The given key was not present in the dictionary.")]
+    [InlineData("""{"documents":[],"elements":[],"relationships":[]}""", "Operation is not valid due to the current state of the object.")]
+    [InlineData("""{"documents":[{"name":"N"}],"relationships":[]}""", "The given key was not present in the dictionary.")]
+    [InlineData("""{"documents":[{"name":"N"}],"elements":[]}""", "The given key was not present in the dictionary.")]
+    [InlineData("""{"documents":[{"name":"N"}],"elements":[{"element_identifier":"T1"}],"relationships":[]}""", "The given key was not present in the dictionary.")]
+    public async Task ImportJson_WithANiceFileMissingARequiredPart_Is500(string json, string message)
     {
         var response = await ImportJson(Client(await Manager()), json);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal(message, failure.Title);
+        Assert.Contains("CompetencyFrameworkService.ImportFromNiceJsonAsync", failure.Detail);
         Assert.Empty(await ReadBack(rb => rb.CompetencyFrameworks.ToListAsync(Ct)));
     }
 
@@ -1676,7 +1682,7 @@ public class CompetencyFrameworkImportTests(DatabaseFixture fixture, BlueprintAp
     [InlineData("api/competencyframeworks/import")]
     [InlineData("api/competencyframeworks/import-json")]
     [InlineData("api/competencyframeworks/import-xlsx")]
-    public async Task EveryImport_WithNoSystemPermission_Is403(string route)
+    public async Task EveryImport_is_forbidden_for_a_caller_holding_only_ViewCompetencyFrameworks(string route)
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCompetencyFrameworks).SeedAsync();
         using var content = Form(Encoding.UTF8.GetBytes(Csv(FrameworkRow("FW-1"))), "f.csv", "text/csv");

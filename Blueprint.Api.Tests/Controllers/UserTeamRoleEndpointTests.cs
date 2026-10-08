@@ -135,6 +135,19 @@ public class UserTeamRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
     }
 
     [Fact]
+    public async Task GetByMsel_ForATemplate_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var template = await SeedMsel(isTemplate: true);
+        var team = await SeedTeam(template);
+        await SeedRole((await Actor().OnTeam(team).SeedAsync()).Id, team.Id);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync(RolesOf(template.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task GetByMsel_WithCreateMselsForAMselThatIsNotATemplate_Is403()
     {
         var msel = await SeedMsel();
@@ -150,11 +163,17 @@ public class UserTeamRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
     public async Task GetByMsel_ForAMselThatIsNotThere_Is403()
     {
         var stranger = await Actor().OnNewMsel(MselRole.Owner).SeedAsync();
-        var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(stranger).GetAsync(RolesOf(Guid.NewGuid()), Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetByMsel_ForAMselThatIsNotThere_WithViewMsels_IsAnEmptyList()
+    {
+        var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
         Assert.Empty(await GetRoles(Client(privileged), RolesOf(Guid.NewGuid())));
     }
 
@@ -179,20 +198,27 @@ public class UserTeamRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         Assert.Equal("Submitter", answered.Role);
     }
 
-    /// <summary>Get for an id that is not there is answered with a 500 without view MSELs and 404 with it.</summary>
+    /// <summary>Get for an id that is not there is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
-    public async Task Get_ForAnIdThatIsNotThere_Is500WithoutViewMselsAnd404WithIt()
+    public async Task Get_ForAnIdThatIsNotThere_WithoutViewMsels_Is500()
     {
         var stranger = await Actor().SeedAsync();
-        var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-        var id = Guid.NewGuid();
 
-        Assert.Equal(
-            HttpStatusCode.InternalServerError,
-            (await Client(stranger).GetAsync(RoleRoute(id), Ct)).StatusCode);
-        Assert.Equal(
-            HttpStatusCode.NotFound,
-            (await Client(privileged).GetAsync(RoleRoute(id), Ct)).StatusCode);
+        var response = await Client(stranger).GetAsync(RoleRoute(Guid.NewGuid()), Ct);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("UserTeamRoleService.GetAsync", failure.Detail);
+    }
+
+    [Fact]
+    public async Task Get_ForAnIdThatIsNotThere_WithViewMsels_Is404()
+    {
+        var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Client(privileged).GetAsync(RoleRoute(Guid.NewGuid()), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -215,6 +241,49 @@ public class UserTeamRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         var member = await Actor().OnTeam(team).SeedAsync();
         var role = await SeedRole(member.Id, team.Id);
         var actor = await Actor().OnNewMsel(MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).GetAsync(RoleRoute(role.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_on_a_template_with_CreateMsels_returns_the_role()
+    {
+        var msel = await SeedMsel(isTemplate: true);
+        var team = await SeedTeam(msel);
+        var subject = TestData.User();
+        await Seed(subject);
+        var role = await SeedRole(subject.Id, team.Id);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        Assert.Equal(role.Id, (await GetRole(Client(actor), role.Id)).Id);
+    }
+
+    [Fact]
+    public async Task Get_on_a_template_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var msel = await SeedMsel(isTemplate: true);
+        var team = await SeedTeam(msel);
+        var subject = TestData.User();
+        await Seed(subject);
+        var role = await SeedRole(subject.Id, team.Id);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync(RoleRoute(role.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_on_a_msel_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var msel = await SeedMsel();
+        var team = await SeedTeam(msel);
+        var subject = TestData.User();
+        await Seed(subject);
+        var role = await SeedRole(subject.Id, team.Id);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
 
         var response = await Client(actor).GetAsync(RoleRoute(role.Id), Ct);
 
@@ -330,7 +399,9 @@ public class UserTeamRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         var response = await Post(Client(actor), Body(member.Id, team.Id));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("UserTeamRoleService.CreateAsync", failure.Detail);
     }
 
     /// <remarks>
@@ -397,7 +468,9 @@ public class UserTeamRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         var response = await Post(Client(actor), Body(Guid.NewGuid(), team.Id));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("UserTeamRoleService.CreateAsync", failure.Detail);
     }
 
     [Fact]
@@ -497,20 +570,25 @@ public class UserTeamRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         Assert.Empty(await StoredFor(team.Id));
     }
 
-    /// <summary>An unknown role row is a 404 on delete for every caller.</summary>
+    /// <summary>An unknown role row is a 404 on delete for a caller holding nothing.</summary>
     [Fact]
     public async Task Delete_ForAnIdThatIsNotThere_Is404ForAStrangerToo()
     {
         var stranger = await Actor().SeedAsync();
-        var privileged = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
-        var id = Guid.NewGuid();
 
-        Assert.Equal(
-            HttpStatusCode.NotFound,
-            (await Client(stranger).DeleteAsync(RoleRoute(id), Ct)).StatusCode);
-        Assert.Equal(
-            HttpStatusCode.NotFound,
-            (await Client(privileged).DeleteAsync(RoleRoute(id), Ct)).StatusCode);
+        var response = await Client(stranger).DeleteAsync(RoleRoute(Guid.NewGuid()), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_ForAnIdThatIsNotThere_WithEditMsels_Is404()
+    {
+        var privileged = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(privileged).DeleteAsync(RoleRoute(Guid.NewGuid()), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -526,8 +604,24 @@ public class UserTeamRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
+    /// <summary>A member of the team without a role on the MSEL is refused the delete.</summary>
     [Fact]
-    public async Task Delete_ForACallerWithNoRoleOnTheMsel_Is403()
+    public async Task Delete_is_forbidden_for_a_member_of_the_team_without_a_role_on_the_msel()
+    {
+        var msel = await SeedMsel();
+        var team = await SeedTeam(msel);
+        var member = await Actor().OnTeam(team).SeedAsync();
+        var role = await SeedRole(member.Id, team.Id);
+
+        var response = await Client(member).DeleteAsync(RoleRoute(role.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Single(await StoredFor(team.Id));
+    }
+
+    /// <summary>An editor of the MSEL is refused the delete: it asks for ownership.</summary>
+    [Fact]
+    public async Task Delete_is_forbidden_for_an_editor_of_the_msel()
     {
         var msel = await SeedMsel();
         var team = await SeedTeam(msel);
@@ -535,12 +629,9 @@ public class UserTeamRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         var role = await SeedRole(member.Id, team.Id);
         var editor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
 
-        Assert.Equal(
-            HttpStatusCode.Forbidden,
-            (await Client(member).DeleteAsync(RoleRoute(role.Id), Ct)).StatusCode);
-        Assert.Equal(
-            HttpStatusCode.Forbidden,
-            (await Client(editor).DeleteAsync(RoleRoute(role.Id), Ct)).StatusCode);
+        var response = await Client(editor).DeleteAsync(RoleRoute(role.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Single(await StoredFor(team.Id));
     }
 

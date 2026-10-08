@@ -101,6 +101,23 @@ public class CatalogEndpointTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal(theirs.Id, catalogs[0].Id);
     }
 
+    [Fact]
+    public async Task GetUserCatalogs_for_the_callers_own_id_without_ManageUsers_returns_its_catalogs()
+    {
+        var actor = await Actor().SeedAsync();
+        var injectType = TestData.InjectType();
+        var other = TestData.User();
+        await Seed(injectType, other);
+        var mine = TestData.Catalog(injectType.Id, actor.Id);
+        var theirs = TestData.Catalog(injectType.Id, other.Id);
+        await Seed(mine, theirs);
+
+        var catalogs = await Get<List<ViewModels.Catalog>>(
+            Client(actor), $"api/users/{actor.Id}/catalogs");
+
+        Assert.Equal(mine.Id, Assert.Single(catalogs).Id);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // GET catalogs/{id}
     // ---------------------------------------------------------------------------------------------
@@ -209,7 +226,9 @@ public class CatalogEndpointTests(DatabaseFixture fixture, BlueprintAppFactory f
 
         var response = await Client(actor).PostAsync($"api/catalogs/{Guid.NewGuid()}/copy", null, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("CatalogService.privateCatalogCopyAsync", failure.Detail);
     }
 
     // ---------------------------------------------------------------------------------------------

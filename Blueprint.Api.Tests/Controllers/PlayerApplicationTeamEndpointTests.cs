@@ -65,21 +65,29 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         Assert.Equal(mine.Team.Id, list[0].TeamId);
     }
 
-    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 or 200 for a view MSELs holder.</summary>
+    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
-    public async Task GetByMsel_ForAMselThatIsNotThere_Is500_Or200ForAViewMselsHolder()
+    public async Task GetByMsel_ForAMselThatIsNotThere_Is500()
     {
         var stranger = await Actor().SeedAsync();
+
+        var response = await Client(stranger).GetAsync($"api/msels/{Guid.NewGuid()}/teamplayerApplications", Ct);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("PlayerApplicationTeamService.GetByMselAsync", failure.Detail);
+    }
+
+    // Same case as GetByMsel_ForAMselThatIsNotThere_Is500.
+    [Fact]
+    public async Task GetByMsel_ForAMselThatIsNotThere_WithViewMsels_IsAnEmptyList()
+    {
         var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-        var id = Guid.NewGuid();
 
-        var refused = await Client(stranger).GetAsync($"api/msels/{id}/teamplayerApplications", Ct);
-        Assert.Equal(HttpStatusCode.InternalServerError, refused.StatusCode);
+        var response = await Client(privileged).GetAsync($"api/msels/{Guid.NewGuid()}/teamplayerApplications", Ct);
 
-        var answered = await Client(privileged).GetAsync($"api/msels/{id}/teamplayerApplications", Ct);
-        Assert.Equal(HttpStatusCode.OK, answered.StatusCode);
-        Assert.Empty(await answered.Content
-            .ReadFromJsonAsync<List<ViewModels.PlayerApplicationTeam>>(JsonOptions, Ct));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(await response.Content.ReadFromJsonAsync<List<ViewModels.PlayerApplicationTeam>>(JsonOptions, Ct));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -105,21 +113,29 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         Assert.Equal(graph.Row.Id, list[0].Id);
     }
 
-    /// <summary>Get by player application for an id that is not there is answered with a 500 or 200 for a view MSELs holder.</summary>
+    /// <summary>Get by player application for an id that is not there is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
-    public async Task GetByPlayerApplication_ForAnIdThatIsNotThere_Is500_Or200ForAViewMselsHolder()
+    public async Task GetByPlayerApplication_ForAnIdThatIsNotThere_Is500()
     {
         var stranger = await Actor().SeedAsync();
+
+        var response = await Client(stranger).GetAsync($"api/playerApplications/{Guid.NewGuid()}/teamplayerApplications", Ct);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("PlayerApplicationTeamService.GetByPlayerApplicationAsync", failure.Detail);
+    }
+
+    // Same case as GetByPlayerApplication_ForAnIdThatIsNotThere_Is500.
+    [Fact]
+    public async Task GetByPlayerApplication_ForAnIdThatIsNotThere_WithViewMsels_IsAnEmptyList()
+    {
         var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-        var url = $"api/playerApplications/{Guid.NewGuid()}/teamplayerApplications";
 
-        var refused = await Client(stranger).GetAsync(url, Ct);
-        Assert.Equal(HttpStatusCode.InternalServerError, refused.StatusCode);
+        var response = await Client(privileged).GetAsync($"api/playerApplications/{Guid.NewGuid()}/teamplayerApplications", Ct);
 
-        var answered = await Client(privileged).GetAsync(url, Ct);
-        Assert.Equal(HttpStatusCode.OK, answered.StatusCode);
-        Assert.Empty(await answered.Content
-            .ReadFromJsonAsync<List<ViewModels.PlayerApplicationTeam>>(JsonOptions, Ct));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(await response.Content.ReadFromJsonAsync<List<ViewModels.PlayerApplicationTeam>>(JsonOptions, Ct));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -144,19 +160,27 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         Assert.Equal(1, answered.DisplayOrder);
     }
 
-    /// <summary>Get for an id that is not there is answered with a 404 with view MSELs and 500 for everybody else.</summary>
+    /// <summary>Get for an id that is not there is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
-    public async Task Get_ForAnIdThatIsNotThere_Is404WithViewMselsAnd500ForEverybodyElse()
+    public async Task Get_ForAnIdThatIsNotThere_Is500()
     {
         var stranger = await Actor().SeedAsync();
+
+        var response = await Client(stranger).GetAsync($"api/teamplayerApplications/{Guid.NewGuid()}", Ct);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("PlayerApplicationTeamService.GetAsync", failure.Detail);
+    }
+
+    [Fact]
+    public async Task Get_ForAnIdThatIsNotThere_WithViewMsels_Is404()
+    {
         var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-        var url = $"api/teamplayerApplications/{Guid.NewGuid()}";
 
-        var refused = await Client(stranger).GetAsync(url, Ct);
-        Assert.Equal(HttpStatusCode.InternalServerError, refused.StatusCode);
+        var response = await Client(privileged).GetAsync($"api/teamplayerApplications/{Guid.NewGuid()}", Ct);
 
-        var answered = await Client(privileged).GetAsync(url, Ct);
-        Assert.Equal(HttpStatusCode.NotFound, answered.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -192,9 +216,9 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         Assert.Equal(1, stored.DisplayOrder);
     }
 
-    /// <summary>No write consults a MSEL role so an owner is refused and a stranger is not.</summary>
+    /// <summary>No write consults a MSEL role, so an owner of the MSEL without EditMsels is refused.</summary>
     [Fact]
-    public async Task NoWriteConsultsAMselRole_SoAnOwnerIsRefusedAndAStrangerIsNot()
+    public async Task NoWriteConsultsAMselRole_SoAnOwnerIsRefused()
     {
         var msel = TestData.Msel();
         await Seed(msel);
@@ -202,15 +226,27 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         var application = TestData.PlayerApplication(msel.Id);
         await Seed(team, application);
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(owner).PostAsJsonAsync(
+            "api/teamplayerApplications", Body(application.Id, team.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Create_WithEditMsels_and_no_role_on_the_msel_Is201()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var team = TestData.Team(msel.Id);
+        var application = TestData.PlayerApplication(msel.Id);
+        await Seed(team, application);
         var stranger = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var refused = await Client(owner).PostAsJsonAsync(
+        var response = await Client(stranger).PostAsJsonAsync(
             "api/teamplayerApplications", Body(application.Id, team.Id), Ct);
-        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
 
-        var allowed = await Client(stranger).PostAsJsonAsync(
-            "api/teamplayerApplications", Body(application.Id, team.Id), Ct);
-        Assert.Equal(HttpStatusCode.Created, allowed.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -248,7 +284,7 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
             Body(graph.Application.Id, graph.Team.Id) with { id = graph.Row.Id },
             Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The requested display order is not valid", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     [Fact]
@@ -298,21 +334,31 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
     // DELETE teams/{teamId}/playerApplications/{playerApplicationId}
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Delete by ids is answered with a 404 for a well formed request and deletes the row when the ids are swapped.</summary>
+    /// <summary>Delete by ids with the ids in route order is answered with a 404 and keeps the row.</summary>
     [Fact]
-    public async Task DeleteByIds_Is404ForAWellFormedRequest_AndDeletesTheRowWhenTheIdsAreSwapped()
+    public async Task DeleteByIds_InRouteOrder_Is404AndKeepsTheRow()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
         var graph = await SeedGraph();
 
-        var wellFormed = await Client(actor).DeleteAsync(
+        var response = await Client(actor).DeleteAsync(
             $"api/teams/{graph.Team.Id}/playerApplications/{graph.Application.Id}", Ct);
-        Assert.Equal(HttpStatusCode.NotFound, wellFormed.StatusCode);
-        Assert.Single(await ReadBack(rb => rb.PlayerApplicationTeams.ToListAsync(Ct)));
 
-        var swapped = await Client(actor).DeleteAsync(
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Single(await ReadBack(rb => rb.PlayerApplicationTeams.ToListAsync(Ct)));
+    }
+
+    // Same case as DeleteByIds_InRouteOrder_Is404AndKeepsTheRow.
+    [Fact]
+    public async Task DeleteByIds_WithTheIdsSwapped_RemovesTheRow()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var graph = await SeedGraph();
+
+        var response = await Client(actor).DeleteAsync(
             $"api/teams/{graph.Application.Id}/playerApplications/{graph.Team.Id}", Ct);
-        Assert.Equal(HttpStatusCode.NoContent, swapped.StatusCode);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Empty(await ReadBack(rb => rb.PlayerApplicationTeams.ToListAsync(Ct)));
     }
 

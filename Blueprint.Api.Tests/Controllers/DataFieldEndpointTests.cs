@@ -207,7 +207,9 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}/dataFields", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("DataFieldService.GetByMselAsync", failure.Detail);
     }
 
     /// <summary>Get by MSEL for an unknown MSEL with view MSELs permission is an empty array.</summary>
@@ -354,7 +356,9 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await Client(actor).GetAsync($"/api/dataFields/{Guid.NewGuid()}", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains no elements.", failure.Title);
+        Assert.Contains("DataFieldService.GetAsync", failure.Detail);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -510,7 +514,9 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await Post(Client(actor), Body(msel.Id) with { InjectTypeId = injectType.Id });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("DataFieldService.CreateAsync", failure.Detail);
     }
 
     [Fact]
@@ -520,7 +526,9 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await Post(Client(actor), Body(Guid.NewGuid()));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("DataFieldService.CreateAsync", failure.Detail);
     }
 
     [Fact]
@@ -741,6 +749,23 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             (await context.DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct)).Name);
     }
 
+    [Fact]
+    public async Task Update_OnAMsel_with_EditMsels_and_no_role_changes_the_field()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id, name: "Before");
+        await Seed(field);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Put(Client(actor), field.Id, BodyFor(field) with { Name = "After" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("After", (await ReadBack(rb => rb.DataFields.SingleAsync(x => x.Id == field.Id, Ct))).Name);
+    }
+
     [Theory]
     [InlineData(MselRole.Approver)]
     [InlineData(MselRole.Viewer)]
@@ -787,7 +812,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             Body(msel.Id) with { Id = Guid.NewGuid() },
             Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'DataFieldEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     /// <summary>Update with no MSEL id in the body detaches a MSELs field for anyone holding manage data fields.</summary>
@@ -1129,6 +1154,23 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Delete_OnAMsel_with_EditMsels_and_no_role_deletes_it()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"/api/dataFields/{field.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(await ReadBack(rb => rb.DataFields.Where(x => x.Id == field.Id).ToListAsync(Ct)));
+    }
+
     /// <summary>Delete chooses its permission branch from the stored row, so <c>ManageDataFields</c> alone
     /// cannot reach a MSEL's column.</summary>
     [Fact]
@@ -1375,7 +1417,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await UploadJson(Client(actor), "{not json");
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("'n' is an invalid start of a property name. Expected a '\"'. Path: $ | LineNumber: 0 | BytePositionInLine: 1.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     /// <summary>A request with no file is a 400 from <c>ValidateModelStateFilter</c>, before the service

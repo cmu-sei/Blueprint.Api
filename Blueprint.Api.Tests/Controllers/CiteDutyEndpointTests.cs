@@ -72,20 +72,44 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(team.Id, list[0].Team.Id);
     }
 
-    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 or 200 for a view MSELs holder.</summary>
+    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
-    public async Task GetByMsel_ForAMselThatIsNotThere_Is500_Or200ForAViewMselsHolder()
+    public async Task GetByMsel_ForAMselThatIsNotThere_Is500()
     {
-        var stranger = await Actor().SeedAsync();
-        var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-        var id = Guid.NewGuid();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
 
-        var refused = await Client(stranger).GetAsync($"api/msels/{id}/citeDuties", Ct);
-        Assert.Equal(HttpStatusCode.InternalServerError, refused.StatusCode);
+        var response = await Client(actor).GetAsync($"api/msels/{Guid.NewGuid()}/citeDuties", Ct);
 
-        var answered = await Client(privileged).GetAsync($"api/msels/{id}/citeDuties", Ct);
-        Assert.Equal(HttpStatusCode.OK, answered.StatusCode);
-        Assert.Empty(await answered.Content.ReadFromJsonAsync<List<ViewModels.CiteDuty>>(JsonOptions, Ct));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("CiteDutyService.GetByMselAsync", failure.Detail);
+    }
+
+    // Same case as GetByMsel_ForAMselThatIsNotThere_Is500.
+    [Fact]
+    public async Task GetByMsel_ForAMselThatIsNotThere_WithViewMsels_IsAnEmptyList()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/msels/{Guid.NewGuid()}/citeDuties", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(await response.Content.ReadFromJsonAsync<List<ViewModels.CiteDuty>>(JsonOptions, Ct));
+    }
+
+    [Fact]
+    public async Task GetByMsel_with_ViewMsels_and_no_role_returns_the_msels_duties()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var row = TestData.CiteDuty(msel.Id, team.Id);
+        await Seed(row);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/msels/{msel.Id}/citeDuties", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var list = await response.Content.ReadFromJsonAsync<List<ViewModels.CiteDuty>>(JsonOptions, Ct);
+        Assert.Equal(row.Id, Assert.Single(list).Id);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -117,7 +141,9 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Client(actor).GetAsync($"api/citeDuties/{Guid.NewGuid()}", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains no elements.", failure.Title);
+        Assert.Contains("CiteDutyService.GetAsync", failure.Detail);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -167,7 +193,9 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var response = await Client(actor).PostAsJsonAsync(
             "api/citeDuties", Body(Guid.NewGuid(), null), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("CiteDutyService.CreateAsync", failure.Detail);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -399,6 +427,64 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var (msel, team) = await SeedMselAndTeam();
         var actor = await Actor().OnNewMsel(MselRole.Editor).SeedAsync();
         var row = TestData.CiteDuty(msel.Id, team.Id, "before");
+        await Seed(row);
+
+        var response = await Client(actor).DeleteAsync($"api/citeDuties/{row.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Single(await ReadBack(rb => rb.CiteDuties.Where(x => x.Id == row.Id).ToListAsync(Ct)));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Templates: the ManageCiteDuties tier
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Update_of_a_template_with_ManageCiteDuties_stores_the_change()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageCiteDuties).SeedAsync();
+        var row = TestData.CiteDuty(name: "before");
+        await Seed(row);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/citeDuties/{row.Id}", Body(null, null) with { id = row.Id, name = "after", isTemplate = true }, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("after", (await ReadBack(rb => rb.CiteDuties.SingleAsync(x => x.Id == row.Id, Ct))).Name);
+    }
+
+    [Fact]
+    public async Task Update_of_a_template_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var row = TestData.CiteDuty(name: "before");
+        await Seed(row);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/citeDuties/{row.Id}", Body(null, null) with { id = row.Id, name = "changed", isTemplate = true }, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("before", (await ReadBack(rb => rb.CiteDuties.SingleAsync(x => x.Id == row.Id, Ct))).Name);
+    }
+
+    [Fact]
+    public async Task Delete_of_a_template_with_ManageCiteDuties_removes_it()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageCiteDuties).SeedAsync();
+        var row = TestData.CiteDuty();
+        await Seed(row);
+
+        var response = await Client(actor).DeleteAsync($"api/citeDuties/{row.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Empty(await ReadBack(rb => rb.CiteDuties.Where(x => x.Id == row.Id).ToListAsync(Ct)));
+    }
+
+    [Fact]
+    public async Task Delete_of_a_template_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var row = TestData.CiteDuty();
         await Seed(row);
 
         var response = await Client(actor).DeleteAsync($"api/citeDuties/{row.Id}", Ct);

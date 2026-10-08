@@ -651,7 +651,9 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
 
         var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/copy", null, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Nullable object must have a value.", failure.Title);
+        Assert.Contains("MselService.privateMselCopyAsync", failure.Detail);
     }
 
     /// <summary>Copy of a MSEL whose card is shown to another MSELs team is answered with a 500.</summary>
@@ -681,7 +683,7 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
 
         var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/copy", null, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Matches(@"^The\ given\ key\ '[0-9a-f-]{36}'\ was\ not\ present\ in\ the\ dictionary\.$", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     // ---------------------------------------------------------------------------------------------

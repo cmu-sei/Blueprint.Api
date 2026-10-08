@@ -82,6 +82,18 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         Assert.Empty(roles);
     }
 
+    [Fact]
+    public async Task GetByMsel_ForATemplate_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var msel = TestData.Msel(isTemplate: true);
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync(MselRoles(msel.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     /// <summary>An unknown MSEL's role list is empty for a <c>ViewMsels</c> holder.</summary>
     [Fact]
     public async Task GetByMsel_ForAMselThatIsNotThere_WithViewMsels_IsAnEmptyList()
@@ -189,6 +201,45 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Get_on_a_template_with_CreateMsels_returns_the_role()
+    {
+        var msel = await SeedMsel(isTemplate: true);
+        var subject = await SeedUser();
+        var row = await SeedRole(subject.Id, msel.Id, MselRole.Editor);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var role = await GetRole(Client(actor), row.Id);
+
+        Assert.Equal(row.Id, role.Id);
+    }
+
+    [Fact]
+    public async Task Get_on_a_template_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var msel = await SeedMsel(isTemplate: true);
+        var subject = await SeedUser();
+        var row = await SeedRole(subject.Id, msel.Id, MselRole.Editor);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync(RoleRoute(row.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_on_a_msel_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var msel = await SeedMsel();
+        var subject = await SeedUser();
+        var row = await SeedRole(subject.Id, msel.Id, MselRole.Editor);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync(RoleRoute(row.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     /// <summary>An unknown role row is a 404 for a <c>ViewMsels</c> holder.</summary>
     [Fact]
     public async Task Get_ForAnIdThatIsNotThere_WithViewMsels_Is404()
@@ -209,7 +260,9 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         var response = await Client(actor).GetAsync(RoleRoute(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("UserMselRoleService.GetAsync", failure.Detail);
     }
 
     /// <remarks>
@@ -351,28 +404,37 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         var response = await Post(Client(actor), Body(subject.Id, msel.Id, MselRole.Editor));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("UserMselRoleService.CreateAsync", failure.Detail);
     }
 
-    /// <summary>Create for a MSEL that is not there is answered with a 500 for everybody.</summary>
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Create_ForAMselThatIsNotThere_Is500ForEverybody(bool hasManageMsels)
+    /// <summary>Create for a MSEL that is not there is answered with a 500 for a caller without ManageMsels.</summary>
+    [Fact]
+    public async Task Create_ForAMselThatIsNotThere_WithoutManageMsels_Is500()
     {
-        var builder = Actor();
-
-        if (hasManageMsels)
-        {
-            builder = builder.WithSystemPermissions(SystemPermission.ManageMsels);
-        }
-
-        var actor = await builder.SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Owner).SeedAsync();
         var subject = await SeedUser();
 
         var response = await Post(Client(actor), Body(subject.Id, Guid.NewGuid(), MselRole.Editor));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+    }
+
+    // Same case as Create_ForAMselThatIsNotThere_WithoutManageMsels_Is500.
+    [Fact]
+    public async Task Create_ForAMselThatIsNotThere_WithManageMsels_Is500()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+        var subject = await SeedUser();
+
+        var response = await Post(Client(actor), Body(subject.Id, Guid.NewGuid(), MselRole.Editor));
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("UserMselRoleService.CreateAsync", failure.Detail);
     }
 
     [Fact]
@@ -666,7 +728,9 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         var response = await SetIntegrationRoles(
             Client(actor), Guid.NewGuid(), actor.Id, new { citeEvaluationRole = "Inject" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
     }
 
     /// <summary>Set integration roles with a partial body clears the roles it does not mention.</summary>
@@ -792,9 +856,9 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
     private static RoleBody Body(Guid userId, Guid mselId, MselRole role) =>
         new() { UserId = userId, MselId = mselId, Role = role };
 
-    private async Task<MselEntity> SeedMsel()
+    private async Task<MselEntity> SeedMsel(bool isTemplate = false)
     {
-        var msel = TestData.Msel();
+        var msel = TestData.Msel(isTemplate: isTemplate);
         await Seed(msel);
 
         return msel;

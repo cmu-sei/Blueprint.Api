@@ -93,6 +93,7 @@ public class MiddlewareTests(DatabaseFixture fixture, BlueprintAppFactory factor
             $"{Route}?bearer={actor.Id}&bearer={actor.Id}", Ct);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.StartsWith("System.InvalidOperationException: Sequence contains more than one matching element", await response.Content.ReadAsStringAsync(Ct));
     }
 
     /// <summary>The parameter name is matched case-sensitively, so <c>?Bearer=</c> is not promoted.</summary>

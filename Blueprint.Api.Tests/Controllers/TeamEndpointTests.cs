@@ -65,15 +65,7 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Empty(await GetTeams(Client(actor), MyTeams));
     }
 
-    /// <remarks>
-    /// The only route in any of the three files of this unit with no authorization of any kind: the
-    /// controller resolves no <c>SystemPermission</c> and the service filters on the caller's own id, which
-    /// is the argument that it needs none. The second assertion is the contrast that makes the route worth
-    /// pinning - the same caller may list their own team here and may not read it by id, because
-    /// <c>GET teams/{id}</c> requires <c>ViewMsels</c> outright and consults no membership at all. So the
-    /// id this route hands out is an id the caller cannot use. Requiring a permission here turns the first
-    /// assertion red.
-    /// </remarks>
+    /// <summary>The caller's own teams are listed with no permission at all: the service filters on the caller's id.</summary>
     [Fact]
     public async Task GetMine_AsksTheCallerForNoPermissionAtAll()
     {
@@ -84,9 +76,19 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var mine = Assert.Single(await GetTeams(Client(actor), MyTeams));
 
         Assert.Equal(msel.Id, mine.MselId);
-        Assert.Equal(
-            HttpStatusCode.Forbidden,
-            (await Client(actor).GetAsync(TeamRoute(team.Id), Ct)).StatusCode);
+    }
+
+    /// <summary>A member of a team without <c>ViewMsels</c> is refused the team by id.</summary>
+    [Fact]
+    public async Task Get_is_forbidden_for_a_member_of_the_team_without_ViewMsels()
+    {
+        var msel = await SeedMsel();
+        var team = await SeedTeam(msel);
+        var actor = await Actor().OnTeam(team).SeedAsync();
+
+        var response = await Client(actor).GetAsync(TeamRoute(team.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>Get mine answers each team without its members.</summary>
@@ -210,16 +212,25 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Single(await GetTeams(Client(actor), TeamsOf(msel.Id)));
     }
 
-    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500.</summary>
+    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
     public async Task GetByMsel_ForAMselThatIsNotThere_Is500()
     {
         var stranger = await Actor().SeedAsync();
-        var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(stranger).GetAsync(TeamsOf(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("TeamService.GetByMselAsync", failure.Detail);
+    }
+
+    // Same case as GetByMsel_ForAMselThatIsNotThere_Is500.
+    [Fact]
+    public async Task GetByMsel_ForAMselThatIsNotThere_WithViewMsels_IsAnEmptyList()
+    {
+        var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
         Assert.Empty(await GetTeams(Client(privileged), TeamsOf(Guid.NewGuid())));
     }
 
@@ -419,7 +430,9 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Post(Client(actor), Body(Guid.NewGuid()));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
     }
 
     /// <summary>Create that omits the MSEL id is answered with a 500.</summary>
@@ -430,7 +443,9 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Post(Client(actor), Body(Guid.NewGuid()) with { MselId = null });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("TeamService.CreateAsync", failure.Detail);
     }
 
     [Fact]
@@ -457,20 +472,32 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Null(stored.DateModified);
     }
 
-    /// <summary>A create keeps the body's id, and a second create naming it is answered with a 500.</summary>
     [Fact]
-    public async Task Create_KeepsTheBodysIdAndRefusesASecondOneWithA500()
+    public async Task Create_KeepsTheBodysId()
     {
         var msel = await SeedMsel();
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
         var id = Guid.NewGuid();
 
-        var first = await Post(Client(actor), Body(msel.Id) with { Id = id });
-        var second = await Post(Client(actor), Body(msel.Id) with { Id = id });
+        var response = await Post(Client(actor), Body(msel.Id) with { Id = id });
 
-        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
-        Assert.Equal(id, (await Read<ViewModels.Team>(first)).Id);
-        Assert.Equal(HttpStatusCode.InternalServerError, second.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(id, (await Read<ViewModels.Team>(response)).Id);
+    }
+
+    /// <summary>A create naming the id of a team that exists is answered with a 500.</summary>
+    [Fact]
+    public async Task Create_WithTheIdOfAnExistingTeam_Is500()
+    {
+        var msel = await SeedMsel();
+        var existing = await SeedTeam(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Post(Client(actor), Body(msel.Id) with { Id = existing.Id });
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("TeamService.CreateAsync", failure.Detail);
     }
 
     /// <remarks>
@@ -587,20 +614,32 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(0, await CountOn(msel.Id));
     }
 
-    /// <summary>Creating a team from a unit for a MSEL that is not there is answered with a 500.</summary>
+    /// <summary>Creating a team from a unit for a MSEL that is not there is answered with a 500 for a caller without EditMsels.</summary>
     [Fact]
     public async Task CreateFromUnit_ForAMselThatIsNotThere_Is500()
     {
         var stranger = await Actor().SeedAsync();
-        var privileged = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
         var unit = await SeedUnit(stranger.Id);
 
-        Assert.Equal(
-            HttpStatusCode.InternalServerError,
-            (await PostFromUnit(Client(stranger), Guid.NewGuid(), unit.Id)).StatusCode);
-        Assert.Equal(
-            HttpStatusCode.InternalServerError,
-            (await PostFromUnit(Client(privileged), Guid.NewGuid(), unit.Id)).StatusCode);
+        var response = await PostFromUnit(Client(stranger), Guid.NewGuid(), unit.Id);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+    }
+
+    // Same case as CreateFromUnit_ForAMselThatIsNotThere_Is500.
+    [Fact]
+    public async Task CreateFromUnit_ForAMselThatIsNotThere_WithEditMsels_Is500()
+    {
+        var privileged = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var unit = await SeedUnit(privileged.Id);
+
+        var response = await PostFromUnit(Client(privileged), Guid.NewGuid(), unit.Id);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("TeamService.CreateFromUnitAsync", failure.Detail);
     }
 
     /// <remarks>
@@ -704,7 +743,7 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Put(Client(actor), team.Id, BodyFor(team) with { MselId = mine.Id });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The MselId of the team cannot be changed!", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.Equal(target.Id, (await Stored(team.Id)).MselId);
     }
 
@@ -718,7 +757,7 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Put(Client(actor), team.Id, BodyFor(team) with { MselId = null });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The MselId of the team cannot be changed!", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.Equal(msel.Id, (await Stored(team.Id)).MselId);
     }
 
@@ -775,7 +814,7 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Put(Client(actor), team.Id, BodyFor(team) with { Id = Guid.NewGuid() });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'TeamEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     [Fact]

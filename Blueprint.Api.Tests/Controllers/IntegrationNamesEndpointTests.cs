@@ -168,15 +168,7 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal("", names.SteamfitterScenarioName);
     }
 
-    /// <summary>
-    /// Cancellation is not a failure, so it is deliberately left out of the catch and fails the request.
-    /// </summary>
-    /// <remarks>
-    /// The 500 is what a cancelled lookup looks like when the caller has <em>not</em> gone away - which is
-    /// the case here, since the exception is the client's own rather than the request's token being
-    /// tripped. Widening the catch to include <c>OperationCanceledException</c> turns this green with an
-    /// empty name, and would also swallow a genuine client disconnect.
-    /// </remarks>
+    /// <summary>A lookup that throws <c>OperationCanceledException</c> is not caught, and fails the request with a 500.</summary>
     [Fact]
     public async Task Names_WhenALookupIsCancelled_FailsTheRequest()
     {
@@ -190,7 +182,7 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
 
         var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/integrations/names", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The operation was canceled.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -276,7 +268,9 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         var response = await Client(actor)
             .GetAsync($"/api/msels/{Guid.NewGuid()}/integrations/names", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselService.GetAsync", failure.Detail);
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -110,6 +110,18 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     }
 
     [Fact]
+    public async Task GetByMsel_with_ViewMsels_and_no_role_returns_the_rows()
+    {
+        var msel = await SeedMsel();
+        var row = await SeedCardTeam(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var rows = await GetByMsel(Client(actor), msel.Id);
+
+        Assert.Equal(row.Id, Assert.Single(rows).Id);
+    }
+
+    [Fact]
     public async Task GetByMsel_is_forbidden_for_a_caller_holding_Owner_only_in_another_msel()
     {
         var msel = await SeedMsel();
@@ -120,19 +132,26 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             HttpStatusCode.Forbidden, (await Client(actor).GetAsync(TeamCardsOfMsel(msel.Id), Ct)).StatusCode);
     }
 
-    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 for an ordinary caller and empty for a privileged one.</summary>
+    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
-    public async Task GetByMsel_ForAMselThatIsNotThere_Is500ForAnOrdinaryCallerAndEmptyForAPrivilegedOne()
+    public async Task GetByMsel_ForAMselThatIsNotThere_Is500()
     {
         var stranger = await Actor().SeedAsync();
+
+        var response = await Client(stranger).GetAsync(TeamCardsOfMsel(Guid.NewGuid()), Ct);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("CardTeamService.GetByMselAsync", failure.Detail);
+    }
+
+    // Same case as GetByMsel_ForAMselThatIsNotThere_Is500.
+    [Fact]
+    public async Task GetByMsel_ForAMselThatIsNotThere_WithViewMsels_IsEmpty()
+    {
         var viewer = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-        var unknown = Guid.NewGuid();
 
-        var response = await Client(stranger).GetAsync(TeamCardsOfMsel(unknown), Ct);
-
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Object reference not set to an instance of an object.", await Title(response));
-        Assert.Empty(await GetByMsel(Client(viewer), unknown));
+        Assert.Empty(await GetByMsel(Client(viewer), Guid.NewGuid()));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -172,6 +191,18 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     }
 
     [Fact]
+    public async Task GetByCard_with_ViewMsels_and_no_role_returns_the_rows()
+    {
+        var msel = await SeedMsel();
+        var row = await SeedCardTeam(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var rows = await Read<List<ViewModels.CardTeam>>(await Client(actor).GetAsync(TeamCardsOfCard(row.CardId), Ct));
+
+        Assert.Equal(row.Id, Assert.Single(rows).Id);
+    }
+
+    [Fact]
     public async Task GetByCard_is_forbidden_for_a_caller_holding_Owner_only_in_another_msel()
     {
         var msel = await SeedMsel();
@@ -182,37 +213,57 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             HttpStatusCode.Forbidden, (await Client(actor).GetAsync(TeamCardsOfCard(card.Id), Ct)).StatusCode);
     }
 
-    /// <summary>Get by card for a card that is not there is answered with a 500 for an ordinary caller and an empty list for a privileged one.</summary>
+    /// <summary>Get by card for a card that is not there is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
-    public async Task GetByCard_ForACardThatIsNotThere_Is500ForAnOrdinaryCallerAndAnEmptyListForAPrivilegedOne()
+    public async Task GetByCard_ForACardThatIsNotThere_Is500()
     {
         var stranger = await Actor().SeedAsync();
-        var viewer = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-        var unknown = Guid.NewGuid();
 
-        var ordinary = await Client(stranger).GetAsync(TeamCardsOfCard(unknown), Ct);
-        var privileged = await Client(viewer).GetAsync(TeamCardsOfCard(unknown), Ct);
+        var response = await Client(stranger).GetAsync(TeamCardsOfCard(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, ordinary.StatusCode);
-        Assert.Equal("Object reference not set to an instance of an object.", await Title(ordinary));
-        Assert.Empty(await Read<List<ViewModels.CardTeam>>(privileged));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("CardTeamService.GetByCardAsync", failure.Detail);
     }
 
-    /// <summary>Get by card for a template card is answered with a 500 for an ordinary caller.</summary>
+    // Same case as GetByCard_ForACardThatIsNotThere_Is500.
+    [Fact]
+    public async Task GetByCard_ForACardThatIsNotThere_WithViewMsels_IsAnEmptyList()
+    {
+        var viewer = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Client(viewer).GetAsync(TeamCardsOfCard(Guid.NewGuid()), Ct);
+
+        Assert.Empty(await Read<List<ViewModels.CardTeam>>(response));
+    }
+
+    /// <summary>Get by card for a template card is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
     public async Task GetByCard_ForATemplateCard_Is500ForAnOrdinaryCaller()
     {
         var card = await SeedCard(null, isTemplate: true);
         var team = await SeedTeam(await SeedMsel());
-        var row = await Seeded(TestData.CardTeam(card.Id, team.Id));
+        await Seed(TestData.CardTeam(card.Id, team.Id));
         var stranger = await Actor().SeedAsync();
+
+        var response = await Client(stranger).GetAsync(TeamCardsOfCard(card.Id), Ct);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("CardTeamService.GetByCardAsync", failure.Detail);
+    }
+
+    [Fact]
+    public async Task GetByCard_ForATemplateCard_WithViewMsels_ReturnsTheRows()
+    {
+        var card = await SeedCard(null, isTemplate: true);
+        var team = await SeedTeam(await SeedMsel());
+        var row = await Seeded(TestData.CardTeam(card.Id, team.Id));
         var viewer = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
-        var ordinary = await Client(stranger).GetAsync(TeamCardsOfCard(card.Id), Ct);
-        var privileged = await Client(viewer).GetAsync(TeamCardsOfCard(card.Id), Ct);
+        var response = await Client(viewer).GetAsync(TeamCardsOfCard(card.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, ordinary.StatusCode);
-        Assert.Equal(row.Id, Assert.Single(await Read<List<ViewModels.CardTeam>>(privileged)).Id);
+        Assert.Equal(row.Id, Assert.Single(await Read<List<ViewModels.CardTeam>>(response)).Id);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -253,6 +304,18 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     }
 
     [Fact]
+    public async Task Get_with_ViewMsels_and_no_role_returns_the_row()
+    {
+        var msel = await SeedMsel();
+        var row = await SeedCardTeam(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var answer = await Read<ViewModels.CardTeam>(await Client(actor).GetAsync(TeamCard(row.Id), Ct));
+
+        Assert.Equal(row.Id, answer.Id);
+    }
+
+    [Fact]
     public async Task Get_is_forbidden_for_a_caller_holding_Owner_only_in_another_msel()
     {
         var msel = await SeedMsel();
@@ -262,23 +325,31 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.Forbidden, (await Client(actor).GetAsync(TeamCard(row.Id), Ct)).StatusCode);
     }
 
-    /// <summary>Get for an id that is not there is answered with a 500 for an ordinary caller and answered with a 404 for a privileged one.</summary>
+    /// <summary>Get for an id that is not there is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
-    public async Task Get_ForAnIdThatIsNotThere_Is500ForAnOrdinaryCallerAndA404ForAPrivilegedOne()
+    public async Task Get_ForAnIdThatIsNotThere_Is500()
     {
         var stranger = await Actor().SeedAsync();
-        var viewer = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-        var unknown = Guid.NewGuid();
 
-        var ordinary = await Client(stranger).GetAsync(TeamCard(unknown), Ct);
-        var privileged = await Client(viewer).GetAsync(TeamCard(unknown), Ct);
+        var response = await Client(stranger).GetAsync(TeamCard(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, ordinary.StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, privileged.StatusCode);
-        Assert.Equal("Card Team not found", await Title(privileged));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("CardTeamService.GetAsync", failure.Detail);
     }
 
-    /// <summary>Get for a row on a template card is answered with a 500 for an ordinary caller.</summary>
+    [Fact]
+    public async Task Get_ForAnIdThatIsNotThere_WithViewMsels_Is404()
+    {
+        var viewer = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Client(viewer).GetAsync(TeamCard(Guid.NewGuid()), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("Card Team not found", await Title(response));
+    }
+
+    /// <summary>Get for a row on a template card is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
     public async Task Get_ForARowOnATemplateCard_Is500ForAnOrdinaryCaller()
     {
@@ -286,13 +357,25 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var team = await SeedTeam(await SeedMsel());
         var row = await Seeded(TestData.CardTeam(card.Id, team.Id));
         var stranger = await Actor().SeedAsync();
+
+        var response = await Client(stranger).GetAsync(TeamCard(row.Id), Ct);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("CardTeamService.GetAsync", failure.Detail);
+    }
+
+    [Fact]
+    public async Task Get_ForARowOnATemplateCard_WithViewMsels_ReturnsTheRow()
+    {
+        var card = await SeedCard(null, isTemplate: true);
+        var team = await SeedTeam(await SeedMsel());
+        var row = await Seeded(TestData.CardTeam(card.Id, team.Id));
         var viewer = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
-        var ordinary = await Client(stranger).GetAsync(TeamCard(row.Id), Ct);
-        var privileged = await Client(viewer).GetAsync(TeamCard(row.Id), Ct);
+        var response = await Client(viewer).GetAsync(TeamCard(row.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, ordinary.StatusCode);
-        Assert.Equal(row.Id, (await Read<ViewModels.CardTeam>(privileged)).Id);
+        Assert.Equal(row.Id, (await Read<ViewModels.CardTeam>(response)).Id);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -411,7 +494,9 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Post(Client(actor), Body(row.CardId, row.TeamId));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("CardTeamService.CreateAsync", failure.Detail);
         Assert.Equal(1, await CountOn(row.CardId));
     }
 
@@ -430,7 +515,9 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             ? Body(Guid.NewGuid(), team.Id)
             : Body(card.Id, Guid.NewGuid()));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("CardTeamService.CreateAsync", failure.Detail);
         Assert.Equal(0, await CountOn(card.Id));
     }
 
@@ -684,23 +771,32 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     // DELETE teams/{teamId}/cards/{cardId}
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Delete by ids is always answered with a 404 because the ids are transposed.</summary>
+    /// <summary>Delete by ids with the ids in route order is answered with a 404 and keeps the row.</summary>
     [Fact]
-    public async Task DeleteByIds_IsAlwaysA404BecauseTheIdsAreTransposed()
+    public async Task DeleteByIds_InRouteOrder_Is404AndKeepsTheRow()
     {
         var msel = await SeedMsel();
         var row = await SeedCardTeam(msel);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var correct = await Client(actor).DeleteAsync(CardOfTeam(row.TeamId, row.CardId), Ct);
+        var response = await Client(actor).DeleteAsync(CardOfTeam(row.TeamId, row.CardId), Ct);
 
-        Assert.Equal(HttpStatusCode.NotFound, correct.StatusCode);
-        Assert.Equal("Card Team not found", await Title(correct));
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("Card Team not found", await Title(response));
         Assert.NotNull(await Stored(row.Id));
+    }
 
-        var transposed = await Client(actor).DeleteAsync(CardOfTeam(row.CardId, row.TeamId), Ct);
+    // Same case as DeleteByIds_InRouteOrder_Is404AndKeepsTheRow.
+    [Fact]
+    public async Task DeleteByIds_WithTheIdsTransposed_RemovesTheRow()
+    {
+        var msel = await SeedMsel();
+        var row = await SeedCardTeam(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        Assert.Equal(HttpStatusCode.NoContent, transposed.StatusCode);
+        var response = await Client(actor).DeleteAsync(CardOfTeam(row.CardId, row.TeamId), Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Null(await Stored(row.Id));
     }
 
@@ -716,7 +812,7 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>Deleting a row by its transposed ids broadcasts the deletion to the MSEL group.</summary>
+    // Same case as DeleteByIds_InRouteOrder_Is404AndKeepsTheRow.
     [Fact]
     public async Task DeleteByIds_WhenItWorks_BroadcastsToTheMselGroup()
     {

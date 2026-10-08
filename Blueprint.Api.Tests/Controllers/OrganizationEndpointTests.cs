@@ -197,7 +197,9 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         var response = await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}/organizations", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("OrganizationService.GetByMselAsync", failure.Detail);
     }
 
     /// <summary>Get by MSEL for an unknown MSEL with view MSELs permission is an empty array.</summary>
@@ -280,7 +282,9 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         var response = await Client(actor).GetAsync($"/api/organizations/{Guid.NewGuid()}", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains no elements.", failure.Title);
+        Assert.Contains("OrganizationService.GetAsync", failure.Detail);
     }
 
     /// <summary>Property names go out in camelCase, read from the raw JSON.</summary>
@@ -537,7 +541,9 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         var response = await Client(actor).PostAsJsonAsync(
             "/api/organizations", NewBody(mselId: Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
     }
 
     /// <summary>A create against a MSEL marks that MSEL modified.</summary>
@@ -714,7 +720,7 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
             Body(organization) with { Id = Guid.NewGuid() },
             Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'OrganizationEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     [Fact]
@@ -732,6 +738,24 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
             $"/api/organizations/{organization.Id}", Body(organization, name: "Renamed"), Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_ForAMsel_with_EditMsels_and_no_role_is_200()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var organization = TestData.Organization(msel.Id);
+        await Seed(organization);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"/api/organizations/{organization.Id}", Body(organization, name: "Renamed"), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Renamed", (await ReadBack(rb => rb.Organizations.SingleAsync(x => x.Id == organization.Id, Ct))).Name);
     }
 
     [Fact]
@@ -878,6 +902,23 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         var response = await Client(actor).DeleteAsync($"/api/organizations/{organization.Id}", Ct);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_ForAMsel_with_EditMsels_and_no_role_is_204()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var organization = TestData.Organization(msel.Id);
+        await Seed(organization);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"/api/organizations/{organization.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Empty(await ReadBack(rb => rb.Organizations.Where(x => x.Id == organization.Id).ToListAsync(Ct)));
     }
 
     [Fact]
@@ -1074,7 +1115,7 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         var response = await UploadJson(Client(actor), "not json at all");
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("'not json at all' is an invalid JSON literal. Expected the literal 'null'. Path: $ | LineNumber: 0 | BytePositionInLine: 1.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     /// <summary>An upload broadcasts one created event per organization.</summary>

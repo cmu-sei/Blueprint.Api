@@ -258,7 +258,9 @@ public class PlayerServiceTests(DatabaseFixture fixture, BlueprintAppFactory fac
         var body = Application(msel.Id);
         var response = await Client(actor).PostAsJsonAsync(Push, body, JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains more than one element.", failure.Title);
+        Assert.Contains("PlayerService.PushApplication", failure.Detail);
         await AssertStoredButNotQueued(msel.Id, body.Name);
     }
 
@@ -273,7 +275,9 @@ public class PlayerServiceTests(DatabaseFixture fixture, BlueprintAppFactory fac
         var body = Application(msel.Id);
         var response = await Client(actor).PostAsJsonAsync(Push, body, JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Nullable object must have a value.", failure.Title);
+        Assert.Contains("PlayerService.PushApplication", failure.Detail);
         await AssertStoredButNotQueued(msel.Id, body.Name);
     }
 
@@ -287,7 +291,7 @@ public class PlayerServiceTests(DatabaseFixture fixture, BlueprintAppFactory fac
         var body = Application(msel.Id) with { Url = "console.example/index.html" };
         var response = await Client(actor).PostAsJsonAsync(Push, body, JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("Invalid URI: The format of the URI could not be determined.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         await AssertStoredButNotQueued(msel.Id, body.Name);
     }
 
@@ -301,7 +305,7 @@ public class PlayerServiceTests(DatabaseFixture fixture, BlueprintAppFactory fac
         var body = Application(msel.Id) with { Url = null };
         var response = await Client(actor).PostAsJsonAsync(Push, body, JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("Value cannot be null. (Parameter 'uriString')", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         await AssertStoredButNotQueued(msel.Id, body.Name);
     }
 
@@ -336,7 +340,9 @@ public class PlayerServiceTests(DatabaseFixture fixture, BlueprintAppFactory fac
 
         var response = await Client(actor).PostAsJsonAsync(Push, Application(msel.Id), JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Nullable object must have a value.", failure.Title);
+        Assert.Contains("PlayerService.PushApplication", failure.Detail);
         Assert.NotEmpty(Hub.Of(MainHubMethods.PlayerApplicationCreated, msel.Id));
     }
 

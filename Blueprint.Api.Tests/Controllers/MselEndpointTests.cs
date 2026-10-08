@@ -165,9 +165,11 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
-        Assert.Equal(
-            HttpStatusCode.InternalServerError,
-            (await Client(actor).GetAsync($"/api/msels?teamId={Guid.NewGuid()}", Ct)).StatusCode);
+        var response = await Client(actor).GetAsync($"/api/msels?teamId={Guid.NewGuid()}", Ct);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselService.GetAsync", failure.Detail);
     }
 
     [Fact]
@@ -402,6 +404,44 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     [Fact]
+    public async Task UserMsels_for_the_caller_with_ViewMsels_includes_the_templates()
+    {
+        var template = TestData.Msel(isTemplate: true);
+        await Seed(template);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var returned = await GetMsels(Client(actor), $"/api/users/{actor.Id}/msels");
+
+        Assert.Equal(template.Id, Assert.Single(returned).Id);
+    }
+
+    [Fact]
+    public async Task UserMsels_for_the_caller_with_CreateMsels_includes_the_templates()
+    {
+        var template = TestData.Msel(isTemplate: true);
+        await Seed(template);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var returned = await GetMsels(Client(actor), $"/api/users/{actor.Id}/msels");
+
+        Assert.Equal(template.Id, Assert.Single(returned).Id);
+    }
+
+    [Fact]
+    public async Task UserMsels_for_the_caller_holding_only_EditMsels_leaves_out_the_templates()
+    {
+        await Seed(TestData.Msel(isTemplate: true));
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var returned = await GetMsels(Client(actor), $"/api/users/{actor.Id}/msels");
+
+        Assert.Empty(returned);
+    }
+
+    [Fact]
     public async Task UserMsels_ForAUserWithNoRow_IsAnEmptyArray()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
@@ -469,9 +509,11 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     {
         var actor = await Actor().SeedAsync();
 
-        Assert.Equal(
-            HttpStatusCode.InternalServerError,
-            (await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}", Ct)).StatusCode);
+        var response = await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}", Ct);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselService.GetAsync", failure.Detail);
     }
 
     /// <summary>Get by id for an unknown MSEL with view MSELs permission is answered with a 500.</summary>
@@ -482,7 +524,9 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselService.GetAsync", failure.Detail);
     }
 
     [Fact]
@@ -588,9 +632,10 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var actor = await Actor().SeedAsync();
 
-        Assert.Equal(
-            HttpStatusCode.InternalServerError,
-            (await Client(actor).GetAsync($"/api/msels/{msel.Id}/data", Ct)).StatusCode);
+        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/data", Ct);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.StartsWith("System.NotSupportedException: Serialization and deserialization of 'System.Type' instances is not supported.", await response.Content.ReadAsStringAsync(Ct));
     }
 
     /// <remarks>
@@ -751,7 +796,9 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).PostAsJsonAsync(
             "/api/msels", new Msel { Id = existing.Id, Name = "Hurricane response" }, JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("MselService.CreateAsync", failure.Detail);
     }
 
     /// <summary>
@@ -896,7 +943,9 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).PutAsJsonAsync(
             $"/api/msels/{id}", new Msel { Id = id, Name = "Renamed" }, JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
     }
 
     /// <summary>Update with no id in the body is answered with a 500.</summary>
@@ -911,7 +960,7 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).PutAsJsonAsync(
             $"/api/msels/{msel.Id}", new Msel { Name = "Renamed" }, JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'MselEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.Equal(
             msel.Name,
             (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).Name);
@@ -930,7 +979,7 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).PutAsJsonAsync(
             $"/api/msels/{msel.Id}", Body(other, "Renamed"), JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'MselEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     /// <summary>A PUT replaces the whole MSEL: a field the body leaves at its default is written as the
@@ -1052,19 +1101,15 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         await Seed(msel);
 
         var subject = await Actor().SeedAsync();
-        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
-        var route = $"/api/msels/{subject.Id}/user/{msel.Id}/role/Owner/add";
+        await Seed(TestData.UserMselRole(subject.Id, msel.Id, MselRole.Owner));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        Assert.Equal(
-            HttpStatusCode.OK,
-            (await Client(actor).PutAsync(route, null, Ct)).StatusCode);
-        Assert.Equal(
-            HttpStatusCode.InternalServerError,
-            (await Client(actor).PutAsync(route, null, Ct)).StatusCode);
+        var response = await Client(actor).PutAsync($"/api/msels/{subject.Id}/user/{msel.Id}/role/Owner/add", null, Ct);
+
+        Assert.Equal("User/MSEL/Role already exists.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
-    /// <summary>Granting a role needs ownership of the MSEL; an editor is refused (reached through the swapped
-    /// route).</summary>
+    /// <summary>Granting a role needs ownership of the MSEL; an editor is refused.</summary>
     [Fact]
     public async Task AddUserRole_WithoutEditMselsPermissionOrOwnership_Is403()
     {
@@ -1112,6 +1157,114 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Empty(await ReadBack(rb => rb.UserMselRoles.ToListAsync(Ct)));
+    }
+
+    /// <summary>Add user role with <c>EditMsels</c> and no role on the MSEL writes the role.</summary>
+    // Same case as AddUserRole_ForARealUserAndMsel_Is404.
+    [Fact]
+    public async Task AddUserRole_with_EditMsels_and_no_role_writes_the_role()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var subject = await Actor().SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).PutAsync(
+            $"/api/msels/{subject.Id}/user/{msel.Id}/role/Editor/add", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var role = Assert.Single(await ReadBack(rb => rb.UserMselRoles.ToListAsync(Ct)));
+        Assert.Equal((subject.Id, msel.Id, MselRole.Editor), (role.UserId, role.MselId, role.Role));
+    }
+
+    /// <summary>Remove user role with <c>EditMsels</c> and no role on the MSEL removes the role.</summary>
+    // Same case as AddUserRole_ForARealUserAndMsel_Is404.
+    [Fact]
+    public async Task RemoveUserRole_with_EditMsels_and_no_role_removes_the_role()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var subject = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).PutAsync(
+            $"/api/msels/{subject.Id}/user/{msel.Id}/role/Editor/remove", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(await ReadBack(rb => rb.UserMselRoles.ToListAsync(Ct)));
+    }
+
+    /// <summary>Removing a role needs ownership of the MSEL; an editor is refused.</summary>
+    // Same case as AddUserRole_ForARealUserAndMsel_Is404.
+    [Fact]
+    public async Task RemoveUserRole_is_forbidden_for_an_editor_of_the_msel()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var response = await Client(actor).PutAsync(
+            $"/api/msels/{actor.Id}/user/{msel.Id}/role/Editor/remove", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Single(await ReadBack(rb => rb.UserMselRoles.ToListAsync(Ct)));
+    }
+
+    /// <summary>Removing a role is refused to the owner of another MSEL.</summary>
+    // Same case as AddUserRole_ForARealUserAndMsel_Is404.
+    [Fact]
+    public async Task RemoveUserRole_is_forbidden_for_a_caller_holding_Owner_only_in_another_msel()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var subject = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PutAsync(
+            $"/api/msels/{subject.Id}/user/{msel.Id}/role/Editor/remove", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.True(await ReadBack(rb => rb.UserMselRoles.AnyAsync(x => x.UserId == subject.Id && x.MselId == msel.Id, Ct)));
+    }
+
+    // Same case as AddUserRole_ForARealUserAndMsel_Is404.
+    [Fact]
+    public async Task AddUserRole_for_an_owner_of_the_msel_writes_the_role()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var subject = await Actor().SeedAsync();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PutAsync(
+            $"/api/msels/{subject.Id}/user/{msel.Id}/role/Editor/add", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(await ReadBack(rb => rb.UserMselRoles.AnyAsync(
+            x => x.UserId == subject.Id && x.MselId == msel.Id && x.Role == MselRole.Editor, Ct)));
+    }
+
+    // Same case as AddUserRole_ForARealUserAndMsel_Is404.
+    [Fact]
+    public async Task RemoveUserRole_for_an_owner_of_the_msel_removes_the_role()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var subject = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PutAsync(
+            $"/api/msels/{subject.Id}/user/{msel.Id}/role/Editor/remove", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(await ReadBack(rb => rb.UserMselRoles.AnyAsync(
+            x => x.UserId == subject.Id && x.MselId == msel.Id, Ct)));
     }
 
     /// <summary>An unknown role name in the path is a 400 from binding.</summary>

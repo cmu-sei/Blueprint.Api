@@ -123,7 +123,9 @@ public class ProficiencyScaleEndpointTests(DatabaseFixture fixture, BlueprintApp
         var response = await Client(actor).PostAsJsonAsync(
             "api/proficiencyScales", Body() with { name = "clash" }, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("ProficiencyScaleService.CreateAsync", failure.Detail);
         Assert.Single(await ReadBack(rb => rb.ProficiencyScales.ToListAsync(Ct)));
     }
 
@@ -279,7 +281,9 @@ public class ProficiencyScaleEndpointTests(DatabaseFixture fixture, BlueprintApp
 
         var response = await UploadJson(Client(actor), exported);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("ProficiencyScaleService.UploadJsonAsync", failure.Detail);
         Assert.Single(await ReadBack(rb => rb.ProficiencyScales.ToListAsync(Ct)));
     }
 

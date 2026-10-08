@@ -54,21 +54,29 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
         Assert.Equal("mine", list[0].Name);
     }
 
-    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 or 200 for a view MSELs holder.</summary>
+    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
-    public async Task GetByMsel_ForAMselThatIsNotThere_Is500_Or200ForAViewMselsHolder()
+    public async Task GetByMsel_ForAMselThatIsNotThere_Is500()
     {
         var stranger = await Actor().SeedAsync();
+
+        var response = await Client(stranger).GetAsync($"api/msels/{Guid.NewGuid()}/playerApplications", Ct);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("PlayerApplicationService.GetByMselAsync", failure.Detail);
+    }
+
+    // Same case as GetByMsel_ForAMselThatIsNotThere_Is500.
+    [Fact]
+    public async Task GetByMsel_ForAMselThatIsNotThere_WithViewMsels_IsAnEmptyList()
+    {
         var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-        var id = Guid.NewGuid();
 
-        var refused = await Client(stranger).GetAsync($"api/msels/{id}/playerApplications", Ct);
-        Assert.Equal(HttpStatusCode.InternalServerError, refused.StatusCode);
+        var response = await Client(privileged).GetAsync($"api/msels/{Guid.NewGuid()}/playerApplications", Ct);
 
-        var answered = await Client(privileged).GetAsync($"api/msels/{id}/playerApplications", Ct);
-        Assert.Equal(HttpStatusCode.OK, answered.StatusCode);
-        Assert.Empty(await answered.Content
-            .ReadFromJsonAsync<List<ViewModels.PlayerApplication>>(JsonOptions, Ct));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(await response.Content.ReadFromJsonAsync<List<ViewModels.PlayerApplication>>(JsonOptions, Ct));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -118,7 +126,9 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
 
         var response = await Client(actor).GetAsync($"api/playerApplications/{Guid.NewGuid()}", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains no elements.", failure.Title);
+        Assert.Contains("PlayerApplicationService.GetAsync", failure.Detail);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -154,7 +164,9 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
         var response = await Client(actor).PostAsJsonAsync(
             "api/playerApplications", Body(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("PlayerApplicationService.CreateAsync", failure.Detail);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -232,20 +244,28 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
         Assert.Empty(await ReadBack(rb => rb.PlayerApplications.ToListAsync(Ct)));
     }
 
-    /// <summary>Delete for an id that is not there is answered with a 404 with edit MSELs and 500 for an owner.</summary>
+    /// <summary>Delete for an id that is not there is answered with a 500 for a MSEL owner.</summary>
     [Fact]
-    public async Task Delete_ForAnIdThatIsNotThere_Is404WithEditMselsAnd500ForAnOwner()
+    public async Task Delete_ForAnIdThatIsNotThere_Is500ForAnOwner()
     {
         var msel = await SeedMsel();
-        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var stranger = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(stranger).DeleteAsync($"api/playerApplications/{Guid.NewGuid()}", Ct);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("PlayerApplicationService.DeleteAsync", failure.Detail);
+    }
+
+    [Fact]
+    public async Task Delete_ForAnIdThatIsNotThere_WithEditMsels_Is404()
+    {
         var privileged = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
-        var id = Guid.NewGuid();
 
-        var refused = await Client(owner).DeleteAsync($"api/playerApplications/{id}", Ct);
-        Assert.Equal(HttpStatusCode.InternalServerError, refused.StatusCode);
+        var response = await Client(privileged).DeleteAsync($"api/playerApplications/{Guid.NewGuid()}", Ct);
 
-        var answered = await Client(privileged).DeleteAsync($"api/playerApplications/{id}", Ct);
-        Assert.Equal(HttpStatusCode.NotFound, answered.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     private async Task<MselEntity> SeedMsel()

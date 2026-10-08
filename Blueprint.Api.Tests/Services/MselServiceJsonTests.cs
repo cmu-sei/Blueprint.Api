@@ -391,7 +391,7 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
 
         var response = await Post(Client(actor), "not json at all");
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("'not json at all' is an invalid JSON literal. Expected the literal 'null'. Path: $ | LineNumber: 0 | BytePositionInLine: 1.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     /// <summary>Upload with an explicitly null teams collection is answered with a 500.</summary>
@@ -402,7 +402,9 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
 
         var response = await Post(Client(actor), """{"Name":"no teams at all","Teams":null}""");
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselService.UploadJsonAsync", failure.Detail);
     }
 
     [Fact]

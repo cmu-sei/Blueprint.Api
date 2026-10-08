@@ -44,6 +44,16 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     }
 
     [Fact]
+    public async Task GetAll_with_ViewRoles_only_returns_the_roles()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewRoles).SeedAsync();
+
+        var roles = await GetRoles(Client(actor));
+
+        Assert.Contains(SystemRoleDefaults.AdministratorRoleId, roles.Select(x => x.Id));
+    }
+
+    [Fact]
     public async Task GetAll_is_forbidden_for_a_caller_holding_only_ViewUsers()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewUsers).SeedAsync();
@@ -228,7 +238,9 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         var response = await Post(Client(actor), Body("Administrator"));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("SystemRoleService.CreateAsync", failure.Detail);
     }
 
     /// <summary>A permission listed twice is stored twice, and an undefined number is stored and answered back as a number.</summary>
@@ -368,7 +380,7 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var response = await Put(
             Client(actor), role.Id, BodyFor(role) with { Id = other.Id, Name = "renamed" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'SystemRoleEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.Equal("auditor", (await Stored(role.Id)).Name);
         Assert.Equal("inspector", (await Stored(other.Id)).Name);
     }
@@ -383,7 +395,7 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var response = await Client(actor)
             .PutAsJsonAsync(RoleRoute(role.Id), new { name = "inspector" }, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'SystemRoleEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.Equal("auditor", (await Stored(role.Id)).Name);
     }
 
@@ -476,7 +488,9 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         var response = await Client(actor).DeleteAsync(RoleRoute(role.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("SystemRoleService.DeleteAsync", failure.Detail);
         Assert.NotNull(await Stored(role.Id));
     }
 

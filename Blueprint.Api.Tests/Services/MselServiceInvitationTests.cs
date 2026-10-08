@@ -598,7 +598,9 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
 
         var response = await Join(Client(actor), msel.Id);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains more than one matching element", failure.Title);
+        Assert.Contains("MselService.GetValidInvitationAsync", failure.Detail);
     }
 
     [Fact]
@@ -650,7 +652,9 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
 
         var response = await Join(Client(actor), msel.Id);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Nullable object must have a value.", failure.Title);
+        Assert.Contains("MselService.JoinMselByInvitationAsync", failure.Detail);
         await using var db = NewContext();
         Assert.Equal(1, (await db.Invitations.SingleAsync(i => i.Id == invitation.Id, Ct)).UserCount);
         Assert.True(await db.TeamUsers.AnyAsync(tu => tu.TeamId == team.Id && tu.UserId == actor.Id, Ct));
@@ -928,7 +932,9 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
 
         var response = await Launch(Client(actor), template.Id);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains no matching element", failure.Title);
+        Assert.Contains("MselService.LaunchMselByInvitationAsync", failure.Detail);
     }
 
     [Fact]

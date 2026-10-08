@@ -151,19 +151,27 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 for an ordinary caller and 200 for a privileged one.</summary>
+    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
-    public async Task GetByMsel_ForAMselThatIsNotThere_Is500ForAnOrdinaryCallerAnd200ForAPrivilegedOne()
+    public async Task GetByMsel_ForAMselThatIsNotThere_Is500()
     {
-        var mselId = Guid.NewGuid();
+        var actor = await Actor().SeedAsync();
 
-        var ordinary = await Client(await Actor().SeedAsync()).GetAsync(MovesOf(mselId), Ct);
-        var privileged = await Client(await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync())
-            .GetAsync(MovesOf(mselId), Ct);
+        var response = await Client(actor).GetAsync(MovesOf(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, ordinary.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, privileged.StatusCode);
-        Assert.Empty(await Read<List<ViewModels.Move>>(privileged));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselUserRequirement.IsMet", failure.Detail);
+    }
+
+    [Fact]
+    public async Task GetByMsel_ForAMselThatIsNotThere_WithViewMsels_IsAnEmptyList()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync(MovesOf(Guid.NewGuid()), Ct);
+
+        Assert.Empty(await Read<List<ViewModels.Move>>(response));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -411,7 +419,9 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Post(Client(actor), Body(msel.Id, moveNumber: 2));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("MoveService.CreateAsync", failure.Detail);
         Assert.Equal(1, await CountOn(msel.Id));
     }
 
@@ -427,19 +437,30 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
-    /// <summary>Create for a MSEL that is not there is answered with a 500 whoever asks.</summary>
+    /// <summary>Create for a MSEL that is not there is answered with a 500 for a caller without EditMsels.</summary>
     [Fact]
-    public async Task Create_ForAMselThatIsNotThere_Is500WhoeverAsks()
+    public async Task Create_ForAMselThatIsNotThere_Is500()
     {
-        var mselId = Guid.NewGuid();
+        var actor = await Actor().SeedAsync();
 
-        var ordinary = await Post(Client(await Actor().SeedAsync()), Body(mselId, moveNumber: 1));
-        var privileged = await Post(
-            Client(await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync()),
-            Body(mselId, moveNumber: 1));
+        var response = await Post(Client(actor), Body(Guid.NewGuid(), moveNumber: 1));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, ordinary.StatusCode);
-        Assert.Equal(HttpStatusCode.InternalServerError, privileged.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+    }
+
+    // Same case as Create_ForAMselThatIsNotThere_Is500.
+    [Fact]
+    public async Task Create_ForAMselThatIsNotThere_WithEditMsels_Is500()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Post(Client(actor), Body(Guid.NewGuid(), moveNumber: 1));
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("MoveService.CreateAsync", failure.Detail);
     }
 
     [Fact]
@@ -644,24 +665,28 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(move.Description, (await Stored(move.Id)).Description);
     }
 
-    /// <remarks>
-    /// The permission check runs before the lookup, so which answer an unknown id gets depends on the body
-    /// it arrived with: a body naming a MSEL the caller owns reaches the lookup and is a 404, and a body
-    /// naming anything else is a 403 that cannot be told from "that move is yours and you may not have
-    /// it". Looking the row up first, as <c>DeleteAsync</c> does, turns the second case into a 404 too.
-    /// </remarks>
     [Fact]
-    public async Task Update_ForAnIdThatIsNotThere_Is404OrA403DependingOnTheBody()
+    public async Task Update_ForAnIdThatIsNotThere_WithABodyNamingAMselTheCallerOwns_Is404()
+    {
+        var mine = await SeedMsel();
+        var actor = await Actor().OnMsel(mine, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), Guid.NewGuid(), Body(mine.Id, moveNumber: 1));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    // Same case as Update_ChoosesItsPermissionBranchFromTheRequestBody.
+    [Fact]
+    public async Task Update_ForAnIdThatIsNotThere_WithABodyNamingAnotherMsel_Is403()
     {
         var mine = await SeedMsel();
         var theirs = await SeedMsel();
         var actor = await Actor().OnMsel(mine, MselRole.Owner).SeedAsync();
 
-        var withMine = await Put(Client(actor), Guid.NewGuid(), Body(mine.Id, moveNumber: 1));
-        var withTheirs = await Put(Client(actor), Guid.NewGuid(), Body(theirs.Id, moveNumber: 1));
+        var response = await Put(Client(actor), Guid.NewGuid(), Body(theirs.Id, moveNumber: 1));
 
-        Assert.Equal(HttpStatusCode.NotFound, withMine.StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, withTheirs.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>Update with a body id that is not the routes is answered with a 500.</summary>
@@ -679,10 +704,11 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             move.Id,
             BodyFor(move) with { Id = omitted ? Guid.Empty : Guid.NewGuid(), Description = "after" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'MoveEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.Equal(move.Description, (await Stored(move.Id)).Description);
     }
 
+    // Same case as Create_WithAMoveNumberTheMselAlreadyUses_Is500.
     [Fact]
     public async Task Update_ToAMoveNumberTheMselAlreadyUses_Is500()
     {
@@ -693,7 +719,9 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Put(Client(actor), move.Id, BodyFor(move) with { MoveNumber = 2 });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("MoveService.UpdateAsync", failure.Detail);
         Assert.Equal(1, (await Stored(move.Id)).MoveNumber);
     }
 

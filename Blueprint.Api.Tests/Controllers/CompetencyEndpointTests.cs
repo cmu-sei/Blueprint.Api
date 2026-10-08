@@ -1063,7 +1063,9 @@ public class CompetencyEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         var response = await Client(actor).DeleteAsync($"api/competencies/{parent.Id}", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("CompetencyFrameworkService.DeleteCompetencyAsync", failure.Detail);
         await using var db = NewContext();
         Assert.Equal(2, await db.Competencies.CountAsync(Ct));
     }

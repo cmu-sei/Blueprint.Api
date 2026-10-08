@@ -104,12 +104,7 @@ public class UnitUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal("Named Member", answered.User.Name);
     }
 
-    /// <remarks>
-    /// The <c>Include</c> reaches <c>User</c> and stops, so the row knows which unit it is in only as a
-    /// bare id - and no route in <c>UnitController</c> will name it for a caller without
-    /// <c>ViewUnits</c>, which this route already required. Adding <c>.Include(tu => tu.Unit)</c> turns
-    /// this red.
-    /// </remarks>
+    /// <summary>A unit membership read by id answers no unit.</summary>
     [Fact]
     public async Task Get_AnswersANullUnit()
     {
@@ -268,7 +263,9 @@ public class UnitUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Post(Client(actor), Body(Guid.NewGuid(), unit.Id));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("UnitUserService.CreateAsync", failure.Detail);
         Assert.Empty(await StoredRows());
     }
 
@@ -281,7 +278,9 @@ public class UnitUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Post(Client(actor), Body(member.Id, Guid.NewGuid()));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("UnitUserService.CreateAsync", failure.Detail);
         Assert.Empty(await StoredRows());
     }
 
@@ -295,7 +294,9 @@ public class UnitUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Post(Client(actor), Body(member.Id, unit.Id));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("UnitUserService.CreateAsync", failure.Detail);
         Assert.Single(await StoredRows());
     }
 

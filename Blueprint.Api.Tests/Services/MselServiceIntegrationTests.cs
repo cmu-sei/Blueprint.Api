@@ -190,7 +190,9 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         var response = await Client(actor)
             .PostAsync($"/api/msels/{Guid.NewGuid()}/integrations", null, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
     }
 
     /// <summary>Push for an already deployed MSEL is answered with a 500.</summary>

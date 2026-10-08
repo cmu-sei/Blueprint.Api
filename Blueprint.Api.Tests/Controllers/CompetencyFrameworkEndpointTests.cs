@@ -848,7 +848,9 @@ public class CompetencyFrameworkEndpointTests(DatabaseFixture fixture, Blueprint
             DefaultProficiencyScaleId = Guid.NewGuid()
         });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("CompetencyFrameworkService.UpdateAsync", failure.Detail);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -944,10 +946,10 @@ public class CompetencyFrameworkEndpointTests(DatabaseFixture fixture, Blueprint
     /// any signed-in account could enumerate them.
     /// </summary>
     [Fact]
-    public async Task CanDelete_WithNoSystemPermission_Is403()
+    public async Task CanDelete_is_forbidden_for_a_caller_holding_only_ViewCompetencyFrameworks()
     {
         var framework = await SeedFramework();
-        var actor = await Nobody();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCompetencyFrameworks).SeedAsync();
 
         var response = await Client(actor).GetAsync($"api/competencyframeworks/{framework.Id}/can-delete", Ct);
 

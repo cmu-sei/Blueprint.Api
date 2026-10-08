@@ -258,7 +258,9 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         var response = await Post(Client(actor), Body(existing.Name));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("InjectTypeService.CreateAsync", failure.Detail);
     }
 
     [Fact]
@@ -423,7 +425,7 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var response = await Put(
             Client(actor), type.Id, BodyFor(type) with { Id = Guid.NewGuid() });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'InjectTypeEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     /// <remarks>
@@ -734,7 +736,7 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var response = await Upload(
             Client(actor), ExportFile("a type with a named data type", dataType: "\"Html\""));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The JSON value could not be converted to Blueprint.Api.Data.Enumerations.DataFieldType. Path: $[0].dataFields[0].dataType | LineNumber: 16 | BytePositionInLine: 26.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     /// <summary>Upload JSON of a file from the same installation is answered with a 500.</summary>
@@ -748,7 +750,9 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         var response = await Upload(ClientFor(actor.Id, null), file);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("InjectTypeService.UploadJsonAsync", failure.Detail);
     }
 
     /// <summary>Upload JSON of a renamed download loses every option description.</summary>

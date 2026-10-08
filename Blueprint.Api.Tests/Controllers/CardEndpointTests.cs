@@ -210,7 +210,9 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).GetAsync(CardsOf(Guid.NewGuid()), Ct);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Object reference not set to an instance of an object.", await Title(response));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("CardService.GetByMselAsync", failure.Detail);
     }
 
     [Fact]
@@ -323,7 +325,9 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).GetAsync(Card(Guid.NewGuid()), Ct);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Sequence contains no elements.", await Title(response));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains no elements.", failure.Title);
+        Assert.Contains("CardService.GetAsync", failure.Detail);
     }
 
     /// <summary>Get for a template card is answered with a 500 for an ordinary caller.</summary>
@@ -336,7 +340,9 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).GetAsync(Card(card.Id), Ct);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Object reference not set to an instance of an object.", await Title(response));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselUserRequirement.IsMet", failure.Detail);
     }
 
     [Fact]
@@ -481,28 +487,49 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     [Fact]
-    public async Task Create_WithNoMselId_RequiresManageGalleryCards()
+    public async Task Create_WithNoMselId_is_forbidden_for_an_owner_of_a_msel_without_ManageGalleryCards()
     {
         var msel = await SeedMsel();
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
-        var gallery = await Actor().WithSystemPermissions(SystemPermission.ManageGalleryCards).SeedAsync();
 
-        Assert.Equal(HttpStatusCode.Forbidden, (await Post(Client(owner), Body(null))).StatusCode);
-        Assert.Equal(HttpStatusCode.Created, (await Post(Client(gallery), Body(null))).StatusCode);
+        var response = await Post(Client(owner), Body(null));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>Create with no MSEL id and no template flag is reachable by no list route.</summary>
     [Fact]
-    public async Task Create_WithNoMselIdAndNoTemplateFlag_IsReachableByNoListRoute()
+    public async Task Create_WithNoMselId_WithManageGalleryCards_Is201()
     {
         var gallery = await Actor().WithSystemPermissions(SystemPermission.ManageGalleryCards).SeedAsync();
-        var root = await Actor().WithAllSystemPermissions().SeedAsync();
+
+        var response = await Post(Client(gallery), Body(null));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    /// <summary>Create with no MSEL id and no template flag stores a card with no MSEL that is not a template.</summary>
+    [Fact]
+    public async Task Create_WithNoMselIdAndNoTemplateFlag_StoresACardThatIsNotATemplate()
+    {
+        var gallery = await Actor().WithSystemPermissions(SystemPermission.ManageGalleryCards).SeedAsync();
 
         var created = await Read<ViewModels.Card>(await Post(Client(gallery), Body(null)));
 
-        Assert.False((await Stored(created.Id)).IsTemplate);
-        Assert.Empty(await Read<List<ViewModels.Card>>(await Client(root).GetAsync(Templates, Ct)));
-        Assert.Equal(created.Id, (await GetCard(Client(root), created.Id)).Id);
+        var stored = await Stored(created.Id);
+        Assert.Null(stored.MselId);
+        Assert.False(stored.IsTemplate);
+    }
+
+    /// <summary>The template list leaves out a card with no MSEL that is not marked a template.</summary>
+    [Fact]
+    public async Task Templates_LeavesOutACardWithNoMselThatIsNotMarkedATemplate()
+    {
+        await Seed(TestData.Card(null, isTemplate: false));
+        var actor = await Actor().SeedAsync();
+
+        var templates = await Read<List<ViewModels.Card>>(await Client(actor).GetAsync(Templates, Ct));
+
+        Assert.Empty(templates);
     }
 
     /// <summary>Create does not sanitize the description.</summary>
@@ -569,7 +596,9 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Post(Client(actor), Body(Guid.NewGuid()));
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Object reference not set to an instance of an object.", await Title(response));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -884,20 +913,28 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     [Fact]
-    public async Task Delete_OfATemplateCard_RequiresManageGalleryCards()
+    public async Task Delete_OfATemplateCard_is_forbidden_for_an_owner_of_a_msel_without_ManageGalleryCards()
     {
         var msel = await SeedMsel();
-        var refusedTemplate = await SeedCard(null, isTemplate: true);
-        var allowedTemplate = await SeedCard(null, isTemplate: true);
+        var template = await SeedCard(null, isTemplate: true);
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(owner).DeleteAsync(Card(template.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotNull(await Stored(template.Id));
+    }
+
+    [Fact]
+    public async Task Delete_OfATemplateCard_WithManageGalleryCards_Is204()
+    {
+        var template = await SeedCard(null, isTemplate: true);
         var gallery = await Actor().WithSystemPermissions(SystemPermission.ManageGalleryCards).SeedAsync();
 
-        Assert.Equal(
-            HttpStatusCode.Forbidden,
-            (await Client(owner).DeleteAsync(Card(refusedTemplate.Id), Ct)).StatusCode);
-        Assert.Equal(
-            HttpStatusCode.NoContent,
-            (await Client(gallery).DeleteAsync(Card(allowedTemplate.Id), Ct)).StatusCode);
+        var response = await Client(gallery).DeleteAsync(Card(template.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Null(await Stored(template.Id));
     }
 
     [Fact]

@@ -89,16 +89,24 @@ public class TeamUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Single(await GetRows(Client(actor), TeamUsersOf(msel.Id)));
     }
 
-    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500.</summary>
+    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 for a caller without ViewMsels.</summary>
     [Fact]
     public async Task GetByMsel_ForAMselThatIsNotThere_Is500()
     {
         var stranger = await Actor().SeedAsync();
-        var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(stranger).GetAsync(TeamUsersOf(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselUserRequirement.IsMet", failure.Detail);
+    }
+
+    [Fact]
+    public async Task GetByMsel_ForAMselThatIsNotThere_WithViewMsels_IsAnEmptyList()
+    {
+        var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
         Assert.Empty(await GetRows(Client(privileged), TeamUsersOf(Guid.NewGuid())));
     }
 
@@ -408,7 +416,9 @@ public class TeamUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Post(Client(actor), Body(member.Id, team.Id));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("TeamUserService.CreateAsync", failure.Detail);
     }
 
     /// <summary>Create for a user that is not there is answered with a 500.</summary>
@@ -421,7 +431,9 @@ public class TeamUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Post(Client(actor), Body(Guid.NewGuid(), team.Id));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("TeamUserService.CreateAsync", failure.Detail);
     }
 
     /// <remarks>
@@ -537,13 +549,24 @@ public class TeamUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
-    /// <remarks>
-    /// A participant cannot take themselves off a team, and the MSEL's <c>Editor</c> cannot take them
-    /// off either - the delete asks <c>MselOwnerRequirement</c>, from the stored row's team. Both cases
-    /// are 403 here.
-    /// </remarks>
+    /// <summary>A member of the team without a role on the MSEL is refused the delete.</summary>
     [Fact]
-    public async Task Delete_ForACallerWithNoRoleOnTheMsel_Is403()
+    public async Task Delete_is_forbidden_for_a_member_of_the_team_without_a_role_on_the_msel()
+    {
+        var msel = await SeedMsel();
+        var team = await SeedTeam(msel);
+        var member = await Actor().OnTeam(team).SeedAsync();
+        var row = await StoredFor(member.Id, team.Id);
+
+        var response = await Client(member).DeleteAsync(TeamUserRoute(row.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotNull(await StoredFor(member.Id, team.Id));
+    }
+
+    /// <summary>An editor of the MSEL is refused the delete: it asks for ownership.</summary>
+    [Fact]
+    public async Task Delete_is_forbidden_for_an_editor_of_the_msel()
     {
         var msel = await SeedMsel();
         var team = await SeedTeam(msel);
@@ -551,12 +574,9 @@ public class TeamUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var row = await StoredFor(member.Id, team.Id);
         var editor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
 
-        Assert.Equal(
-            HttpStatusCode.Forbidden,
-            (await Client(member).DeleteAsync(TeamUserRoute(row.Id), Ct)).StatusCode);
-        Assert.Equal(
-            HttpStatusCode.Forbidden,
-            (await Client(editor).DeleteAsync(TeamUserRoute(row.Id), Ct)).StatusCode);
+        var response = await Client(editor).DeleteAsync(TeamUserRoute(row.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.NotNull(await StoredFor(member.Id, team.Id));
     }
 

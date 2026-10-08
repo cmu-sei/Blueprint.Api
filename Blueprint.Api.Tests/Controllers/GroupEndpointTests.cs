@@ -94,7 +94,9 @@ public class GroupEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fac
 
         var response = await Client(actor).PostAsJsonAsync("api/groups", new { name = "taken" }, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("GroupService.CreateAsync", failure.Detail);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -299,7 +301,9 @@ public class GroupEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fac
         var response = await Client(actor).PostAsJsonAsync(
             $"api/groups/{group.Id}/memberships", new { userId = Guid.NewGuid() }, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("GroupService.CreateMembershipAsync", failure.Detail);
     }
 
     [Fact]

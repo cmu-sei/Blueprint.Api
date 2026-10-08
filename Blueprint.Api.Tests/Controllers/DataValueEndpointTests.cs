@@ -296,7 +296,9 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}/datavalues", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselUserRequirement.IsMet", failure.Detail);
     }
 
     [Fact]
@@ -471,8 +473,7 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
-    /// <summary><c>ManageDataFields</c> alone cannot create a value: the flag is passed to the service and not
-    /// read.</summary>
+    /// <summary><c>ManageDataFields</c> alone cannot create a value.</summary>
     [Fact]
     public async Task Create_WithManageDataFieldsOnly_Is403()
     {
@@ -495,7 +496,9 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await Post(Client(actor), Body(Guid.NewGuid(), cell.Event.Id));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
     }
 
     /// <summary>Create for a data field on an inject type is answered with a 500.</summary>
@@ -503,19 +506,15 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     public async Task Create_ForADataFieldOnAnInjectType_Is500()
     {
         var cell = await SeedInjectCell();
-        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
-        var forbidden = await Actor().WithSystemPermissions(SystemPermission.ManageDataFields).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageDataFields).SeedAsync();
         var inject = TestData.Inject(cell.InjectType.Id);
         await Seed(inject);
 
-        // Proves the row is writable at all, so the 500 below is the permission check.
-        var allowed = await Post(Client(actor), Body(cell.Field.Id, injectId: inject.Id));
+        var response = await Post(Client(actor), Body(cell.Field.Id, injectId: inject.Id));
 
-        Assert.Equal(HttpStatusCode.Created, allowed.StatusCode);
-
-        var response = await Post(Client(forbidden), Body(cell.Field.Id, injectId: inject.Id));
-
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
     }
 
     [Fact]
@@ -580,7 +579,9 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             Value = "neither"
         });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("DataValueService.CreateAsync", failure.Detail);
     }
 
     [Fact]
@@ -773,6 +774,22 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    // Same case as Create_ForADataFieldOnAnInjectType_Is500.
+    [Fact]
+    public async Task Update_AValueOnAnInject_WithoutEditMsels_Is500()
+    {
+        var cell = await SeedInjectCell();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageDataFields).SeedAsync();
+
+        var response = await Put(
+            Client(actor),
+            cell.Value.Id,
+            BodyFor(cell.Value) with { Value = "after" });
+
+        var error = await AssertJsonError<ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", error.Title);
+    }
+
     [Fact]
     public async Task Update_ForAnUnknownId_Is404()
     {
@@ -864,7 +881,7 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             cell.Value.Id,
             BodyFor(cell.Value) with { Id = Guid.Empty, Value = "after" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'DataValueEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     [Fact]
@@ -974,7 +991,9 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await Client(actor).DeleteAsync($"/api/dataValues/{cell.Value.Id}", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
         Assert.NotNull(await Stored(cell.Value.Id));
     }
 

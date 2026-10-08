@@ -185,6 +185,18 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task GetByMsel_ForATemplate_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var template = await SeedMsel(isTemplate: true);
+        await SeedEvent(template);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/msels/{template.Id}/scenarioEvents", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     /// <summary>An unknown MSEL is a 403: this route's requirement guards its lookup.</summary>
     [Fact]
     public async Task GetByMsel_ForAnUnknownMsel_Is403()
@@ -228,20 +240,17 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal("before", cell.Value);
     }
 
-    /// <summary>Get for an unknown id is answered with a 500.</summary>
+    /// <summary>Get for an unknown id is answered with a 500, a ViewMsels holder's included.</summary>
     [Fact]
     public async Task Get_ForAnUnknownId_Is500()
     {
-        var stranger = await Actor().SeedAsync();
-        var admin = await Actor().WithAllSystemPermissions().SeedAsync();
-        var id = Guid.NewGuid();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
-        Assert.Equal(
-            HttpStatusCode.InternalServerError,
-            (await Client(stranger).GetAsync($"/api/scenarioEvents/{id}", Ct)).StatusCode);
-        Assert.Equal(
-            HttpStatusCode.InternalServerError,
-            (await Client(admin).GetAsync($"/api/scenarioEvents/{id}", Ct)).StatusCode);
+        var response = await Client(actor).GetAsync($"/api/scenarioEvents/{Guid.NewGuid()}", Ct);
+
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains no elements.", failure.Title);
+        Assert.Contains("ScenarioEventService.GetAsync", failure.Detail);
     }
 
     [Fact]
@@ -277,6 +286,41 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         var scenarioEvent = await GetEvent(Client(actor), row.Event.Id);
 
         Assert.Equal(row.Event.Id, scenarioEvent.Id);
+    }
+
+    [Fact]
+    public async Task Get_on_a_template_with_CreateMsels_is_200()
+    {
+        var msel = await SeedMsel(isTemplate: true);
+        var scenarioEvent = await SeedEvent(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var answered = await GetEvent(Client(actor), scenarioEvent.Id);
+
+        Assert.Equal(scenarioEvent.Id, answered.Id);
+    }
+
+    [Fact]
+    public async Task Get_on_a_template_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var msel = await SeedMsel(isTemplate: true);
+        var scenarioEvent = await SeedEvent(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/scenarioEvents/{scenarioEvent.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_on_a_msel_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var row = await SeedRow();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/scenarioEvents/{row.Event.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -384,7 +428,9 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
 
         var response = await Post(Client(actor), Body(Guid.NewGuid()));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
     }
 
     /// <summary>
@@ -513,7 +559,9 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
 
         var response = await Post(Client(actor), Body(msel.Id, id: existing.Id, deltaSeconds: 60));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("ScenarioEventService.CreateAsync", failure.Detail);
     }
 
     [Fact]
@@ -663,7 +711,7 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
             row.Event.Id,
             BodyFor(row.Event) with { Id = Guid.NewGuid() });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'ScenarioEventEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     [Fact]
@@ -804,7 +852,7 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
             row.Event.Id,
             BodyFor(row.Event) with { RowMetadata = "20,red,green,blue" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The input string 'red' was not in a correct format.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     /// <summary>Update with two cells for one data field is answered with a 500.</summary>
@@ -826,7 +874,9 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
                 ]
             });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains more than one matching element", failure.Title);
+        Assert.Contains("ScenarioEventService.UpdateAsync", failure.Detail);
     }
 
     /// <summary>
@@ -997,7 +1047,7 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
 
         var response = await BatchDelete(Client(actor), mine.Id, elsewhere.Id);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("Scenario events can only be from one MSEL for batch delete!", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.NotNull(await Stored(mine.Id));
         Assert.NotNull(await Stored(elsewhere.Id));
     }

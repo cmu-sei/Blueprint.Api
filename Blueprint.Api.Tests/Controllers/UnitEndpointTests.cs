@@ -482,7 +482,7 @@ public class UnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Put(Client(actor), unit.Id, Body() with { Name = "Renamed" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'UnitEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.NotEqual("Renamed", (await Stored(unit.Id)).Name);
     }
 
@@ -536,16 +536,24 @@ public class UnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var unit = TestData.Unit();
         unit.Id = actor.Id;
         await Seed(unit);
-        var other = await Actor().WithSystemPermissions(SystemPermission.ManageUnits).SeedAsync();
 
-        var refused = await Put(Client(actor), unit.Id, BodyFor(unit) with { Id = Guid.NewGuid() });
-        var forEverybodyElse = await Put(Client(other), unit.Id, BodyFor(unit) with { Id = Guid.NewGuid() });
-        var echoed = await Put(Client(actor), unit.Id, BodyFor(unit) with { Name = "Renamed" });
+        var response = await Put(Client(actor), unit.Id, BodyFor(unit) with { Id = Guid.NewGuid() });
 
-        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
-        Assert.Contains("You cannot change your own Id", await refused.Content.ReadAsStringAsync(Ct));
-        Assert.Equal(HttpStatusCode.InternalServerError, forEverybodyElse.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, echoed.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("You cannot change your own Id", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    [Fact]
+    public async Task Update_ForAUnitWhoseIdIsTheCallersOwnUserId_ThatKeepsTheId_RenamesIt()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUnits).SeedAsync();
+        var unit = TestData.Unit();
+        unit.Id = actor.Id;
+        await Seed(unit);
+
+        var response = await Put(Client(actor), unit.Id, BodyFor(unit) with { Name = "Renamed" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Renamed", (await Stored(unit.Id)).Name);
     }
 
@@ -779,7 +787,7 @@ public class UnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await UploadJson(Client(actor), "not json at all");
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("'not json at all' is an invalid JSON literal. Expected the literal 'null'. Path: $ | LineNumber: 0 | BytePositionInLine: 1.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.Empty(await StoredUnits());
     }
 

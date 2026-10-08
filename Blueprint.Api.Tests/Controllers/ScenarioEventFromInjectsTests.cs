@@ -367,7 +367,7 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
             declared.InjectType.Id,
             other.Injects.Select(x => x.Id));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Matches(@"^The\ given\ key\ '[0-9a-f-]{36}'\ was\ not\ present\ in\ the\ dictionary\.$", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     [Fact]
@@ -407,7 +407,9 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
 
         var response = await Post(Client(actor), Guid.NewGuid(), Guid.NewGuid(), []);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
     }
 
     /// <summary>
@@ -636,7 +638,7 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
 
         var response = await PostCopy(Client(scene.Actor), scene.Destination.Id, []);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("An exception was thrown while attempting to evaluate a LINQ query parameter expression. See the inner exception for more information. To show additional information call 'DbContextOptionsBuilder.EnableSensitiveDataLogging'.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     /// <summary>Copy for an unknown scenario event is answered with a 500.</summary>
@@ -647,7 +649,9 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
 
         var response = await PostCopy(Client(scene.Actor), scene.Destination.Id, [Guid.NewGuid()]);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("ScenarioEventService.CopyScenarioEventsToMselAsync", failure.Detail);
     }
 
     [Fact]
@@ -677,12 +681,13 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
             scene.Destination.Id,
             [scene.Rows[0].Id, stray.Id]);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The list of Scenario Event IDs was invalid.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     [Fact]
     public async Task Copy_ForTheOwnerOfOnlyTheDestination_Is403()
     {
+        // Data-row gate: the actor created the destination MSEL and not the source, and MselOwnerRequirement reads that CreatedBy.
         var scene = await SeedCopy(rows: 1, ownsSource: false);
 
         var response = await PostCopy(
@@ -696,6 +701,7 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
     [Fact]
     public async Task Copy_ForTheOwnerOfOnlyTheSource_Is403()
     {
+        // Data-row gate: the actor created the source MSEL and not the destination, and MselOwnerRequirement reads that CreatedBy.
         var scene = await SeedCopy(rows: 1, ownsDestination: false);
 
         var response = await PostCopy(
@@ -704,6 +710,36 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
             [scene.Rows[0].Id]);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Copy_is_forbidden_for_an_owner_of_the_destination_who_is_only_an_editor_of_the_source()
+    {
+        var scene = await SeedCopy(rows: 1, ownsSource: false, ownsDestination: false);
+        var actor = await Actor()
+            .OnMsel(scene.Destination, MselRole.Owner)
+            .OnMsel(scene.Source, MselRole.Editor)
+            .SeedAsync();
+
+        var response = await PostCopy(Client(actor), scene.Destination.Id, [scene.Rows[0].Id]);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, await ReadBack(rb => rb.ScenarioEvents.CountAsync(Ct)));
+    }
+
+    [Fact]
+    public async Task Copy_is_forbidden_for_an_owner_of_the_source_who_is_only_an_editor_of_the_destination()
+    {
+        var scene = await SeedCopy(rows: 1, ownsSource: false, ownsDestination: false);
+        var actor = await Actor()
+            .OnMsel(scene.Source, MselRole.Owner)
+            .OnMsel(scene.Destination, MselRole.Editor)
+            .SeedAsync();
+
+        var response = await PostCopy(Client(actor), scene.Destination.Id, [scene.Rows[0].Id]);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, await ReadBack(rb => rb.ScenarioEvents.CountAsync(Ct)));
     }
 
     [Fact]
@@ -746,7 +782,9 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
             scene.Destination.Id,
             [scene.Rows[0].Id]);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains more than one matching element", failure.Title);
+        Assert.Contains("ScenarioEventService.CopyScenarioEventsToMselAsync", failure.Detail);
     }
 
     [Fact]

@@ -376,7 +376,9 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var response = await Client(actor).GetAsync(Inject(Guid.NewGuid()), Ct);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Sequence contains no elements.", await Title(response));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains no elements.", failure.Title);
+        Assert.Contains("InjectService.GetAsync", failure.Detail);
     }
 
     /// <summary>Get for an id that is not there is that same 500 without any permission.</summary>
@@ -388,7 +390,9 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var response = await Client(actor).GetAsync(Inject(Guid.NewGuid()), Ct);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Sequence contains no elements.", await Title(response));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Sequence contains no elements.", failure.Title);
+        Assert.Contains("InjectService.GetAsync", failure.Detail);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -562,7 +566,9 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var response = await Post(Client(actor), catalog.Id, Body(Guid.NewGuid()));
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Object reference not set to an instance of an object.", await Title(response));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("InjectService.CreateAsync", failure.Detail);
     }
 
     /// <summary>Create for a catalog that is not there is answered with a 500 and stores nothing.</summary>
@@ -576,7 +582,9 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var response = await Post(
             Client(actor), Guid.NewGuid(), Body(type.Id) with { Id = chosen });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("InjectService.CreateAsync", failure.Detail);
         Assert.Null(await Stored(chosen));
     }
 
@@ -758,7 +766,9 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
 
         var response = await Put(Client(actor), inject.Id, body);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("InjectService.UpdateAsync", failure.Detail);
         Assert.Equal(inject.Name, (await Stored(inject.Id)).Name);
         Assert.Equal(mine.Id, Assert.Single(await StoredValues(inject.Id)).DataFieldId);
     }
@@ -800,7 +810,9 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var response = await Put(Client(actor), inject.Id, body);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Object reference not set to an instance of an object.", await Title(response));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("InjectService.UpdateAsync", failure.Detail);
         Assert.Equal(inject.Name, (await Stored(inject.Id)).Name);
     }
 
@@ -816,7 +828,9 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var response = await Put(Client(actor), inject.Id, BodyFor(inject));
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Object reference not set to an instance of an object.", await Title(response));
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("InjectService.UpdateAsync", failure.Detail);
     }
 
     /// <remarks>
@@ -857,7 +871,7 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var response = await Put(
             Client(actor), inject.Id, BodyFor(inject) with { Id = Guid.NewGuid() });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'InjectEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     [Fact]
@@ -980,7 +994,9 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
 
         var response = await Client(actor).DeleteAsync(Inject(required.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("InjectService.DeleteAsync", failure.Detail);
         Assert.NotNull(await Stored(required.Id));
     }
 

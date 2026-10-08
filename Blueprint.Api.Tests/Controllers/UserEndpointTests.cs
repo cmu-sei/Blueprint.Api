@@ -274,6 +274,18 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Empty(users);
     }
 
+    [Fact]
+    public async Task GetByMsel_ForATemplate_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var msel = TestData.Msel(isTemplate: true);
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync(MselUsers(msel.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     /// <summary>An unknown MSEL's user list is empty for a <c>ViewMsels</c> holder.</summary>
     [Fact]
     public async Task GetByMsel_ForAMselThatIsNotThere_WithViewMsels_IsAnEmptyList()
@@ -481,7 +493,9 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Post(Client(actor), new { name = "nameless" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("UserController.Create", failure.Detail);
 
         var stored = await StoredUsers();
 
@@ -565,9 +579,9 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Empty(Hub.ToGroup(MainHub.USER_GROUP));
     }
 
-    /// <summary>A <c>ManageUsers</c> holder may create a user holding the seeded Administrator role.</summary>
+    // Same case as Update_lets_a_caller_holding_only_ManageUsers_give_itself_the_Administrator_role.
     [Fact]
-    public async Task Create_MayGiveTheNewUserEveryPermissionInTheInstallation()
+    public async Task Create_lets_a_caller_holding_only_ManageUsers_create_an_Administrator()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
         var id = Guid.NewGuid();
@@ -580,10 +594,7 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-
-        var theirs = await ClientFor(id, "administrator").GetAsync("/api/system-roles", Ct);
-
-        Assert.Equal(HttpStatusCode.OK, theirs.StatusCode);
+        Assert.Equal(SystemRoleDefaults.AdministratorRoleId, (await ReadBack(rb => rb.Users.SingleAsync(x => x.Id == id, Ct))).RoleId);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -645,17 +656,13 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Update may give the caller every permission in the installation.</summary>
+    /// <summary>A caller holding only <c>ManageUsers</c> puts the seeded Administrator role on its own row.</summary>
     [Fact]
-    public async Task Update_MayGiveTheCallerEveryPermissionInTheInstallation()
+    public async Task Update_lets_a_caller_holding_only_ManageUsers_give_itself_the_Administrator_role()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
-        var client = Client(actor);
 
-        Assert.Equal(
-            HttpStatusCode.Forbidden, (await client.GetAsync("/api/system-roles", Ct)).StatusCode);
-
-        var response = await Put(client, actor.Id, new UserBody
+        var response = await Put(Client(actor), actor.Id, new UserBody
         {
             Id = actor.Id,
             Name = actor.Name,
@@ -663,7 +670,7 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/system-roles", Ct)).StatusCode);
+        Assert.Equal(SystemRoleDefaults.AdministratorRoleId, (await ReadBack(rb => rb.Users.SingleAsync(x => x.Id == actor.Id, Ct))).RoleId);
     }
 
     /// <remarks>
@@ -697,7 +704,7 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Put(
             Client(actor), subject.Id, BodyFor(subject) with { Id = Guid.NewGuid(), Name = "after" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'UserEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         Assert.Equal("before", (await Stored(subject.Id)).Name);
     }
 

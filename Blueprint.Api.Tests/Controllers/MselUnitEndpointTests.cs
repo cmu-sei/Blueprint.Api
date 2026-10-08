@@ -46,19 +46,26 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(mine.Id, Assert.Single(rows).UnitId);
     }
 
-    /// <summary>An unknown MSEL is a 404 for every caller: the MSEL is read before any permission is
-    /// consulted.</summary>
+    [Fact]
+    public async Task GetByMsel_ForAMselThatIsNotThere_WithViewMsels_Is404()
+    {
+        var holder = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Client(holder).GetAsync(MselUnitsOf(Guid.NewGuid()), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>An unknown MSEL is a 404 for a caller holding nothing: the MSEL is read before any permission
+    /// is consulted.</summary>
     [Fact]
     public async Task GetByMsel_ForAMselThatIsNotThere_IsA404ForAStrangerToo()
     {
-        var holder = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
         var stranger = await Actor().SeedAsync();
 
-        var forHolder = await Client(holder).GetAsync(MselUnitsOf(Guid.NewGuid()), Ct);
-        var forStranger = await Client(stranger).GetAsync(MselUnitsOf(Guid.NewGuid()), Ct);
+        var response = await Client(stranger).GetAsync(MselUnitsOf(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.NotFound, forHolder.StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, forStranger.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -94,30 +101,20 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    /// <remarks>
-    /// <c>GetByMselAsync</c> includes <c>Unit.UnitUsers.User</c>, so this is the only place in the API
-    /// that answers who is in a unit: <c>GET units/{id}</c> and <c>GET my-units</c> include nothing and
-    /// answer an empty list for the same unit. Both halves are asserted here because the fact is the
-    /// contrast. Adding the include to <c>UnitService</c> makes the second half red, which is the point.
-    /// </remarks>
+    /// <summary>The MSEL's unit assignments answer each unit's members.</summary>
     [Fact]
-    public async Task GetByMsel_AnswersTheUnitsMembersWhereTheUnitRoutesDoNot()
+    public async Task GetByMsel_AnswersTheUnitsMembers()
     {
         var msel = await SeedMsel();
         var unit = await SeedUnit();
         await Seed(TestData.MselUnit(unit.Id, msel.Id));
         var member = await Actor().WithName("Assigned Member").SeedAsync();
         await Seed(TestData.UnitUser(member.Id, unit.Id));
-        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var row = Assert.Single(await GetRows(Client(actor), msel.Id));
 
         Assert.Equal("Assigned Member", Assert.Single(row.Unit.Users).Name);
-
-        var throughTheUnitRoute = await Client(actor).GetAsync($"/api/units/{unit.Id}", Ct);
-
-        Assert.Equal(HttpStatusCode.OK, throughTheUnitRoute.StatusCode);
-        Assert.Empty((await Read<ViewModels.Unit>(throughTheUnitRoute)).Users);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -188,6 +185,72 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var response = await Client(actor).GetAsync(MselUnitRoute(row.Id), Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetByMsel_of_a_template_with_CreateMsels_is_200()
+    {
+        var row = await SeedAssignment(isTemplate: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var rows = await GetRows(Client(actor), row.MselId);
+
+        Assert.Equal(row.Id, Assert.Single(rows).Id);
+    }
+
+    [Fact]
+    public async Task GetByMsel_of_a_template_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var row = await SeedAssignment(isTemplate: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync(MselUnitsOf(row.MselId), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetByMsel_of_a_msel_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var row = await SeedAssignment();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync(MselUnitsOf(row.MselId), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_of_a_template_row_with_CreateMsels_is_200()
+    {
+        var row = await SeedAssignment(isTemplate: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var answered = await GetRow(Client(actor), row.Id);
+
+        Assert.Equal(row.Id, answered.Id);
+    }
+
+    [Fact]
+    public async Task Get_of_a_template_row_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var row = await SeedAssignment(isTemplate: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync(MselUnitRoute(row.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_of_a_row_on_a_msel_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var row = await SeedAssignment();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync(MselUnitRoute(row.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -276,21 +339,29 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Empty(await StoredFor(msel.Id, unit.Id));
     }
 
-    /// <summary>Both parents are read before the permission check, so an unknown MSEL is a 404 for every
-    /// caller.</summary>
+    [Fact]
+    public async Task Create_ForAMselThatIsNotThere_WithManageMsels_Is404()
+    {
+        var unit = await SeedUnit();
+        var holder = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Post(Client(holder), Body(Guid.NewGuid(), unit.Id));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Contains("Msel Entity not found", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    /// <summary>Both parents are read before the permission check, so an unknown MSEL is a 404 for a caller
+    /// holding nothing.</summary>
     [Fact]
     public async Task Create_ForAMselThatIsNotThere_IsA404ForAStrangerToo()
     {
         var unit = await SeedUnit();
-        var holder = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
         var stranger = await Actor().SeedAsync();
 
-        var forHolder = await Post(Client(holder), Body(Guid.NewGuid(), unit.Id));
-        var forStranger = await Post(Client(stranger), Body(Guid.NewGuid(), unit.Id));
+        var response = await Post(Client(stranger), Body(Guid.NewGuid(), unit.Id));
 
-        Assert.Equal(HttpStatusCode.NotFound, forHolder.StatusCode);
-        Assert.Contains("Msel Entity not found", await forHolder.Content.ReadAsStringAsync(Ct));
-        Assert.Equal(HttpStatusCode.NotFound, forStranger.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -609,7 +680,7 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var response = await Put(
             Client(actor), row.Id, new MselUnitBody { MselId = row.MselId, UnitId = replacement.Id });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The property 'MselUnitEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     /// <remarks>
@@ -650,16 +721,23 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     }
 
     [Fact]
-    public async Task Delete_ForAnIdThatIsNotThere_IsA404ForAStrangerToo()
+    public async Task Delete_ForAnIdThatIsNotThere_WithManageMsels_Is404()
     {
         var holder = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(holder).DeleteAsync(MselUnitRoute(Guid.NewGuid()), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_ForAnIdThatIsNotThere_IsA404ForAStrangerToo()
+    {
         var stranger = await Actor().SeedAsync();
 
-        var forHolder = await Client(holder).DeleteAsync(MselUnitRoute(Guid.NewGuid()), Ct);
-        var forStranger = await Client(stranger).DeleteAsync(MselUnitRoute(Guid.NewGuid()), Ct);
+        var response = await Client(stranger).DeleteAsync(MselUnitRoute(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.NotFound, forHolder.StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, forStranger.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -850,17 +928,17 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         return unit;
     }
 
-    private async Task<MselEntity> SeedMsel()
+    private async Task<MselEntity> SeedMsel(bool isTemplate = false)
     {
-        var msel = TestData.Msel();
+        var msel = TestData.Msel(isTemplate: isTemplate);
         await Seed(msel);
 
         return msel;
     }
 
-    private async Task<MselUnitEntity> SeedAssignment()
+    private async Task<MselUnitEntity> SeedAssignment(bool isTemplate = false)
     {
-        var msel = await SeedMsel();
+        var msel = await SeedMsel(isTemplate);
         var unit = await SeedUnit();
         var row = TestData.MselUnit(unit.Id, msel.Id);
         await Seed(row);

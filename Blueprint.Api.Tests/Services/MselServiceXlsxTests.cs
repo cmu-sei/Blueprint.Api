@@ -267,7 +267,9 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
 
         var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/xlsx", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Index was outside the bounds of the array.", failure.Title);
+        Assert.Contains("MselService.CreateStylesheet", failure.Detail);
     }
 
     /// <summary>Download writes a value containing markup as an inline string.</summary>
@@ -486,7 +488,7 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
 
         var response = await Post(Client(actor), Encoding.UTF8.GetBytes("not a spreadsheet"));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.StartsWith("The Position must be within the length of the Stream: 17 (Parameter 'value')", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     [Fact]
@@ -574,6 +576,7 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Contains("'Invented' does not exist in the current Data Fields", error.Title);
     }
 
+    // Same case as Replace_WithAHeadingThatIsNotADataField_Is500.
     [Fact]
     public async Task Replace_WithTheHeadingsInADifferentOrder_Is500()
     {
@@ -597,6 +600,7 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
     /// later refactor that keeps a context alive across requests, or commits earlier, destroys an
     /// author's scenario on a mistyped column heading with nothing to recover it from.
     /// </remarks>
+    // Same case as Replace_WithAHeadingThatIsNotADataField_Is500.
     [Fact]
     public async Task Replace_WhenTheSheetIsRejected_LeavesTheOldScenarioEventsInPlace()
     {
@@ -607,7 +611,7 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
 
         var response = await Put(Client(actor), msel.Id, Workbook(["Invented"], ["a"]));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("The xlsx file column heading 'Invented' does not exist in the current Data Fields.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
         await using var db = NewContext();
         var events = await db.ScenarioEvents
             .Where(se => se.MselId == msel.Id)
@@ -635,9 +639,12 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
 
         var response = await Put(Client(actor), Guid.NewGuid(), Workbook(["Target"], ["a"]));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
+        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
     }
 
+    // Same case as Replace_WithAHeadingThatIsNotADataField_Is500.
     [Fact]
     public async Task Replace_WithAMismatchedMselIdInTheForm_Is500()
     {

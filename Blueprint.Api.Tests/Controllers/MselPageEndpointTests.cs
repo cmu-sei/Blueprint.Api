@@ -267,9 +267,92 @@ public class MselPageEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    private async Task<MselEntity> SeedMsel()
+    // ---------------------------------------------------------------------------------------------
+    // CreateMsels: the reads of a template MSEL
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetByMsel_of_a_template_with_CreateMsels_returns_its_pages()
     {
-        var msel = TestData.Msel();
+        var msel = await SeedMsel(isTemplate: true);
+        var page = TestData.MselPage(msel.Id);
+        await Seed(page);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/msels/{msel.Id}/mselpages", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var list = await response.Content.ReadFromJsonAsync<List<ViewModels.MselPage>>(JsonOptions, Ct);
+        Assert.Equal(page.Id, Assert.Single(list).Id);
+    }
+
+    [Fact]
+    public async Task GetByMsel_of_a_template_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var msel = await SeedMsel(isTemplate: true);
+        await Seed(TestData.MselPage(msel.Id));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/msels/{msel.Id}/mselpages", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetByMsel_of_a_msel_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var msel = await SeedMsel();
+        await Seed(TestData.MselPage(msel.Id));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/msels/{msel.Id}/mselpages", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_of_a_template_page_with_CreateMsels_returns_it()
+    {
+        var msel = await SeedMsel(isTemplate: true);
+        var page = TestData.MselPage(msel.Id);
+        await Seed(page);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/mselpages/{page.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(page.Id, (await response.Content.ReadFromJsonAsync<ViewModels.MselPage>(JsonOptions, Ct)).Id);
+    }
+
+    [Fact]
+    public async Task Get_of_a_template_page_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var msel = await SeedMsel(isTemplate: true);
+        var page = TestData.MselPage(msel.Id);
+        await Seed(page);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/mselpages/{page.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_of_a_page_on_a_msel_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var msel = await SeedMsel();
+        var page = TestData.MselPage(msel.Id);
+        await Seed(page);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/mselpages/{page.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    private async Task<MselEntity> SeedMsel(bool isTemplate = false)
+    {
+        var msel = TestData.Msel(isTemplate: isTemplate);
         await Seed(msel);
 
         return msel;

@@ -154,7 +154,7 @@ public class CatalogUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFacto
         var response = await Client(actor).PostAsJsonAsync(
             "api/catalogunits", Body(graph.Catalog.Id, graph.Unit.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("Catalog Unit already exists.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
 
     // ---------------------------------------------------------------------------------------------

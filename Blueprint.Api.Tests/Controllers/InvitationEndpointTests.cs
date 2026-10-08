@@ -419,9 +419,92 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Single(await ReadBack(rb => rb.Invitations.Where(x => x.Id == invitation.Id).ToListAsync(Ct)));
     }
 
-    private async Task<(MselEntity Msel, TeamEntity Team)> SeedMselAndTeam()
+    // ---------------------------------------------------------------------------------------------
+    // CreateMsels: the reads of a template MSEL
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetByMsel_of_a_template_with_CreateMsels_returns_its_invitations()
     {
-        var msel = TestData.Msel();
+        var (msel, team) = await SeedMselAndTeam(isTemplate: true);
+        var invitation = TestData.Invitation(msel.Id, team.Id);
+        await Seed(invitation);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/msels/{msel.Id}/invitations", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var list = await response.Content.ReadFromJsonAsync<List<ViewModels.Invitation>>(JsonOptions, Ct);
+        Assert.Equal(invitation.Id, Assert.Single(list).Id);
+    }
+
+    [Fact]
+    public async Task GetByMsel_of_a_template_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var (msel, team) = await SeedMselAndTeam(isTemplate: true);
+        await Seed(TestData.Invitation(msel.Id, team.Id));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/msels/{msel.Id}/invitations", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetByMsel_of_a_msel_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        await Seed(TestData.Invitation(msel.Id, team.Id));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/msels/{msel.Id}/invitations", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_of_a_template_invitation_with_CreateMsels_returns_it()
+    {
+        var (msel, team) = await SeedMselAndTeam(isTemplate: true);
+        var invitation = TestData.Invitation(msel.Id, team.Id);
+        await Seed(invitation);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/invitations/{invitation.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(invitation.Id, (await response.Content.ReadFromJsonAsync<ViewModels.Invitation>(JsonOptions, Ct)).Id);
+    }
+
+    [Fact]
+    public async Task Get_of_a_template_invitation_is_forbidden_for_a_caller_holding_only_EditMsels()
+    {
+        var (msel, team) = await SeedMselAndTeam(isTemplate: true);
+        var invitation = TestData.Invitation(msel.Id, team.Id);
+        await Seed(invitation);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/invitations/{invitation.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_of_an_invitation_on_a_msel_that_is_not_a_template_is_forbidden_for_a_caller_holding_only_CreateMsels()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var invitation = TestData.Invitation(msel.Id, team.Id);
+        await Seed(invitation);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/invitations/{invitation.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    private async Task<(MselEntity Msel, TeamEntity Team)> SeedMselAndTeam(bool isTemplate = false)
+    {
+        var msel = TestData.Msel(isTemplate: isTemplate);
         await Seed(msel);
         var team = TestData.Team(msel.Id);
         await Seed(team);

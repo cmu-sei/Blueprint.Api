@@ -157,7 +157,9 @@ public class CatalogInjectEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         var response = await Client(actor).PostAsJsonAsync(
             "api/cataloginjects", Body(Guid.NewGuid(), graph.Inject.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
+        Assert.Contains("CatalogInjectService.CreateAsync", failure.Detail);
     }
 
     /// <remarks>

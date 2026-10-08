@@ -595,6 +595,7 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.Equal(SystemRoleDefaults.AdministratorRoleId, (await ReadBack(rb => rb.Users.SingleAsync(x => x.Id == id, Ct))).RoleId);
+        Assert.Equal(HttpStatusCode.OK, (await ClientFor(id, "administrator").GetAsync(SystemRolesRoute, Ct)).StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -661,8 +662,9 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     public async Task Update_lets_a_caller_holding_only_ManageUsers_give_itself_the_Administrator_role()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
+        var client = Client(actor);
 
-        var response = await Put(Client(actor), actor.Id, new UserBody
+        var response = await Put(client, actor.Id, new UserBody
         {
             Id = actor.Id,
             Name = actor.Name,
@@ -671,6 +673,7 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(SystemRoleDefaults.AdministratorRoleId, (await ReadBack(rb => rb.Users.SingleAsync(x => x.Id == actor.Id, Ct))).RoleId);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(SystemRolesRoute, Ct)).StatusCode);
     }
 
     /// <remarks>
@@ -881,6 +884,9 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     // ---------------------------------------------------------------------------------------------
 
     private const string Users = "/api/users";
+
+    /// <summary>A route gated on <c>ViewRoles</c>, which the Administrator role holds and <c>ManageUsers</c> does not grant.</summary>
+    private const string SystemRolesRoute = "/api/system-roles";
 
     private static string UserRoute(Guid id) => $"{Users}/{id}";
 

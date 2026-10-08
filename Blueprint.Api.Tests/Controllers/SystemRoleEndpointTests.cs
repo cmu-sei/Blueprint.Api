@@ -63,6 +63,16 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task GetAll_is_forbidden_for_a_caller_holding_only_ManageUsers()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
+
+        var response = await Client(actor).GetAsync(SystemRoles, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     /// <remarks>
     /// The two shapes a role comes in, both seeded by <c>SystemRoleConfiguration.HasData</c>:
     /// Administrator carries <c>AllPermissions</c> and an <em>empty</em> list, Content Developer carries

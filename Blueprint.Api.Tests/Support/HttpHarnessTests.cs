@@ -2,7 +2,8 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 // App-specific: api/groups is gated on ViewGroups (403 for a caller without it), api/users lists every user
-// for a holder of ViewUsers, and group names are uniquely indexed, which the concurrency probes rely on.
+// for a holder of ViewUsers, group names are uniquely indexed, which the concurrency probes rely on, and
+// api/organizations stamps CreatedBy with the caller, which the write probe reads back.
 
 using System;
 using System.Collections.Generic;
@@ -65,13 +66,17 @@ public class HttpHarnessTests(DatabaseFixture fixture, BlueprintAppFactory facto
     [Fact]
     public async Task A_request_writes_to_this_tests_database()
     {
-        var actor = await Actor().WithSystemPermissions(Data.Enumerations.SystemPermission.ManageGroups).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(Data.Enumerations.SystemPermission.ManageOrganizations).SeedAsync();
 
-        var response = await Client(actor).PostAsJsonAsync("api/groups", new { name = "written-by-a-request" }, Ct);
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/organizations",
+            new { name = "written-by-a-request", shortName = "wbar", email = "wbar@organization.test" },
+            Ct);
 
         await AssertStatus(HttpStatusCode.Created, response);
         await using var context = NewContext();
-        Assert.True(await context.Groups.AnyAsync(x => x.Name == "written-by-a-request", Ct));
+        var stored = await context.Organizations.AsNoTracking().SingleAsync(x => x.Name == "written-by-a-request", Ct);
+        Assert.Equal(actor.Id, stored.CreatedBy);
     }
 
     /// <summary>The host's own database is not this test's, so a request that reached it would be visible.</summary>

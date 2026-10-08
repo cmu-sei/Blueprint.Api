@@ -67,7 +67,8 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
             ],
             Added(harness));
         Assert.DoesNotContain(strangers.Id.ToString(), Added(harness));
-        Assert.Empty(Presence(harness));
+        Assert.Empty(harness.Clients.ReceivedCalls());
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     /// <summary>Join with manage users adds every MSEL in the installation.</summary>
@@ -84,6 +85,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 
         AssertGroups([strangers.Id.ToString(), actor.ToString()], Added(harness));
         Assert.DoesNotContain(archived.Id.ToString(), Added(harness));
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     [Fact]
@@ -100,6 +102,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         await Hub(harness).Join();
 
         AssertGroups([live.Id.ToString(), actor.ToString()], Added(harness));
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     /// <summary>A caller with no <c>sub</c> claim throws from <c>Claims.First</c>.</summary>
@@ -109,6 +112,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         var harness = Harness([new Claim("name", "no-sub")]);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => Hub(harness).Join());
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -135,6 +139,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 
         Assert.Contains(unit.Id.ToString(), Added(harness));
         AssertGroups([msel.Id.ToString(), actor.ToString()], Removed(harness));
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     /// <summary>Leaving broadcasts the departure under the caller's current claims and forgets the
@@ -154,6 +159,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         Assert.Equal(msel.Id.ToString(), send.Group);
         Assert.Equal((actor.ToString(), "current-name"), Identity(send.Payload));
         Assert.Empty(_cache.Connections);
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     [Fact]
@@ -167,8 +173,9 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 
         await Hub(harness).Leave();
 
-        Assert.Empty(Presence(harness));
+        Assert.Empty(harness.Clients.ReceivedCalls());
         Assert.Single(_cache.Connections);
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -190,6 +197,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         Assert.Equal((whoTheyWere.ToString(), "cached-name"), Identity(send.Payload));
         Assert.Empty(_cache.Connections);
         Assert.Empty(Removed(harness));
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     [Fact]
@@ -199,7 +207,8 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 
         await Hub(harness).OnDisconnectedAsync(null);
 
-        Assert.Empty(Presence(harness));
+        Assert.Empty(harness.Clients.ReceivedCalls());
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     /// <summary>A tracked connection with no MSEL is forgotten without a broadcast.</summary>
@@ -211,8 +220,9 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 
         await Hub(harness).OnDisconnectedAsync(null);
 
-        Assert.Empty(Presence(harness));
+        Assert.Empty(harness.Clients.ReceivedCalls());
         Assert.Empty(_cache.Connections);
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -239,6 +249,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         Assert.Equal(msel.Id.ToString(), tracked.MselId);
         Assert.Equal(actor.ToString(), tracked.UserId);
         Assert.Equal("arriving", tracked.UserName);
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     /// <summary>Select MSEL for a MSEL the caller cannot reach joins nothing and says nothing.</summary>
@@ -253,8 +264,9 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         await Hub(harness).SelectMsel([strangers.Id]);
 
         Assert.Empty(Added(harness));
-        Assert.Empty(Presence(harness));
+        Assert.Empty(harness.Clients.ReceivedCalls());
         Assert.Empty(_cache.Connections);
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     [Fact]
@@ -274,6 +286,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         var send = Assert.Single(Presence(harness, MainHubMethods.PresenceDeparted));
         Assert.Equal(msel.Id.ToString(), send.Group);
         Assert.Empty(_cache.Connections);
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     /// <summary>Selecting two MSELs joins neither.</summary>
@@ -289,8 +302,9 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         await Hub(harness).SelectMsel([first.Id, second.Id]);
 
         Assert.Empty(Added(harness));
-        Assert.Empty(Presence(harness));
+        Assert.Empty(harness.Clients.ReceivedCalls());
         Assert.Empty(_cache.Connections);
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     [Fact]
@@ -308,6 +322,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         Assert.Equal(was.Id.ToString(), Assert.Single(Presence(harness, MainHubMethods.PresenceDeparted)).Group);
         Assert.Equal(now.Id.ToString(), Assert.Single(Presence(harness, MainHubMethods.PresenceArrived)).Group);
         Assert.Equal(now.Id.ToString(), Assert.Single(_cache.Connections).Value.MselId);
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -328,6 +343,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         var send = Assert.Single(Presence(harness, MainHubMethods.PresenceGreeted));
         Assert.Equal(strangers.Id.ToString(), send.Group);
         Assert.Equal((actor.ToString(), "gatecrasher"), Identity(send.Payload));
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     /// <summary>A caller with no <c>name</c> claim is announced as <c>Unknown</c>, to whatever group name was
@@ -343,6 +359,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         var send = Assert.Single(Presence(harness, MainHubMethods.PresenceGreeted));
         Assert.Equal("not-a-msel", send.Group);
         Assert.Equal((actor.ToString(), "Unknown"), Identity(send.Payload));
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -365,6 +382,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 
         Assert.Equal(
             (colleague.ToString(), "them"), Identity(Assert.Single(presence)));
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     /// <summary>Presence for a MSEL the caller cannot reach lists its occupants.</summary>
@@ -382,6 +400,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 
         Assert.Equal(
             (occupant.ToString(), "somebody-working"), Identity(Assert.Single(presence)));
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     [Fact]
@@ -394,6 +413,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         var harness = Harness(actor);
 
         Assert.Empty(await Hub(harness).GetPresence(msel.Id.ToString()));
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -415,6 +435,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         await Hub(harness, permission).JoinAdmin();
 
         AssertGroups([actor.ToString(), group], Added(harness));
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     [Fact]
@@ -426,6 +447,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         await Hub(harness).JoinAdmin();
 
         AssertGroups([actor.ToString()], Added(harness));
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     [Fact]
@@ -453,6 +475,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
             ],
             Added(harness));
         Assert.Equal(Added(harness), Removed(harness));
+        AssertAddressedOnlyOthersInGroup(harness);
     }
 
     /// <summary>
@@ -518,6 +541,21 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
                 .Where(x => x.GetMethodInfo().Name == nameof(IClientProxy.SendCoreAsync))
                 .Select(x => new PresenceSend(group, (string)x.GetArguments()[0], ((object[])x.GetArguments()[1])[0])))
             .Where(x => method is null || x.Method == method)];
+
+    /// <summary>
+    /// Every client the hub addressed was <c>Clients.OthersInGroup</c>, the one form <see cref="Presence"/>
+    /// reads, and the hub neither read the connection's features nor aborted it, which a harness-driven
+    /// call cannot stand for.
+    /// </summary>
+    private static void AssertAddressedOnlyOthersInGroup(HubHarness harness)
+    {
+        Assert.All(
+            harness.Clients.ReceivedCalls(),
+            x => Assert.Equal(nameof(IHubCallerClients.OthersInGroup), x.GetMethodInfo().Name));
+        Assert.DoesNotContain(
+            harness.Context.ReceivedCalls(),
+            x => x.GetMethodInfo().Name is "get_" + nameof(HubCallerContext.Features) or nameof(HubCallerContext.Abort));
+    }
 
     /// <summary>The <c>id</c> and <c>name</c> of a presence payload, which is an anonymous object.</summary>
     private static (string Id, string Name) Identity(object payload) =>

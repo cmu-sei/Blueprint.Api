@@ -159,9 +159,66 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     // POST xapi/assertions
     // -------------------------------------------------------------------------------------------------
 
+    /// <summary>The assertions route passes the request's cancellation token on.</summary>
+    [Fact]
+    public async Task CreateAssertion_PassesTheRequestsCancellationToken()
+    {
+        var client = Client(await Actor().SeedAsync());
+
+        await client.PostAsJsonAsync(Assertions, new { mselId = Guid.NewGuid() }, Ct);
+
+        await Factory.XApi.Received(1)
+            .AssertCompetencyAsync(Arg.Any<CompetencyAssertion>(), Cancellable);
+    }
+
+    // Same case as XApiLiveEndpointTests.CreateAssertion_WithAnEmptyJsonObject_Is500NamingTheAllZerosMsel.
+    [Fact]
+    public async Task CreateAssertion_WithAnEmptyJsonObject_IsForwardedWithAllZeroIds()
+    {
+        using var content = EmptyJsonObject();
+
+        var response = await Client(await Actor().SeedAsync()).PostAsync(Assertions, content, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Factory.XApi.Received(1).AssertCompetencyAsync(
+            Arg.Is<CompetencyAssertion>(x =>
+                x.MselId == Guid.Empty &&
+                x.CompetencyId == Guid.Empty &&
+                x.ProficiencyLevelId == Guid.Empty &&
+                x.ScenarioEventId == null &&
+                x.TeamId == null &&
+                x.Comment == null &&
+                x.MoveNumber == null &&
+                x.GroupNumber == null),
+            Cancellable);
+    }
+
     // -------------------------------------------------------------------------------------------------
     // POST xapi/viewed/msel/{id} and POST xapi/viewed/joinpage
     // -------------------------------------------------------------------------------------------------
+
+    /// <summary>The MSEL-viewed route passes the route id and the request's cancellation token on.</summary>
+    [Fact]
+    public async Task Viewed_PassesTheRequestsCancellationToken()
+    {
+        var client = Client(await Actor().SeedAsync());
+        var mselId = Guid.NewGuid();
+
+        await client.PostAsync(Viewed(mselId), null, Ct);
+
+        await Factory.XApi.Received(1).MselViewedAsync(mselId, Cancellable);
+    }
+
+    /// <summary>The join-page route passes the request's cancellation token on.</summary>
+    [Fact]
+    public async Task ViewedJoinPage_PassesTheRequestsCancellationToken()
+    {
+        var client = Client(await Actor().SeedAsync());
+
+        await client.PostAsync(ViewedJoinPage, null, Ct);
+
+        await Factory.XApi.Received(1).JoinPageViewedAsync(Cancellable);
+    }
 
     // -------------------------------------------------------------------------------------------------
     // Helpers

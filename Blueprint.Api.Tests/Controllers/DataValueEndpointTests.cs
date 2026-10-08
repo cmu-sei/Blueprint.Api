@@ -1059,9 +1059,10 @@ public class DataValueXApiTests(DatabaseFixture fixture, XApiEnabledFactory fact
         Assert.Equal(cell.Msel.Id, row.MselId);
         Assert.Equal(XApiEnabledFactory.ApiUrl + "scenarioevents/" + cell.Event.Id + "/datafields/" + cell.Field.Id, row.ActivityId);
         Assert.Equal("https://w3id.org/xapi/dod-isd/verbs/selected", VerbOf(row));
+        Assert.Equal(cell.Field.Name, FieldNameOf(row));
     }
 
-    /// <summary>Update a checkbox set to one is recorded as unchecked.</summary>
+    /// <summary>A checkbox set to one is recorded as unchecked.</summary>
     [Fact]
     public async Task Update_ACheckboxSetToOne_IsRecordedAsUnchecked()
     {
@@ -1072,6 +1073,9 @@ public class DataValueXApiTests(DatabaseFixture fixture, XApiEnabledFactory fact
 
         var row = Assert.Single(await ReadBack(rb => rb.XApiQueuedStatements.ToListAsync(Ct)));
         Assert.Equal("https://w3id.org/xapi/dod-isd/verbs/reset", VerbOf(row));
+        Assert.Equal(cell.Msel.Id, row.MselId);
+        Assert.Equal(XApiEnabledFactory.ApiUrl + "scenarioevents/" + cell.Event.Id + "/datafields/" + cell.Field.Id, row.ActivityId);
+        Assert.Equal(cell.Field.Name, FieldNameOf(row));
     }
 
     /// <summary>A PUT that leaves a checkbox alone records no statement.</summary>
@@ -1118,4 +1122,13 @@ public class DataValueXApiTests(DatabaseFixture fixture, XApiEnabledFactory fact
         await AssertRecordedNothing();
     }
 
+    /// <summary>The checkbox's data field name, which the statement carries as its object's name.</summary>
+    private static string FieldNameOf(XApiQueuedStatementEntity row)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(row.StatementJson);
+
+        return document.RootElement
+            .GetProperty("object").GetProperty("definition").GetProperty("name").GetProperty("en-US")
+            .GetString();
+    }
 }

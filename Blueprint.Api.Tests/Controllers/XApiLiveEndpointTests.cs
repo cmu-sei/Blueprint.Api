@@ -106,11 +106,16 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
         Assert.Equal(0, await QueuedCount());
     }
 
+    /// <summary>Every member of the body binds and reaches the queued statement: the ids, the comment, the
+    /// team, the scenario event, the move and the group.</summary>
     [Fact]
     public async Task CreateAssertion_QueuesAnAssertedStatement()
     {
         var actor = await Actor().SeedAsync();
         var graph = await SeedAssertionGraph();
+        var scenarioEvent = TestData.ScenarioEvent(graph.MselId);
+        var team = TestData.Team(graph.MselId);
+        await Seed(scenarioEvent, team);
 
         var response = await Client(actor).PostAsJsonAsync(
             XApiEndpointTests.Assertions,
@@ -118,8 +123,12 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
             {
                 mselId = graph.MselId,
                 competencyId = graph.CompetencyId,
+                scenarioEventId = scenarioEvent.Id,
+                teamId = team.Id,
                 proficiencyLevelId = graph.LevelId,
-                comment = "held the line"
+                comment = "held the line",
+                moveNumber = AssertedMove,
+                groupNumber = AssertedGroup
             },
             Ct);
 
@@ -128,6 +137,7 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
         var row = await Queued();
         Assert.Equal("asserted", row.Verb);
         Assert.Equal(graph.MselId, row.MselId);
+        Assert.Equal(team.Id, row.TeamId);
         Assert.Equal(CompetencyIri, row.ActivityId);
 
         var statement = Statement(row);
@@ -136,6 +146,15 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
         Assert.Equal("held the line", Text(statement, "result.response"));
         Assert.Equal(3, At(statement, "result.score.raw").GetDouble());
         Assert.Equal(actor.Id.ToString(), Text(statement, "actor.account.name"));
+        Assert.Equal(graph.MselId.ToString(), Text(statement, "context.registration"));
+        Assert.Equal(team.Id.ToString(), Text(statement, "context.team.account.name"));
+
+        var groupings = GroupingIds(statement);
+        Assert.Contains(XApiEnabledFactory.ApiUrl + "scenarioevents/" + scenarioEvent.Id, groupings);
+        Assert.Contains($"{XApiEnabledFactory.ApiUrl}msels/{graph.MselId}/moves/{AssertedMove}", groupings);
+        Assert.Contains(
+            $"{XApiEnabledFactory.ApiUrl}msels/{graph.MselId}/moves/{AssertedMove}/groups/{AssertedGroup}",
+            groupings);
     }
 
     /// <summary>An assertion about a MSEL the caller has no role on is queued.</summary>
@@ -224,6 +243,12 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
     /// </summary>
     private const string CompetencyIri = "https://competencies.test/c/17";
 
+    /// <summary>A move number other than the default zero, so its grouping is told apart from a missing one.</summary>
+    private const int AssertedMove = 2;
+
+    /// <summary>A group number other than the move number, so the two cannot be confused in a grouping id.</summary>
+    private const int AssertedGroup = 3;
+
     private async Task<int> QueuedCount()
     {
         await using var context = NewContext();
@@ -262,6 +287,13 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
     }
 
     private static string Text(JsonElement element, string path) => At(element, path).GetString();
+
+    /// <summary>The ids of the statement's <c>context.contextActivities.grouping</c> activities.</summary>
+    private static string[] GroupingIds(JsonElement statement) =>
+        At(statement, "context.contextActivities.grouping")
+            .EnumerateArray()
+            .Select(x => x.GetProperty("id").GetString())
+            .ToArray();
 
     /// <summary>
     /// <c>ApiError.Title</c>, which in Development carries the exception's own message for a 500.

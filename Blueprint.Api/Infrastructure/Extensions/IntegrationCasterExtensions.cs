@@ -51,9 +51,11 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Existing templates declare their variables under these names, so keep it. Then drop anything
         // else an HCL identifier cannot hold (a comma, say): such a name never worked under Alloy either,
         // because terraform rejects the whole file, so no working template can depend on it.
+        // ToLowerInvariant, as Alloy does: ToLower is culture-sensitive, so on a Turkish-locale host "I" would
+        // lowercase to the dotless "ı" and the variable name would change.
         public static string CleanName(string name)
         {
-            var alloyName = Regex.Replace((name ?? "").ToLower().Replace(" ", "_"), "[@&'(\\s)<>#]", "", RegexOptions.None);
+            var alloyName = Regex.Replace((name ?? "").ToLowerInvariant().Replace(" ", "_"), "[@&'(\\s)<>#]", "", RegexOptions.None);
             return Regex.Replace(alloyName, "[^\\p{L}\\p{Nd}_-]", "", RegexOptions.None);
         }
 

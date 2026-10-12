@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -89,6 +90,22 @@ public class IntegrationCasterExtensionsTests
     public void CleanName_LeavesEveryNameAlloyAcceptedAsItWas(string teamName, string variable)
     {
         Assert.Equal(variable, IntegrationCasterExtensions.CleanName(teamName));
+    }
+
+    [Fact]
+    public void CleanName_IgnoresTheHostCulture()
+    {
+        var culture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("tr-TR");
+
+            Assert.Equal("intel_team", IntegrationCasterExtensions.CleanName("INTEL Team"));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = culture;
+        }
     }
 
     [Fact]

@@ -198,6 +198,76 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.DoesNotContain(bytes, b => b > 127);
     }
 
+    /// <summary>
+    /// The export records the scoring model's name as CITE has it now, because that name is what an
+    /// import on another installation looks the model up by - the id is local to this CITE.
+    /// </summary>
+    /// <remarks>
+    /// Before this, only the import ever wrote <c>CiteScoringModelName</c>, so a MSEL whose model was
+    /// picked in the UI exported a null name and the importing side had nothing to remap with. A stored
+    /// name is replaced too: the model may have been renamed in CITE since.
+    /// </remarks>
+    [Fact]
+    public async Task Download_OfACiteMsel_RecordsTheScoringModelNameFromCite()
+    {
+        var scoringModelId = Guid.NewGuid();
+        var msel = BlueprintAppFactory.Msel();
+        msel.UseCite = true;
+        msel.CiteScoringModelId = scoringModelId;
+        msel.CiteScoringModelName = "Old Name";
+        await Seed(msel);
+        Factory.Cite.GetScoringModelAsync(scoringModelId, Arg.Any<CancellationToken>())
+            .Returns(new ScoringModel { Id = scoringModelId, Description = "Incident Triage" });
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var exported = await ReadExport(await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct));
+
+        Assert.Equal("Incident Triage", exported.GetProperty("CiteScoringModelName").GetString());
+        // The name is written to the file, not to the MSEL.
+        var stored = await NewContext().Msels.SingleAsync(m => m.Id == msel.Id, Ct);
+        Assert.Equal("Old Name", stored.CiteScoringModelName);
+    }
+
+    /// <summary>
+    /// CITE being down doesn't block an export: the file carries whatever name is already stored.
+    /// </summary>
+    [Fact]
+    public async Task Download_WhenCiteCannotBeReached_KeepsTheStoredScoringModelName()
+    {
+        var scoringModelId = Guid.NewGuid();
+        var msel = BlueprintAppFactory.Msel();
+        msel.UseCite = true;
+        msel.CiteScoringModelId = scoringModelId;
+        msel.CiteScoringModelName = "Incident Triage";
+        await Seed(msel);
+        Factory.Cite.GetScoringModelAsync(scoringModelId, Arg.Any<CancellationToken>())
+            .Throws(new HttpRequestException("Connection refused"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Incident Triage", (await ReadExport(response)).GetProperty("CiteScoringModelName").GetString());
+    }
+
+    /// <summary>
+    /// Exporting a MSEL that doesn't use CITE asks CITE nothing, the same as importing one.
+    /// </summary>
+    [Fact]
+    public async Task Download_OfANonCiteMsel_AsksCiteNothing()
+    {
+        var msel = BlueprintAppFactory.Msel();
+        msel.UseCite = false;
+        msel.CiteScoringModelId = Guid.NewGuid();
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(Factory.Cite.ReceivedCalls());
+    }
+
     [Fact]
     public async Task Download_OfAnUnknownMsel_Is404()
     {

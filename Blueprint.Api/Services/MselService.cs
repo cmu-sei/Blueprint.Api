@@ -2052,6 +2052,26 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselEntity>("MSEL not found " + mselId);
             }
 
+            // Record the scoring model's name so the import on another installation can find the model
+            // there by name - its id is local to this CITE. Best effort: if CITE can't be reached, export
+            // whatever name is already stored. The entity is not tracked, so this is not saved.
+            if (msel.UseCite && msel.CiteScoringModelId.HasValue)
+            {
+                try
+                {
+                    var scoringModel = await _citeApiClient.GetScoringModelAsync(msel.CiteScoringModelId.Value, ct);
+                    if (!string.IsNullOrWhiteSpace(scoringModel?.Description))
+                    {
+                        msel.CiteScoringModelName = scoringModel.Description;
+                    }
+                }
+                catch (System.Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning("Could not read CITE scoring model {ScoringModelId} for the export of MSEL {MselId}; exporting the stored name. Error: {ErrorMessage}",
+                        msel.CiteScoringModelId.Value, msel.Id, ex.Message);
+                }
+            }
+
             var mselJson = "";
             var options = new JsonSerializerOptions()
             {

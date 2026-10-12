@@ -103,11 +103,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
                     .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
                     .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
+                    .Replace("{casterWorkspaceId}", msel.CasterWorkspaceId.ToString())
                     .Replace("{playerViewId}", msel.PlayerViewId.ToString())
                     .Replace("{playerUrl}", clientOptions.PlayerUiUrl ?? "")
                     .Replace("{citeUrl}", clientOptions.CiteUiUrl ?? "")
                     .Replace("{galleryUrl}", clientOptions.GalleryUiUrl ?? "")
                     .Replace("{steamfitterUrl}", clientOptions.SteamfitterUiUrl ?? "")
+                    .Replace("{casterUrl}", clientOptions.CasterUiUrl ?? "")
+                    .Replace("{vmUrl}", (clientOptions.VmUiUrl ?? "").TrimEnd('/'))
                     .Replace("{blueprintUrl}", clientOptions.BlueprintUiUrl ?? "");
                 Uri applicationUrl;
                 if (!Uri.TryCreate(urlString, UriKind.Absolute, out applicationUrl) || !(applicationUrl.Scheme == Uri.UriSchemeHttp || applicationUrl.Scheme == Uri.UriSchemeHttps))
@@ -120,11 +123,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
                     .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
                     .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
+                    .Replace("{casterWorkspaceId}", msel.CasterWorkspaceId.ToString())
                     .Replace("{playerViewId}", msel.PlayerViewId.ToString())
                     .Replace("{playerUrl}", clientOptions.PlayerUiUrl ?? "")
                     .Replace("{citeUrl}", clientOptions.CiteUiUrl ?? "")
                     .Replace("{galleryUrl}", clientOptions.GalleryUiUrl ?? "")
                     .Replace("{steamfitterUrl}", clientOptions.SteamfitterUiUrl ?? "")
+                    .Replace("{casterUrl}", clientOptions.CasterUiUrl ?? "")
+                    .Replace("{vmUrl}", (clientOptions.VmUiUrl ?? "").TrimEnd('/'))
                     .Replace("{blueprintUrl}", clientOptions.BlueprintUiUrl ?? "");
 
                 var playerApplication = new Application() {

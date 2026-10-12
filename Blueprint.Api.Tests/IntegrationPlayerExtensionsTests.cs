@@ -490,7 +490,10 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
             "&citeUrl=http://cite.ui" +
             "&galleryUrl=http://gallery.ui" +
             "&steamfitterUrl=http://steamfitter.ui" +
-            "&blueprintUrl=http://blueprint.ui",
+            "&blueprintUrl=http://blueprint.ui" +
+            $"&workspace={CasterWorkspaceId}" +
+            "&casterUrl=http://caster.ui" +
+            "&vmUrl=http://vm.ui",
             url);
     }
 
@@ -822,6 +825,7 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
     private static readonly Guid CiteEvaluationId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
     private static readonly Guid GalleryExhibitId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000002");
     private static readonly Guid SteamfitterScenarioId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000003");
+    private static readonly Guid CasterWorkspaceId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000004");
 
     private const string AllPlaceholders =
         "http://application.example/" +
@@ -834,7 +838,10 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         "&citeUrl={citeUrl}" +
         "&galleryUrl={galleryUrl}" +
         "&steamfitterUrl={steamfitterUrl}" +
-        "&blueprintUrl={blueprintUrl}";
+        "&blueprintUrl={blueprintUrl}" +
+        "&workspace={casterWorkspaceId}" +
+        "&casterUrl={casterUrl}" +
+        "&vmUrl={vmUrl}";
 
     // Bodies the generated client will accept for each call. Hand-written rather than serialized from the
     // client's own DTOs because what is being pinned is the wire format, not a round trip through it.
@@ -858,7 +865,10 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         CiteUiUrl = "http://cite.ui",
         GalleryUiUrl = "http://gallery.ui",
         SteamfitterUiUrl = "http://steamfitter.ui",
-        BlueprintUiUrl = "http://blueprint.ui"
+        BlueprintUiUrl = "http://blueprint.ui",
+        CasterUiUrl = "http://caster.ui",
+        // a trailing slash is trimmed, so "{vmUrl}/views/..." never doubles it
+        VmUiUrl = "http://vm.ui/"
     };
 
     /// <summary>
@@ -874,6 +884,7 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
             msel.CiteEvaluationId = CiteEvaluationId;
             msel.GalleryExhibitId = GalleryExhibitId;
             msel.SteamfitterScenarioId = SteamfitterScenarioId;
+            msel.CasterWorkspaceId = CasterWorkspaceId;
         }
 
         await Seed(msel);

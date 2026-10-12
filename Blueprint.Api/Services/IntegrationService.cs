@@ -18,6 +18,7 @@ using Cite.Api.Client;
 using Gallery.Api.Client;
 using Player.Api.Client;
 using Steamfitter.Api.Client;
+using Caster.Api.Client;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.AspNetCore.SignalR;
@@ -123,6 +124,15 @@ namespace Blueprint.Api.Services
                 var tokenResponse = await ApiClientsExtensions.GetToken(scope);
                 _logger.LogInformation($"Cancel cleanup: token acquired for MSEL {mselId}. Starting external pulls.");
 
+                // Caster first, while the Player view still exists. If the destroy fails, stop here
+                // and keep every ID, so Remove Integrations can retry instead of orphaning VMs.
+                if (msel.CasterWorkspaceId != null)
+                {
+                    var casterClientSource = new CasterClientSource(_httpClientFactory, _clientOptions.CurrentValue.CasterApiUrl, () => ApiClientsExtensions.GetToken(scope), tokenResponse);
+                    if (!await TryPullFromCasterAsync(dbContext, mselId, (Guid)msel.CasterWorkspaceId, casterClientSource, freshCt))
+                        return;
+                }
+
                 // Step 4: Call external API deletes directly (no BlueprintContext/SaveChanges needed).
                 if (msel.SteamfitterScenarioId != null)
                 {
@@ -193,6 +203,8 @@ namespace Blueprint.Api.Services
                     finalMsel.GalleryCollectionId = null;
                     finalMsel.CiteEvaluationId = null;
                     finalMsel.SteamfitterScenarioId = null;
+                    finalMsel.CasterWorkspaceId = null;
+                    finalMsel.CasterRunId = null;
                     finalMsel.IntegrationStatus = null;
                     finalMsel.Status = Data.Enumerations.MselItemStatus.Approved;
                     await finalContext.SaveChangesAsync(freshCt);
@@ -354,6 +366,16 @@ namespace Blueprint.Api.Services
                                 await PlayerProcessPart1(msel, integrationInformation.PlayerViewId, playerApiClient, blueprintContext, playerUserIds, ct);
                             }
 
+                            // Caster processing. Runs before the other apps because it is the slowest
+                            // step and the one most likely to fail, so a bad template fails early.
+                            if (msel.UseCaster)
+                            {
+                                ct.ThrowIfCancellationRequested();
+                                currentProcessStep = "Caster - begin processing";
+                                var casterClientSource = new CasterClientSource(_httpClientFactory, _clientOptions.CurrentValue.CasterApiUrl, () => ApiClientsExtensions.GetToken(scope), tokenResponse);
+                                await CasterProcess(msel, integrationInformation.UserId ?? msel.CreatedBy, playerApiClient, casterClientSource, blueprintContext, ct);
+                            }
+
                             // Gallery processing
                             if (msel.UseGallery)
                             {
@@ -401,7 +423,7 @@ namespace Blueprint.Api.Services
                         }
                         else
                         {
-                            await PullIntegrations(msel, integrationInformation, blueprintContext, tokenResponse, ct);
+                            await PullIntegrations(msel, integrationInformation, scope, blueprintContext, tokenResponse, ct);
                         }
 
                     }
@@ -471,11 +493,19 @@ namespace Blueprint.Api.Services
         /// Uses ExecuteUpdateAsync for all DB writes to avoid the EntityEventInterceptor →
         /// MediatR → SignalR chain that can hang on slow/saturated browser connections.
         /// </summary>
-        private async STT.Task PullIntegrations(MselEntity msel, IntegrationInformation integrationInformation, BlueprintContext blueprintContext, IdentityModel.Client.TokenResponse tokenResponse, CancellationToken ct)
+        private async STT.Task PullIntegrations(MselEntity msel, IntegrationInformation integrationInformation, IServiceScope scope, BlueprintContext blueprintContext, IdentityModel.Client.TokenResponse tokenResponse, CancellationToken ct)
         {
             var mselId = msel.Id;
             var currentProcessStep = "Pulling Integrations";
             await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Integrations", ct);
+
+            // Pull from Caster first, while the Player view its VMs belong to still exists
+            if (msel.CasterWorkspaceId != null)
+            {
+                var casterClientSource = new CasterClientSource(_httpClientFactory, _clientOptions.CurrentValue.CasterApiUrl, () => ApiClientsExtensions.GetToken(scope), tokenResponse);
+                if (!await TryPullFromCasterAsync(blueprintContext, mselId, (Guid)msel.CasterWorkspaceId, casterClientSource, ct))
+                    return;
+            }
 
             // Pull from Steamfitter
             if (msel.SteamfitterScenarioId != null)
@@ -551,6 +581,8 @@ namespace Blueprint.Api.Services
                 finalMsel.GalleryCollectionId = null;
                 finalMsel.CiteEvaluationId = null;
                 finalMsel.SteamfitterScenarioId = null;
+                finalMsel.CasterWorkspaceId = null;
+                finalMsel.CasterRunId = null;
                 finalMsel.IntegrationStatus = null;
                 finalMsel.Status = integrationInformation.FinalStatus;
                 await finalContext.SaveChangesAsync(ct);
@@ -575,6 +607,66 @@ namespace Blueprint.Api.Services
                 .SendAsync(MainHubMethods.IntegrationStatusUpdated, mselId, status, ct);
             await _mainHub.Clients.Group(MainHub.ADMIN_DATA_GROUP)
                 .SendAsync(MainHubMethods.IntegrationStatusUpdated, mselId, status, ct);
+        }
+
+        private async STT.Task CasterProcess(MselEntity msel, Guid userId, PlayerApiClient playerApiClient, CasterClientSource casterClientSource, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            Func<string, STT.Task> sendStatus = status => SendIntegrationStatusAsync(blueprintContext, msel.Id, status, ct);
+            var casterApiClient = await casterClientSource.GetAsync(ct);
+
+            // create the workspace and record it at once, so a failure from here on can be cleaned up
+            await sendStatus("Pushing Workspace to Caster");
+            var workspace = await IntegrationCasterExtensions.CreateWorkspaceAsync(msel, casterApiClient, ct);
+            msel.CasterWorkspaceId = workspace.Id;
+            await blueprintContext.Msels
+                .Where(m => m.Id == msel.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.CasterWorkspaceId, workspace.Id), ct);
+
+            // the variables terraform needs to attach VMs to this view and its teams
+            await sendStatus("Pushing Variables to Caster");
+            var user = await blueprintContext.Users.FindAsync(new object[] { userId }, ct);
+            var teamVariables = await blueprintContext.Teams
+                .Where(t => t.MselId == msel.Id && t.CasterTeamVariable != null)
+                .ToDictionaryAsync(t => t.Id, t => t.CasterTeamVariable, ct);
+            var varsFileContent = await IntegrationCasterExtensions.GetVarsFileContentAsync((Guid)msel.PlayerViewId, userId, user?.Name, teamVariables, playerApiClient, ct);
+            await IntegrationCasterExtensions.CreateVarsFileAsync(workspace, varsFileContent, casterApiClient, ct);
+
+            var run = await IntegrationCasterExtensions.CreateRunAsync(workspace.Id, false, casterApiClient, ct);
+            msel.CasterRunId = run.Id;
+            await blueprintContext.Msels
+                .Where(m => m.Id == msel.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.CasterRunId, run.Id), ct);
+
+            await IntegrationCasterExtensions.PlanAndApplyAsync(run.Id, casterClientSource, _clientOptions.CurrentValue, _clientOptions.CurrentValue.CasterApplyMaxWaitMinutes, sendStatus, ct);
+        }
+
+        /// <summary>
+        /// Destroys and deletes the MSEL's Caster workspace. Unlike the other pulls, a failure is not
+        /// swallowed: it is reported and false is returned, so the caller stops before deleting the
+        /// Player view and clearing the IDs. Otherwise the VMs would keep running with nothing
+        /// pointing at them. Running Remove Integrations again retries.
+        /// </summary>
+        private async STT.Task<bool> TryPullFromCasterAsync(BlueprintContext blueprintContext, Guid mselId, Guid casterWorkspaceId, CasterClientSource casterClientSource, CancellationToken ct)
+        {
+            try
+            {
+                await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Caster Workspace", ct);
+                await IntegrationCasterExtensions.DestroyWorkspaceAsync(
+                    casterWorkspaceId,
+                    casterClientSource,
+                    _clientOptions.CurrentValue,
+                    status => SendIntegrationStatusAsync(blueprintContext, mselId, status, ct),
+                    ct);
+                return true;
+            }
+            catch (System.Exception ex)
+            {
+                _logger.LogError(ex, $"Caster - pull workspace {casterWorkspaceId} ({mselId})");
+                await SendIntegrationStatusAsync(blueprintContext, mselId,
+                    $"ERROR: Caster - pull workspace {casterWorkspaceId} failed - {ex.Message} Nothing else was removed. Remove Integrations again to retry, or clean up the workspace in Caster.",
+                    new CancellationToken());
+                return false;
+            }
         }
 
         private bool CanMselBePushed(MselEntity mselToIntegrate)
@@ -795,6 +887,8 @@ namespace Blueprint.Api.Services
         public Guid MselId { get; set; }
         public Guid? PlayerViewId { get; set; }
         public bool IsPush { get; set; }
+        // the user who pushed or launched the MSEL; Caster passes it to terraform as user_id
+        public Guid? UserId { get; set; }
         public Data.Enumerations.MselItemStatus FinalStatus { get; set; }
     }
 

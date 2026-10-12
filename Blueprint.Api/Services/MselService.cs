@@ -210,6 +210,8 @@ namespace Blueprint.Api.Services
                )
             {
                 var mselCheck = await _context.Msels.FindAsync(id);
+                if (mselCheck == null)
+                    throw new EntityNotFoundException<MselEntity>("MSEL not found " + id);
                 if (!mselCheck.IsTemplate)
                     throw new ForbiddenException();
             }
@@ -223,6 +225,8 @@ namespace Blueprint.Api.Services
                 .Include(m => m.UserMselRoles.Where(r => r.UserId == _user.GetId()))
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
+            if (mselEntity == null)
+                throw new EntityNotFoundException<MselEntity>("MSEL not found " + id);
             var msel = _mapper.Map<Msel>(mselEntity);
             EnsureCreatorOwnerRole(msel);
             // add the needed parameters for Gallery integration

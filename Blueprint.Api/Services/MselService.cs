@@ -304,14 +304,15 @@ namespace Blueprint.Api.Services
             return await privateMselCopyAsync(mselEntity, currentUserTeamId, ct);
         }
 
-        private async Task<MselEntity> privateMselCopyAsync(MselEntity mselEntity, Guid? currentUserTeamId, CancellationToken ct)
+        private async Task<MselEntity> privateMselCopyAsync(MselEntity mselEntity, Guid? currentUserTeamId, CancellationToken ct, bool keepName = false)
         {
             var newGuidValues = new Dictionary<Guid, Guid>();
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId)).Name;
             mselEntity.Id = Guid.NewGuid();
             mselEntity.CreatedBy = currentUserId;
-            mselEntity.Name = mselEntity.Name + " - " + username;
+            if (!keepName)
+                mselEntity.Name = mselEntity.Name + " - " + username;
             mselEntity.IsTemplate = false;
             mselEntity.GalleryCollectionId = null;
             mselEntity.GalleryExhibitId = null;
@@ -2276,8 +2277,11 @@ namespace Blueprint.Api.Services
                 }
             }
 
-            // make a copy and add it to the database
-            mselEntity = await privateMselCopyAsync(mselEntity, null, ct);
+            // make a copy and add it to the database. An import keeps the file's name, which every pushed
+            // app inherits, unless a MSEL here already has that name; only then add the importer's name.
+            var nameInUse = await _context.Msels
+                .AnyAsync(m => m.Name.ToLower() == (mselEntity.Name ?? "").ToLower(), ct);
+            mselEntity = await privateMselCopyAsync(mselEntity, null, ct, keepName: !nameInUse);
 
             return _mapper.Map<Msel>(mselEntity);
         }

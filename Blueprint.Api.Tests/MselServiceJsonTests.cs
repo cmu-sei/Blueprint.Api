@@ -46,9 +46,10 @@ namespace Blueprint.Api.Tests;
 /// <para>
 /// Upload is a thin layer over the copy: after remapping the CITE ids it hands the deserialized entity
 /// to the same <c>privateMselCopyAsync</c> that <c>POST msels/{id}/copy</c> uses. So an import inherits
-/// every behaviour <see cref="MselServiceCopyTests"/> pins - the renaming, the cleared integration ids,
-/// the <c>Pending</c> status, the silence over SignalR - and those are asserted here only where an
-/// importer would be surprised by them.
+/// every behaviour <see cref="MselServiceCopyTests"/> pins - the cleared integration ids, the
+/// <c>Pending</c> status, the silence over SignalR - and those are asserted here only where an importer
+/// would be surprised by them. The one exception is the name: an import keeps the file's name unless it
+/// is already in use, where a copy always adds the copier's name.
 /// </para>
 /// <para>
 /// The CITE remapping is the part written specifically for the import, and it is the reason moving a
@@ -369,20 +370,48 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     /// carries no roles.
     /// </summary>
     [Fact]
-    public async Task Upload_RenamesTheMselAfterTheImporterAndGivesItANewId()
+    public async Task Upload_KeepsTheFileNameAndGivesItANewId()
     {
         var actor = await Actor()
             .WithName("Importing User")
             .WithSystemPermissions(SystemPermission.CreateMsels)
             .SeedAsync();
         var originalId = Guid.NewGuid();
-        var file = Exported(m => { m.Id = originalId; m.Name = "imported exercise"; });
+        var name = $"imported exercise {Guid.NewGuid()}";
+        var file = Exported(m => { m.Id = originalId; m.Name = name; });
 
         var imported = await Upload(Client(actor), file);
 
-        Assert.Equal("imported exercise - Importing User", imported.Name);
+        Assert.Equal(name, imported.Name);
         Assert.NotEqual(originalId, imported.Id);
         Assert.Equal(actor.Id, imported.CreatedBy);
+    }
+
+    /// <summary>
+    /// Only a name already in use here gets the importer's name added, so the two can be told apart
+    /// in the MSEL list. The check ignores case, the way a planner reading the list would.
+    /// </summary>
+    /// <remarks>
+    /// The name matters beyond Blueprint: every pushed app inherits it, so players would otherwise see
+    /// "Exercise X - Admin User" as the CITE evaluation and Gallery exhibit. A copy
+    /// (<c>POST msels/{id}/copy</c>) always collides with its source and keeps the suffix; see
+    /// <see cref="MselServiceCopyTests"/>.
+    /// </remarks>
+    [Fact]
+    public async Task Upload_OfANameAlreadyInUse_AddsTheImportersName()
+    {
+        var existing = BlueprintAppFactory.Msel();
+        existing.Name = $"Exercise {Guid.NewGuid()}";
+        await Seed(existing);
+        var actor = await Actor()
+            .WithName("Importing User")
+            .WithSystemPermissions(SystemPermission.CreateMsels)
+            .SeedAsync();
+        var file = Exported(m => m.Name = existing.Name.ToUpperInvariant());
+
+        var imported = await Upload(Client(actor), file);
+
+        Assert.Equal($"{existing.Name.ToUpperInvariant()} - Importing User", imported.Name);
     }
 
     /// <summary>
@@ -643,6 +672,7 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         var reimported = await Upload(Client(actor), file);
 
         Assert.NotEqual(msel.Id, reimported.Id);
+        // The source is still here, so the name is in use.
         Assert.Equal($"{msel.Name} - Round Tripper", reimported.Name);
         Assert.Equal("the exercise as exported", reimported.Description);
 

@@ -570,7 +570,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         var msel = TestData.Msel();
         await Seed(msel);
 
-        Assert.True(await Service().MselViewedAsync(msel.Id, Ct));
+        Assert.True(await Service().MselViewedAsync(msel.Id, true, Ct));
 
         var row = await Queued();
         Assert.Equal("viewed", row.Verb);
@@ -582,7 +582,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
     [Fact]
     public async Task ViewedById_ForAMselThatIsNotThere_IsFalseAndQueuesNothing()
     {
-        Assert.False(await Service().MselViewedAsync(Guid.NewGuid(), Ct));
+        Assert.False(await Service().MselViewedAsync(Guid.NewGuid(), true, Ct));
         Assert.Equal(0, await QueuedCount());
     }
 
@@ -595,8 +595,8 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         await Seed(msel);
         var service = Service(Options(enabled: false));
 
-        Assert.True(await service.MselViewedAsync(msel.Id, Ct));
-        Assert.False(await service.MselViewedAsync(Guid.NewGuid(), Ct));
+        Assert.True(await service.MselViewedAsync(msel.Id, true, Ct));
+        Assert.False(await service.MselViewedAsync(Guid.NewGuid(), true, Ct));
         Assert.Equal(0, await QueuedCount());
     }
 
@@ -610,7 +610,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         var graph = await SeedAssertionGraph(values: [1, 3, 5]);
 
         await Service().AssertCompetencyAsync(
-            Assertion(graph, comment: "handled the escalation well"), Ct);
+            Assertion(graph, comment: "handled the escalation well"), true, Ct);
 
         var row = await Queued();
         Assert.Equal("asserted", row.Verb);
@@ -646,7 +646,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
     {
         var graph = await SeedAssertionGraph();
 
-        await Service().AssertCompetencyAsync(Assertion(graph), Ct);
+        await Service().AssertCompetencyAsync(Assertion(graph), true, Ct);
 
         Assert.False(At(await QueuedStatement(), "result").TryGetProperty("response", out _));
     }
@@ -657,7 +657,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
     {
         var graph = await SeedAssertionGraph(values: [4]);
 
-        await Service().AssertCompetencyAsync(Assertion(graph), Ct);
+        await Service().AssertCompetencyAsync(Assertion(graph), true, Ct);
 
         var statement = await QueuedStatement();
         Assert.Equal(4, At(statement, "result.score.raw").GetDouble());
@@ -670,7 +670,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
     {
         var graph = await SeedAssertionGraph();
 
-        await Service().AssertCompetencyAsync(Assertion(graph), Ct);
+        await Service().AssertCompetencyAsync(Assertion(graph), true, Ct);
 
         Assert.Equal(
             1.0,
@@ -691,7 +691,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         await Actor().WithName("The Participant").OnTeam(team).SeedAsync();
 
         await Service(user: Principal(assessor.Id))
-            .AssertCompetencyAsync(Assertion(graph, teamId: team.Id), Ct);
+            .AssertCompetencyAsync(Assertion(graph, teamId: team.Id), true, Ct);
 
         var statement = await QueuedStatement();
         Assert.Equal("The Assessor", Text(statement, "actor.name"));
@@ -706,7 +706,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
     {
         var graph = await SeedAssertionGraph();
 
-        await Service().AssertCompetencyAsync(Assertion(graph), Ct);
+        await Service().AssertCompetencyAsync(Assertion(graph), true, Ct);
 
         var statement = await QueuedStatement();
         var parent = Assert.Single(Items(statement, "context.contextActivities.parent"));
@@ -729,7 +729,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
     {
         var graph = await SeedAssertionGraph(competencyIdNumber: idNumber);
 
-        await Service().AssertCompetencyAsync(Assertion(graph), Ct);
+        await Service().AssertCompetencyAsync(Assertion(graph), true, Ct);
 
         Assert.Equal(
             expected ?? $"{ApiUrl}competencies/{graph.Competency.Id}",
@@ -744,7 +744,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         await Seed(scenarioEvent);
 
         await Service().AssertCompetencyAsync(
-            Assertion(graph, scenarioEventId: scenarioEvent.Id, moveNumber: 2, groupNumber: 3), Ct);
+            Assertion(graph, scenarioEventId: scenarioEvent.Id, moveNumber: 2, groupNumber: 3), true, Ct);
 
         var grouping = Items(await QueuedStatement(), "context.contextActivities.grouping")
             .Select(x => Text(x, "id"))
@@ -761,7 +761,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
     {
         var graph = await SeedAssertionGraph();
 
-        await Service().AssertCompetencyAsync(Assertion(graph, groupNumber: 3), Ct);
+        await Service().AssertCompetencyAsync(Assertion(graph, groupNumber: 3), true, Ct);
 
         Assert.Contains(
             $"{ApiUrl}msels/{graph.Msel.Id}/moves/0/groups/3",
@@ -775,7 +775,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         var graph = await SeedAssertionGraph();
 
         var category = Assert.Single(
-            await Categories(() => Service().AssertCompetencyAsync(Assertion(graph), Ct)));
+            await Categories(() => Service().AssertCompetencyAsync(Assertion(graph), true, Ct)));
 
         Assert.Equal("https://crucible.sei.cmu.edu/xapi/profile/v1", Text(category, "id"));
     }
@@ -811,7 +811,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         }
 
         await Assert.ThrowsAsync<ArgumentException>(
-            () => Service().AssertCompetencyAsync(assertion, Ct));
+            () => Service().AssertCompetencyAsync(assertion, true, Ct));
 
         Assert.Equal(0, await QueuedCount());
     }
@@ -822,7 +822,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         var graph = await SeedAssertionGraph();
 
         Assert.True(
-            await Service(Options(enabled: false)).AssertCompetencyAsync(Assertion(graph), Ct));
+            await Service(Options(enabled: false)).AssertCompetencyAsync(Assertion(graph), true, Ct));
 
         Assert.Equal(0, await QueuedCount());
     }
@@ -905,7 +905,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         await Seed(scenarioEvent);
         var service = Service();
 
-        await service.AssertCompetencyAsync(Assertion(graph), Ct);
+        await service.AssertCompetencyAsync(Assertion(graph), true, Ct);
         await service.RecordCheckboxChangeAsync(
             graph.Msel.Id, scenarioEvent.Id, Guid.NewGuid(), "Comms restored", true, Ct);
 
@@ -1036,14 +1036,14 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         Assert.Equal(
             "{\"statements\":[]}",
             await Service(Options(enabled: false))
-                .GetStatementsAsync(Guid.NewGuid(), null, null, 100, null, Ct));
+                .GetStatementsAsync(Guid.NewGuid(), null, null, 100, null, true, Ct));
 
     /// <summary>Get statements for a MSEL that is not there answers an empty statement list too.</summary>
     [Fact]
     public async Task GetStatements_ForAMselThatIsNotThere_AnswersAnEmptyStatementListToo() =>
         Assert.Equal(
             "{\"statements\":[]}",
-            await Service().GetStatementsAsync(Guid.NewGuid(), null, null, 100, null, Ct));
+            await Service().GetStatementsAsync(Guid.NewGuid(), null, null, 100, null, true, Ct));
 
     /// <summary>Get statements for a source nobody recognizes answers an empty statement list.</summary>
     [Fact]
@@ -1054,7 +1054,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
 
         Assert.Equal(
             "{\"statements\":[]}",
-            await Service().GetStatementsAsync(msel.Id, null, null, 100, "citee", Ct));
+            await Service().GetStatementsAsync(msel.Id, null, null, 100, "citee", true, Ct));
     }
 
     [Fact]
@@ -1065,7 +1065,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
 
         Assert.Equal(
             "{\"statements\":[]}",
-            await Service().GetStatementsAsync(msel.Id, null, null, 100, "cite", Ct));
+            await Service().GetStatementsAsync(msel.Id, null, null, 100, "cite", true, Ct));
     }
 
     /// <summary>Get statements with an LRS that cannot be reached throws where a non success status is swallowed.</summary>
@@ -1077,7 +1077,7 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
 
         await Assert.ThrowsAnyAsync<HttpRequestException>(
             () => Service(Options(endpoint: "http://127.0.0.1:1/xapi"))
-                .GetStatementsAsync(msel.Id, null, null, 100, null, Ct));
+                .GetStatementsAsync(msel.Id, null, null, 100, null, true, Ct));
     }
 
     // -------------------------------------------------------------------------------------------------

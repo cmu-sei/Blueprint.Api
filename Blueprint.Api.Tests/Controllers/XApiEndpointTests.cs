@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Tests.Support;
 using Blueprint.Api.ViewModels;
@@ -42,27 +43,60 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    /// <summary>Every route for a caller with no permissions is answered with a 200.</summary>
+    /// <summary>The join-page statement names no MSEL and needs nothing beyond being signed in.</summary>
+    [Fact]
+    public async Task ViewedJoinPage_ForACallerWithNoPermissions_Is200()
+    {
+        var response = await Client(await Actor().SeedAsync()).PostAsync(ViewedJoinPage, null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>The three routes that name a MSEL each resolve one system permission and hand the answer to
+    /// the service; holding the other permission does not count.</summary>
     [Theory]
-    [InlineData("GET", Statements)]
-    [InlineData("POST", Assertions)]
-    [InlineData("POST", ViewedSomeMsel)]
-    [InlineData("POST", ViewedJoinPage)]
-    public async Task EveryRoute_ForACallerWithNoPermissions_Is200(string method, string route)
+    [InlineData("GET", Statements, SystemPermission.ViewMsels, SystemPermission.EditMsels)]
+    [InlineData("POST", Assertions, SystemPermission.EditMsels, SystemPermission.ViewMsels)]
+    [InlineData("POST", ViewedSomeMsel, SystemPermission.ViewMsels, SystemPermission.EditMsels)]
+    public async Task TheMselRoutes_TellTheServiceWhetherTheCallerHoldsTheSystemPermission(
+        string method, string route, SystemPermission required, SystemPermission other)
     {
         StatementsAre("{\"statements\":[]}");
 
-        var actor = await Actor().SeedAsync();
+        var withRequired = await Actor().WithSystemPermissions(required).SeedAsync();
+        var withOther = await Actor().WithSystemPermissions(other).SeedAsync();
+        var withNothing = await Actor().SeedAsync();
 
-        using var request = new HttpRequestMessage(new HttpMethod(method), route);
-        if (method == "POST")
+        foreach (var (actor, expected) in new[] { (withRequired, true), (withOther, false), (withNothing, false) })
         {
-            request.Content = EmptyJsonObject();
+            Factory.XApi.ClearReceivedCalls();
+
+            using var request = new HttpRequestMessage(new HttpMethod(method), route);
+            if (method == "POST")
+            {
+                request.Content = EmptyJsonObject();
+            }
+
+            var response = await Client(actor).SendAsync(request, Ct);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            switch (route)
+            {
+                case Statements:
+                    await Factory.XApi.Received(1).GetStatementsAsync(
+                        Arg.Any<Guid>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>(), Arg.Any<int>(),
+                        Arg.Any<string>(), expected, Arg.Any<CancellationToken>());
+                    break;
+                case Assertions:
+                    await Factory.XApi.Received(1).AssertCompetencyAsync(
+                        Arg.Any<CompetencyAssertion>(), expected, Arg.Any<CancellationToken>());
+                    break;
+                default:
+                    await Factory.XApi.Received(1).MselViewedAsync(
+                        Arg.Any<Guid>(), expected, Arg.Any<CancellationToken>());
+                    break;
+            }
         }
-
-        var response = await Client(actor).SendAsync(request, Ct);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     /// <summary>The statements route passes the request's cancellation token on.</summary>
@@ -81,6 +115,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             Arg.Any<DateTime?>(),
             Arg.Any<int>(),
             Arg.Any<string>(),
+            Arg.Any<bool>(),
             Cancellable);
     }
 
@@ -111,6 +146,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             Utc(new DateTime(2026, 1, 2, 9, 45, 0, DateTimeKind.Utc)),
             Arg.Is(7),
             Arg.Is("cite"),
+            Arg.Any<bool>(),
             Cancellable);
     }
 
@@ -126,7 +162,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         await Client(await Actor().SeedAsync()).GetAsync($"{Statements}?mselId={mselId}", Ct);
 
         await Factory.XApi.Received(1).GetStatementsAsync(
-            Arg.Is(mselId), Missing, Missing, Arg.Is(100), NoSource, Cancellable);
+            Arg.Is(mselId), Missing, Missing, Arg.Is(100), NoSource, Arg.Any<bool>(), Cancellable);
     }
 
     /// <summary>A request naming no MSEL asks about the all-zeros MSEL.</summary>
@@ -139,7 +175,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         await Factory.XApi.Received(1).GetStatementsAsync(
-            Arg.Is(Guid.Empty), Missing, Missing, Arg.Is(100), NoSource, Cancellable);
+            Arg.Is(Guid.Empty), Missing, Missing, Arg.Is(100), NoSource, Arg.Any<bool>(), Cancellable);
     }
 
     /// <summary>A null answer from the service is a 200 with an empty body.</summary>
@@ -168,7 +204,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         await client.PostAsJsonAsync(Assertions, new { mselId = Guid.NewGuid() }, Ct);
 
         await Factory.XApi.Received(1)
-            .AssertCompetencyAsync(Arg.Any<CompetencyAssertion>(), Cancellable);
+            .AssertCompetencyAsync(Arg.Any<CompetencyAssertion>(), Arg.Any<bool>(), Cancellable);
     }
 
     // Same case as XApiLiveEndpointTests.CreateAssertion_WithAnEmptyJsonObject_Is500NamingTheAllZerosMsel.
@@ -190,6 +226,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
                 x.Comment == null &&
                 x.MoveNumber == null &&
                 x.GroupNumber == null),
+            Arg.Any<bool>(),
             Cancellable);
     }
 
@@ -206,7 +243,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         await client.PostAsync(Viewed(mselId), null, Ct);
 
-        await Factory.XApi.Received(1).MselViewedAsync(mselId, Cancellable);
+        await Factory.XApi.Received(1).MselViewedAsync(mselId, Arg.Any<bool>(), Cancellable);
     }
 
     /// <summary>The join-page route passes the request's cancellation token on.</summary>
@@ -250,6 +287,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
                 Arg.Any<DateTime?>(),
                 Arg.Any<int>(),
                 Arg.Any<string>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>())
             .Returns(document);
 

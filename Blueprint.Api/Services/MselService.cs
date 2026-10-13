@@ -48,10 +48,10 @@ namespace Blueprint.Api.Services
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<Msel> UploadXlsxAsync(FileForm form, CancellationToken ct);
         Task<Msel> ReplaceAsync(MselFileForm form, Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, CancellationToken ct);
+        Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
-        Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
+        Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct);
         Task CancelIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
@@ -690,13 +690,16 @@ namespace Blueprint.Api.Services
             return _mapper.Map<Msel>(mselEntity);
         }
 
-        public async Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, CancellationToken ct)
+        public async Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var msel = await _context.Msels
                 .Where(f => f.Id == mselId)
                 .SingleOrDefaultAsync(ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
+            // the export holds every event and data value, so the caller must be able to view the MSEL's contents
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
+                throw new ForbiddenException();
             var filename = msel.Name.ToLower().EndsWith(".xlsx") ? msel.Name : msel.Name + ".xlsx";
 
             // get the MSEL data into a DataTable
@@ -884,13 +887,16 @@ namespace Blueprint.Api.Services
             return System.Tuple.Create(memoryStream, filename);
         }
 
-        public async Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct)
+        public async Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var msel = await _context.Msels
                 .Where(f => f.Id == mselId)
                 .SingleOrDefaultAsync(ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
+            // the data table holds every event and data value, so the caller must be able to view the MSEL's contents
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
+                throw new ForbiddenException();
             var scenarioEventList = await _context.ScenarioEvents
                 .Where(n => n.MselId == mselId)
                 .OrderBy(se => se.DeltaSeconds)

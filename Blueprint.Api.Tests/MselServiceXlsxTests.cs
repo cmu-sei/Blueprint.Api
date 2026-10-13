@@ -54,12 +54,11 @@ namespace Blueprint.Api.Tests;
 /// silently writing every value into the wrong column.
 /// </para>
 /// <para>
-/// Two things are characterized rather than fixed. <c>GET msels/{id}/xlsx</c> has <em>no authorization
-/// check at all</em> - see <see cref="Download_WithNoPermissionAndNoRoleOnTheMsel_Is200"/> - so the whole
-/// scenario of every MSEL in the installation is readable by any account that can sign in. And the two
-/// write endpoints disagree about who may write: the upload demands installation-wide <c>EditMsels</c>,
-/// while the replace also accepts the MSEL's owner, so the author of a MSEL can replace its sheet but
-/// cannot create one.
+/// <c>GET msels/{id}/xlsx</c> needs <c>ViewMsels</c> or view access to the MSEL's contents - see
+/// <see cref="Download_WithNoPermissionAndNoRoleOnTheMsel_Is403"/>. One thing is characterized rather
+/// than fixed: the two write endpoints disagree about who may write. The upload demands
+/// installation-wide <c>EditMsels</c>, while the replace also accepts the MSEL's owner, so the author of
+/// a MSEL can replace its sheet but cannot create one.
 /// </para>
 /// <para>
 /// One note for anyone mutation-checking the replace half. Turning <c>verifyDataFields</c> off reddens
@@ -126,34 +125,69 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     /// <summary>
-    /// Characterizes a missing authorization check: the action asks nothing of the caller beyond being
-    /// signed in.
+    /// The export is every event and every Data Value of the MSEL, so a caller with no permission and
+    /// no role on it is refused.
     /// </summary>
-    /// <remarks>
-    /// Every other MSEL-scoped read in the controller resolves a <c>SystemPermission</c> and passes it
-    /// to the service, which falls back to the caller's role on the MSEL. This one calls
-    /// <c>DownloadXlsxAsync</c> straight off the route, and the service method takes no permission
-    /// argument - so any account that can obtain a token can read the full scenario, every injected
-    /// event and every Data Value, of every MSEL in the installation. That is the whole exercise: the
-    /// thing the participants are not supposed to see.
-    /// <para>
-    /// The fix is the shape <c>GET msels/{id}/json</c> uses, and better than it: resolve
-    /// <c>ViewMsels</c> in the controller, pass it in, and fall back to
-    /// <c>MselViewRequirement.IsMet</c>. This test turns red when that lands, and
-    /// <see cref="Download_ReturnsTheMselAsAFileNamedAfterIt"/> stays green because its actor holds
-    /// <c>EditMsels</c> - so give the new check a permission an author already has, or update both.
-    /// </para>
-    /// </remarks>
     [Fact]
-    public async Task Download_WithNoPermissionAndNoRoleOnTheMsel_Is200()
+    public async Task Download_WithNoPermissionAndNoRoleOnTheMsel_Is403()
     {
         var msel = await SeedSheet(["Target"]);
         await SeedEvent(msel, 0, "the exercise's secret");
         var stranger = await Actor().SeedAsync();
 
-        var sheet = Read(await Download(Client(stranger), msel.Id));
+        var response = await Client(stranger).GetAsync($"/api/msels/{msel.Id}/xlsx", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Download_ForAViewerOfTheMsel_Is200()
+    {
+        var msel = await SeedSheet(["Target"]);
+        await SeedEvent(msel, 0, "the exercise's secret");
+        var viewer = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
+
+        var sheet = Read(await Download(Client(viewer), msel.Id));
 
         Assert.Equal("the exercise's secret", sheet.Text(0, "Target"));
+    }
+
+    [Fact]
+    public async Task Download_ForAViewerOfAnotherMsel_Is403()
+    {
+        var mine = await SeedSheet(["Target"]);
+        var theirs = await SeedSheet(["Target"]);
+        var viewer = await Actor().OnMsel(mine, MselRole.Viewer).SeedAsync();
+
+        var response = await Client(viewer).GetAsync($"/api/msels/{theirs.Id}/xlsx", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>
+    /// A template's contents follow the rule its events and Data Values already use: readable with
+    /// <c>CreateMsels</c>, the permission that lets a caller start a MSEL from it.
+    /// </summary>
+    [Fact]
+    public async Task Download_OfATemplate_WithCreateMsels_Is200()
+    {
+        var template = await SeedSheet(["Target"], m => m.IsTemplate = true);
+        var creator = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(creator).GetAsync($"/api/msels/{template.Id}/xlsx", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Download_OfATemplate_WithoutCreateMsels_Is403()
+    {
+        var template = await SeedSheet(["Target"], m => m.IsTemplate = true);
+        var stranger = await Actor().SeedAsync();
+
+        var response = await Client(stranger).GetAsync($"/api/msels/{template.Id}/xlsx", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -917,7 +951,7 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
     // ---------------------------------------------------------------------------------------------
 
     private async Task<TestActor> Author() =>
-        await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        await Actor().WithSystemPermissions(SystemPermission.ViewMsels, SystemPermission.EditMsels).SeedAsync();
 
     /// <summary>
     /// A MSEL with one Data Field per name, at display orders 1..n.

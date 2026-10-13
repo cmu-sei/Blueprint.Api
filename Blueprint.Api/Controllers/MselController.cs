@@ -166,7 +166,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getMselData")]
         public async Task<IActionResult> GetData(Guid id, CancellationToken ct)
         {
-            var mselData = await _mselService.GetDataTableAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var mselData = await _mselService.GetDataTableAsync(id, hasSystemPermission, hasCreateMselsPermission, ct);
             return Ok(mselData);
         }
 
@@ -340,7 +342,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "downloadXlsx")]
         public async Task<IActionResult> DownloadXlsxAsync(Guid id, CancellationToken ct)
         {
-            (var stream, var fileName) = await _mselService.DownloadXlsxAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            (var stream, var fileName) = await _mselService.DownloadXlsxAsync(id, hasSystemPermission, hasCreateMselsPermission, ct);
 
             // If this is wrapped in an Ok, it throws an exception
             return File(stream, "application/octet-stream", fileName);

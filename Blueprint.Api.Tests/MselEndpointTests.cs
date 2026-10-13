@@ -715,18 +715,11 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <summary>
-    /// A caller with no role on the MSEL and no permission at all gets as far as the serializer.
+    /// The data table is every event and Data Value of the MSEL, so a caller with no role on it and no
+    /// permission is refused before the serializer is reached.
     /// </summary>
-    /// <remarks>
-    /// Characterization of a missing authorization check, asserted through the defect above: reaching the
-    /// 500 is proof the request was never refused. <c>MselController.GetData</c> asks
-    /// <c>IBlueprintAuthorizationService</c> nothing and <c>GetDataTableAsync</c> checks no requirement,
-    /// so were the serialization fixed, this endpoint would hand every scenario event and data value of
-    /// any MSEL to any authenticated user who knows its id. Turns red when a check is added -
-    /// <c>MselViewRequirement</c> is the one the sibling read uses - and then it should be a 403.
-    /// </remarks>
     [Fact]
-    public async Task GetData_WithNoRoleOrPermission_IsNotForbidden()
+    public async Task GetData_WithNoRoleOrPermission_Is403()
     {
         var msel = BlueprintAppFactory.Msel();
         await Seed(msel);
@@ -734,14 +727,13 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var actor = await Actor().SeedAsync();
 
         Assert.Equal(
-            HttpStatusCode.InternalServerError,
+            HttpStatusCode.Forbidden,
             (await Client(actor).GetAsync($"/api/msels/{msel.Id}/data", Ct)).StatusCode);
     }
 
     /// <remarks>
-    /// The one branch of this endpoint that answers correctly, and the second half of the evidence that
-    /// it is ungated: an unknown MSEL is a 404 to a caller holding nothing, where a gated endpoint would
-    /// refuse before looking.
+    /// The MSEL is looked up before the caller is authorized, so an unknown one is a 404 whatever the
+    /// caller holds.
     /// </remarks>
     [Fact]
     public async Task GetData_ForAnUnknownMsel_WithNoRoleOrPermission_Is404()

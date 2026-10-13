@@ -607,23 +607,17 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
     }
 
     /// <summary>
-    /// Naming an MSEL that does not exist is a 500.
+    /// Naming an MSEL that does not exist is refused: a missing MSEL grants no ownership.
     /// </summary>
-    /// <remarks>
-    /// Characterization. <c>MselOwnerRequirement.IsMet</c> opens with
-    /// <c>(await ...FirstOrDefaultAsync(m => m.Id == mselId)).CreatedBy</c>, so a missing MSEL is a
-    /// <c>NullReferenceException</c>. Every caller of that helper inherits it, which is most of the
-    /// write surface. Turns red when the null is handled - expect 403 or 404.
-    /// </remarks>
     [Fact]
-    public async Task Create_ForAnUnknownMsel_Is500()
+    public async Task Create_ForAnUnknownMsel_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync(
             "/api/organizations", NewBody(mselId: Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>

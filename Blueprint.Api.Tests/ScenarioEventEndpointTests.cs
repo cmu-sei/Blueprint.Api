@@ -469,23 +469,20 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
     }
 
     /// <summary>
-    /// An MSEL that does not exist is a 500, not a 404 or a 403.
+    /// An MSEL that does not exist grants no role, so an ordinary caller is refused.
     /// </summary>
     /// <remarks>
-    /// Characterization. <c>MselOwnerRequirement.IsMet</c> reads <c>.CreatedBy</c> off the result of a
-    /// <c>FirstOrDefaultAsync</c>, so an id matching nothing is a null reference rather than a refusal.
-    /// Turns red when the helper guards its lookup - at which point this becomes the 403 it should always
-    /// have been. A caller holding <c>EditMsels</c> gets a 500 too, from the foreign key, which is why
-    /// only the permission path is asserted.
+    /// A caller holding <c>EditMsels</c> skips the check and gets a 500 from the foreign key, which is
+    /// why only the permission path is asserted.
     /// </remarks>
     [Fact]
-    public async Task Create_ForAnUnknownMsel_Is500()
+    public async Task Create_ForAnUnknownMsel_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Post(Client(actor), Body(Guid.NewGuid()));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>

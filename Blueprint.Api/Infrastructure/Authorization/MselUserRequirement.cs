@@ -14,8 +14,13 @@ namespace Blueprint.Api.Infrastructure.Authorization
     {
         public static async Task<Boolean> IsMet(Guid userId, Guid? mselId, BlueprintContext blueprintContext)
         {
-            var createdBy = (await blueprintContext.Msels.FirstOrDefaultAsync(m => m.Id == mselId)).CreatedBy;
-            if (createdBy == userId)
+            var msel = await blueprintContext.Msels.FirstOrDefaultAsync(m => m.Id == mselId);
+            if (msel == null)
+            {
+                // a MSEL that is not there grants nothing; the caller answers 404 for it
+                return false;
+            }
+            if (msel.CreatedBy == userId)
             {
                 return true;
             }

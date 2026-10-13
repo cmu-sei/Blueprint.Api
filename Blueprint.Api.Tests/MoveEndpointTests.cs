@@ -51,9 +51,8 @@ namespace Blueprint.Api.Tests;
 /// <strong>Reading is looser than the rest of the API.</strong> Both reads use
 /// <c>MselUserRequirement</c> - the one helper of the eight that accepts a unit member holding no MSEL role
 /// at all - so anybody in a unit assigned to the MSEL may read its moves, while writing needs
-/// <c>MselOwnerRequirement</c> or <c>MoveEditorRequirement</c>. And <c>MselUserRequirement</c> dereferences
-/// a <c>FirstOrDefaultAsync</c>, so a MSEL that is not there is a 500 for an ordinary caller and an empty
-/// list for one holding <c>ViewMsels</c>: the answer to "is this MSEL there" depends on who asks.
+/// <c>MselOwnerRequirement</c> or <c>MoveEditorRequirement</c>. A MSEL that is not there is a 403 for an
+/// ordinary caller and an empty list for one holding <c>ViewMsels</c>.
 /// </para>
 /// <para>
 /// <strong><c>GetAsync</c>'s null check is dead</strong> - <c>SingleAsync</c> has already thrown - and the
@@ -200,14 +199,11 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// <c>MselUserRequirement.IsMet</c> dereferences a <c>FirstOrDefaultAsync</c> to read the MSEL's
-    /// <c>CreatedBy</c>, so a MSEL that is not there is a <c>NullReferenceException</c> - a 500 - for a
-    /// caller whose permission has to be checked, and an ordinary empty list for one holding
-    /// <c>ViewMsels</c>, who never reaches the helper. Guarding the lookup turns the first case into the
-    /// 403 or 404 it should have been and leaves the second alone.
+    /// A MSEL that is not there grants a caller whose permission has to be checked nothing, so it is a
+    /// 403, and an ordinary empty list for one holding <c>ViewMsels</c>, who never reaches the helper.
     /// </remarks>
     [Fact]
-    public async Task GetByMsel_ForAMselThatIsNotThere_Is500ForAnOrdinaryCallerAnd200ForAPrivilegedOne()
+    public async Task GetByMsel_ForAMselThatIsNotThere_Is403ForAnOrdinaryCallerAnd200ForAPrivilegedOne()
     {
         var mselId = Guid.NewGuid();
 
@@ -215,7 +211,7 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var privileged = await Client(await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync())
             .GetAsync(MovesOf(mselId), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, ordinary.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, ordinary.StatusCode);
         Assert.Equal(HttpStatusCode.OK, privileged.StatusCode);
         Assert.Empty(await Read<List<ViewModels.Move>>(privileged));
     }
@@ -504,13 +500,12 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// <c>MselOwnerRequirement.IsMet</c> dereferences its <c>FirstOrDefaultAsync</c>, so a body naming a
-    /// MSEL that is not there is a 500 before anything is attempted; a caller holding <c>EditMsels</c>
-    /// skips the helper and reaches the insert, which is a 500 from the foreign key instead. Two paths, two
-    /// exceptions, one status code and no sentence naming the MSEL either way.
+    /// A body naming a MSEL that is not there grants an ordinary caller no ownership, so it is refused; a
+    /// caller holding <c>EditMsels</c> skips the helper and reaches the insert, which is a 500 from the
+    /// foreign key.
     /// </remarks>
     [Fact]
-    public async Task Create_ForAMselThatIsNotThere_Is500WhoeverAsks()
+    public async Task Create_ForAMselThatIsNotThere_Is403ForAnOrdinaryCallerAnd500ForAPrivilegedOne()
     {
         var mselId = Guid.NewGuid();
 
@@ -519,7 +514,7 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             Client(await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync()),
             Body(mselId, moveNumber: 1));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, ordinary.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, ordinary.StatusCode);
         Assert.Equal(HttpStatusCode.InternalServerError, privileged.StatusCode);
     }
 

@@ -96,20 +96,18 @@ public class SystemPermissionHandlerTests
     }
 
     /// <remarks>
-    /// Documented on purpose, because it is the branch that decides what an *unconditional*
-    /// <c>[Authorize]</c>-only action means: an empty requirement succeeds for anyone authenticated. Every
-    /// controller that means "any signed-in user" relies on it, so it is deliberate rather than a defect -
-    /// but a caller that computed its permission array and got an empty one would be silently allowed
-    /// through, which is why it is pinned here.
+    /// A requirement that names no permission grants nothing, so a caller that computed its permission
+    /// array and got an empty one is refused rather than let through.
     /// </remarks>
     [Fact]
-    public async Task AnEmptyRequirement_SucceedsForAnyUser()
+    public async Task AnEmptyRequirement_FailsForAnyUser()
     {
         var context = Context(Principal());
 
         await new SystemPermissionHandler().HandleAsync(context);
 
-        Assert.True(context.HasSucceeded);
+        Assert.False(context.HasSucceeded);
+        Assert.True(context.HasFailed);
     }
 
     /// <remarks>
@@ -117,14 +115,15 @@ public class SystemPermissionHandlerTests
     /// <c>new SystemPermissionRequirement(null)</c> produces.
     /// </remarks>
     [Fact]
-    public async Task ANullRequirementList_SucceedsForAnyUser()
+    public async Task ANullRequirementList_FailsForAnyUser()
     {
         var requirement = new SystemPermissionRequirement(null);
         var context = new AuthorizationHandlerContext([requirement], Principal(), null);
 
         await new SystemPermissionHandler().HandleAsync(context);
 
-        Assert.True(context.HasSucceeded);
+        Assert.False(context.HasSucceeded);
+        Assert.True(context.HasFailed);
     }
 
     /// <summary>

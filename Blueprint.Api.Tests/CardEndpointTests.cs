@@ -51,15 +51,13 @@ namespace Blueprint.Api.Tests;
 /// five write paths. So a MSEL's <c>DateModified</c> does not move when its Gallery cards change.
 /// </para>
 /// <para>
-/// <strong>Reading a card by id is stricter than listing them</strong>, and inconsistently so. The list uses
+/// <strong>Reading a card by id differs from listing them.</strong> The list uses
 /// <c>MselViewRequirement</c> with an <c>IsTemplate</c> fall-through, so a template MSEL's cards are readable
-/// by a stranger; the single read uses <c>MselUserRequirement</c>, which throws on a null MSEL id, so a
-/// template card - listed to everybody by <c>cards/templates</c> - is a 500 when read by its own id.
+/// by a stranger; the single read uses <c>MselUserRequirement</c> for a MSEL's card and nothing for a
+/// template card, which <c>cards/templates</c> already lists to everybody.
 /// </para>
 /// <para>
-/// <strong><c>GetAsync</c>'s null check is dead</strong>, <c>SingleAsync</c> having already thrown, and the
-/// exception it would have thrown is <c>EntityNotFoundException&lt;DataValueEntity&gt;</c> carrying
-/// "DataValue not found" - the same copied line as <c>MoveService</c> and <c>OrganizationService</c>.
+/// <strong><c>GetAsync</c> answers 404 for an unknown card</strong>, as the PUT and DELETE routes do.
 /// </para>
 /// <para>
 /// Per this branch's rule, every test characterizes rather than fixes, and says what fixing it will do to
@@ -382,39 +380,32 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// <c>SingleAsync</c> throws before the null check below it can run, so an unknown id is a 500 for
-    /// everybody - where an unknown id on the PUT and DELETE routes is a 404. Changing the call to
-    /// <c>SingleOrDefaultAsync</c> makes the dead check live and this a 404 (naming <c>DataValue</c>, wrongly),
-    /// which reddens the test.
+    /// An unknown id is a 404, as it is on the PUT and DELETE routes.
     /// </remarks>
     [Fact]
-    public async Task Get_ForAnIdThatIsNotThere_Is500RatherThanThe404TheDeadCheckPromises()
+    public async Task Get_ForAnIdThatIsNotThere_Is404()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(actor).GetAsync(Card(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Sequence contains no elements.", await Title(response));
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     /// <remarks>
-    /// A template card has no <c>MselId</c>, and <c>MselUserRequirement.IsMet</c> dereferences a
-    /// <c>FirstOrDefaultAsync</c> that a null id cannot match - so the one card every caller may see in
-    /// <c>GET cards/templates</c> is a 500 when read by its own id. Guarding that helper (the fix injected by
-    /// batch MV22 for the move unit) turns this into a 403, which reddens the test; making the template
-    /// branch here match <c>GetByMselAsync</c>'s <c>IsTemplate</c> fall-through would make it a 200.
+    /// A template card has no <c>MselId</c>, and every caller may already see it in
+    /// <c>GET cards/templates</c>, so reading it by its own id needs nothing either.
     /// </remarks>
     [Fact]
-    public async Task Get_ForATemplateCard_Is500ForAnOrdinaryCaller()
+    public async Task Get_ForATemplateCard_Is200ForAnOrdinaryCaller()
     {
         var card = await SeedCard(null, isTemplate: true);
         var actor = await Actor().SeedAsync();
 
         var response = await Client(actor).GetAsync(Card(card.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Object reference not set to an instance of an object.", await Title(response));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(card.Id, (await Read<ViewModels.Card>(response)).Id);
     }
 
     [Fact]
@@ -663,19 +654,16 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// The body names a MSEL that is not there, so <c>MselOwnerRequirement.IsMet</c> dereferences a
-    /// <c>FirstOrDefaultAsync</c> that matched nothing - the Phase 2 table's "missing MSEL: throws" column.
-    /// Guarding that helper turns this into the 403 the branch intended and reddens the test.
+    /// The body names a MSEL that is not there, which grants no ownership, so the create is refused.
     /// </remarks>
     [Fact]
-    public async Task Create_ForAMselThatIsNotThere_Is500ForAnOrdinaryCaller()
+    public async Task Create_ForAMselThatIsNotThere_Is403ForAnOrdinaryCaller()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Post(Client(actor), Body(Guid.NewGuid()));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Object reference not set to an instance of an object.", await Title(response));
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------

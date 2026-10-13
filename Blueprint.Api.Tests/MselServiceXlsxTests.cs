@@ -787,25 +787,20 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     /// <summary>
-    /// Characterizes the order of the two checks: without the system permission the missing MSEL is a
-    /// 500 rather than the 403 or 404 either reading of the request would give.
+    /// The permission check runs before the existence check, so without the system permission a missing
+    /// MSEL is a 403, the same answer as an existing one the caller does not own.
     /// </summary>
     /// <remarks>
-    /// <c>MselOwnerRequirement.IsMet</c> dereferences the result of <c>FirstOrDefaultAsync</c>, so it
-    /// throws <c>NullReferenceException</c> for a MSEL that does not exist, and the permission check runs
-    /// before the existence check. A caller probing for MSEL ids can therefore tell an id that exists
-    /// (403) from one that does not (500) without being allowed to touch either. Adding the null guard to
-    /// the requirement - which <c>MselViewRequirement</c> already has - turns this red and gives a 403;
-    /// see also the two <c>MselOwnerRequirementTests</c> characterizations of the same throw.
+    /// A caller probing for MSEL ids therefore cannot tell an id that exists from one that does not.
     /// </remarks>
     [Fact]
-    public async Task Replace_OfAnUnknownMsel_WithoutEditMsels_Is500()
+    public async Task Replace_OfAnUnknownMsel_WithoutEditMsels_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Put(Client(actor), Guid.NewGuid(), Workbook(["Target"], ["a"]));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]

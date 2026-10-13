@@ -108,34 +108,27 @@ public class MselOwnerRequirementTests(DatabaseFixture fixture) : DatabaseTestBa
     }
 
     /// <remarks>
-    /// Characterization. The creator check reads <c>.CreatedBy</c> off the result of
-    /// <c>FirstOrDefaultAsync</c> without checking it for null, so an id that names no MSEL throws rather
-    /// than answering false. Every caller is a service about to return 403, so the caller's 403 becomes a
-    /// 500 - and the two are not equivalent to a client, which retries one and not the other.
-    /// <c>MselViewRequirement</c> gets this right; see
-    /// <see cref="MselViewRequirementTests.IsMet_ForAMselThatDoesNotExist_IsFalse"/>. Turns red when the
-    /// null check arrives.
+    /// A MSEL that is not there grants nothing, so the caller's 403 stays a 403 - or a 404 where the
+    /// service looks the record up first. Same answer as
+    /// <see cref="MselViewRequirementTests.IsMet_ForAMselThatDoesNotExist_IsFalse"/>.
     /// </remarks>
     [Fact]
-    public async Task IsMet_ForAMselThatDoesNotExist_Throws()
+    public async Task IsMet_ForAMselThatDoesNotExist_IsFalse()
     {
         var actor = await Actor().SeedAsync();
 
-        await Assert.ThrowsAsync<NullReferenceException>(
-            () => MselOwnerRequirement.IsMet(actor.Id, Guid.NewGuid(), Db));
+        Assert.False(await MselOwnerRequirement.IsMet(actor.Id, Guid.NewGuid(), Db));
     }
 
     /// <remarks>
-    /// Characterization, same cause. A null id matches no row, so the same unguarded dereference throws -
-    /// and a null <c>mselId</c> is the ordinary shape of a request against an unscoped entity.
+    /// A null id matches no MSEL, which is the ordinary shape of a request against an unscoped entity.
     /// </remarks>
     [Fact]
-    public async Task IsMet_ForANullMselId_Throws()
+    public async Task IsMet_ForANullMselId_IsFalse()
     {
         var actor = await Actor().SeedAsync();
 
-        await Assert.ThrowsAsync<NullReferenceException>(
-            () => MselOwnerRequirement.IsMet(actor.Id, null, Db));
+        Assert.False(await MselOwnerRequirement.IsMet(actor.Id, null, Db));
     }
 
     [Fact]

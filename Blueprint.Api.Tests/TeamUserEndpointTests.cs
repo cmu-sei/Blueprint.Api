@@ -148,22 +148,18 @@ public class TeamUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     }
 
     /// <remarks>
-    /// <c>MselUserRequirement</c> dereferences its <c>FirstOrDefaultAsync</c> with no null guard, so an
-    /// unknown MSEL id is a 500 for an ordinary caller and an empty list for a <c>ViewMsels</c> holder
-    /// whose permission short-circuits the check. "Is this MSEL there" therefore has two answers
-    /// depending on who asks - the shape recorded for <c>MoveService</c> in <c>997a9c4</c> and for
-    /// <c>TeamService.GetByMselAsync</c> in this unit's first file. A null guard turns the first half into
-    /// a 403 and leaves the second alone.
+    /// An unknown MSEL id grants an ordinary caller nothing, so it is a 403, and an empty list for a
+    /// <c>ViewMsels</c> holder whose permission short-circuits the check.
     /// </remarks>
     [Fact]
-    public async Task GetByMsel_ForAMselThatIsNotThere_Is500()
+    public async Task GetByMsel_ForAMselThatIsNotThere_Is403ForAnOrdinaryCaller()
     {
         var stranger = await Actor().SeedAsync();
         var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(stranger).GetAsync(TeamUsersOf(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Empty(await GetRows(Client(privileged), TeamUsersOf(Guid.NewGuid())));
     }
 
@@ -223,9 +219,8 @@ public class TeamUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     /// <remarks>
     /// The existence check runs <em>before</em> the permission check, so an unknown team is a 404 whoever
     /// asks - which leaks that a team id is unused, and is also the shape every other service in this
-    /// tier should have copied. Compare <c>TeamService.UpdateAsync</c>, where the permission check runs
-    /// first and a stranger naming an unknown MSEL gets <c>MselOwnerRequirement</c>'s 500. Moving the
-    /// permission check above the existence check turns this into a 403 and reddens this test.
+    /// tier should have copied. Moving the permission check above the existence check turns this into a
+    /// 403 and reddens this test.
     /// </remarks>
     [Fact]
     public async Task GetByTeam_ForATeamThatIsNotThere_IsA404ForAStrangerToo()

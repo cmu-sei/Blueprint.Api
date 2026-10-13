@@ -158,9 +158,8 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
     }
 
     /// <remarks>
-    /// BUG: nothing validates the MSEL the body names. <c>MselOwnerRequirement</c> dereferences its
-    /// unguarded lookup for an ordinary caller and the foreign key refuses the insert for an
-    /// <c>EditMsels</c> holder, so an unknown MSEL is a 500 either way.
+    /// BUG: nothing validates the MSEL the body names, so for an <c>EditMsels</c> holder, who skips the
+    /// ownership check, the foreign key refuses the insert and an unknown MSEL is a 500.
     /// </remarks>
     [Fact]
     public async Task Create_ForAMselThatIsNotThere_Is500()

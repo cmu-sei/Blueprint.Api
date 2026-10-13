@@ -451,28 +451,32 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
     }
 
     /// <remarks>
-    /// With <c>ManageMsels</c> the permission check is skipped and the insert fails on the foreign key;
-    /// without it, <c>MselOwnerRequirement.IsMet</c> dereferences a MSEL that is not there. Two unrelated
-    /// causes, one status, and neither is the 404 the request deserves.
+    /// With <c>ManageMsels</c> the permission check is skipped and the insert fails on the foreign key,
+    /// which is a 500 rather than the 404 the request deserves.
     /// </remarks>
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Create_ForAMselThatIsNotThere_Is500ForEverybody(bool hasManageMsels)
+    [Fact]
+    public async Task Create_ForAMselThatIsNotThere_WithManageMsels_Is500()
     {
-        var builder = Actor();
-
-        if (hasManageMsels)
-        {
-            builder = builder.WithSystemPermissions(SystemPermission.ManageMsels);
-        }
-
-        var actor = await builder.SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
         var subject = await SeedUser();
 
         var response = await Post(Client(actor), Body(subject.Id, Guid.NewGuid(), MselRole.Editor));
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+    }
+
+    /// <remarks>
+    /// Without the permission, a MSEL that is not there grants no ownership, so the caller is refused.
+    /// </remarks>
+    [Fact]
+    public async Task Create_ForAMselThatIsNotThere_WithoutManageMsels_Is403()
+    {
+        var actor = await Actor().SeedAsync();
+        var subject = await SeedUser();
+
+        var response = await Post(Client(actor), Body(subject.Id, Guid.NewGuid(), MselRole.Editor));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -782,18 +786,17 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
     }
 
     /// <remarks>
-    /// And without the permission the same request is a 500, because <c>MselOwnerRequirement.IsMet</c>
-    /// dereferences the missing MSEL's <c>CreatedBy</c>. The two callers cannot compare notes.
+    /// Without the permission, a MSEL that is not there grants no ownership, so the request is refused.
     /// </remarks>
     [Fact]
-    public async Task SetIntegrationRoles_ForAMselThatIsNotThere_WithoutManageMsels_Is500()
+    public async Task SetIntegrationRoles_ForAMselThatIsNotThere_WithoutManageMsels_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await SetIntegrationRoles(
             Client(actor), Guid.NewGuid(), actor.Id, new { citeEvaluationRole = "Inject" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <remarks>

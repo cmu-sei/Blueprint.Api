@@ -508,19 +508,16 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// <c>MselOwnerRequirement.IsMet</c> dereferences a <c>FirstOrDefaultAsync</c>, so naming a MSEL that
-    /// is not there is a 500 rather than the 404 or 403 either answer would justify - the Phase 2 finding,
-    /// reached from a create. A null guard in the requirement turns this red, which is what
-    /// <c>MselOwnerRequirementTests</c>' two characterizations already promise.
+    /// A MSEL that is not there grants no ownership, so naming one is refused.
     /// </remarks>
     [Fact]
-    public async Task Create_ForAMselThatIsNotThere_Is500()
+    public async Task Create_ForAMselThatIsNotThere_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Post(Client(actor), Body(Guid.NewGuid()));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <remarks>
@@ -702,20 +699,19 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// The permission check runs before the unit is loaded, so an unknown MSEL is
-    /// <c>MselOwnerRequirement</c>'s unguarded dereference and a 500 - and it is a 500 for a caller holding
-    /// <c>EditMsels</c> too, because the create then fails the MSEL foreign key. Two causes, one status;
-    /// guarding the requirement leaves the second half of this test green.
+    /// The permission check runs before the unit is loaded, so an unknown MSEL grants an ordinary caller
+    /// nothing and is a 403. A caller holding <c>EditMsels</c> skips the check and the create then fails
+    /// the MSEL foreign key, a 500.
     /// </remarks>
     [Fact]
-    public async Task CreateFromUnit_ForAMselThatIsNotThere_Is500()
+    public async Task CreateFromUnit_ForAMselThatIsNotThere_Is403ForAnOrdinaryCallerAnd500ForAPrivilegedOne()
     {
         var stranger = await Actor().SeedAsync();
         var privileged = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
         var unit = await SeedUnit(stranger.Id);
 
         Assert.Equal(
-            HttpStatusCode.InternalServerError,
+            HttpStatusCode.Forbidden,
             (await PostFromUnit(Client(stranger), Guid.NewGuid(), unit.Id)).StatusCode);
         Assert.Equal(
             HttpStatusCode.InternalServerError,

@@ -196,8 +196,8 @@ public class UserTeamRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
     /// <remarks>
     /// The four-argument <c>MselViewRequirement</c> null-guards its <c>FirstOrDefaultAsync</c> and returns
-    /// false, so an unknown MSEL is a clean 403 here where <c>TeamService.GetByMselAsync</c> and
-    /// <c>MselUserRequirement</c> both answer 500 for the same question. The 403 is also indistinguishable
+    /// false, so an unknown MSEL is a clean 403 here, as it is for <c>MselOwnerRequirement</c> and
+    /// <c>MselUserRequirement</c>. The 403 is also indistinguishable
     /// from "that MSEL exists and you may not see it", which is the right answer to give a stranger.
     /// </remarks>
     [Fact]

@@ -57,8 +57,8 @@ namespace Blueprint.Api.Tests;
 /// not, because one of the three columns is always null and Postgres counts nulls as distinct
 /// (<see cref="Create_ASecondValueForTheSameCell_IsAccepted"/>). And the delete path resolves the MSEL
 /// from the data field and reaches <c>MselOwnerRequirement</c> with a null id for a field belonging to an
-/// inject type, which throws rather than refusing - a 500 where a 403 was meant
-/// (<see cref="Delete_AValueOnAnInject_Is500"/>).
+/// inject type, which grants nothing, so the delete is refused
+/// (<see cref="Delete_AValueOnAnInject_Is403"/>).
 /// </para>
 /// <para>
 /// Two things are noted here and not tested because nothing observable follows from them:
@@ -185,23 +185,20 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     }
 
     /// <summary>
-    /// An unknown MSEL is a 500 for a caller who has to be checked against it.
+    /// An unknown MSEL grants a caller who has to be checked against it nothing, so it is a 403.
     /// </summary>
     /// <remarks>
-    /// Characterization. <c>MselUserRequirement.IsMet</c> reads <c>.CreatedBy</c> off the result of a
-    /// <c>FirstOrDefaultAsync</c>, so an id matching nothing is a null reference rather than a refusal.
     /// The pair below shows it is the permission check and not the query: the same request from a caller
-    /// holding <c>ViewMsels</c> skips the helper and answers an empty list. Turns red when the helper
-    /// guards its lookup.
+    /// holding <c>ViewMsels</c> skips the helper and answers an empty list.
     /// </remarks>
     [Fact]
-    public async Task GetByMsel_ForAnUnknownMsel_Is500()
+    public async Task GetByMsel_ForAnUnknownMsel_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}/datavalues", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -1048,23 +1045,21 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     }
 
     /// <summary>
-    /// Deleting a value on an inject is a 500 for anyone without <c>EditMsels</c>, for the same reason
-    /// creating one is.
+    /// Deleting a value on an inject is refused for anyone without <c>EditMsels</c>.
     /// </summary>
     /// <remarks>
-    /// Characterization. The MSEL is resolved from the data field, an inject type's field has none, and
-    /// <c>MselOwnerRequirement</c> dereferences the MSEL it cannot find. Turns red when the requirement
-    /// guards its lookup.
+    /// The MSEL is resolved from the data field, an inject type's field has none, and a missing MSEL
+    /// grants no ownership.
     /// </remarks>
     [Fact]
-    public async Task Delete_AValueOnAnInject_Is500()
+    public async Task Delete_AValueOnAnInject_Is403()
     {
         var cell = await SeedInjectCell();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageDataFields).SeedAsync();
 
         var response = await Client(actor).DeleteAsync($"/api/dataValues/{cell.Value.Id}", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.NotNull(await Stored(cell.Value.Id));
     }
 

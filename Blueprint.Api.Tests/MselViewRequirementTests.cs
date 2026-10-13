@@ -39,8 +39,8 @@ public class MselViewRequirementTests(DatabaseFixture fixture) : DatabaseTestBas
 
     /// <summary>
     /// A missing MSEL is a plain false, not a throw - which is what lets the service layer turn it into a
-    /// 403 rather than a 500. <c>MselOwnerRequirement</c> and <c>MselUserRequirement</c> do not do this;
-    /// see <see cref="MselOwnerRequirementTests.IsMet_ForAMselThatDoesNotExist_Throws"/>.
+    /// 403 rather than a 500. <c>MselOwnerRequirement</c> and <c>MselUserRequirement</c> answer the same;
+    /// see <see cref="MselOwnerRequirementTests.IsMet_ForAMselThatDoesNotExist_IsFalse"/>.
     /// </summary>
     [Fact]
     public async Task IsMet_ForAMselThatDoesNotExist_IsFalse()

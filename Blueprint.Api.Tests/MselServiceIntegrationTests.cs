@@ -182,20 +182,18 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
     }
 
     /// <summary>
-    /// Characterizes a defect. An unknown MSEL is a 500 rather than a 404 for a caller without the
-    /// system permission, because <c>MselOwnerRequirement.IsMet</c> dereferences the MSEL it just failed
-    /// to find. Fixing that null guard turns this red, and the endpoint answers 403 - which is the right
-    /// answer, since a caller with no permission should not learn whether the MSEL exists.
+    /// An unknown MSEL grants no ownership, so a caller without the system permission is refused - and
+    /// does not learn whether the MSEL exists.
     /// </summary>
     [Fact]
-    public async Task Push_ForAnUnknownMsel_WithNoPermission_Is500()
+    public async Task Push_ForAnUnknownMsel_WithNoPermission_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Client(actor)
             .PostAsync($"/api/msels/{Guid.NewGuid()}/integrations", null, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>

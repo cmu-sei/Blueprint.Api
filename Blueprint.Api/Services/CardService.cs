@@ -78,12 +78,13 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Card> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
-            var item = await _context.Cards.SingleAsync(card => card.Id == id, ct);
+            var item = await _context.Cards.SingleOrDefaultAsync(card => card.Id == id, ct);
 
             if (item == null)
-                throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
+                throw new EntityNotFoundException<Card>("Card not found: " + id);
 
-            if (!hasSystemPermission && !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
+            // templates (null MselId) can be viewed by anyone, as the template list already shows them
+            if (item.MselId.HasValue && !hasSystemPermission && !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
                 throw new ForbiddenException();
 
             return _mapper.Map<Card>(item);

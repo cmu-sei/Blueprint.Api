@@ -520,19 +520,17 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
     }
 
     /// <summary>
-    /// The permission check runs first and <c>MselOwnerRequirement</c> dereferences the MSEL it did not
-    /// find, so an unknown MSEL is a 500 for an ordinary caller and the 404 three lines below is
-    /// unreachable for them. Turns red when the requirement guards its lookup - the same defect
-    /// <c>MselOwnerRequirementTests</c> pins directly.
+    /// The permission check runs first, and an unknown MSEL grants no ownership, so an ordinary caller is
+    /// refused before the service looks the MSEL up.
     /// </summary>
     [Fact]
-    public async Task CreateFromInjects_ForAnUnknownMsel_Is500()
+    public async Task CreateFromInjects_ForAnUnknownMsel_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Post(Client(actor), Guid.NewGuid(), Guid.NewGuid(), []);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>

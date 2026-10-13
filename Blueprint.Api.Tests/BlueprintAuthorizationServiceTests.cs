@@ -120,21 +120,20 @@ public class BlueprintAuthorizationServiceTests
     }
 
     /// <remarks>
-    /// Characterization of a hazard rather than a bug: an empty array authorizes anyone, because
-    /// <see cref="SystemPermissionHandler"/> succeeds on an empty requirement. A controller computing its
-    /// permission array and arriving at none would open the action to every caller instead of closing it.
-    /// See <see cref="SystemPermissionHandlerTests.AnEmptyRequirement_SucceedsForAnyUser"/>.
+    /// An empty array authorizes nobody, because <see cref="SystemPermissionHandler"/> fails an empty
+    /// requirement: a controller computing its permission array and arriving at none closes the action.
+    /// See <see cref="SystemPermissionHandlerTests.AnEmptyRequirement_FailsForAnyUser"/>.
     /// </remarks>
     [Fact]
-    public async Task AuthorizeAsync_WithNoRequiredPermissions_IsTrueForAnyone()
+    public async Task AuthorizeAsync_WithNoRequiredPermissions_IsFalseForAnyone()
     {
         _userClaims.GetCurrentClaimsPrincipal().Returns(Principal());
 
-        Assert.True(await _service.AuthorizeAsync([], Ct));
+        Assert.False(await _service.AuthorizeAsync([], Ct));
     }
 
     /// <summary>
-    /// Even so, the null-user branch still wins: no caller means no, regardless of the requirement.
+    /// And with no caller at all: no caller means no, regardless of the requirement.
     /// </summary>
     [Fact]
     public async Task AuthorizeAsync_WithNoRequiredPermissionsAndNoPrincipal_IsFalse()

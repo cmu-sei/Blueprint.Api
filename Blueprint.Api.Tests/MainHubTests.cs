@@ -96,15 +96,11 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
     }
 
     /// <remarks>
-    /// BUG: the permission that decides whether a connection sees every MSEL in the installation is
-    /// <see cref="SystemPermission.ManageUsers"/> - a user-administration permission that says nothing
-    /// about MSELs. <see cref="SystemPermission.ViewMsels"/> is what every read route in the API asks for
-    /// and is not consulted here, so a holder of it is joined to the MSELs they belong to and told nothing
-    /// about the rest, while a holder of <c>ManageUsers</c> and no MSEL permission at all receives every
-    /// edit to every exercise.
+    /// <see cref="SystemPermission.ViewMsels"/>, the permission every read route asks for, is what joins a
+    /// connection to every MSEL in the installation.
     /// </remarks>
     [Fact]
-    public async Task Join_WithManageUsers_AddsEveryMselInTheInstallation()
+    public async Task Join_WithViewMsels_AddsEveryMselInTheInstallation()
     {
         var actor = Guid.NewGuid();
         var strangers = BlueprintAppFactory.Msel();
@@ -112,10 +108,40 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         await Seed(strangers, archived);
         var harness = new HubHarness(actor);
 
-        await Hub(harness, SystemPermission.ManageUsers).Join();
+        await Hub(harness, SystemPermission.ViewMsels).Join();
 
         AssertGroups([strangers.Id.ToString(), actor.ToString()], harness.Added);
         Assert.DoesNotContain(archived.Id.ToString(), harness.Added);
+    }
+
+    /// <remarks>
+    /// <see cref="SystemPermission.ManageUsers"/> administers accounts and says nothing about MSELs, so
+    /// its holder is joined only to the MSELs they belong to and never receives another exercise's edits.
+    /// </remarks>
+    [Fact]
+    public async Task Join_WithManageUsers_AddsNoMselTheCallerIsNotOn()
+    {
+        var actor = Guid.NewGuid();
+        var strangers = BlueprintAppFactory.Msel();
+        await Seed(strangers);
+        var harness = new HubHarness(actor);
+
+        await Hub(harness, SystemPermission.ManageUsers).Join();
+
+        AssertGroups([actor.ToString()], harness.Added);
+    }
+
+    [Fact]
+    public async Task SelectMsel_WithManageUsers_ForAMselTheCallerIsNotOn_JoinsNothing()
+    {
+        var actor = Guid.NewGuid();
+        var strangers = BlueprintAppFactory.Msel();
+        await Seed(strangers);
+        var harness = new HubHarness(actor);
+
+        await Hub(harness, SystemPermission.ManageUsers).SelectMsel([strangers.Id]);
+
+        Assert.DoesNotContain(strangers.Id.ToString(), harness.Added);
     }
 
     [Fact]

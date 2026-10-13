@@ -183,7 +183,8 @@ namespace Blueprint.Api.Hubs
         {
             var userGuid = Guid.Parse(userId);
             var idList = new List<string>();
-            if (await _blueprintAuthorizationService.AuthorizeAsync([SystemPermission.ManageUsers], _ct))
+            // every MSEL's live data goes to those who may view every MSEL
+            if (await _blueprintAuthorizationService.AuthorizeAsync([SystemPermission.ViewMsels], _ct))
             {
                 idList = await _context.Msels
                     .Where(m => m.Status != Data.Enumerations.MselItemStatus.Archived)

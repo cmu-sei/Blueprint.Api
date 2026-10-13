@@ -803,17 +803,11 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
     }
 
     /// <summary>
-    /// The body's id has to match the route's, or the update is a 500.
+    /// The edit request has no id, so a different one in the body is ignored and the route's
+    /// organization is written.
     /// </summary>
-    /// <remarks>
-    /// Characterization, and the reason every <c>PUT</c> in this file echoes the id back.
-    /// <c>UpdateAsync</c> loads the row by the route id and then maps the whole body onto it, id
-    /// included, so a mismatched body id asks EF Core to change a tracked primary key - which it refuses.
-    /// The action's own documentation says the ids "MUST MATCH"; nothing enforces it. Turns red when the
-    /// mismatch is rejected - expect 400.
-    /// </remarks>
     [Fact]
-    public async Task Update_WithAMismatchedBodyId_Is500()
+    public async Task Update_WithAMismatchedBodyId_UpdatesTheRoutesOrganization()
     {
         var organization = BlueprintAppFactory.Organization();
         await Seed(organization);
@@ -824,10 +818,11 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         var response = await Client(actor).PutAsJsonAsync(
             $"/api/organizations/{organization.Id}",
-            Body(organization) with { Id = Guid.NewGuid() },
+            Body(organization, name: "Renamed") with { Id = Guid.NewGuid() },
             Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Renamed", (await NewContext().Organizations.SingleAsync(x => x.Id == organization.Id, Ct)).Name);
     }
 
     [Fact]
@@ -887,26 +882,11 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
     }
 
     /// <summary>
-    /// A caller holding only <see cref="SystemPermission.ManageOrganizations"/> can edit an MSEL's
-    /// organization by sending <c>mselId: null</c> in the body.
+    /// A MSEL's organization is decided by the MSEL's permissions whatever the body says, so
+    /// <see cref="SystemPermission.ManageOrganizations"/> cannot reach it by sending <c>mselId: null</c>.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Characterization, and a privilege escalation. <c>UpdateAsync</c> picks its permission branch from
-    /// the <em>request body's</em> <c>MselId</c> rather than from the stored row's, so a null there routes
-    /// the check to the template branch - which <see cref="SystemPermission.ManageOrganizations"/>
-    /// satisfies. The write then lands on MSEL-scoped data the caller has no role on, and it *also*
-    /// detaches the row from its MSEL, because the global null-source rule only protects <c>T?</c> mapped
-    /// onto <c>T</c> and <c>MselId</c> is <c>Guid?</c> on both sides. One request both edits and steals
-    /// the record.
-    /// </para>
-    /// <para>
-    /// Turns red when the branch is chosen from <c>organizationToUpdate.MselId</c>, as
-    /// <c>DeleteAsync</c> already does - expect 403.
-    /// </para>
-    /// </remarks>
     [Fact]
-    public async Task Update_ChoosesItsPermissionBranchFromTheRequestBody()
+    public async Task Update_WithANullMselIdInTheBody_AndManageOrganizationsOnly_Is403AndLeavesTheRowAlone()
     {
         var msel = BlueprintAppFactory.Msel();
         await Seed(msel);
@@ -920,7 +900,72 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         var response = await Client(actor).PutAsJsonAsync(
             $"/api/organizations/{organization.Id}",
-            Body(organization, name: "Escalated") with { MselId = null },
+            Body(organization, name: "Escalated") with { MselId = null, IsTemplate = true },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        await using var context = NewContext();
+        var stored = await context.Organizations.AsNoTracking()
+            .SingleAsync(x => x.Id == organization.Id, Ct);
+
+        Assert.Equal(organization.Name, stored.Name);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.False(stored.IsTemplate);
+    }
+
+    /// <summary>
+    /// The decision is made on the organization's stored MSEL, so editing the MSEL named in the body
+    /// buys nothing.
+    /// </summary>
+    [Fact]
+    public async Task Update_AsAnEditorOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheRowAlone()
+    {
+        var mine = BlueprintAppFactory.Msel();
+        var theirs = BlueprintAppFactory.Msel();
+        await Seed(mine, theirs);
+
+        var organization = BlueprintAppFactory.Organization(theirs.Id);
+        await Seed(organization);
+
+        var actor = await Actor().OnMsel(mine, MselRole.Editor).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"/api/organizations/{organization.Id}",
+            Body(organization, name: "Stolen") with { MselId = mine.Id },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        await using var context = NewContext();
+        var stored = await context.Organizations.AsNoTracking()
+            .SingleAsync(x => x.Id == organization.Id, Ct);
+
+        Assert.Equal(organization.Name, stored.Name);
+        Assert.Equal(theirs.Id, stored.MselId);
+    }
+
+    /// <summary>
+    /// An owner's edit that names no MSEL, or another one, changes the organization and leaves it in
+    /// its MSEL.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Update_AsAnOwner_NamingAnotherScopeInTheBody_KeepsTheRowInItsMsel(bool toNull)
+    {
+        var msel = BlueprintAppFactory.Msel();
+        var other = BlueprintAppFactory.Msel();
+        await Seed(msel, other);
+
+        var organization = BlueprintAppFactory.Organization(msel.Id);
+        await Seed(organization);
+
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"/api/organizations/{organization.Id}",
+            Body(organization, name: "Renamed") with { MselId = toNull ? null : other.Id, IsTemplate = toNull },
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -929,8 +974,9 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         var stored = await context.Organizations.AsNoTracking()
             .SingleAsync(x => x.Id == organization.Id, Ct);
 
-        Assert.Equal("Escalated", stored.Name);
-        Assert.Null(stored.MselId);
+        Assert.Equal("Renamed", stored.Name);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.False(stored.IsTemplate);
     }
 
     [Fact]
@@ -1302,6 +1348,32 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
     }
 
     /// <summary>
+    /// Only templates are exported. A MSEL's organization named in the request is left out, so
+    /// <see cref="SystemPermission.ManageOrganizations"/> does not read a MSEL's rows.
+    /// </summary>
+    [Fact]
+    public async Task DownloadJson_LeavesOutAMselsOrganizations()
+    {
+        var msel = BlueprintAppFactory.Msel();
+        await Seed(msel);
+        var mselRow = BlueprintAppFactory.Organization(msel.Id, name: "FromTheMsel");
+        var template = BlueprintAppFactory.Organization(name: "FromTheTemplates");
+        await Seed(mselRow, template);
+
+        var actor = await Actor()
+            .WithSystemPermissions(SystemPermission.ManageOrganizations)
+            .SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "/api/organizations/json/download", new[] { mselRow.Id, template.Id }, Ct);
+
+        var json = await response.Content.ReadAsStringAsync(Ct);
+
+        Assert.Contains("FromTheTemplates", json);
+        Assert.DoesNotContain("FromTheMsel", json);
+    }
+
+    /// <summary>
     /// The download is serialized with <c>ReferenceHandler.Preserve</c>, so the list is wrapped in
     /// <c>$id</c>/<c>$values</c> rather than being a bare JSON array.
     /// </summary>
@@ -1405,8 +1477,8 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
     };
 
     /// <summary>
-    /// The wire shape of an update, echoing the seeded row. The id is included because
-    /// <see cref="Update_WithAMismatchedBodyId_Is500"/> is what happens when it is not.
+    /// The wire shape of an update, echoing the seeded row the way the UI does. The edit request ignores
+    /// the id, the MSEL and the template flag.
     /// </summary>
     private static UpdateBody Body(OrganizationEntity entity, string name = null) => new()
     {

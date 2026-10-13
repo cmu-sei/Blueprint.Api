@@ -188,6 +188,35 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Create_ForATeamOfAnotherMsel_Is404AndCreatesNothing()
+    {
+        var (msel, _) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var (_, theirTeam) = await SeedMselAndTeam();
+
+        var response = await Client(actor).PostAsJsonAsync("api/citeDuties", Body(msel.Id, theirTeam.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(await NewContext().CiteDuties.AnyAsync(Ct));
+    }
+
+    /// <summary>
+    /// A template belongs to no MSEL, so it cannot name a MSEL's team.
+    /// </summary>
+    [Fact]
+    public async Task Create_ATemplateNamingATeam_Is404AndCreatesNothing()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageCiteDuties).SeedAsync();
+        var (_, team) = await SeedMselAndTeam();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/citeDuties", Body(null, team.Id) with { isTemplate = true }, Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(await NewContext().CiteDuties.AnyAsync(Ct));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // PUT citeDuties/{id}
     // ---------------------------------------------------------------------------------------------
@@ -223,13 +252,11 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <remarks>
-    /// BUG: <c>UpdateAsync</c> decides from the request body's <c>MselId</c> before it looks the row up
-    /// and the profile maps that id both ways, so an editor of any MSEL may steal every other MSEL's
-    /// duties. Tenth instance of the shape on the branch; <c>DeleteAsync</c> below is the model to copy.
-    /// </remarks>
+    /// <summary>
+    /// The decision is made on the duty's stored MSEL, so editing the MSEL named in the body buys nothing.
+    /// </summary>
     [Fact]
-    public async Task Update_DecidesFromTheRequestBodyAndStealsTheRow()
+    public async Task Update_AsAnEditorOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheRowAlone()
     {
         var (mine, myTeam) = await SeedMselAndTeam();
         var actor = await Actor().OnMsel(mine, MselRole.Editor).SeedAsync();
@@ -242,10 +269,102 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             Body(mine.Id, myTeam.Id) with { id = duty.Id, name = "stolen" },
             Ct);
 
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var stored = await NewContext().CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct);
+        Assert.Equal(theirs.Id, stored.MselId);
+        Assert.Equal(theirTeam.Id, stored.TeamId);
+        Assert.Equal(duty.Name, stored.Name);
+    }
+
+    /// <summary>
+    /// A MSEL's duty is decided by the MSEL's permissions whatever the body says, so the template
+    /// permission cannot reach it by sending no MSEL.
+    /// </summary>
+    [Fact]
+    public async Task Update_WithANullMselIdInTheBody_AndManageCiteDutiesOnly_Is403AndLeavesTheRowAlone()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageCiteDuties).SeedAsync();
+        var duty = BlueprintAppFactory.CiteDuty(msel.Id, team.Id);
+        await Seed(duty);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/citeDuties/{duty.Id}",
+            Body(null, null) with { id = duty.Id, isTemplate = true, name = "detached" },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var stored = await NewContext().CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.False(stored.IsTemplate);
+        Assert.Equal(duty.Name, stored.Name);
+    }
+
+    /// <summary>
+    /// An editor's edit that names another MSEL changes the duty and leaves it in its MSEL.
+    /// </summary>
+    [Fact]
+    public async Task Update_AsAnEditor_NamingAnotherMselInTheBody_KeepsTheRowInItsMsel()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var (other, _) = await SeedMselAndTeam();
+        var duty = BlueprintAppFactory.CiteDuty(msel.Id, team.Id);
+        await Seed(duty);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/citeDuties/{duty.Id}",
+            Body(other.Id, team.Id) with { id = duty.Id, isTemplate = true, name = "after" },
+            Ct);
+
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var stored = await NewContext().CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct);
-        Assert.Equal(mine.Id, stored.MselId);
-        Assert.Equal("stolen", stored.Name);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.False(stored.IsTemplate);
+        Assert.Equal("after", stored.Name);
+    }
+
+    /// <summary>
+    /// The CITE team must be one of the duty's own MSEL's teams; another MSEL's is answered as a team
+    /// that is not there.
+    /// </summary>
+    [Fact]
+    public async Task Update_ToATeamOfAnotherMsel_Is404AndLeavesTheRowAlone()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var (_, theirTeam) = await SeedMselAndTeam();
+        var duty = BlueprintAppFactory.CiteDuty(msel.Id, team.Id);
+        await Seed(duty);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/citeDuties/{duty.Id}", Body(msel.Id, theirTeam.Id) with { id = duty.Id }, Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(team.Id, (await NewContext().CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct)).TeamId);
+    }
+
+    /// <summary>
+    /// The duty names its team by id only. A nested team in the body is not written, so a duty edit
+    /// cannot rename another MSEL's team.
+    /// </summary>
+    [Fact]
+    public async Task Update_WithANestedTeamInTheBody_LeavesThatTeamAlone()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var (theirs, theirTeam) = await SeedMselAndTeam();
+        var duty = BlueprintAppFactory.CiteDuty(msel.Id, team.Id);
+        await Seed(duty);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/citeDuties/{duty.Id}",
+            new { name = "renamed", teamId = team.Id, team = new { id = theirTeam.Id, name = "hijacked", mselId = theirs.Id } },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(theirTeam.Name, (await NewContext().Teams.SingleAsync(x => x.Id == theirTeam.Id, Ct)).Name);
+        Assert.Equal("renamed", (await NewContext().CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct)).Name);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -302,6 +421,29 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.DoesNotContain("unwanted", file);
     }
 
+    /// <summary>
+    /// Only templates are exported. A MSEL's duty named in the request is left out, so the template
+    /// permission does not read a MSEL's rows.
+    /// </summary>
+    [Fact]
+    public async Task DownloadJson_LeavesOutAMselsRows()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageCiteDuties).SeedAsync();
+        var (msel, team) = await SeedMselAndTeam();
+        var mselRow = BlueprintAppFactory.CiteDuty(msel.Id, team.Id);
+        mselRow.Name = "from the msel";
+        var template = BlueprintAppFactory.CiteDuty();
+        template.Name = "from the templates";
+        await Seed(mselRow, template);
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/citeDuties/json/download", new[] { mselRow.Id, template.Id }, Ct);
+
+        var file = await response.Content.ReadAsStringAsync(Ct);
+        Assert.Contains("from the templates", file);
+        Assert.DoesNotContain("from the msel", file);
+    }
+
     /// <remarks>
     /// The round trip: the file is PascalCase behind <c>ReferenceHandler.Preserve</c>'s
     /// <c>$id</c>/<c>$values</c> wrapper where every response is camelCase, but the pair agrees with
@@ -311,8 +453,7 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     public async Task UploadJson_TakesADownloadedFileAndMakesTemplatesOfIt()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageCiteDuties).SeedAsync();
-        var (msel, team) = await SeedMselAndTeam();
-        var duty = BlueprintAppFactory.CiteDuty(msel.Id, team.Id, "exported");
+        var duty = BlueprintAppFactory.CiteDuty(null, null, "exported");
         await Seed(duty);
         var download = await Client(actor).PostAsJsonAsync(
             "api/citeDuties/json/download", new[] { duty.Id }, Ct);

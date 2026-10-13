@@ -83,10 +83,9 @@ namespace Blueprint.Api.Controllers
         [HttpPost("moves")]
         [ProducesResponseType(typeof(Move), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createMove")]
-        public async Task<IActionResult> Create([FromBody] Move move, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] MoveCreate move, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            move.CreatedBy = User.GetId();
             var createdMove = await _moveService.CreateAsync(move, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdMove.Id }, createdMove);
         }
@@ -96,7 +95,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a Move with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the move parameter
+        /// The Move stays in its MSEL: the MSEL cannot be changed
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -106,10 +105,9 @@ namespace Blueprint.Api.Controllers
         [HttpPut("moves/{id}")]
         [ProducesResponseType(typeof(Move), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateMove")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Move move, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] MoveEdit move, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            move.ModifiedBy = User.GetId();
             var updatedMove = await _moveService.UpdateAsync(id, move, hasSystemPermission, ct);
             return Ok(updatedMove);
         }

@@ -12,8 +12,12 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<CiteDutyEntity, CiteDuty>();
 
+            // the JSON template upload
             CreateMap<CiteDuty, CiteDutyEntity>()
-                .ForMember(cr => cr.Msel, opt => opt.Ignore());
+                .ForMember(cr => cr.Msel, opt => opt.Ignore())
+                .ForMember(cr => cr.Team, opt => opt.Ignore());
+            CreateMap<CiteDutyCreate, CiteDutyEntity>(AutoMapper.MemberList.Source);
+            CreateMap<CiteDutyEdit, CiteDutyEntity>(AutoMapper.MemberList.Source);
 
         }
     }

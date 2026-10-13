@@ -163,7 +163,7 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
     /// Worth pinning precisely, because the rule reads as though it made every nullable field on every
     /// <c>PUT</c> a partial update, and it does not - <c>Organization.MselId</c>, <c>Team.CiteTeamTypeId</c>,
     /// <c>Msel.PlayerViewId</c> and the rest are <c>T?</c> on both sides, where the rule does not fire and
-    /// a null overwrites. See <see cref="Map_AnOrganizationWithNoMselId_DetachesItFromItsMsel"/>.
+    /// a null overwrites. That is why the edit requests leave such fields out rather than relying on it.
     /// </para>
     /// <para>
     /// Measured from the CLR property types rather than from the property map, so this says which
@@ -229,25 +229,25 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
     }
 
     /// <summary>
-    /// Characterization, and the mapper half of <c>OrganizationEndpointTests</c>'s
-    /// <c>Update_ChoosesItsPermissionBranchFromTheRequestBody</c>. <c>MselId</c> is <c>Guid?</c> on both
-    /// the view model and the entity, so the global rule does not fire and a <c>PUT</c> whose body omits
-    /// it detaches the organization from its MSEL - turning an MSEL's organization back into a template.
+    /// The edit request has no MSEL, template flag or id, so mapping it onto a stored organization changes
+    /// the editable fields and cannot detach it from its MSEL. <c>MselId</c> is <c>Guid?</c> on the
+    /// entity, where the global null-source rule would not have protected it.
     /// </summary>
-    /// <remarks>
-    /// Turns red when the rule is widened to <c>T?</c> → <c>T?</c>, or when <c>OrganizationService</c>
-    /// stops taking <c>MselId</c> from the body.
-    /// </remarks>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void Map_AnOrganizationWithNoMselId_DetachesItFromItsMsel(bool hosted)
+    public void Map_AnOrganizationEdit_LeavesTheEntitysMselAndTemplateFlagAlone(bool hosted)
     {
-        var entity = new OrganizationEntity { Id = Guid.NewGuid(), MselId = Guid.NewGuid() };
+        var id = Guid.NewGuid();
+        var mselId = Guid.NewGuid();
+        var entity = new OrganizationEntity { Id = id, MselId = mselId, IsTemplate = false };
 
-        Mapper(hosted).Map(new Organization { Id = entity.Id, MselId = null }, entity);
+        Mapper(hosted).Map(new OrganizationEdit { Name = "Renamed" }, entity);
 
-        Assert.Null(entity.MselId);
+        Assert.Equal(id, entity.Id);
+        Assert.Equal(mselId, entity.MselId);
+        Assert.False(entity.IsTemplate);
+        Assert.Equal("Renamed", entity.Name);
     }
 
     /// <summary>

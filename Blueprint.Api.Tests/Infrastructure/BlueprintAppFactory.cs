@@ -439,9 +439,8 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     /// <c>MselId</c> is nullable and is the whole of the permission story, because <c>CardService</c> has two
     /// permission branches and picks between them on whether it is set: a card with a MSEL is the MSEL
     /// owner's or editor's, and a card without one is <c>ManageGalleryCards</c>'. <c>IsTemplate</c> is a
-    /// separate flag that nothing keeps in step with it, so all four combinations are reachable - and a card
-    /// with no MSEL and no template flag is reachable by no list route at all
-    /// (<c>CardEndpointTests.Update_ThatOmitsTheMselId_WithManageGalleryCardsOnly_DetachesTheCard</c>).
+    /// separate flag set on create; an edit can change neither, so a card stays in the scope it was created
+    /// in.
     /// Pass <paramref name="mselId"/> null and <paramref name="isTemplate"/> true for a template.
     /// <para />
     /// Nothing is unique here: two cards may share a MSEL, a <c>Move</c> and an <c>Inject</c>.

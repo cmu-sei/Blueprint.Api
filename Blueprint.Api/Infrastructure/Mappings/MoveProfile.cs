@@ -12,8 +12,8 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<MoveEntity, Move>();
 
-            CreateMap<Move, MoveEntity>()
-                .ForMember(m => m.Msel, opt => opt.Ignore());
+            CreateMap<MoveCreate, MoveEntity>(AutoMapper.MemberList.Source);
+            CreateMap<MoveEdit, MoveEntity>(AutoMapper.MemberList.Source);
 
         }
     }

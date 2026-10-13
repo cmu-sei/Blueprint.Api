@@ -102,11 +102,10 @@ namespace Blueprint.Api.Controllers
         [HttpPost("citeDuties")]
         [ProducesResponseType(typeof(CiteDuty), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createCiteDuty")]
-        public async Task<IActionResult> Create([FromBody] CiteDuty citeDuty, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] CiteDutyCreate citeDuty, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasCiteDutyPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageCiteDuties], ct);
-            citeDuty.CreatedBy = User.GetId();
             var createdCiteDuty = await _citeDutyService.CreateAsync(citeDuty, hasMselPermission, hasCiteDutyPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdCiteDuty.Id }, createdCiteDuty);
         }
@@ -116,7 +115,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a CiteDuty with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the citeDuty parameter
+        /// The CiteDuty stays where it is: its MSEL and template flag cannot be changed
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -126,11 +125,10 @@ namespace Blueprint.Api.Controllers
         [HttpPut("citeDuties/{id}")]
         [ProducesResponseType(typeof(CiteDuty), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateCiteDuty")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CiteDuty citeDuty, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CiteDutyEdit citeDuty, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasCiteDutyPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageCiteDuties], ct);
-            citeDuty.ModifiedBy = User.GetId();
             var updatedCiteDuty = await _citeDutyService.UpdateAsync(id, citeDuty, hasMselPermission, hasCiteDutyPermission, ct);
             return Ok(updatedCiteDuty);
         }

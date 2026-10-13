@@ -118,21 +118,18 @@ public class ErrorResponseTests(DatabaseFixture fixture, BlueprintAppFactory fac
     }
 
     /// <remarks>
-    /// <c>ViewModels.Base</c> declares <c>DateCreated</c> and <c>CreatedBy</c> non-nullable, so a client
-    /// echoing back a row it read - with the nulls the API itself answered for an unmodified entity -
-    /// cannot send <c>dateCreated: null</c> either. Recorded because it cost 36 tests at once earlier in
-    /// this branch, all failing with one cause: the request is a 400 that never reaches the controller,
-    /// so no amount of reading the service explains it.
+    /// <c>ViewModels.Base</c> declares <c>DateCreated</c> and <c>CreatedBy</c> non-nullable, so a body
+    /// that bound to a view model refused <c>dateCreated: null</c> with a 400 before the controller ran.
+    /// The create and edit requests carry no audit fields at all - the server stamps them - so a client
+    /// echoing back a row it read, nulls included, is no longer refused for it.
     /// </remarks>
     [Fact]
-    public async Task ANullAuditField_IsRefusedBeforeTheControllerRuns()
+    public async Task ANullAuditField_IsIgnoredByAWriteRequest()
     {
         var response = await PostJson(
-            Client(await Author()), """{"name":"probe","dateCreated":null}""");
-        var body = await response.Content.ReadAsStringAsync(Ct);
+            Client(await Author()), """{"name":"probe","isTemplate":true,"dateCreated":null}""");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("$.dateCreated", body);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     /// <remarks>

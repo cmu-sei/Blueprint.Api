@@ -102,11 +102,10 @@ namespace Blueprint.Api.Controllers
         [HttpPost("citeActions")]
         [ProducesResponseType(typeof(CiteAction), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createCiteAction")]
-        public async Task<IActionResult> Create([FromBody] CiteAction citeAction, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] CiteActionCreate citeAction, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasCiteActionPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageCiteActions], ct);
-            citeAction.CreatedBy = User.GetId();
             var createdCiteAction = await _citeActionService.CreateAsync(citeAction, hasMselPermission, hasCiteActionPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdCiteAction.Id }, createdCiteAction);
         }
@@ -116,7 +115,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a CiteAction with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the citeAction parameter
+        /// The CiteAction stays where it is: its MSEL and template flag cannot be changed
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -126,11 +125,10 @@ namespace Blueprint.Api.Controllers
         [HttpPut("citeActions/{id}")]
         [ProducesResponseType(typeof(CiteAction), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateCiteAction")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CiteAction citeAction, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CiteActionEdit citeAction, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasCiteActionPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageCiteActions], ct);
-            citeAction.ModifiedBy = User.GetId();
             var updatedCiteAction = await _citeActionService.UpdateAsync(id, citeAction, hasMselPermission, hasCiteActionPermission, ct);
             return Ok(updatedCiteAction);
         }

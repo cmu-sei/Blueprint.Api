@@ -28,8 +28,8 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Card>> GetTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Card>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Card> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.Card> CreateAsync(ViewModels.Card card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct);
-        Task<ViewModels.Card> UpdateAsync(Guid id, ViewModels.Card card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct);
+        Task<ViewModels.Card> CreateAsync(ViewModels.CardCreate card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct);
+        Task<ViewModels.Card> UpdateAsync(Guid id, ViewModels.CardEdit card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Card>> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
@@ -89,7 +89,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<Card>(item);
         }
 
-        public async Task<ViewModels.Card> CreateAsync(ViewModels.Card card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct)
+        public async Task<ViewModels.Card> CreateAsync(ViewModels.CardCreate card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct)
         {
             if (card.MselId.HasValue)
             {
@@ -103,46 +103,48 @@ namespace Blueprint.Api.Services
                 if (!hasGalleryCardPermission)
                     throw new ForbiddenException();
             }
-            card.Id = card.Id != Guid.Empty ? card.Id : Guid.NewGuid();
-            card.CreatedBy = _user.GetId();
             var cardEntity = _mapper.Map<CardEntity>(card);
+            cardEntity.Id = card.Id != Guid.Empty ? card.Id : Guid.NewGuid();
+            cardEntity.CreatedBy = _user.GetId();
 
             _context.Cards.Add(cardEntity);
             await _context.SaveChangesAsync(ct);
-            card = await GetAsync(cardEntity.Id, true, ct);
+            var created = await GetAsync(cardEntity.Id, true, ct);
 
-            return card;
+            return created;
         }
 
-        public async Task<ViewModels.Card> UpdateAsync(Guid id, ViewModels.Card card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct)
+        public async Task<ViewModels.Card> UpdateAsync(Guid id, ViewModels.CardEdit card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct)
         {
-            if (card.MselId.HasValue)
-            {
-                if (!hasMselPermission &&
-                    !await MselOwnerRequirement.IsMet(_user.GetId(), card.MselId, _context) &&
-                    !await MselEditorRequirement.IsMet(_user.GetId(), card.MselId, _context))
-                    throw new ForbiddenException();
-            }
-            else
-            {
-                if (!hasGalleryCardPermission)
-                    throw new ForbiddenException();
-            }
-
             var cardToUpdate = await _context.Cards.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (cardToUpdate == null)
                 throw new EntityNotFoundException<Card>();
 
-            card.ModifiedBy = _user.GetId();
+            // decided on the stored row: a MSEL's card needs the MSEL permission or an owner or editor
+            // of that MSEL, and a template needs the template permission
+            if (cardToUpdate.MselId.HasValue)
+            {
+                if (!hasMselPermission &&
+                    !await MselOwnerRequirement.IsMet(_user.GetId(), cardToUpdate.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(_user.GetId(), cardToUpdate.MselId, _context))
+                    throw new ForbiddenException();
+            }
+            else
+            {
+                if (!hasGalleryCardPermission)
+                    throw new ForbiddenException();
+            }
+
             _mapper.Map(card, cardToUpdate);
+            cardToUpdate.ModifiedBy = _user.GetId();
 
             _context.Cards.Update(cardToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            card = await GetAsync(cardToUpdate.Id, true, ct);
+            var updated = await GetAsync(cardToUpdate.Id, true, ct);
 
-            return card;
+            return updated;
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct)
@@ -174,8 +176,9 @@ namespace Blueprint.Api.Services
         public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct)
         {
             var idList = ids?.ToList() ?? new List<Guid>();
+            // only templates are exported: a MSEL's own rows are read through the MSEL
             var cardEntities = await _context.Cards
-                .Where(c => idList.Contains(c.Id))
+                .Where(c => idList.Contains(c.Id) && c.MselId == null)
                 .ToListAsync(ct);
             var cards = _mapper.Map<IEnumerable<ViewModels.Card>>(cardEntities).ToList();
 

@@ -43,20 +43,9 @@ namespace Blueprint.Api.Tests;
 /// <see cref="Delete_OfTheOnlyMove_MakesTheMoveLookupThrowForEveryScenarioEvent"/>.
 /// </para>
 /// <para>
-/// <strong><c>UpdateAsync</c> takes its permission decision from the request body's <c>MselId</c></strong>
-/// and the mapper then writes that id onto the row - the fourth instance of this shape in the branch, after
-/// <c>OrganizationService</c>, <c>ScenarioEventService</c> and <c>DataOptionService</c>. So a caller who
-/// owns any MSEL at all may edit and steal every move of every other one, and the MSEL that loses the move
-/// is not even marked modified. <c>DeleteAsync</c> one method below reads the <em>stored</em> row and is
-/// the model to copy. See <see cref="Update_ChoosesItsPermissionBranchFromTheRequestBody"/> and
-/// <see cref="Delete_TakesItsPermissionDecisionFromTheStoredRow"/>.
-/// </para>
-/// <para>
-/// <strong>The body's <c>Id</c> is mapped onto the tracked row too</strong>, and a key cannot be modified,
-/// so a PUT whose body carries a different id - or omits it - is a 500 rather than the 400 the controller's
-/// own remarks ("The ID from the route MUST MATCH the ID contained in the move parameter") promise. Nothing
-/// validates the match. <c>MoveProfile</c> is the only difference between this service and
-/// <c>ScenarioEventService</c> here, whose profile ignores <c>Id</c>.
+/// <strong><c>UpdateAsync</c> decides from the move's stored MSEL</strong>, and the edit request names
+/// neither a MSEL nor an id, so an edit cannot move a move or change its key. See
+/// <see cref="Update_AsTheOwnerOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheMoveAlone"/>.
 /// </para>
 /// <para>
 /// <strong>Reading is looser than the rest of the API.</strong> Both reads use
@@ -684,22 +673,11 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.InRange(stored.DateModified.Value, before, DateTime.UtcNow);
     }
 
-    /// <remarks>
-    /// <para>
-    /// <strong>The permission decision is taken from the request body.</strong> A caller who owns one MSEL
-    /// puts a body naming <em>their</em> MSEL at another MSEL's move: the owner check passes against the id
-    /// in the body, the row is then found by the id in the route, and the mapper writes the body's
-    /// <c>MselId</c> onto it. So the move is edited and moved, and one call both steals a row and rewrites
-    /// its number.
-    /// </para>
-    /// <para>
-    /// Fourth instance of this shape in the branch, after <c>OrganizationService</c>,
-    /// <c>ScenarioEventService</c> and <c>DataOptionService</c>. Checking the stored row's <c>MselId</c>,
-    /// as <c>DeleteAsync</c> does one method below, turns this red.
-    /// </para>
-    /// </remarks>
+    /// <summary>
+    /// The decision is made on the move's stored MSEL, so owning the MSEL named in the body buys nothing.
+    /// </summary>
     [Fact]
-    public async Task Update_ChoosesItsPermissionBranchFromTheRequestBody()
+    public async Task Update_AsTheOwnerOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheMoveAlone()
     {
         var mine = await SeedMsel();
         var theirs = await SeedMsel();
@@ -711,34 +689,36 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             move.Id,
             BodyFor(move) with { MselId = mine.Id, MoveNumber = 9, Description = "taken" });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         var stored = await Stored(move.Id);
-        Assert.Equal(mine.Id, stored.MselId);
-        Assert.Equal(9, stored.MoveNumber);
-        Assert.Equal(0, await CountOn(theirs.Id));
+        Assert.Equal(theirs.Id, stored.MselId);
+        Assert.Equal(1, stored.MoveNumber);
+        Assert.Equal(move.Description, stored.Description);
     }
 
-    /// <remarks>
-    /// The other half of the same defect: <c>SetMselModifiedAsync</c> is called with the row's
-    /// <em>new</em> MSEL, so the MSEL that lost a move is not marked modified and nothing tells anybody
-    /// watching it that its timeline changed. The <c>MoveDeleted</c> broadcast a real removal would send
-    /// is not sent either - see <see cref="Update_ThatMovesAMoveToAnotherMsel_TellsTheOldMselNothing"/>.
-    /// </remarks>
+    /// <summary>
+    /// An owner's edit that names another MSEL changes the move and leaves it in its MSEL, which is the
+    /// one marked modified and told about it.
+    /// </summary>
     [Fact]
-    public async Task Update_ThatMovesAMoveToAnotherMsel_TellsTheOldMselNothing()
+    public async Task Update_AsAnOwner_NamingAnotherMselInTheBody_KeepsTheMoveInItsMsel()
     {
         var mine = await SeedMsel();
-        var theirs = await SeedMsel();
-        var move = await SeedMove(theirs, moveNumber: 1);
+        var other = await SeedMsel();
+        var move = await SeedMove(mine, moveNumber: 1);
         var actor = await Actor().OnMsel(mine, MselRole.Owner).SeedAsync();
 
-        await Put(Client(actor), move.Id, BodyFor(move) with { MselId = mine.Id });
+        var response = await Put(Client(actor), move.Id, BodyFor(move) with { MselId = other.Id, Description = "after" });
 
-        Assert.Null((await StoredMsel(theirs.Id)).DateModified);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await Stored(move.Id);
+        Assert.Equal(mine.Id, stored.MselId);
+        Assert.Equal("after", stored.Description);
+        Assert.Equal(0, await CountOn(other.Id));
+        Assert.Null((await StoredMsel(other.Id)).DateModified);
         Assert.NotNull((await StoredMsel(mine.Id)).DateModified);
         Assert.Equal([mine.Id.ToString(), MainHub.ADMIN_DATA_GROUP], Hub.Recipients(MainHubMethods.MoveUpdated));
-        Assert.Empty(Hub.Of(MainHubMethods.MoveDeleted));
     }
 
     [Fact]
@@ -754,14 +734,12 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(move.Description, (await Stored(move.Id)).Description);
     }
 
-    /// <remarks>
-    /// The permission check runs before the lookup, so which answer an unknown id gets depends on the body
-    /// it arrived with: a body naming a MSEL the caller owns reaches the lookup and is a 404, and a body
-    /// naming anything else is a 403 that cannot be told from "that move is yours and you may not have
-    /// it". Looking the row up first, as <c>DeleteAsync</c> does, turns the second case into a 404 too.
-    /// </remarks>
+    /// <summary>
+    /// The move is looked up before the caller is authorized, so an unknown id is a 404 whatever the body
+    /// names.
+    /// </summary>
     [Fact]
-    public async Task Update_ForAnIdThatIsNotThere_Is404OrA403DependingOnTheBody()
+    public async Task Update_ForAnIdThatIsNotThere_Is404WhateverTheBodyNames()
     {
         var mine = await SeedMsel();
         var theirs = await SeedMsel();
@@ -771,21 +749,17 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var withTheirs = await Put(Client(actor), Guid.NewGuid(), Body(theirs.Id, moveNumber: 1));
 
         Assert.Equal(HttpStatusCode.NotFound, withMine.StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, withTheirs.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, withTheirs.StatusCode);
     }
 
-    /// <remarks>
-    /// <c>MoveProfile</c> does not ignore <c>Id</c>, so <c>_mapper.Map(move, moveToUpdate)</c> writes the
-    /// body's id onto a tracked row and EF refuses to modify a key - a 500, whether the body carries a
-    /// different id or leaves it at all zeros by not mentioning it at all. The controller's own remarks say
-    /// "The ID from the route MUST MATCH the ID contained in the move parameter"; nothing checks, and the
-    /// answer to not matching is not the 400 that sentence implies. Ignoring <c>Id</c> in the profile - as
-    /// <c>ScenarioEventProfile</c> does - turns both cases green and this test red.
-    /// </remarks>
+    /// <summary>
+    /// The edit request has no id, so a different id in the body, or none, is ignored and the route's
+    /// move is written.
+    /// </summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Update_WithABodyIdThatIsNotTheRoutes_Is500(bool omitted)
+    public async Task Update_WithABodyIdThatIsNotTheRoutes_UpdatesTheRoutesMove(bool omitted)
     {
         var msel = await SeedMsel();
         var move = await SeedMove(msel, moveNumber: 1);
@@ -796,8 +770,8 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             move.Id,
             BodyFor(move) with { Id = omitted ? Guid.Empty : Guid.NewGuid(), Description = "after" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal(move.Description, (await Stored(move.Id)).Description);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("after", (await Stored(move.Id)).Description);
     }
 
     [Fact]
@@ -900,9 +874,8 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// The one method in this service that reads the stored row before deciding - and so the model for
-    /// fixing <see cref="Update_ChoosesItsPermissionBranchFromTheRequestBody"/>. A caller who owns another
-    /// MSEL entirely cannot touch this move, and there is no body to say otherwise.
+    /// Decided on the stored row, as <c>UpdateAsync</c> is: a caller who owns another MSEL entirely cannot
+    /// touch this move.
     /// </remarks>
     [Fact]
     public async Task Delete_TakesItsPermissionDecisionFromTheStoredRow()
@@ -920,8 +893,7 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
     /// <remarks>
     /// The lookup comes first here, so an id that is not there is a 404 for everybody - including a caller
-    /// with no permissions at all, who learns from it that the id is unused. The opposite order to
-    /// <c>UpdateAsync</c>, and the two cannot both be right.
+    /// with no permissions at all. <c>UpdateAsync</c> uses the same order.
     /// </remarks>
     [Fact]
     public async Task Delete_ForAnIdThatIsNotThere_Is404EvenForAStranger()

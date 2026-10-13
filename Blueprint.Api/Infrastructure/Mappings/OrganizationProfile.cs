@@ -12,8 +12,11 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<OrganizationEntity, Organization>();
 
+            // the JSON template upload
             CreateMap<Organization, OrganizationEntity>()
                 .ForMember(m => m.Msel, opt => opt.Ignore());
+            CreateMap<OrganizationCreate, OrganizationEntity>(AutoMapper.MemberList.Source);
+            CreateMap<OrganizationEdit, OrganizationEntity>(AutoMapper.MemberList.Source);
 
         }
     }

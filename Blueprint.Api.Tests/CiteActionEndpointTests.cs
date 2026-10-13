@@ -241,6 +241,35 @@ public class CiteActionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(before, after.DateModified);
     }
 
+    [Fact]
+    public async Task Create_ForATeamOfAnotherMsel_Is404AndCreatesNothing()
+    {
+        var (msel, _) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var (_, theirTeam) = await SeedMselAndTeam();
+
+        var response = await Client(actor).PostAsJsonAsync("api/citeActions", Body(msel.Id, theirTeam.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(await NewContext().CiteActions.AnyAsync(Ct));
+    }
+
+    /// <summary>
+    /// A template belongs to no MSEL, so it cannot name a MSEL's team.
+    /// </summary>
+    [Fact]
+    public async Task Create_ATemplateNamingATeam_Is404AndCreatesNothing()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageCiteActions).SeedAsync();
+        var (_, team) = await SeedMselAndTeam();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/citeActions", Body(null, team.Id) with { isTemplate = true }, Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(await NewContext().CiteActions.AnyAsync(Ct));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // PUT citeActions/{id}
     // ---------------------------------------------------------------------------------------------
@@ -277,15 +306,11 @@ public class CiteActionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <remarks>
-    /// BUG: <c>UpdateAsync</c> takes its permission decision from the request body's <c>MselId</c>
-    /// (<c>CiteActionService.cs:126-137</c>) before it looks the row up, and <c>CiteActionProfile</c>
-    /// maps <c>MselId</c> both ways - so an editor of any MSEL may edit and steal every other MSEL's
-    /// actions. Ninth instance of this shape on the branch; <c>DeleteAsync</c> thirty lines below is the
-    /// model to copy.
-    /// </remarks>
+    /// <summary>
+    /// The decision is made on the action's stored MSEL, so editing the MSEL named in the body buys nothing.
+    /// </summary>
     [Fact]
-    public async Task Update_DecidesFromTheRequestBodyAndStealsTheRow()
+    public async Task Update_AsAnEditorOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheRowAlone()
     {
         var (mine, myTeam) = await SeedMselAndTeam();
         var actor = await Actor().OnMsel(mine, MselRole.Editor).SeedAsync();
@@ -298,10 +323,79 @@ public class CiteActionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             Body(mine.Id, myTeam.Id) with { id = action.Id, description = "stolen" },
             Ct);
 
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var stored = await NewContext().CiteActions.SingleAsync(x => x.Id == action.Id, Ct);
+        Assert.Equal(theirs.Id, stored.MselId);
+        Assert.Equal(theirTeam.Id, stored.TeamId);
+        Assert.Equal(action.Description, stored.Description);
+    }
+
+    /// <summary>
+    /// A MSEL's action is decided by the MSEL's permissions whatever the body says, so the template
+    /// permission cannot reach it by sending no MSEL.
+    /// </summary>
+    [Fact]
+    public async Task Update_WithANullMselIdInTheBody_AndManageCiteActionsOnly_Is403AndLeavesTheRowAlone()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageCiteActions).SeedAsync();
+        var action = BlueprintAppFactory.CiteAction(msel.Id, team.Id);
+        await Seed(action);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/citeActions/{action.Id}",
+            Body(null, null) with { id = action.Id, isTemplate = true, description = "detached" },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var stored = await NewContext().CiteActions.SingleAsync(x => x.Id == action.Id, Ct);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.False(stored.IsTemplate);
+        Assert.Equal(action.Description, stored.Description);
+    }
+
+    /// <summary>
+    /// An editor's edit that names another MSEL changes the action and leaves it in its MSEL.
+    /// </summary>
+    [Fact]
+    public async Task Update_AsAnEditor_NamingAnotherMselInTheBody_KeepsTheRowInItsMsel()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var (other, _) = await SeedMselAndTeam();
+        var action = BlueprintAppFactory.CiteAction(msel.Id, team.Id);
+        await Seed(action);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/citeActions/{action.Id}",
+            Body(other.Id, team.Id) with { id = action.Id, isTemplate = true, description = "after" },
+            Ct);
+
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var stored = await NewContext().CiteActions.SingleAsync(x => x.Id == action.Id, Ct);
-        Assert.Equal(mine.Id, stored.MselId);
-        Assert.Equal("stolen", stored.Description);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.False(stored.IsTemplate);
+        Assert.Equal("after", stored.Description);
+    }
+
+    /// <summary>
+    /// The CITE team must be one of the action's own MSEL's teams; another MSEL's is answered as a team
+    /// that is not there.
+    /// </summary>
+    [Fact]
+    public async Task Update_ToATeamOfAnotherMsel_Is404AndLeavesTheRowAlone()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var (_, theirTeam) = await SeedMselAndTeam();
+        var action = BlueprintAppFactory.CiteAction(msel.Id, team.Id);
+        await Seed(action);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/citeActions/{action.Id}", Body(msel.Id, theirTeam.Id) with { id = action.Id }, Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(team.Id, (await NewContext().CiteActions.SingleAsync(x => x.Id == action.Id, Ct)).TeamId);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -324,7 +418,7 @@ public class CiteActionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
     /// <remarks>
     /// <c>DeleteAsync</c> checks existence <em>before</em> the permission, so an unknown id is a clean
-    /// 404 for a stranger as well - the contrast with <c>UpdateAsync</c> above.
+    /// 404 for a stranger as well, the same order <c>UpdateAsync</c> uses.
     /// </remarks>
     [Fact]
     public async Task Delete_ForAnIdThatIsNotThere_Is404_EvenForAStranger()
@@ -359,6 +453,29 @@ public class CiteActionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.DoesNotContain("unwanted", file);
     }
 
+    /// <summary>
+    /// Only templates are exported. A MSEL's action named in the request is left out, so the template
+    /// permission does not read a MSEL's rows.
+    /// </summary>
+    [Fact]
+    public async Task DownloadJson_LeavesOutAMselsRows()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageCiteActions).SeedAsync();
+        var (msel, team) = await SeedMselAndTeam();
+        var mselRow = BlueprintAppFactory.CiteAction(msel.Id, team.Id);
+        mselRow.Description = "from the msel";
+        var template = BlueprintAppFactory.CiteAction();
+        template.Description = "from the templates";
+        await Seed(mselRow, template);
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/citeActions/json/download", new[] { mselRow.Id, template.Id }, Ct);
+
+        var file = await response.Content.ReadAsStringAsync(Ct);
+        Assert.Contains("from the templates", file);
+        Assert.DoesNotContain("from the msel", file);
+    }
+
     /// <remarks>
     /// The round trip is the test: the two file routes build their own <c>JsonSerializerOptions</c> with
     /// <c>ReferenceHandler.Preserve</c>, so the file is PascalCase with raw integers where every response
@@ -369,8 +486,7 @@ public class CiteActionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     public async Task UploadJson_TakesADownloadedFileAndMakesTemplatesOfIt()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageCiteActions).SeedAsync();
-        var (msel, team) = await SeedMselAndTeam();
-        var action = BlueprintAppFactory.CiteAction(msel.Id, team.Id, 1, 2, 3, "exported");
+        var action = BlueprintAppFactory.CiteAction(null, null, 1, 2, 3, "exported");
         await Seed(action);
         var download = await Client(actor).PostAsJsonAsync(
             "api/citeActions/json/download", new[] { action.Id }, Ct);

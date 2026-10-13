@@ -944,6 +944,7 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         var team = await SeedTeam(msel);
         await SeedInvitation(msel, team);
         var actor = await Actor().SeedAsync();
+        // Data-row gate: the invitation seeded above, on a MSEL that is not a template, is the only grant the launch reads.
 
         var response = await Launch(ClientWithEmail(actor, "a@example.test"), msel.Id);
 
@@ -975,6 +976,7 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         var other = await SeedTemplate();
         await SeedInvitation(other, await SeedTeam(other));
         var actor = await Actor().SeedAsync();
+        // Data-row gate: the only invitation row seeded is on another template; invitation rows are the only grant the launch reads.
 
         var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
 
@@ -988,6 +990,7 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         var team = await SeedTeam(template);
         await SeedInvitation(template, team, i => i.WasDeactivated = true);
         var actor = await Actor().SeedAsync();
+        // Data-row gate: the deactivated invitation seeded above is the only grant the launch reads.
 
         var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
 
@@ -1001,6 +1004,7 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         var team = await SeedTeam(template);
         await SeedInvitation(template, team, i => i.ExpirationDateTime = DateTime.UtcNow.AddMinutes(-1));
         var actor = await Actor().SeedAsync();
+        // Data-row gate: the expired invitation seeded above is the only grant the launch reads.
 
         var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
 
@@ -1018,6 +1022,7 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
             i.UserCount = 1;
         });
         var actor = await Actor().SeedAsync();
+        // Data-row gate: the full invitation seeded above is the only grant the launch reads.
 
         var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
 
@@ -1032,6 +1037,7 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         var other = await SeedTeam(template);
         await SeedInvitation(template, invited);
         var actor = await Actor().SeedAsync();
+        // Data-row gate: the invitation seeded above names another team; it is the only grant the launch reads.
 
         var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id, other.Id);
 
@@ -1045,6 +1051,7 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         var team = await SeedTeam(template);
         await SeedInvitation(template, team, i => i.EmailDomain = "@example.test");
         var actor = await Actor().SeedAsync();
+        // Data-row gate: the invitation seeded above, restricted to example.test, is the only grant the launch reads.
 
         var response = await Launch(ClientWithEmail(actor, "a@elsewhere.test"), template.Id);
 

@@ -111,6 +111,99 @@ public class CatalogInjectEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
     }
 
+    /// <remarks>
+    /// The row's own id is its catalog's id, so the id the requirement reads names the catalog the row
+    /// is in. That makes the three ways <c>CatalogViewRequirement</c> admits a caller without
+    /// <c>ViewCatalogs</c> reachable on this route: a unit the catalog is shared with, the catalog's
+    /// creator, a public catalog.
+    /// </remarks>
+    [Fact]
+    public async Task Get_ForAMemberOfAUnitSharingTheCatalog_OfARowKeyedByItsCatalogsId_Is200()
+    {
+        var graph = await SeedRowKeyedByItsCatalog();
+        var actor = await Actor().InUnit(await UnitSharing(graph.Catalog.Id)).SeedAsync();
+
+        var response = await Client(actor).GetAsync(
+            $"api/cataloginjects/{graph.CatalogInject.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var answered = await response.Content.ReadFromJsonAsync<ViewModels.CatalogInject>(JsonOptions, Ct);
+        Assert.Equal(graph.Catalog.Id, answered.CatalogId);
+        Assert.Equal(graph.Inject.Id, answered.InjectId);
+    }
+
+    [Fact]
+    public async Task Get_ForTheCatalogsCreator_OfARowKeyedByItsCatalogsId_Is200()
+    {
+        var creator = await Actor().SeedAsync();
+        var graph = await SeedRowKeyedByItsCatalog(createdBy: creator.Id);
+
+        var response = await Client(creator).GetAsync(
+            $"api/cataloginjects/{graph.CatalogInject.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            graph.Inject.Id,
+            (await response.Content.ReadFromJsonAsync<ViewModels.CatalogInject>(JsonOptions, Ct)).InjectId);
+    }
+
+    [Fact]
+    public async Task Get_ForAPublicCatalog_OfARowKeyedByItsCatalogsId_Is200WithNoPermission()
+    {
+        var graph = await SeedRowKeyedByItsCatalog(isPublic: true);
+        var actor = await Actor().SeedAsync();
+        // Data-row gate: the public catalog seeded above, whose id the row carries, is the only grant.
+
+        var response = await Client(actor).GetAsync(
+            $"api/cataloginjects/{graph.CatalogInject.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            graph.Inject.Id,
+            (await response.Content.ReadFromJsonAsync<ViewModels.CatalogInject>(JsonOptions, Ct)).InjectId);
+    }
+
+    [Fact]
+    public async Task Get_is_forbidden_for_a_member_of_a_unit_sharing_only_another_catalog()
+    {
+        var graph = await SeedRowKeyedByItsCatalog();
+        var other = TestData.Catalog(graph.InjectType.Id);
+        await Seed(other);
+        var actor = await Actor().InUnit(await UnitSharing(other.Id)).SeedAsync();
+
+        var response = await Client(actor).GetAsync(
+            $"api/cataloginjects/{graph.CatalogInject.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_is_forbidden_for_the_creator_of_another_catalog()
+    {
+        var graph = await SeedRowKeyedByItsCatalog();
+        var creator = await Actor().SeedAsync();
+        await Seed(TestData.Catalog(graph.InjectType.Id, createdBy: creator.Id));
+
+        var response = await Client(creator).GetAsync(
+            $"api/cataloginjects/{graph.CatalogInject.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_is_forbidden_when_only_another_catalog_is_public()
+    {
+        var graph = await SeedRowKeyedByItsCatalog();
+        await Seed(TestData.Catalog(graph.InjectType.Id, isPublic: true));
+        var actor = await Actor().SeedAsync();
+        // Data-row gate: the public catalog seeded above is another one; the row's own catalog is private.
+
+        var response = await Client(actor).GetAsync(
+            $"api/cataloginjects/{graph.CatalogInject.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     [Fact]
     public async Task Get_ForAnIdThatIsNotThere_Is404()
     {
@@ -255,6 +348,25 @@ public class CatalogInjectEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         var catalogInject = TestData.CatalogInject(catalog.Id, inject.Id);
         if (withJoinRow)
             await Seed(catalogInject);
+
+        return new Graph(injectType, inject, catalog, catalogInject);
+    }
+
+    /// <summary>
+    /// A catalog (private unless <paramref name="isPublic"/>) holding one inject, whose join row's own id
+    /// is the catalog's id (a client may choose the id on create).
+    /// </summary>
+    private async Task<Graph> SeedRowKeyedByItsCatalog(Guid? createdBy = null, bool isPublic = false)
+    {
+        var injectType = TestData.InjectType();
+        await Seed(injectType);
+        var inject = TestData.Inject(injectType.Id);
+        var catalog = TestData.Catalog(injectType.Id, createdBy: createdBy, isPublic: isPublic);
+        await Seed(inject, catalog);
+
+        var catalogInject = TestData.CatalogInject(catalog.Id, inject.Id);
+        catalogInject.Id = catalog.Id;
+        await Seed(catalogInject);
 
         return new Graph(injectType, inject, catalog, catalogInject);
     }

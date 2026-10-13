@@ -1080,16 +1080,71 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
     }
 
     [Fact]
+    public async Task BatchDelete_ForTheMselsCreator_RemovesEveryRow()
+    {
+        var creator = await Actor().SeedAsync();
+        var msel = await SeedMsel(createdBy: creator.Id);
+        var first = await SeedEvent(msel);
+        var second = await SeedEvent(msel, deltaSeconds: 60);
+
+        var response = await BatchDelete(Client(creator), first.Id, second.Id);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(await Stored(first.Id));
+        Assert.Null(await Stored(second.Id));
+    }
+
+    /// <summary>
+    /// The owner check runs once per id in the batch, inside the loop; both rows exist on the route's MSEL,
+    /// so the refusal comes from that check on the first row and the second is never reached.
+    /// </summary>
+    [Fact]
     public async Task BatchDelete_ForAnEditor_Is403()
     {
+        // Gate: Blueprint.Api/Services/ScenarioEventService.cs#ScenarioEventService.BatchDeleteAsync
         var msel = await SeedMsel();
-        var scenarioEvent = await SeedEvent(msel);
+        var first = await SeedEvent(msel);
+        var second = await SeedEvent(msel, deltaSeconds: 60);
         var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
 
-        var response = await BatchDelete(Client(actor), scenarioEvent.Id);
+        var response = await BatchDelete(Client(actor), first.Id, second.Id);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.NotNull(await Stored(scenarioEvent.Id));
+        Assert.NotNull(await Stored(first.Id));
+        Assert.NotNull(await Stored(second.Id));
+    }
+
+    [Fact]
+    public async Task BatchDelete_is_forbidden_for_a_caller_holding_Owner_only_in_another_msel()
+    {
+        // Gate: Blueprint.Api/Services/ScenarioEventService.cs#ScenarioEventService.BatchDeleteAsync
+        var msel = await SeedMsel();
+        var first = await SeedEvent(msel);
+        var second = await SeedEvent(msel, deltaSeconds: 60);
+        var actor = await Actor().OnNewMsel(MselRole.Owner).SeedAsync();
+
+        var response = await BatchDelete(Client(actor), first.Id, second.Id);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotNull(await Stored(first.Id));
+        Assert.NotNull(await Stored(second.Id));
+    }
+
+    [Fact]
+    public async Task BatchDelete_is_forbidden_for_the_creator_of_another_msel()
+    {
+        // Gate: Blueprint.Api/Services/ScenarioEventService.cs#ScenarioEventService.BatchDeleteAsync
+        var creator = await Actor().SeedAsync();
+        await SeedMsel(createdBy: creator.Id);
+        var msel = await SeedMsel();
+        var first = await SeedEvent(msel);
+        var second = await SeedEvent(msel, deltaSeconds: 60);
+
+        var response = await BatchDelete(Client(creator), first.Id, second.Id);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotNull(await Stored(first.Id));
+        Assert.NotNull(await Stored(second.Id));
     }
 
     [Fact]

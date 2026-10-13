@@ -638,12 +638,16 @@ public class UnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     public async Task Delete_ForTheCallersOwnUserId_Is403AboutAnAccount()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUnits).SeedAsync();
+        var unit = TestData.Unit();
+        unit.Id = actor.Id;
+        await Seed(unit);
 
-        var response = await Client(actor).DeleteAsync(UnitRoute(actor.Id), Ct);
+        var response = await Client(actor).DeleteAsync(UnitRoute(unit.Id), Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Contains(
             "You cannot delete your own account", await response.Content.ReadAsStringAsync(Ct));
+        Assert.NotNull(await Stored(unit.Id));
     }
 
     /// <summary>Deleting a unit removes it from every MSEL by the cascade and leaves the roles its assignments

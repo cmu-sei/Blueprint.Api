@@ -677,9 +677,8 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// The one thing the route refuses, and the guard the unit unit found copy-pasted onto a unit id
-    /// (<c>UnitService.cs:104-108</c>, where it compares a <em>unit</em> id against the caller's user id
-    /// and can therefore only fire by coincidence). Here it is in its right place.
+    /// The one thing the service refuses a <c>ManageUsers</c> holder on this route: a body that changes
+    /// the id of the caller's own row.
     /// </remarks>
     [Fact]
     public async Task Update_ThatChangesTheCallersOwnId_Is403()
@@ -692,7 +691,9 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             Name = actor.Name
         });
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(
+            "You cannot change your own Id",
+            (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.Forbidden, response)).Title);
         Assert.NotNull(await Stored(actor.Id));
     }
 
@@ -817,11 +818,8 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// The other half of the copy-pasted guard: "You cannot delete your own account", here about an
-    /// account. <c>UnitService.DeleteAsync</c> carries the same sentence about a <em>unit</em>, so a unit
-    /// whose id happens to equal some user's id is undeletable by that user and by nobody else.
-    /// It fires before the existence check, which for the caller's own id can never
-    /// matter.
+    /// A <c>ManageUsers</c> holder may delete any account but its own. The guard runs before the
+    /// existence check, which for the caller's own id makes no difference.
     /// </remarks>
     [Fact]
     public async Task Delete_ForTheCallersOwnAccount_Is403()
@@ -830,7 +828,9 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Client(actor).DeleteAsync(UserRoute(actor.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(
+            "You cannot delete your own account",
+            (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.Forbidden, response)).Title);
         Assert.NotNull(await Stored(actor.Id));
     }
 

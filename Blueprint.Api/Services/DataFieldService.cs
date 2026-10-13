@@ -55,7 +55,7 @@ namespace Blueprint.Api.Services
         public async Task<IEnumerable<ViewModels.DataField>> GetTemplatesAsync(CancellationToken ct)
         {
             var dataFieldEntities = await _context.DataFields
-                .Where(dataField => dataField.IsTemplate)
+                .Where(dataField => dataField.IsTemplate && dataField.MselId == null)
                 .Include(dataField => dataField.DataOptions)
                 .ToListAsync(ct);
 

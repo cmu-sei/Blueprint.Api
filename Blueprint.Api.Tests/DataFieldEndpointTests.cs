@@ -137,16 +137,11 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     }
 
     /// <summary>
-    /// A column scoped to an MSEL but flagged <c>IsTemplate</c> is returned by the shared template list,
-    /// because the query filters on the flag alone and never on the scope.
+    /// A template belongs to no MSEL, so a MSEL's column flagged <c>IsTemplate</c> - which a create can no
+    /// longer write - stays out of the shared template list any signed-in user may read.
     /// </summary>
-    /// <remarks>
-    /// Characterization, and the reason it matters is <see cref="Create_WithIsTemplateOnAMselField_PutsAMselsColumnInTheSharedTemplateList"/>:
-    /// a caller can produce this row through the API. Turns red when <c>GetTemplatesAsync</c> also requires
-    /// <c>MselId == null</c>.
-    /// </remarks>
     [Fact]
-    public async Task Templates_IncludesAMselScopedFieldFlaggedAsATemplate()
+    public async Task Templates_LeavesOutAMselScopedFieldFlaggedAsATemplate()
     {
         var msel = BlueprintAppFactory.Msel();
         await Seed(msel);
@@ -156,9 +151,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var actor = await Actor().SeedAsync();
 
-        var returned = Assert.Single(await GetFields(Client(actor), "/api/dataFields/templates"));
-
-        Assert.Equal(msel.Id, returned.MselId);
+        Assert.Empty(await GetFields(Client(actor), "/api/dataFields/templates"));
     }
 
     // ---------------------------------------------------------------------------------------------

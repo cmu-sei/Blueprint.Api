@@ -52,51 +52,97 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    /// <summary>The three routes that name a MSEL each resolve one system permission and hand the answer to
-    /// the service; holding the other permission does not count.</summary>
+    /// <summary>The statements route tells the service whether the caller holds <c>ViewMsels</c>; holding
+    /// <c>EditMsels</c> instead does not count.</summary>
     [Theory]
-    [InlineData("GET", Statements, SystemPermission.ViewMsels, SystemPermission.EditMsels)]
-    [InlineData("POST", Assertions, SystemPermission.EditMsels, SystemPermission.ViewMsels)]
-    [InlineData("POST", ViewedSomeMsel, SystemPermission.ViewMsels, SystemPermission.EditMsels)]
-    public async Task TheMselRoutes_TellTheServiceWhetherTheCallerHoldsTheSystemPermission(
-        string method, string route, SystemPermission required, SystemPermission other)
+    [InlineData(SystemPermission.ViewMsels, true)]
+    [InlineData(SystemPermission.EditMsels, false)]
+    public async Task GetStatements_TellsTheServiceWhetherTheCallerHoldsViewMsels(
+        SystemPermission held, bool expected)
     {
         StatementsAre("{\"statements\":[]}");
+        var actor = await Actor().WithSystemPermissions(held).SeedAsync();
 
-        var withRequired = await Actor().WithSystemPermissions(required).SeedAsync();
-        var withOther = await Actor().WithSystemPermissions(other).SeedAsync();
-        var withNothing = await Actor().SeedAsync();
+        var response = await Client(actor).GetAsync(Statements, Ct);
 
-        foreach (var (actor, expected) in new[] { (withRequired, true), (withOther, false), (withNothing, false) })
-        {
-            Factory.XApi.ClearReceivedCalls();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Factory.XApi.Received(1).GetStatementsAsync(
+            Arg.Any<Guid>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>(), Arg.Any<int>(),
+            Arg.Any<string>(), expected, Arg.Any<CancellationToken>());
+    }
 
-            using var request = new HttpRequestMessage(new HttpMethod(method), route);
-            if (method == "POST")
-            {
-                request.Content = EmptyJsonObject();
-            }
+    [Fact]
+    public async Task GetStatements_TellsTheServiceACallerWithNoPermissionsLacksViewMsels()
+    {
+        StatementsAre("{\"statements\":[]}");
+        var actor = await Actor().SeedAsync();
 
-            var response = await Client(actor).SendAsync(request, Ct);
+        var response = await Client(actor).GetAsync(Statements, Ct);
 
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            switch (route)
-            {
-                case Statements:
-                    await Factory.XApi.Received(1).GetStatementsAsync(
-                        Arg.Any<Guid>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>(), Arg.Any<int>(),
-                        Arg.Any<string>(), expected, Arg.Any<CancellationToken>());
-                    break;
-                case Assertions:
-                    await Factory.XApi.Received(1).AssertCompetencyAsync(
-                        Arg.Any<CompetencyAssertion>(), expected, Arg.Any<CancellationToken>());
-                    break;
-                default:
-                    await Factory.XApi.Received(1).MselViewedAsync(
-                        Arg.Any<Guid>(), expected, Arg.Any<CancellationToken>());
-                    break;
-            }
-        }
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Factory.XApi.Received(1).GetStatementsAsync(
+            Arg.Any<Guid>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>(), Arg.Any<int>(),
+            Arg.Any<string>(), false, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>The assertions route tells the service whether the caller holds <c>EditMsels</c>; holding
+    /// <c>ViewMsels</c> instead does not count.</summary>
+    [Theory]
+    [InlineData(SystemPermission.EditMsels, true)]
+    [InlineData(SystemPermission.ViewMsels, false)]
+    public async Task CreateAssertion_TellsTheServiceWhetherTheCallerHoldsEditMsels(
+        SystemPermission held, bool expected)
+    {
+        var actor = await Actor().WithSystemPermissions(held).SeedAsync();
+        using var content = EmptyJsonObject();
+
+        var response = await Client(actor).PostAsync(Assertions, content, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Factory.XApi.Received(1).AssertCompetencyAsync(
+            Arg.Any<CompetencyAssertion>(), expected, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateAssertion_TellsTheServiceACallerWithNoPermissionsLacksEditMsels()
+    {
+        var actor = await Actor().SeedAsync();
+        using var content = EmptyJsonObject();
+
+        var response = await Client(actor).PostAsync(Assertions, content, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Factory.XApi.Received(1).AssertCompetencyAsync(
+            Arg.Any<CompetencyAssertion>(), false, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>The MSEL-viewed route tells the service whether the caller holds <c>ViewMsels</c>; holding
+    /// <c>EditMsels</c> instead does not count.</summary>
+    [Theory]
+    [InlineData(SystemPermission.ViewMsels, true)]
+    [InlineData(SystemPermission.EditMsels, false)]
+    public async Task Viewed_TellsTheServiceWhetherTheCallerHoldsViewMsels(
+        SystemPermission held, bool expected)
+    {
+        var actor = await Actor().WithSystemPermissions(held).SeedAsync();
+
+        var response = await Client(actor).PostAsync(ViewedSomeMsel, null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Factory.XApi.Received(1).MselViewedAsync(
+            Arg.Any<Guid>(), expected, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Viewed_TellsTheServiceACallerWithNoPermissionsLacksViewMsels()
+    {
+        var actor = await Actor().SeedAsync();
+
+        var response = await Client(actor).PostAsync(ViewedSomeMsel, null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Factory.XApi.Received(1).MselViewedAsync(
+            Arg.Any<Guid>(), false, Arg.Any<CancellationToken>());
     }
 
     /// <summary>The statements route passes the request's cancellation token on.</summary>

@@ -63,16 +63,110 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
         Assert.Equal(0, await QueuedCount());
     }
 
-    /// <summary>A caller who did not create the MSEL and is on none of its teams or units is refused, and
-    /// nothing is queued.</summary>
+    /// <summary><c>ViewMsels</c> lets a caller with no part in the MSEL record that they viewed it.</summary>
     [Fact]
-    public async Task Viewed_ByACallerWithNoPartInTheMsel_Is403AndQueuesNothing()
+    public async Task Viewed_WithViewMselsAndNoPartInTheMsel_QueuesTheStatement()
     {
         var msel = TestData.Msel();
         await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
-        var response = await Client(await Actor().SeedAsync())
-            .PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
+        var response = await Client(actor).PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(msel.Id, (await Queued()).MselId);
+    }
+
+    [Fact]
+    public async Task Viewed_WithEditMselsAndNoPartInTheMsel_Is403AndQueuesNothing()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    [Fact]
+    public async Task Viewed_ByTheMselsCreator_QueuesTheStatement()
+    {
+        var actor = await Actor().SeedAsync();
+        var msel = TestData.Msel(createdBy: actor.Id);
+        await Seed(msel);
+
+        var response = await Client(actor).PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(msel.Id, (await Queued()).MselId);
+    }
+
+    [Fact]
+    public async Task Viewed_ByTheCreatorOfAnotherMsel_Is403AndQueuesNothing()
+    {
+        var actor = await Actor().SeedAsync();
+        var theirs = TestData.Msel(createdBy: actor.Id);
+        var msel = TestData.Msel();
+        await Seed(theirs, msel);
+
+        var response = await Client(actor).PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    [Fact]
+    public async Task Viewed_ByAParticipantOnTheMselsTeam_QueuesTheStatement()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+        var actor = await Actor().OnTeam(team).SeedAsync();
+
+        var response = await Client(actor).PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(msel.Id, (await Queued()).MselId);
+    }
+
+    [Fact]
+    public async Task Viewed_ByAParticipantOnAnotherMselsTeam_Is403AndQueuesNothing()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnNewTeam().SeedAsync();
+
+        var response = await Client(actor).PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    [Fact]
+    public async Task Viewed_ByAMemberOfAUnitOnTheMsel_QueuesTheStatement()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().InUnitOf(msel).SeedAsync();
+
+        var response = await Client(actor).PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(msel.Id, (await Queued()).MselId);
+    }
+
+    [Fact]
+    public async Task Viewed_ByAMemberOfAUnitOnAnotherMsel_Is403AndQueuesNothing()
+    {
+        var other = TestData.Msel();
+        var msel = TestData.Msel();
+        await Seed(other, msel);
+        var actor = await Actor().InUnitOf(other).SeedAsync();
+
+        var response = await Client(actor).PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(0, await QueuedCount());
@@ -173,24 +267,19 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
             groupings);
     }
 
-    /// <summary>Only the MSEL's owners and evaluators may assert: a caller with no role, a Viewer, an
-    /// Editor, an Approver and a Move Editor are refused and nothing is queued.</summary>
+    /// <summary>Only the MSEL's owners and evaluators may assert: a Viewer, an Editor, an Approver and a
+    /// Move Editor are refused and nothing is queued.</summary>
     [Theory]
-    [InlineData(null)]
     [InlineData(MselRole.Viewer)]
     [InlineData(MselRole.Editor)]
     [InlineData(MselRole.Approver)]
     [InlineData(MselRole.MoveEditor)]
-    public async Task CreateAssertion_ByACallerWhoIsNeitherOwnerNorEvaluator_Is403AndRecordsNothing(MselRole? role)
+    public async Task CreateAssertion_ByACallerWhoIsNeitherOwnerNorEvaluator_Is403AndRecordsNothing(MselRole role)
     {
         var graph = await SeedAssertionGraph();
-        var builder = Actor();
-        if (role.HasValue)
-        {
-            builder = builder.OnMsel(graph.Msel, role.Value);
-        }
+        var actor = await Actor().OnMsel(graph.Msel, role).SeedAsync();
 
-        var response = await Client(await builder.SeedAsync()).PostAsJsonAsync(
+        var response = await Client(actor).PostAsJsonAsync(
             XApiEndpointTests.Assertions,
             new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
             Ct);
@@ -231,6 +320,70 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
         Assert.Equal(1, await QueuedCount());
     }
 
+    [Theory]
+    [InlineData(MselRole.Owner)]
+    [InlineData(MselRole.Evaluator)]
+    public async Task CreateAssertion_ByAnOwnerOrEvaluatorOfAnotherMsel_Is403AndRecordsNothing(MselRole role)
+    {
+        var graph = await SeedAssertionGraph();
+        var actor = await Actor().OnNewMsel(role).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            XApiEndpointTests.Assertions,
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    /// <summary>The creator counts as the MSEL's owner.</summary>
+    [Fact]
+    public async Task CreateAssertion_ByTheMselsCreator_IsRecorded()
+    {
+        var actor = await Actor().SeedAsync();
+        var graph = await SeedAssertionGraph(createdBy: actor.Id);
+
+        var response = await Client(actor).PostAsJsonAsync(
+            XApiEndpointTests.Assertions,
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(graph.MselId, (await Queued()).MselId);
+    }
+
+    [Fact]
+    public async Task CreateAssertion_ByTheCreatorOfAnotherMsel_Is403AndRecordsNothing()
+    {
+        var actor = await Actor().SeedAsync();
+        await Seed(TestData.Msel(createdBy: actor.Id));
+        var graph = await SeedAssertionGraph();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            XApiEndpointTests.Assertions,
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    [Fact]
+    public async Task CreateAssertion_WithViewMselsAndNoRoleOnTheMsel_Is403AndRecordsNothing()
+    {
+        var graph = await SeedAssertionGraph();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            XApiEndpointTests.Assertions,
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, await QueuedCount());
+    }
+
     [Fact]
     public async Task CreateAssertion_WithEditMselsAndNoRoleOnTheMsel_IsRecorded()
     {
@@ -246,19 +399,15 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
         Assert.Equal(1, await QueuedCount());
     }
 
-    /// <summary>An evaluator on one MSEL naming a team or a scenario event of another MSEL is answered with a
-    /// 500 naming the MSEL, and nothing is queued.</summary>
-    [Theory]
-    [InlineData("team")]
-    [InlineData("scenarioEvent")]
-    public async Task CreateAssertion_NamingSomethingFromAnotherMsel_IsRefusedAndRecordsNothing(string what)
+    // Same case as XApiServiceTests.AssertCompetency_AboutSomethingThatIsNotThere_Throws.
+    [Fact]
+    public async Task CreateAssertion_NamingATeamOfAnotherMsel_Is500NamingTheTeamAndRecordsNothing()
     {
         var graph = await SeedAssertionGraph();
         var otherMsel = TestData.Msel();
         await Seed(otherMsel);
         var otherTeam = TestData.Team(otherMsel.Id);
-        var otherEvent = TestData.ScenarioEvent(otherMsel.Id);
-        await Seed(otherTeam, otherEvent);
+        await Seed(otherTeam);
         var actor = await Actor().OnMsel(graph.Msel, MselRole.Evaluator).SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync(
@@ -268,13 +417,40 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
                 mselId = graph.MselId,
                 competencyId = graph.CompetencyId,
                 proficiencyLevelId = graph.LevelId,
-                teamId = what == "team" ? otherTeam.Id : (Guid?)null,
-                scenarioEventId = what == "scenarioEvent" ? otherEvent.Id : (Guid?)null,
+                teamId = otherTeam.Id,
             },
             Ct);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Contains($"not found on MSEL {graph.MselId}", await Title(response));
+        Assert.Equal($"Team {otherTeam.Id} not found on MSEL {graph.MselId}", await Title(response));
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    // Same case as XApiServiceTests.AssertCompetency_AboutSomethingThatIsNotThere_Throws.
+    [Fact]
+    public async Task CreateAssertion_NamingAScenarioEventOfAnotherMsel_Is500NamingTheEventAndRecordsNothing()
+    {
+        var graph = await SeedAssertionGraph();
+        var otherMsel = TestData.Msel();
+        await Seed(otherMsel);
+        var otherEvent = TestData.ScenarioEvent(otherMsel.Id);
+        await Seed(otherEvent);
+        var actor = await Actor().OnMsel(graph.Msel, MselRole.Evaluator).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            XApiEndpointTests.Assertions,
+            new
+            {
+                mselId = graph.MselId,
+                competencyId = graph.CompetencyId,
+                proficiencyLevelId = graph.LevelId,
+                scenarioEventId = otherEvent.Id,
+            },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(
+            $"Scenario event {otherEvent.Id} not found on MSEL {graph.MselId}", await Title(response));
         Assert.Equal(0, await QueuedCount());
     }
 
@@ -339,22 +515,17 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
     }
 
     /// <summary>The statements go to the roles that can open the Assessor View and to nobody else on the
-    /// MSEL: a caller with no role, a Viewer and a Move Editor are refused.</summary>
+    /// MSEL: a Viewer and a Move Editor are refused.</summary>
     [Theory]
-    [InlineData(null)]
     [InlineData(MselRole.Viewer)]
     [InlineData(MselRole.MoveEditor)]
-    public async Task GetStatements_ByACallerOutsideTheAssessorRoles_Is403(MselRole? role)
+    public async Task GetStatements_ByACallerOutsideTheAssessorRoles_Is403(MselRole role)
     {
         var msel = TestData.Msel();
         await Seed(msel);
-        var builder = Actor();
-        if (role.HasValue)
-        {
-            builder = builder.OnMsel(msel, role.Value);
-        }
+        var actor = await Actor().OnMsel(msel, role).SeedAsync();
 
-        var response = await Client(await builder.SeedAsync())
+        var response = await Client(actor)
             .GetAsync($"{XApiEndpointTests.Statements}?mselId={msel.Id}&source=cite", Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -390,6 +561,66 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
             .GetAsync($"{XApiEndpointTests.Statements}?mselId={msel.Id}&source=cite", Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("{\"statements\":[]}", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    [Theory]
+    [InlineData(MselRole.Owner)]
+    [InlineData(MselRole.Editor)]
+    [InlineData(MselRole.Approver)]
+    [InlineData(MselRole.Evaluator)]
+    public async Task GetStatements_ByAnAssessorRoleOnAnotherMsel_Is403(MselRole role)
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnNewMsel(role).SeedAsync();
+
+        var response = await Client(actor)
+            .GetAsync($"{XApiEndpointTests.Statements}?mselId={msel.Id}&source=cite", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>The creator counts as the MSEL's owner.</summary>
+    [Fact]
+    public async Task GetStatements_ByTheMselsCreator_IsAllowed()
+    {
+        var actor = await Actor().SeedAsync();
+        var msel = TestData.Msel(createdBy: actor.Id);
+        await Seed(msel);
+
+        var response = await Client(actor)
+            .GetAsync($"{XApiEndpointTests.Statements}?mselId={msel.Id}&source=cite", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("{\"statements\":[]}", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    [Fact]
+    public async Task GetStatements_ByTheCreatorOfAnotherMsel_Is403()
+    {
+        var actor = await Actor().SeedAsync();
+        var theirs = TestData.Msel(createdBy: actor.Id);
+        var msel = TestData.Msel();
+        await Seed(theirs, msel);
+
+        var response = await Client(actor)
+            .GetAsync($"{XApiEndpointTests.Statements}?mselId={msel.Id}&source=cite", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetStatements_WithEditMselsAndNoRoleOnTheMsel_Is403()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor)
+            .GetAsync($"{XApiEndpointTests.Statements}?mselId={msel.Id}&source=cite", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -488,9 +719,9 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
     /// naming the middle level needs. A thinner version of <c>XApiServiceTests.SeedAssertionGraph</c>,
     /// which varies the scale; here the only interesting thing about it is that the raw score is 3.
     /// </summary>
-    private async Task<AssertionGraph> SeedAssertionGraph()
+    private async Task<AssertionGraph> SeedAssertionGraph(Guid? createdBy = null)
     {
-        var msel = TestData.Msel();
+        var msel = TestData.Msel(createdBy: createdBy);
         var framework = TestData.CompetencyFramework();
         framework.IdNumber = "https://frameworks.test/f/1";
         var competency = TestData.Competency(framework.Id);

@@ -79,48 +79,52 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     /// <summary>
-    /// Characterizes a defect, and the most serious one on this endpoint. Copying reads the entire MSEL -
-    /// its scenario events, every data value, its teams and their members, its cards, its CITE actions -
-    /// and returns the result, but the only check is <see cref="SystemPermission.CreateMsels"/>. Nothing
-    /// asks whether the caller may <em>view</em> the MSEL being copied.
+    /// Copying hands over the whole MSEL, so <see cref="SystemPermission.CreateMsels"/> alone is not
+    /// enough: the caller must also be able to view the source.
     /// </summary>
-    /// <remarks>
-    /// So any user who can create an MSEL of their own can read the contents of every MSEL in the
-    /// installation, including other people's unpublished exercises, by copying it and then reading the
-    /// copy - which they now own. <c>CreateMsels</c> is a routine permission; the Content Developer role
-    /// ships with it.
-    ///
-    /// <para>
-    /// The fix that turns this red and leaves the other thirty-two green is the shape <c>GET msels/{id}</c>
-    /// already uses: have the controller resolve <c>ViewMsels</c> and pass it in, then
-    /// <c>if (!hasViewPermission &amp;&amp; !await MselViewRequirement.IsMet(_user.GetId(), mselId, _context))
-    /// throw new ForbiddenException();</c>. Note the three-argument <c>IsMet</c> overload is <em>not</em>
-    /// enough on its own - it reads only roles, teams, units and the creator, and knows nothing about
-    /// system permissions - so using it alone forbids the very administrators who are meant to copy.
-    /// Check existence first if <see cref="Copy_OfAnUnknownMsel_Is404"/> is to stay a 404.
-    /// </para>
-    /// </remarks>
     [Fact]
-    public async Task Copy_OfAMselTheCallerCannotSee_Is201AndHandsOverItsContents()
+    public async Task Copy_OfAMselTheCallerCannotSee_Is403AndCreatesNothing()
     {
         var graph = await SeedGraph();
         // CreateMsels alone, which is the point: this actor has no way to view the MSEL.
         var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var before = await NewContext().Msels.CountAsync(Ct);
 
-        // Proof the caller cannot read it the honest way.
-        var read = await Client(actor).GetAsync($"/api/msels/{graph.Msel.Id}", Ct);
-        Assert.Equal(HttpStatusCode.Forbidden, read.StatusCode);
+        var response = await Client(actor).PostAsync($"/api/msels/{graph.Msel.Id}/copy", null, Ct);
 
-        var copy = await Copy(Client(actor), graph.Msel.Id);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(before, await NewContext().Msels.CountAsync(Ct));
+    }
 
-        var events = await NewContext().ScenarioEvents
-            .Where(x => x.MselId == copy.Id)
-            .Include(x => x.DataValues)
-            .SelectMany(x => x.DataValues)
-            .Select(x => x.Value)
-            .ToListAsync(Ct);
+    [Fact]
+    public async Task Copy_OfAMselTheCallerViews_WithCreateMsels_Is201()
+    {
+        var msel = BlueprintAppFactory.Msel();
+        await Seed(msel);
+        var actor = await Actor()
+            .WithSystemPermissions(SystemPermission.CreateMsels)
+            .OnMsel(msel, MselRole.Viewer)
+            .SeedAsync();
 
-        Assert.Contains(GraphSeed.SecretValue, events);
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/copy", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    /// <summary>
+    /// A template is what <see cref="SystemPermission.CreateMsels"/> lets a caller start from, so it
+    /// needs no other access.
+    /// </summary>
+    [Fact]
+    public async Task Copy_OfATemplate_WithCreateMselsOnly_Is201()
+    {
+        var template = BlueprintAppFactory.Msel(isTemplate: true);
+        await Seed(template);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{template.Id}/copy", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     /// <summary>
@@ -829,16 +833,10 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// An actor who may copy: <see cref="SystemPermission.CreateMsels"/> because the endpoint asks for it,
-    /// and <see cref="SystemPermission.ViewMsels"/> because they ought to need it.
+    /// An actor who may copy any MSEL: <see cref="SystemPermission.CreateMsels"/> to create the copy, and
+    /// <see cref="SystemPermission.ViewMsels"/> to read the source. See
+    /// <see cref="Copy_OfAMselTheCallerCannotSee_Is403AndCreatesNothing"/>.
     /// </summary>
-    /// <remarks>
-    /// Copy does not in fact check that the caller may view the MSEL - see
-    /// <see cref="Copy_OfAMselTheCallerCannotSee_Is201AndHandsOverItsContents"/>, which is the one test in
-    /// this class that holds <c>CreateMsels</c> alone. Every other test grants the view permission too, so
-    /// that adding the missing check reddens only the test written to characterize its absence rather than
-    /// the thirty tests about what the copy contains.
-    /// </remarks>
     private TestActorBuilder Copier() =>
         Actor().WithSystemPermissions(SystemPermission.CreateMsels, SystemPermission.ViewMsels);
 

@@ -41,7 +41,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> CreateAsync(ViewModels.MselCreate msel, CancellationToken ct);
-        Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct);
+        Task<ViewModels.Msel> CopyAsync(Guid mselId, bool hasViewMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.MselEdit msel, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> RemoveUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct);
@@ -251,8 +251,16 @@ namespace Blueprint.Api.Services
             return await GetAsync(mselEntity.Id, true, ct);
         }
 
-        public async Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct)
+        public async Task<ViewModels.Msel> CopyAsync(Guid mselId, bool hasViewMselsPermission, CancellationToken ct)
         {
+            if (!await _context.Msels.AnyAsync(m => m.Id == mselId, ct))
+                throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
+
+            // a copy hands over the whole MSEL, so the caller must be able to view it.
+            // The caller already holds CreateMsels, which is what lets them view a template.
+            if (!hasViewMselsPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, true, _context)))
+                throw new ForbiddenException();
+
             var newMselEntity = await privateMselCopyAsync(mselId, null, ct);
             var msel = _mapper.Map<Msel>(newMselEntity);
             // add the needed parameters for Gallery integration

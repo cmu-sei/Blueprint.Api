@@ -76,28 +76,15 @@ namespace Blueprint.Api.Services
         {
             var item = await _context.Injects
                 .Include(se => se.DataValues)
-                .SingleAsync(a => a.Id == id, ct);
+                .SingleOrDefaultAsync(a => a.Id == id, ct);
 
             if (item == null)
                 throw new EntityNotFoundException<InjectEntity>();
 
-            if (!hasSystemPermission)
-            {
-                var userId = _user.GetId();
-                var unitIdList = await _context.CatalogUnits
-                    .Where(m => m.Id == userId)
-                    .Select(m => m.UnitId)
-                    .ToListAsync(ct);
-                var catalogIdList = await _context.CatalogUnits
-                    .Where(m => unitIdList.Contains(m.UnitId))
-                    .Select(m => m.CatalogId)
-                    .ToListAsync(ct);
-                var isAuthorized = await _context.CatalogInjects
-                    .Where(m => catalogIdList.Contains(m.CatalogId))
-                    .AnyAsync(ct);
-                if (!isAuthorized)
-                    throw new ForbiddenException();
-            }
+            // the user must be able to view one of the catalogs this inject is in
+            if (!hasSystemPermission &&
+                !(await CatalogViewRequirement.ViewableInjectIdsAsync(_user.GetId(), [id], _context, ct)).Contains(id))
+                throw new ForbiddenException();
 
             return _mapper.Map<ViewModels.Injectm>(item);
         }

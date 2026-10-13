@@ -63,15 +63,11 @@ namespace Blueprint.Api.Tests;
 /// that is the previous paragraph. Moving a row <em>up</em> is exact.
 /// </para>
 /// <para>
-/// And one more, in <c>CreateAsync</c> rather than in the helper. A new row with position zero is meant to
-/// be appended rather than inserted - the comment at <c>ScenarioEventService.cs:720</c> says so - and the
-/// test for "was this row created after the ones already there" reads <c>DateCreated</c> off the request
-/// body. But <c>CreateAsync</c> reorders <em>before</em> it saves, and <c>BlueprintContext.SaveEntries</c>
-/// is what puts a real timestamp there, so the field is still whatever the client sent: a body that omits
-/// it carries <c>DateTime.MinValue</c> and the row is inserted at the head instead
-/// (<see cref="Create_WithoutADateCreated_IsInsertedAtTheHeadInstead"/>). The same helper is called from
-/// <c>CreateScenarioEventsFromInjectsAsync</c> <em>after</em> its save, where the intended behaviour is what
-/// happens - so the append heuristic works in one caller and not the other.
+/// A new row with position zero is appended rather than inserted - the comment in the helper says so -
+/// and the test for "was this row created after the ones already there" reads the new entity's
+/// <c>DateCreated</c>. The create request carries no audit fields, so that is always the server's time and
+/// the row is appended whatever the body says
+/// (<see cref="Create_WithoutADateCreated_IsAppendedToTheEndToo"/>).
 /// </para>
 /// </remarks>
 public class ScenarioEventOrderingTests(DatabaseFixture fixture, BlueprintAppFactory factory)
@@ -109,21 +105,11 @@ public class ScenarioEventOrderingTests(DatabaseFixture fixture, BlueprintAppFac
     }
 
     /// <summary>
-    /// The same request without a <c>dateCreated</c> in the body is inserted at the head instead.
+    /// The same request without a <c>dateCreated</c> in the body is appended too: the creation time is the
+    /// server's, not the body's.
     /// </summary>
-    /// <remarks>
-    /// Characterization, and the sharpest one here: two bodies differing only in a field the server is
-    /// about to overwrite put the row in different places. The append special case at
-    /// <c>ScenarioEventService.cs:722</c> only applies when every row already in the group was created no
-    /// later than this one, and it reads the request body's <c>DateCreated</c> - which
-    /// <c>CreateAsync</c> has not yet handed to <c>SaveEntries</c> to stamp, so an absent field is
-    /// <c>DateTime.MinValue</c> and no existing row can be older than it. The stored value is server time
-    /// either way, which is asserted here so the two halves are on one screen. Turns red when the reorder
-    /// moves below the save, as it already is in
-    /// <c>CreateScenarioEventsFromInjectsAsync</c>.
-    /// </remarks>
     [Fact]
-    public async Task Create_WithoutADateCreated_IsInsertedAtTheHeadInstead()
+    public async Task Create_WithoutADateCreated_IsAppendedToTheEndToo()
     {
         var msel = await SeedMsel();
         await SeedGroup(msel, 0, "A", "B", "C");
@@ -132,7 +118,7 @@ public class ScenarioEventOrderingTests(DatabaseFixture fixture, BlueprintAppFac
 
         await CreateWithoutADate(Client(actor), msel.Id, "N", groupOrder: 0);
 
-        Assert.Equal(["N=0", "A=1", "B=2", "C=3"], await Orders(msel.Id));
+        Assert.Equal(["A=0", "B=1", "C=2", "N=3"], await Orders(msel.Id));
 
         var stored = await Stored(msel.Id, "N");
 
@@ -208,9 +194,9 @@ public class ScenarioEventOrderingTests(DatabaseFixture fixture, BlueprintAppFac
         await SeedAt(msel, 0, 9, "C");
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        await CreateWithoutADate(Client(actor), msel.Id, "N", groupOrder: 0);
+        await Create(Client(actor), msel.Id, "N", groupOrder: 5);
 
-        Assert.Equal(["N=0", "A=1", "B=2", "C=3"], await Orders(msel.Id));
+        Assert.Equal(["A=0", "N=5", "B=6", "C=7"], await Orders(msel.Id));
     }
 
     [Fact]
@@ -770,8 +756,7 @@ public class ScenarioEventOrderingTests(DatabaseFixture fixture, BlueprintAppFac
 
     /// <summary>
     /// Creates a row, as a client sending the whole view model does: with a <c>dateCreated</c> of now,
-    /// which the server overwrites and which decides where a row asking for position zero lands. See
-    /// <see cref="Create_WithoutADateCreated_IsInsertedAtTheHeadInstead"/>.
+    /// which the server ignores. See <see cref="Create_WithoutADateCreated_IsAppendedToTheEndToo"/>.
     /// </summary>
     private Task<List<ScenarioEvent>> Create(
         HttpClient client,

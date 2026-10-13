@@ -73,7 +73,6 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
         "MselCompetency -> MselCompetencyEntity: Msel",
         "MselEntity -> Msel: GalleryArticleParameters, GallerySourceTypes",
         "ProficiencyLevel -> ProficiencyLevelEntity: ProficiencyScale",
-        "ScenarioEvent -> ScenarioEventEntity: Msel, Inject",
         "TeamCompetency -> TeamCompetencyEntity: Team",
         "TeamUser -> TeamUserEntity: User, Team",
         "TeamUserEntity -> TeamUser: DateCreated, DateModified, CreatedBy, ModifiedBy",

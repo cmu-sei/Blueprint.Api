@@ -104,15 +104,12 @@ public class CatalogInjectEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(graph.Inject.Id, answered.InjectId);
     }
 
-    /// <remarks>
-    /// BUG: <c>GetAsync</c> puts the <em>CatalogInject</em>'s id to <c>CatalogViewRequirement.IsMet</c>
-    /// as if it were a catalog id (<c>CatalogInjectService.cs:70</c>), so no catalog is ever found and
-    /// the requirement is false for every caller. A unit member of the catalog therefore reads the whole
-    /// list eleven lines above and cannot read one row of it. <c>GetByCatalogAsync</c> passes the right
-    /// id and is the model to copy.
-    /// </remarks>
+    /// <summary>
+    /// The single read authorizes the row's own catalog, so a unit member of the catalog reads the row as
+    /// they read the list.
+    /// </summary>
     [Fact]
-    public async Task Get_ForAMemberOfAUnitTheCatalogIsAssignedTo_Is403_ThoughTheyMayListTheSameRow()
+    public async Task Get_ForAMemberOfAUnitTheCatalogIsAssignedTo_Is200LikeTheList()
     {
         var actor = await Actor().SeedAsync();
         var graph = await SeedGraph();
@@ -121,11 +118,44 @@ public class CatalogInjectEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         var response = await Client(actor).GetAsync(
             $"api/cataloginjects/{graph.CatalogInject.Id}", Ct);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var list = await Client(actor).GetAsync(
             $"api/catalogs/{graph.Catalog.Id}/cataloginjects", Ct);
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+    }
+
+    /// <summary>
+    /// A row whose own id happens to equal a catalog the caller can see is still judged by the catalog it
+    /// belongs to.
+    /// </summary>
+    [Fact]
+    public async Task Get_ForARowWhoseIdIsAnAccessibleCatalogsId_IsJudgedByItsOwnCatalog()
+    {
+        var actor = await Actor().SeedAsync();
+        var injectType = BlueprintAppFactory.InjectType();
+        await Seed(injectType);
+        var visible = BlueprintAppFactory.Catalog(injectType.Id, isPublic: true);
+        var hidden = BlueprintAppFactory.Catalog(injectType.Id);
+        var inject = BlueprintAppFactory.Inject(injectType.Id);
+        await Seed(visible, hidden, inject);
+        var row = BlueprintAppFactory.CatalogInject(hidden.Id, inject.Id);
+        row.Id = visible.Id;
+        await Seed(row);
+
+        var response = await Client(actor).GetAsync($"api/cataloginjects/{row.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_ForAnIdThatIsNotThere_WithoutAnyPermission_Is404()
+    {
+        var actor = await Actor().SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/cataloginjects/{Guid.NewGuid()}", Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]

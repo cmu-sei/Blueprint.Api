@@ -33,15 +33,10 @@ namespace Blueprint.Api.Tests;
 /// owner-only, which no cell operation is.
 /// </para>
 /// <para>
-/// Four characterizations here, in rough order of how much they matter.
-/// </para>
-/// <para>
-/// <c>UpdateAsync</c> takes its permission decision from the <em>request body's</em> <c>MselId</c> and then
-/// finds the row by the route's id, so a caller who owns any MSEL at all may edit every row of every other
-/// one - and the mapper writes that <c>MselId</c> onto the row, moving it (see
-/// <see cref="Update_ChoosesItsPermissionBranchFromTheRequestBodyAndMovesTheRow"/>). This is the same
-/// defect <c>OrganizationService.UpdateAsync</c> has, one step more serious: there the body's MSEL id is
-/// nullable on both sides, here it is the row's whole identity.
+/// <c>UpdateAsync</c> takes its permission decision from the row's stored MSEL, and the edit request names
+/// no MSEL, so an edit cannot move a row (see
+/// <see cref="Update_AsTheOwnerOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheRowAlone"/>). The
+/// characterizations that follow are in rough order of how much they matter.
 /// </para>
 /// <para>
 /// Any PUT rewrites the <c>CellMetadata</c> of <em>every</em> cell on the row from the row's
@@ -749,20 +744,11 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
     }
 
     /// <summary>
-    /// Anybody who owns any MSEL may rewrite any row of any other one, and doing so moves the row onto
-    /// their MSEL.
+    /// The permission check runs on the row's stored MSEL, so owning the MSEL named in the body buys
+    /// nothing, and the row stays where it is.
     /// </summary>
-    /// <remarks>
-    /// Characterization, and the most serious finding on this endpoint. The three permission tests all run
-    /// against the <em>request body's</em> <c>MselId</c>; the row is then found by the route's id and the
-    /// body mapped over it, <c>MselId</c> included. So the caller here holds no role on the MSEL the row
-    /// belongs to, is refused nothing, and ends up with the row - and its cells, which still point at the
-    /// old MSEL's data fields - on theirs. Only the destination MSEL is marked modified, so the MSEL that
-    /// lost a row has nothing recording that it changed. Turns red when the permission check uses the
-    /// stored row's MSEL, which is also what makes the move impossible.
-    /// </remarks>
     [Fact]
-    public async Task Update_ChoosesItsPermissionBranchFromTheRequestBodyAndMovesTheRow()
+    public async Task Update_AsTheOwnerOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheRowAlone()
     {
         var row = await SeedRow();
         var mine = await SeedMsel();
@@ -773,27 +759,71 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
             row.Event.Id,
             BodyFor(row.Event) with { MselId = mine.Id, Information = "taken" });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         var stored = await Stored(row.Event.Id);
 
-        Assert.Equal(mine.Id, stored.MselId);
-        Assert.Equal("taken", stored.Information);
-        Assert.Equal(row.Field.Id, Assert.Single(await CellsOn(row.Event.Id)).DataFieldId);
-        Assert.NotNull((await StoredMsel(mine.Id)).DateModified);
+        Assert.Equal(row.Msel.Id, stored.MselId);
+        Assert.Equal(row.Event.Information, stored.Information);
+        Assert.Equal("before", Assert.Single(await CellsOn(row.Event.Id)).Value);
+        Assert.Null((await StoredMsel(mine.Id)).DateModified);
         Assert.Null((await StoredMsel(row.Msel.Id)).DateModified);
     }
 
     /// <summary>
-    /// A body carrying an id other than the route's is a 500.
+    /// An editor's change that names another MSEL is applied to the row, which stays in its own MSEL.
     /// </summary>
-    /// <remarks>
-    /// Characterization, the same shape as <c>DataValueEndpointTests.Update_WithNoIdInTheBody_Is500</c>:
-    /// the route id finds the row and the body is then mapped over it including its key, so EF is asked to
-    /// change a primary key and refuses. Turns red when the service forces the route id onto the body.
-    /// </remarks>
     [Fact]
-    public async Task Update_WithADifferentIdInTheBody_Is500()
+    public async Task Update_AsAnEditor_NamingAnotherMselInTheBody_KeepsTheRowInItsMsel()
+    {
+        var row = await SeedRow();
+        var other = await SeedMsel();
+        var actor = await Actor().OnMsel(row.Msel, MselRole.Editor).SeedAsync();
+
+        var response = await Put(
+            Client(actor),
+            row.Event.Id,
+            BodyFor(row.Event) with { MselId = other.Id, Information = "after" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var stored = await Stored(row.Event.Id);
+
+        Assert.Equal(row.Msel.Id, stored.MselId);
+        Assert.Equal("after", stored.Information);
+        Assert.Null((await StoredMsel(other.Id)).DateModified);
+    }
+
+    /// <summary>
+    /// The cells written are the row's own MSEL's: a cell for another MSEL's data field is ignored.
+    /// </summary>
+    [Fact]
+    public async Task Update_WithACellForAnotherMselsDataField_IgnoresIt()
+    {
+        var row = await SeedRow();
+        var other = await SeedMsel();
+        var foreignField = BlueprintAppFactory.DataField(mselId: other.Id);
+        await Seed(foreignField);
+        var actor = await Actor().OnMsel(row.Msel, MselRole.Editor).SeedAsync();
+
+        var response = await Put(
+            Client(actor),
+            row.Event.Id,
+            BodyFor(row.Event) with
+            {
+                MselId = other.Id,
+                DataValues = [new ValueBody { DataFieldId = foreignField.Id, ScenarioEventId = row.Event.Id, Value = "planted" }]
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(row.Field.Id, Assert.Single(await CellsOn(row.Event.Id)).DataFieldId);
+    }
+
+    /// <summary>
+    /// The edit request has no id, so another id in the body is ignored and the route's row is written.
+    /// </summary>
+    [Fact]
+    public async Task Update_WithADifferentIdInTheBody_UpdatesTheRoutesRow()
     {
         var row = await SeedRow();
         var actor = await Actor().OnMsel(row.Msel, MselRole.Editor).SeedAsync();
@@ -801,9 +831,10 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         var response = await Put(
             Client(actor),
             row.Event.Id,
-            BodyFor(row.Event) with { Id = Guid.NewGuid() });
+            BodyFor(row.Event) with { Id = Guid.NewGuid(), Information = "after" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("after", (await Stored(row.Event.Id)).Information);
     }
 
     [Fact]

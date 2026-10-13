@@ -15,6 +15,9 @@ namespace Blueprint.Api.Infrastructure.Mappings
             CreateMap<DataValue, DataValueEntity>()
                 .ForMember(x => x.DataField, opt => opt.Ignore());
 
+            CreateMap<DataValueCreate, DataValueEntity>(AutoMapper.MemberList.Source);
+            CreateMap<DataValueEdit, DataValueEntity>(AutoMapper.MemberList.Source);
+
         }
     }
 }

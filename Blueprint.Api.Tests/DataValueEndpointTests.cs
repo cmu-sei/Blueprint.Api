@@ -49,17 +49,16 @@ namespace Blueprint.Api.Tests;
 /// (<see cref="GetByMsel_ForAUnitMemberWithNoRole_Is200_WhileTheSameValueByIdIs403"/>).
 /// </para>
 /// <para>
-/// Four more characterizations. The list route filters on the scenario event and never on the data field,
-/// so a value wired to another MSEL's field is returned as one of this MSEL's cells - and
-/// <c>UpdateAsync</c> checks only the <em>stored</em> field's MSEL before mapping the request body over
-/// the row, so an editor of one MSEL can move a cell into another
-/// (<see cref="Update_MovesTheValueIntoAnotherMselsCell"/>). The unique index over
+/// A value is a cell of one MSEL: a create needs a scenario event of the data field's own MSEL, and an
+/// edit carries only the value and its metadata, so it cannot move a cell
+/// (<see cref="Update_NamingAnotherMselsCell_KeepsTheValueInItsOwnCell"/>). The list route returns only
+/// values whose data field is the MSEL's too. Two more characterizations. The unique index over
 /// <c>(ScenarioEventId, InjectId, DataFieldId)</c> looks like it forbids two values for one cell and does
 /// not, because one of the three columns is always null and Postgres counts nulls as distinct
-/// (<see cref="Create_ASecondValueForTheSameCell_IsAccepted"/>). And every path that resolves the MSEL
-/// from the data field reaches <c>MselOwnerRequirement</c> with a null id for a field belonging to an
+/// (<see cref="Create_ASecondValueForTheSameCell_IsAccepted"/>). And the delete path resolves the MSEL
+/// from the data field and reaches <c>MselOwnerRequirement</c> with a null id for a field belonging to an
 /// inject type, which throws rather than refusing - a 500 where a 403 was meant
-/// (<see cref="Create_ForADataFieldOnAnInjectType_Is500"/>).
+/// (<see cref="Delete_AValueOnAnInject_Is500"/>).
 /// </para>
 /// <para>
 /// Two things are noted here and not tested because nothing observable follows from them:
@@ -119,19 +118,11 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     }
 
     /// <summary>
-    /// A value whose scenario event is on this MSEL and whose data field is on another is returned as one
-    /// of this MSEL's cells.
+    /// A value whose scenario event is on this MSEL and whose data field is on another - a row the API no
+    /// longer writes, but which older data may hold - is not returned as one of this MSEL's cells.
     /// </summary>
-    /// <remarks>
-    /// Characterization. <c>GetByMselAsync</c> collects the MSEL's scenario events and then every value
-    /// pointing at one of them, without ever asking which MSEL the value's data field belongs to - and
-    /// nothing else does either, because no foreign key ties the two sides of a cell to the same MSEL.
-    /// The consequence is the update path's, not this one's: see
-    /// <see cref="Update_MovesTheValueIntoAnotherMselsCell"/>, which is how such a row gets written.
-    /// Turns red when the query filters on the data field as well.
-    /// </remarks>
     [Fact]
-    public async Task GetByMsel_ReturnsAValueWhoseDataFieldBelongsToAnotherMsel()
+    public async Task GetByMsel_LeavesOutAValueWhoseDataFieldBelongsToAnotherMsel()
     {
         var cell = await SeedCell();
         var elsewhere = await SeedCell();
@@ -141,8 +132,7 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var values = await GetValues(Client(actor), cell.Msel.Id);
 
-        Assert.Equal(["before", "stray"], values.Select(x => x.Value).Order(StringComparer.Ordinal));
-        Assert.Contains(elsewhere.Field.Id, values.Select(x => x.DataFieldId));
+        Assert.Equal(["before"], values.Select(x => x.Value));
     }
 
     /// <summary>
@@ -422,70 +412,66 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>
-    /// A data field that does not exist is a 500, not a 404 or a 403.
-    /// </summary>
-    /// <remarks>
-    /// Characterization. The MSEL is resolved from the data field, an unknown field gives a null id, and
-    /// <c>MselOwnerRequirement.IsMet</c> dereferences the MSEL it then fails to find. Turns red when the
-    /// requirement guards its lookup or the service checks the field exists first.
-    /// </remarks>
     [Fact]
-    public async Task Create_ForAnUnknownDataField_Is500()
+    public async Task Create_ForAnUnknownDataField_Is404()
     {
         var cell = await SeedCell();
         var actor = await Actor().OnMsel(cell.Msel, MselRole.Owner).SeedAsync();
 
         var response = await Post(Client(actor), Body(Guid.NewGuid(), cell.Event.Id));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     /// <summary>
-    /// The same 500 for a data field that does exist and belongs to an inject type, because that field has
-    /// no MSEL either.
+    /// This endpoint writes the cells of a MSEL's grid. A data field with no MSEL - an inject type's -
+    /// has no cells here, whoever asks.
     /// </summary>
-    /// <remarks>
-    /// Characterization, and the more serious half of <see cref="Create_ForAnUnknownDataField_Is500"/>:
-    /// this is a legitimate request against real rows, and the only way to make it work is to hold
-    /// <c>EditMsels</c> - see <see cref="Create_AValueOnAnInject_WithEditMsels_Is201"/>, which proves the
-    /// write itself is fine. Turns red when the inject side gets a permission check of its own.
-    /// </remarks>
     [Fact]
-    public async Task Create_ForADataFieldOnAnInjectType_Is500()
-    {
-        var cell = await SeedInjectCell();
-        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
-        var forbidden = await Actor().WithSystemPermissions(SystemPermission.ManageDataFields).SeedAsync();
-        var inject = BlueprintAppFactory.Inject(cell.InjectType.Id);
-        await Seed(inject);
-
-        // Proves the row is writable at all, so the 500 below is the permission check.
-        var allowed = await Post(Client(actor), Body(cell.Field.Id, injectId: inject.Id));
-
-        Assert.Equal(HttpStatusCode.Created, allowed.StatusCode);
-
-        var response = await Post(Client(forbidden), Body(cell.Field.Id, injectId: inject.Id));
-
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Create_AValueOnAnInject_WithEditMsels_Is201()
+    public async Task Create_ForADataFieldOnAnInjectType_Is404()
     {
         var cell = await SeedInjectCell();
         var second = BlueprintAppFactory.DataField(injectTypeId: cell.InjectType.Id, displayOrder: 2);
         await Seed(second);
+        var row = await SeedCell();
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+
+        var response = await Post(Client(actor), Body(second.Id, row.Event.Id));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(await NewContext().DataValues.AnyAsync(x => x.DataFieldId == second.Id, Ct));
+    }
+
+    /// <summary>
+    /// A value is a cell of one MSEL: the data field's MSEL and the scenario event's must be the same.
+    /// Another MSEL's scenario event is answered as one that is not there, and nothing is written.
+    /// </summary>
+    [Fact]
+    public async Task Create_ForAnotherMselsScenarioEvent_Is404AndWritesNothing()
+    {
+        var cell = await SeedCell();
+        var elsewhere = await SeedCell();
+        var field = BlueprintAppFactory.DataField(mselId: cell.Msel.Id, displayOrder: 2);
+        await Seed(field);
+        var actor = await Actor().OnMsel(cell.Msel, MselRole.Editor).SeedAsync();
+
+        var response = await Post(Client(actor), Body(field.Id, elsewhere.Event.Id, "planted"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(await NewContext().DataValues.AnyAsync(x => x.ScenarioEventId == elsewhere.Event.Id && x.DataFieldId == field.Id, Ct));
+    }
+
+    [Fact]
+    public async Task Create_ForAnotherMselsScenarioEvent_WithEditMsels_Is404()
+    {
+        var cell = await SeedCell();
+        var elsewhere = await SeedCell();
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var response = await Post(Client(actor), Body(second.Id, injectId: cell.Inject.Id));
+        var response = await Post(Client(actor), Body(cell.Field.Id, elsewhere.Event.Id, "planted"));
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-
-        var stored = await Stored((await Read<DataValue>(response)).Id);
-
-        Assert.Equal(cell.Inject.Id, stored.InjectId);
-        Assert.Null(stored.ScenarioEventId);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Single(await NewContext().DataValues.Where(x => x.ScenarioEventId == elsewhere.Event.Id).ToListAsync(Ct));
     }
 
     /// <summary>
@@ -522,22 +508,21 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     }
 
     /// <summary>
-    /// A body naming neither a scenario event nor an inject, or both, is a 500: the check constraint
-    /// refuses it and nothing checks it first.
+    /// The create request names a scenario event and nothing else: without one it is refused by model
+    /// binding, and an inject in the body is ignored.
     /// </summary>
-    /// <remarks>
-    /// Characterization. Every other invalid body on this endpoint is a 400 from
-    /// <c>ValidateModelStateFilter</c>; this one reaches the database, so the caller gets a server error
-    /// for a request the API could have refused. Turns red when the rule is expressed in the view model.
-    /// </remarks>
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, true)]
-    public async Task Create_WithoutExactlyOneOfAScenarioEventAndAnInject_Is500(
+    [InlineData(false, false, HttpStatusCode.BadRequest)]
+    [InlineData(false, true, HttpStatusCode.BadRequest)]
+    [InlineData(true, true, HttpStatusCode.Created)]
+    public async Task Create_TheScenarioEventIsTheOnlyParent(
         bool withScenarioEvent,
-        bool withInject)
+        bool withInject,
+        HttpStatusCode expected)
     {
         var cell = await SeedCell();
+        var field = BlueprintAppFactory.DataField(mselId: cell.Msel.Id, displayOrder: 2);
+        await Seed(field);
         var injectType = BlueprintAppFactory.InjectType();
         await Seed(injectType);
         var inject = BlueprintAppFactory.Inject(injectType.Id);
@@ -546,13 +531,14 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await Post(Client(actor), new ValueBody
         {
-            DataFieldId = cell.Field.Id,
+            DataFieldId = field.Id,
             ScenarioEventId = withScenarioEvent ? cell.Event.Id : null,
             InjectId = withInject ? inject.Id : null,
-            Value = "neither"
+            Value = "one parent"
         });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(expected, response.StatusCode);
+        Assert.False(await NewContext().DataValues.AnyAsync(x => x.InjectId == inject.Id, Ct));
     }
 
     [Fact]
@@ -623,18 +609,10 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     }
 
     /// <summary>
-    /// A value on an inject is broadcast to a group named by the all-zeros guid, which no client joins.
+    /// A refused value on an inject is not broadcast anywhere.
     /// </summary>
-    /// <remarks>
-    /// Characterization, the same shape of defect as <c>OrganizationHandler</c>'s empty-string group.
-    /// <c>DataValueHandler.GetGroups</c> resolves the MSEL by looking the value's scenario event up in
-    /// <c>ScenarioEvents</c>; for an inject there is no event, <c>SingleOrDefault</c> answers
-    /// <c>Guid.Empty</c>, and that is what the group is named after. The admin group still gets it, so
-    /// nothing is lost - but a client editing injects has nothing to subscribe to. Turns red when the
-    /// handler skips the MSEL group for a value that has no scenario event.
-    /// </remarks>
     [Fact]
-    public async Task Create_AValueOnAnInject_BroadcastsToAGroupNamedByTheEmptyGuid()
+    public async Task Create_AValueOnAnInject_BroadcastsNothing()
     {
         var cell = await SeedInjectCell();
         var second = BlueprintAppFactory.DataField(injectTypeId: cell.InjectType.Id, displayOrder: 2);
@@ -643,9 +621,7 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         await Post(Client(actor), Body(second.Id, injectId: cell.Inject.Id));
 
-        Assert.Equal(
-            [Guid.Empty.ToString(), MainHub.ADMIN_DATA_GROUP],
-            Hub.Recipients(MainHubMethods.DataValueCreated));
+        Assert.Empty(Hub.Recipients(MainHubMethods.DataValueCreated));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -823,19 +799,11 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     }
 
     /// <summary>
-    /// An editor of one MSEL moves a cell into another MSEL, and the API answers 200.
+    /// The edit request carries only the value and its metadata, so the cell's data field and scenario
+    /// event stay what they were, whatever the body names.
     /// </summary>
-    /// <remarks>
-    /// Characterization, and the most serious finding on this endpoint. The permission check runs against
-    /// the MSEL of the <em>stored</em> data field; the body is then mapped over the row wholesale, so
-    /// <c>DataFieldId</c> and <c>ScenarioEventId</c> land wherever the caller pointed them - at a MSEL
-    /// they have no relationship to. What they have written is a cell of that MSEL's grid, returned by its
-    /// list route (see <see cref="GetByMsel_ReturnsAValueWhoseDataFieldBelongsToAnotherMsel"/>) and
-    /// editable from then on by its owner and not by this caller. Turns red when the new data field's MSEL
-    /// is checked as well as the old one's.
-    /// </remarks>
     [Fact]
-    public async Task Update_MovesTheValueIntoAnotherMselsCell()
+    public async Task Update_NamingAnotherMselsCell_KeepsTheValueInItsOwnCell()
     {
         var cell = await SeedCell();
         var elsewhere = await SeedCell();
@@ -855,27 +823,21 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var stored = await Stored(cell.Value.Id);
 
-        Assert.Equal(elsewhere.Field.Id, stored.DataFieldId);
-        Assert.Equal(elsewhere.Event.Id, stored.ScenarioEventId);
+        Assert.Equal(cell.Field.Id, stored.DataFieldId);
+        Assert.Equal(cell.Event.Id, stored.ScenarioEventId);
+        Assert.Equal("moved", stored.Value);
 
         var admin = await Actor().WithAllSystemPermissions().SeedAsync();
         var values = await GetValues(Client(admin), elsewhere.Msel.Id);
 
-        Assert.Contains(cell.Value.Id, values.Select(x => x.Id));
+        Assert.DoesNotContain(cell.Value.Id, values.Select(x => x.Id));
     }
 
     /// <summary>
-    /// A body carrying an id other than the route's is a 500.
+    /// The edit request has no id: the route decides which value is written.
     /// </summary>
-    /// <remarks>
-    /// Characterization. The route id finds the row and the body is then mapped over it including its key,
-    /// so EF is asked to change a primary key and refuses. The same shape as
-    /// <c>MselEndpointTests.Update_WithAnotherMselsIdInTheBody_Is500</c>: harmless in practice, because
-    /// the client generates the body from what it read, but a 500 for a request that should be a 400.
-    /// Turns red when the service forces the route id onto the body.
-    /// </remarks>
     [Fact]
-    public async Task Update_WithNoIdInTheBody_Is500()
+    public async Task Update_WithNoIdInTheBody_UpdatesTheRoutesValue()
     {
         var cell = await SeedCell();
         var actor = await Actor().OnMsel(cell.Msel, MselRole.Editor).SeedAsync();
@@ -885,7 +847,8 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             cell.Value.Id,
             BodyFor(cell.Value) with { Id = Guid.Empty, Value = "after" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("after", (await Stored(cell.Value.Id)).Value);
     }
 
     [Fact]
@@ -985,16 +948,11 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     }
 
     /// <summary>
-    /// A checkbox on an inject records nothing, because a statement needs both an MSEL and a scenario
-    /// event to place the activity in and an inject has neither.
+    /// A value on an inject is not a cell of a MSEL's grid, so this endpoint does not edit it, and
+    /// nothing is recorded.
     /// </summary>
-    /// <remarks>
-    /// Not a defect on its own - there is no MSEL to attribute the statement to - but worth pinning:
-    /// injects are the reusable half of the data model, so as more of an exercise moves into them, more of
-    /// it stops being recorded. Both of the two guards fail here, not one.
-    /// </remarks>
     [Fact]
-    public async Task Update_ACheckboxOnAnInject_RecordsNothing()
+    public async Task Update_ACheckboxOnAnInject_Is404AndRecordsNothing()
     {
         var cell = await SeedInjectCell(DataFieldType.Checkbox, value: "false");
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
@@ -1004,7 +962,8 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             cell.Value.Id,
             BodyFor(cell.Value) with { Value = "true" });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("false", (await Stored(cell.Value.Id)).Value);
         await AssertRecordedNothing();
     }
 

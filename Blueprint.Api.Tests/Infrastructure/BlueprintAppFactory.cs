@@ -808,9 +808,9 @@ public class BlueprintAppFactory(DatabaseFixture database) : WebApplicationFacto
     /// </summary>
     /// <remarks>
     /// <c>Id</c> is settable on purpose. It is the row's own primary key and nothing in the API should care
-    /// what it is - but <c>InjectService.GetAsync</c> compares it against a <em>user</em> id, so a test for
-    /// that defect has to be able to choose it. See
-    /// <c>InjectEndpointTests.Get_ForACatalogUnitRowWhosePrimaryKeyEqualsTheCallersId_ReadsAnyInject</c>.
+    /// what it is - <c>InjectService.GetAsync</c> once compared it against a <em>user</em> id, and
+    /// <c>InjectEndpointTests.Get_ForACatalogUnitRowWhosePrimaryKeyEqualsTheCallersId_Is403</c> keeps that
+    /// from coming back.
     /// </remarks>
     public static CatalogUnitEntity CatalogUnit(Guid unitId, Guid catalogId, Guid? id = null) =>
         new(unitId, catalogId) { Id = id ?? Guid.NewGuid() };

@@ -88,7 +88,7 @@ namespace Blueprint.Api.Controllers
         [HttpPost("scenarioEvents")]
         [ProducesResponseType(typeof(IEnumerable<ViewModels.ScenarioEvent>), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createScenarioEvent")]
-        public async Task<IActionResult> Create([FromBody] ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] ViewModels.ScenarioEventCreate scenarioEvent, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var list = await _scenarioEventService.CreateAsync(scenarioEvent, hasSystemPermission, ct);
@@ -109,7 +109,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> CreateFromInjects([FromBody] CreateFromInjectsForm createFromInjectsForm, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            var list = await _scenarioEventService.CreateFromInjectsAsync(createFromInjectsForm, hasSystemPermission, ct);
+            var hasViewMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var list = await _scenarioEventService.CreateFromInjectsAsync(createFromInjectsForm, hasSystemPermission, hasViewMselsPermission, ct);
             return Ok(list);
         }
 
@@ -137,7 +138,7 @@ namespace Blueprint.Api.Controllers
         /// Updates a ScenarioEvent
         /// </summary>
         /// <remarks>
-        /// Updates a ScenarioEvent with the attributes specified
+        /// Updates a ScenarioEvent with the attributes specified. The ScenarioEvent stays in its MSEL.
         /// <para />
         /// Accessible only to a SuperUser or a User on an Admin Team within the specified ScenarioEvent
         /// </remarks>
@@ -147,10 +148,9 @@ namespace Blueprint.Api.Controllers
         [HttpPut("scenarioEvents/{id}")]
         [ProducesResponseType(typeof(IEnumerable<ViewModels.ScenarioEvent>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateScenarioEvent")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] ViewModels.ScenarioEvent scenarioEvent, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] ViewModels.ScenarioEventEdit scenarioEvent, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            scenarioEvent.ModifiedBy = User.GetId();
             var list = await _scenarioEventService.UpdateAsync(id, scenarioEvent, hasSystemPermission, ct);
             return Ok(list);
         }

@@ -74,7 +74,7 @@ namespace Blueprint.Api.Controllers
         /// Creates a new DataValue
         /// </summary>
         /// <remarks>
-        /// Creates a new DataValue with the attributes specified
+        /// Creates a new DataValue with the attributes specified. The Scenario Event must belong to the Data Field's MSEL.
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -83,11 +83,10 @@ namespace Blueprint.Api.Controllers
         [HttpPost("dataValues")]
         [ProducesResponseType(typeof(DataValue), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createDataValue")]
-        public async Task<IActionResult> Create([FromBody] DataValue dataValue, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] DataValueCreate dataValue, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
-            dataValue.CreatedBy = User.GetId();
             var createdDataValue = await _dataValueService.CreateAsync(dataValue, hasMselPermission, hasDataFieldPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdDataValue.Id }, createdDataValue);
         }
@@ -97,7 +96,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a DataValue with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the dataValue parameter
+        /// The value stays in its cell: its Data Field and Scenario Event cannot be changed.
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -107,11 +106,10 @@ namespace Blueprint.Api.Controllers
         [HttpPut("dataValues/{id}")]
         [ProducesResponseType(typeof(DataValue), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateDataValue")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] DataValue dataValue, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] DataValueEdit dataValue, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
-            dataValue.ModifiedBy = User.GetId();
             var updatedDataValue = await _dataValueService.UpdateAsync(id, dataValue, hasMselPermission, hasDataFieldPermission, ct);
             return Ok(updatedDataValue);
         }

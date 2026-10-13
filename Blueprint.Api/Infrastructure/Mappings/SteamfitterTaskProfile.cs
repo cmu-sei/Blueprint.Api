@@ -13,8 +13,7 @@ namespace Blueprint.Api.Infrastructure.Mappings
             CreateMap<SteamfitterTaskEntity, SteamfitterTask>()
                 .ForMember(m => m.ScenarioEvent, opt => opt.Ignore());
 
-            CreateMap<SteamfitterTask, SteamfitterTaskEntity>()
-                .ForMember(m => m.ScenarioEvent, opt => opt.Ignore());
+            CreateMap<SteamfitterTaskFields, SteamfitterTaskEntity>(AutoMapper.MemberList.Source);
         }
     }
 }

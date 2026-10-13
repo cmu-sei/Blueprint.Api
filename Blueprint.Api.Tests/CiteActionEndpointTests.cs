@@ -56,6 +56,25 @@ public class CiteActionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.True(list[0].IsTemplate);
     }
 
+    /// <summary>
+    /// A template belongs to no MSEL, so a MSEL's row flagged as a template - which a create can no longer
+    /// write - stays out of the list any signed-in user may read.
+    /// </summary>
+    [Fact]
+    public async Task Templates_LeavesOutAMselsCiteActionFlaggedAsATemplate()
+    {
+        var actor = await Actor().SeedAsync();
+        var (msel, team) = await SeedMselAndTeam();
+        var row = BlueprintAppFactory.CiteAction(msel.Id, team.Id);
+        row.IsTemplate = true;
+        await Seed(row);
+
+        var response = await Client(actor).GetAsync("api/citeActions/templates", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(await response.Content.ReadFromJsonAsync<List<ViewModels.CiteAction>>(JsonOptions, Ct));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // GET msels/{mselId}/citeActions
     // ---------------------------------------------------------------------------------------------

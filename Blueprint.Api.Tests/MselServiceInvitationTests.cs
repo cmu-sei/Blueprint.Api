@@ -1032,27 +1032,40 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
     }
 
     /// <summary>
-    /// Characterizes the <c>PlayerViewId</c> in the response: it is a fresh guid that exists nowhere but
-    /// the response and the queued push.
+    /// The clone is saved with the <c>PlayerViewId</c> the push is queued with.
     /// </summary>
     /// <remarks>
-    /// The clone is saved with a null <c>PlayerViewId</c>; the guid returned to the caller is generated
-    /// afterwards and handed to <c>IIntegrationQueue</c>, on the understanding that the background worker
-    /// will create a Player View with that id and store it. So the response promises something that has
-    /// not happened, and if the push fails the UI polls for a view id the database never learns. A caller
-    /// cannot tell the difference between "launching" and "launched" from this response.
+    /// The push creates the view under the queued id but pre-generates a <c>PlayerViewId</c> for a MSEL
+    /// that has none, and creates the teams and applications under that one. Stored before the push,
+    /// the two are the same view.
     /// </remarks>
     [Fact]
-    public async Task Launch_ReturnsAPlayerViewIdThatIsNotYetStored()
+    public async Task Launch_StoresThePlayerViewIdItQueues()
     {
-        var template = await SeedTemplate();
+        var template = await SeedTemplate(m => m.UsePlayer = true);
         var team = await SeedTeam(template);
         await SeedInvitation(template, team);
         var actor = await Actor().SeedAsync();
 
         var launched = await Read<Msel>(await Launch(ClientWithEmail(actor, "a@example.test"), template.Id));
 
+        var queued = Assert.Single(DrainIntegrationQueue());
         Assert.NotNull(launched.PlayerViewId);
+        Assert.Equal(launched.PlayerViewId, queued.PlayerViewId);
+        using var db = NewContext();
+        Assert.Equal(launched.PlayerViewId, (await db.Msels.SingleAsync(m => m.Id == launched.Id, Ct)).PlayerViewId);
+    }
+
+    [Fact]
+    public async Task Launch_StoresNoPlayerViewIdForAMselWithoutPlayer()
+    {
+        var template = await SeedTemplate(m => m.UsePlayer = false);
+        var team = await SeedTeam(template);
+        await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var launched = await Read<Msel>(await Launch(ClientWithEmail(actor, "a@example.test"), template.Id));
+
         using var db = NewContext();
         Assert.Null((await db.Msels.SingleAsync(m => m.Id == launched.Id, Ct)).PlayerViewId);
     }

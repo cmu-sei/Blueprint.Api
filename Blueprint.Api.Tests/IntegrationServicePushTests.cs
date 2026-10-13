@@ -162,8 +162,8 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
 
     /// <remarks>
     /// The queue item carries a <c>PlayerViewId</c> so that re-pushing a MSEL can reuse the view somebody is
-    /// already looking at. It reaches <c>CreateViewAsync</c>, which prefers it over the MSEL's own - and
-    /// note the MSEL's own is <em>not</em> updated to match, so the two disagree for the rest of the push.
+    /// already looking at. The view is created under it, so the MSEL takes it too, and the teams go in that
+    /// view rather than in one under an ID the MSEL made up.
     /// </remarks>
     [Fact]
     public async Task Push_UsesThePlayerViewIdFromTheQueueItemWhenGivenOne()
@@ -178,7 +178,9 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
         var view = Body(harness.Handler.Sent.First(x => x.Path == "player/api/views").Body);
 
         Assert.Equal(fromTheQueue.ToString(), view["id"].GetString());
-        Assert.NotEqual(fromTheQueue, deployed.PlayerViewId);
+        Assert.Equal(fromTheQueue, deployed.PlayerViewId);
+        Assert.Contains($"player/api/views/{fromTheQueue}/teams", harness.Handler.Paths);
+        Assert.DoesNotContain(harness.Handler.Paths, p => p.StartsWith("player/api/views/") && p.EndsWith("/teams") && !p.Contains(fromTheQueue.ToString()));
     }
 
     // ---------------------------------------------------------------------------------------------

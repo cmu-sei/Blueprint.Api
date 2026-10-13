@@ -411,30 +411,20 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
     // DELETE teams/{teamId}/playerApplications/{playerApplicationId}
     // ---------------------------------------------------------------------------------------------
 
-    /// <remarks>
-    /// BUG: <c>PlayerApplicationTeamController.cs:192</c> calls
-    /// <c>DeleteByIdsAsync(teamId, playerApplicationId, ct)</c> against a signature of
-    /// <c>(Guid playerApplicationId, Guid teamId, …)</c>, so the ids arrive transposed and the
-    /// <c>Where</c> matches nothing: the route is a 404 for every well-formed request and answers 204
-    /// only when the caller passes the ids the wrong way round, which is what the second half of this
-    /// test does. Both parameters are <c>Guid</c>, so nothing about it is a compile error. Second
-    /// instance of the shape after <c>CardTeamController.cs:192</c>; the working copy is
-    /// <c>TeamUserController.cs:152</c>.
-    /// </remarks>
     [Fact]
-    public async Task DeleteByIds_Is404ForAWellFormedRequest_AndDeletesTheRowWhenTheIdsAreSwapped()
+    public async Task DeleteByIds_DeletesTheRowTheRouteNames_AndATransposedRouteIs404()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
         var graph = await SeedGraph();
 
-        var wellFormed = await Client(actor).DeleteAsync(
-            $"api/teams/{graph.Team.Id}/playerApplications/{graph.Application.Id}", Ct);
-        Assert.Equal(HttpStatusCode.NotFound, wellFormed.StatusCode);
-        Assert.Single(await NewContext().PlayerApplicationTeams.ToListAsync(Ct));
-
         var swapped = await Client(actor).DeleteAsync(
             $"api/teams/{graph.Application.Id}/playerApplications/{graph.Team.Id}", Ct);
-        Assert.Equal(HttpStatusCode.NoContent, swapped.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, swapped.StatusCode);
+        Assert.Single(await NewContext().PlayerApplicationTeams.ToListAsync(Ct));
+
+        var wellFormed = await Client(actor).DeleteAsync(
+            $"api/teams/{graph.Team.Id}/playerApplications/{graph.Application.Id}", Ct);
+        Assert.Equal(HttpStatusCode.NoContent, wellFormed.StatusCode);
         Assert.Empty(await NewContext().PlayerApplicationTeams.ToListAsync(Ct));
     }
 

@@ -1177,25 +1177,10 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
     // ---------------------------------------------------------------------------------------------
     // PUT msels/{mselId}/user/{userId}/role/{mselRole}/add and .../remove
-    //
-    // Both routes are broken in the same way, so both are characterized rather than covered: the
-    // controller passes the ids to the service in the wrong order.
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>
-    /// Granting a real user a role on a real MSEL is answered 404, and writes nothing.
-    /// </summary>
-    /// <remarks>
-    /// Characterization of a defect that makes the endpoint unusable.
-    /// <c>MselService.AddUserMselRoleAsync</c> is declared <c>(Guid mselId, Guid userId, …)</c> and
-    /// <c>MselController.AddUserMselRole</c> calls it <c>(userId, mselId, …)</c>, so the service looks
-    /// for an MSEL whose id is the user's and throws <c>EntityNotFoundException</c>. The only way to get
-    /// a 200 is to write the URL backwards - see
-    /// <see cref="AddUserRole_WithTheIdsSwappedInTheRoute_WritesTheRole"/>. Turns red when the arguments
-    /// are put in the right order, which is when this endpoint starts working.
-    /// </remarks>
     [Fact]
-    public async Task AddUserRole_ForARealUserAndMsel_Is404()
+    public async Task AddUserRole_ForARealUserAndMsel_WritesTheRole()
     {
         var msel = BlueprintAppFactory.Msel();
         await Seed(msel);
@@ -1205,33 +1190,6 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Client(actor).PutAsync(
             $"/api/msels/{msel.Id}/user/{subject.Id}/role/Owner/add", null, Ct);
-
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Empty(await NewContext().UserMselRoles.ToListAsync(Ct));
-    }
-
-    /// <summary>
-    /// Writing the URL backwards - the user's id where the route asks for an MSEL and the MSEL's id where
-    /// it asks for a user - is answered 200 and writes the role correctly.
-    /// </summary>
-    /// <remarks>
-    /// Characterization, and the proof of the transposition above: the service itself is right, and what
-    /// reaches it is <c>(mselId: {userId route value}, userId: {mselId route value})</c>. Both halves of
-    /// the swap are needed to get here - the role row's <c>UserId</c> has a foreign key to
-    /// <c>Users</c>, so naming a second MSEL in the user slot is a 500 rather than a swapped write. Turns
-    /// red with <see cref="AddUserRole_ForARealUserAndMsel_Is404"/>.
-    /// </remarks>
-    [Fact]
-    public async Task AddUserRole_WithTheIdsSwappedInTheRoute_WritesTheRole()
-    {
-        var msel = BlueprintAppFactory.Msel();
-        await Seed(msel);
-
-        var subject = await Actor().SeedAsync();
-        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
-
-        var response = await Client(actor).PutAsync(
-            $"/api/msels/{subject.Id}/user/{msel.Id}/role/Owner/add", null, Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(msel.Id, (await Read<Msel>(response)).Id);
@@ -1244,11 +1202,30 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(actor.Id, role.CreatedBy);
     }
 
+    /// <summary>
+    /// The ids are read from where the route names them, so a URL written backwards names an MSEL that
+    /// is not there.
+    /// </summary>
+    [Fact]
+    public async Task AddUserRole_WithTheIdsSwappedInTheRoute_Is404AndWritesNothing()
+    {
+        var msel = BlueprintAppFactory.Msel();
+        await Seed(msel);
+
+        var subject = await Actor().SeedAsync();
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+
+        var response = await Client(actor).PutAsync(
+            $"/api/msels/{subject.Id}/user/{msel.Id}/role/Owner/add", null, Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Empty(await NewContext().UserMselRoles.ToListAsync(Ct));
+    }
+
     /// <remarks>
-    /// Characterization. Reached through the swap above, because there is no other way to reach it: a
-    /// duplicate role throws <c>ArgumentException</c>, which is not an <c>IApiException</c>, so
-    /// <c>JsonExceptionFilter</c> answers 500 where the service plainly meant 400 or 409. Turns red when
-    /// the exception becomes an <c>IApiException</c>.
+    /// Characterization. A duplicate role throws <c>ArgumentException</c>, which is not an
+    /// <c>IApiException</c>, so <c>JsonExceptionFilter</c> answers 500 where the service plainly meant 400
+    /// or 409. Turns red when the exception becomes an <c>IApiException</c>.
     /// </remarks>
     [Fact]
     public async Task AddUserRole_ForARoleThatAlreadyExists_Is500()
@@ -1258,7 +1235,7 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var subject = await Actor().SeedAsync();
         var actor = await Actor().WithAllSystemPermissions().SeedAsync();
-        var route = $"/api/msels/{subject.Id}/user/{msel.Id}/role/Owner/add";
+        var route = $"/api/msels/{msel.Id}/user/{subject.Id}/role/Owner/add";
 
         Assert.Equal(
             HttpStatusCode.OK,
@@ -1269,9 +1246,7 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <summary>
-    /// Reached through the swap, so that the authorization the endpoint would apply if it worked is
-    /// pinned rather than left to the transposition to hide: granting a role needs ownership of the MSEL,
-    /// and an editor does not have it.
+    /// Granting a role needs ownership of the MSEL, and an editor does not have it.
     /// </summary>
     [Fact]
     public async Task AddUserRole_WithoutEditMselsPermissionOrOwnership_Is403()
@@ -1282,19 +1257,14 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
 
         var response = await Client(actor).PutAsync(
-            $"/api/msels/{actor.Id}/user/{msel.Id}/role/Owner/add", null, Ct);
+            $"/api/msels/{msel.Id}/user/{actor.Id}/role/Owner/add", null, Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Single(await NewContext().UserMselRoles.ToListAsync(Ct));
     }
 
-    /// <remarks>
-    /// Characterization, the same transposition in <c>RemoveUserMselRole</c>. Removing a role a user
-    /// really holds is answered 404 and the row survives. Turns red when the arguments are ordered
-    /// correctly.
-    /// </remarks>
     [Fact]
-    public async Task RemoveUserRole_ForARoleTheUserReallyHolds_Is404AndKeepsIt()
+    public async Task RemoveUserRole_ForARoleTheUserReallyHolds_RemovesIt()
     {
         var msel = BlueprintAppFactory.Msel();
         await Seed(msel);
@@ -1305,13 +1275,13 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).PutAsync(
             $"/api/msels/{msel.Id}/user/{subject.Id}/role/Owner/remove", null, Ct);
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.True(await NewContext().UserMselRoles.AnyAsync(
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(await NewContext().UserMselRoles.AnyAsync(
             x => x.UserId == subject.Id && x.MselId == msel.Id, Ct));
     }
 
     [Fact]
-    public async Task RemoveUserRole_WithTheIdsSwappedInTheRoute_RemovesTheRole()
+    public async Task RemoveUserRole_WithTheIdsSwappedInTheRoute_Is404AndKeepsTheRole()
     {
         var msel = BlueprintAppFactory.Msel();
         await Seed(msel);
@@ -1322,8 +1292,9 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).PutAsync(
             $"/api/msels/{subject.Id}/user/{msel.Id}/role/Owner/remove", null, Ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Empty(await NewContext().UserMselRoles.ToListAsync(Ct));
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.True(await NewContext().UserMselRoles.AnyAsync(
+            x => x.UserId == subject.Id && x.MselId == msel.Id, Ct));
     }
 
     /// <summary>

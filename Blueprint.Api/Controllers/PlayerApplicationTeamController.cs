@@ -189,7 +189,7 @@ namespace Blueprint.Api.Controllers
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
                 throw new ForbiddenException();
-            await _playerApplicationTeamService.DeleteByIdsAsync(teamId, playerApplicationId, ct);
+            await _playerApplicationTeamService.DeleteByIdsAsync(playerApplicationId, teamId, ct);
             return NoContent();
         }
 

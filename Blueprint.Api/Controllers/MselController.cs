@@ -257,7 +257,7 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> AddUserMselRole([FromRoute] Guid userId, [FromRoute] Guid mselId, [FromRoute] MselRole mselRole, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            var msel = await _mselService.AddUserMselRoleAsync(userId, mselId, mselRole, hasSystemPermission, ct);
+            var msel = await _mselService.AddUserMselRoleAsync(mselId, userId, mselRole, hasSystemPermission, ct);
             return Ok(msel);
         }
 
@@ -279,7 +279,7 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> RemoveUserMselRole([FromRoute] Guid userId, [FromRoute] Guid mselId, [FromRoute] MselRole mselRole, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            var msel = await _mselService.RemoveUserMselRoleAsync(userId, mselId, mselRole, hasSystemPermission, ct);
+            var msel = await _mselService.RemoveUserMselRoleAsync(mselId, userId, mselRole, hasSystemPermission, ct);
             return Ok(msel);
         }
 

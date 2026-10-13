@@ -35,12 +35,9 @@ namespace Blueprint.Api.Tests;
 /// the service takes a permission argument.
 /// </para>
 /// <para>
-/// <strong>`DELETE teams/{teamId}/cards/{cardId}` never deletes anything.</strong>
-/// <c>CardTeamController.cs:192</c> calls <c>DeleteByIdsAsync(teamId, cardId, ct)</c> against a signature of
-/// <c>(Guid cardId, Guid teamId)</c>, so the two ids arrive transposed and the lookup matches no row - the
-/// route is a 404 for every well-formed request, and returns 204 only when the caller passes the ids the
-/// wrong way round. See <see cref="DeleteByIds_IsAlwaysA404BecauseTheIdsAreTransposed"/>. Both arguments are
-/// <c>Guid</c>, so nothing about this is a compile error and no test in the estate covered it.
+/// <strong>`DELETE teams/{teamId}/cards/{cardId}` deletes the row the route names.</strong> Both ids are
+/// <c>Guid</c>, so a transposed call is no compile error; see
+/// <see cref="DeleteByIds_WithTheIdsTransposed_Is404AndKeepsTheRow"/>.
 /// </para>
 /// <para>
 /// <strong>Three of the four reads dereference the card unguarded</strong>, so "that row is not there" and
@@ -791,31 +788,30 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     // DELETE teams/{teamId}/cards/{cardId}
     // ---------------------------------------------------------------------------------------------
 
-    /// <remarks>
-    /// <strong>The defect this file exists to record.</strong> <c>CardTeamController.cs:192</c> calls
-    /// <c>DeleteByIdsAsync(teamId, cardId, ct)</c> and the service's signature is
-    /// <c>DeleteByIdsAsync(Guid cardId, Guid teamId, …)</c>, so the route's own ids arrive swapped, the
-    /// <c>Where</c> matches nothing, and the caller is told the row does not exist. Both parameters are
-    /// <c>Guid</c>, so the compiler has nothing to say. Swapping the arguments at the call site makes the
-    /// first half of this test a 204 and the second a 404, reddening both.
-    /// </remarks>
     [Fact]
-    public async Task DeleteByIds_IsAlwaysA404BecauseTheIdsAreTransposed()
+    public async Task DeleteByIds_DeletesTheRowTheRouteNames()
     {
         var msel = await SeedMsel();
         var row = await SeedCardTeam(msel);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var correct = await Client(actor).DeleteAsync(CardOfTeam(row.TeamId, row.CardId), Ct);
+        var response = await Client(actor).DeleteAsync(CardOfTeam(row.TeamId, row.CardId), Ct);
 
-        Assert.Equal(HttpStatusCode.NotFound, correct.StatusCode);
-        Assert.Equal("Card Team not found", await Title(correct));
-        Assert.NotNull(await Stored(row.Id));
-
-        var transposed = await Client(actor).DeleteAsync(CardOfTeam(row.CardId, row.TeamId), Ct);
-
-        Assert.Equal(HttpStatusCode.NoContent, transposed.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Null(await Stored(row.Id));
+    }
+
+    [Fact]
+    public async Task DeleteByIds_WithTheIdsTransposed_Is404AndKeepsTheRow()
+    {
+        var msel = await SeedMsel();
+        var row = await SeedCardTeam(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync(CardOfTeam(row.CardId, row.TeamId), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.NotNull(await Stored(row.Id));
     }
 
     [Fact]
@@ -825,24 +821,21 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var row = await SeedCardTeam(msel);
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        var response = await Client(actor).DeleteAsync(CardOfTeam(row.CardId, row.TeamId), Ct);
+        var response = await Client(actor).DeleteAsync(CardOfTeam(row.TeamId, row.CardId), Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotNull(await Stored(row.Id));
     }
 
-    /// <remarks>
-    /// Reached only by passing the ids the wrong way round, which is the only way this route works at all.
-    /// The broadcast and the group are right; it is the arguments that are not.
-    /// </remarks>
     [Fact]
-    public async Task DeleteByIds_WhenItWorks_BroadcastsToTheMselGroup()
+    public async Task DeleteByIds_BroadcastsToTheMselGroup()
     {
         var msel = await SeedMsel();
         var row = await SeedCardTeam(msel);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
         Hub.Clear();
 
-        await Client(actor).DeleteAsync(CardOfTeam(row.CardId, row.TeamId), Ct);
+        await Client(actor).DeleteAsync(CardOfTeam(row.TeamId, row.CardId), Ct);
 
         Assert.Equal(
             [msel.Id.ToString(), MainHub.ADMIN_DATA_GROUP],

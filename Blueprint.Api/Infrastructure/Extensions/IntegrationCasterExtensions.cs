@@ -190,11 +190,12 @@ namespace Blueprint.Api.Infrastructure.Extensions
         /// The variables a template leaves open for team IDs: those its .tf and .tf.json files declare
         /// as strings, less the sensitive ones, the ones its .tfvars files already assign and the ones
         /// Blueprint writes itself. A template takes team IDs this way by convention only, so this is
-        /// the list a planner picks from, not a guarantee that a variable lands VMs on a team.
+        /// the list a planner picks from, not a guarantee that a variable lands VMs on a team. One with no
+        /// default is required: terraform fails the plan unless a team is mapped to it.
         /// </summary>
-        public static List<string> FindTeamVariableSlots(IEnumerable<(string Name, string Content)> files)
+        public static List<ViewModels.CasterTeamVariable> FindTeamVariableSlots(IEnumerable<(string Name, string Content)> files)
         {
-            var declared = new List<string>();
+            var declared = new List<(string Name, bool Required)>();
             var assigned = new HashSet<string>();
             foreach (var (name, content) in files)
             {
@@ -208,16 +209,37 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 else if (fileName.EndsWith(".tfvars.json"))
                     assigned.UnionWith(JsonTopLevelKeys(content ?? ""));
             }
+            // terraform refuses a variable declared twice, so the first declaration stands
             return declared
-                .Distinct()
-                .Where(v => !assigned.Contains(v) && IsMappableTeamVariable(v))
-                .OrderBy(v => v, StringComparer.Ordinal)
+                .DistinctBy(v => v.Name)
+                .Where(v => !assigned.Contains(v.Name) && IsMappableTeamVariable(v.Name))
+                .OrderBy(v => v.Name, StringComparer.Ordinal)
+                .Select(v => new ViewModels.CasterTeamVariable { Name = v.Name, Required = v.Required })
                 .ToList();
+        }
+
+        /// <summary>
+        /// The required team variables no team writes to, which would fail the plan.
+        /// </summary>
+        public static List<string> FindUnmappedRequiredTeamVariables(
+            IEnumerable<ViewModels.CasterTeamVariable> slots,
+            IEnumerable<(string Name, string Variable)> teams)
+        {
+            var written = ResolveTeamVariables(teams.Select(t => (t.Name, Guid.Empty, t.Variable))).Select(t => t.Variable).ToHashSet();
+            return slots.Where(s => s.Required && !written.Contains(s.Name)).Select(s => s.Name).ToList();
+        }
+
+        public static string UnmappedRequiredTeamVariablesMessage(List<string> variables)
+        {
+            var names = string.Join(", ", variables.Select(v => $"\"{v}\""));
+            return variables.Count == 1
+                ? $"The Caster template requires topology team {names}, but no MSEL team is mapped to it. Map a team to it, or give the variable a default in the template."
+                : $"The Caster template requires topology teams {names}, but no MSEL team is mapped to them. Map a team to each, or give the variables defaults in the template.";
         }
 
         private static readonly Regex _variableBlock = new("^[ \\t]*variable[ \\t]+\"?([^\"\\s{]+)\"?[ \\t]*\\{", RegexOptions.Multiline);
 
-        private static IEnumerable<string> HclStringVariables(string content)
+        private static IEnumerable<(string Name, bool Required)> HclStringVariables(string content)
         {
             content = Regex.Replace(content, "/\\*.*?\\*/", "", RegexOptions.Singleline);
             foreach (Match match in _variableBlock.Matches(content))
@@ -229,7 +251,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     continue;
                 if (Regex.IsMatch(body, "^[ \\t]*sensitive[ \\t]*=[ \\t]*true", RegexOptions.Multiline))
                     continue;
-                yield return match.Groups[1].Value;
+                var required = !Regex.IsMatch(body, "^[ \\t]*default[ \\t]*=", RegexOptions.Multiline);
+                yield return (match.Groups[1].Value, required);
             }
         }
 
@@ -293,7 +316,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             }
         }
 
-        private static IEnumerable<string> JsonStringVariables(string content)
+        private static IEnumerable<(string Name, bool Required)> JsonStringVariables(string content)
         {
             if (!TryParseJsonObject(content, out var root) ||
                 !root.TryGetProperty("variable", out var variables) ||
@@ -303,7 +326,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 .Where(v => v.Value.ValueKind != JsonValueKind.Object ||
                     ((!v.Value.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String || type.GetString() == "string") &&
                      (!v.Value.TryGetProperty("sensitive", out var sensitive) || sensitive.ValueKind != JsonValueKind.True)))
-                .Select(v => v.Name)
+                .Select(v => (v.Name, Required: v.Value.ValueKind != JsonValueKind.Object || !v.Value.TryGetProperty("default", out _)))
                 .ToList();
         }
 

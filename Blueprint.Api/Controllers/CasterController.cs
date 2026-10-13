@@ -45,13 +45,14 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Returns the string variables the directory's template, including its parent directories,
         /// declares and does not already assign: the topology teams a MSEL team's Player team ID can be
-        /// written to. The user's token must carry the caster scope.
+        /// written to. A required one has no default, so a push fails unless a team is mapped to it.
+        /// The user's token must carry the caster scope.
         /// </remarks>
         /// <param name="id">The Caster directory ID</param>
         /// <param name="ct"></param>
         /// <returns></returns>
         [HttpGet("caster/directories/{id}/team-variables")]
-        [ProducesResponseType(typeof(IEnumerable<string>), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(IEnumerable<CasterTeamVariable>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getCasterTeamVariables")]
         public async Task<IActionResult> GetTeamVariables([FromRoute] System.Guid id, CancellationToken ct)
         {

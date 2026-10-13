@@ -17,7 +17,7 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.CasterDirectory>> GetDirectoriesAsync(CancellationToken ct);
         Task<ViewModels.CasterDirectory> GetDirectoryAsync(Guid directoryId, CancellationToken ct);
-        Task<IEnumerable<string>> GetTeamVariablesAsync(Guid directoryId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.CasterTeamVariable>> GetTeamVariablesAsync(Guid directoryId, CancellationToken ct);
     }
 
     /// <summary>
@@ -82,7 +82,7 @@ namespace Blueprint.Api.Services
         /// The variables a team can be mapped to in the template a workspace in this directory runs.
         /// Like a run, it reads the directory's files and those of every directory above it.
         /// </summary>
-        public async Task<IEnumerable<string>> GetTeamVariablesAsync(Guid directoryId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.CasterTeamVariable>> GetTeamVariablesAsync(Guid directoryId, CancellationToken ct)
         {
             var files = new List<(string Name, string Content)>();
             Guid? id = directoryId;

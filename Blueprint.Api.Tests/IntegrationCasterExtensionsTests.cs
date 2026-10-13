@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Tests.Infrastructure;
+using Blueprint.Api.ViewModels;
 using Xunit;
 
 namespace Blueprint.Api.Tests;
@@ -256,20 +257,71 @@ public class IntegrationCasterExtensionsTests
         var slots = IntegrationCasterExtensions.FindTeamVariableSlots(
             [("variables.tf", variables), ("terraform.tfvars", tfvars), ("main.tf", "locals {}")]);
 
-        Assert.Equal(["admin", "admin_user", "notes"], slots);
+        Assert.Equal([("admin", false), ("admin_user", false), ("notes", true)], slots.Select(s => (s.Name, s.Required)));
+    }
+
+    [Fact]
+    public void FindTeamVariableSlots_ARequiredVariableIsOneWithNoDefault()
+    {
+        var variables = """
+            variable "blue" { default = "" }
+            variable "red" {
+              type        = string
+              description = "default = is in the description, not an attribute"
+            }
+            variable "green" {
+              type = string
+              validation {
+                condition     = length(var.green) > 0
+                error_message = "Needs a team."
+              }
+            }
+            """;
+
+        var slots = IntegrationCasterExtensions.FindTeamVariableSlots([("variables.tf", variables)]);
+
+        Assert.Equal([("blue", false), ("green", true), ("red", true)], slots.Select(s => (s.Name, s.Required)));
+    }
+
+    [Fact]
+    public void FindUnmappedRequiredTeamVariables_CountsMappedAndNamedTeams()
+    {
+        var slots = new List<CasterTeamVariable>
+        {
+            new() { Name = "admin", Required = true },
+            new() { Name = "blue_cell", Required = true },
+            new() { Name = "red_cell", Required = true },
+            new() { Name = "gold_cell", Required = true },
+            new() { Name = "spare", Required = false },
+        };
+
+        var unmapped = IntegrationCasterExtensions.FindUnmappedRequiredTeamVariables(
+            slots, [("Admin", null), ("Blue Team", "blue_cell"), ("Red Cell", null), ("Gold Team", "  ")]);
+
+        Assert.Equal(["gold_cell"], unmapped);
+    }
+
+    [Fact]
+    public void UnmappedRequiredTeamVariablesMessage_NamesEachVariable()
+    {
+        Assert.Equal(
+            "The Caster template requires topology team \"gold_cell\", but no MSEL team is mapped to it. Map a team to it, or give the variable a default in the template.",
+            IntegrationCasterExtensions.UnmappedRequiredTeamVariablesMessage(["gold_cell"]));
+        Assert.Contains("topology teams \"gold_cell\", \"red_cell\"",
+            IntegrationCasterExtensions.UnmappedRequiredTeamVariablesMessage(["gold_cell", "red_cell"]));
     }
 
     [Fact]
     public void FindTeamVariableSlots_ReadsJsonFiles()
     {
         var tfJson = """
-            {"variable": {"red": {"type": "string"}, "count": {"type": "number"}, "blue": {}, "assigned": {}}}
+            {"variable": {"red": {"type": "string"}, "count": {"type": "number"}, "blue": {"default": null}, "assigned": {}}}
             """;
 
         var slots = IntegrationCasterExtensions.FindTeamVariableSlots(
             [("teams.tf.json", tfJson), ("x.auto.tfvars.json", """{"assigned": "a"}"""), ("broken.tf.json", "{")]);
 
-        Assert.Equal(["blue", "red"], slots);
+        Assert.Equal([("blue", false), ("red", true)], slots.Select(s => (s.Name, s.Required)));
     }
 
     // --- push ---

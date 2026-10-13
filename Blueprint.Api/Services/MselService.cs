@@ -2318,6 +2318,12 @@ namespace Blueprint.Api.Services
                 var duplicates = IntegrationCasterExtensions.FindDuplicateTeamVariables(teams.Select(t => (t.Name, t.CasterTeamVariable)));
                 if (duplicates.Count > 0)
                     throw new ConflictException(IntegrationCasterExtensions.DuplicateTeamVariablesMessage(duplicates));
+                // Player gives the view its own Admin team, which writes "admin" unless a MSEL team is mapped to it
+                var slots = await _casterService.GetTeamVariablesAsync((Guid)msel.CasterDirectoryId, ct);
+                var unmapped = IntegrationCasterExtensions.FindUnmappedRequiredTeamVariables(
+                    slots, teams.Select(t => (t.Name, t.CasterTeamVariable)).Append(("Admin", (string)null)));
+                if (unmapped.Count > 0)
+                    throw new ConflictException(IntegrationCasterExtensions.UnmappedRequiredTeamVariablesMessage(unmapped));
             }
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);

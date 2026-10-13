@@ -12,7 +12,8 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<InvitationEntity, Invitation>();
 
-            CreateMap<Invitation, InvitationEntity>();
+            CreateMap<InvitationCreate, InvitationEntity>(AutoMapper.MemberList.Source);
+            CreateMap<InvitationEdit, InvitationEntity>(AutoMapper.MemberList.Source);
         }
     }
 }

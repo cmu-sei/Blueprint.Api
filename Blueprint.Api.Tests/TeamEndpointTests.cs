@@ -50,15 +50,9 @@ namespace Blueprint.Api.Tests;
 /// See <see cref="GetByMsel_ForAMselThatIsNotThere_Is500"/>.
 /// </para>
 /// <para>
-/// <strong><c>UpdateAsync</c> takes its permission decision from the request body's <c>MselId</c></strong>
-/// - the sixth instance of that shape in the branch, after <c>OrganizationService</c>,
-/// <c>ScenarioEventService</c>, <c>DataOptionService</c>, <c>MoveService</c> and <c>CardService</c> - but it
-/// is the first one with a guard against the steal that follows, at <c>TeamService.cs:173</c>. The order is
-/// what is left to characterize: the permission check runs <em>before</em> the guard, so a caller who owns
-/// any MSEL at all reaches the guard for every team of every other one and is answered 500 by an
-/// <c>ArgumentException</c> rather than the 403 the check should have produced or the 400 a bad request
-/// deserves. A body that simply omits the id is the same 500. See
-/// <see cref="Update_ChoosesItsPermissionBranchFromTheRequestBodyAndThenRefusesTheSteal"/>.
+/// <strong><c>UpdateAsync</c> decides from the team's stored MSEL</strong>, and the edit request names no
+/// MSEL, so an edit cannot move a team. See
+/// <see cref="Update_AsTheOwnerOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheTeamAlone"/>.
 /// </para>
 /// <para>
 /// <strong>Nothing here marks the MSEL modified.</strong> None of the four write paths calls
@@ -818,79 +812,68 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(team.Name, (await Stored(team.Id)).Name);
     }
 
-    /// <remarks>
-    /// <para>
-    /// The sixth instance of the request-body permission decision in the branch, and the first with a guard
-    /// against what usually follows: a caller who owns MSEL B names B in the body of a PUT to a team on
-    /// MSEL A, passes <c>MselOwnerRequirement</c> on the strength of it, and is then refused by
-    /// <c>TeamService.cs:173</c> - as an <c>ArgumentException</c>, which <c>JsonExceptionFilter</c> maps to
-    /// 500. So the steal is blocked and the caller is told the server broke.
-    /// </para>
-    /// <para>
-    /// Deciding from the stored row - which <c>DeleteAsync</c> fourteen lines below already does - turns
-    /// this into the 403 it should be and reddens this test. Turning the <c>ArgumentException</c> into a
-    /// <c>BadRequestException</c> reddens it too, and would be an improvement on its own.
-    /// </para>
-    /// </remarks>
+    /// <summary>
+    /// The decision is made on the team's stored MSEL, so owning another MSEL buys nothing, and the
+    /// body's MSEL is ignored.
+    /// </summary>
     [Fact]
-    public async Task Update_ChoosesItsPermissionBranchFromTheRequestBodyAndThenRefusesTheSteal()
+    public async Task Update_AsTheOwnerOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheTeamAlone()
     {
         var target = await SeedMsel();
         var team = await SeedTeam(target);
         var mine = await SeedMsel();
         var actor = await Actor().OnMsel(mine, MselRole.Owner).SeedAsync();
 
-        var response = await Put(Client(actor), team.Id, BodyFor(team) with { MselId = mine.Id });
+        var response = await Put(Client(actor), team.Id, BodyFor(team) with { Name = "Stolen", MselId = mine.Id });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal(target.Id, (await Stored(team.Id)).MselId);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var stored = await Stored(team.Id);
+        Assert.Equal(target.Id, stored.MselId);
+        Assert.Equal(team.Name, stored.Name);
     }
 
-    /// <remarks>
-    /// The guard compares a <c>Guid</c> against a <c>Guid?</c>, so a body that does not mention the MSEL is
-    /// a mismatch and a 500 - and because the permission check runs first, a caller with no permission at
-    /// all gets <c>MselOwnerRequirement</c>'s null dereference instead, which is the same 500 for a
-    /// different reason. A PUT is therefore unusable by any client that does not echo the whole row back.
-    /// </remarks>
+    /// <summary>
+    /// An owner's edit that names another MSEL renames the team and leaves it where it is.
+    /// </summary>
     [Fact]
-    public async Task Update_ThatOmitsTheMselId_Is500()
+    public async Task Update_AsAnOwner_NamingAnotherMselInTheBody_KeepsTheTeamInItsMsel()
+    {
+        var msel = await SeedMsel();
+        var team = await SeedTeam(msel);
+        var other = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), team.Id, BodyFor(team) with { Name = "Renamed", MselId = other.Id });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await Stored(team.Id);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.Equal("Renamed", stored.Name);
+    }
+
+    [Fact]
+    public async Task Update_ThatOmitsTheMselId_Is200()
     {
         var msel = await SeedMsel();
         var team = await SeedTeam(msel);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var response = await Put(Client(actor), team.Id, BodyFor(team) with { MselId = null });
+        var response = await Put(Client(actor), team.Id, BodyFor(team) with { Name = "Renamed", MselId = null });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(msel.Id, (await Stored(team.Id)).MselId);
     }
 
-    /// <remarks>
-    /// <para>
-    /// <strong>A PUT lets the client say who made the change.</strong> <c>SaveEntries</c> restores
-    /// <c>CreatedBy</c> and <c>DateCreated</c> from <c>OriginalValues</c> and stamps <c>DateModified</c>
-    /// with <c>UtcNow</c>, so three of the four audit fields are immune to a hostile body exactly as Phase
-    /// 1 found - but it never touches <c>ModifiedBy</c>, and neither
-    /// <c>TeamController.Update</c> nor <c>TeamService.UpdateAsync</c> assigns it either, while
-    /// <c>TeamProfile</c> maps it by convention. So the row records whoever the request said, and the one
-    /// audit field that answers "who did this" is the one a client controls.
-    /// </para>
-    /// <para>
-    /// This is the second exception to Phase 1's immunity finding, after the nested data values in
-    /// <c>3437aed</c> - and the simpler of the two, needing no attach-versus-load trick. Compare
-    /// <c>MoveController.cs:112</c>, which assigns <c>ModifiedBy</c> redundantly because
-    /// <c>MoveService</c> has already done it (<c>997a9c4</c>): here neither layer does. Assigning it in
-    /// either layer turns the third assertion red, which is the fix.
-    /// </para>
-    /// </remarks>
+    /// <summary>
+    /// The audit fields are the server's: the modifier is the caller, whatever the body claims.
+    /// </summary>
     [Fact]
-    public async Task Update_StampsTheDateButLetsTheClientClaimTheModifier()
+    public async Task Update_StampsTheCallerAsTheModifier()
     {
         var msel = await SeedMsel();
         var team = await SeedTeam(msel);
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
         var created = await Stored(team.Id);
-        var somebodyElse = Guid.NewGuid();
         var before = DateTime.UtcNow;
 
         await Put(Client(actor), team.Id, BodyFor(team) with
@@ -898,53 +881,31 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             Name = "Renamed",
             CreatedBy = Guid.NewGuid(),
             DateCreated = new DateTime(1999, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-            ModifiedBy = somebodyElse
+            ModifiedBy = Guid.NewGuid()
         });
 
         var stored = await Stored(team.Id);
 
         Assert.Equal(created.CreatedBy, stored.CreatedBy);
         Assert.Equal(created.DateCreated, stored.DateCreated);
-        Assert.Equal(somebodyElse, stored.ModifiedBy);
+        Assert.Equal(actor.Id, stored.ModifiedBy);
         AssertStampedBetween(stored.DateModified, before, DateTime.UtcNow);
     }
 
-    /// <remarks>
-    /// The other half of the finding above: a body that mentions no <c>modifiedBy</c> leaves the column
-    /// null, so an edited team says nobody edited it. The UI's own client always echoes the row back, so
-    /// in practice the value stored is whatever the row last held - which is null for a team that has
-    /// never been edited, and the previous editor's id for one that has.
-    /// </remarks>
+    /// <summary>
+    /// The edit request has no id, so another id in the body is ignored and the route's team is written.
+    /// </summary>
     [Fact]
-    public async Task Update_ThatMentionsNoModifier_RecordsNone()
+    public async Task Update_WithABodyIdThatIsNotTheRoutes_UpdatesTheRoutesTeam()
     {
         var msel = await SeedMsel();
         var team = await SeedTeam(msel);
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        await Put(Client(actor), team.Id, BodyFor(team) with { Name = "Renamed" });
+        var response = await Put(Client(actor), team.Id, BodyFor(team) with { Id = Guid.NewGuid(), Name = "Renamed" });
 
-        var stored = await Stored(team.Id);
-
-        Assert.Null(stored.ModifiedBy);
-        Assert.NotNull(stored.DateModified);
-    }
-
-    /// <remarks>
-    /// <c>TeamProfile</c> maps <c>Id</c>, and a key cannot be modified on a tracked entity, so a PUT whose
-    /// body carries a different id is a 500 from EF rather than the 400 a mismatch deserves. Nothing
-    /// validates that the route and the body agree - the same finding as <c>MoveService</c>'s.
-    /// </remarks>
-    [Fact]
-    public async Task Update_WithABodyIdThatIsNotTheRoutes_Is500()
-    {
-        var msel = await SeedMsel();
-        var team = await SeedTeam(msel);
-        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
-
-        var response = await Put(Client(actor), team.Id, BodyFor(team) with { Id = Guid.NewGuid() });
-
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Renamed", (await Stored(team.Id)).Name);
     }
 
     [Fact]

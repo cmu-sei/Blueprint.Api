@@ -185,12 +185,11 @@ namespace Blueprint.Api.Controllers
         [HttpPost("msels")]
         [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createMsel")]
-        public async Task<IActionResult> Create([FromBody] Msel msel, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] MselCreate msel, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct))
                 throw new ForbiddenException();
 
-            msel.CreatedBy = User.GetId();
             var createdMsel = await _mselService.CreateAsync(msel, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdMsel.Id }, createdMsel);
         }
@@ -222,7 +221,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a Msel with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the msel parameter
+        /// The integration IDs and the Pushing, Pulling and Deployed statuses are set only by the integration pipeline.
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -232,10 +231,9 @@ namespace Blueprint.Api.Controllers
         [HttpPut("msels/{id}")]
         [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateMsel")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Msel msel, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] MselEdit msel, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            msel.ModifiedBy = User.GetId();
             var updatedMsel = await _mselService.UpdateAsync(id, msel, hasSystemPermission, ct);
             return Ok(updatedMsel);
         }

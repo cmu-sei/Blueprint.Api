@@ -40,9 +40,9 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct);
+        Task<ViewModels.Msel> CreateAsync(ViewModels.MselCreate msel, CancellationToken ct);
         Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.MselEdit msel, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> RemoveUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
@@ -235,20 +235,20 @@ namespace Blueprint.Api.Services
             return msel;
         }
 
-        public async Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct)
+        public async Task<ViewModels.Msel> CreateAsync(ViewModels.MselCreate msel, CancellationToken ct)
         {
-            msel.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
-            msel.DateCreated = DateTime.UtcNow;
-            msel.CreatedBy = _user.GetId();
-            msel.DateModified = null;
-            msel.ModifiedBy = null;
+            if (IsPipelineStatus(msel.Status))
+                throw new ConflictException($"A MSEL cannot be created with status {msel.Status}, which only the integration pipeline sets.");
+
+            // the integration IDs and status are not part of the request, so a new MSEL starts with none
             var mselEntity = _mapper.Map<MselEntity>(msel);
+            mselEntity.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
+            mselEntity.CreatedBy = _user.GetId();
 
             _context.Msels.Add(mselEntity);
             await _context.SaveChangesAsync(ct);
-            msel = await GetAsync(mselEntity.Id, true, ct);
 
-            return msel;
+            return await GetAsync(mselEntity.Id, true, ct);
         }
 
         public async Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct)
@@ -568,27 +568,32 @@ namespace Blueprint.Api.Services
             }
         }
 
-        public async Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.MselEdit msel, bool hasSystemPermission, CancellationToken ct)
         {
-            // user must be a Content Developer or a MSEL owner
-            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), id, _context)))
-                throw new ForbiddenException();
-
             var mselToUpdate = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (mselToUpdate == null)
                 throw new EntityNotFoundException<Msel>();
 
+            // user must be a Content Developer or a MSEL owner
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), id, _context)))
+                throw new ForbiddenException();
+
+            // the integration pipeline owns its statuses, both moving into them and moving out of them
+            if (msel.Status != mselToUpdate.Status && (IsPipelineStatus(msel.Status) || IsPipelineStatus(mselToUpdate.Status)))
+                throw new ConflictException($"The MSEL status cannot be changed from {mselToUpdate.Status} to {msel.Status}. Only the integration pipeline sets Pushing, Pulling and Deployed, and moves a MSEL out of them.");
+
             // okay to update this msel
-            msel.ModifiedBy = _user.GetId();
             _mapper.Map(msel, mselToUpdate);
+            mselToUpdate.ModifiedBy = _user.GetId();
 
             _context.Msels.Update(mselToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            msel = await GetAsync(mselToUpdate.Id, true, ct);
-
-            return msel;
+            return await GetAsync(mselToUpdate.Id, true, ct);
         }
+
+        private static bool IsPipelineStatus(MselItemStatus status) =>
+            status == MselItemStatus.Pushing || status == MselItemStatus.Pulling || status == MselItemStatus.Deployed;
 
         public async Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct)
         {
@@ -2497,12 +2502,14 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException($"No invitations exist for MSEL {mselId}.");
             }
 
+            // an invitation can only enroll the user in a team of its own MSEL
             var invitationList = allInvitations
                 .Where(i =>
                     !i.WasDeactivated &&
                     i.ExpirationDateTime > now &&
                     i.UserCount < i.MaxUsersAllowed &&
                     i.Msel.Status == MselItemStatus.Deployed &&
+                    i.Team != null && i.Team.MselId == mselId &&
                     (teamId == null || teamId == i.TeamId))
                 .ToList();
 
@@ -2515,6 +2522,7 @@ namespace Blueprint.Api.Services
                 if (inv.ExpirationDateTime <= now) reasons.Add($"expired (expiration: {inv.ExpirationDateTime}, now: {now})");
                 if (inv.UserCount >= inv.MaxUsersAllowed) reasons.Add($"at capacity ({inv.UserCount}/{inv.MaxUsersAllowed})");
                 if (inv.Msel.Status != MselItemStatus.Deployed) reasons.Add($"MSEL not deployed (status: {inv.Msel.Status})");
+                if (inv.Team == null || inv.Team.MselId != mselId) reasons.Add("team is not in this MSEL");
                 if (teamId != null && inv.TeamId != teamId) reasons.Add($"team mismatch (invitation team: {inv.TeamId}, requested: {teamId})");
                 throw new ForbiddenException($"Invitation is not valid: {string.Join(", ", reasons)}");
             }
@@ -2592,6 +2600,7 @@ namespace Blueprint.Api.Services
                     i.UserCount < i.MaxUsersAllowed &&
                     i.Msel.IsTemplate &&
                     i.MselId == mselId &&
+                    i.Team.MselId == mselId &&
                     (teamId == null || i.TeamId == teamId))
                 .ToListAsync(ct);
             var invitation = invitationList

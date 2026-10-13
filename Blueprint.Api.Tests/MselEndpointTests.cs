@@ -1047,15 +1047,11 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <summary>
-    /// An unknown id is a 500 for a caller without the permission.
+    /// The MSEL is looked up before the caller is authorized, so an unknown id is a 404 whatever the
+    /// caller holds.
     /// </summary>
-    /// <remarks>
-    /// Characterization. The fallback runs first and <c>MselOwnerRequirement.IsMet</c> dereferences the
-    /// MSEL it did not find, so this never reaches the 404 above. Turns red when that helper guards its
-    /// lookup - <c>MselOwnerRequirementTests</c> pins the same defect one layer down.
-    /// </remarks>
     [Fact]
-    public async Task Update_ForAnUnknownMsel_WithNoPermission_Is500()
+    public async Task Update_ForAnUnknownMsel_WithNoPermission_Is404()
     {
         var actor = await Actor().SeedAsync();
 
@@ -1063,21 +1059,14 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).PutAsJsonAsync(
             $"/api/msels/{id}", new Msel { Id = id, Name = "Renamed" }, JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     /// <summary>
-    /// The body's <c>id</c> is mapped onto the tracked entity, so a body that omits it is a 500.
+    /// The edit request has no <c>id</c>: the route decides which MSEL is written.
     /// </summary>
-    /// <remarks>
-    /// Characterization. <c>MselProfile</c>'s <c>Msel -&gt; MselEntity</c> map does not ignore
-    /// <c>Id</c> - only <c>MselEntity -&gt; MselEntity</c> does - so <c>UpdateAsync</c> assigns the
-    /// primary key of a tracked entity and EF Core refuses at save. The route id is therefore not
-    /// authoritative: it decides which row is loaded and which permission is checked, and the body
-    /// decides what is written. Turns red when the map ignores <c>Id</c>.
-    /// </remarks>
     [Fact]
-    public async Task Update_WithNoIdInTheBody_Is500()
+    public async Task Update_WithNoIdInTheBody_UpdatesTheRoutesMsel()
     {
         var msel = BlueprintAppFactory.Msel();
         await Seed(msel);
@@ -1087,19 +1076,18 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).PutAsJsonAsync(
             $"/api/msels/{msel.Id}", new Msel { Name = "Renamed" }, JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(
-            msel.Name,
+            "Renamed",
             (await NewContext().Msels.SingleAsync(x => x.Id == msel.Id, Ct)).Name);
     }
 
-    /// <remarks>
-    /// Characterization, the same defect reached from the other side: the body names a different MSEL and
-    /// the write is refused rather than applied to it. Turns red with
-    /// <see cref="Update_WithNoIdInTheBody_Is500"/>.
-    /// </remarks>
+    /// <summary>
+    /// Another MSEL's <c>id</c> in the body is ignored: the route's MSEL is written and the other is
+    /// left alone.
+    /// </summary>
     [Fact]
-    public async Task Update_WithAnotherMselsIdInTheBody_Is500()
+    public async Task Update_WithAnotherMselsIdInTheBody_UpdatesOnlyTheRoutesMsel()
     {
         var msel = BlueprintAppFactory.Msel();
         var other = BlueprintAppFactory.Msel();
@@ -1110,15 +1098,18 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).PutAsJsonAsync(
             $"/api/msels/{msel.Id}", Body(other, "Renamed"), JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await using var context = NewContext();
+        Assert.Equal("Renamed", (await context.Msels.SingleAsync(x => x.Id == msel.Id, Ct)).Name);
+        Assert.Equal(other.Name, (await context.Msels.SingleAsync(x => x.Id == other.Id, Ct)).Name);
     }
 
     /// <summary>
     /// A PUT is a whole-object replace: a field the body leaves at its default is written as the default.
     /// </summary>
     /// <remarks>
-    /// Not a defect - it is what PUT means - but it is the shape of the two tests above, and it is why
-    /// the UI has to round-trip an entire MSEL to rename one. A client sending only the fields it changed
+    /// Not a defect - it is what PUT means - but it is why the UI has to round-trip an entire MSEL to
+    /// rename one. A client sending only the fields it changed
     /// resets <c>Status</c> to <c>Pending</c>, clears every integration flag, and moves
     /// <c>StartTime</c> to the epoch.
     /// </remarks>

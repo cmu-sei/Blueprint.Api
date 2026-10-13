@@ -45,6 +45,16 @@ namespace Blueprint.Api.Services
             }
         }
 
+        /// <summary>
+        /// Throws a 404 unless the team belongs to the MSEL. A reference to another MSEL's team is
+        /// answered the same as a reference to no team at all.
+        /// </summary>
+        public static async Task EnsureTeamIsInMselAsync(Guid teamId, Guid? mselId, BlueprintContext context, CancellationToken ct)
+        {
+            if (mselId == null || !await context.Teams.AnyAsync(t => t.Id == teamId && t.MselId == mselId, ct))
+                throw new EntityNotFoundException<Team>($"Team {teamId} was not found in MSEL {mselId}.");
+        }
+
     }
 }
 

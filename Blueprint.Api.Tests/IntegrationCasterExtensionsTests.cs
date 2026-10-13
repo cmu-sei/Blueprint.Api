@@ -32,7 +32,7 @@ public class IntegrationCasterExtensionsTests
     private static readonly Guid RunId = Guid.NewGuid();
     private static readonly Guid ViewId = Guid.NewGuid();
     private static readonly Guid UserId = Guid.NewGuid();
-    private static readonly (string Name, Guid Id)[] NoTeams = [];
+    private static readonly (string Name, Guid Id, string Variable)[] NoTeams = [];
 
     private static readonly ClientOptions Options = new()
     {
@@ -72,7 +72,7 @@ public class IntegrationCasterExtensionsTests
         var redTeam = Guid.NewGuid();
 
         var content = IntegrationCasterExtensions.GetVarsFileContent(
-            ViewId, UserId, "Pat Planner", [("Blue Team", blueTeam), ("Red (Opfor) #2, West", redTeam)]);
+            ViewId, UserId, "Pat Planner", [("Blue Team", blueTeam, null), ("Red (Opfor) #2, West", redTeam, null)]);
 
         Assert.Equal(
             $"exercise_id = \"{ViewId}\"\r\n" +
@@ -115,7 +115,7 @@ public class IntegrationCasterExtensionsTests
         var squad = Guid.NewGuid();
 
         var content = IntegrationCasterExtensions.GetVarsFileContent(
-            ViewId, UserId, "u", [("2nd Squad", squad), ("***", Guid.NewGuid())]);
+            ViewId, UserId, "u", [("2nd Squad", squad, null), ("***", Guid.NewGuid(), null)]);
 
         var teamLines = content.Split("\r\n").Skip(4).Where(l => l.Length > 0).ToList();
         Assert.Equal([$"_2nd_squad = \"{squad}\""], teamLines);
@@ -128,7 +128,7 @@ public class IntegrationCasterExtensionsTests
     public void GetVarsFileContent_RefusesTeamsThatShareAVariable()
     {
         var ex = Assert.Throws<Exception>(() => IntegrationCasterExtensions.GetVarsFileContent(
-            ViewId, UserId, "u", [("Blue Team", Guid.NewGuid()), ("Blue-Team", Guid.NewGuid()), ("blue team", Guid.NewGuid())]));
+            ViewId, UserId, "u", [("Blue Team", Guid.NewGuid(), null), ("Blue-Team", Guid.NewGuid(), null), ("blue team", Guid.NewGuid(), null)]));
 
         Assert.Contains("\"Blue Team\" and \"blue team\" all become \"blue_team\"", ex.Message);
     }
@@ -188,6 +188,14 @@ public class IntegrationCasterExtensionsTests
         var teamLines = content.Split("\r\n").Skip(4).Where(l => l.Length > 0).ToList();
         Assert.Equal([$"admin = \"{control}\""], teamLines);
         Assert.Empty(IntegrationCasterExtensions.FindDuplicateTeamVariables([("Admin", null), ("Exercise Control", "admin")]));
+    }
+
+    [Fact]
+    public void FindDuplicateTeamVariables_CatchesUnmappedTeamsThatShareAName()
+    {
+        var duplicates = IntegrationCasterExtensions.FindDuplicateTeamVariables([("Gold Cell", null), ("Blue Team", null), ("gold cell", null)]);
+
+        Assert.Equal(["gold_cell"], duplicates.Keys);
     }
 
     [Theory]
@@ -284,34 +292,6 @@ public class IntegrationCasterExtensionsTests
     }
 
     [Fact]
-    public void FindUnmappedRequiredTeamVariables_CountsMappedAndNamedTeams()
-    {
-        var slots = new List<CasterTeamVariable>
-        {
-            new() { Name = "admin", Required = true },
-            new() { Name = "blue_cell", Required = true },
-            new() { Name = "red_cell", Required = true },
-            new() { Name = "gold_cell", Required = true },
-            new() { Name = "spare", Required = false },
-        };
-
-        var unmapped = IntegrationCasterExtensions.FindUnmappedRequiredTeamVariables(
-            slots, [("Admin", null), ("Blue Team", "blue_cell"), ("Red Cell", null), ("Gold Team", "  ")]);
-
-        Assert.Equal(["gold_cell"], unmapped);
-    }
-
-    [Fact]
-    public void UnmappedRequiredTeamVariablesMessage_NamesEachVariable()
-    {
-        Assert.Equal(
-            "The Caster template requires topology team \"gold_cell\", but no MSEL team is mapped to it. Map a team to it, or give the variable a default in the template.",
-            IntegrationCasterExtensions.UnmappedRequiredTeamVariablesMessage(["gold_cell"]));
-        Assert.Contains("topology teams \"gold_cell\", \"red_cell\"",
-            IntegrationCasterExtensions.UnmappedRequiredTeamVariablesMessage(["gold_cell", "red_cell"]));
-    }
-
-    [Fact]
     public void FindTeamVariableSlots_ReadsJsonFiles()
     {
         var tfJson = """
@@ -340,7 +320,7 @@ public class IntegrationCasterExtensionsTests
         var statuses = new List<string>();
 
         await IntegrationCasterExtensions.PlanAndApplyAsync(
-            RunId, await Source(handler), Options, 1, Record(statuses), CancellationToken.None);
+            RunId, Source(handler), Options, 1, Record(statuses), CancellationToken.None);
 
         Assert.Single(handler.Sent, x => x.Path == $"api/runs/{RunId}/actions/apply");
         Assert.Equal(["Caster - planning", "Caster - applying"], statuses);
@@ -353,7 +333,7 @@ public class IntegrationCasterExtensionsTests
             .AnswersJson($"GET api/runs/{RunId}", Run("Failed"));
 
         var ex = await Assert.ThrowsAsync<Exception>(async () => await IntegrationCasterExtensions.PlanAndApplyAsync(
-            RunId, await Source(handler), Options, 1, _ => Task.CompletedTask, CancellationToken.None));
+            RunId, Source(handler), Options, 1, _ => Task.CompletedTask, CancellationToken.None));
 
         Assert.Contains("plan ended Failed", ex.Message);
         Assert.DoesNotContain(handler.Sent, x => x.Path.EndsWith("/actions/apply"));
@@ -370,7 +350,7 @@ public class IntegrationCasterExtensionsTests
             .AnswersJson($"POST api/runs/{RunId}/actions/save-state", Run("Applied"));
 
         await IntegrationCasterExtensions.PlanAndApplyAsync(
-            RunId, await Source(handler), Options, 1, _ => Task.CompletedTask, CancellationToken.None);
+            RunId, Source(handler), Options, 1, _ => Task.CompletedTask, CancellationToken.None);
 
         Assert.Single(handler.Sent, x => x.Path == $"api/runs/{RunId}/actions/save-state");
     }
@@ -384,7 +364,7 @@ public class IntegrationCasterExtensionsTests
         cts.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await IntegrationCasterExtensions.PlanAndApplyAsync(
-            RunId, await Source(handler), Options, 1, _ => Task.CompletedTask, cts.Token));
+            RunId, Source(handler), Options, 1, _ => Task.CompletedTask, cts.Token));
     }
 
     // --- pull ---
@@ -396,7 +376,7 @@ public class IntegrationCasterExtensionsTests
             .Answers($"GET api/workspaces/{WorkspaceId}", HttpStatusCode.NotFound);
 
         await IntegrationCasterExtensions.DestroyWorkspaceAsync(
-            WorkspaceId, await Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None);
+            WorkspaceId, Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None);
 
         Assert.Single(handler.Sent);
     }
@@ -415,7 +395,7 @@ public class IntegrationCasterExtensionsTests
             .Answers($"DELETE api/workspaces/{WorkspaceId}", HttpStatusCode.NoContent);
 
         await IntegrationCasterExtensions.DestroyWorkspaceAsync(
-            WorkspaceId, await Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None);
+            WorkspaceId, Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None);
 
         Assert.Contains("\"isDestroy\":true", handler.Sent.Single(x => x.Method == HttpMethod.Post && x.Path == "api/runs").Body);
         Assert.Equal(HttpMethod.Delete, handler.Sent.Last().Method);
@@ -431,7 +411,7 @@ public class IntegrationCasterExtensionsTests
             .Answers($"DELETE api/workspaces/{WorkspaceId}", HttpStatusCode.NoContent);
 
         await IntegrationCasterExtensions.DestroyWorkspaceAsync(
-            WorkspaceId, await Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None);
+            WorkspaceId, Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None);
 
         Assert.DoesNotContain(handler.Sent, x => x.Path.EndsWith("/actions/cancel"));
         Assert.Equal(2, handler.Sent.Count(x => x.Path == $"api/runs/{RunId}"));
@@ -446,7 +426,7 @@ public class IntegrationCasterExtensionsTests
             .Answers($"DELETE api/workspaces/{WorkspaceId}", HttpStatusCode.NoContent);
 
         await IntegrationCasterExtensions.DestroyWorkspaceAsync(
-            WorkspaceId, await Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None);
+            WorkspaceId, Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None);
 
         Assert.Single(handler.Sent, x => x.Path == $"api/runs/{RunId}/actions/reject");
     }
@@ -464,10 +444,50 @@ public class IntegrationCasterExtensionsTests
             .Answers($"DELETE api/workspaces/{WorkspaceId}", HttpStatusCode.NoContent);
 
         await IntegrationCasterExtensions.DestroyWorkspaceAsync(
-            WorkspaceId, await Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None);
+            WorkspaceId, Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None);
 
         Assert.Single(handler.Sent, x => x.Path == $"api/runs/{RunId}/actions/save-state");
         Assert.Equal(HttpMethod.Delete, handler.Sent.Last().Method);
+    }
+
+    [Fact]
+    public async Task DestroyWorkspace_RetriesADestroyThatFailed()
+    {
+        var firstRunId = Guid.NewGuid();
+        var secondRunId = Guid.NewGuid();
+        var handler = Workspace("[]")
+            // still there after the failed first destroy, gone after the second
+            .AnswersJson($"GET api/workspaces/{WorkspaceId}/resources", Resources(1), once: true)
+            .AnswersJson($"GET api/workspaces/{WorkspaceId}/resources", Resources(1), once: true)
+            .AnswersJson($"GET api/workspaces/{WorkspaceId}/resources", "[]")
+            .AnswersJson("POST api/runs", Run("Queued", firstRunId), HttpStatusCode.Created, once: true)
+            .AnswersJson("POST api/runs", Run("Queued", secondRunId), HttpStatusCode.Created)
+            .AnswersJson($"GET api/runs/{firstRunId}", Run("Failed", firstRunId))
+            .AnswersJson($"GET api/runs/{secondRunId}", Run("Planned", secondRunId), once: true)
+            .AnswersJson($"GET api/runs/{secondRunId}", Run("Applied", secondRunId))
+            .AnswersJson($"POST api/runs/{secondRunId}/actions/apply", "{}")
+            .Answers($"DELETE api/workspaces/{WorkspaceId}", HttpStatusCode.NoContent);
+
+        await IntegrationCasterExtensions.DestroyWorkspaceAsync(
+            WorkspaceId, Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None);
+
+        Assert.Equal(2, handler.Sent.Count(x => x.Method == HttpMethod.Post && x.Path == "api/runs"));
+        Assert.Equal(HttpMethod.Delete, handler.Sent.Last().Method);
+    }
+
+    [Fact]
+    public async Task DestroyWorkspace_ReportsTheLastDestroysFailure()
+    {
+        var handler = Workspace("[]")
+            .AnswersJson($"GET api/workspaces/{WorkspaceId}/resources", Resources(1))
+            .AnswersJson("POST api/runs", Run("Queued"), HttpStatusCode.Created)
+            .AnswersJson($"GET api/runs/{RunId}", Run("Failed"));
+
+        await Assert.ThrowsAsync<Exception>(async () => await IntegrationCasterExtensions.DestroyWorkspaceAsync(
+            WorkspaceId, Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None));
+
+        Assert.Equal(2, handler.Sent.Count(x => x.Method == HttpMethod.Post && x.Path == "api/runs"));
+        Assert.DoesNotContain(handler.Sent, x => x.Method == HttpMethod.Delete);
     }
 
     [Fact]
@@ -484,7 +504,7 @@ public class IntegrationCasterExtensionsTests
             .AnswersJson($"POST api/runs/{destroyRunId}/actions/apply", "{}");
 
         var ex = await Assert.ThrowsAsync<Exception>(async () => await IntegrationCasterExtensions.DestroyWorkspaceAsync(
-            WorkspaceId, await Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None));
+            WorkspaceId, Source(handler), Options, _ => Task.CompletedTask, CancellationToken.None));
 
         Assert.Contains("still has resources after 2 destroy attempts", ex.Message);
         Assert.Equal(2, handler.Sent.Count(x => x.Method == HttpMethod.Post && x.Path == "api/runs"));
@@ -494,26 +514,43 @@ public class IntegrationCasterExtensionsTests
     // --- token ---
 
     [Fact]
-    public async Task ClientSource_RefreshesATokenAboutToExpire()
+    public async Task ClientSource_FetchesItsFirstTokenWhenFirstUsed()
     {
-        var refreshes = 0;
+        var fetches = 0;
         var source = new CasterClientSource(
             new TestHttpHandler().AsFactory(),
             "http://caster.example/",
-            async () => { refreshes++; return await Tokens.Bearer(); },
-            await Tokens.Bearer(expiresIn: 30));
+            async () => { fetches++; return await Tokens.Bearer(); });
 
+        Assert.Equal(0, fetches);
         await source.GetAsync(CancellationToken.None);
         await source.GetAsync(CancellationToken.None);
 
-        // the first call replaces the 30-second token; the 300-second one it got lasts
-        Assert.Equal(1, refreshes);
+        // the 300-second token it got lasts
+        Assert.Equal(1, fetches);
+    }
+
+    [Fact]
+    public async Task ClientSource_RefreshesATokenAboutToExpire()
+    {
+        var fetches = 0;
+        var source = new CasterClientSource(
+            new TestHttpHandler().AsFactory(),
+            "http://caster.example/",
+            async () => { fetches++; return await Tokens.Bearer(expiresIn: fetches == 1 ? 30 : 300); });
+
+        await source.GetAsync(CancellationToken.None);
+        await source.GetAsync(CancellationToken.None);
+        await source.GetAsync(CancellationToken.None);
+
+        // the second call replaces the 30-second token; the 300-second one it got lasts
+        Assert.Equal(2, fetches);
     }
 
     // --- helpers ---
 
-    private static async Task<CasterClientSource> Source(TestHttpHandler handler) =>
-        new(handler.AsFactory(), "http://caster.example/", () => Tokens.Bearer(), await Tokens.Bearer());
+    private static CasterClientSource Source(TestHttpHandler handler) =>
+        new(handler.AsFactory(), "http://caster.example/", () => Tokens.Bearer());
 
     private static TestHttpHandler Workspace(string runs) =>
         new TestHttpHandler()

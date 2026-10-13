@@ -40,13 +40,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
         };
         private static readonly RunStatus[] _terminalStatuses = { RunStatus.Applied, RunStatus.Failed, RunStatus.Rejected };
 
-        public static CasterApiClient GetCasterApiClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse)
-        {
-            var client = ApiClientsExtensions.GetHttpClient(httpClientFactory, apiUrl, tokenResponse);
-            var apiClient = new CasterApiClient(client);
-            return apiClient;
-        }
-
         // Alloy's rule for team variable names: lower case, spaces to underscores, then drop @&'()<>#.
         // Existing templates declare their variables under these names, so keep it. Then drop anything
         // else an HCL identifier cannot hold (a comma, say): such a name never worked under Alloy either,
@@ -73,11 +66,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
         {
             var teams = await playerApiClient.GetViewTeamsAsync(playerViewId, ct);
             return GetVarsFileContent(playerViewId, userId, userName, teams.Select(t => (t.Name, t.Id, teamVariables.GetValueOrDefault(t.Id))));
-        }
-
-        public static string GetVarsFileContent(Guid playerViewId, Guid userId, string userName, IEnumerable<(string Name, Guid Id)> teams)
-        {
-            return GetVarsFileContent(playerViewId, userId, userName, teams.Select(t => (t.Name, t.Id, (string)null)));
         }
 
         public static string GetVarsFileContent(Guid playerViewId, Guid userId, string userName, IEnumerable<(string Name, Guid Id, string Variable)> teams)
@@ -161,11 +149,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
         /// <summary>
         /// Variable names that two or more of these teams would share, with the teams sharing each.
         /// </summary>
-        public static Dictionary<string, List<string>> FindDuplicateTeamVariables(IEnumerable<string> teamNames)
-        {
-            return FindDuplicateTeamVariables(teamNames.Select(n => (n, (string)null)));
-        }
-
         public static Dictionary<string, List<string>> FindDuplicateTeamVariables(IEnumerable<(string Name, string Variable)> teams)
         {
             return FindDuplicates(ResolveTeamVariables(teams.Select(t => (t.Name, Guid.Empty, t.Variable))).Select(t => (t.Name, t.Variable)));
@@ -191,7 +174,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         /// as strings, less the sensitive ones, the ones its .tfvars files already assign and the ones
         /// Blueprint writes itself. A template takes team IDs this way by convention only, so this is
         /// the list a planner picks from, not a guarantee that a variable lands VMs on a team. One with no
-        /// default is required: terraform fails the plan unless a team is mapped to it.
+        /// default is required: terraform fails the plan unless a team is mapped to it or Caster supplies it.
         /// </summary>
         public static List<ViewModels.CasterTeamVariable> FindTeamVariableSlots(IEnumerable<(string Name, string Content)> files)
         {
@@ -216,25 +199,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 .OrderBy(v => v.Name, StringComparer.Ordinal)
                 .Select(v => new ViewModels.CasterTeamVariable { Name = v.Name, Required = v.Required })
                 .ToList();
-        }
-
-        /// <summary>
-        /// The required team variables no team writes to, which would fail the plan.
-        /// </summary>
-        public static List<string> FindUnmappedRequiredTeamVariables(
-            IEnumerable<ViewModels.CasterTeamVariable> slots,
-            IEnumerable<(string Name, string Variable)> teams)
-        {
-            var written = ResolveTeamVariables(teams.Select(t => (t.Name, Guid.Empty, t.Variable))).Select(t => t.Variable).ToHashSet();
-            return slots.Where(s => s.Required && !written.Contains(s.Name)).Select(s => s.Name).ToList();
-        }
-
-        public static string UnmappedRequiredTeamVariablesMessage(List<string> variables)
-        {
-            var names = string.Join(", ", variables.Select(v => $"\"{v}\""));
-            return variables.Count == 1
-                ? $"The Caster template requires topology team {names}, but no MSEL team is mapped to it. Map a team to it, or give the variable a default in the template."
-                : $"The Caster template requires topology teams {names}, but no MSEL team is mapped to them. Map a team to each, or give the variables defaults in the template.";
         }
 
         private static readonly Regex _variableBlock = new("^[ \\t]*variable[ \\t]+\"?([^\"\\s{]+)\"?[ \\t]*\\{", RegexOptions.Multiline);
@@ -485,7 +449,16 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     throw new Exception($"Caster workspace {workspaceId} still has resources after {maxDestroyAttempts} destroy attempts.");
                 await sendStatus($"Caster - destroying workspace (attempt {attempt})");
                 var run = await CreateRunAsync(workspaceId, true, await casterClientSource.GetAsync(ct), ct);
-                await PlanAndApplyAsync(run.Id, casterClientSource, clientOptions, clientOptions.CasterDestroyMaxWaitMinutes, sendStatus, ct);
+                try
+                {
+                    await PlanAndApplyAsync(run.Id, casterClientSource, clientOptions, clientOptions.CasterDestroyMaxWaitMinutes, sendStatus, ct);
+                }
+                catch (Exception ex) when (attempt < maxDestroyAttempts && ex is not OperationCanceledException)
+                {
+                    // a run that failed is what the retry is for; one that timed out is still going,
+                    // and Caster refuses a new run until it is stopped
+                    await StopActiveRunsAsync(workspaceId, casterClientSource, clientOptions, ct);
+                }
             }
 
             await sendStatus("Caster - deleting workspace");
@@ -596,12 +569,12 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 .Select(name => (name, status: (RunStatus)f.GetValue(null))))
             .ToDictionary(x => x.name, x => x.status, StringComparer.OrdinalIgnoreCase);
 
-        public CasterClientSource(IHttpClientFactory httpClientFactory, string apiUrl, Func<STT.Task<TokenResponse>> getToken, TokenResponse tokenResponse)
+        // no token yet: the first GetAsync fetches one, so it is fresh when the Caster work starts
+        public CasterClientSource(IHttpClientFactory httpClientFactory, string apiUrl, Func<STT.Task<TokenResponse>> getToken)
         {
             _httpClientFactory = httpClientFactory;
             _apiUrl = apiUrl;
             _getToken = getToken;
-            SetToken(tokenResponse);
         }
 
         public async STT.Task<CasterApiClient> GetAsync(CancellationToken ct)

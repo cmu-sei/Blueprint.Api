@@ -11,7 +11,7 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
 
         /// <summary>
-        /// The template gives the variable no default, so terraform fails the plan unless a team is mapped to it.
+        /// The template gives the variable no default, so terraform fails the plan unless a team is mapped to it or Caster supplies it.
         /// </summary>
         public bool Required { get; set; }
     }

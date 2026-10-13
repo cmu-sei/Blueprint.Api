@@ -45,7 +45,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Returns the string variables the directory's template, including its parent directories,
         /// declares and does not already assign: the topology teams a MSEL team's Player team ID can be
-        /// written to. A required one has no default, so a push fails unless a team is mapped to it.
+        /// written to. A required one has no default, so the plan fails unless a team is mapped to it or Caster supplies it.
         /// The user's token must carry the caster scope.
         /// </remarks>
         /// <param name="id">The Caster directory ID</param>

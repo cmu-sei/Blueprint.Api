@@ -2306,24 +2306,9 @@ namespace Blueprint.Api.Services
                 throw new InvalidOperationException($"MSEL {mselId} is already deployed.");
             if (msel.UseCaster)
             {
-                // terraform attaches the VMs to the Player view and its teams
-                if (!msel.UsePlayer)
-                    throw new ConflictException($"MSEL {mselId} uses Caster, which requires Player.");
-                if (msel.CasterDirectoryId == null)
-                    throw new ConflictException($"MSEL {mselId} uses Caster but has no Caster directory selected.");
+                await ValidateCasterSetupAsync(msel, ct);
                 // also covers a directory that arrived by copy rather than through UpdateAsync
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
-                // fail here, where the planner can rename a team, not minutes into the push
-                var teams = await _context.Teams.Where(t => t.MselId == mselId).Select(t => new { t.Name, t.CasterTeamVariable }).ToListAsync(ct);
-                var duplicates = IntegrationCasterExtensions.FindDuplicateTeamVariables(teams.Select(t => (t.Name, t.CasterTeamVariable)));
-                if (duplicates.Count > 0)
-                    throw new ConflictException(IntegrationCasterExtensions.DuplicateTeamVariablesMessage(duplicates));
-                // Player gives the view its own Admin team, which writes "admin" unless a MSEL team is mapped to it
-                var slots = await _casterService.GetTeamVariablesAsync((Guid)msel.CasterDirectoryId, ct);
-                var unmapped = IntegrationCasterExtensions.FindUnmappedRequiredTeamVariables(
-                    slots, teams.Select(t => (t.Name, t.CasterTeamVariable)).Append(("Admin", (string)null)));
-                if (unmapped.Count > 0)
-                    throw new ConflictException(IntegrationCasterExtensions.UnmappedRequiredTeamVariablesMessage(unmapped));
             }
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
@@ -2385,6 +2370,23 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
 
             return _mapper.Map<ViewModels.Msel>(msel);
+        }
+
+        // Checks a Caster MSEL without calling Caster, so an invitee with no Caster access can run them too.
+        // Fails here, where the planner can fix the MSEL, not minutes into the push.
+        private async Task ValidateCasterSetupAsync(MselEntity msel, CancellationToken ct)
+        {
+            // terraform attaches the VMs to the Player view and its teams
+            if (!msel.UsePlayer)
+                throw new ConflictException($"MSEL {msel.Id} uses Caster, which requires Player.");
+            if (msel.CasterDirectoryId == null)
+                throw new ConflictException($"MSEL {msel.Id} uses Caster but has no Caster directory selected.");
+            var teams = await _context.Teams.Where(t => t.MselId == msel.Id).Select(t => new { t.Name, t.CasterTeamVariable }).ToListAsync(ct);
+            // Player gives the view its own Admin team, which writes "admin" unless a MSEL team is mapped to it
+            var duplicates = IntegrationCasterExtensions.FindDuplicateTeamVariables(
+                teams.Select(t => (t.Name, t.CasterTeamVariable)).Append(("Admin", (string)null)));
+            if (duplicates.Count > 0)
+                throw new ConflictException(IntegrationCasterExtensions.DuplicateTeamVariablesMessage(duplicates));
         }
 
         private async Task<string> FindDuplicateMselUsersAsync(Guid mselId, CancellationToken ct)
@@ -2651,6 +2653,11 @@ namespace Blueprint.Api.Services
                 );
             if (invitation == null)
                 throw new ForbiddenException();
+
+            // the copy gets the template's teams and Caster settings, so check the template before using up an invitation
+            var template = await _context.Msels.AsNoTracking().SingleAsync(m => m.Id == mselId, ct);
+            if (template.UseCaster)
+                await ValidateCasterSetupAsync(template, ct);
 
             // clone the template MSEL
             var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct);

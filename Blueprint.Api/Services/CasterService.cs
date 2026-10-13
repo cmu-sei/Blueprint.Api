@@ -47,15 +47,12 @@ namespace Blueprint.Api.Services
                 projects = await _casterApiClient.GetAllProjectsAsync(true, ct);
             }
 
-            var directories = new List<ViewModels.CasterDirectory>();
-            foreach (var project in projects.OrderBy(p => p.Name))
-            {
-                var projectDirectories = await _casterApiClient.GetDirectoriesByProjectAsync(project.Id, true, false, false, ct);
-                directories.AddRange(projectDirectories
+            var byProject = await Task.WhenAll(projects
+                .OrderBy(p => p.Name)
+                .Select(async project => (await _casterApiClient.GetDirectoriesByProjectAsync(project.Id, true, false, false, ct))
                     .OrderBy(d => d.Name)
-                    .Select(d => ToViewModel(d, project.Name)));
-            }
-            return directories;
+                    .Select(d => ToViewModel(d, project.Name))));
+            return byProject.SelectMany(d => d).ToList();
         }
 
         /// <summary>

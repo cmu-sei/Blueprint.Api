@@ -230,6 +230,7 @@ namespace Blueprint.Api.Services
             {
                 msel.GalleryArticleParameters = Enum.GetNames(typeof(GalleryArticleParameter)).ToList();
                 msel.GallerySourceTypes = Enum.GetNames(typeof(GallerySourceType)).ToList();
+                msel.GalleryItemStatuses = Enum.GetNames(typeof(GalleryItemStatus)).ToList();
             }
 
             return msel;
@@ -260,6 +261,7 @@ namespace Blueprint.Api.Services
             {
                 msel.GalleryArticleParameters = Enum.GetNames(typeof(GalleryArticleParameter)).ToList();
                 msel.GallerySourceTypes = Enum.GetNames(typeof(GallerySourceType)).ToList();
+                msel.GalleryItemStatuses = Enum.GetNames(typeof(GalleryItemStatus)).ToList();
             }
             return msel;
         }

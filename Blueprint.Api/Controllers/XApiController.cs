@@ -6,6 +6,8 @@ using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -15,10 +17,12 @@ namespace Blueprint.Api.Controllers
     public class XApiController : BaseController
     {
         private readonly IXApiService _xApiService;
+        private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public XApiController(IXApiService xApiService)
+        public XApiController(IXApiService xApiService, IBlueprintAuthorizationService authorizationService)
         {
             _xApiService = xApiService;
+            _authorizationService = authorizationService;
         }
 
         /// <summary>
@@ -40,7 +44,8 @@ namespace Blueprint.Api.Controllers
             [FromQuery] string source = null,
             CancellationToken ct = default)
         {
-            var result = await _xApiService.GetStatementsAsync(mselId, since, until, limit, source, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var result = await _xApiService.GetStatementsAsync(mselId, since, until, limit, source, hasSystemPermission, ct);
             return Content(result, "application/json");
         }
 
@@ -56,7 +61,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "createCompetencyAssertion")]
         public async Task<IActionResult> CreateAssertion([FromBody] CompetencyAssertion assertion, CancellationToken ct)
         {
-            await _xApiService.AssertCompetencyAsync(assertion, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            await _xApiService.AssertCompetencyAsync(assertion, hasSystemPermission, ct);
             return Ok();
         }
 
@@ -72,7 +78,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "viewedMsel")]
         public async Task<IActionResult> Viewed(Guid id, CancellationToken ct)
         {
-            await _xApiService.MselViewedAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            await _xApiService.MselViewedAsync(id, hasSystemPermission, ct);
             return Ok();
         }
 

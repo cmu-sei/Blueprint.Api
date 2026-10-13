@@ -555,6 +555,15 @@ namespace Blueprint.Api.Services
                     scenarioEventToUpdate.SteamfitterTaskId = steamfitterTaskEntity.Id;
                 }
             }
+            else if (scenarioEventToUpdate.SteamfitterTask != null &&
+                !(scenarioEvent.IntegrationTarget ?? "").Contains("Steamfitter"))
+            {
+                // an event that no longer targets Steamfitter loses its task; an edit that only omits
+                // the task, as the timeline does, keeps it
+                _context.SteamfitterTasks.Remove(scenarioEventToUpdate.SteamfitterTask);
+                scenarioEventToUpdate.SteamfitterTask = null;
+                scenarioEventToUpdate.SteamfitterTaskId = null;
+            }
             var scenarioEventEnitities = new List<ScenarioEventEntity>
             {
                 scenarioEventToUpdate

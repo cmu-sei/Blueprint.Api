@@ -1028,8 +1028,8 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
     }
 
     /// <summary>
-    /// The task is written by the service, not mapped, so a body that does not mention it leaves the
-    /// row's task as it was.
+    /// The task is written by the service, not mapped, so a body that still targets Steamfitter but does
+    /// not mention the task - as the timeline's edits do - leaves the row's task as it was.
     /// </summary>
     [Fact]
     public async Task Update_WithoutTheTaskInTheBody_KeepsTheRowsSteamfitterTask()
@@ -1042,6 +1042,25 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
         var stored = await StoredTask(scene.Rows[0].Id);
         Assert.Equal(scene.Task.Id, stored.Id);
         Assert.Equal(scene.Task.Name, stored.Name);
+    }
+
+    /// <summary>
+    /// An event whose integration target no longer includes Steamfitter loses its task, which is how the
+    /// edit dialog removes one.
+    /// </summary>
+    [Fact]
+    public async Task Update_ThatNoLongerTargetsSteamfitter_RemovesTheRowsSteamfitterTask()
+    {
+        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
+        var row = scene.Rows[0];
+
+        var response = await Client(scene.Actor).PutAsJsonAsync(
+            $"/api/scenarioEvents/{row.Id}",
+            new { row.DeltaSeconds, row.GroupOrder, ScenarioEventType = EventType.Inject, IntegrationTarget = "Gallery" },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(await StoredTask(row.Id));
     }
 
     /// <summary>
@@ -1289,13 +1308,15 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
             task = BlueprintAppFactory.SteamfitterTask(seeded[0].Id);
             await Seed(task);
 
+            await using var context = NewContext();
+            var stored = await context.ScenarioEvents.SingleAsync(x => x.Id == seeded[0].Id, Ct);
+            stored.IntegrationTarget = "Steamfitter";
             if (backfillTaskId)
             {
-                await using var context = NewContext();
-                var stored = await context.ScenarioEvents.SingleAsync(x => x.Id == seeded[0].Id, Ct);
                 stored.SteamfitterTaskId = task.Id;
-                await context.SaveChangesAsync(Ct);
             }
+            await context.SaveChangesAsync(Ct);
+            seeded[0].IntegrationTarget = stored.IntegrationTarget;
         }
 
         Hub.Clear();
@@ -1354,6 +1375,7 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
                 DeltaSeconds = deltaSeconds,
                 row.GroupOrder,
                 row.ScenarioEventType,
+                row.IntegrationTarget,
                 Information = "edited",
                 CreatedBy = Guid.Empty,
                 DateCreated = DateTime.UtcNow,

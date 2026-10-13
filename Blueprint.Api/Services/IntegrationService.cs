@@ -329,8 +329,12 @@ namespace Blueprint.Api.Services
                             GalleryApiClient galleryApiClient = null;
                             CiteApiClient citeApiClient = null;
                             SteamfitterApiClient steamfitterApiClient = null;
+                            HttpClient playerHttpClient = null;
                             if (msel.UsePlayer)
-                                playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
+                            {
+                                playerHttpClient = ApiClientsExtensions.GetHttpClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
+                                playerApiClient = new PlayerApiClient(playerHttpClient);
+                            }
                             if (msel.UseGallery)
                                 galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse);
                             if (msel.UseCite)
@@ -363,7 +367,7 @@ namespace Blueprint.Api.Services
                             {
                                 ct.ThrowIfCancellationRequested();
                                 currentProcessStep = "Player - begin processing part 1";
-                                await PlayerProcessPart1(msel, integrationInformation.PlayerViewId, playerApiClient, blueprintContext, playerUserIds, ct);
+                                await PlayerProcessPart1(msel, integrationInformation.PlayerViewId, playerApiClient, playerHttpClient, blueprintContext, playerUserIds, ct);
                             }
 
                             // Gallery processing
@@ -684,18 +688,23 @@ namespace Blueprint.Api.Services
             return true;
         }
 
-        private async STT.Task PlayerProcessPart1(MselEntity msel, Guid? playerViewId, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, HashSet<Guid> playerUserIds, CancellationToken ct)
+        private async STT.Task PlayerProcessPart1(MselEntity msel, Guid? playerViewId, PlayerApiClient playerApiClient, HttpClient playerHttpClient, BlueprintContext blueprintContext, HashSet<Guid> playerUserIds, CancellationToken ct)
         {
-            var currentProcessStep = "Player create view";
+            var currentProcessStep = "Player get view admin role";
             try
             {
+                // a MSEL Admin team takes the place of Player's own; find its role before there is a view to clean up
+                Guid? viewAdminRoleId = null;
+                if (msel.Teams.Any(t => IntegrationPlayerExtensions.IsAdminTeam(t.Name)))
+                    viewAdminRoleId = await IntegrationPlayerExtensions.GetViewAdminRoleIdAsync(playerHttpClient, ct);
                 // create the Player View
+                currentProcessStep = "Player create view";
                 await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing View to Player", ct);
                 await IntegrationPlayerExtensions.CreateViewAsync(msel, playerViewId, playerApiClient, blueprintContext, ct);
                 // create the Player Teams
                 currentProcessStep = "Player create teams";
                 await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Teams to Player", ct);
-                await IntegrationPlayerExtensions.CreateTeamsAsync(msel, playerApiClient, blueprintContext, playerUserIds, ct);
+                await IntegrationPlayerExtensions.CreateTeamsAsync(msel, playerApiClient, blueprintContext, playerUserIds, viewAdminRoleId, ct);
             }
             catch (System.Exception ex)
             {

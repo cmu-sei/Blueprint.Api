@@ -200,11 +200,11 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
     }
 
     /// <remarks>
-    /// Both are hard-coded rather than taken from the MSEL: a pushed view is Active whatever the MSEL's own
-    /// status is, and Player is always asked to build an admin team.
+    /// A pushed view is Active whatever the MSEL's own status is, and Player is asked to build an admin team
+    /// unless a MSEL team takes its place.
     /// </remarks>
     [Fact]
-    public async Task CreateView_AlwaysAsksForAnActiveViewWithAnAdminTeam()
+    public async Task CreateView_AsksForAnActiveViewWithAnAdminTeam()
     {
         var msel = BlueprintAppFactory.Msel();
         msel.PlayerViewId = ViewId;
@@ -217,6 +217,62 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
 
         Assert.Equal("Active", form["status"].GetString());
         Assert.True(form["createAdminTeam"].GetBoolean());
+    }
+
+    /// <remarks>
+    /// Otherwise the view would have two teams named Admin, and with Caster both would write "admin".
+    /// </remarks>
+    [Theory]
+    [InlineData("Admin")]
+    [InlineData(" admin ")]
+    public async Task CreateView_LetsAMselAdminTeamTakeThePlaceOfPlayersOwn(string teamName)
+    {
+        var msel = BlueprintAppFactory.Msel();
+        msel.PlayerViewId = ViewId;
+        var team = BlueprintAppFactory.Team(msel.Id);
+        team.Name = teamName;
+        msel.Teams.Add(team);
+
+        var handler = Handler().AnswersJson("api/views", ViewJson, HttpStatusCode.Created);
+
+        await IntegrationPlayerExtensions.CreateViewAsync(msel, null, Client(handler), null, Ct);
+
+        Assert.False(Body(Assert.Single(handler.Sent).Body)["createAdminTeam"].GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("Admin", true)]
+    [InlineData("ADMIN ", true)]
+    [InlineData("Admins", false)]
+    [InlineData("Exercise Control", false)]
+    [InlineData(null, false)]
+    public void IsAdminTeam_MatchesPlayersAdminTeamNameOnly(string teamName, bool isAdmin)
+    {
+        Assert.Equal(isAdmin, IntegrationPlayerExtensions.IsAdminTeam(teamName));
+    }
+
+    [Fact]
+    public async Task GetViewAdminRoleId_FindsTheRolePlayerGivesItsAdminTeam()
+    {
+        var viewAdmin = Guid.NewGuid();
+        var handler = Handler().AnswersJson("api/team-roles",
+            $$"""[{"id":"{{Guid.NewGuid()}}","name":"View Member"},{"id":"{{viewAdmin}}","name":"View Admin"}]""");
+
+        var id = await IntegrationPlayerExtensions.GetViewAdminRoleIdAsync(
+            ApiClientsExtensions.GetHttpClient(handler.AsFactory(), "http://player.example/", null), Ct);
+
+        Assert.Equal(viewAdmin, id);
+    }
+
+    [Fact]
+    public async Task GetViewAdminRoleId_RefusesAPlayerWithoutTheRole()
+    {
+        var handler = Handler().AnswersJson("api/team-roles", $$"""[{"id":"{{Guid.NewGuid()}}","name":"View Member"}]""");
+
+        var ex = await Assert.ThrowsAsync<Exception>(() => IntegrationPlayerExtensions.GetViewAdminRoleIdAsync(
+            ApiClientsExtensions.GetHttpClient(handler.AsFactory(), "http://player.example/", null), Ct));
+
+        Assert.Contains("View Admin", ex.Message);
     }
 
     /// <remarks>
@@ -296,13 +352,33 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         var handler = Handler().AnswersJson($"api/views/{ViewId}/teams", TeamJson, HttpStatusCode.Created);
 
         await IntegrationPlayerExtensions.CreateTeamsAsync(
-            await Reload(msel.Id), Client(handler), null, [], Ct);
+            await Reload(msel.Id), Client(handler), null, [], null, Ct);
 
         var ids = handler.Sent.Select(x => Body(x.Body)["id"].GetString()).ToList();
 
         Assert.Equal(2, ids.Count);
         Assert.Contains(first.Id.ToString(), ids);
         Assert.Contains(second.Id.ToString(), ids);
+    }
+
+    [Fact]
+    public async Task CreateTeams_GivesOnlyTheAdminTeamTheViewAdminRole()
+    {
+        var msel = await SeedMsel();
+        var admin = BlueprintAppFactory.Team(msel.Id);
+        admin.Name = "Admin";
+        var blue = BlueprintAppFactory.Team(msel.Id);
+        await Seed(admin, blue);
+        var viewAdmin = Guid.NewGuid();
+
+        var handler = Handler().AnswersJson($"api/views/{ViewId}/teams", TeamJson, HttpStatusCode.Created);
+
+        await IntegrationPlayerExtensions.CreateTeamsAsync(
+            await Reload(msel.Id), Client(handler), null, [], viewAdmin, Ct);
+
+        var roles = handler.Sent.Select(x => Body(x.Body)).ToDictionary(b => b["id"].GetString(), b => b["roleId"]);
+        Assert.Equal(viewAdmin.ToString(), roles[admin.Id.ToString()].GetString());
+        Assert.Equal(JsonValueKind.Null, roles[blue.Id.ToString()].ValueKind);
     }
 
     [Fact]
@@ -320,7 +396,7 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
             .AnswersJson($"api/teams/{team.Id}/users/{actor.Id}", UserJson);
 
         await IntegrationPlayerExtensions.CreateTeamsAsync(
-            await Reload(msel.Id), Client(handler), null, [], Ct);
+            await Reload(msel.Id), Client(handler), null, [], null, Ct);
 
         Assert.Equal(
             [$"api/views/{ViewId}/teams", "api/users", $"api/teams/{team.Id}/users/{actor.Id}"],
@@ -351,7 +427,7 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
             .AnswersJson($"api/teams/{team.Id}/users/{actor.Id}", UserJson);
 
         await IntegrationPlayerExtensions.CreateTeamsAsync(
-            await Reload(msel.Id), Client(handler), null, [actor.Id], Ct);
+            await Reload(msel.Id), Client(handler), null, [actor.Id], null, Ct);
 
         Assert.DoesNotContain("api/users", handler.Paths);
     }
@@ -375,7 +451,7 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         var seen = new HashSet<Guid>();
 
         await IntegrationPlayerExtensions.CreateTeamsAsync(
-            await Reload(msel.Id), Client(handler), null, seen, Ct);
+            await Reload(msel.Id), Client(handler), null, seen, null, Ct);
 
         Assert.Single(handler.Paths.Where(x => x == "api/users").ToList());
         Assert.Contains(actor.Id, seen);
@@ -395,7 +471,7 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         var handler = Handler().AnswersJson($"api/views/{ViewId}/teams", TeamJson, HttpStatusCode.Created);
 
         await IntegrationPlayerExtensions.CreateTeamsAsync(
-            await Reload(msel.Id), Client(handler), blueprintContext: null, [], Ct);
+            await Reload(msel.Id), Client(handler), blueprintContext: null, [], viewAdminRoleId: null, Ct);
 
         Assert.Single(handler.Sent);
     }
@@ -410,7 +486,7 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         var loaded = await Reload(msel.Id);
 
         await Assert.ThrowsAnyAsync<ApiException>(() =>
-            IntegrationPlayerExtensions.CreateTeamsAsync(loaded, Client(handler), null, [], Ct));
+            IntegrationPlayerExtensions.CreateTeamsAsync(loaded, Client(handler), null, [], null, Ct));
     }
 
     // ---------------------------------------------------------------------------------------------

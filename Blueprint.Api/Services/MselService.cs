@@ -2382,9 +2382,12 @@ namespace Blueprint.Api.Services
             if (msel.CasterDirectoryId == null)
                 throw new ConflictException($"MSEL {msel.Id} uses Caster but has no Caster directory selected.");
             var teams = await _context.Teams.Where(t => t.MselId == msel.Id).Select(t => new { t.Name, t.CasterTeamVariable }).ToListAsync(ct);
-            // Player gives the view its own Admin team, which writes "admin" unless a MSEL team is mapped to it
-            var duplicates = IntegrationCasterExtensions.FindDuplicateTeamVariables(
-                teams.Select(t => (t.Name, t.CasterTeamVariable)).Append(("Admin", (string)null)));
+            // Unless a MSEL team takes its place, Player gives the view its own Admin team,
+            // which writes "admin" unless a MSEL team is mapped to it
+            var teamVariables = teams.Select(t => (t.Name, t.CasterTeamVariable)).ToList();
+            if (!teams.Any(t => IntegrationPlayerExtensions.IsAdminTeam(t.Name)))
+                teamVariables.Add((IntegrationPlayerExtensions.PlayerAdminTeamName, null));
+            var duplicates = IntegrationCasterExtensions.FindDuplicateTeamVariables(teamVariables);
             if (duplicates.Count > 0)
                 throw new ConflictException(IntegrationCasterExtensions.DuplicateTeamVariablesMessage(duplicates));
         }

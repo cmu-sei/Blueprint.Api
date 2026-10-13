@@ -12,7 +12,8 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<CardTeamEntity, CardTeam>();
 
-            CreateMap<CardTeam, CardTeamEntity>();
+            CreateMap<CardTeamCreate, CardTeamEntity>(AutoMapper.MemberList.Source);
+            CreateMap<CardTeamEdit, CardTeamEntity>(AutoMapper.MemberList.Source);
         }
     }
 }

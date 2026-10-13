@@ -24,9 +24,9 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.PlayerApplication>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.PlayerApplication> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplication playerApplication, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.PlayerApplication> CreateAndPushAsync(ViewModels.PlayerApplication playerApplication, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplication playerApplication, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.PlayerApplication> CreateAndPushAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplicationEdit playerApplication, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
     }
 
@@ -78,22 +78,21 @@ namespace Blueprint.Api.Services
             return _mapper.Map<PlayerApplication>(item);
         }
 
-        public async Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplication playerApplication, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, CancellationToken ct)
         {
             if (!hasSystemPermission && !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context))
                 throw new ForbiddenException();
-            playerApplication.Id = playerApplication.Id != Guid.Empty ? playerApplication.Id : Guid.NewGuid();
-            playerApplication.CreatedBy = _user.GetId();
             var playerApplicationEntity = _mapper.Map<PlayerApplicationEntity>(playerApplication);
+            playerApplicationEntity.Id = playerApplication.Id != Guid.Empty ? playerApplication.Id : Guid.NewGuid();
+            playerApplicationEntity.CreatedBy = _user.GetId();
 
             _context.PlayerApplications.Add(playerApplicationEntity);
             await _context.SaveChangesAsync(ct);
-            playerApplication = await GetAsync(playerApplicationEntity.Id, true, ct);
 
-            return playerApplication;
+            return await GetAsync(playerApplicationEntity.Id, true, ct);
         }
 
-        public async Task<ViewModels.PlayerApplication> CreateAndPushAsync(ViewModels.PlayerApplication playerApplication, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.PlayerApplication> CreateAndPushAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, CancellationToken ct)
         {
             // authorization will be checked in CreateAsync
             var item = await CreateAsync(playerApplication, hasSystemPermission, ct);
@@ -103,25 +102,24 @@ namespace Blueprint.Api.Services
             return item;
         }
 
-        public async Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplication playerApplication, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplicationEdit playerApplication, bool hasSystemPermission, CancellationToken ct)
         {
-            if (!hasSystemPermission && !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context))
-                throw new ForbiddenException();
-
             var playerApplicationToUpdate = await _context.PlayerApplications.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (playerApplicationToUpdate == null)
                 throw new EntityNotFoundException<PlayerApplication>();
 
-            playerApplication.ModifiedBy = _user.GetId();
+            // user must be a Content Developer or an owner of the application's MSEL
+            if (!hasSystemPermission && !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplicationToUpdate.MselId, _context))
+                throw new ForbiddenException();
+
             _mapper.Map(playerApplication, playerApplicationToUpdate);
+            playerApplicationToUpdate.ModifiedBy = _user.GetId();
 
             _context.PlayerApplications.Update(playerApplicationToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            playerApplication = await GetAsync(playerApplicationToUpdate.Id, true, ct);
-
-            return playerApplication;
+            return await GetAsync(playerApplicationToUpdate.Id, true, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)

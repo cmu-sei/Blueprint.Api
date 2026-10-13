@@ -26,8 +26,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.PlayerApplicationTeam> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByPlayerApplicationAsync(Guid playerApplicationId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.PlayerApplicationTeam> CreateAsync(ViewModels.PlayerApplicationTeam playerApplicationTeam, CancellationToken ct);
-        Task<ViewModels.PlayerApplicationTeam> UpdateAsync(Guid id, ViewModels.PlayerApplicationTeam playerApplicationTeam, CancellationToken ct);
+        Task<ViewModels.PlayerApplicationTeam> CreateAsync(ViewModels.PlayerApplicationTeamCreate playerApplicationTeam, CancellationToken ct);
+        Task<ViewModels.PlayerApplicationTeam> UpdateAsync(Guid id, ViewModels.PlayerApplicationTeamEdit playerApplicationTeam, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<bool> DeleteByIdsAsync(Guid playerApplicationId, Guid teamId, CancellationToken ct);
     }
@@ -103,8 +103,14 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<PlayerApplicationTeam>>(items);
         }
 
-        public async Task<ViewModels.PlayerApplicationTeam> CreateAsync(ViewModels.PlayerApplicationTeam playerApplicationTeam, CancellationToken ct)
+        public async Task<ViewModels.PlayerApplicationTeam> CreateAsync(ViewModels.PlayerApplicationTeamCreate playerApplicationTeam, CancellationToken ct)
         {
+            // the application and the team must belong to the same MSEL
+            var playerApplication = await _context.PlayerApplications.SingleOrDefaultAsync(pa => pa.Id == playerApplicationTeam.PlayerApplicationId, ct);
+            if (playerApplication == null)
+                throw new EntityNotFoundException<PlayerApplication>();
+            await ServiceUtilities.EnsureTeamIsInMselAsync(playerApplicationTeam.TeamId, playerApplication.MselId, _context, ct);
+
             // make sure that the display order is valid
             var itemList = await _context.PlayerApplicationTeams.Where(m => m.TeamId == playerApplicationTeam.TeamId).OrderBy(m => m.DisplayOrder).ToListAsync();
             if (playerApplicationTeam.DisplayOrder > itemList.Count + 1 || playerApplicationTeam.DisplayOrder < 1)
@@ -122,27 +128,27 @@ namespace Blueprint.Api.Services
             return await GetAsync(playerApplicationTeamEntity.Id, true, ct);
         }
 
-        public async Task<ViewModels.PlayerApplicationTeam> UpdateAsync(Guid id, ViewModels.PlayerApplicationTeam playerApplicationTeam, CancellationToken ct)
+        public async Task<ViewModels.PlayerApplicationTeam> UpdateAsync(Guid id, ViewModels.PlayerApplicationTeamEdit playerApplicationTeam, CancellationToken ct)
         {
-            // make sure that the display order is valid
-            var itemList = await _context.PlayerApplicationTeams.Where(m => m.TeamId == playerApplicationTeam.TeamId && m.Id != playerApplicationTeam.Id).OrderBy(m => m.DisplayOrder).ToListAsync();
-            if (playerApplicationTeam.DisplayOrder > itemList.Count + 1 || playerApplicationTeam.DisplayOrder < 1)
-                throw new InvalidDataException("The requested display order is not valid");
-
             var playerApplicationTeamToUpdate = await _context.PlayerApplicationTeams.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (playerApplicationTeamToUpdate == null)
                 throw new EntityNotFoundException<PlayerApplicationTeam>();
+
+            // make sure that the display order is valid among the stored team's other applications
+            var itemList = await _context.PlayerApplicationTeams.Where(m => m.TeamId == playerApplicationTeamToUpdate.TeamId && m.Id != id).OrderBy(m => m.DisplayOrder).ToListAsync();
+            if (playerApplicationTeam.DisplayOrder > itemList.Count + 1 || playerApplicationTeam.DisplayOrder < 1)
+                throw new InvalidDataException("The requested display order is not valid");
 
             _mapper.Map(playerApplicationTeam, playerApplicationTeamToUpdate);
 
             _context.PlayerApplicationTeams.Update(playerApplicationTeamToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            playerApplicationTeam = await GetAsync(playerApplicationTeamToUpdate.Id, true, ct);
+            var updated = await GetAsync(playerApplicationTeamToUpdate.Id, true, ct);
             await UpdateOrdering(playerApplicationTeamToUpdate, itemList, ct);
 
-            return playerApplicationTeam;
+            return updated;
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

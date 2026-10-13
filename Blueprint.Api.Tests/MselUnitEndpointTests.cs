@@ -44,20 +44,10 @@ namespace Blueprint.Api.Tests;
 /// <see cref="Delete_LeavesBehindTheRolesItsCreateGranted"/>.
 /// </para>
 /// <para>
-/// <strong><c>UpdateAsync</c> takes its permission decision from the request body's <c>MselId</c> - the
-/// seventh instance on the branch</strong>, after <c>OrganizationService</c>,
-/// <c>ScenarioEventService</c>, <c>DataOptionService</c>, <c>MoveService</c>, <c>CardService</c> and
-/// <c>TeamService</c>, and the only one where the row being moved <em>is</em> an authorization decision:
-/// the mapper writes the body's <c>MselId</c> onto the row, so a caller who owns any MSEL may take any
-/// other MSEL's unit onto their own - gaining its members - and the MSEL it left is told nothing.
-/// <see cref="Update_ForAnOwnerOfTheMselNamedInTheBody_TakesAnotherMselsUnit"/>. Note the update grants no
-/// roles on the MSEL it moves the unit to, so the stolen unit's members arrive with no role and the
-/// assignment is inert until somebody notices.
-/// </para>
-/// <para>
-/// <strong>The two deletes check existence before permission and the update checks permission first</strong>,
-/// so within one file an unknown id is a clean 404 for everybody on one route and a 403 for a stranger on
-/// the next. <c>DeleteAsync</c> is the model to copy, exactly as it was in <c>DataOptionService</c>.
+/// <strong><c>UpdateAsync</c> decides from the pairing's stored MSEL</strong>, and the edit request names no
+/// MSEL, Unit or nested Unit, so a PUT can neither move a unit between MSELs nor rewrite the Unit itself.
+/// See <see cref="Update_ForAnOwnerOfTheMselNamedInTheBody_Is403AndLeavesTheUnitWhereItIs"/>. Like the two
+/// deletes, it looks the row up before checking permission, so an unknown id is a 404 for everybody.
 /// </para>
 /// <para>
 /// <strong><c>CreateAsync</c> is the well-behaved one, and saying so is the point:</strong> it reads both
@@ -110,9 +100,8 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
     /// <remarks>
     /// The MSEL is read first and its absence is a 404 before any permission is consulted, so a stranger
-    /// learns whether a MSEL exists. That is the right shape for the route and the wrong shape for the
-    /// leak; both halves are here because the contrast with
-    /// <see cref="Update_ForAnIdThatIsNotThere_WithoutManageMsels_Is403"/> is the finding.
+    /// learns whether a MSEL exists - the same order the update and the deletes use
+    /// (<see cref="Update_ForAnIdThatIsNotThere_WithoutManageMsels_Is404"/>).
     /// </remarks>
     [Fact]
     public async Task GetByMsel_ForAMselThatIsNotThere_IsA404ForAStrangerToo()
@@ -584,8 +573,12 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     // PUT mselunits/{id}
     // ---------------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// The pairing has no editable fields, so a PUT confirms it and changes nothing - a body naming
+    /// another Unit leaves the row's Unit alone.
+    /// </summary>
     [Fact]
-    public async Task Update_ChangesTheUnitAndAnswers200()
+    public async Task Update_WithAnotherUnitInTheBody_Is200AndKeepsTheUnit()
     {
         var msel = await SeedMsel();
         var unit = await SeedUnit();
@@ -597,7 +590,7 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var response = await Put(Client(actor), row.Id, BodyFor(row) with { UnitId = replacement.Id });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(replacement.Id, (await Stored(row.Id)).UnitId);
+        Assert.Equal(unit.Id, (await Stored(row.Id)).UnitId);
     }
 
     [Fact]
@@ -613,13 +606,11 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     }
 
     /// <remarks>
-    /// The permission check runs before the row is looked up, so a caller without <c>ManageMsels</c> is
-    /// answered 403 for an id that does not exist - where <c>DeleteAsync</c> eleven lines below reads the
-    /// row first and answers 404 to everybody (<see cref="Delete_ForAnIdThatIsNotThere_IsA404ForAStrangerToo"/>).
-    /// One service, one question, two answers. Reordering the update to match the delete turns this red.
+    /// The row is looked up before the caller is authorized, as in <c>DeleteAsync</c>, so an unknown id
+    /// is a 404 for everybody.
     /// </remarks>
     [Fact]
-    public async Task Update_ForAnIdThatIsNotThere_WithoutManageMsels_Is403()
+    public async Task Update_ForAnIdThatIsNotThere_WithoutManageMsels_Is404()
     {
         var msel = await SeedMsel();
         var unit = await SeedUnit();
@@ -627,7 +618,7 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Put(Client(actor), Guid.NewGuid(), Body(msel.Id, unit.Id));
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -655,15 +646,12 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(row.UnitId, (await Stored(row.Id)).UnitId);
     }
 
-    /// <remarks>
-    /// The escalation. The permission check asks whether the caller owns the MSEL <em>the body names</em>,
-    /// then the mapper writes that <c>MselId</c> onto the row - so an owner of any MSEL may take any other
-    /// MSEL's unit onto their own, gaining a list of its members, and the MSEL the unit left keeps no
-    /// record and is sent no notification. Deciding from the stored row's <c>MselId</c>, the way
-    /// <c>DeleteAsync</c> does, turns this into the 403 it should be.
-    /// </remarks>
+    /// <summary>
+    /// The decision is made on the pairing's stored MSEL, so owning the MSEL named in the body buys
+    /// nothing, and the other MSEL keeps its unit.
+    /// </summary>
     [Fact]
-    public async Task Update_ForAnOwnerOfTheMselNamedInTheBody_TakesAnotherMselsUnit()
+    public async Task Update_ForAnOwnerOfTheMselNamedInTheBody_Is403AndLeavesTheUnitWhereItIs()
     {
         var mine = await SeedMsel();
         var theirs = await SeedMsel();
@@ -674,19 +662,16 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Put(Client(actor), row.Id, BodyFor(row) with { MselId = mine.Id });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(mine.Id, (await Stored(row.Id)).MselId);
-        Assert.Empty(await StoredFor(theirs.Id, unit.Id));
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(theirs.Id, (await Stored(row.Id)).MselId);
+        Assert.Single(await StoredFor(theirs.Id, unit.Id));
     }
 
-    /// <remarks>
-    /// Moving a unit onto a MSEL grants nobody a role there, where creating the same assignment grants
-    /// every member <c>Viewer</c> - so the unit arrives attached and inert, and its members cannot see
-    /// the exercise they have been moved to. Copying the create's grant loop into the update turns this
-    /// red.
-    /// </remarks>
+    /// <summary>
+    /// An edit cannot move the pairing to another MSEL, so it grants no roles there either.
+    /// </summary>
     [Fact]
-    public async Task Update_GrantsNoRolesOnTheMselItMovesTheUnitTo()
+    public async Task Update_NamingAnotherMselInTheBody_LeavesThePairingOnItsMsel()
     {
         var from = await SeedMsel();
         var to = await SeedMsel();
@@ -697,22 +682,41 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         await Seed(BlueprintAppFactory.UnitUser(member.Id, unit.Id));
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
 
-        await Put(Client(actor), row.Id, BodyFor(row) with { MselId = to.Id });
+        var response = await Put(Client(actor), row.Id, BodyFor(row) with { MselId = to.Id });
 
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(from.Id, (await Stored(row.Id)).MselId);
         Assert.Empty(await StoredRoles(to.Id));
-        Assert.Equal(
-            HttpStatusCode.Forbidden, (await Client(member).GetAsync(MselUnitsOf(to.Id), Ct)).StatusCode);
     }
 
-    /// <remarks>
-    /// The profile maps <c>Id</c> in both directions, so a body that does not echo the route's id writes
-    /// a different key onto a tracked entity and EF refuses to modify it. A PUT is therefore unusable by
-    /// any client that does not send the whole row back, and the failure is a 500 rather than the 400 a
-    /// mismatched id deserves. Same shape as <c>InjectService</c>'s. Ignoring <c>Id</c> on the inbound map
-    /// turns this red.
-    /// </remarks>
+    /// <summary>
+    /// The edit request has no nested Unit, so an owner cannot rename a global Unit through it.
+    /// </summary>
     [Fact]
-    public async Task Update_ThatOmitsTheId_Is500()
+    public async Task Update_WithANestedUnitInTheBody_LeavesTheUnitAlone()
+    {
+        var msel = await SeedMsel();
+        var unit = await SeedUnit();
+        var row = BlueprintAppFactory.MselUnit(unit.Id, msel.Id);
+        await Seed(row);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync(
+            MselUnitRoute(row.Id),
+            new { id = row.Id, mselId = msel.Id, unitId = unit.Id, unit = new { id = unit.Id, name = "renamed", shortName = "renamed" } },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await NewContext().Units.SingleAsync(x => x.Id == unit.Id, Ct);
+        Assert.Equal(unit.Name, stored.Name);
+        Assert.Equal(unit.ShortName, stored.ShortName);
+    }
+
+    /// <summary>
+    /// The edit request has no id, so a body without one still updates the route's row.
+    /// </summary>
+    [Fact]
+    public async Task Update_ThatOmitsTheId_Is200()
     {
         var row = await SeedAssignment();
         var replacement = await SeedUnit();
@@ -721,7 +725,8 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var response = await Put(
             Client(actor), row.Id, new MselUnitBody { MselId = row.MselId, UnitId = replacement.Id });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(row.UnitId, (await Stored(row.Id)).UnitId);
     }
 
     /// <remarks>

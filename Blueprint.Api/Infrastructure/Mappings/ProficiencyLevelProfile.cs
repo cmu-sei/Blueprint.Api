@@ -12,7 +12,10 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<ProficiencyLevelEntity, ProficiencyLevel>();
 
+            // a scale's create and edit requests carry their levels
             CreateMap<ProficiencyLevel, ProficiencyLevelEntity>();
+            CreateMap<ProficiencyLevelCreate, ProficiencyLevelEntity>(AutoMapper.MemberList.Source);
+            CreateMap<ProficiencyLevelEdit, ProficiencyLevelEntity>(AutoMapper.MemberList.Source);
         }
     }
 }

@@ -30,9 +30,9 @@ namespace Blueprint.Api.Tests;
 /// answers do not agree. <strong>Every write here requires <c>EditMsels</c> - the system permission - and
 /// consults no MSEL role at all</strong>, so a MSEL owner cannot assign their own MSEL's card to their own
 /// MSEL's team (<see cref="Create_ForAMselOwner_Is403"/>), while a caller holding <c>EditMsels</c> and no
-/// role anywhere may assign any card to any team, including a team on a different MSEL
-/// (<see cref="Create_AcceptsATeamThatBelongsToADifferentMsel"/>). Not one of the four write methods on the
-/// service takes a permission argument.
+/// role anywhere may assign any card to a team - but only a team of the card's own MSEL
+/// (<see cref="Create_ForATeamOfAnotherMsel_Is404AndCreatesNothing"/>). Not one of the four write methods on
+/// the service takes a permission argument.
 /// </para>
 /// <para>
 /// <strong>`DELETE teams/{teamId}/cards/{cardId}` never deletes anything.</strong>
@@ -53,8 +53,8 @@ namespace Blueprint.Api.Tests;
 /// <strong>The update route is spelled <c>cardteams/{id}</c></strong> where its seven siblings are spelled
 /// <c>teamcards</c>, so <c>PUT teamcards/{id}</c> - the route a reader of the other seven would guess, and
 /// the one <c>POST teamcards</c>' own <c>Location</c> pattern implies - is a 405
-/// (<see cref="Update_AtTheRouteTheOtherSevenImply_Is405"/>). And because <c>CardTeamProfile</c> maps
-/// <c>Id</c>, a body that omits it writes <c>Guid.Empty</c> onto the key and the request is a 500.
+/// (<see cref="Update_AtTheRouteTheOtherSevenImply_Is405"/>). The edit request carries only the two flags,
+/// so it cannot change the row's key, card or team.
 /// </para>
 /// <para>
 /// <c>CardTeamEntity</c> is not a <c>BaseEntity</c>, so there is no record of who showed a card to a team or
@@ -126,9 +126,8 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
     /// <remarks>
     /// The query gathers the MSEL's card ids and then the rows pointing at them, so a row whose <em>team</em>
-    /// belongs to another MSEL is still listed here - which is how the create route's missing check
-    /// (<see cref="Create_AcceptsATeamThatBelongsToADifferentMsel"/>) becomes visible to the MSEL that did
-    /// not ask for it.
+    /// belongs to another MSEL is still listed here. The create route now refuses such a row
+    /// (<see cref="Create_ForATeamOfAnotherMsel_Is404AndCreatesNothing"/>); this is one written before it did.
     /// </remarks>
     [Fact]
     public async Task GetByMsel_ListsARowWhoseTeamBelongsToAnotherMsel()
@@ -263,9 +262,9 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     /// A template card has a null <c>MselId</c>, which this route hands to <c>MselViewRequirement</c> (false,
     /// for a MSEL that is not there) and then to <c>FindAsync</c>, whose null result is dereferenced. So the
     /// rows of a template card are a 500 for an ordinary caller, and readable only by a <c>ViewMsels</c>
-    /// holder who never enters the branch. Nothing stops a template card from having card-team rows -
-    /// <see cref="Create_AcceptsATemplateCard"/> puts one there - so this is a state the API produces and
-    /// then half-refuses to read.
+    /// holder who never enters the branch. The create route no longer attaches a team to a template card
+    /// (<see cref="Create_OnATemplateCard_Is404AndCreatesNothing"/>), so this is a row written before it
+    /// refused.
     /// </remarks>
     [Fact]
     public async Task GetByCard_ForATemplateCard_Is500ForAnOrdinaryCaller()
@@ -454,14 +453,12 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(0, await CountOn(card.Id));
     }
 
-    /// <remarks>
-    /// Nothing requires the team to belong to the card's MSEL, so one <c>EditMsels</c> holder may show any
-    /// exercise's card to any other exercise's team - and because the row is listed under the <em>card's</em>
-    /// MSEL (<see cref="GetByMsel_ListsARowWhoseTeamBelongsToAnotherMsel"/>), the MSEL that owns the team
-    /// never sees it. Checking that the team's <c>MselId</c> matches the card's reddens this test.
-    /// </remarks>
+    /// <summary>
+    /// The card and the team must belong to the same MSEL, even for an <c>EditMsels</c> holder. Another
+    /// MSEL's team is answered as a team that is not there, and nothing is written.
+    /// </summary>
     [Fact]
-    public async Task Create_AcceptsATeamThatBelongsToADifferentMsel()
+    public async Task Create_ForATeamOfAnotherMsel_Is404AndCreatesNothing()
     {
         var msel = await SeedMsel();
         var elsewhere = await SeedMsel();
@@ -471,17 +468,15 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Post(Client(actor), Body(card.Id, team.Id));
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.Equal(team.Id, (await Stored((await Read<ViewModels.CardTeam>(response)).Id)).TeamId);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(0, await CountOn(card.Id));
     }
 
-    /// <remarks>
-    /// A template card belongs to no MSEL and is not exercise content, and nothing stops a team being
-    /// attached to one - which creates the row that
-    /// <see cref="Get_ForARowOnATemplateCard_Is500ForAnOrdinaryCaller"/> then cannot read back.
-    /// </remarks>
+    /// <summary>
+    /// A template card belongs to no MSEL, so no team can be in the same MSEL as it.
+    /// </summary>
     [Fact]
-    public async Task Create_AcceptsATemplateCard()
+    public async Task Create_OnATemplateCard_Is404AndCreatesNothing()
     {
         var card = await SeedCard(null, isTemplate: true);
         var team = await SeedTeam(await SeedMsel());
@@ -489,8 +484,8 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Post(Client(actor), Body(card.Id, team.Id));
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.Equal(1, await CountOn(card.Id));
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(0, await CountOn(card.Id));
     }
 
     /// <remarks>
@@ -512,14 +507,10 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(1, await CountOn(row.CardId));
     }
 
-    /// <remarks>
-    /// Neither id is checked against its table, so a card id that is not there is a foreign-key violation -
-    /// a 500 where the rest of the API answers 404 for a parent that is not there. Same for a team id.
-    /// </remarks>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Create_ForAnIdThatIsNotThere_Is500RatherThanA404(bool cardIsMissing)
+    public async Task Create_ForAnIdThatIsNotThere_Is404(bool cardIsMissing)
     {
         var msel = await SeedMsel();
         var card = await SeedCard(msel);
@@ -530,7 +521,7 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             ? Body(Guid.NewGuid(), team.Id)
             : Body(card.Id, Guid.NewGuid()));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal(0, await CountOn(card.Id));
     }
 
@@ -551,12 +542,11 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     }
 
     /// <remarks>
-    /// <c>CardTeamHandler.GetGroups</c> looks the card up to find the MSEL to broadcast to, and a template
-    /// card's null <c>MselId</c> becomes the empty string - so the one row type this service creates that
-    /// nobody can read back is also the one nobody is told about. Same defect as <c>CardHandler</c>'s.
+    /// A refused pairing writes no row, so nothing is broadcast - not even to the empty-string group
+    /// <c>CardTeamHandler.GetGroups</c> derives from a template card's null <c>MselId</c>.
     /// </remarks>
     [Fact]
-    public async Task Create_OnATemplateCard_BroadcastsToAGroupNamedByTheEmptyString()
+    public async Task Create_OnATemplateCard_BroadcastsNothing()
     {
         var card = await SeedCard(null, isTemplate: true);
         var team = await SeedTeam(await SeedMsel());
@@ -565,9 +555,7 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         await Post(Client(actor), Body(card.Id, team.Id));
 
-        Assert.Equal(
-            [string.Empty, MainHub.ADMIN_DATA_GROUP],
-            Hub.Recipients(MainHubMethods.CardTeamCreated));
+        Assert.Empty(Hub.Recipients(MainHubMethods.CardTeamCreated));
     }
 
     /// <remarks>
@@ -639,16 +627,14 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
     }
 
-    /// <remarks>
-    /// <c>CardTeamProfile</c> is two bare <c>CreateMap</c> calls, so <c>Id</c> is mapped onto the tracked row
-    /// and a key cannot be modified. A body that omits <c>Id</c> sends <c>Guid.Empty</c>, which is as fatal as
-    /// a wrong one - both are 500s where the controller's remarks promise the route validates the match.
-    /// Ignoring <c>Id</c> in the profile makes both succeed and reddens the test.
-    /// </remarks>
+    /// <summary>
+    /// The edit request has no id, so a missing or different one in the body is ignored and the route's
+    /// row is written.
+    /// </summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Update_WithABodyIdThatIsNotTheRoutes_Is500(bool omitted)
+    public async Task Update_WithABodyIdThatIsNotTheRoutes_UpdatesTheRoutesRow(bool omitted)
     {
         var msel = await SeedMsel();
         var row = await SeedCardTeam(msel);
@@ -656,32 +642,34 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Put(Client(actor), row.Id, BodyFor(row) with
         {
-            Id = omitted ? Guid.Empty : Guid.NewGuid()
+            Id = omitted ? Guid.Empty : Guid.NewGuid(),
+            CanPostArticles = true
         });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.StartsWith("The property 'CardTeamEntity.Id'", await Title(response));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True((await Stored(row.Id)).CanPostArticles);
     }
 
-    /// <remarks>
-    /// <c>Id</c> is not the only key-shaped thing the profile maps: a PUT may rewrite <c>CardId</c> and
-    /// <c>TeamId</c> too, so "update which flags this team has on this card" and "point this row at a
-    /// different card entirely" are the same request. No permission is consulted for either, and nothing
-    /// checks the new card's MSEL.
-    /// </remarks>
+    /// <summary>
+    /// The edit request carries only the flags, so a body naming another MSEL's card or team leaves the
+    /// row's pairing alone.
+    /// </summary>
     [Fact]
-    public async Task Update_MayRepointTheRowAtAnotherMselsCard()
+    public async Task Update_WithAnotherMselsCardAndTeamInTheBody_LeavesThePairingAlone()
     {
         var msel = await SeedMsel();
         var elsewhere = await SeedMsel();
         var row = await SeedCardTeam(msel);
-        var other = await SeedCard(elsewhere);
+        var otherCard = await SeedCard(elsewhere);
+        var otherTeam = await SeedTeam(elsewhere);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var response = await Put(Client(actor), row.Id, BodyFor(row) with { CardId = other.Id });
+        var response = await Put(Client(actor), row.Id, BodyFor(row) with { CardId = otherCard.Id, TeamId = otherTeam.Id });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(other.Id, (await Stored(row.Id)).CardId);
+        var stored = await Stored(row.Id);
+        Assert.Equal(row.CardId, stored.CardId);
+        Assert.Equal(row.TeamId, stored.TeamId);
     }
 
     [Theory]

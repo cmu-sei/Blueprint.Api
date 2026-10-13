@@ -84,7 +84,7 @@ namespace Blueprint.Api.Controllers
         [HttpPost("mselunits")]
         [ProducesResponseType(typeof(MselUnit), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createMselUnit")]
-        public async Task<IActionResult> Create([FromBody] MselUnit mselUnit, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] MselUnitCreate mselUnit, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             var createdMselUnit = await _mselUnitService.CreateAsync(mselUnit, hasSystemPermission, ct);
@@ -95,7 +95,7 @@ namespace Blueprint.Api.Controllers
         /// Updates a MselUnit
         /// </summary>
         /// <remarks>
-        /// Updates a MselUnit with the attributes specified
+        /// Updates a MselUnit. The MSEL and the Unit cannot be changed, so this only confirms the pairing exists.
         /// <para />
         /// </remarks>
         /// <param name="id">The Id of the MselUnit to update</param>
@@ -104,7 +104,7 @@ namespace Blueprint.Api.Controllers
         [HttpPut("mselunits/{id}")]
         [ProducesResponseType(typeof(Unit), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateMselUnit")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] MselUnit mselUnit, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] MselUnitEdit mselUnit, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             var updatedUnit = await _mselUnitService.UpdateAsync(id, mselUnit, hasSystemPermission, ct);

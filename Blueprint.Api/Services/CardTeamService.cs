@@ -25,8 +25,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.CardTeam> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.CardTeam>> GetByCardAsync(Guid cardId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.CardTeam>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.CardTeam> CreateAsync(ViewModels.CardTeam cardTeam, CancellationToken ct);
-        Task<ViewModels.CardTeam> UpdateAsync(Guid id, ViewModels.CardTeam cardTeam, CancellationToken ct);
+        Task<ViewModels.CardTeam> CreateAsync(ViewModels.CardTeamCreate cardTeam, CancellationToken ct);
+        Task<ViewModels.CardTeam> UpdateAsync(Guid id, ViewModels.CardTeamEdit cardTeam, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<bool> DeleteByIdsAsync(Guid cardId, Guid teamId, CancellationToken ct);
     }
@@ -102,8 +102,14 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<CardTeam>>(items);
         }
 
-        public async Task<ViewModels.CardTeam> CreateAsync(ViewModels.CardTeam cardTeam, CancellationToken ct)
+        public async Task<ViewModels.CardTeam> CreateAsync(ViewModels.CardTeamCreate cardTeam, CancellationToken ct)
         {
+            // the card and the team must belong to the same MSEL
+            var card = await _context.Cards.SingleOrDefaultAsync(c => c.Id == cardTeam.CardId, ct);
+            if (card == null)
+                throw new EntityNotFoundException<Card>();
+            await ServiceUtilities.EnsureTeamIsInMselAsync(cardTeam.TeamId, card.MselId, _context, ct);
+
             var cardTeamEntity = _mapper.Map<CardTeamEntity>(cardTeam);
             cardTeamEntity.Id = cardTeamEntity.Id != Guid.Empty ? cardTeamEntity.Id : Guid.NewGuid();
 
@@ -113,7 +119,7 @@ namespace Blueprint.Api.Services
             return await GetAsync(cardTeamEntity.Id, true, ct);
         }
 
-        public async Task<ViewModels.CardTeam> UpdateAsync(Guid id, ViewModels.CardTeam cardTeam, CancellationToken ct)
+        public async Task<ViewModels.CardTeam> UpdateAsync(Guid id, ViewModels.CardTeamEdit cardTeam, CancellationToken ct)
         {
             var cardTeamToUpdate = await _context.CardTeams.SingleOrDefaultAsync(v => v.Id == id, ct);
 
@@ -125,9 +131,7 @@ namespace Blueprint.Api.Services
             _context.CardTeams.Update(cardTeamToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            cardTeam = await GetAsync(cardTeamToUpdate.Id, true, ct);
-
-            return cardTeam;
+            return await GetAsync(cardTeamToUpdate.Id, true, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

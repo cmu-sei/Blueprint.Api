@@ -231,15 +231,11 @@ public class ProficiencyLevelEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal("Proficiency Level not found", error.title);
     }
 
-    /// <remarks>
-    /// BUG: the profile maps <c>ProficiencyScaleId</c>, and nothing compares the body's to the stored
-    /// row's, so a PUT moves a level from one scale to another - the scale it left keeps no record and
-    /// nothing broadcasts either way, there being no handler for this type among the 25. Milder than the
-    /// same shape on an MSEL-scoped row (this is global reference data, so no permission boundary is
-    /// crossed), which is why it is one assertion rather than a file of them.
-    /// </remarks>
+    /// <summary>
+    /// The edit request names no scale, so a PUT changes the level and leaves it on its scale.
+    /// </summary>
     [Fact]
-    public async Task Update_MovesTheLevelToWhicheverScaleTheBodyNames()
+    public async Task Update_NamingAnotherScaleInTheBody_KeepsTheLevelOnItsScale()
     {
         var actor = await Actor()
             .WithSystemPermissions(SystemPermission.ManageCompetencyFrameworks).SeedAsync();
@@ -254,7 +250,7 @@ public class ProficiencyLevelEndpointTests(DatabaseFixture fixture, BlueprintApp
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var stored = await NewContext().ProficiencyLevels.SingleAsync(x => x.Id == level.Id, Ct);
-        Assert.Equal(otherScale.Id, stored.ProficiencyScaleId);
+        Assert.Equal(scale.Id, stored.ProficiencyScaleId);
     }
 
     // ---------------------------------------------------------------------------------------------

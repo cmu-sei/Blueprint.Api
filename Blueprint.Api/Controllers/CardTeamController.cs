@@ -121,7 +121,7 @@ namespace Blueprint.Api.Controllers
         [HttpPost("teamcards")]
         [ProducesResponseType(typeof(CardTeam), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createCardTeam")]
-        public async Task<IActionResult> Create([FromBody] CardTeam cardTeam, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] CardTeamCreate cardTeam, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
                 throw new ForbiddenException();
@@ -134,7 +134,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a CardTeam with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the cardTeam parameter
+        /// The Card and the Team cannot be changed.
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -144,7 +144,7 @@ namespace Blueprint.Api.Controllers
         [HttpPut("cardteams/{id}")]
         [ProducesResponseType(typeof(CardTeam), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateCardTeam")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CardTeam cardTeam, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CardTeamEdit cardTeam, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
                 throw new ForbiddenException();

@@ -68,12 +68,11 @@ namespace Blueprint.Api.Controllers
         [HttpPost("proficiencyLevels")]
         [ProducesResponseType(typeof(ProficiencyLevel), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createProficiencyLevel")]
-        public async Task<IActionResult> Create([FromBody] ProficiencyLevel proficiencyLevel, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] ProficiencyLevelCreate proficiencyLevel, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
                 throw new ForbiddenException();
 
-            proficiencyLevel.CreatedBy = User.GetId();
             var created = await _proficiencyLevelService.CreateAsync(proficiencyLevel, ct);
             return CreatedAtAction(nameof(this.Get), new { id = created.Id }, created);
         }
@@ -84,12 +83,11 @@ namespace Blueprint.Api.Controllers
         [HttpPut("proficiencyLevels/{id}")]
         [ProducesResponseType(typeof(ProficiencyLevel), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateProficiencyLevel")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] ProficiencyLevel proficiencyLevel, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] ProficiencyLevelEdit proficiencyLevel, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
                 throw new ForbiddenException();
 
-            proficiencyLevel.ModifiedBy = User.GetId();
             var updated = await _proficiencyLevelService.UpdateAsync(id, proficiencyLevel, ct);
             return Ok(updated);
         }

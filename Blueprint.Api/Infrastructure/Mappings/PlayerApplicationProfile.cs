@@ -12,7 +12,8 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<PlayerApplicationEntity, PlayerApplication>();
 
-            CreateMap<PlayerApplication, PlayerApplicationEntity>();
+            CreateMap<PlayerApplicationCreate, PlayerApplicationEntity>(AutoMapper.MemberList.Source);
+            CreateMap<PlayerApplicationEdit, PlayerApplicationEntity>(AutoMapper.MemberList.Source);
         }
     }
 }

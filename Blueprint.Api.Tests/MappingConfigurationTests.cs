@@ -60,7 +60,6 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
     private static readonly string[] MapsWithUnmappedMembers =
     [
         "Card -> CardEntity: CardTeams",
-        "CardTeam -> CardTeamEntity: Team, Card",
         "Catalog -> CatalogEntity: InjectType, CatalogUnits, CatalogInjects",
         "CatalogEntity -> Catalog: Units",
         "CatalogInject -> CatalogInjectEntity: Catalog",
@@ -73,10 +72,6 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
         "Injectm -> InjectEntity: InjectType, RequiresInject, CatalogInjects",
         "MselCompetency -> MselCompetencyEntity: Msel",
         "MselEntity -> Msel: GalleryArticleParameters, GallerySourceTypes",
-        "MselPage -> MselPageEntity: Msel",
-        "MselUnit -> MselUnitEntity: Msel",
-        "PlayerApplication -> PlayerApplicationEntity: Msel, PlayerApplicationTeams",
-        "PlayerApplicationTeam -> PlayerApplicationTeamEntity: Team, PlayerApplication",
         "ProficiencyLevel -> ProficiencyLevelEntity: ProficiencyScale",
         "ScenarioEvent -> ScenarioEventEntity: Msel, Inject",
         "TeamCompetency -> TeamCompetencyEntity: Team",

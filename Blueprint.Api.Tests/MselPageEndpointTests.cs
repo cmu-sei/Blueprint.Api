@@ -240,14 +240,11 @@ public class MselPageEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <remarks>
-    /// BUG: <c>UpdateAsync</c> decides from the request body's <c>MselId</c> before the lookup
-    /// (<c>MselPageService.cs:108</c>) and the profile maps that id both ways, so an owner of any MSEL may
-    /// edit and steal every other MSEL's pages. Twelfth instance of the shape; <c>DeleteAsync</c>
-    /// twenty lines below reads the stored row first, which is half the fix.
-    /// </remarks>
+    /// <summary>
+    /// The decision is made on the stored MSEL, so owning the MSEL named in the body buys nothing.
+    /// </summary>
     [Fact]
-    public async Task Update_DecidesFromTheRequestBodyAndStealsTheRow()
+    public async Task Update_AsTheOwnerOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheRowAlone()
     {
         var mine = await SeedMsel();
         var actor = await Actor().OnMsel(mine, MselRole.Owner).SeedAsync();
@@ -260,10 +257,33 @@ public class MselPageEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             Body(mine.Id) with { id = page.Id, name = "stolen" },
             Ct);
 
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var stored = await NewContext().MselPages.SingleAsync(x => x.Id == page.Id, Ct);
+        Assert.Equal(theirs.Id, stored.MselId);
+        Assert.Equal(page.Name, stored.Name);
+    }
+
+    /// <summary>
+    /// An owner's edit that names another MSEL changes the row and leaves it in its MSEL.
+    /// </summary>
+    [Fact]
+    public async Task Update_AsAnOwner_NamingAnotherMselInTheBody_KeepsTheRowInItsMsel()
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var other = await SeedMsel();
+        var page = BlueprintAppFactory.MselPage(msel.Id);
+        await Seed(page);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/mselpages/{page.Id}",
+            Body(other.Id) with { id = page.Id, name = "renamed" },
+            Ct);
+
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var stored = await NewContext().MselPages.SingleAsync(x => x.Id == page.Id, Ct);
-        Assert.Equal(mine.Id, stored.MselId);
-        Assert.Equal("stolen", stored.Name);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.Equal("renamed", stored.Name);
     }
 
     // ---------------------------------------------------------------------------------------------

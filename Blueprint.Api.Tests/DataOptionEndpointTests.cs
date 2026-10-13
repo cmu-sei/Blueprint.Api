@@ -37,9 +37,8 @@ namespace Blueprint.Api.Tests;
 /// <c>Infrastructure/EventHandlers/</c> holds no handler for the entity, so the only way a change to an
 /// option reaches a connected client is as a side effect of its parent field being marked modified and
 /// re-sent with <c>.Include(f =&gt; f.DataOptions)</c>. Create and delete do mark the field. Update does
-/// not - <c>UpdateAsync</c> line 171 assigns <c>dataField.ModifiedBy = dataFieldEntity.ModifiedBy</c> on
-/// what is the same tracked instance, i.e. a self-assignment - so **renaming a drop-down option is
-/// invisible to every client until something else touches the column**. See
+/// not touch the field at all, so **renaming a drop-down option is invisible to every client until
+/// something else touches the column**. See
 /// <see cref="Update_DoesNotMarkTheDataFieldModified"/> and <see cref="Update_BroadcastsNothing"/>.
 /// </para>
 /// <para>
@@ -49,14 +48,12 @@ namespace Blueprint.Api.Tests;
 /// <c>dataField.ModifiedBy = dataFieldEntity.CreatedBy</c> - so adding an option records the field's own
 /// author as the last person to touch it, whoever actually did
 /// (<see cref="Create_MarksTheFieldModifiedByItsOwnCreatorRatherThanTheCaller"/>). <c>UpdateAsync</c>
-/// records nobody. <c>DeleteAsync</c> line 207 records the caller, which is what all three should do.
+/// records nobody on the field. <c>DeleteAsync</c> line 207 records the caller, which is what all three should do.
 /// </para>
 /// <para>
-/// <strong><c>UpdateAsync</c> takes its permission decision from the request body's <c>DataFieldId</c>,</strong>
-/// never from the stored option's, so a caller who owns any MSEL at all may reassign every option of every
-/// other one into their own column - the third instance of this defect in the graph, after
-/// <c>OrganizationService.UpdateAsync</c> and <c>ScenarioEventService.UpdateAsync</c>. See
-/// <see cref="Update_TakesItsPermissionDecisionFromTheRequestBodysDataField"/>.
+/// <strong><c>UpdateAsync</c> takes its permission decision from the option's stored field,</strong> and the
+/// edit request names no field, so an edit cannot move an option to another column. See
+/// <see cref="Update_OfAnotherMselsOption_NamingTheirOwnField_Is403AndLeavesItAlone"/>.
 /// </para>
 /// <para>
 /// The reads are inconsistent in the other direction. <c>GetByDataFieldAsync</c> and <c>GetAsync</c> both
@@ -574,8 +571,8 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     /// <c>DataOptionEntity.Id</c> is <c>DatabaseGeneratedOption.Identity</c>, but <c>CreateAsync</c>
     /// line 126 keeps a non-empty id from the body, and <c>DataOptionProfile</c> does not ignore it. That
     /// is deliberate here - <c>DataFieldService.UploadJsonAsync</c> relies on it to rebuild a field's
-    /// options with their original ids - and it is the same mechanism that makes
-    /// <see cref="Update_WithAMismatchedIdInTheBody_Is500"/> a 500 rather than a 404.
+    /// options with their original ids. The edit request has no id, so an update cannot do the same
+    /// (<see cref="Update_WithAMismatchedIdInTheBody_UpdatesTheRoutesOption"/>).
     /// </remarks>
     [Fact]
     public async Task Create_HonoursAClientSuppliedId()
@@ -906,18 +903,14 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         AssertStampedBetween(updated.DateModified, before, DateTime.UtcNow);
     }
 
-    /// <remarks>
-    /// <c>DataOptionProfile</c> ignores only <c>DataField</c>, so <c>_mapper.Map(dataOption, dataOptionToUpdate)</c>
-    /// writes the body's <c>Id</c> onto the tracked row and EF refuses to modify a key. The exception
-    /// surfaces from <c>BlueprintContext.SaveEntries</c> as a 500, where the route ought to answer 400 -
-    /// and a body carrying <c>Guid.Empty</c>, which is what a client that never sets the id sends, gets
-    /// the same 500. Ignoring <c>Id</c> on the inbound map turns this test red; note it cannot simply be
-    /// ignored, because <see cref="Create_HonoursAClientSuppliedId"/> shares the map.
-    /// </remarks>
+    /// <summary>
+    /// The edit request has no id, so whatever id the body carries is ignored and the route's option is
+    /// written.
+    /// </summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Update_WithAMismatchedIdInTheBody_Is500(bool empty)
+    public async Task Update_WithAMismatchedIdInTheBody_UpdatesTheRoutesOption(bool empty)
     {
         var field = BlueprintAppFactory.DataField();
         await Seed(field);
@@ -930,9 +923,12 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var response = await Put(
             Client(actor),
             option.Id,
-            BodyFor(option) with { Id = empty ? Guid.Empty : Guid.NewGuid() });
+            BodyFor(option) with { Id = empty ? Guid.Empty : Guid.NewGuid(), OptionName = "after" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await NewContext().DataOptions.AsNoTracking().SingleAsync(Ct);
+        Assert.Equal(option.Id, stored.Id);
+        Assert.Equal("after", stored.OptionName);
     }
 
     [Fact]
@@ -953,12 +949,12 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <remarks>
-    /// The field is looked up from the body before the option is looked up by route id, so an unknown
-    /// <c>dataFieldId</c> is reported instead of an unknown option even when both are wrong.
-    /// </remarks>
+    /// <summary>
+    /// The edit request names no field, so an unknown <c>dataFieldId</c> in the body is ignored and the
+    /// option stays on its own field.
+    /// </summary>
     [Fact]
-    public async Task Update_ForAnUnknownDataFieldInTheBody_Is404()
+    public async Task Update_WithAnUnknownDataFieldInTheBody_KeepsTheOptionOnItsField()
     {
         var field = BlueprintAppFactory.DataField();
         await Seed(field);
@@ -973,27 +969,16 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             option.Id,
             BodyFor(option) with { DataFieldId = Guid.NewGuid() });
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(field.Id, (await NewContext().DataOptions.AsNoTracking().SingleAsync(Ct)).DataFieldId);
     }
 
-    /// <remarks>
-    /// <para>
-    /// <strong>Privilege escalation.</strong> <c>UpdateAsync</c> lines 142-158 resolve the data field from
-    /// <c>dataOption.DataFieldId</c> - the value in the request body - and check the caller's rights
-    /// against <em>that</em> field's MSEL. The stored option's own field is never consulted. So an owner
-    /// of any MSEL may PUT any option in the installation, naming one of their own columns, and both pass
-    /// the check and take the option with them: the mapper writes the body's <c>DataFieldId</c> onto the
-    /// row, so the victim's drop-down loses an entry and the attacker's gains it.
-    /// </para>
-    /// <para>
-    /// This is the third instance of the same defect in the graph, after
-    /// <c>OrganizationService.UpdateAsync</c> and <c>ScenarioEventService.UpdateAsync</c>.
-    /// <c>DeleteAsync</c> gets it right by reading the stored row, which is what this should do; making
-    /// that change turns this test red.
-    /// </para>
-    /// </remarks>
+    /// <summary>
+    /// The decision is taken on the option's stored field, so owning another MSEL and naming one of its
+    /// columns in the body buys nothing.
+    /// </summary>
     [Fact]
-    public async Task Update_TakesItsPermissionDecisionFromTheRequestBodysDataField()
+    public async Task Update_OfAnotherMselsOption_NamingTheirOwnField_Is403AndLeavesItAlone()
     {
         var mine = BlueprintAppFactory.Msel();
         var theirs = BlueprintAppFactory.Msel();
@@ -1013,23 +998,21 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             theirOption.Id,
             BodyFor(theirOption) with { DataFieldId = myField.Id, OptionName = "stolen" });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         await using var context = NewContext();
-        var stored = await context.DataOptions.SingleAsync(Ct);
+        var stored = await context.DataOptions.AsNoTracking().SingleAsync(Ct);
 
-        Assert.Equal(myField.Id, stored.DataFieldId);
-        Assert.Equal("stolen", stored.OptionName);
+        Assert.Equal(theirField.Id, stored.DataFieldId);
+        Assert.Equal("theirs", stored.OptionName);
     }
 
-    /// <remarks>
-    /// The same defect in the other direction: naming a shared template as the body's field satisfies the
-    /// <c>ManageDataFields</c> branch, and the option leaves the MSEL for the installation-wide template
-    /// list. Compare <c>DataFieldEndpointTests.Update_WithAMselIdInTheBody_MovesASharedTemplateOntoTheCallersMsel</c>,
-    /// which is the column-level version of this.
-    /// </remarks>
+    /// <summary>
+    /// An MSEL's option needs MSEL rights, so a <c>ManageDataFields</c> holder naming a shared template in
+    /// the body cannot move it into the template list.
+    /// </summary>
     [Fact]
-    public async Task Update_WithATemplateFieldInTheBody_MovesAMselsOptionIntoTheSharedTemplateList()
+    public async Task Update_OfAMselsOption_WithOnlyManageDataFields_NamingATemplate_Is403AndLeavesItAlone()
     {
         var msel = BlueprintAppFactory.Msel();
         await Seed(msel);
@@ -1048,15 +1031,18 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             option.Id,
             BodyFor(option) with { DataFieldId = template.Id });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         await using var context = NewContext();
 
-        Assert.Equal(template.Id, (await context.DataOptions.SingleAsync(Ct)).DataFieldId);
+        Assert.Equal(mselField.Id, (await context.DataOptions.AsNoTracking().SingleAsync(Ct)).DataFieldId);
     }
 
+    /// <summary>
+    /// An owner's edit that names a template field changes the option and keeps it on its own field.
+    /// </summary>
     [Fact]
-    public async Task Update_MovingAMselsOptionOntoATemplateField_AsAMselOwner_Is403()
+    public async Task Update_AsAMselOwner_NamingATemplateFieldInTheBody_KeepsTheOptionOnItsField()
     {
         var msel = BlueprintAppFactory.Msel();
         await Seed(msel);
@@ -1073,18 +1059,20 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var response = await Put(
             Client(actor),
             option.Id,
-            BodyFor(option) with { DataFieldId = template.Id });
+            BodyFor(option) with { DataFieldId = template.Id, OptionName = "renamed" });
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var stored = await NewContext().DataOptions.AsNoTracking().SingleAsync(Ct);
+        Assert.Equal(mselField.Id, stored.DataFieldId);
+        Assert.Equal("renamed", stored.OptionName);
     }
 
     /// <remarks>
-    /// <c>UpdateAsync</c> lines 170-171 fetch the field a second time and assign
-    /// <c>dataField.ModifiedBy = dataFieldEntity.ModifiedBy</c>, which is a self-assignment because
-    /// <c>FindAsync</c> hands back the tracked instance. Nothing about the field changes, so
-    /// <c>SaveEntries</c> sees no modified entry, no <c>DateModified</c> is stamped, and - see
-    /// <see cref="Update_BroadcastsNothing"/> - no entity event is raised. Replacing the line with
-    /// <c>_user.GetId()</c> turns both tests red.
+    /// <c>UpdateAsync</c> changes only the option. Nothing about the field changes, so <c>SaveEntries</c>
+    /// sees no modified entry, no <c>DateModified</c> is stamped, and - see
+    /// <see cref="Update_BroadcastsNothing"/> - no entity event is raised. Marking the field modified by
+    /// the caller turns both tests red.
     /// </remarks>
     [Fact]
     public async Task Update_DoesNotMarkTheDataFieldModified()
@@ -1110,7 +1098,7 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     }
 
     /// <remarks>
-    /// The consequence of the line above, and the reason it matters: renaming or reordering a drop-down
+    /// The consequence of the above, and the reason it matters: renaming or reordering a drop-down
     /// option reaches no connected client, because the option has no handler of its own and its field was
     /// never marked modified. Every open MSEL editor keeps showing the old label until something else
     /// touches the column.
@@ -1273,8 +1261,8 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
     /// <remarks>
     /// <c>DeleteAsync</c> lines 185-188 resolve the field from the <em>stored</em> option, so unlike
-    /// <see cref="Update_TakesItsPermissionDecisionFromTheRequestBodysDataField"/> there is nothing to
-    /// spoof - a DELETE has no body. Both theory cases assert the same thing from opposite ends: the
+    /// <see cref="Update_OfAnotherMselsOption_NamingTheirOwnField_Is403AndLeavesItAlone"/> there is
+    /// nothing to spoof - a DELETE has no body. Both theory cases assert the same thing from opposite ends: the
     /// permission that answers is the one the stored option's field requires, not one the caller happens
     /// to hold for the other kind of field.
     /// </remarks>
@@ -2300,9 +2288,8 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     /// <c>with</c> expression.
     /// </summary>
     /// <remarks>
-    /// It carries the stored <c>Id</c>, which is load-bearing rather than tidy:
-    /// <see cref="Update_WithAMismatchedIdInTheBody_Is500"/> shows that an update whose body id does not
-    /// match the route is a 500, so every other PUT test has to send it.
+    /// It carries the stored <c>Id</c> and <c>DataFieldId</c>, as the UI does; an update ignores both
+    /// (<see cref="Update_WithAMismatchedIdInTheBody_UpdatesTheRoutesOption"/>).
     /// </remarks>
     private static OptionBody BodyFor(DataOptionEntity option) => new()
     {

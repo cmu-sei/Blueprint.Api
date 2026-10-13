@@ -82,7 +82,7 @@ namespace Blueprint.Api.Controllers
         /// Creates a new InjectType
         /// </summary>
         /// <remarks>
-        /// Creates a new InjectType with the attributes specified
+        /// Creates a new InjectType with the attributes specified. Any DataFields sent with it are created as new fields of the InjectType.
         /// <para />
         /// Accessible only to a SuperUser or an Administrator
         /// </remarks>
@@ -91,12 +91,11 @@ namespace Blueprint.Api.Controllers
         [HttpPost("injectTypes")]
         [ProducesResponseType(typeof(InjectType), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createInjectType")]
-        public async Task<IActionResult> Create([FromBody] InjectType injectType, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] InjectTypeCreate injectType, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageInjectTypes], ct))
                 throw new ForbiddenException();
 
-            injectType.CreatedBy = User.GetId();
             var createdInjectType = await _injectTypeService.CreateAsync(injectType, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdInjectType.Id }, createdInjectType);
         }
@@ -105,7 +104,7 @@ namespace Blueprint.Api.Controllers
         /// Updates a InjectType
         /// </summary>
         /// <remarks>
-        /// Updates a InjectType with the attributes specified
+        /// Updates a InjectType with the attributes specified. Its DataFields are edited through the DataField endpoints.
         /// <para />
         /// Accessible only to a SuperUser or a User on an Admin Team within the specified InjectType
         /// </remarks>
@@ -115,12 +114,11 @@ namespace Blueprint.Api.Controllers
         [HttpPut("injectTypes/{id}")]
         [ProducesResponseType(typeof(InjectType), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateInjectType")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] InjectType injectType, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] InjectTypeEdit injectType, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageInjectTypes], ct))
                 throw new ForbiddenException();
 
-            injectType.ModifiedBy = User.GetId();
             var updatedInjectType = await _injectTypeService.UpdateAsync(id, injectType, ct);
             return Ok(updatedInjectType);
         }

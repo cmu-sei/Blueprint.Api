@@ -106,11 +106,10 @@ namespace Blueprint.Api.Controllers
         [HttpPost("dataOptions")]
         [ProducesResponseType(typeof(DataOption), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createDataOption")]
-        public async Task<IActionResult> Create([FromBody] DataOption dataOption, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] DataOptionCreate dataOption, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
-            dataOption.CreatedBy = User.GetId();
             var createdDataOption = await _dataOptionService.CreateAsync(dataOption, hasMselPermission, hasDataFieldPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdDataOption.Id }, createdDataOption);
         }
@@ -120,7 +119,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a DataOption with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the dataOption parameter
+        /// The DataOption stays on its DataField; that cannot be changed.
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -130,11 +129,10 @@ namespace Blueprint.Api.Controllers
         [HttpPut("dataOptions/{id}")]
         [ProducesResponseType(typeof(DataOption), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateDataOption")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] DataOption dataOption, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] DataOptionEdit dataOption, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
-            dataOption.ModifiedBy = User.GetId();
             var updatedDataOption = await _dataOptionService.UpdateAsync(id, dataOption, hasMselPermission, hasDataFieldPermission, ct);
             return Ok(updatedDataOption);
         }

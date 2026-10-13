@@ -216,10 +216,9 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     }
 
     /// <remarks>
-    /// <c>InjectTypeProfile</c> maps <c>DataFields</c> in both directions with nothing ignored, so a nested
-    /// collection in the body is written through by <c>_context.InjectTypes.Add</c>'s graph traversal - the
-    /// route creates a whole column layout in one request, although nothing in the surface says so. The
-    /// fields' <c>InjectTypeId</c> is filled by EF from the navigation, so the body need not carry it.
+    /// A nested collection in the body is created as new fields of the new type - the route creates a whole
+    /// column layout in one request. The fields' <c>InjectTypeId</c> is the new type's, so the body need not
+    /// carry it.
     /// </remarks>
     [Fact]
     public async Task Create_AlsoCreatesTheDataFieldsTheBodyCarries()
@@ -239,17 +238,11 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.All(stored, x => Assert.Equal(created.Id, x.InjectTypeId));
     }
 
-    /// <remarks>
-    /// <c>CreateAsync</c> stamps <c>CreatedBy</c> on the inject type and on nothing else, so a field created
-    /// this way records no creator - <c>SaveEntries</c> stamps the dates for every added entity but never
-    /// touches <c>CreatedBy</c>, which is the asymmetry Phase 1 recorded. Stamping the children reddens this
-    /// test.
-    /// </remarks>
     [Fact]
-    public async Task Create_LeavesTheNestedDataFieldsCreatedByUnstamped()
+    public async Task Create_StampsTheCallerOnTheNestedDataFields()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageInjectTypes).SeedAsync();
-        var body = Body("a type with an unattributed field") with
+        var body = Body("a type with an attributed field") with
         {
             DataFields = [Field("headline", DataFieldType.Html, 1)]
         };
@@ -259,8 +252,37 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         Assert.Equal(actor.Id, (await Stored(created.Id)).CreatedBy);
         var field = Assert.Single(await StoredFields(created.Id));
-        Assert.Equal(Guid.Empty, field.CreatedBy);
+        Assert.Equal(actor.Id, field.CreatedBy);
         AssertStampedBetween(field.DateCreated, before, DateTime.UtcNow);
+    }
+
+    /// <summary>
+    /// A nested field always becomes a new field of the new type: one naming an MSEL's field by id and
+    /// MSEL creates a copy here and leaves the MSEL's column where it is.
+    /// </summary>
+    [Fact]
+    public async Task Create_WithANestedFieldNamingAMselsField_CreatesANewFieldAndLeavesTheMselsAlone()
+    {
+        var msel = BlueprintAppFactory.Msel();
+        await Seed(msel);
+        var mselField = BlueprintAppFactory.DataField(mselId: msel.Id, name: "the msel's column");
+        await Seed(mselField);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageInjectTypes).SeedAsync();
+        var body = Body("a type naming a msel's field") with
+        {
+            DataFields = [Field("taken", DataFieldType.Html, 1) with { Id = mselField.Id, MselId = msel.Id, IsTemplate = true }]
+        };
+
+        var created = await Read<ViewModels.InjectType>(await Post(Client(actor), body));
+
+        var field = Assert.Single(await StoredFields(created.Id));
+        Assert.NotEqual(mselField.Id, field.Id);
+        Assert.Null(field.MselId);
+        Assert.False(field.IsTemplate);
+        var untouched = await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == mselField.Id, Ct);
+        Assert.Equal(msel.Id, untouched.MselId);
+        Assert.Null(untouched.InjectTypeId);
+        Assert.Equal("the msel's column", untouched.Name);
     }
 
     /// <remarks>
@@ -439,40 +461,28 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         AssertStampedBetween(stored.DateModified, before, DateTime.UtcNow);
     }
 
-    /// <remarks>
-    /// <para>
-    /// <c>UpdateAsync</c> ends <c>return _mapper.Map(injectTypeToUpdate, injectType)</c> - it maps the stored
-    /// entity back over the <em>request</em> object rather than answering a fresh read the way
-    /// <c>CreateAsync</c> does. The entity's own <c>DataFields</c> was never loaded and its collection holds
-    /// exactly what the mapper put there on the way in, so the answer's <c>dataFields</c> is the request's
-    /// <c>dataFields</c> echoed back: a PUT that adds one column to a type that has two answers as though the
-    /// type has one.
-    /// </para>
-    /// <para>
-    /// So the collection means something different on each of the three verbs - the real graph on a create,
-    /// the request's own graph on an update, and always empty on a read. Returning
-    /// <c>await GetAsync(id, ct)</c> reddens this test and makes the update agree with the read.
-    /// </para>
-    /// </remarks>
+    /// <summary>
+    /// The edit request has no fields: fields are edited through the data-field routes. A body that
+    /// carries one is answered and stored as though it did not.
+    /// </summary>
     [Fact]
-    public async Task Update_AnswersOnlyTheDataFieldsTheBodyCarried()
+    public async Task Update_WithDataFieldsInTheBody_IgnoresThem()
     {
         var type = await SeedInjectType();
         var existing = await SeedDataField(type.Id);
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageInjectTypes).SeedAsync();
         var body = BodyFor(type) with { DataFields = [Field("added", DataFieldType.Html, 2)] };
 
-        var answer = await Read<ViewModels.InjectType>(await Put(Client(actor), type.Id, body));
+        var response = await Put(Client(actor), type.Id, body);
 
-        Assert.Equal("added", Assert.Single(answer.DataFields).Name);
-        Assert.DoesNotContain(existing.Name, answer.DataFields.Select(x => x.Name));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty((await Read<ViewModels.InjectType>(response)).DataFields);
+        Assert.Equal(existing.Id, Assert.Single(await StoredFields(type.Id)).Id);
     }
 
     /// <remarks>
-    /// And a body that mentions no field at all answers none and deletes none - the stored field is neither
-    /// loaded nor tracked, so there is no orphan for EF to remove. That is the shape every request from
-    /// blueprint.ui takes, because the read route it filled its form from answers an empty collection: the
-    /// column layout is safe from a round-trip only because two absences happen to cancel out.
+    /// A body that mentions no field at all answers none and deletes none. That is the shape every request
+    /// from blueprint.ui takes.
     /// </remarks>
     [Fact]
     public async Task Update_WithNoDataFieldsInTheBody_AnswersNoneAndKeepsTheStoredOnes()
@@ -488,38 +498,11 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(existing.Id, Assert.Single(await StoredFields(type.Id)).Id);
     }
 
-    /// <remarks>
-    /// The field the body carries is stored, because the profile maps <c>DataFields</c> and
-    /// <c>_context.InjectTypes.Update</c> traverses the graph - so a PUT is a second way to add a column to a
-    /// type, and nothing in the route's name or its surface says so. The field it adds has no value on any
-    /// existing inject of the type, which is the state
-    /// <c>InjectEndpointTests.Update_AfterADataFieldIsAddedToTheType_Is500</c> shows making every later edit
-    /// of those injects a 500. Ignoring the body's <c>DataFields</c> reddens this test.
-    /// </remarks>
+    /// <summary>
+    /// A body naming another type's field by id leaves the field with its own type.
+    /// </summary>
     [Fact]
-    public async Task Update_StoresADataFieldTheBodyCarries()
-    {
-        var type = await SeedInjectType();
-        var existing = await SeedDataField(type.Id);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageInjectTypes).SeedAsync();
-        var body = BodyFor(type) with { DataFields = [Field("added", DataFieldType.Html, 2)] };
-
-        Assert.Equal(HttpStatusCode.OK, (await Put(Client(actor), type.Id, body)).StatusCode);
-
-        var stored = await StoredFields(type.Id);
-        Assert.Equal(
-            new HashSet<string> { existing.Name, "added" }, stored.Select(x => x.Name).ToHashSet());
-    }
-
-    /// <remarks>
-    /// The same map writes an existing field's <c>InjectTypeId</c>, so a PUT naming another type's field by
-    /// id moves the column out of that type and into this one - the type it left keeps whatever injects and
-    /// values referred to it, with no column to describe them. Nothing checks that a field in the body
-    /// belongs to the type being updated. Validating the collection against the route's id reddens this
-    /// test.
-    /// </remarks>
-    [Fact]
-    public async Task Update_MayStealAnotherInjectTypesDataField()
+    public async Task Update_NamingAnotherInjectTypesDataField_LeavesItWithItsType()
     {
         var type = await SeedInjectType();
         var other = await SeedInjectType();
@@ -532,25 +515,51 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         Assert.Equal(HttpStatusCode.OK, (await Put(Client(actor), type.Id, body)).StatusCode);
 
-        Assert.Equal(theirs.Id, Assert.Single(await StoredFields(type.Id)).Id);
-        Assert.Empty(await StoredFields(other.Id));
+        Assert.Empty(await StoredFields(type.Id));
+        Assert.Equal(theirs.Id, Assert.Single(await StoredFields(other.Id)).Id);
     }
 
-    /// <remarks>
-    /// <c>InjectTypeProfile</c> maps <c>Id</c>, so the mapper writes the body's id onto the tracked row and
-    /// EF refuses to modify a key - a 500 where comparing the two ids would be a 400. Same shape as every
-    /// other update in the estate; ignoring the body's id reddens this test.
-    /// </remarks>
+    /// <summary>
+    /// And an MSEL's column named by id stays on the MSEL: <c>ManageInjectTypes</c> grants nothing on an
+    /// MSEL.
+    /// </summary>
     [Fact]
-    public async Task Update_WhoseBodyIdIsNotTheRoutes_Is500()
+    public async Task Update_NamingAMselsDataField_LeavesItOnTheMsel()
+    {
+        var type = await SeedInjectType();
+        var msel = BlueprintAppFactory.Msel();
+        await Seed(msel);
+        var mselField = BlueprintAppFactory.DataField(mselId: msel.Id, name: "the msel's column");
+        await Seed(mselField);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageInjectTypes).SeedAsync();
+        var body = BodyFor(type) with
+        {
+            DataFields = [Field("taken", DataFieldType.Html, 1) with { Id = mselField.Id, MselId = null, InjectTypeId = type.Id }]
+        };
+
+        Assert.Equal(HttpStatusCode.OK, (await Put(Client(actor), type.Id, body)).StatusCode);
+
+        Assert.Empty(await StoredFields(type.Id));
+        var stored = await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == mselField.Id, Ct);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.Null(stored.InjectTypeId);
+        Assert.Equal("the msel's column", stored.Name);
+    }
+
+    /// <summary>
+    /// The edit request has no id, so another id in the body is ignored and the route's type is written.
+    /// </summary>
+    [Fact]
+    public async Task Update_WhoseBodyIdIsNotTheRoutes_UpdatesTheRoutesType()
     {
         var type = await SeedInjectType();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageInjectTypes).SeedAsync();
 
         var response = await Put(
-            Client(actor), type.Id, BodyFor(type) with { Id = Guid.NewGuid() });
+            Client(actor), type.Id, BodyFor(type) with { Id = Guid.NewGuid(), Name = "renamed" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("renamed", (await Stored(type.Id)).Name);
     }
 
     /// <remarks>

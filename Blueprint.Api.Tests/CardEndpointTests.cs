@@ -104,20 +104,19 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// The filter is on <c>IsTemplate</c> alone, so a card that is both a template and attached to a MSEL is
-    /// listed here - which is how an exercise's own card reaches the template list a stranger may read.
+    /// A template belongs to no MSEL, so a MSEL's card flagged as a template - which a create can no longer
+    /// write - stays out of the template list a stranger may read.
     /// </remarks>
     [Fact]
-    public async Task Templates_IncludesAMselsCardIfItIsFlaggedAsATemplate()
+    public async Task Templates_LeavesOutAMselsCardFlaggedAsATemplate()
     {
         var msel = await SeedMsel();
-        var card = await SeedCard(msel.Id, isTemplate: true);
+        await SeedCard(msel.Id, isTemplate: true);
         var actor = await Actor().SeedAsync();
 
         var cards = await Read<List<ViewModels.Card>>(await Client(actor).GetAsync(Templates, Ct));
 
-        Assert.Equal(card.Id, Assert.Single(cards).Id);
-        Assert.Equal(msel.Id, Assert.Single(cards).MselId);
+        Assert.Empty(cards);
     }
 
     /// <remarks>

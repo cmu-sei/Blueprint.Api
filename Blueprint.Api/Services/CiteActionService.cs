@@ -54,7 +54,7 @@ namespace Blueprint.Api.Services
         public async Task<IEnumerable<ViewModels.CiteAction>> GetTemplatesAsync(CancellationToken ct)
         {
             var citeActionEntities = await _context.CiteActions
-                .Where(citeAction => citeAction.IsTemplate)
+                .Where(citeAction => citeAction.IsTemplate && citeAction.MselId == null)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<CiteAction>>(citeActionEntities).ToList();;
@@ -98,6 +98,10 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.CiteAction> CreateAsync(ViewModels.CiteActionCreate citeAction, bool hasMselPermission, bool hasCiteActionPermission, CancellationToken ct)
         {
+            // a template belongs to no MSEL, so a MSEL's CITE action cannot be listed as one
+            if (citeAction.MselId.HasValue && citeAction.IsTemplate)
+                throw new ConflictException("A CITE action cannot belong to a MSEL and be a template.");
+
             if (citeAction.MselId.HasValue)
             {
                 if (!hasMselPermission &&

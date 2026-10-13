@@ -94,6 +94,10 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Organization> CreateAsync(ViewModels.OrganizationCreate organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct)
         {
+            // a template belongs to no MSEL, so a MSEL's organization cannot be listed as one
+            if (organization.MselId.HasValue && organization.IsTemplate)
+                throw new ConflictException("A organization cannot belong to a MSEL and be a template.");
+
             if (organization.MselId.HasValue)
             {
                 if (!hasMselPermission &&

@@ -54,7 +54,7 @@ namespace Blueprint.Api.Services
         public async Task<IEnumerable<ViewModels.Card>> GetTemplatesAsync(CancellationToken ct)
         {
             var cardEntities = await _context.Cards
-                .Where(card => card.IsTemplate)
+                .Where(card => card.IsTemplate && card.MselId == null)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<Card>>(cardEntities).ToList();;
@@ -91,6 +91,10 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.Card> CreateAsync(ViewModels.CardCreate card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct)
         {
+            // a template belongs to no MSEL, so a MSEL's card cannot be listed as one
+            if (card.MselId.HasValue && card.IsTemplate)
+                throw new ConflictException("A card cannot belong to a MSEL and be a template.");
+
             if (card.MselId.HasValue)
             {
                 if (!hasMselPermission &&

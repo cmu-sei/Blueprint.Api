@@ -56,7 +56,10 @@ namespace Blueprint.Api.Data.Enumerations
         Checkbox = 130,    // used to track statuses about the inject.
         Url = 140,    // link to other information
         Move = 150,     // values will be filled from the MSEL moves
-        Competency = 170    // competencies (e.g., NICE Framework tasks) for tracking and xAPI logging
+        // 160 is not reused: it was DeliveryMethod, then IntegrationTarget, and older databases may still hold it
+        Competency = 170,    // competencies (e.g., NICE Framework tasks) for tracking and xAPI logging
+        IpAddress = 180,    // a single IPv4 or IPv6 address
+        Network = 190    // an IPv4 or IPv6 network in CIDR form (10.1.0.0/24)
     }
 
     public enum MselRole

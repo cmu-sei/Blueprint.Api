@@ -88,6 +88,16 @@ namespace Blueprint.Api.Data.Enumerations
         Summary
     }
 
+    // Gallery article statuses, named for the color the wall shows, best to worst
+    public enum GalleryItemStatus
+    {
+        Gray,
+        Green,
+        Yellow,
+        Orange,
+        Red
+    }
+
     public enum GallerySourceType
     {
         News,

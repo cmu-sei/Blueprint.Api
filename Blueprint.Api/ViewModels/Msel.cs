@@ -34,6 +34,11 @@ namespace Blueprint.Api.ViewModels
         public bool UseSteamfitter { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
         public IntegrationType SteamfitterIntegrationType { get; set; }
+        public bool UseCaster { get; set; }
+        public Guid? CasterDirectoryId { get; set; }
+        public Guid? CasterWorkspaceId { get; set; }
+        public Guid? CasterRunId { get; set; }
+        public IntegrationType CasterIntegrationType { get; set; }
         public bool IsTemplate { get; set; }
         public DateTime StartTime { get; set; }
 

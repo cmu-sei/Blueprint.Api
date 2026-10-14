@@ -42,14 +42,14 @@ public static class Tokens
         }
         """;
 
-    public static async Task<TokenResponse> Bearer()
+    public static async Task<TokenResponse> Bearer(int expiresIn = 300)
     {
         var idp = new SiblingApiHandler()
             .AnswersJson("realms/crucible/.well-known/openid-configuration", Discovery)
             .AnswersJson("realms/crucible/protocol/openid-connect/certs", """{"keys":[]}""")
             .AnswersJson(
                 "realms/crucible/protocol/openid-connect/token",
-                $$"""{"access_token":"{{AccessToken}}","token_type":"Bearer","expires_in":300}""");
+                $$"""{"access_token":"{{AccessToken}}","token_type":"Bearer","expires_in":{{expiresIn}}}""");
 
         using var client = new HttpClient(idp, disposeHandler: false);
 

@@ -1060,6 +1060,22 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("uuid_generate_v4()");
 
+                    b.Property<Guid?>("CasterDirectoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caster_directory_id");
+
+                    b.Property<int>("CasterIntegrationType")
+                        .HasColumnType("integer")
+                        .HasColumnName("caster_integration_type");
+
+                    b.Property<Guid?>("CasterRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caster_run_id");
+
+                    b.Property<Guid?>("CasterWorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caster_workspace_id");
+
                     b.Property<Guid?>("CiteEvaluationId")
                         .HasColumnType("uuid")
                         .HasColumnName("cite_evaluation_id");
@@ -1239,6 +1255,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<int>("TimeDisplayOrder")
                         .HasColumnType("integer")
                         .HasColumnName("time_display_order");
+
+                    b.Property<bool>("UseCaster")
+                        .HasColumnType("boolean")
+                        .HasColumnName("use_caster");
 
                     b.Property<bool>("UseCite")
                         .HasColumnType("boolean")
@@ -1912,6 +1932,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<string>("CasterTeamVariable")
+                        .HasColumnType("text")
+                        .HasColumnName("caster_team_variable");
 
                     b.Property<Guid?>("CiteTeamTypeId")
                         .HasColumnType("uuid")

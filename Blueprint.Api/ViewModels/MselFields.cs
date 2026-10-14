@@ -33,6 +33,10 @@ namespace Blueprint.Api.ViewModels
         public IntegrationType CiteIntegrationType { get; set; }
         public bool UseSteamfitter { get; set; }
         public IntegrationType SteamfitterIntegrationType { get; set; }
+        public bool UseCaster { get; set; }
+        /// <summary>The Caster directory a push deploys from, which the caller must be able to view.</summary>
+        public Guid? CasterDirectoryId { get; set; }
+        public IntegrationType CasterIntegrationType { get; set; }
         public bool IsTemplate { get; set; }
         public DateTime StartTime { get; set; }
 

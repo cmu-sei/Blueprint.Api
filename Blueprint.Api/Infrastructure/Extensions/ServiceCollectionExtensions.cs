@@ -15,6 +15,7 @@ using Cite.Api.Client;
 using Gallery.Api.Client;
 using Player.Api.Client;
 using Steamfitter.Api.Client;
+using Caster.Api.Client;
 using Ganss.Xss;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
@@ -169,6 +170,30 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 httpClient.DefaultRequestHeaders.Add("Authorization", authHeader);
 
                 var apiClient = new SteamfitterApiClient(httpClient);
+                return apiClient;
+            });
+        }
+
+        public static void AddCasterApiClient(this IServiceCollection services)
+        {
+            services.AddScoped<ICasterApiClient, CasterApiClient>(p =>
+            {
+                var httpContextAccessor = p.GetRequiredService<IHttpContextAccessor>();
+                var httpClientFactory = p.GetRequiredService<IHttpClientFactory>();
+                var clientOptions = p.GetRequiredService<ClientOptions>();
+
+                var casterUri = new Uri(clientOptions.CasterApiUrl);
+
+                string authHeader = httpContextAccessor.HttpContext?.Request.Headers["Authorization"];
+
+                var httpClient = httpClientFactory.CreateClient();
+                httpClient.BaseAddress = casterUri;
+                if (!string.IsNullOrEmpty(authHeader))
+                {
+                    httpClient.DefaultRequestHeaders.Add("Authorization", authHeader);
+                }
+
+                var apiClient = new CasterApiClient(httpClient);
                 return apiClient;
             });
         }

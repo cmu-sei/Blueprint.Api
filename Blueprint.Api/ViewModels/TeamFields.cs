@@ -20,6 +20,8 @@ namespace Blueprint.Api.ViewModels
         public string Email { get; set; }
         public bool canTeamLeaderInvite { get; set; }
         public bool canTeamMemberInvite { get; set; }
+        // the template variable this team's Player team ID is written to; null writes it under the team's own name
+        public string CasterTeamVariable { get; set; }
     }
 
     public class TeamCreate : TeamFields

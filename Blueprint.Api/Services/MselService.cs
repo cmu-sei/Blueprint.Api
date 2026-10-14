@@ -76,6 +76,7 @@ namespace Blueprint.Api.Services
         private readonly IJoinQueue _joinQueue;
         private readonly IXApiService _xApiService;
         private readonly ICiteApiClient _citeApiClient;
+        private readonly ICasterService _casterService;
 
         public MselService(
             BlueprintContext context,
@@ -89,7 +90,8 @@ namespace Blueprint.Api.Services
             ILogger<MselService> logger,
             IMapper mapper,
             IXApiService xApiService,
-            ICiteApiClient citeApiClient)
+            ICiteApiClient citeApiClient,
+            ICasterService casterService)
         {
             _context = context;
             _clientOptions = clientOptions;
@@ -103,6 +105,7 @@ namespace Blueprint.Api.Services
             _joinQueue = joinQueue;
             _xApiService = xApiService;
             _citeApiClient = citeApiClient;
+            _casterService = casterService;
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct)
@@ -240,6 +243,10 @@ namespace Blueprint.Api.Services
             if (IsPipelineStatus(msel.Status))
                 throw new ConflictException($"A MSEL cannot be created with status {msel.Status}, which only the integration pipeline sets.");
 
+            // the push deploys this directory as the service account, so only accept one the user can view in Caster
+            if (msel.CasterDirectoryId != null)
+                await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
+
             // the integration IDs and status are not part of the request, so a new MSEL starts with none
             var mselEntity = _mapper.Map<MselEntity>(msel);
             mselEntity.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
@@ -322,6 +329,8 @@ namespace Blueprint.Api.Services
             mselEntity.CiteEvaluationId = null;
             mselEntity.PlayerViewId = null;
             mselEntity.SteamfitterScenarioId = null;
+            mselEntity.CasterWorkspaceId = null;
+            mselEntity.CasterRunId = null;
             mselEntity.Status = MselItemStatus.Pending;
             // copy DataFields
             foreach (var dataField in mselEntity.DataFields)
@@ -590,6 +599,10 @@ namespace Blueprint.Api.Services
             if (msel.Status != mselToUpdate.Status && (IsPipelineStatus(msel.Status) || IsPipelineStatus(mselToUpdate.Status)))
                 throw new ConflictException($"The MSEL status cannot be changed from {mselToUpdate.Status} to {msel.Status}. Only the integration pipeline sets Pushing, Pulling and Deployed, and moves a MSEL out of them.");
 
+            // the push deploys this directory as the service account, so only accept one the user can view in Caster
+            if (msel.CasterDirectoryId != null && msel.CasterDirectoryId != mselToUpdate.CasterDirectoryId)
+                await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
+
             // okay to update this msel
             _mapper.Map(msel, mselToUpdate);
             mselToUpdate.ModifiedBy = _user.GetId();
@@ -659,6 +672,11 @@ namespace Blueprint.Api.Services
             var mselToDelete = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (mselToDelete == null)
                 throw new EntityNotFoundException<Msel>();
+
+            // The pull below is queued and this row is gone before it runs, so it would find nothing to
+            // pull. Losing a Player view that way is untidy; losing a Caster workspace leaves VMs running.
+            if (mselToDelete.CasterWorkspaceId != null)
+                throw new ConflictException($"MSEL {id} has a deployed Caster workspace. Remove its integrations before deleting it.");
 
             // pull integrations if there are any
             if (mselToDelete.Status == MselItemStatus.Deployed)
@@ -2271,6 +2289,21 @@ namespace Blueprint.Api.Services
                 }
             }
 
+            // A directory ID from another environment, or one this user cannot view in Caster, is dropped
+            // rather than failing the import; the planner can pick a directory afterwards.
+            if (mselEntity.CasterDirectoryId != null)
+            {
+                try
+                {
+                    await _casterService.GetDirectoryAsync((Guid)mselEntity.CasterDirectoryId, ct);
+                }
+                catch (System.Exception ex)
+                {
+                    _logger.LogWarning("Dropping Caster directory {DirectoryId} from imported MSEL {MselId}: {ErrorMessage}", mselEntity.CasterDirectoryId, mselEntity.Id, ex.Message);
+                    mselEntity.CasterDirectoryId = null;
+                }
+            }
+
             // make a copy and add it to the database
             mselEntity = await privateMselCopyAsync(mselEntity, null, ct);
 
@@ -2292,6 +2325,12 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to push integrations.");
             if (msel.PlayerViewId != null)
                 throw new InvalidOperationException($"MSEL {mselId} is already deployed.");
+            if (msel.UseCaster)
+            {
+                await ValidateCasterSetupAsync(msel, ct);
+                // also covers a directory that arrived by copy rather than through UpdateAsync
+                await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
+            }
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
@@ -2299,7 +2338,7 @@ namespace Blueprint.Api.Services
             msel.Status = MselItemStatus.Pushing;
             msel.IntegrationStatus = "Pushing Integrations";
             await _context.SaveChangesAsync(ct);
-            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = true, FinalStatus = MselItemStatus.Deployed });
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = true, FinalStatus = MselItemStatus.Deployed, UserId = _user.GetId() });
 
             // Track xAPI - Exercise Started
             if (_xApiService.IsConfigured())
@@ -2352,6 +2391,26 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
 
             return _mapper.Map<ViewModels.Msel>(msel);
+        }
+
+        // Checks a Caster MSEL without calling Caster, so an invitee with no Caster access can run them too.
+        // Fails here, where the planner can fix the MSEL, not minutes into the push.
+        private async Task ValidateCasterSetupAsync(MselEntity msel, CancellationToken ct)
+        {
+            // terraform attaches the VMs to the Player view and its teams
+            if (!msel.UsePlayer)
+                throw new ConflictException($"MSEL {msel.Id} uses Caster, which requires Player.");
+            if (msel.CasterDirectoryId == null)
+                throw new ConflictException($"MSEL {msel.Id} uses Caster but has no Caster directory selected.");
+            var teams = await _context.Teams.Where(t => t.MselId == msel.Id).Select(t => new { t.Name, t.CasterTeamVariable }).ToListAsync(ct);
+            // Unless a MSEL team takes its place, Player gives the view its own Admin team,
+            // which writes "admin" unless a MSEL team is mapped to it
+            var teamVariables = teams.Select(t => (t.Name, t.CasterTeamVariable)).ToList();
+            if (!teams.Any(t => IntegrationPlayerExtensions.IsAdminTeam(t.Name)))
+                teamVariables.Add((IntegrationPlayerExtensions.PlayerAdminTeamName, null));
+            var duplicates = IntegrationCasterExtensions.FindDuplicateTeamVariables(teamVariables);
+            if (duplicates.Count > 0)
+                throw new ConflictException(IntegrationCasterExtensions.DuplicateTeamVariablesMessage(duplicates));
         }
 
         private async Task<string> FindDuplicateMselUsersAsync(Guid mselId, CancellationToken ct)
@@ -2623,6 +2682,11 @@ namespace Blueprint.Api.Services
             if (invitation == null)
                 throw new ForbiddenException();
 
+            // the copy gets the template's teams and Caster settings, so check the template before using up an invitation
+            var template = await _context.Msels.AsNoTracking().SingleAsync(m => m.Id == mselId, ct);
+            if (template.UseCaster)
+                await ValidateCasterSetupAsync(template, ct);
+
             // clone the template MSEL
             var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct);
             // set the start time to the current time
@@ -2633,7 +2697,7 @@ namespace Blueprint.Api.Services
             // create the new player view ID, so that the UI will be able to look for it to be created
             var playerViewId = Guid.NewGuid();
             // add the launch data to the launch queue
-            _integrationQueue.Add(new IntegrationInformation { MselId = mselEntity.Id, PlayerViewId = playerViewId, IsPush = true });
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselEntity.Id, PlayerViewId = playerViewId, IsPush = true, UserId = _user.GetId() });
             // get the MSEL to return with the new Player View ID
             var launchedMsel = _mapper.Map<Msel>(mselEntity);
             launchedMsel.PlayerViewId = playerViewId;

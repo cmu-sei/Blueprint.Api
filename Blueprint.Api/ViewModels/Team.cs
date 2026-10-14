@@ -17,6 +17,7 @@ namespace Blueprint.Api.ViewModels
         public string Email { get; set; }
         public bool canTeamLeaderInvite { get; set; }
         public bool canTeamMemberInvite { get; set; }
+        public string CasterTeamVariable { get; set; }
         public User[] Users { get; set; }
         public CardTeam[] CardTeams { get; set; }
         public PlayerApplicationTeam[] PlayerApplicationTeams { get; set; }

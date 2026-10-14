@@ -107,6 +107,7 @@ namespace Blueprint.Api.Services
                )
                 throw new ForbiddenException();
 
+            team.CasterTeamVariable = NormalizeCasterTeamVariable(team.CasterTeamVariable);
             var teamEntity = _mapper.Map<TeamEntity>(team);
             teamEntity.Id = team.Id != Guid.Empty ? team.Id : Guid.NewGuid();
             teamEntity.CreatedBy = _user.GetId();
@@ -171,6 +172,7 @@ namespace Blueprint.Api.Services
             )
                 throw new ForbiddenException();
 
+            team.CasterTeamVariable = NormalizeCasterTeamVariable(team.CasterTeamVariable);
             _mapper.Map(team, teamToUpdate);
             teamToUpdate.ModifiedBy = _user.GetId();
 
@@ -196,6 +198,17 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"Team ({teamToDelete.Id}) deleted by {_user.GetId()}");
             return true;
+        }
+
+        // blank means unmapped; anything else must be a variable a tfvars line can assign
+        private static string NormalizeCasterTeamVariable(string variable)
+        {
+            if (string.IsNullOrWhiteSpace(variable))
+                return null;
+            variable = variable.Trim();
+            if (!IntegrationCasterExtensions.IsMappableTeamVariable(variable))
+                throw new ConflictException($"\"{variable}\" cannot be a topology team: it must be a terraform variable name other than {string.Join(", ", IntegrationCasterExtensions.BlueprintVariables)}.");
+            return variable;
         }
 
     }

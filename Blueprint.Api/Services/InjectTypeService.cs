@@ -72,14 +72,14 @@ namespace Blueprint.Api.Services
             _context.InjectTypes.Add(injectTypeEntity);
 
             // the fields sent with a new inject type are always new fields of it
-            foreach (var dataField in injectType.DataFields)
+            foreach (var dataField in injectType.DataFields ?? [])
             {
                 var dataFieldEntity = _mapper.Map<DataFieldEntity>(dataField);
                 dataFieldEntity.Id = Guid.NewGuid();
                 dataFieldEntity.InjectTypeId = injectTypeEntity.Id;
                 dataFieldEntity.CreatedBy = userId;
                 _context.DataFields.Add(dataFieldEntity);
-                foreach (var dataOption in dataField.DataOptions)
+                foreach (var dataOption in dataField.DataOptions ?? [])
                 {
                     var dataOptionEntity = _mapper.Map<DataOptionEntity>(dataOption);
                     dataOptionEntity.Id = Guid.NewGuid();

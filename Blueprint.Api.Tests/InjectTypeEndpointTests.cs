@@ -257,6 +257,47 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     }
 
     /// <summary>
+    /// A null field list, or a field with a null option list, creates the type with nothing nested in
+    /// it rather than failing.
+    /// </summary>
+    [Fact]
+    public async Task Create_WithNullDataFields_Is201AndCreatesNoFields()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageInjectTypes).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(InjectTypes, new
+        {
+            name = "a type with no field list",
+            description = "posted by the test",
+            dataFields = (object[])null
+        }, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await Read<ViewModels.InjectType>(response);
+        Assert.Empty(await StoredFields(created.Id));
+    }
+
+    [Fact]
+    public async Task Create_WithAFieldWhoseDataOptionsAreNull_Is201AndCreatesTheField()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageInjectTypes).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(InjectTypes, new
+        {
+            name = "a type with a field and no option list",
+            description = "posted by the test",
+            dataFields = new[]
+            {
+                new { name = "headline", dataType = DataFieldType.Html, displayOrder = 1, dataOptions = (object[])null }
+            }
+        }, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await Read<ViewModels.InjectType>(response);
+        Assert.Equal("headline", Assert.Single(await StoredFields(created.Id)).Name);
+    }
+
+    /// <summary>
     /// A nested field always becomes a new field of the new type: one naming an MSEL's field by id and
     /// MSEL creates a copy here and leaves the MSEL's column where it is.
     /// </summary>

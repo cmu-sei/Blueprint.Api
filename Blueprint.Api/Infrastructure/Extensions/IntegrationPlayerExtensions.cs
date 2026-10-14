@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,17 @@ namespace Blueprint.Api.Infrastructure.Extensions
 {
     public static class IntegrationPlayerExtensions
     {
+        // the team Player creates for a view's creator, unless asked not to
+        public const string PlayerAdminTeamName = "Admin";
+        // Player's Roles:DefaultViewCreatorRole, the role it gives that team
+        private const string ViewAdminRoleName = "View Admin";
+
+        // A MSEL team with Player's Admin team's name takes its place, so the view has one Admin team
+        public static bool IsAdminTeam(string teamName)
+        {
+            return string.Equals(teamName?.Trim(), PlayerAdminTeamName, StringComparison.OrdinalIgnoreCase);
+        }
+
         public static PlayerApiClient GetPlayerApiClient(IHttpClientFactory httpClientFactory, string apiUrl, TokenResponse tokenResponse)
         {
             var client = ApiClientsExtensions.GetHttpClient(httpClientFactory, apiUrl, tokenResponse);
@@ -44,14 +56,29 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 Name = msel.Name,
                 Description = msel.Description,
                 Status = ViewStatus.Active,
-                CreateAdminTeam = true
+                CreateAdminTeam = !msel.Teams.Any(t => IsAdminTeam(t.Name))
             };
             if (playerViewId != null) viewForm.Id = (Guid)playerViewId;
             await playerApiClient.CreateViewAsync(viewForm, ct);
         }
 
-        // Create Player Teams for this MSEL
-        public static async Task CreateTeamsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, HashSet<Guid> playerUserIds, CancellationToken ct)
+        // The role Player gives its own Admin team, for a MSEL Admin team that takes its place.
+        // Player.Api.Client 3.2.0 predates team roles, so this reads them directly.
+        public static async Task<Guid> GetViewAdminRoleIdAsync(HttpClient playerHttpClient, CancellationToken ct)
+        {
+            var roles = await playerHttpClient.GetFromJsonAsync<List<PlayerTeamRole>>("api/team-roles", ct);
+            return roles?.FirstOrDefault(r => r.Name == ViewAdminRoleName)?.Id
+                ?? throw new Exception($"Player has no \"{ViewAdminRoleName}\" team role to give the MSEL's {PlayerAdminTeamName} team.");
+        }
+
+        private class PlayerTeamRole
+        {
+            public Guid Id { get; set; }
+            public string Name { get; set; }
+        }
+
+        // Create Player Teams for this MSEL. viewAdminRoleId is the role for a MSEL Admin team.
+        public static async Task CreateTeamsAsync(MselEntity msel, PlayerApiClient playerApiClient, BlueprintContext blueprintContext, HashSet<Guid> playerUserIds, Guid? viewAdminRoleId, CancellationToken ct)
         {
             // use eager-loaded teams from the MSEL
             var teams = msel.Teams.ToList();
@@ -60,7 +87,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 // create team in Player using the Blueprint team ID
                 var playerTeamForm = new TeamForm() {
                     Id = team.Id,
-                    Name = team.Name
+                    Name = team.Name,
+                    RoleId = IsAdminTeam(team.Name) ? viewAdminRoleId : null
                 };
                 await playerApiClient.CreateTeamAsync((Guid)msel.PlayerViewId, playerTeamForm, ct);
                 // use eager-loaded users from the team
@@ -103,11 +131,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
                     .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
                     .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
+                    .Replace("{casterWorkspaceId}", msel.CasterWorkspaceId.ToString())
                     .Replace("{playerViewId}", msel.PlayerViewId.ToString())
                     .Replace("{playerUrl}", clientOptions.PlayerUiUrl ?? "")
                     .Replace("{citeUrl}", clientOptions.CiteUiUrl ?? "")
                     .Replace("{galleryUrl}", clientOptions.GalleryUiUrl ?? "")
                     .Replace("{steamfitterUrl}", clientOptions.SteamfitterUiUrl ?? "")
+                    .Replace("{casterUrl}", clientOptions.CasterUiUrl ?? "")
+                    .Replace("{vmUrl}", (clientOptions.VmUiUrl ?? "").TrimEnd('/'))
                     .Replace("{blueprintUrl}", clientOptions.BlueprintUiUrl ?? "");
                 Uri applicationUrl;
                 if (!Uri.TryCreate(urlString, UriKind.Absolute, out applicationUrl) || !(applicationUrl.Scheme == Uri.UriSchemeHttp || applicationUrl.Scheme == Uri.UriSchemeHttps))
@@ -120,11 +151,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
                     .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
                     .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
+                    .Replace("{casterWorkspaceId}", msel.CasterWorkspaceId.ToString())
                     .Replace("{playerViewId}", msel.PlayerViewId.ToString())
                     .Replace("{playerUrl}", clientOptions.PlayerUiUrl ?? "")
                     .Replace("{citeUrl}", clientOptions.CiteUiUrl ?? "")
                     .Replace("{galleryUrl}", clientOptions.GalleryUiUrl ?? "")
                     .Replace("{steamfitterUrl}", clientOptions.SteamfitterUiUrl ?? "")
+                    .Replace("{casterUrl}", clientOptions.CasterUiUrl ?? "")
+                    .Replace("{vmUrl}", (clientOptions.VmUiUrl ?? "").TrimEnd('/'))
                     .Replace("{blueprintUrl}", clientOptions.BlueprintUiUrl ?? "");
 
                 var playerApplication = new Application() {

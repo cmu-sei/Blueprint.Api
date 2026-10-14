@@ -10,6 +10,7 @@ using Cite.Api.Client;
 using Gallery.Api.Client;
 using Player.Api.Client;
 using Steamfitter.Api.Client;
+using Caster.Api.Client;
 
 namespace Blueprint.Api.Services
 {
@@ -36,6 +37,7 @@ namespace Blueprint.Api.Services
         private readonly IGalleryApiClient _galleryApiClient;
         private readonly ICiteApiClient _citeApiClient;
         private readonly ISteamfitterApiClient _steamfitterApiClient;
+        private readonly ICasterApiClient _casterApiClient;
         private readonly ILogger<IntegrationNameService> _logger;
 
         public IntegrationNameService(
@@ -44,6 +46,7 @@ namespace Blueprint.Api.Services
             IGalleryApiClient galleryApiClient,
             ICiteApiClient citeApiClient,
             ISteamfitterApiClient steamfitterApiClient,
+            ICasterApiClient casterApiClient,
             ILogger<IntegrationNameService> logger)
         {
             _mselService = mselService;
@@ -51,6 +54,7 @@ namespace Blueprint.Api.Services
             _galleryApiClient = galleryApiClient;
             _citeApiClient = citeApiClient;
             _steamfitterApiClient = steamfitterApiClient;
+            _casterApiClient = casterApiClient;
             _logger = logger;
         }
 
@@ -105,6 +109,20 @@ namespace Blueprint.Api.Services
                 var id = msel.SteamfitterScenarioId.Value;
                 names.SteamfitterScenarioName = await ResolveAsync("Steamfitter scenario", id,
                     async () => (await _steamfitterApiClient.GetScenarioAsync(id, ct))?.Name, ct);
+            }
+
+            if (msel.CasterDirectoryId.HasValue)
+            {
+                var id = msel.CasterDirectoryId.Value;
+                names.CasterDirectoryName = await ResolveAsync("Caster directory", id,
+                    async () => (await _casterApiClient.GetDirectoryAsync(id, false, false, ct))?.Name, ct);
+            }
+
+            if (msel.CasterWorkspaceId.HasValue)
+            {
+                var id = msel.CasterWorkspaceId.Value;
+                names.CasterWorkspaceName = await ResolveAsync("Caster workspace", id,
+                    async () => (await _casterApiClient.GetWorkspaceAsync(id, ct))?.Name, ct);
             }
 
             return names;

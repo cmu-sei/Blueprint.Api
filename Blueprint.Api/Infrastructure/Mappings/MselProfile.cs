@@ -26,6 +26,10 @@ namespace Blueprint.Api.Infrastructure.Mappings
                 .ForMember(m => m.MselUnits, opt => opt.Ignore())
                 .ForMember(m => m.MselCompetencies, opt => opt.Ignore())
                 .ForMember(m => m.UserMselRoles, opt => opt.Ignore())
+                // Only the integration service writes these. A stale UI save must not clear them,
+                // or Blueprint loses track of a deployed Caster workspace and its VMs.
+                .ForMember(m => m.CasterWorkspaceId, opt => opt.Ignore())
+                .ForMember(m => m.CasterRunId, opt => opt.Ignore())
                 .ForMember(m => m.DateCreated, opt => opt.Ignore());
 
             CreateMap<MselEntity, MselEntity>()

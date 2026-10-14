@@ -45,6 +45,7 @@
     <PackageReference Include="System.Text.RegularExpressions" />
     <PackageReference Include="Z.EntityFramework.Plus.EFCore" />
     <PackageReference Include="IdentityServer4.AccessTokenValidation" />
+    <PackageReference Include="caster.api.client" />
     <PackageReference Include="Player.Api.Client" />
     <PackageReference Include="steamfitter.api.client" />
     <PackageReference Include="HtmlSanitizer" />

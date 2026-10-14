@@ -3865,20 +3865,20 @@ namespace Gallery.Api.Client
     public enum ItemStatus
     {
 
-        [System.Runtime.Serialization.EnumMember(Value = @"Unused")]
-        Unused = 0,
+        [System.Runtime.Serialization.EnumMember(Value = @"Gray")]
+        Gray = 0,
 
-        [System.Runtime.Serialization.EnumMember(Value = @"Closed")]
-        Closed = 1,
+        [System.Runtime.Serialization.EnumMember(Value = @"Red")]
+        Red = 1,
 
-        [System.Runtime.Serialization.EnumMember(Value = @"Critical")]
-        Critical = 2,
+        [System.Runtime.Serialization.EnumMember(Value = @"Orange")]
+        Orange = 2,
 
-        [System.Runtime.Serialization.EnumMember(Value = @"Affected")]
-        Affected = 3,
+        [System.Runtime.Serialization.EnumMember(Value = @"Yellow")]
+        Yellow = 3,
 
-        [System.Runtime.Serialization.EnumMember(Value = @"Open")]
-        Open = 4,
+        [System.Runtime.Serialization.EnumMember(Value = @"Green")]
+        Green = 4,
 
     }
 

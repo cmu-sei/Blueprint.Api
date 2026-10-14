@@ -655,6 +655,7 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             [.. Enum.GetNames<GalleryArticleParameter>()],
             returned.GalleryArticleParameters);
         Assert.Equal([.. Enum.GetNames<GallerySourceType>()], returned.GallerySourceTypes);
+        Assert.Equal([.. Enum.GetNames<GalleryItemStatus>()], returned.GalleryItemStatuses);
     }
 
     [Fact]
@@ -669,6 +670,7 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         Assert.Empty(returned.GalleryArticleParameters);
         Assert.Empty(returned.GallerySourceTypes);
+        Assert.Empty(returned.GalleryItemStatuses);
     }
 
     // ---------------------------------------------------------------------------------------------

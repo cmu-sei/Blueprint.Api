@@ -20,5 +20,7 @@ namespace Blueprint.Api.ViewModels
         public string CiteEvaluationName { get; set; } = "";
         public string CiteScoringModelName { get; set; } = "";
         public string SteamfitterScenarioName { get; set; } = "";
+        public string CasterDirectoryName { get; set; } = "";
+        public string CasterWorkspaceName { get; set; } = "";
     }
 }

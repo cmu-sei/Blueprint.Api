@@ -361,6 +361,38 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Contains("DataFieldService.GetAsync", failure.Detail);
     }
 
+    /// <summary>A data field's type goes out by its name, the address types included.</summary>
+    [Theory]
+    [InlineData(DataFieldType.IpAddress, "IpAddress")]
+    [InlineData(DataFieldType.Network, "Network")]
+    public async Task Get_AnswersAnAddressTypeByItsName(DataFieldType dataType, string name)
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var field = TestData.DataField(mselId: msel.Id, dataType: dataType);
+        await Seed(field);
+        var actor = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/dataFields/{field.Id}", Ct);
+
+        Assert.Equal(name, (await Json(response)).GetProperty("dataType").GetString());
+    }
+
+    /// <summary>A row still holding the retired type 160 is read, and its type goes out as the number.</summary>
+    [Fact]
+    public async Task Get_ForAFieldOfTheRetiredType160_AnswersTheNumber()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var field = TestData.DataField(mselId: msel.Id, dataType: RetiredType);
+        await Seed(field);
+        var actor = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/dataFields/{field.Id}", Ct);
+
+        Assert.Equal(160, (await Json(response)).GetProperty("dataType").GetInt32());
+    }
+
     // ---------------------------------------------------------------------------------------------
     // POST dataFields
     // ---------------------------------------------------------------------------------------------
@@ -384,6 +416,63 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         Assert.Equal(msel.Id, stored.MselId);
         Assert.Equal(actor.Id, stored.CreatedBy);
+    }
+
+    [Theory]
+    [InlineData(DataFieldType.IpAddress)]
+    [InlineData(DataFieldType.Network)]
+    public async Task Create_OfAnAddressField_StoresItsType(DataFieldType dataType)
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var created = await Read<DataField>(await Post(Client(actor), Body(msel.Id) with { DataType = dataType }));
+
+        Assert.Equal(dataType, created.DataType);
+        Assert.Equal(dataType, (await ReadBack(rb => rb.DataFields.SingleAsync(x => x.Id == created.Id, Ct))).DataType);
+    }
+
+    /// <summary>A client may name the type rather than send its number.</summary>
+    [Fact]
+    public async Task Create_WithTheTypeNamedOnTheWire_StoresIt()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        using var body = new StringContent(
+            $$"""{"mselId":"{{msel.Id}}","name":"Subnet","dataType":"Network","displayOrder":1,"createdBy":"{{Guid.Empty}}","dateCreated":"2026-01-01T00:00:00Z"}""",
+            Encoding.UTF8, "application/json");
+
+        var created = await Read<DataField>(await Client(actor).PostAsync("/api/dataFields", body, Ct));
+
+        Assert.Equal(DataFieldType.Network, (await ReadBack(rb => rb.DataFields.SingleAsync(x => x.Id == created.Id, Ct))).DataType);
+    }
+
+    /// <summary>A data type no member names is stored as sent.</summary>
+    [Fact]
+    public async Task Create_WithADataTypeNoMemberNames_StoresIt()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var created = await Read<DataField>(await Post(Client(actor), Body(msel.Id) with { DataType = UndefinedType }));
+
+        Assert.Equal(UndefinedType, (await ReadBack(rb => rb.DataFields.SingleAsync(x => x.Id == created.Id, Ct))).DataType);
+    }
+
+    /// <summary>The retired type number 160 is stored as sent.</summary>
+    [Fact]
+    public async Task Create_WithTheRetiredTypeNumber160_StoresIt()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var created = await Read<DataField>(await Post(Client(actor), Body(msel.Id) with { DataType = RetiredType }));
+
+        Assert.Equal(RetiredType, (await ReadBack(rb => rb.DataFields.SingleAsync(x => x.Id == created.Id, Ct))).DataType);
     }
 
     [Theory]
@@ -1717,6 +1806,22 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     {
         Assert.NotNull(actual);
         Assert.InRange(actual.Value, notBefore, notAfter);
+    }
+
+    /// <summary>The number <c>DataFieldType</c> retired (DeliveryMethod, then IntegrationTarget) and does not
+    /// reuse, which older databases may still hold.</summary>
+    private const DataFieldType RetiredType = (DataFieldType)160;
+
+    /// <summary>A number no <c>DataFieldType</c> member has ever carried.</summary>
+    private const DataFieldType UndefinedType = (DataFieldType)999;
+
+    private async Task<JsonElement> Json(HttpResponseMessage response)
+    {
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+
+        return document.RootElement.Clone();
     }
 
     private async Task<T> Read<T>(HttpResponseMessage response)

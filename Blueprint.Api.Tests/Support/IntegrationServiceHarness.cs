@@ -28,16 +28,17 @@ namespace Blueprint.Api.Tests.Support;
 /// <see cref="BlueprintAppFactory"/> removes every <c>IHostedService</c>, so the worker never runs inside
 /// the host and cannot be reached through it. This builds one by hand instead: a null logger, a scope
 /// factory whose every scope hands out a <c>BlueprintContext</c> over the test's own database, the real
-/// <c>IntegrationQueue</c>, <see cref="SiblingApiHandler"/> as the transport for all four sibling APIs and
+/// <c>IntegrationQueue</c>, <see cref="SiblingApiHandler"/> as the transport for all five sibling APIs and
 /// the identity provider, and <see cref="HubRecorder{THub}"/> for the broadcasts.
 /// </para>
 /// <para>
-/// <strong>The four sibling urls are given distinct path prefixes</strong> - <c>http://siblings.test/player/</c>
+/// <strong>The five sibling urls are given distinct path prefixes</strong> - <c>http://siblings.test/player/</c>
 /// and so on - because <see cref="SiblingApiHandler"/> matches on the path alone, and all four generated
 /// clients build <c>api/users</c>. Without a prefix, a rule for one application's user list would answer
 /// another's. The trailing slash is what makes a prefix survive; see <c>ApiClientsExtensionsTests</c> for
 /// what happens without one. A deployment behind a path-based reverse proxy is configured exactly this way,
 /// so nothing here is more artificial than the alternative.
+/// Caster's run polling interval is zero, so a push or a pull that waits on a run polls flat out.
 /// </para>
 /// <para>
 /// <strong>Nothing stops the worker.</strong> <c>Run()</c> is a <c>while (true)</c> over a blocking
@@ -54,6 +55,7 @@ public sealed class IntegrationServiceHarness
     public const string GalleryApiUrl = "http://siblings.test/gallery/";
     public const string CiteApiUrl = "http://siblings.test/cite/";
     public const string SteamfitterApiUrl = "http://siblings.test/steamfitter/";
+    public const string CasterApiUrl = "http://siblings.test/caster/";
 
     /// <summary>The realm path the identity provider stubs sit under.</summary>
     public const string Realm = "realms/crucible";
@@ -97,6 +99,11 @@ public sealed class IntegrationServiceHarness
             GalleryApiUrl = GalleryApiUrl,
             CiteApiUrl = CiteApiUrl,
             SteamfitterApiUrl = SteamfitterApiUrl,
+            CasterApiUrl = CasterApiUrl,
+            CasterCheckIntervalSeconds = 0,
+            CasterPlanMaxWaitMinutes = 1,
+            CasterApplyMaxWaitMinutes = 1,
+            CasterDestroyMaxWaitMinutes = 1,
             PlayerMaxConcurrentRequests = 5,
             GalleryMaxConcurrentRequests = 5,
             CiteMaxConcurrentRequests = 5
@@ -128,8 +135,8 @@ public sealed class IntegrationServiceHarness
     /// </summary>
     public Task StartAsync() => Service.StartAsync(CancellationToken.None);
 
-    /// <summary>Queues a push and starts the worker.</summary>
-    public async Task PushAsync(Guid mselId, Guid? playerViewId = null)
+    /// <summary>Queues a push, naming <paramref name="userId"/> as the pusher, and starts the worker.</summary>
+    public async Task PushAsync(Guid mselId, Guid? playerViewId = null, Guid? userId = null)
     {
         await StartAsync();
 
@@ -137,7 +144,8 @@ public sealed class IntegrationServiceHarness
         {
             MselId = mselId,
             PlayerViewId = playerViewId,
-            IsPush = true
+            IsPush = true,
+            UserId = userId
         });
     }
 

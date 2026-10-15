@@ -255,7 +255,11 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         },
         { "DELETE", "api/proficiencyScales/{proficiencyscale}", "ManageCompetencyFrameworks", null },
         { "POST", "api/proficiencyScales/json", "ManageCompetencyFrameworks", "@file" },
-        { "POST", "api/proficiencyScales/json/download", "ManageCompetencyFrameworks", "[]" }
+        { "POST", "api/proficiencyScales/json/download", "ManageCompetencyFrameworks", "[]" },
+
+        // MselController - the JSON import report wants CreateMsels, like the upload it reports on; the
+        // controller's other routes are covered in MselEndpointTests and MselServiceJsonTests.
+        { "POST", "api/msels/json/import", "CreateMsels", "@file" }
     };
 
     [Theory]
@@ -266,6 +270,32 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         var graph = await SeedGraph();
 
         var response = await Client().SendAsync(Request(method, route, body, graph), Ct);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    /// <summary>
+    /// The routes that ask Blueprint's authorization service nothing, because the application they read
+    /// decides what the caller may see. Behind the MVC-wide authorization filter all the same.
+    /// </summary>
+    /// <remarks>
+    /// <c>CasterController</c>'s two routes call Caster with the caller's own token, so they cannot hold a row
+    /// in <see cref="Routes"/>: no system permission lifts or imposes a refusal. Their answers are in
+    /// <see cref="CasterEndpointTests"/>.
+    /// </remarks>
+    public static TheoryData<string, string> RoutesWithoutAPermission => new()
+    {
+        { "GET", "api/caster/directories" },
+        { "GET", "api/caster/directories/00000000-0000-0000-0000-000000000001/team-variables" }
+    };
+
+    [Theory]
+    [MemberData(nameof(RoutesWithoutAPermission))]
+    public async Task EveryRouteWithoutAPermission_Anonymously_Is401(string method, string route)
+    {
+        var graph = await SeedGraph();
+
+        var response = await Client().SendAsync(Request(method, route, null, graph), Ct);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }

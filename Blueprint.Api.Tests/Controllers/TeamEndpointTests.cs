@@ -548,6 +548,54 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             Hub.Recipients(MainHubMethods.TeamCreated, created.Id, msel.Id).Order());
     }
 
+    /// <summary>The Caster topology team a team is mapped to is stored trimmed.</summary>
+    [Fact]
+    public async Task Create_TrimsTheCasterTeamVariable()
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var created = await Read<ViewModels.Team>(
+            await Post(Client(actor), Body(msel.Id) with { CasterTeamVariable = "  admin " }));
+
+        Assert.Equal("admin", created.CasterTeamVariable);
+        Assert.Equal("admin", (await Stored(created.Id)).CasterTeamVariable);
+    }
+
+    /// <summary>A blank mapping is stored as no mapping.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Create_StoresABlankCasterTeamVariableAsNone(string variable)
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var created = await Read<ViewModels.Team>(
+            await Post(Client(actor), Body(msel.Id) with { CasterTeamVariable = variable }));
+
+        Assert.Null((await Stored(created.Id)).CasterTeamVariable);
+    }
+
+    /// <summary>A mapping a variables file cannot assign is refused, and no team is stored.</summary>
+    [Theory]
+    [InlineData("view_id")]
+    [InlineData("2nd_squad")]
+    [InlineData("blue team")]
+    public async Task Create_WithACasterTeamVariableTfvarsCannotHold_Is409AndStoresNothing(string variable)
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Post(Client(actor), Body(msel.Id) with { CasterTeamVariable = variable });
+
+        Assert.Equal(
+            $"\"{variable}\" cannot be a topology team: it must be a terraform variable name other than " +
+            "exercise_id, view_id, user_id, username.",
+            (await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title);
+        Assert.Equal(0, await CountOn(msel.Id));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // POST teams/msel/{mselId}/unit/{unitId}
     // ---------------------------------------------------------------------------------------------
@@ -829,6 +877,57 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Null((await StoredMsel(msel.Id)).DateModified);
     }
 
+    [Fact]
+    public async Task Update_TrimsTheCasterTeamVariable()
+    {
+        var msel = await SeedMsel();
+        var team = await SeedTeam(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), team.Id, BodyFor(team) with { CasterTeamVariable = " red_cell " });
+
+        Assert.Equal("red_cell", (await Read<ViewModels.Team>(response)).CasterTeamVariable);
+        Assert.Equal("red_cell", (await Stored(team.Id)).CasterTeamVariable);
+    }
+
+    /// <summary>A blank mapping clears the one the team had.</summary>
+    [Fact]
+    public async Task Update_WithABlankCasterTeamVariable_ClearsTheMapping()
+    {
+        var msel = await SeedMsel();
+        var team = TestData.Team(msel.Id);
+        team.CasterTeamVariable = "admin";
+        await Seed(team);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), team.Id, BodyFor(team) with { CasterTeamVariable = "  " });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null((await Stored(team.Id)).CasterTeamVariable);
+    }
+
+    [Fact]
+    public async Task Update_WithACasterTeamVariableTfvarsCannotHold_Is409AndLeavesTheTeamAlone()
+    {
+        var msel = await SeedMsel();
+        var team = TestData.Team(msel.Id);
+        team.CasterTeamVariable = "admin";
+        await Seed(team);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(
+            Client(actor), team.Id, BodyFor(team) with { Name = "Renamed", CasterTeamVariable = "username" });
+
+        Assert.Equal(
+            "\"username\" cannot be a topology team: it must be a terraform variable name other than " +
+            "exercise_id, view_id, user_id, username.",
+            (await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title);
+
+        var stored = await Stored(team.Id);
+        Assert.Equal("admin", stored.CasterTeamVariable);
+        Assert.Equal(team.Name, stored.Name);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // DELETE teams/{id}
     // ---------------------------------------------------------------------------------------------
@@ -994,6 +1093,7 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         public string Email { get; init; }
         public bool canTeamLeaderInvite { get; init; }
         public bool canTeamMemberInvite { get; init; }
+        public string CasterTeamVariable { get; init; }
 
         public Guid CreatedBy { get; init; }
         public DateTime DateCreated { get; init; }

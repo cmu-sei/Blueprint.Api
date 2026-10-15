@@ -207,6 +207,40 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Empty(Factory.Cite.ReceivedCalls());
     }
 
+    /// <summary>A model CITE answers with a blank description leaves the stored name in the file.</summary>
+    [Fact]
+    public async Task Download_WhenCiteNamesTheModelWithNothing_KeepsTheStoredScoringModelName()
+    {
+        var scoringModelId = Guid.NewGuid();
+        var msel = TestData.Msel();
+        msel.UseCite = true;
+        msel.CiteScoringModelId = scoringModelId;
+        msel.CiteScoringModelName = "Incident Triage";
+        await Seed(msel);
+        Factory.Cite.GetScoringModelAsync(scoringModelId, Arg.Any<CancellationToken>())
+            .Returns(new ScoringModel { Id = scoringModelId, Description = "  " });
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var exported = await ReadExport(await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct));
+
+        Assert.Equal("Incident Triage", exported.GetProperty("CiteScoringModelName").GetString());
+    }
+
+    /// <summary>A CITE MSEL with no scoring model asks CITE nothing on export.</summary>
+    [Fact]
+    public async Task Download_OfACiteMselWithNoScoringModel_AsksCiteNothing()
+    {
+        var msel = TestData.Msel();
+        msel.UseCite = true;
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(Factory.Cite.ReceivedCalls());
+    }
+
     [Fact]
     public async Task Download_OfAnUnknownMsel_Is404()
     {
@@ -284,9 +318,8 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     /// <summary>
-    /// An import is a copy, so it is renamed after whoever imported it and gets a new id. The importer
-    /// becomes the creator - which is what gives them any hold on the MSEL at all, since an import
-    /// carries no roles.
+    /// An import keeps the file's name when no MSEL here has it, gets a new id, and makes the importer its
+    /// creator - which is what gives them any hold on the MSEL at all, since an import carries no roles.
     /// </summary>
     [Fact]
     public async Task Upload_KeepsTheFileNameAndGivesItANewId()
@@ -355,6 +388,9 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
             m.CiteEvaluationId = Guid.NewGuid();
             m.UseSteamfitter = true;
             m.SteamfitterScenarioId = Guid.NewGuid();
+            m.UseCaster = true;
+            m.CasterWorkspaceId = Guid.NewGuid();
+            m.CasterRunId = Guid.NewGuid();
         });
 
         var imported = await Upload(Client(actor), file);
@@ -370,6 +406,11 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.True(imported.UsePlayer);
         Assert.True(imported.UseGallery);
         Assert.True(imported.UseSteamfitter);
+        Assert.True(imported.UseCaster);
+
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == imported.Id, Ct));
+        Assert.Null(stored.CasterWorkspaceId);
+        Assert.Null(stored.CasterRunId);
     }
 
     /// <summary>
@@ -417,35 +458,7 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     public async Task Upload_RenumbersTheGraph()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
-        var dataFieldId = Guid.NewGuid();
-        var scenarioEventId = Guid.NewGuid();
-        var file = Exported(m =>
-        {
-            m.DataFields.Add(new DataFieldEntity
-            {
-                Id = dataFieldId,
-                MselId = m.Id,
-                Name = "Headline",
-                DataType = DataFieldType.String,
-                DisplayOrder = 1
-            });
-            m.ScenarioEvents.Add(new ScenarioEventEntity
-            {
-                Id = scenarioEventId,
-                MselId = m.Id,
-                GroupOrder = 1,
-                DataValues =
-                [
-                    new DataValueEntity
-                    {
-                        Id = Guid.NewGuid(),
-                        ScenarioEventId = scenarioEventId,
-                        DataFieldId = dataFieldId,
-                        Value = "the headline"
-                    }
-                ]
-            });
-        });
+        var (file, dataFieldId) = ExportedWithOneCell(DataFieldType.String, "the headline");
 
         var imported = await Upload(Client(actor), file);
 
@@ -457,6 +470,23 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal("the headline", dataValue.Value);
         // The renumbered data value still points at the renumbered data field.
         Assert.Equal(dataField.Id, dataValue.DataFieldId);
+    }
+
+    /// <summary>An IP Address or Network field comes across with its type and its value.</summary>
+    [Theory]
+    [InlineData(DataFieldType.IpAddress, "10.1.0.5")]
+    [InlineData(DataFieldType.Network, "10.1.0.0/24")]
+    public async Task Upload_KeepsTheTypeAndValueOfAnAddressField(DataFieldType dataType, string value)
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var (file, _) = ExportedWithOneCell(dataType, value);
+
+        var imported = await Upload(Client(actor), file);
+
+        var dataField = await ReadBack(rb => rb.DataFields.SingleAsync(df => df.MselId == imported.Id, Ct));
+        var dataValue = await ReadBack(rb => rb.DataValues.SingleAsync(dv => dv.ScenarioEvent.MselId == imported.Id, Ct));
+        Assert.Equal(dataType, dataField.DataType);
+        Assert.Equal(value, dataValue.Value);
     }
 
     /// <summary>An import is saved with event publishing off, so nothing goes out over SignalR.</summary>
@@ -487,7 +517,7 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
 
-        var response = await Post(Client(actor), "not json at all");
+        var response = await Post(Client(actor), "not json at all", UploadRoute);
 
         Assert.Equal("'not json at all' is an invalid JSON literal. Expected the literal 'null'. Path: $ | LineNumber: 0 | BytePositionInLine: 1.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
     }
@@ -498,11 +528,11 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
 
-        var response = await Post(Client(actor), """{"Name":"no teams at all","Teams":null}""");
+        var response = await Post(Client(actor), """{"Name":"no teams at all","Teams":null}""", UploadRoute);
 
         var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselService.UploadJsonAsync", failure.Detail);
+        Assert.Equal("Value cannot be null. (Parameter 'source')", failure.Title);
+        Assert.Contains("MselService.ImportJsonAsync", failure.Detail);
     }
 
     [Fact]
@@ -510,7 +540,7 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
 
-        var response = await Post(Client(actor), Exported());
+        var response = await Post(Client(actor), Exported(), UploadRoute);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -526,7 +556,7 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var response = await Post(Client(actor), Exported());
+        var response = await Post(Client(actor), Exported(), UploadRoute);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -852,6 +882,74 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal(firstId, imported.CiteScoringModelId);
     }
 
+    /// <summary>A Caster directory the importer can view in Caster comes across.</summary>
+    [Fact]
+    public async Task Upload_OfACasterMselWithADirectoryTheImporterCanView_KeepsIt()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var directory = Guid.NewGuid();
+        Factory.Caster.ShowsDirectory(directory);
+        var file = Exported(m =>
+        {
+            m.UseCaster = true;
+            m.CasterDirectoryId = directory;
+        });
+
+        var imported = await Upload(Client(actor), file);
+
+        Assert.Equal(directory, imported.CasterDirectoryId);
+        Assert.Equal(
+            directory,
+            (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == imported.Id, Ct))).CasterDirectoryId);
+    }
+
+    /// <summary>A directory from another installation, or one Caster will not show the importer, is dropped
+    /// and the import goes on.</summary>
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.NotFound)]
+    public async Task Upload_OfACasterMselWithADirectoryCasterWillNotShow_DropsTheDirectory(HttpStatusCode casterAnswer)
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var directory = Guid.NewGuid();
+        Factory.Caster.RefusesDirectory(directory, casterAnswer);
+        var file = Exported(m =>
+        {
+            m.UseCaster = true;
+            m.CasterDirectoryId = directory;
+        });
+
+        var imported = await Upload(Client(actor), file);
+
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == imported.Id, Ct));
+        Assert.Null(stored.CasterDirectoryId);
+        Assert.True(stored.UseCaster);
+    }
+
+    [Fact]
+    public async Task Upload_WhenCasterCannotBeReached_DropsTheDirectory()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var directory = Guid.NewGuid();
+        Factory.Caster.GetDirectoryAsync(directory, false, false, Arg.Any<CancellationToken>())
+            .Throws(new HttpRequestException("Connection refused"));
+        var file = Exported(m => m.CasterDirectoryId = directory);
+
+        var imported = await Upload(Client(actor), file);
+
+        Assert.Null(imported.CasterDirectoryId);
+    }
+
+    [Fact]
+    public async Task Upload_OfAMselWithNoCasterDirectory_AsksCasterNothing()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        await Upload(Client(actor), Exported());
+
+        Assert.Empty(Factory.Caster.ReceivedCalls());
+    }
+
     // ---------------------------------------------------------------------------------------------
     // The import report (POST msels/json/import)
     // ---------------------------------------------------------------------------------------------
@@ -1050,9 +1148,247 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var response = await Post(Client(actor), Exported(), "/api/msels/json/import");
+        var response = await Post(Client(actor), Exported(), ImportRoute);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>A file naming its scoring model only by name is linked to the model CITE has under it.</summary>
+    [Fact]
+    public async Task Import_OfAScoringModelNamedOnly_ReportsTheLinkByName()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        CiteKnows(scoringModels: [new ScoringModel { Id = Guid.NewGuid(), Description = "Incident Triage" }]);
+
+        var result = await Import(Client(actor), Exported(CiteScoringModel(null, "Incident Triage")));
+
+        Assert.Equal(
+            "Linked to the CITE scoring model \"Incident Triage\" by name.",
+            Assert.Single(result.Changes, c => c.Field == "citeScoringModel").Message);
+    }
+
+    [Fact]
+    public async Task Import_OfAScoringModelNamedOnlyThatCiteDoesNotHave_ReportsItWasNotFound()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        CiteKnows(scoringModels: [new ScoringModel { Id = Guid.NewGuid(), Description = "Something Else" }]);
+
+        var result = await Import(Client(actor), Exported(CiteScoringModel(null, "Incident Triage")));
+
+        Assert.Equal(
+            "Scoring model \"Incident Triage\" was not found in CITE. Choose one before pushing.",
+            Assert.Single(result.Changes, c => c.Field == "citeScoringModel").Message);
+        Assert.Null(result.Msel.CiteScoringModelId);
+    }
+
+    /// <summary>A stale id relinked by name gets its own message, saying the file's id was not in CITE, which
+    /// <see cref="Import_OfAScoringModelFoundByName_ReportsTheLink"/> only matches in part.</summary>
+    [Fact]
+    public async Task Import_OfAStaleScoringModelIdFoundByName_ReportsTheRelink()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        CiteKnows(scoringModels: [new ScoringModel { Id = Guid.NewGuid(), Description = "Incident Triage" }]);
+
+        var result = await Import(Client(actor), Exported(CiteScoringModel(Guid.NewGuid(), "Incident Triage")));
+
+        Assert.Equal(
+            "The file's scoring model id is not in CITE; linked to \"Incident Triage\" by name.",
+            Assert.Single(result.Changes, c => c.Field == "citeScoringModel").Message);
+    }
+
+    [Fact]
+    public async Task Import_OfAStaleScoringModelIdWithNoName_ReportsItWasNotFound()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        CiteKnows(scoringModels: [new ScoringModel { Id = Guid.NewGuid(), Description = "Incident Triage" }]);
+
+        var result = await Import(Client(actor), Exported(CiteScoringModel(Guid.NewGuid(), null)));
+
+        Assert.Equal(
+            "The file's scoring model was not found in CITE. Choose one before pushing.",
+            Assert.Single(result.Changes, c => c.Field == "citeScoringModel").Message);
+        Assert.Null(result.Msel.CiteScoringModelId);
+    }
+
+    [Fact]
+    public async Task Import_OfAScoringModelIdCiteHas_ReportsNoScoringModelChange()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var localId = Guid.NewGuid();
+        CiteKnows(scoringModels: [new ScoringModel { Id = localId, Description = "Incident Triage" }]);
+
+        var result = await Import(Client(actor), Exported(CiteScoringModel(localId, "Incident Triage")));
+
+        Assert.DoesNotContain(result.Changes, c => c.Field == "citeScoringModel");
+        Assert.Equal(localId, result.Msel.CiteScoringModelId);
+    }
+
+    /// <summary>A team type id this CITE does not have falls back to the default, and the report names the
+    /// type the file gave.</summary>
+    [Fact]
+    public async Task Import_OfATeamTypeCiteDoesNotHave_ReportsTheDefaultItWasGiven()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        CiteKnows(teamTypes: [new TeamType { Id = Guid.NewGuid(), Name = "Standard" }]);
+        var file = Exported(m =>
+        {
+            m.UseCite = true;
+            m.Teams.Add(CiteTeam(m.Id, "BLUE", Guid.NewGuid(), "Gold Cell"));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(
+            "Team BLUE's CITE team type \"Gold Cell\" was not found; set to \"Standard\".",
+            Assert.Single(result.Changes, c => c.Field == "teams").Message);
+    }
+
+    [Fact]
+    public async Task Import_OfAnUnnamedTeamTypeCiteDoesNotHave_ReportsTheDefaultItWasGiven()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        CiteKnows(teamTypes: [new TeamType { Id = Guid.NewGuid(), Name = "Standard" }]);
+        var file = Exported(m =>
+        {
+            m.UseCite = true;
+            m.Teams.Add(CiteTeam(m.Id, "BLUE", Guid.NewGuid(), null));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(
+            "Team BLUE's CITE team type was not found; set to \"Standard\".",
+            Assert.Single(result.Changes, c => c.Field == "teams").Message);
+    }
+
+    [Fact]
+    public async Task Import_OfATeamTypeWhenCiteHasNoTeamTypes_ReportsThatNoneCouldBeUsed()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        CiteKnows(teamTypes: []);
+        var file = Exported(m =>
+        {
+            m.UseCite = true;
+            m.Teams.Add(CiteTeam(m.Id, "BLUE", Guid.NewGuid(), "Gold Cell"));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(
+            "Team BLUE's CITE team type was not found, and CITE has no team types to use instead.",
+            Assert.Single(result.Changes, c => c.Field == "teams").Message);
+    }
+
+    /// <summary>A team with no short name is named in the report by its name.</summary>
+    [Fact]
+    public async Task Import_OfATypelessTeamWithNoShortName_NamesTheTeamByItsName()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        CiteKnows(teamTypes: [new TeamType { Id = Guid.NewGuid(), Name = "Standard" }]);
+        var file = Exported(m =>
+        {
+            m.UseCite = true;
+            m.Teams.Add(CiteTeam(m.Id, "", null, null, name: "Blue Team"));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(
+            "Team Blue Team had no CITE team type; set to \"Standard\".",
+            Assert.Single(result.Changes, c => c.Field == "teams").Message);
+    }
+
+    /// <summary>A team type found by the file's name is relinked without a line in the report.</summary>
+    [Fact]
+    public async Task Import_OfATeamTypeFoundByName_ReportsNothing()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var localId = Guid.NewGuid();
+        CiteKnows(teamTypes: [new TeamType { Id = localId, Name = "Gold Cell" }]);
+        var file = Exported(m =>
+        {
+            m.UseCite = true;
+            m.Teams.Add(CiteTeam(m.Id, "BLUE", Guid.NewGuid(), "Gold Cell"));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.DoesNotContain(result.Changes, c => c.Field == "teams");
+        Assert.Equal(localId, (await ReadBack(rb => rb.Teams.SingleAsync(t => t.MselId == result.Msel.Id, Ct))).CiteTeamTypeId);
+    }
+
+    [Fact]
+    public async Task Import_WhenCiteCannotBeReached_ExplainsEachFailure()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        Factory.Cite
+            .GetScoringModelsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool?>(), Arg.Any<CancellationToken>())
+            .Throws(new HttpRequestException("Connection refused"));
+        Factory.Cite.GetTeamTypesAsync(Arg.Any<CancellationToken>())
+            .Throws(new HttpRequestException("Connection refused"));
+        var file = Exported(m =>
+        {
+            CiteScoringModel(Guid.NewGuid(), "Incident Triage")(m);
+            m.Teams.Add(TestData.Team(m.Id));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(
+            "Could not check the scoring model in CITE, so it was not linked. Choose one before pushing.",
+            Assert.Single(result.Failures, f => f.Step == "citeScoringModel").Message);
+        Assert.Equal(
+            "Could not check the teams' CITE team types, so they were imported unchecked.",
+            Assert.Single(result.Failures, f => f.Step == "citeTeamTypes").Message);
+    }
+
+    [Fact]
+    public async Task Import_ReportsGalleryAndCiteWhenTheyAreOn()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        CiteKnows();
+        var file = Exported(m =>
+        {
+            m.UsePlayer = false;
+            m.UseGallery = true;
+            m.UseCite = true;
+            m.UseSteamfitter = false;
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(
+            [("useCite", "CITE integration is on."), ("useGallery", "Gallery integration is on.")],
+            result.Changes.Select(c => (c.Field, c.Message)).Order());
+    }
+
+    /// <summary>A Caster MSEL is imported with Caster on, and the report does not list Caster.</summary>
+    [Fact]
+    public async Task Import_OfACasterMsel_DoesNotReportThatCasterIsOn()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m => m.UseCaster = true);
+
+        var result = await Import(Client(actor), file);
+
+        Assert.True(result.Msel.UseCaster);
+        Assert.Empty(result.Changes);
+    }
+
+    /// <summary>A Caster directory the importer cannot view is dropped, and the report says nothing of it.</summary>
+    [Fact]
+    public async Task Import_OfACasterDirectoryCasterWillNotShow_DropsItWithoutReportingIt()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var directory = Guid.NewGuid();
+        Factory.Caster.RefusesDirectory(directory);
+        var file = Exported(m => m.CasterDirectoryId = directory);
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Null(result.Msel.CasterDirectoryId);
+        Assert.Empty(result.Changes);
+        Assert.Empty(result.Failures);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1071,6 +1407,46 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
             .Returns(scoringModels ?? []);
         Factory.Cite.GetTeamTypesAsync(Arg.Any<CancellationToken>())
             .Returns(teamTypes ?? []);
+    }
+
+    /// <summary>
+    /// A file holding one data field of <paramref name="dataType"/> and one scenario event whose value in
+    /// it is <paramref name="value"/>, and the id the field was exported under.
+    /// </summary>
+    private static (string File, Guid DataFieldId) ExportedWithOneCell(DataFieldType dataType, string value)
+    {
+        var dataFieldId = Guid.Empty;
+        var file = Exported(m =>
+        {
+            var dataField = TestData.DataField(mselId: m.Id, dataType: dataType);
+            var scenarioEvent = TestData.ScenarioEvent(m.Id);
+            scenarioEvent.DataValues.Add(TestData.DataValue(dataField.Id, scenarioEvent.Id, value));
+            m.DataFields.Add(dataField);
+            m.ScenarioEvents.Add(scenarioEvent);
+            dataFieldId = dataField.Id;
+        });
+
+        return (file, dataFieldId);
+    }
+
+    /// <summary>A CITE MSEL whose file names the scoring model <paramref name="id"/> under <paramref name="name"/>.</summary>
+    private static Action<MselEntity> CiteScoringModel(Guid? id, string name) => m =>
+    {
+        m.UseCite = true;
+        m.CiteScoringModelId = id;
+        m.CiteScoringModelName = name;
+    };
+
+    /// <summary>A team of <paramref name="mselId"/> carrying the CITE team type the file gives it.</summary>
+    private static TeamEntity CiteTeam(Guid mselId, string shortName, Guid? typeId, string typeName, string name = null)
+    {
+        var team = TestData.Team(mselId);
+        team.ShortName = shortName;
+        team.Name = name ?? team.Name;
+        team.CiteTeamTypeId = typeId;
+        team.CiteTeamTypeName = typeName;
+
+        return team;
     }
 
     /// <summary>
@@ -1097,7 +1473,7 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
 
     private async Task<Msel> Upload(HttpClient client, string file)
     {
-        var response = await Post(client, file);
+        var response = await Post(client, file, UploadRoute);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -1110,14 +1486,18 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     /// </remarks>
     private async Task<MselImportResult> Import(HttpClient client, string file)
     {
-        var response = await Post(client, file, "/api/msels/json/import");
+        var response = await Post(client, file, ImportRoute);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         return await Read<MselImportResult>(response);
     }
 
-    private async Task<HttpResponseMessage> Post(HttpClient client, string file, string path = "/api/msels/json")
+    private const string UploadRoute = "/api/msels/json";
+
+    private const string ImportRoute = "/api/msels/json/import";
+
+    private async Task<HttpResponseMessage> Post(HttpClient client, string file, string path)
     {
         using var content = new MultipartFormDataContent();
 

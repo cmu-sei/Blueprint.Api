@@ -13,6 +13,7 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
+using Microsoft.EntityFrameworkCore;
 using NSubstitute;
 using Xunit;
 
@@ -245,6 +246,51 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
             "the applications should be created last of all");
     }
 
+    /// <summary>A MSEL team named Admin takes the place of Player's own: the view is created without one, and
+    /// that team alone gets the role Player gives its Admin team.</summary>
+    [Fact]
+    public async Task Push_OfAMselWithAnAdminTeam_GivesItTheViewAdminRoleInsteadOfPlayersOwnTeam()
+    {
+        var viewAdmin = Guid.NewGuid();
+        var msel = await SeedPushableMsel();
+        var admin = TestData.Team(msel.Id);
+        admin.Name = "Admin";
+        await Seed(admin);
+        var harness = Harness(x => x.AnswersJson(
+            "player/api/team-roles", $$"""[{"id":"{{viewAdmin}}","name":"View Admin"}]"""));
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var view = Body(harness.Handler.Sent.Single(x => x.Path == "player/api/views").Body);
+        var adminTeam = harness.Handler.Sent
+            .Where(x => x.Path.StartsWith("player/api/views/") && x.Path.EndsWith("/teams"))
+            .Select(x => Body(x.Body))
+            .Single(x => x["id"].GetString() == admin.Id.ToString());
+
+        Assert.False(view["createAdminTeam"].GetBoolean());
+        Assert.Equal(viewAdmin.ToString(), adminTeam["roleId"].GetString());
+    }
+
+    /// <summary>A Player without the View Admin role stops the push before a view is created.</summary>
+    [Fact]
+    public async Task Push_OfAMselWithAnAdminTeam_WhenPlayerHasNoViewAdminRole_CreatesNoView()
+    {
+        var msel = await SeedPushableMsel();
+        var admin = TestData.Team(msel.Id);
+        admin.Name = "Admin";
+        await Seed(admin);
+        var harness = Harness(x => x.AnswersJson(
+            "player/api/team-roles", $$"""[{"id":"{{Guid.NewGuid()}}","name":"View Member"}]"""));
+
+        await harness.PushAsync(msel.Id);
+
+        var failed = await harness.WaitForError(msel.Id, Ct);
+
+        Assert.Contains("Player has no \"View Admin\" team role to give the MSEL's Admin team.", failed.IntegrationStatus);
+        Assert.DoesNotContain("player/api/views", harness.Handler.Paths);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // The move number every application is told
     // ---------------------------------------------------------------------------------------------
@@ -281,6 +327,29 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
         var article = Body(harness.Handler.Sent.Single(x => x.Path == "gallery/api/articles").Body);
         Assert.Equal(1, Number(article, "move"));
         Assert.Equal(0, Number(article, "inject"));
+    }
+
+    /// <summary>The article's status goes to Gallery under its color name, a status cell holding one of
+    /// Gallery's earlier names included.</summary>
+    [Theory]
+    [InlineData("Red", "Red")]
+    [InlineData("critical", "Orange")]
+    [InlineData("3", "Gray")]
+    public async Task Push_SendsGalleryTheArticlesStatusUnderItsColorName(string cell, string expected)
+    {
+        var msel = await SeedPushableMsel();
+        var scenarioEvent = await ReadBack(rb => rb.ScenarioEvents.SingleAsync(x => x.MselId == msel.Id, Ct));
+        var status = TestData.DataField(mselId: msel.Id, displayOrder: 2);
+        status.GalleryArticleParameter = GalleryArticleParameter.Status.ToString();
+        await Seed(status);
+        await Seed(TestData.DataValue(status.Id, scenarioEvent.Id, cell));
+        var harness = Harness();
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var article = Body(harness.Handler.Sent.Single(x => x.Path == "gallery/api/articles").Body);
+        Assert.Equal(expected, article["status"].GetString());
     }
 
     /// <summary>The CITE and Gallery move-change urls carry the move index.</summary>

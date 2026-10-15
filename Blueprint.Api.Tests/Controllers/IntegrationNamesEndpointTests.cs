@@ -25,11 +25,11 @@ namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary>
 /// <c>GET api/msels/{id}/integrations/names</c>, and through it <c>IntegrationNameService</c> - the one
-/// place blueprint reads from all four sibling APIs in a single request.
+/// place blueprint reads from all five sibling APIs in a single request.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the first test class to drive the four substituted API clients, which is the whole point of
+/// This is the first test class to drive the substituted API clients, which is the whole point of
 /// covering this endpoint early: everything else that talks to Player, Gallery, CITE or Steamfitter does it
 /// from a background worker, where a test can only see what went on a queue. Here the calls happen on the
 /// request thread and their results come back in the response.
@@ -38,7 +38,7 @@ namespace Blueprint.Api.Tests.Controllers;
 /// The service's contract is that a name is best-effort. A MSEL with no association of a kind, an
 /// application that cannot be reached, and an association whose target has been deleted all produce an
 /// empty string rather than an error, because one unreachable application must not cost the caller the
-/// other five names. What is <em>not</em> best-effort is the authorization: the names are read through
+/// other names. What is <em>not</em> best-effort is the authorization: the names are read through
 /// <c>MselService.GetAsync</c> precisely so that a caller who cannot view the MSEL cannot use this
 /// endpoint to learn the name of something in another application.
 /// </para>
@@ -66,6 +66,10 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         Factory.Steamfitter
             .GetScenarioAsync((Guid)msel.SteamfitterScenarioId, Arg.Any<CancellationToken>())
             .Returns(new Steamfitter.Api.Client.Scenario { Name = "the scenario" });
+        Factory.Caster.GetDirectoryAsync((Guid)msel.CasterDirectoryId, false, false, Arg.Any<CancellationToken>())
+            .Returns(new Caster.Api.Client.Directory { Name = "the directory" });
+        Factory.Caster.GetWorkspaceAsync((Guid)msel.CasterWorkspaceId, Arg.Any<CancellationToken>())
+            .Returns(new Caster.Api.Client.Workspace { Name = "the workspace" });
 
         var names = await Names(Client(actor), msel.Id);
 
@@ -76,6 +80,8 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal("the evaluation", names.CiteEvaluationName);
         Assert.Equal("the scoring model", names.CiteScoringModelName);
         Assert.Equal("the scenario", names.SteamfitterScenarioName);
+        Assert.Equal("the directory", names.CasterDirectoryName);
+        Assert.Equal("the workspace", names.CasterWorkspaceName);
     }
 
     [Fact]
@@ -93,11 +99,14 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal("", names.CiteEvaluationName);
         Assert.Equal("", names.CiteScoringModelName);
         Assert.Equal("", names.SteamfitterScenarioName);
+        Assert.Equal("", names.CasterDirectoryName);
+        Assert.Equal("", names.CasterWorkspaceName);
 
         Assert.Empty(Factory.PlayerApi.ReceivedCalls());
         Assert.Empty(Factory.Gallery.ReceivedCalls());
         Assert.Empty(Factory.Cite.ReceivedCalls());
         Assert.Empty(Factory.Steamfitter.ReceivedCalls());
+        Assert.Empty(Factory.Caster.ReceivedCalls());
     }
 
     /// <summary>
@@ -145,6 +154,27 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
 
         Assert.Equal("", names.PlayerViewName);
         Assert.Equal("the evaluation", names.CiteEvaluationName);
+    }
+
+    /// <summary>A Caster directory the caller cannot view in Caster costs its own name, and the workspace's
+    /// name is still read.</summary>
+    [Fact]
+    public async Task Names_WhenCasterRefusesTheDirectory_ReturnsTheWorkspaceName()
+    {
+        var msel = TestData.Msel();
+        msel.CasterDirectoryId = Guid.NewGuid();
+        msel.CasterWorkspaceId = Guid.NewGuid();
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        Factory.Caster.RefusesDirectory((Guid)msel.CasterDirectoryId);
+        Factory.Caster.GetWorkspaceAsync((Guid)msel.CasterWorkspaceId, Arg.Any<CancellationToken>())
+            .Returns(new Caster.Api.Client.Workspace { Name = "the workspace" });
+
+        var names = await Names(Client(actor), msel.Id);
+
+        Assert.Equal("", names.CasterDirectoryName);
+        Assert.Equal("the workspace", names.CasterWorkspaceName);
     }
 
     /// <summary>
@@ -240,6 +270,7 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Empty(Factory.Gallery.ReceivedCalls());
         Assert.Empty(Factory.Cite.ReceivedCalls());
         Assert.Empty(Factory.Steamfitter.ReceivedCalls());
+        Assert.Empty(Factory.Caster.ReceivedCalls());
     }
 
     /// <summary>A template MSEL is readable by anybody, so its integration names are too.</summary>
@@ -285,6 +316,8 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         msel.CiteEvaluationId = Guid.NewGuid();
         msel.CiteScoringModelId = Guid.NewGuid();
         msel.SteamfitterScenarioId = Guid.NewGuid();
+        msel.CasterDirectoryId = Guid.NewGuid();
+        msel.CasterWorkspaceId = Guid.NewGuid();
 
         return msel;
     }

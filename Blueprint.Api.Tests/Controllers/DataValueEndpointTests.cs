@@ -415,6 +415,68 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(cell.Event.Id, stored.ScenarioEventId);
     }
 
+    /// <summary>A value in an IP Address or Network field is stored as entered.</summary>
+    [Theory]
+    [InlineData(DataFieldType.IpAddress, "10.1.0.5")]
+    [InlineData(DataFieldType.IpAddress, "2001:db8::1")]
+    [InlineData(DataFieldType.Network, "10.1.0.0/24")]
+    [InlineData(DataFieldType.Network, "2001:db8::/32")]
+    public async Task Create_OnAnAddressField_StoresTheValueAsEntered(DataFieldType dataType, string value)
+    {
+        var cell = await SeedCell();
+        var field = TestData.DataField(mselId: cell.Msel.Id, dataType: dataType, displayOrder: 2);
+        await Seed(field);
+        var actor = await Actor().OnMsel(cell.Msel, MselRole.Owner).SeedAsync();
+
+        var created = await Read<DataValue>(await Post(Client(actor), Body(field.Id, cell.Event.Id, value)));
+
+        Assert.Equal(value, (await Stored(created.Id)).Value);
+    }
+
+    /// <summary>A value that is not of its address field's type is stored as entered.</summary>
+    [Theory]
+    [InlineData(DataFieldType.IpAddress, "not an address")]
+    [InlineData(DataFieldType.IpAddress, "10.1.0.0/24")]
+    [InlineData(DataFieldType.Network, "10.1.0.0/33")]
+    [InlineData(DataFieldType.Network, "10.1.0.5")]
+    public async Task Create_OnAnAddressField_StoresAValueThatIsNotOfItsType(DataFieldType dataType, string value)
+    {
+        var cell = await SeedCell();
+        var field = TestData.DataField(mselId: cell.Msel.Id, dataType: dataType, displayOrder: 2);
+        await Seed(field);
+        var actor = await Actor().OnMsel(cell.Msel, MselRole.Owner).SeedAsync();
+
+        var response = await Post(Client(actor), Body(field.Id, cell.Event.Id, value));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(value, (await Stored((await Read<DataValue>(response)).Id)).Value);
+    }
+
+    /// <summary>A value that is not of its address field's type is stored as entered on update.</summary>
+    [Fact]
+    public async Task Update_OnAnAddressField_StoresAValueThatIsNotOfItsType()
+    {
+        var cell = await SeedCell(DataFieldType.IpAddress, "10.1.0.5");
+        var actor = await Actor().OnMsel(cell.Msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), cell.Value.Id, BodyFor(cell.Value) with { Value = "not an address" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("not an address", (await Stored(cell.Value.Id)).Value);
+    }
+
+    [Fact]
+    public async Task Update_OnANetworkField_StoresTheNewValue()
+    {
+        var cell = await SeedCell(DataFieldType.Network, "10.1.0.0/24");
+        var actor = await Actor().OnMsel(cell.Msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), cell.Value.Id, BodyFor(cell.Value) with { Value = "10.2.0.0/16" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("10.2.0.0/16", (await Stored(cell.Value.Id)).Value);
+    }
+
     /// <summary>The <c>Location</c> header is lower-case, as <c>RouteOptions.LowercaseUrls</c> writes it, and
     /// resolves.</summary>
     [Fact]

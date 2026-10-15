@@ -10,7 +10,7 @@ The suite is built on xUnit v3 and NSubstitute, and runs against a real PostgreS
 dotnet test
 ```
 
-Docker must be running. The suite starts and disposes its own PostgreSQL container through [Testcontainers](https://testcontainers.com/), so there is nothing to install and no local database to keep in sync. Nothing else is needed: no Keycloak, no Player, Gallery, CITE or Steamfitter, no network access and no `appsettings.json` edit. The container starts when the first test asks for a database, so the tests that take none still run without Docker.
+Docker must be running. The suite starts and disposes its own PostgreSQL container through [Testcontainers](https://testcontainers.com/), so there is nothing to install and no local database to keep in sync. Nothing else is needed: no Keycloak, no Player, Gallery, CITE, Steamfitter or Caster, no network access and no `appsettings.json` edit. The container starts when the first test asks for a database, so the tests that take none still run without Docker.
 
 A single class or a single test can be run with a filter:
 
@@ -71,7 +71,7 @@ Extends `DatabaseTestBase` for tests that drive the application over HTTP:
 - `Actor()` - Starts describing another actor: `await Actor().WithSystemPermissions(SystemPermission.EditMsels).OnMsel(msel, MselRole.Owner).SeedAsync()`.
 - `Client(actor)` - A client acting as a seeded actor. `Client()` carries no identity, so a request to an `/api/` route is a 401.
 - `Hub` - The `HubRecorder<MainHub>` of this test's host. `MainHubBroadcasts` reads it by group.
-- `Factory` - The class's host, with the substituted sibling clients (`Factory.Cite`, `.Gallery`, `.PlayerApi`, `.Steamfitter`, `.XApi`) and `OutboundHttp`.
+- `Factory` - The class's host, with the substituted sibling clients (`Factory.Cite`, `.Gallery`, `.PlayerApi`, `.Steamfitter`, `.Caster`, `.XApi`) and `OutboundHttp`.
 - `ReadAsync<T>`, `AssertStatus`, `AssertProblem` - From the shared base, with the host's own JSON options.
 
 Both fixtures arrive by constructor injection: `DatabaseFixture` from `[assembly: AssemblyFixture(...)]` in `AssemblyFixtures.cs`, and `BlueprintAppFactory` from `IClassFixture<BlueprintAppFactory>` on each hosted class.
@@ -84,7 +84,7 @@ Both fixtures arrive by constructor injection: `DatabaseFixture` from `[assembly
 
 | Real | Substituted or removed |
 | --- | --- |
-| `Startup`, the MVC pipeline, routing, model binding, both global filters | The sibling API clients: CITE, Gallery, Player, Steamfitter, and `IXApiService` (except in `XApiEnabledFactory`) |
+| `Startup`, the MVC pipeline, routing, model binding, both global filters | The sibling API clients: CITE, Gallery, Player, Steamfitter, Caster, and `IXApiService` (except in `XApiEnabledFactory`) |
 | Authorization, `AuthorizationClaimsTransformer`, `UserClaimsService` | `IHostedService`: the four background workers are removed |
 | PostgreSQL, EF Core, the real migrations, both interceptors | `IHubContext<MainHub>`, replaced by the shared `HubRecorder<MainHub>` (which records a `Clients.Groups(...)` send for each group) |
 | AutoMapper's 38 profiles, MediatR and the 24 event handlers | Outbound HTTP, over the shared `StubHttpClientFactory` (`Factory.OutboundHttp`) |
@@ -145,6 +145,7 @@ Blueprint's extras in `Support/`:
 
 - `MainHubBroadcasts` - Reads the recorder by group and method, and names the always-joined groups.
 - `SiblingApiHandler` - The transport for the `Integration*Extensions` classes, which build their own clients from `IHttpClientFactory`: the shared `StubHttpMessageHandler` with `RefusesUnmatched()`, whose route rules (`Answers`, `AnswersOnce`, `AnswersJson`, `Throws`) and `Sent` record it forwards, behind a `DelegatingHandler` that adds the concurrency controls only these tests need (`Yields`, `Holds`, `HoldsUntil`, `MaxInFlight`). `AsFactory()` hands out the shared `StubHttpClientFactory` over it.
+- `CasterArrangements` - What `Factory.Caster` answers `CasterService`, which calls Caster with the caller's own token: a directory Caster shows the caller (`ShowsDirectory`), one it refuses (`RefusesDirectory`), and the client's exception for a status (`Answering`). `ServiceCollectionExtensionsTests` pins that the production registration forwards that token.
 - `IntegrationServiceHarness`, `QueueWorkerHarness` - Construct a background worker with its dependencies and drive it through its real queue.
 - `XApiEnabledFactory` - The one factory subclass, for the xAPI options `Startup` binds at construction.
 - `CompositionFactory` - Snapshots the service collection before the harness substitutes into it.

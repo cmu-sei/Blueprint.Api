@@ -45,8 +45,8 @@ public class IntegrationCasterExtensionsTests
     // --- names ---
 
     /// <remarks>
-    /// The first live push failed on a name derived from the MSEL name: Caster's job mode copies the
-    /// workspace name into a Kubernetes label, which allows 63 characters with alphanumeric ends.
+    /// Caster's job mode copies the workspace name into a Kubernetes label, which allows 63 characters with
+    /// alphanumeric ends, and a MSEL name can hold anything.
     /// </remarks>
     [Theory]
     [InlineData("Official Project Lagoon TTX - Admin User")]
@@ -175,7 +175,7 @@ public class IntegrationCasterExtensionsTests
 
     /// <remarks>
     /// Blueprint creates the view with Player's own Admin team, which becomes "admin" by name: the
-    /// variable Basic Topology declares. The first live push of a mapping failed on exactly this.
+    /// variable a template such as Basic Topology declares for it.
     /// </remarks>
     [Fact]
     public void GetVarsFileContent_AMappingReplacesATeamThatOnlyHasTheVariableByName()
@@ -187,6 +187,13 @@ public class IntegrationCasterExtensionsTests
 
         var teamLines = content.Split("\r\n").Skip(4).Where(l => l.Length > 0).ToList();
         Assert.Equal([$"admin = \"{control}\""], teamLines);
+    }
+
+    /// <summary>The push's duplicate check agrees with the variables file: a mapping is no duplicate of a
+    /// team that only has the variable by name.</summary>
+    [Fact]
+    public void FindDuplicateTeamVariables_AMappingIsNoDuplicateOfATeamThatOnlyHasTheVariableByName()
+    {
         Assert.Empty(IntegrationCasterExtensions.FindDuplicateTeamVariables([("Admin", null), ("Exercise Control", "admin")]));
     }
 
@@ -205,13 +212,22 @@ public class IntegrationCasterExtensionsTests
     [InlineData("admin = \"x\"\nother")]
     public void GetVarsFileContent_RefusesAMappingTfvarsCannotHold(string variable)
     {
-        Assert.False(IntegrationCasterExtensions.IsMappableTeamVariable(variable));
         Assert.Throws<Exception>(() => IntegrationCasterExtensions.GetVarsFileContent(
             ViewId, UserId, "u", [("Blue Team", Guid.NewGuid(), variable)]));
     }
 
+    [Theory]
+    [InlineData("view_id")]
+    [InlineData("username")]
+    [InlineData("2nd_squad")]
+    [InlineData("admin = \"x\"\nother")]
+    public void IsMappableTeamVariable_RefusesANameTfvarsCannotHold(string variable)
+    {
+        Assert.False(IntegrationCasterExtensions.IsMappableTeamVariable(variable));
+    }
+
     /// <remarks>
-    /// The Basic Topology template as it is in dev: two team variables, the rest connection
+    /// A template shaped like Basic Topology: two team variables, the rest connection
     /// settings that its terraform.tfvars fills in.
     /// </remarks>
     [Fact]
@@ -367,6 +383,37 @@ public class IntegrationCasterExtensionsTests
             RunId, Source(handler), Options, 1, _ => Task.CompletedTask, cts.Token));
     }
 
+    /// <summary>A run still planning when the plan's wait runs out is reported as a timeout and never
+    /// applied.</summary>
+    [Fact]
+    public async Task PlanAndApply_ARunStillPlanningWhenTheWaitRunsOutTimesOut()
+    {
+        var handler = new SiblingApiHandler()
+            .AnswersJson($"GET api/runs/{RunId}", Run("Planning"));
+        var noWait = new ClientOptions { CasterCheckIntervalSeconds = 0, CasterPlanMaxWaitMinutes = 0 };
+
+        var ex = await Assert.ThrowsAsync<TimeoutException>(async () => await IntegrationCasterExtensions.PlanAndApplyAsync(
+            RunId, Source(handler), noWait, 1, _ => Task.CompletedTask, Ct));
+
+        Assert.Equal(
+            $"Caster run {RunId} plan was still Planning after 0 minutes. Time spent queued behind other Caster runs counts too.",
+            ex.Message);
+        Assert.DoesNotContain(handler.Sent, x => x.Path.EndsWith("/actions/apply"));
+    }
+
+    [Fact]
+    public async Task PlanAndApply_RefusesARunStatusItDoesNotKnow()
+    {
+        var handler = new SiblingApiHandler()
+            .AnswersJson($"GET api/runs/{RunId}", Run("Exploded"));
+
+        var ex = await Assert.ThrowsAsync<Exception>(async () => await IntegrationCasterExtensions.PlanAndApplyAsync(
+            RunId, Source(handler), Options, 1, _ => Task.CompletedTask, Ct));
+
+        Assert.Equal("Caster returned an unknown run status \"Exploded\".", ex.Message);
+        Assert.DoesNotContain(handler.Sent, x => x.Path.EndsWith("/actions/apply"));
+    }
+
     // --- pull ---
 
     [Fact]
@@ -417,6 +464,39 @@ public class IntegrationCasterExtensionsTests
         Assert.Equal(2, handler.Sent.Count(x => x.Path == $"api/runs/{RunId}"));
     }
 
+    /// <summary>A queued run is cancelled once, without force, and waited out before the destroy.</summary>
+    [Fact]
+    public async Task DestroyWorkspace_CancelsAQueuedRunOnceThenDestroys()
+    {
+        var destroyRunId = Guid.NewGuid();
+        var handler = Workspace($"[{Run("Queued")}]")
+            .AnswersJson($"POST api/runs/{RunId}/actions/cancel", Run("Queued"))
+            .AnswersJson($"GET api/runs/{RunId}", Run("Queued"), once: true)
+            .AnswersJson($"GET api/runs/{RunId}", Run("Rejected"))
+            .AnswersJson($"GET api/workspaces/{WorkspaceId}/resources", Resources(1), once: true)
+            .AnswersJson($"GET api/workspaces/{WorkspaceId}/resources", "[]")
+            .AnswersJson("POST api/runs", Run("Queued", destroyRunId), HttpStatusCode.Created)
+            .AnswersJson($"GET api/runs/{destroyRunId}", Run("Planned", destroyRunId), once: true)
+            .AnswersJson($"GET api/runs/{destroyRunId}", Run("Applied", destroyRunId))
+            .AnswersJson($"POST api/runs/{destroyRunId}/actions/apply", "{}")
+            .Answers($"DELETE api/workspaces/{WorkspaceId}", HttpStatusCode.NoContent);
+
+        await IntegrationCasterExtensions.DestroyWorkspaceAsync(
+            WorkspaceId, Source(handler), Options, _ => Task.CompletedTask, Ct);
+
+        var cancel = Assert.Single(handler.Sent, x => x.Path.EndsWith("/actions/cancel"));
+        Assert.Equal($"api/runs/{RunId}/actions/cancel", cancel.Path);
+        Assert.Contains("\"force\":false", cancel.Body);
+
+        // the cancelled run is polled until it ends, and only then is the destroy created
+        var requests = handler.Sent.Select(x => $"{x.Method} {x.Path}").ToList();
+        Assert.Equal(2, requests.Count(x => x == $"GET api/runs/{RunId}"));
+        Assert.True(requests.LastIndexOf($"GET api/runs/{RunId}") < requests.IndexOf("POST api/runs"));
+
+        Assert.Contains("\"isDestroy\":true", handler.Sent.Single(x => x.Method == HttpMethod.Post && x.Path == "api/runs").Body);
+        Assert.Equal(HttpMethod.Delete, handler.Sent.Last().Method);
+    }
+
     [Fact]
     public async Task DestroyWorkspace_RejectsAPlanThatWasNeverApplied()
     {
@@ -432,8 +512,8 @@ public class IntegrationCasterExtensionsTests
     }
 
     /// <remarks>
-    /// caster.api.client 1.5.0 cannot deserialize this status - its Run.Status converter ignores the
-    /// EnumMember names Caster writes - so this is the run list the typed client would fail to read.
+    /// Caster writes this status by its EnumMember name, which the typed client's Run.Status converter does
+    /// not read, so the run list is read raw.
     /// </remarks>
     [Fact]
     public async Task DestroyWorkspace_SavesTheStateOfARunCasterCouldNotSave()
@@ -524,12 +604,27 @@ public class IntegrationCasterExtensionsTests
 
         Assert.Equal(0, fetches);
         await source.GetAsync(Ct);
-        await source.GetAsync(Ct);
 
-        // the 300-second token it got lasts
         Assert.Equal(1, fetches);
     }
 
+    /// <summary>A 300-second token outlasts the refresh margin, so the next call keeps it.</summary>
+    [Fact]
+    public async Task ClientSource_KeepsATokenThatLasts()
+    {
+        var fetches = 0;
+        var source = new CasterClientSource(
+            new SiblingApiHandler().AsFactory(),
+            "http://caster.example/",
+            async () => { fetches++; return await Tokens.Bearer(); });
+        await source.GetAsync(Ct);
+
+        await source.GetAsync(Ct);
+
+        Assert.Equal(1, fetches);
+    }
+
+    /// <summary>A 30-second token is inside the refresh margin, so the next call replaces it.</summary>
     [Fact]
     public async Task ClientSource_RefreshesATokenAboutToExpire()
     {
@@ -538,13 +633,45 @@ public class IntegrationCasterExtensionsTests
             new SiblingApiHandler().AsFactory(),
             "http://caster.example/",
             async () => { fetches++; return await Tokens.Bearer(expiresIn: fetches == 1 ? 30 : 300); });
-
-        await source.GetAsync(Ct);
-        await source.GetAsync(Ct);
         await source.GetAsync(Ct);
 
-        // the second call replaces the 30-second token; the 300-second one it got lasts
+        await source.GetAsync(Ct);
+
         Assert.Equal(2, fetches);
+    }
+
+    /// <summary>The 300-second token a refresh got lasts for the call after it.</summary>
+    [Fact]
+    public async Task ClientSource_KeepsTheTokenARefreshGot()
+    {
+        var fetches = 0;
+        var source = new CasterClientSource(
+            new SiblingApiHandler().AsFactory(),
+            "http://caster.example/",
+            async () => { fetches++; return await Tokens.Bearer(expiresIn: fetches == 1 ? 30 : 300); });
+        await source.GetAsync(Ct);
+        await source.GetAsync(Ct);
+
+        await source.GetAsync(Ct);
+
+        Assert.Equal(2, fetches);
+    }
+
+    /// <summary>A token response that is an error is refused, naming the error.</summary>
+    [Fact]
+    public async Task ClientSource_RefusesATokenResponseThatIsAnError()
+    {
+        using var refusal = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("""{"error":"invalid_grant"}""", System.Text.Encoding.UTF8, "application/json")
+        };
+        var token = await IdentityModel.Client.ProtocolResponse.FromHttpResponseAsync<IdentityModel.Client.TokenResponse>(refusal);
+        var source = new CasterClientSource(
+            new SiblingApiHandler().AsFactory(), "http://caster.example/", () => Task.FromResult(token));
+
+        var ex = await Assert.ThrowsAsync<Exception>(async () => await source.GetAsync(Ct));
+
+        Assert.Equal("Could not get a token for Caster: invalid_grant", ex.Message);
     }
 
     // --- helpers ---

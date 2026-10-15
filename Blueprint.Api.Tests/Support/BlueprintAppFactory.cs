@@ -1,7 +1,7 @@
 // Copyright 2026 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
-// The per-class factory variant (PerClassAppFactory.template.cs). App-specific: the four sibling API
+// The per-class factory variant (PerClassAppFactory.template.cs). App-specific: the five sibling API
 // clients and IXApiService substituted; Development rather than Production; the shared test scheme
 // registered as Bearer; the hub recorder renewed per test; outside a request the context falls back to the
 // host's own database, also after start-up, because CompositionTests resolve every service off
@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using Blueprint.Api.Data;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Services;
+using Caster.Api.Client;
 using Cite.Api.Client;
 using Gallery.Api.Client;
 using Microsoft.AspNetCore.Authentication;
@@ -35,7 +36,7 @@ namespace Blueprint.Api.Tests.Support;
 
 /// <summary>
 /// Hosts <c>Blueprint.Api</c> in process, once per test class, with the sibling-API clients substituted.
-/// Everything between the HTTP request and the four sibling Crucible APIs is the production wiring: routing,
+/// Everything between the HTTP request and the five sibling Crucible APIs is the production wiring: routing,
 /// model binding, the MVC-wide authorization filter, the claims transformer, the controllers, the services,
 /// the static requirement helpers, AutoMapper, MediatR, the entity-event interceptor and EF Core against real
 /// PostgreSQL.
@@ -43,15 +44,15 @@ namespace Blueprint.Api.Tests.Support;
 /// <remarks>
 /// <para>
 /// <b>Why per class.</b> Tests arrange return values on and assert <c>Received()</c> against
-/// <see cref="Cite"/>, <see cref="Gallery"/>, <see cref="PlayerApi"/>, <see cref="Steamfitter"/> and
-/// <see cref="XApi"/>. NSubstitute keeps its assertion state per thread, so substitutes shared by test classes
+/// <see cref="Cite"/>, <see cref="Gallery"/>, <see cref="PlayerApi"/>, <see cref="Steamfitter"/>,
+/// <see cref="Caster"/> and <see cref="XApi"/>. NSubstitute keeps its assertion state per thread, so substitutes shared by test classes
 /// running in parallel would lose calls; one class's tests run one after another, so a class fixture is safe.
 /// <see cref="ResetForTest"/>, called by <see cref="ApiTestBase"/> before each test, clears them and renews
 /// <see cref="Hub"/>. Each test class declares
 /// <c>XTests(DatabaseFixture fixture, BlueprintAppFactory factory) : ApiTestBase(fixture, factory), IClassFixture&lt;BlueprintAppFactory&gt;</c>.
 /// </para>
 /// <para>
-/// <b>The substitutes.</b> The production registrations of the four clients build their own HttpClient from
+/// <b>The substitutes.</b> The production registrations of the five clients build their own HttpClient from
 /// <c>ClientSettings:*ApiUrl</c> and a bearer token lifted off the current request. <see cref="XApi"/> is
 /// substituted for observability: <c>XApiOptions:Enabled</c> ships false, so the real service returns early
 /// from every method, and the substitute answers <c>IsConfigured()</c> with false as the real one does.
@@ -110,6 +111,12 @@ public class BlueprintAppFactory(DatabaseFixture database)
     /// <summary>Steamfitter, reached by the MSEL integration paths.</summary>
     public ISteamfitterApiClient Steamfitter { get; } = Substitute.For<ISteamfitterApiClient>();
 
+    /// <summary>
+    /// Caster, as <c>CasterService</c> and <c>IntegrationNameService</c> consume it with the caller's own token.
+    /// The push and pull build their own client as the service account, over <see cref="OutboundHttp"/>.
+    /// </summary>
+    public ICasterApiClient Caster { get; } = Substitute.For<ICasterApiClient>();
+
     /// <summary>The xAPI statement seam. <c>IsConfigured()</c> answers false unless a test says otherwise.</summary>
     public IXApiService XApi { get; } = Substitute.For<IXApiService>();
 
@@ -145,6 +152,7 @@ public class BlueprintAppFactory(DatabaseFixture database)
         Gallery.ClearSubstitute();
         PlayerApi.ClearSubstitute();
         Steamfitter.ClearSubstitute();
+        Caster.ClearSubstitute();
         XApi.ClearSubstitute();
     }
 
@@ -179,6 +187,7 @@ public class BlueprintAppFactory(DatabaseFixture database)
             services.Replace(ServiceDescriptor.Singleton(Gallery));
             services.Replace(ServiceDescriptor.Singleton(PlayerApi));
             services.Replace(ServiceDescriptor.Singleton(Steamfitter));
+            services.Replace(ServiceDescriptor.Singleton(Caster));
             services.Replace(ServiceDescriptor.Singleton(XApi));
 
             // Transient over the current recording, so ResetForTest takes effect for every handler resolved

@@ -141,6 +141,8 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         msel.GalleryExhibitId = Guid.NewGuid();
         msel.CiteEvaluationId = Guid.NewGuid();
         msel.SteamfitterScenarioId = Guid.NewGuid();
+        msel.CasterWorkspaceId = Guid.NewGuid();
+        msel.CasterRunId = Guid.NewGuid();
         await Seed(msel);
         var actor = await Copier().SeedAsync();
 
@@ -151,9 +153,13 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Null(copy.GalleryExhibitId);
         Assert.Null(copy.CiteEvaluationId);
         Assert.Null(copy.SteamfitterScenarioId);
+
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == copy.Id, Ct));
+        Assert.Null(stored.CasterWorkspaceId);
+        Assert.Null(stored.CasterRunId);
     }
 
-    /// <summary>The copy keeps the CITE scoring model, the one integration pointer it does not clear.</summary>
+    /// <summary>The copy keeps the CITE scoring model, an integration setting rather than a deployment.</summary>
     [Fact]
     public async Task Copy_KeepsTheCiteScoringModel()
     {
@@ -170,6 +176,40 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
 
         var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == copy.Id, Ct));
         Assert.Equal("Vigilance", stored.CiteScoringModelName);
+    }
+
+    /// <summary>The copy keeps the Caster settings, and Caster is not asked about the directory: the push
+    /// checks it.</summary>
+    [Fact]
+    public async Task Copy_KeepsTheCasterSettingsWithoutAskingCaster()
+    {
+        var msel = TestData.Msel();
+        msel.UseCaster = true;
+        msel.CasterDirectoryId = Guid.NewGuid();
+        await Seed(msel);
+        var actor = await Copier().SeedAsync();
+
+        var copy = await Copy(Client(actor), msel.Id);
+
+        Assert.True(copy.UseCaster);
+        Assert.Equal(msel.CasterDirectoryId, copy.CasterDirectoryId);
+        Assert.Empty(Factory.Caster.ReceivedCalls());
+    }
+
+    [Fact]
+    public async Task Copy_KeepsEachTeamsCasterTeamVariable()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var team = TestData.Team(msel.Id);
+        team.CasterTeamVariable = "blue";
+        await Seed(team);
+        var actor = await Copier().SeedAsync();
+
+        var copy = await Copy(Client(actor), msel.Id);
+
+        var copied = await ReadBack(rb => rb.Teams.SingleAsync(x => x.MselId == copy.Id, Ct));
+        Assert.Equal("blue", copied.CasterTeamVariable);
     }
 
     /// <summary>
@@ -221,9 +261,9 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     /// <summary>
-    /// The Gallery parameter name lists are computed from the enums on the way out, exactly as
-    /// <c>GetAsync</c> does it - a third copy of the same three lines, which is why this is asserted here
-    /// as well as on the read.
+    /// The Gallery parameter name lists are computed from the enums on the way out, as <c>GetAsync</c> and
+    /// <c>MselHandler</c> do it, by a third copy of the same block, which is why this is asserted here as
+    /// well as on the read and the broadcast.
     /// </summary>
     [Fact]
     public async Task Copy_OfAGalleryMsel_IncludesTheGalleryParameterNames()

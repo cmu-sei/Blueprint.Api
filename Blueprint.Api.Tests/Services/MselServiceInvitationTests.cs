@@ -1058,6 +1058,89 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>The queue item names the launching participant, whom a Caster push passes to terraform as
+    /// the user.</summary>
+    [Fact]
+    public async Task Launch_QueuesThePushInTheParticipantsName()
+    {
+        var template = await SeedTemplate();
+        var team = await SeedTeam(template);
+        await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        Assert.Equal(actor.Id, Assert.Single(DrainIntegrationQueue()).UserId);
+    }
+
+    /// <summary>An invitee need not see the template's Caster directory: the launch checks the template's
+    /// setup without calling Caster, and the clone keeps the directory and drops any workspace.</summary>
+    [Fact]
+    public async Task Launch_OfACasterTemplate_AsksCasterNothingAndClonesItsSettings()
+    {
+        var directory = Guid.NewGuid();
+        var template = await SeedTemplate(CasterSetup(directory));
+        var team = await SeedTeam(template, t => t.CasterTeamVariable = "blue");
+        await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var launched = await Read<Msel>(await Launch(ClientWithEmail(actor, "a@example.test"), template.Id));
+
+        Assert.Empty(Factory.Caster.ReceivedCalls());
+
+        var clone = await ReadBack(rb => rb.Msels.SingleAsync(m => m.Id == launched.Id, Ct));
+        Assert.True(clone.UseCaster);
+        Assert.Equal(directory, clone.CasterDirectoryId);
+        Assert.Null(clone.CasterWorkspaceId);
+        Assert.Null(clone.CasterRunId);
+        Assert.Equal(
+            "blue",
+            (await ReadBack(rb => rb.Teams.SingleAsync(t => t.MselId == launched.Id, Ct))).CasterTeamVariable);
+    }
+
+    /// <summary>A Caster template that cannot be pushed is refused before the invitation is used.</summary>
+    [Fact]
+    public async Task Launch_OfACasterTemplateWithoutPlayer_Is409AndSpendsNoSeat()
+    {
+        var template = await SeedTemplate(m =>
+        {
+            CasterSetup(Guid.NewGuid())(m);
+            m.UsePlayer = false;
+        });
+        var team = await SeedTeam(template);
+        var invitation = await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        Assert.Equal(
+            $"MSEL {template.Id} uses Caster, which requires Player.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        await using var db = NewContext();
+        Assert.Equal(0, (await db.Invitations.SingleAsync(i => i.Id == invitation.Id, Ct)).UserCount);
+        Assert.Equal(1, await db.Msels.CountAsync(Ct));
+        Assert.Empty(DrainIntegrationQueue());
+    }
+
+    [Fact]
+    public async Task Launch_OfACasterTemplateWhoseTeamsShareAVariable_Is409AndSpendsNoSeat()
+    {
+        var template = await SeedTemplate(CasterSetup(Guid.NewGuid()));
+        var team = await SeedTeam(template, t => t.CasterTeamVariable = "red");
+        await SeedTeam(template, t => t.CasterTeamVariable = "red");
+        var invitation = await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        Assert.StartsWith(
+            "Caster needs a distinct variable name for each team, but ",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        await using var db = NewContext();
+        Assert.Equal(0, (await db.Invitations.SingleAsync(i => i.Id == invitation.Id, Ct)).UserCount);
+        Assert.Empty(DrainIntegrationQueue());
+    }
+
     /// <summary>Launch twice with one invitation clones the template twice.</summary>
     [Fact]
     public async Task Launch_TwiceWithOneInvitation_ClonesTheTemplateTwice()
@@ -1128,6 +1211,16 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
 
         return msel;
     }
+
+    /// <summary>A template set up to push to Player and Caster, from <paramref name="directory"/>.</summary>
+    private static Action<MselEntity> CasterSetup(Guid directory) => m =>
+    {
+        m.UsePlayer = true;
+        m.UseCaster = true;
+        m.CasterDirectoryId = directory;
+        m.CasterWorkspaceId = Guid.NewGuid();
+        m.CasterRunId = Guid.NewGuid();
+    };
 
     private async Task<TeamEntity> SeedTeam(MselEntity msel, Action<TeamEntity> arrange = null)
     {

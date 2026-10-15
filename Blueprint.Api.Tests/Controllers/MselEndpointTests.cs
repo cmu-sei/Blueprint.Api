@@ -581,6 +581,21 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal([.. Enum.GetNames<GalleryItemStatus>()], returned.GalleryItemStatuses);
     }
 
+    /// <summary>Gallery's status colors, best to worst, by the names the article push sends.</summary>
+    [Fact]
+    public async Task GetById_ForAGalleryMsel_ListsTheStatusColorsBestToWorst()
+    {
+        var msel = TestData.Msel();
+        msel.UseGallery = true;
+        await Seed(msel);
+
+        var actor = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
+
+        var returned = await GetMsel(Client(actor), msel.Id);
+
+        Assert.Equal(["Gray", "Green", "Yellow", "Orange", "Red"], returned.GalleryItemStatuses);
+    }
+
     [Fact]
     public async Task GetById_ForANonGalleryMsel_LeavesTheGalleryListsEmpty()
     {
@@ -834,6 +849,83 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             Hub.Recipients(MainHubMethods.MselCreated, created.Id));
     }
 
+    /// <summary>A Caster directory the caller can view in Caster is stored with the new MSEL.</summary>
+    [Fact]
+    public async Task Create_WithACasterDirectoryTheCallerCanViewInCaster_Is201AndStoresIt()
+    {
+        var directory = Guid.NewGuid();
+        Factory.Caster.ShowsDirectory(directory);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "/api/msels", new Msel { Name = "Hurricane response", UseCaster = true, CasterDirectoryId = directory },
+            JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var created = await Read<Msel>(response);
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == created.Id, Ct));
+
+        Assert.Equal(directory, stored.CasterDirectoryId);
+        Assert.True(stored.UseCaster);
+    }
+
+    /// <summary>
+    /// The push deploys the directory as the service account, so a directory Caster will not show the caller
+    /// is refused, and no MSEL is stored.
+    /// </summary>
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    public async Task Create_WithACasterDirectoryCasterWillNotShowTheCaller_Is403AndStoresNothing(HttpStatusCode casterAnswer)
+    {
+        var directory = Guid.NewGuid();
+        Factory.Caster.RefusesDirectory(directory, casterAnswer);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "/api/msels", new Msel { Name = "Hurricane response", CasterDirectoryId = directory }, JsonOptions, Ct);
+
+        Assert.Equal(
+            $"Caster directory {directory} does not exist or you cannot view it in Caster.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Forbidden, response)).Title);
+        Assert.Empty(await ReadBack(rb => rb.Msels.ToListAsync(Ct)));
+    }
+
+    [Fact]
+    public async Task Create_WithNoCasterDirectory_AsksCasterNothing()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "/api/msels", new Msel { Name = "Hurricane response" }, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Empty(Factory.Caster.ReceivedCalls());
+    }
+
+    /// <summary>Only the integration worker writes the workspace and run ids; a create body cannot set
+    /// them.</summary>
+    [Fact]
+    public async Task Create_IgnoresACasterWorkspaceAndRunInTheBody()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "/api/msels",
+            new Msel { Name = "Hurricane response", CasterWorkspaceId = Guid.NewGuid(), CasterRunId = Guid.NewGuid() },
+            JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var created = await Read<Msel>(response);
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == created.Id, Ct));
+
+        Assert.Null(stored.CasterWorkspaceId);
+        Assert.Null(stored.CasterRunId);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // PUT msels/{id}
     // ---------------------------------------------------------------------------------------------
@@ -1042,6 +1134,155 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var send = Hub.Of(MainHubMethods.MselUpdated, msel.Id).First();
 
         Assert.Contains("name", (string[])send.Arguments[1]);
+    }
+
+    /// <summary>The update broadcast of a Gallery MSEL carries the Gallery lists a client fills its pickers
+    /// from, the status colors best to worst.</summary>
+    [Fact]
+    public async Task Update_OfAGalleryMsel_BroadcastsTheGalleryLists()
+    {
+        var msel = TestData.Msel();
+        msel.UseGallery = true;
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var body = Body(msel, "Renamed");
+        body.UseGallery = true;
+
+        await Update(Client(actor), msel.Id, body);
+
+        var sent = Assert.IsType<Msel>(Hub.Of(MainHubMethods.MselUpdated, msel.Id).First().Payload);
+        Assert.Equal(["Gray", "Green", "Yellow", "Orange", "Red"], sent.GalleryItemStatuses);
+        Assert.Equal([.. Enum.GetNames<GalleryArticleParameter>()], sent.GalleryArticleParameters);
+        Assert.Equal([.. Enum.GetNames<GallerySourceType>()], sent.GallerySourceTypes);
+    }
+
+    [Fact]
+    public async Task Update_OfANonGalleryMsel_BroadcastsNoGalleryLists()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        await Update(Client(actor), msel.Id, Body(msel, "Renamed"));
+
+        var sent = Assert.IsType<Msel>(Hub.Of(MainHubMethods.MselUpdated, msel.Id).First().Payload);
+        Assert.Empty(sent.GalleryItemStatuses);
+        Assert.Empty(sent.GalleryArticleParameters);
+        Assert.Empty(sent.GallerySourceTypes);
+    }
+
+    [Fact]
+    public async Task Update_ToACasterDirectoryTheCallerCanViewInCaster_Is200AndStoresIt()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var directory = Guid.NewGuid();
+        Factory.Caster.ShowsDirectory(directory);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var body = Body(msel);
+        body.CasterDirectoryId = directory;
+
+        await Update(Client(actor), msel.Id, body);
+
+        Assert.Equal(
+            directory,
+            (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).CasterDirectoryId);
+    }
+
+    [Fact]
+    public async Task Update_ToACasterDirectoryCasterWillNotShowTheCaller_Is403AndLeavesTheMselAlone()
+    {
+        var kept = Guid.NewGuid();
+        var msel = TestData.Msel();
+        msel.CasterDirectoryId = kept;
+        await Seed(msel);
+        var directory = Guid.NewGuid();
+        Factory.Caster.RefusesDirectory(directory);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var body = Body(msel, "Renamed");
+        body.CasterDirectoryId = directory;
+
+        var response = await Client(actor).PutAsJsonAsync($"/api/msels/{msel.Id}", body, JsonOptions, Ct);
+
+        Assert.Equal(
+            $"Caster directory {directory} does not exist or you cannot view it in Caster.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Forbidden, response)).Title);
+
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct));
+        Assert.Equal(kept, stored.CasterDirectoryId);
+        Assert.Equal(msel.Name, stored.Name);
+    }
+
+    /// <summary>A directory the MSEL already has was checked when it was set, and is not asked about again.</summary>
+    [Fact]
+    public async Task Update_KeepingTheCasterDirectory_AsksCasterNothing()
+    {
+        var directory = Guid.NewGuid();
+        var msel = TestData.Msel();
+        msel.CasterDirectoryId = directory;
+        await Seed(msel);
+        Factory.Caster.RefusesDirectory(directory);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var body = Body(msel, "Renamed");
+        body.CasterDirectoryId = directory;
+
+        Assert.Equal("Renamed", (await Update(Client(actor), msel.Id, body)).Name);
+        Assert.Empty(Factory.Caster.ReceivedCalls());
+    }
+
+    [Fact]
+    public async Task Update_ClearingTheCasterDirectory_AsksCasterNothingAndClearsIt()
+    {
+        var msel = TestData.Msel();
+        msel.CasterDirectoryId = Guid.NewGuid();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        await Update(Client(actor), msel.Id, Body(msel));
+
+        Assert.Null((await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).CasterDirectoryId);
+        Assert.Empty(Factory.Caster.ReceivedCalls());
+    }
+
+    /// <summary>A caller who may not update the MSEL is refused before Caster is asked about the directory.</summary>
+    [Fact]
+    public async Task Update_ToACasterDirectory_AsAnEditor_Is403WithoutAskingCaster()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var directory = Guid.NewGuid();
+        Factory.Caster.ShowsDirectory(directory);
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var body = Body(msel);
+        body.CasterDirectoryId = directory;
+
+        var response = await Client(actor).PutAsJsonAsync($"/api/msels/{msel.Id}", body, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(Factory.Caster.ReceivedCalls());
+    }
+
+    /// <summary>Only the integration worker writes the workspace and run ids; an update body cannot clear or
+    /// change them.</summary>
+    [Fact]
+    public async Task Update_LeavesTheCasterWorkspaceAndRunAlone()
+    {
+        var workspace = Guid.NewGuid();
+        var run = Guid.NewGuid();
+        var msel = TestData.Msel();
+        msel.CasterWorkspaceId = workspace;
+        msel.CasterRunId = run;
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var body = Body(msel);
+        body.CasterWorkspaceId = Guid.NewGuid();
+        body.CasterRunId = null;
+
+        await Update(Client(actor), msel.Id, body);
+
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct));
+        Assert.Equal(workspace, stored.CasterWorkspaceId);
+        Assert.Equal(run, stored.CasterRunId);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1374,6 +1615,25 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             [msel.Id.ToString(), MainHub.ADMIN_DATA_GROUP],
             Hub.Recipients(MainHubMethods.MselDeleted, msel.Id));
         Assert.Equal(msel.Id, Hub.Of(MainHubMethods.MselDeleted, msel.Id).First().Payload);
+    }
+
+    /// <summary>A MSEL with a deployed Caster workspace cannot be deleted until its integrations are
+    /// removed.</summary>
+    [Fact]
+    public async Task Delete_OfAMselWithACasterWorkspace_Is409AndKeepsIt()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Deployed);
+        msel.CasterWorkspaceId = Guid.NewGuid();
+        await Seed(msel);
+
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"/api/msels/{msel.Id}", Ct);
+
+        Assert.Equal(
+            $"MSEL {msel.Id} has a deployed Caster workspace. Remove its integrations before deleting it.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        Assert.Single(await ReadBack(rb => rb.Msels.ToListAsync(Ct)));
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -16,6 +16,7 @@ using Blueprint.Api.Tests.Support;
 using Blueprint.Api.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using Xunit;
 using Xunit.Sdk;
 
@@ -315,6 +316,153 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         Assert.Null(stored.ModifiedBy);
     }
 
+    /// <summary>The queue item names the caller, whom a Caster push passes to terraform as the user.</summary>
+    [Fact]
+    public async Task Push_QueuesThePushInTheCallersName()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(actor.Id, Enqueued(msel.Id).UserId);
+    }
+
+    [Fact]
+    public async Task Push_OfACasterMselTheCallerCanViewInCaster_EnqueuesIt()
+    {
+        var msel = await SeedCasterMsel();
+        Factory.Caster.ShowsDirectory((Guid)msel.CasterDirectoryId);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(msel.Id, Enqueued(msel.Id).MselId);
+        await Factory.Caster.Received(1).GetDirectoryAsync(
+            (Guid)msel.CasterDirectoryId, false, false, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>The directory is checked at the push too, since a copy brings one across unchecked.</summary>
+    [Fact]
+    public async Task Push_OfACasterMselWithADirectoryCasterWillNotShowTheCaller_Is403AndEnqueuesNothing()
+    {
+        var msel = await SeedCasterMsel();
+        Factory.Caster.RefusesDirectory((Guid)msel.CasterDirectoryId);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(
+            $"Caster directory {msel.CasterDirectoryId} does not exist or you cannot view it in Caster.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Forbidden, response)).Title);
+        Assert.Equal(
+            MselItemStatus.Approved,
+            (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).Status);
+        AssertNothingEnqueued();
+    }
+
+    [Fact]
+    public async Task Push_OfACasterMselWithoutPlayer_Is409AndEnqueuesNothing()
+    {
+        var msel = await SeedCasterMsel(m => m.UsePlayer = false);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(
+            $"MSEL {msel.Id} uses Caster, which requires Player.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        Assert.Empty(Factory.Caster.ReceivedCalls());
+        AssertNothingEnqueued();
+    }
+
+    [Fact]
+    public async Task Push_OfACasterMselWithNoDirectory_Is409AndEnqueuesNothing()
+    {
+        var msel = await SeedCasterMsel(m => m.CasterDirectoryId = null);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(
+            $"MSEL {msel.Id} uses Caster but has no Caster directory selected.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        AssertNothingEnqueued();
+    }
+
+    [Fact]
+    public async Task Push_OfACasterMselWhoseTeamsShareAVariable_Is409NamingThem()
+    {
+        var msel = await SeedCasterMsel();
+        var blue = TestData.Team(msel.Id);
+        blue.Name = "Blue Team";
+        var alsoBlue = TestData.Team(msel.Id);
+        alsoBlue.Name = "blue team";
+        await Seed(blue, alsoBlue);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        var title = (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.StartsWith("Caster needs a distinct variable name for each team, but ", title);
+        Assert.Contains("\"Blue Team\"", title);
+        Assert.Contains("\"blue team\"", title);
+        Assert.Contains(" all become \"blue_team\"", title);
+        AssertNothingEnqueued();
+    }
+
+    /// <summary>Player gives the view an Admin team of its own unless a MSEL team named Admin takes its
+    /// place, so a MSEL team whose variable is also "admin" clashes with it.</summary>
+    [Fact]
+    public async Task Push_OfACasterMselWithATeamThatClashesWithPlayersAdminTeam_Is409()
+    {
+        var msel = await SeedCasterMsel();
+        var team = TestData.Team(msel.Id);
+        team.Name = "Admin!";
+        await Seed(team);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(
+            "Caster needs a distinct variable name for each team, but \"Admin!\" and \"Admin\" all become " +
+            "\"admin\". Rename one of each or map it to a different topology team.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        AssertNothingEnqueued();
+    }
+
+    [Fact]
+    public async Task Push_OfACasterMselWithItsOwnAdminTeam_EnqueuesIt()
+    {
+        var msel = await SeedCasterMsel();
+        var team = TestData.Team(msel.Id);
+        team.Name = "Admin";
+        await Seed(team);
+        Factory.Caster.ShowsDirectory((Guid)msel.CasterDirectoryId);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(msel.Id, Enqueued(msel.Id).MselId);
+    }
+
+    [Fact]
+    public async Task Push_OfAMselNotUsingCaster_AsksCasterNothing()
+    {
+        var msel = await SeedCasterMsel(m => m.UseCaster = false);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(msel.Id, Enqueued(msel.Id).MselId);
+        Assert.Empty(Factory.Caster.ReceivedCalls());
+    }
+
     // ---------------------------------------------------------------------------------------------
     // DELETE msels/{id}/integrations - pull
     // ---------------------------------------------------------------------------------------------
@@ -604,6 +752,19 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
     }
 
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>An approved MSEL using Player and Caster, with a Caster directory.</summary>
+    private async Task<MselEntity> SeedCasterMsel(Action<MselEntity> arrange = null)
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        msel.UsePlayer = true;
+        msel.UseCaster = true;
+        msel.CasterDirectoryId = Guid.NewGuid();
+        arrange?.Invoke(msel);
+        await Seed(msel);
+
+        return msel;
+    }
 
     /// <summary>
     /// A team the duplicate-user check looks at. Only a team mapped to a CITE team type counts.

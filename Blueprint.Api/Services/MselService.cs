@@ -50,6 +50,7 @@ namespace Blueprint.Api.Services
         Task<Msel> ReplaceAsync(MselFileForm form, Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, CancellationToken ct);
         Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
+        Task<MselImportResult> ImportJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
         Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
@@ -213,6 +214,8 @@ namespace Blueprint.Api.Services
                )
             {
                 var mselCheck = await _context.Msels.FindAsync(id);
+                if (mselCheck == null)
+                    throw new EntityNotFoundException<MselEntity>("MSEL not found " + id);
                 if (!mselCheck.IsTemplate)
                     throw new ForbiddenException();
             }
@@ -226,6 +229,8 @@ namespace Blueprint.Api.Services
                 .Include(m => m.UserMselRoles.Where(r => r.UserId == _user.GetId()))
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
+            if (mselEntity == null)
+                throw new EntityNotFoundException<MselEntity>("MSEL not found " + id);
             var msel = _mapper.Map<Msel>(mselEntity);
             EnsureCreatorOwnerRole(msel);
             // add the needed parameters for Gallery integration
@@ -307,14 +312,15 @@ namespace Blueprint.Api.Services
             return await privateMselCopyAsync(mselEntity, currentUserTeamId, ct);
         }
 
-        private async Task<MselEntity> privateMselCopyAsync(MselEntity mselEntity, Guid? currentUserTeamId, CancellationToken ct)
+        private async Task<MselEntity> privateMselCopyAsync(MselEntity mselEntity, Guid? currentUserTeamId, CancellationToken ct, bool keepName = false)
         {
             var newGuidValues = new Dictionary<Guid, Guid>();
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId)).Name;
             mselEntity.Id = Guid.NewGuid();
             mselEntity.CreatedBy = currentUserId;
-            mselEntity.Name = mselEntity.Name + " - " + username;
+            if (!keepName)
+                mselEntity.Name = mselEntity.Name + " - " + username;
             mselEntity.IsTemplate = false;
             mselEntity.GalleryCollectionId = null;
             mselEntity.GalleryExhibitId = null;
@@ -2066,6 +2072,26 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselEntity>("MSEL not found " + mselId);
             }
 
+            // Record the scoring model's name so the import on another installation can find the model
+            // there by name - its id is local to this CITE. Best effort: if CITE can't be reached, export
+            // whatever name is already stored. The entity is not tracked, so this is not saved.
+            if (msel.UseCite && msel.CiteScoringModelId.HasValue)
+            {
+                try
+                {
+                    var scoringModel = await _citeApiClient.GetScoringModelAsync(msel.CiteScoringModelId.Value, ct);
+                    if (!string.IsNullOrWhiteSpace(scoringModel?.Description))
+                    {
+                        msel.CiteScoringModelName = scoringModel.Description;
+                    }
+                }
+                catch (System.Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning("Could not read CITE scoring model {ScoringModelId} for the export of MSEL {MselId}; exporting the stored name. Error: {ErrorMessage}",
+                        msel.CiteScoringModelId.Value, msel.Id, ex.Message);
+                }
+            }
+
             var mselJson = "";
             var options = new JsonSerializerOptions()
             {
@@ -2082,6 +2108,12 @@ namespace Blueprint.Api.Services
 
         public async Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct)
         {
+            return (await ImportJsonAsync(form, ct)).Msel;
+        }
+
+        public async Task<MselImportResult> ImportJsonAsync(FileForm form, CancellationToken ct)
+        {
+            var result = new MselImportResult();
             var uploadItem = form.ToUpload;
             var mselJson = "";
             using (StreamReader reader = new StreamReader(uploadItem.OpenReadStream()))
@@ -2094,6 +2126,9 @@ namespace Blueprint.Api.Services
                 ReferenceHandler = ReferenceHandler.Preserve
             };
             var mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
+            var droppedTeamUsers = mselEntity.Teams.Sum(t => t.TeamUsers?.Count ?? 0);
+            if (droppedTeamUsers > 0)
+                AddChange(result, "teams", $"{droppedTeamUsers} team members were not imported. Add users to the teams before pushing.");
             foreach (var team in mselEntity.Teams)
             {
                 team.TeamUsers = [];
@@ -2137,10 +2172,12 @@ namespace Blueprint.Api.Services
                             mselEntity.CiteScoringModelName = scoringModels.FirstOrDefault(sm => sm.Id == newId)?.Description ?? mselEntity.CiteScoringModelName;
                             _logger.LogInformation("Auto-mapped MSEL {MselId} scoring model by name to {NewId}",
                                 mselEntity.Id, newId);
+                            AddChange(result, "citeScoringModel", $"Linked to the CITE scoring model \"{mselEntity.CiteScoringModelName}\" by name.");
                         }
                         else
                         {
                             mselEntity.CiteScoringModelId = null;
+                            AddChange(result, "citeScoringModel", $"Scoring model \"{mselEntity.CiteScoringModelName}\" was not found in CITE. Choose one before pushing.");
                         }
                     }
                     // Check if the scoring model ID exists in CITE
@@ -2156,6 +2193,7 @@ namespace Blueprint.Api.Services
                             mselEntity.CiteScoringModelName = scoringModels.FirstOrDefault(sm => sm.Id == newId)?.Description ?? mselEntity.CiteScoringModelName;
                             _logger.LogInformation("Auto-mapped MSEL {MselId} scoring model from {OldId} to {NewId}",
                                 mselEntity.Id, oldId, newId);
+                            AddChange(result, "citeScoringModel", $"The file's scoring model id is not in CITE; linked to \"{mselEntity.CiteScoringModelName}\" by name.");
                         }
                         else
                         {
@@ -2164,6 +2202,9 @@ namespace Blueprint.Api.Services
                             _logger.LogWarning("MSEL {MselId} has invalid CITE scoring model ID {ScoringModelId}, clearing for manual selection",
                                 mselEntity.Id, oldId);
                             mselEntity.CiteScoringModelId = null;
+                            AddChange(result, "citeScoringModel", string.IsNullOrWhiteSpace(mselEntity.CiteScoringModelName)
+                                ? "The file's scoring model was not found in CITE. Choose one before pushing."
+                                : $"Scoring model \"{mselEntity.CiteScoringModelName}\" was not found in CITE. Choose one before pushing.");
                         }
                     }
                     else
@@ -2186,6 +2227,7 @@ namespace Blueprint.Api.Services
                     // Clear the scoring model ID so user can set it manually in the UI.
                     // Keep the imported name for context.
                     mselEntity.CiteScoringModelId = null;
+                    AddFailure(result, "citeScoringModel", "Could not check the scoring model in CITE, so it was not linked. Choose one before pushing.");
                 }
             }
 
@@ -2219,6 +2261,7 @@ namespace Blueprint.Api.Services
                                 team.CiteTeamTypeName = defaultTeamTypeName;
                                 _logger.LogInformation("Team {TeamId} had no CITE team type, defaulted to {DefaultName} ({DefaultId})",
                                     team.Id, defaultTeamTypeName, defaultTeamTypeId);
+                                AddChange(result, "teams", $"Team {TeamLabel(team)} had no CITE team type; set to \"{defaultTeamTypeName}\".");
                             }
                         }
                         else if (!teamTypeIds.Contains(team.CiteTeamTypeId.Value))
@@ -2238,15 +2281,20 @@ namespace Blueprint.Api.Services
                             // Fall back to default team type (Standard preferred, or first available)
                             if (defaultTeamTypeId != Guid.Empty)
                             {
+                                var fileTeamTypeName = team.CiteTeamTypeName;
                                 team.CiteTeamTypeId = defaultTeamTypeId;
                                 team.CiteTeamTypeName = defaultTeamTypeName;
                                 _logger.LogWarning("Team {TeamId} had invalid CITE team type ID {OldId}, defaulted to {NewId}",
                                     team.Id, oldId, defaultTeamTypeId);
+                                AddChange(result, "teams", string.IsNullOrWhiteSpace(fileTeamTypeName)
+                                    ? $"Team {TeamLabel(team)}'s CITE team type was not found; set to \"{defaultTeamTypeName}\"."
+                                    : $"Team {TeamLabel(team)}'s CITE team type \"{fileTeamTypeName}\" was not found; set to \"{defaultTeamTypeName}\".");
                             }
                             else
                             {
                                 _logger.LogError("Team {TeamId} has invalid CITE team type ID {TeamTypeId} and no team types found in CITE",
                                     team.Id, oldId);
+                                AddChange(result, "teams", $"Team {TeamLabel(team)}'s CITE team type was not found, and CITE has no team types to use instead.");
                             }
                         }
                         else
@@ -2267,6 +2315,7 @@ namespace Blueprint.Api.Services
                 {
                     _logger.LogWarning("Failed to validate CITE team types for MSEL {MselId}, continuing with import. Error: {ErrorMessage}", mselEntity.Id, ex.Message);
                     // Don't block import on validation failure - CITE might be unavailable
+                    AddFailure(result, "citeTeamTypes", "Could not check the teams' CITE team types, so they were imported unchecked.");
                 }
             }
 
@@ -2285,10 +2334,47 @@ namespace Blueprint.Api.Services
                 }
             }
 
-            // make a copy and add it to the database
-            mselEntity = await privateMselCopyAsync(mselEntity, null, ct);
+            // make a copy and add it to the database. An import keeps the file's name, which every pushed
+            // app inherits, unless a MSEL here already has that name; only then add the importer's name.
+            var fileName = mselEntity.Name;
+            var nameInUse = await _context.Msels
+                .AnyAsync(m => m.Name.ToLower() == (mselEntity.Name ?? "").ToLower(), ct);
+            mselEntity = await privateMselCopyAsync(mselEntity, null, ct, keepName: !nameInUse);
+            if (nameInUse)
+                AddChange(result, "name", $"A MSEL named \"{fileName}\" already exists, so this one was named \"{mselEntity.Name}\".");
 
-            return _mapper.Map<Msel>(mselEntity);
+            // Integrations stay as the file had them; pushing creates content in each app that is on.
+            if (mselEntity.UsePlayer) AddChange(result, "usePlayer", "Player integration is on.");
+            if (mselEntity.UseGallery) AddChange(result, "useGallery", "Gallery integration is on.");
+            if (mselEntity.UseCite) AddChange(result, "useCite", "CITE integration is on.");
+            if (mselEntity.UseSteamfitter) AddChange(result, "useSteamfitter", "Steamfitter integration is on.");
+
+            result.Imported = new MselImportCounts
+            {
+                Moves = mselEntity.Moves.Count,
+                ScenarioEvents = mselEntity.ScenarioEvents.Count,
+                Cards = mselEntity.Cards.Count,
+                Teams = mselEntity.Teams.Count,
+                DataFields = mselEntity.DataFields.Count,
+                Pages = mselEntity.Pages.Count
+            };
+            result.Msel = _mapper.Map<Msel>(mselEntity);
+            return result;
+        }
+
+        private static void AddChange(MselImportResult result, string field, string message)
+        {
+            result.Changes.Add(new MselImportMessage { Field = field, Message = message });
+        }
+
+        private static void AddFailure(MselImportResult result, string step, string message)
+        {
+            result.Failures.Add(new MselImportFailure { Step = step, Message = message });
+        }
+
+        private static string TeamLabel(TeamEntity team)
+        {
+            return string.IsNullOrWhiteSpace(team.ShortName) ? team.Name : team.ShortName;
         }
 
         public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)

@@ -503,30 +503,26 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(template.Id, (await GetMsel(Client(actor), template.Id)).Id);
     }
 
-    /// <summary>Get by id for an unknown MSEL with no permission is answered with a 500.</summary>
+    /// <summary>An unknown id is a 404 for a caller with no permission, as <see cref="GetData_ForAnUnknownMsel_WithNoRoleOrPermission_Is404"/> answers.</summary>
     [Fact]
-    public async Task GetById_ForAnUnknownMsel_WithNoPermission_Is500()
+    public async Task GetById_ForAnUnknownMsel_WithNoPermission_Is404()
     {
         var actor = await Actor().SeedAsync();
 
-        var response = await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}", Ct);
-
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselService.GetAsync", failure.Detail);
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}", Ct)).StatusCode);
     }
 
-    /// <summary>Get by id for an unknown MSEL with view MSELs permission is answered with a 500.</summary>
+    /// <summary>An unknown id is a 404 for a caller holding <see cref="SystemPermission.ViewMsels"/> too, by the other branch of <c>GetAsync</c>, rather than a 200 with a null body.</summary>
     [Fact]
-    public async Task GetById_ForAnUnknownMsel_WithViewMselsPermission_Is500()
+    public async Task GetById_ForAnUnknownMsel_WithViewMselsPermission_Is404()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}", Ct);
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselService.GetAsync", failure.Detail);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]

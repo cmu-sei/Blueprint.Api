@@ -259,18 +259,16 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal("the template's view", names.PlayerViewName);
     }
 
-    /// <summary>Names for an unknown MSEL with view MSELs permission is answered with a 500.</summary>
+    /// <summary>An unknown MSEL is a 404, as on <c>GET msels/{id}</c>, rather than six empty names.</summary>
     [Fact]
-    public async Task Names_ForAnUnknownMsel_WithViewMselsPermission_Is500()
+    public async Task Names_ForAnUnknownMsel_WithViewMselsPermission_Is404()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(actor)
             .GetAsync($"/api/msels/{Guid.NewGuid()}/integrations/names", Ct);
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselService.GetAsync", failure.Detail);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -74,6 +74,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 {
                     msel.GalleryArticleParameters = Enum.GetNames(typeof(GalleryArticleParameter)).ToList();
                     msel.GallerySourceTypes = Enum.GetNames(typeof(GallerySourceType)).ToList();
+                    msel.GalleryItemStatuses = Enum.GetNames(typeof(GalleryItemStatus)).ToList();
                 }
                 var tasks = new List<Task>();
 

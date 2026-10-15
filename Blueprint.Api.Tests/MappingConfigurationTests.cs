@@ -47,7 +47,7 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
     /// leaving them alone. Four entries are not that, and are findings:
     /// </para>
     /// <list type="bullet">
-    /// <item><c>MselEntity -> Msel: GalleryArticleParameters, GallerySourceTypes</c> - view-model-only
+    /// <item><c>MselEntity -> Msel: GalleryArticleParameters, GallerySourceTypes, GalleryItemStatuses</c> - view-model-only
     /// lists that <c>MselService</c> fills from <c>Enum.GetNames</c> after mapping.</item>
     /// <item><c>TeamUserEntity -> TeamUser</c> and <c>UnitUserEntity -> UnitUser</c>: <c>DateCreated,
     /// DateModified, CreatedBy, ModifiedBy</c> - both view models derive from <c>ViewModels.Base</c>
@@ -71,7 +71,7 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
         "GroupMembership -> GroupMembershipEntity: Group, User",
         "Injectm -> InjectEntity: InjectType, RequiresInject, CatalogInjects",
         "MselCompetency -> MselCompetencyEntity: Msel",
-        "MselEntity -> Msel: GalleryArticleParameters, GallerySourceTypes",
+        "MselEntity -> Msel: GalleryArticleParameters, GallerySourceTypes, GalleryItemStatuses",
         "ProficiencyLevel -> ProficiencyLevelEntity: ProficiencyScale",
         "TeamCompetency -> TeamCompetencyEntity: Team",
         "TeamUser -> TeamUserEntity: User, Team",
@@ -338,6 +338,7 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
 
         Assert.Empty(msel.GalleryArticleParameters);
         Assert.Empty(msel.GallerySourceTypes);
+        Assert.Empty(msel.GalleryItemStatuses);
     }
 
     /// <summary>

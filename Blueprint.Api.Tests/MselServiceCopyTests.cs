@@ -328,6 +328,7 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
 
         Assert.NotEmpty(copy.GalleryArticleParameters);
         Assert.NotEmpty(copy.GallerySourceTypes);
+        Assert.NotEmpty(copy.GalleryItemStatuses);
     }
 
     [Fact]
@@ -341,6 +342,7 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
 
         Assert.Empty(copy.GalleryArticleParameters);
         Assert.Empty(copy.GallerySourceTypes);
+        Assert.Empty(copy.GalleryItemStatuses);
     }
 
     // ---------------------------------------------------------------------------------------------

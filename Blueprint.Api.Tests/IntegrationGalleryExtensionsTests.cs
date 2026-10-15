@@ -72,9 +72,9 @@ namespace Blueprint.Api.Tests;
 /// </para>
 /// <para>
 /// <strong>Every parse in the article builder fails quietly to a default.</strong> An unparseable status
-/// becomes <c>Unused</c> and an unparseable date becomes <c>0001-01-01</c> - so an article whose
+/// becomes <c>Gray</c> and an unparseable date becomes <c>0001-01-01</c> - so an article whose
 /// <c>DatePosted</c> cell is empty or misspelled is published dated year one, and one whose <c>Status</c>
-/// cell says something Gallery does not know is published unused. The <c>status == null</c> guards are
+/// cell says something Gallery does not know is published gray. The <c>sourceType == null</c> guard is
 /// necessary rather than defensive: <c>Enum.TryParse</c> assigns <em>null</em> to its <c>object</c> out
 /// parameter when it fails, overwriting the initializer.
 /// </para>
@@ -754,7 +754,7 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
             [GalleryArticleParameter.Description] = "The grid is down",
             [GalleryArticleParameter.SourceName] = "Wire service",
             [GalleryArticleParameter.Url] = "http://news.example/1",
-            [GalleryArticleParameter.Status] = "Critical",
+            [GalleryArticleParameter.Status] = "Orange",
             [GalleryArticleParameter.SourceType] = "Social",
             [GalleryArticleParameter.DatePosted] = "2026-03-04T05:06:07Z",
             [GalleryArticleParameter.OpenInNewTab] = "true"
@@ -772,7 +772,7 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
         Assert.Equal("The grid is down", body["description"].GetString());
         Assert.Equal("Wire service", body["sourceName"].GetString());
         Assert.Equal("http://news.example/1", body["url"].GetString());
-        Assert.Equal("Critical", body["status"].GetString());
+        Assert.Equal("Orange", body["status"].GetString());
         Assert.Equal("Social", body["sourceType"].GetString());
         Assert.True(body["openInNewTab"].GetBoolean());
         Assert.Equal(4, body["move"].GetInt32());
@@ -805,14 +805,14 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
     }
 
     /// <remarks>
-    /// Case-insensitively - <c>Enum.TryParse</c> is called with <c>ignoreCase: true</c> - so the cell may
-    /// say <c>critical</c> or <c>CRITICAL</c>. This is the one parse in the article builder that forgives
-    /// anything.
+    /// Case-insensitively and trimmed, so the cell may say <c>red</c> or <c>RED</c>. This is the one parse
+    /// in the article builder that forgives anything.
     /// </remarks>
     [Theory]
-    [InlineData("critical", "Critical")]
-    [InlineData("CRITICAL", "Critical")]
-    [InlineData("Open", "Open")]
+    [InlineData("red", "Red")]
+    [InlineData("RED", "Red")]
+    [InlineData("Red", "Red")]
+    [InlineData(" Green ", "Green")]
     public async Task CreateArticles_ParsesTheStatusCaseInsensitively(string cell, string expected)
     {
         var body = await OneArticle(new() { [GalleryArticleParameter.Status] = cell });
@@ -821,11 +821,26 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
     }
 
     /// <remarks>
+    /// Gallery statuses were renamed for the colors the wall shows. MSELs written before then hold the
+    /// old names, which still publish as the matching color.
+    /// </remarks>
+    [Theory]
+    [InlineData("Critical", "Orange")]
+    [InlineData("open", "Green")]
+    [InlineData(" Closed ", "Red")]
+    [InlineData("AFFECTED", "Yellow")]
+    [InlineData("Unused", "Gray")]
+    public async Task CreateArticles_MapsALegacyStatusNameToItsColor(string cell, string expected)
+    {
+        var body = await OneArticle(new() { [GalleryArticleParameter.Status] = cell });
+
+        Assert.Equal(expected, body["status"].GetString());
+    }
+
+    /// <remarks>
     /// <para>
-    /// <c>Enum.TryParse</c> assigns <em>null</em> to an <c>object</c> out parameter when it fails, wiping
-    /// out the <c>ItemStatus.Unused</c> the variable was initialized with - which is why the
-    /// <c>status == null ? Unused : (ItemStatus)status</c> guard on the article is load-bearing rather than
-    /// defensive. The effect is that a misspelled status cell publishes the article as unused, silently.
+    /// A misspelled status cell publishes the article as gray, silently. A number is not accepted either:
+    /// <c>Enum.TryParse</c> would take <c>"2"</c> as the client enum's ordinal, which is not Gallery's value.
     /// </para>
     /// <para>
     /// The empty case is the common one: a MSEL with no Status data field at all gets <c>""</c> from
@@ -835,11 +850,12 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
     [Theory]
     [InlineData("")]
     [InlineData("nonsense")]
-    public async Task CreateArticles_ForAStatusGalleryDoesNotKnow_PublishesItUnused(string cell)
+    [InlineData("2")]
+    public async Task CreateArticles_ForAStatusGalleryDoesNotKnow_PublishesItGray(string cell)
     {
         var body = await OneArticle(new() { [GalleryArticleParameter.Status] = cell });
 
-        Assert.Equal("Unused", body["status"].GetString());
+        Assert.Equal("Gray", body["status"].GetString());
     }
 
     [Theory]

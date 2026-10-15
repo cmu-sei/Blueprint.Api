@@ -276,26 +276,19 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
     }
 
     /// <summary>
-    /// Characterizes a defect. An unknown MSEL is a 500, not a 404 and not the empty names the service is
-    /// written to answer with: <c>MselService.GetAsync</c> maps a null entity and then dereferences the
-    /// result, so <c>IntegrationNameService</c>'s own <c>if (msel == null)</c> guard is unreachable.
-    /// Making <c>GetAsync</c> answer for a missing MSEL turns this red - and if it is made to return null,
-    /// the guard below finally runs and this endpoint answers 200 with six empty names, which is worse
-    /// than a 404 for a client polling a deleted MSEL.
+    /// An unknown MSEL is a 404, the same as <c>GET msels/{id}</c>. <c>MselService.GetAsync</c> throws
+    /// for a missing MSEL, so a client polling a deleted one is told it is gone rather than handed six
+    /// empty names.
     /// </summary>
-    /// <remarks>
-    /// A caller with no permission at all reaches a 500 by a different route - the null
-    /// <c>mselCheck.IsTemplate</c> - which <c>MselEndpointTests</c> pins on <c>GET msels/{id}</c>.
-    /// </remarks>
     [Fact]
-    public async Task Names_ForAnUnknownMsel_WithViewMselsPermission_Is500()
+    public async Task Names_ForAnUnknownMsel_WithViewMselsPermission_Is404()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(actor)
             .GetAsync($"/api/msels/{Guid.NewGuid()}/integrations/names", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------

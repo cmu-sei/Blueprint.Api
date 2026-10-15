@@ -46,9 +46,10 @@ namespace Blueprint.Api.Tests;
 /// <para>
 /// Upload is a thin layer over the copy: after remapping the CITE ids it hands the deserialized entity
 /// to the same <c>privateMselCopyAsync</c> that <c>POST msels/{id}/copy</c> uses. So an import inherits
-/// every behaviour <see cref="MselServiceCopyTests"/> pins - the renaming, the cleared integration ids,
-/// the <c>Pending</c> status, the silence over SignalR - and those are asserted here only where an
-/// importer would be surprised by them.
+/// every behaviour <see cref="MselServiceCopyTests"/> pins - the cleared integration ids, the
+/// <c>Pending</c> status, the silence over SignalR - and those are asserted here only where an importer
+/// would be surprised by them. The one exception is the name: an import keeps the file's name unless it
+/// is already in use, where a copy always adds the copier's name.
 /// </para>
 /// <para>
 /// The CITE remapping is the part written specifically for the import, and it is the reason moving a
@@ -198,6 +199,76 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.DoesNotContain(bytes, b => b > 127);
     }
 
+    /// <summary>
+    /// The export records the scoring model's name as CITE has it now, because that name is what an
+    /// import on another installation looks the model up by - the id is local to this CITE.
+    /// </summary>
+    /// <remarks>
+    /// Before this, only the import ever wrote <c>CiteScoringModelName</c>, so a MSEL whose model was
+    /// picked in the UI exported a null name and the importing side had nothing to remap with. A stored
+    /// name is replaced too: the model may have been renamed in CITE since.
+    /// </remarks>
+    [Fact]
+    public async Task Download_OfACiteMsel_RecordsTheScoringModelNameFromCite()
+    {
+        var scoringModelId = Guid.NewGuid();
+        var msel = BlueprintAppFactory.Msel();
+        msel.UseCite = true;
+        msel.CiteScoringModelId = scoringModelId;
+        msel.CiteScoringModelName = "Old Name";
+        await Seed(msel);
+        Factory.Cite.GetScoringModelAsync(scoringModelId, Arg.Any<CancellationToken>())
+            .Returns(new ScoringModel { Id = scoringModelId, Description = "Incident Triage" });
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var exported = await ReadExport(await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct));
+
+        Assert.Equal("Incident Triage", exported.GetProperty("CiteScoringModelName").GetString());
+        // The name is written to the file, not to the MSEL.
+        var stored = await NewContext().Msels.SingleAsync(m => m.Id == msel.Id, Ct);
+        Assert.Equal("Old Name", stored.CiteScoringModelName);
+    }
+
+    /// <summary>
+    /// CITE being down doesn't block an export: the file carries whatever name is already stored.
+    /// </summary>
+    [Fact]
+    public async Task Download_WhenCiteCannotBeReached_KeepsTheStoredScoringModelName()
+    {
+        var scoringModelId = Guid.NewGuid();
+        var msel = BlueprintAppFactory.Msel();
+        msel.UseCite = true;
+        msel.CiteScoringModelId = scoringModelId;
+        msel.CiteScoringModelName = "Incident Triage";
+        await Seed(msel);
+        Factory.Cite.GetScoringModelAsync(scoringModelId, Arg.Any<CancellationToken>())
+            .Throws(new HttpRequestException("Connection refused"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Incident Triage", (await ReadExport(response)).GetProperty("CiteScoringModelName").GetString());
+    }
+
+    /// <summary>
+    /// Exporting a MSEL that doesn't use CITE asks CITE nothing, the same as importing one.
+    /// </summary>
+    [Fact]
+    public async Task Download_OfANonCiteMsel_AsksCiteNothing()
+    {
+        var msel = BlueprintAppFactory.Msel();
+        msel.UseCite = false;
+        msel.CiteScoringModelId = Guid.NewGuid();
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(Factory.Cite.ReceivedCalls());
+    }
+
     [Fact]
     public async Task Download_OfAnUnknownMsel_Is404()
     {
@@ -299,20 +370,48 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     /// carries no roles.
     /// </summary>
     [Fact]
-    public async Task Upload_RenamesTheMselAfterTheImporterAndGivesItANewId()
+    public async Task Upload_KeepsTheFileNameAndGivesItANewId()
     {
         var actor = await Actor()
             .WithName("Importing User")
             .WithSystemPermissions(SystemPermission.CreateMsels)
             .SeedAsync();
         var originalId = Guid.NewGuid();
-        var file = Exported(m => { m.Id = originalId; m.Name = "imported exercise"; });
+        var name = $"imported exercise {Guid.NewGuid()}";
+        var file = Exported(m => { m.Id = originalId; m.Name = name; });
 
         var imported = await Upload(Client(actor), file);
 
-        Assert.Equal("imported exercise - Importing User", imported.Name);
+        Assert.Equal(name, imported.Name);
         Assert.NotEqual(originalId, imported.Id);
         Assert.Equal(actor.Id, imported.CreatedBy);
+    }
+
+    /// <summary>
+    /// Only a name already in use here gets the importer's name added, so the two can be told apart
+    /// in the MSEL list. The check ignores case, the way a planner reading the list would.
+    /// </summary>
+    /// <remarks>
+    /// The name matters beyond Blueprint: every pushed app inherits it, so players would otherwise see
+    /// "Exercise X - Admin User" as the CITE evaluation and Gallery exhibit. A copy
+    /// (<c>POST msels/{id}/copy</c>) always collides with its source and keeps the suffix; see
+    /// <see cref="MselServiceCopyTests"/>.
+    /// </remarks>
+    [Fact]
+    public async Task Upload_OfANameAlreadyInUse_AddsTheImportersName()
+    {
+        var existing = BlueprintAppFactory.Msel();
+        existing.Name = $"Exercise {Guid.NewGuid()}";
+        await Seed(existing);
+        var actor = await Actor()
+            .WithName("Importing User")
+            .WithSystemPermissions(SystemPermission.CreateMsels)
+            .SeedAsync();
+        var file = Exported(m => m.Name = existing.Name.ToUpperInvariant());
+
+        var imported = await Upload(Client(actor), file);
+
+        Assert.Equal($"{existing.Name.ToUpperInvariant()} - Importing User", imported.Name);
     }
 
     /// <summary>
@@ -573,6 +672,7 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         var reimported = await Upload(Client(actor), file);
 
         Assert.NotEqual(msel.Id, reimported.Id);
+        // The source is still here, so the name is in use.
         Assert.Equal($"{msel.Name} - Round Tripper", reimported.Name);
         Assert.Equal("the exercise as exported", reimported.Description);
 
@@ -894,6 +994,207 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     // ---------------------------------------------------------------------------------------------
+    // The import report (POST msels/json/import)
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The report counts what was saved, not what the file held, so a planner can check the import
+    /// against the spreadsheet they started from.
+    /// </summary>
+    [Fact]
+    public async Task Import_CountsWhatWasImported()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            m.Moves.Add(BlueprintAppFactory.Move(m.Id, moveNumber: 0));
+            m.Moves.Add(BlueprintAppFactory.Move(m.Id, moveNumber: 1));
+            m.Cards.Add(BlueprintAppFactory.Card(m.Id));
+            m.Teams.Add(new TeamEntity { Id = Guid.NewGuid(), Name = "Blue", ShortName = "B", MselId = m.Id });
+            m.DataFields.Add(BlueprintAppFactory.DataField(m.Id));
+            m.ScenarioEvents.Add(new ScenarioEventEntity { Id = Guid.NewGuid(), MselId = m.Id, GroupOrder = 1 });
+            m.Pages.Add(new MselPageEntity { Id = Guid.NewGuid(), MselId = m.Id, Name = "Briefing" });
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(2, result.Imported.Moves);
+        Assert.Equal(1, result.Imported.Cards);
+        Assert.Equal(1, result.Imported.Teams);
+        Assert.Equal(1, result.Imported.DataFields);
+        Assert.Equal(1, result.Imported.ScenarioEvents);
+        Assert.Equal(1, result.Imported.Pages);
+        Assert.NotNull(await NewContext().Msels.SingleOrDefaultAsync(m => m.Id == result.Msel.Id, Ct));
+    }
+
+    [Fact]
+    public async Task Import_OfAPlainMsel_ReportsNoChangesOrFailures()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var result = await Import(Client(actor), Exported(m => m.Name = $"plain {Guid.NewGuid()}"));
+
+        Assert.Empty(result.Changes);
+        Assert.Empty(result.Failures);
+    }
+
+    [Fact]
+    public async Task Import_OfANameAlreadyInUse_ReportsTheRename()
+    {
+        var existing = BlueprintAppFactory.Msel();
+        existing.Name = $"Exercise {Guid.NewGuid()}";
+        await Seed(existing);
+        var actor = await Actor()
+            .WithName("Importing User")
+            .WithSystemPermissions(SystemPermission.CreateMsels)
+            .SeedAsync();
+
+        var result = await Import(Client(actor), Exported(m => m.Name = existing.Name));
+
+        var change = Assert.Single(result.Changes, c => c.Field == "name");
+        Assert.Contains($"{existing.Name} - Importing User", change.Message);
+        Assert.Equal($"{existing.Name} - Importing User", result.Msel.Name);
+    }
+
+    /// <summary>
+    /// Team members are never imported (see <see cref="Upload_CarriesTheTeamsButNotTheirMembership"/>);
+    /// the report says how many were left behind so the planner knows to add them before pushing.
+    /// </summary>
+    [Fact]
+    public async Task Import_ReportsTheTeamMembersItLeftBehind()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            var team = new TeamEntity { Id = Guid.NewGuid(), Name = "Blue", ShortName = "B", MselId = m.Id };
+            team.TeamUsers.Add(new TeamUserEntity { Id = Guid.NewGuid(), TeamId = team.Id, UserId = Guid.NewGuid() });
+            team.TeamUsers.Add(new TeamUserEntity { Id = Guid.NewGuid(), TeamId = team.Id, UserId = Guid.NewGuid() });
+            m.Teams.Add(team);
+        });
+
+        var result = await Import(Client(actor), file);
+
+        var change = Assert.Single(result.Changes, c => c.Field == "teams");
+        Assert.StartsWith("2 team members", change.Message);
+    }
+
+    /// <summary>
+    /// The integration settings come across on, so a push would create content in each of those apps.
+    /// The report lists them so that is a decision rather than a surprise.
+    /// </summary>
+    [Fact]
+    public async Task Import_ReportsTheIntegrationsThatAreOn()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            m.UsePlayer = true;
+            m.UseSteamfitter = true;
+            m.UseGallery = false;
+            m.UseCite = false;
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(["usePlayer", "useSteamfitter"], result.Changes.Select(c => c.Field).Order());
+    }
+
+    [Fact]
+    public async Task Import_OfAnUnknownScoringModel_ReportsThatItWasNotLinked()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        CiteKnows(scoringModels: [new ScoringModel { Id = Guid.NewGuid(), Description = "Something Else" }]);
+        var file = Exported(m =>
+        {
+            m.UseCite = true;
+            m.CiteScoringModelId = Guid.NewGuid();
+            m.CiteScoringModelName = "Incident Triage";
+        });
+
+        var result = await Import(Client(actor), file);
+
+        var change = Assert.Single(result.Changes, c => c.Field == "citeScoringModel");
+        Assert.Contains("\"Incident Triage\" was not found in CITE", change.Message);
+        Assert.Null(result.Msel.CiteScoringModelId);
+        Assert.Empty(result.Failures);
+    }
+
+    [Fact]
+    public async Task Import_OfAScoringModelFoundByName_ReportsTheLink()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var localId = Guid.NewGuid();
+        CiteKnows(scoringModels: [new ScoringModel { Id = localId, Description = "Incident Triage" }]);
+        var file = Exported(m =>
+        {
+            m.UseCite = true;
+            m.CiteScoringModelId = Guid.NewGuid();
+            m.CiteScoringModelName = "Incident Triage";
+        });
+
+        var result = await Import(Client(actor), file);
+
+        var change = Assert.Single(result.Changes, c => c.Field == "citeScoringModel");
+        Assert.Contains("\"Incident Triage\" by name", change.Message);
+        Assert.Equal(localId, result.Msel.CiteScoringModelId);
+    }
+
+    [Fact]
+    public async Task Import_OfATypelessTeam_ReportsTheDefaultTeamType()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        CiteKnows(teamTypes: [new TeamType { Id = Guid.NewGuid(), Name = "Standard" }]);
+        var file = Exported(m =>
+        {
+            m.UseCite = true;
+            m.Teams.Add(new TeamEntity { Id = Guid.NewGuid(), Name = "Blue Team", ShortName = "BLUE", MselId = m.Id });
+        });
+
+        var result = await Import(Client(actor), file);
+
+        var change = Assert.Single(result.Changes, c => c.Field == "teams");
+        Assert.Equal("Team BLUE had no CITE team type; set to \"Standard\".", change.Message);
+    }
+
+    /// <summary>
+    /// CITE being down still imports the MSEL, but both CITE steps are reported as failed, without the
+    /// raw exception text.
+    /// </summary>
+    [Fact]
+    public async Task Import_WhenCiteCannotBeReached_ReportsBothCiteStepsAsFailed()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        Factory.Cite
+            .GetScoringModelsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool?>(), Arg.Any<CancellationToken>())
+            .Throws(new HttpRequestException("Connection refused"));
+        Factory.Cite.GetTeamTypesAsync(Arg.Any<CancellationToken>())
+            .Throws(new HttpRequestException("Connection refused"));
+        var file = Exported(m =>
+        {
+            m.UseCite = true;
+            m.CiteScoringModelId = Guid.NewGuid();
+            m.CiteScoringModelName = "Incident Triage";
+            m.Teams.Add(new TeamEntity { Id = Guid.NewGuid(), Name = "Blue", MselId = m.Id });
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(["citeScoringModel", "citeTeamTypes"], result.Failures.Select(f => f.Step).Order());
+        Assert.DoesNotContain(result.Failures, f => f.Message.Contains("Connection refused"));
+        Assert.NotNull(await NewContext().Msels.SingleOrDefaultAsync(m => m.Id == result.Msel.Id, Ct));
+    }
+
+    [Fact]
+    public async Task Import_WithEditMselsOnly_Is403()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Post(Client(actor), Exported(), "/api/msels/json/import");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    // ---------------------------------------------------------------------------------------------
 
     /// <summary>
     /// Tells the substituted CITE client what this installation's CITE contains. Both lists default to
@@ -946,7 +1247,16 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     /// The content must be awaited before the <c>using</c> falls out of scope - <c>TestServer</c> reads
     /// the request body inside <c>SendAsync</c>.
     /// </remarks>
-    private async Task<HttpResponseMessage> Post(HttpClient client, string file)
+    private async Task<MselImportResult> Import(HttpClient client, string file)
+    {
+        var response = await Post(client, file, "/api/msels/json/import");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        return await Read<MselImportResult>(response);
+    }
+
+    private async Task<HttpResponseMessage> Post(HttpClient client, string file, string path = "/api/msels/json")
     {
         using var content = new MultipartFormDataContent();
 
@@ -954,7 +1264,7 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         upload.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         content.Add(upload, "ToUpload", "msel.json");
 
-        return await client.PostAsync("/api/msels/json", content, Ct);
+        return await client.PostAsync(path, content, Ct);
     }
 
     /// <summary>

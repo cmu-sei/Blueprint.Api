@@ -558,44 +558,40 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <summary>
-    /// An unknown id is a 500 for a caller with no permission.
+    /// An unknown id is a 404 for a caller with no permission.
     /// </summary>
     /// <remarks>
-    /// Characterization. The refusal branch reads <c>mselCheck.IsTemplate</c> off an unguarded
-    /// <c>FindAsync</c>, so a caller who cannot view an MSEL learns whether it exists from the status
-    /// code - 403 when it does, 500 when it does not. Turns red when the lookup is guarded, which should
-    /// make both cases 403 or both 404.
+    /// The refusal branch looks the MSEL up to see whether it is a template, and a missing one is
+    /// reported as missing - the same answer <see cref="GetData_ForAnUnknownMsel_WithNoRoleOrPermission_Is404"/>
+    /// gives. It used to read <c>IsTemplate</c> off the null and answer 500.
     /// </remarks>
     [Fact]
-    public async Task GetById_ForAnUnknownMsel_WithNoPermission_Is500()
+    public async Task GetById_ForAnUnknownMsel_WithNoPermission_Is404()
     {
         var actor = await Actor().SeedAsync();
 
         Assert.Equal(
-            HttpStatusCode.InternalServerError,
+            HttpStatusCode.NotFound,
             (await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}", Ct)).StatusCode);
     }
 
     /// <summary>
-    /// An unknown id is a 500 for a caller who holds <see cref="SystemPermission.ViewMsels"/> too - by a
+    /// An unknown id is a 404 for a caller who holds <see cref="SystemPermission.ViewMsels"/> too - by a
     /// different route from the test above.
     /// </summary>
     /// <remarks>
-    /// Characterization. This half of <c>GetAsync</c> maps the null entity happily and then reads
-    /// <c>msel.UseGallery</c> off the result to decide whether to fill the Gallery lists, so the one
-    /// endpoint the UI loads an MSEL through cannot say "gone" whoever asks. Every other read on this
-    /// controller throws <c>EntityNotFoundException</c>. Turns red when this one does too - and note that
-    /// fixing only the <c>UseGallery</c> dereference would leave it answering 200 with a null body, which
-    /// is not the fix.
+    /// This half of <c>GetAsync</c> used to map the null entity and then read <c>msel.UseGallery</c> off
+    /// the result, so the endpoint the UI loads an MSEL through answered 500 for a deleted MSEL. Fixing
+    /// only that dereference would answer 200 with a null body, so this pins the 404.
     /// </remarks>
     [Fact]
-    public async Task GetById_ForAnUnknownMsel_WithViewMselsPermission_Is500()
+    public async Task GetById_ForAnUnknownMsel_WithViewMselsPermission_Is404()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}", Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]

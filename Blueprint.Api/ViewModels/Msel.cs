@@ -81,6 +81,7 @@ namespace Blueprint.Api.ViewModels
         public ICollection<Card> Cards { get; set; } = new List<Card>();
         public List<string> GalleryArticleParameters { get; set; } = new List<string>(); // the parameters that must be sent to Gallery to define an Article
         public List<string> GallerySourceTypes { get; set; } = new List<string>(); // the source types that must be sent to Gallery to define an Article
+        public List<string> GalleryItemStatuses { get; set; } = new List<string>(); // the statuses (colors) a Gallery Article can have
         public virtual ICollection<CiteDuty> CiteDuties { get; set; } = new HashSet<CiteDuty>();
         public virtual ICollection<CiteAction> CiteActions { get; set; } = new HashSet<CiteAction>();
         public virtual ICollection<PlayerApplication> PlayerApplications { get; set; } = new HashSet<PlayerApplication>();

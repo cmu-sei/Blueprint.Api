@@ -38,7 +38,7 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
         "Invitation -> InvitationEntity: Msel, Team",
         "Msel -> MselEntity: CiteScoringModelName",
         "MselCompetency -> MselCompetencyEntity: Msel",
-        "MselEntity -> Msel: GalleryArticleParameters, GallerySourceTypes",
+        "MselEntity -> Msel: GalleryArticleParameters, GallerySourceTypes, GalleryItemStatuses",
         "MselPage -> MselPageEntity: Msel",
         "MselUnit -> MselUnitEntity: Msel",
         "PlayerApplication -> PlayerApplicationEntity: Msel, PlayerApplicationTeams",
@@ -265,6 +265,7 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
 
         Assert.Empty(msel.GalleryArticleParameters);
         Assert.Empty(msel.GallerySourceTypes);
+        Assert.Empty(msel.GalleryItemStatuses);
     }
 
     /// <summary>

@@ -627,7 +627,7 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
             [GalleryArticleParameter.Description] = "The grid is down",
             [GalleryArticleParameter.SourceName] = "Wire service",
             [GalleryArticleParameter.Url] = "http://news.example/1",
-            [GalleryArticleParameter.Status] = "Critical",
+            [GalleryArticleParameter.Status] = "Orange",
             [GalleryArticleParameter.SourceType] = "Social",
             [GalleryArticleParameter.DatePosted] = "2026-03-04T05:06:07Z",
             [GalleryArticleParameter.OpenInNewTab] = "true"
@@ -645,7 +645,7 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
         Assert.Equal("The grid is down", body["description"].GetString());
         Assert.Equal("Wire service", body["sourceName"].GetString());
         Assert.Equal("http://news.example/1", body["url"].GetString());
-        Assert.Equal("Critical", body["status"].GetString());
+        Assert.Equal("Orange", body["status"].GetString());
         Assert.Equal("Social", body["sourceType"].GetString());
         Assert.True(body["openInNewTab"].GetBoolean());
         Assert.Equal(4, body["move"].GetInt32());
@@ -678,14 +678,14 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
     }
 
     /// <remarks>
-    /// Case-insensitively - <c>Enum.TryParse</c> is called with <c>ignoreCase: true</c> - so the cell may
-    /// say <c>critical</c> or <c>CRITICAL</c>. This is the one parse in the article builder that forgives
-    /// anything.
+    /// Case-insensitively and trimmed, so the cell may say <c>red</c> or <c>RED</c>. This is the one parse
+    /// in the article builder that forgives anything.
     /// </remarks>
     [Theory]
-    [InlineData("critical", "Critical")]
-    [InlineData("CRITICAL", "Critical")]
-    [InlineData("Open", "Open")]
+    [InlineData("red", "Red")]
+    [InlineData("RED", "Red")]
+    [InlineData("Red", "Red")]
+    [InlineData(" Green ", "Green")]
     public async Task CreateArticles_ParsesTheStatusCaseInsensitively(string cell, string expected)
     {
         var body = await OneArticle(new() { [GalleryArticleParameter.Status] = cell });
@@ -693,15 +693,32 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
         Assert.Equal(expected, body["status"].GetString());
     }
 
-    /// <summary>Create articles for a status gallery does not know publishes it unused.</summary>
+    /// <remarks>
+    /// A MSEL can hold Gallery's earlier status names, which publish as the color each now goes by.
+    /// </remarks>
     [Theory]
-    [InlineData("")]
-    [InlineData("nonsense")]
-    public async Task CreateArticles_ForAStatusGalleryDoesNotKnow_PublishesItUnused(string cell)
+    [InlineData("Critical", "Orange")]
+    [InlineData("open", "Green")]
+    [InlineData(" Closed ", "Red")]
+    [InlineData("AFFECTED", "Yellow")]
+    [InlineData("Unused", "Gray")]
+    public async Task CreateArticles_MapsALegacyStatusNameToItsColor(string cell, string expected)
     {
         var body = await OneArticle(new() { [GalleryArticleParameter.Status] = cell });
 
-        Assert.Equal("Unused", body["status"].GetString());
+        Assert.Equal(expected, body["status"].GetString());
+    }
+
+    /// <summary>A status Gallery does not know, an empty cell or a number included, publishes the article gray.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("nonsense")]
+    [InlineData("2")]
+    public async Task CreateArticles_ForAStatusGalleryDoesNotKnow_PublishesItGray(string cell)
+    {
+        var body = await OneArticle(new() { [GalleryArticleParameter.Status] = cell });
+
+        Assert.Equal("Gray", body["status"].GetString());
     }
 
     [Theory]

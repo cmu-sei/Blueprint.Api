@@ -173,6 +173,7 @@ public class Startup
         services.AddGalleryApiClient();
         services.AddPlayerApiClient();
         services.AddSteamfitterApiClient();
+        services.AddCasterApiClient();
 
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
@@ -239,6 +240,7 @@ public class Startup
         services.AddScoped<IPlayerApplicationService, PlayerApplicationService>();
         services.AddScoped<IPlayerApplicationTeamService, PlayerApplicationTeamService>();
         services.AddScoped<IPlayerService, PlayerService>();
+        services.AddScoped<ICasterService, CasterService>();
         services.AddScoped<ITeamService, TeamService>();
         services.AddScoped<ITeamUserService, TeamUserService>();
         services.AddScoped<IUnitService, UnitService>();

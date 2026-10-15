@@ -2,7 +2,7 @@
 
 This project provides a RESTful API for Blueprint, the Crucible scenario design and MSEL (Master Scenario Events List) management application.
 
-By default, blueprint.api is available at localhost:4724, with the swagger page at localhost:4724/api/index.html.
+Run locally (`dotnet run --project Blueprint.Api`), blueprint.api is available at localhost:4724, with the swagger page at localhost:4724/api/index.html. The Docker image listens on port 8080.
 
 # Testing
 
@@ -16,19 +16,18 @@ CITE or Steamfitter, and no network.
 
 To run one class or one test:
 
-    dotnet test --filter "FullyQualifiedName~Tests.OrganizationEndpointTests"
-    dotnet test --filter "FullyQualifiedName~Create_ForAnOwnerOfTheMsel_Is201"
+    dotnet test --filter "FullyQualifiedName~.OrganizationEndpointTests"
+    dotnet test --filter "FullyQualifiedName~.MselPageEndpointTests.Create_ForAnOwnerOfTheMsel_Is201"
 
 `--filter FullyQualifiedName~X` is a substring match on the whole name, so prefix the namespace when a
-class name is a suffix of another (`~Tests.TeamEndpointTests`, not `~TeamEndpointTests`).
+class name is a suffix of another (`~.TeamEndpointTests`, not `~TeamEndpointTests`; the classes sit in
+sub-namespaces such as `Blueprint.Api.Tests.Controllers`, so `~Tests.X` does not match).
 
-See `docs/Testing.md` for the harness, the conventions a new test has to respect, and coverage.
-Defects the suite characterizes rather than fixes are listed in `docs/known-defects.md`, ranked for a
-follow-up branch in `docs/fix-list.md`.
+See [docs/Testing.md](docs/Testing.md) for the harness, the conventions a new test has to respect, and coverage.
 
 # Database Migrations
 
-When the data model is changed, a new database migration must be created.  From the Blueprint.Api directory, run this command to create the new migration:
+When the data model is changed, a new database migration must be created.  The commands need the `dotnet-ef` tool, which the repository's tool manifest does not include (`dotnet tool install --global dotnet-ef`).  From the Blueprint.Api directory, run this command to create the new migration:
 
     dotnet ef migrations add <new_migration_name> --project ../Blueprint.Api.Migrations.PostgreSQL/Blueprint.Api.Migrations.PostgreSQL.csproj
 
@@ -82,8 +81,8 @@ Higher concurrency improves MSEL push performance but consumes more database con
 - **Production with connection pooler (PgBouncer, etc.)**: Can increase to 20+
 
 **Connection Usage During MSEL Push**:
-- Operations run sequentially across APIs (Gallery → CITE → Steamfitter → Player)
-- Within each API, operations run in parallel up to the configured limit
+- Operations run sequentially across APIs (Player view and teams → Gallery → CITE → Steamfitter → Player applications)
+- Gallery cards and articles, CITE moves, duties and actions, and Player applications run in parallel up to the configured limit
 - Approximate peak connection usage: `MaxConcurrentRequests × NumberOfTeams` (for team-related operations)
 
 # Permissions
@@ -103,25 +102,20 @@ Higher concurrency improves MSEL push performance but consumes more database con
 * ViewInjectTypes, ViewCatalogs, ViewGalleryCards
 * ViewCiteActions, ViewCiteDuties
 * ViewUsers, ViewRoles, ViewGroups
+* ViewCompetencyFrameworks
 
 ## MSEL-Specific Roles
 
-Users can be assigned roles for individual MSELs:
+Users can be assigned roles for individual MSELs. A role applies only while the user is also a member of a unit added to the MSEL, and the user who created a MSEL counts as its Owner.
 
 * **Owner** - Full control over the MSEL (includes all permissions below)
 * **Editor** - Can modify MSEL content and events
 * **Approver** - Can approve MSEL events
-* **MoveEditor** - Can advance the MSEL timeline/moves
+* **MoveEditor** - Can add, edit and delete the MSEL's moves
 * **Viewer** - Read-only access to the MSEL
 * **Evaluator** - Can evaluate MSEL execution
 
 ## Team Roles
 
-Roles for team participation during MSEL execution:
-
-* **Observer** - View team activities
-* **Inviter** - Invite users to the team
-* **Incrementer** - Advance team progress
-* **Modifier** - Modify team settings
-* **Submitter** - Submit team responses
+A team role is the name of one of CITE's team roles. Blueprint reads the list from CITE (`GET api/teamroles`), and when a MSEL is pushed to CITE each team member gets the CITE team role of that name; a member whose role name CITE does not have is added to the CITE team without a role.
 

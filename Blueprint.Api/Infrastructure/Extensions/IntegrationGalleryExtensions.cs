@@ -206,7 +206,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
             {
                 var batch = scenarioEvents.Skip(i).Take(batchSize);
                 await Task.WhenAll(batch.Select(async scenarioEvent => {
-                    object status = Gallery.Api.Client.ItemStatus.Unused;
                     object sourceType = SourceType.News;
                     DateTime datePosted;
                     bool openInNewTab = false;
@@ -225,7 +224,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     var description = GetArticleValue(GalleryArticleParameter.Description.ToString(), scenarioEvent.DataValues, msel.DataFields);
                     var move = movesAndInjects[scenarioEvent.Id][0];
                     var inject = movesAndInjects[scenarioEvent.Id][1];
-                    Enum.TryParse(typeof(Gallery.Api.Client.ItemStatus), GetArticleValue(GalleryArticleParameter.Status.ToString(), scenarioEvent.DataValues, msel.DataFields), true, out status);
+                    var status = ParseItemStatus(GetArticleValue(GalleryArticleParameter.Status.ToString(), scenarioEvent.DataValues, msel.DataFields));
                     Enum.TryParse(typeof(SourceType), GetArticleValue(GalleryArticleParameter.SourceType.ToString(), scenarioEvent.DataValues, msel.DataFields), true, out sourceType);
                     var sourceName = GetArticleValue(GalleryArticleParameter.SourceName.ToString(), scenarioEvent.DataValues, msel.DataFields);
                     var url = GetArticleValue(GalleryArticleParameter.Url.ToString(), scenarioEvent.DataValues, msel.DataFields);
@@ -240,7 +239,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         Description = description,
                         Move = move,
                         Inject = inject,
-                        Status = status == null ? Gallery.Api.Client.ItemStatus.Unused : (Gallery.Api.Client.ItemStatus)status,
+                        Status = status,
                         SourceType = sourceType == null ? SourceType.News : (SourceType)sourceType,
                         SourceName = sourceName,
                         Url = url,
@@ -261,6 +260,31 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     }
                 }));
             }
+        }
+
+        // the names Gallery used before its statuses were named for colors; existing MSELs still hold them
+        private static readonly Dictionary<string, Gallery.Api.Client.ItemStatus> LegacyItemStatusNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Unused", Gallery.Api.Client.ItemStatus.Gray },
+            { "Open", Gallery.Api.Client.ItemStatus.Green },
+            { "Affected", Gallery.Api.Client.ItemStatus.Yellow },
+            { "Critical", Gallery.Api.Client.ItemStatus.Orange },
+            { "Closed", Gallery.Api.Client.ItemStatus.Red }
+        };
+
+        // a color name or a legacy name, any case; anything else (including a number) is Gray
+        public static Gallery.Api.Client.ItemStatus ParseItemStatus(string value)
+        {
+            value = value?.Trim();
+            if (string.IsNullOrEmpty(value) || int.TryParse(value, out _))
+            {
+                return Gallery.Api.Client.ItemStatus.Gray;
+            }
+            if (Enum.TryParse<Gallery.Api.Client.ItemStatus>(value, true, out var status))
+            {
+                return status;
+            }
+            return LegacyItemStatusNames.TryGetValue(value, out status) ? status : Gallery.Api.Client.ItemStatus.Gray;
         }
 
         public static string GetArticleValue(string key, ICollection<DataValueEntity> dataValues, ICollection<DataFieldEntity> dataFields)

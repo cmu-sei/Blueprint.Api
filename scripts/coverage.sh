@@ -5,7 +5,8 @@
 # Nothing about this is part of a normal run or of the pull request build. Coverage is a way of
 # finding the next thing worth testing, not a number to defend: there is no threshold here, nothing
 # fails on a percentage, and `dotnet test` on its own still neither instruments nor slows down.
-# Settings and exclusions are in coverlet.runsettings; read them before believing a figure.
+# Settings and exclusions are in Blueprint.Api.Tests/coverlet.runsettings (the shared one from
+# agent-docs/api-testing, applied by the project's RunSettingsFilePath); read them before believing a figure.
 #
 # Usage:
 #   scripts/coverage.sh                            the whole suite
@@ -34,7 +35,6 @@ dotnet tool restore
 # what nothing executed is worth having either way, so the exit code is carried to the end instead.
 set +e
 dotnet test Blueprint.Api.Tests/Blueprint.Api.Tests.csproj \
-  --settings coverlet.runsettings \
   --collect:"XPlat Code Coverage" \
   --results-directory "$RAW" \
   "$@"

@@ -307,7 +307,10 @@ namespace Blueprint.Api.Services
                         if (isAPush)
                         {
                             // Pre-generate integration object IDs and save before calling remote APIs
-                            if (msel.UsePlayer && msel.PlayerViewId == null)
+                            // the view is created under the queue item's ID when it has one, so the MSEL has to use it too
+                            if (msel.UsePlayer && integrationInformation.PlayerViewId != null)
+                                msel.PlayerViewId = integrationInformation.PlayerViewId;
+                            else if (msel.UsePlayer && msel.PlayerViewId == null)
                                 msel.PlayerViewId = Guid.NewGuid();
                             if (msel.UseGallery)
                             {

@@ -2752,13 +2752,16 @@ namespace Blueprint.Api.Services
 
             // clone the template MSEL
             var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct);
+            // create the new player view ID, so that the UI will be able to look for it to be created
+            var playerViewId = Guid.NewGuid();
+            // store it now, as a push does, so the view, its teams and the MSEL all use the same ID
+            if (mselEntity.UsePlayer)
+                mselEntity.PlayerViewId = playerViewId;
             // set the start time to the current time
             mselEntity.StartTime = DateTime.UtcNow;
             // increment the invitation use count
             invitation.UserCount++;
             await _context.SaveChangesAsync(ct);
-            // create the new player view ID, so that the UI will be able to look for it to be created
-            var playerViewId = Guid.NewGuid();
             // add the launch data to the launch queue
             _integrationQueue.Add(new IntegrationInformation { MselId = mselEntity.Id, PlayerViewId = playerViewId, IsPush = true, UserId = _user.GetId() });
             // get the MSEL to return with the new Player View ID

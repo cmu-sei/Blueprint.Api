@@ -249,27 +249,93 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
+    /// <summary>
+    /// The application and the team must belong to the same MSEL, even for an <c>EditMsels</c> holder.
+    /// </summary>
+    [Fact]
+    public async Task Create_ForATeamOfAnotherMsel_Is404AndCreatesNothing()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var msel = TestData.Msel();
+        var elsewhere = TestData.Msel();
+        await Seed(msel, elsewhere);
+        var team = TestData.Team(elsewhere.Id);
+        var application = TestData.PlayerApplication(msel.Id);
+        await Seed(team, application);
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/teamplayerApplications", Body(application.Id, team.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(await NewContext().PlayerApplicationTeams.AnyAsync(x => x.PlayerApplicationId == application.Id, Ct));
+    }
+
+    [Fact]
+    public async Task Create_ForAnApplicationThatIsNotThere_Is404()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var graph = await SeedGraph();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/teamplayerApplications", Body(Guid.NewGuid(), graph.Team.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(1, await NewContext().PlayerApplicationTeams.CountAsync(x => x.TeamId == graph.Team.Id, Ct));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // PUT playerApplicationteams/{id}
     // ---------------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// The edit request carries only the display order, so a body naming another application or team
+    /// leaves the row's pairing alone.
+    /// </summary>
     [Fact]
-    public async Task Update_WithEditMsels_Is200()
+    public async Task Update_WithEditMsels_Is200AndLeavesThePairingAlone()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
         var graph = await SeedGraph();
-        var other = TestData.PlayerApplication(graph.Msel.Id, "other");
-        await Seed(other);
+        var elsewhere = TestData.Msel();
+        await Seed(elsewhere);
+        var other = TestData.PlayerApplication(elsewhere.Id, "other");
+        var otherTeam = TestData.Team(elsewhere.Id);
+        await Seed(other, otherTeam);
 
         var response = await Client(actor).PutAsJsonAsync(
             $"api/playerApplicationteams/{graph.Row.Id}",
-            Body(other.Id, graph.Team.Id) with { id = graph.Row.Id, displayOrder = 1 },
+            Body(other.Id, otherTeam.Id) with { id = graph.Row.Id, displayOrder = 1 },
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var stored = await ReadBack(rb => rb.PlayerApplicationTeams
-            .SingleAsync(x => x.Id == graph.Row.Id, Ct));
-        Assert.Equal(other.Id, stored.PlayerApplicationId);
+        var stored = await NewContext().PlayerApplicationTeams
+            .SingleAsync(x => x.Id == graph.Row.Id, Ct);
+        Assert.Equal(graph.Application.Id, stored.PlayerApplicationId);
+        Assert.Equal(graph.Team.Id, stored.TeamId);
+    }
+
+    /// <summary>
+    /// The display order is checked against the stored team's other applications, not a team the body
+    /// names: here the stored team has one other row, so 2 is in range whatever the body says.
+    /// </summary>
+    [Fact]
+    public async Task Update_ChecksTheDisplayOrderAgainstTheStoredTeam()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var graph = await SeedGraph();
+        var second = TestData.PlayerApplication(graph.Msel.Id, "second");
+        await Seed(second);
+        await Seed(TestData.PlayerApplicationTeam(second.Id, graph.Team.Id, 2));
+        var emptyTeam = TestData.Team(graph.Msel.Id);
+        await Seed(emptyTeam);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/playerApplicationteams/{graph.Row.Id}",
+            Body(graph.Application.Id, emptyTeam.Id) with { id = graph.Row.Id, displayOrder = 2 },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, (await NewContext().PlayerApplicationTeams.SingleAsync(x => x.Id == graph.Row.Id, Ct)).DisplayOrder);
     }
 
     /// <summary>Update without a display order is answered with a 500.</summary>
@@ -334,9 +400,9 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
     // DELETE teams/{teamId}/playerApplications/{playerApplicationId}
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Delete by ids with the ids in route order is answered with a 404 and keeps the row.</summary>
+    /// <summary>Delete by ids with the ids in route order deletes the row.</summary>
     [Fact]
-    public async Task DeleteByIds_InRouteOrder_Is404AndKeepsTheRow()
+    public async Task DeleteByIds_InRouteOrder_DeletesTheRow()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
         var graph = await SeedGraph();
@@ -344,13 +410,13 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         var response = await Client(actor).DeleteAsync(
             $"api/teams/{graph.Team.Id}/playerApplications/{graph.Application.Id}", Ct);
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Single(await ReadBack(rb => rb.PlayerApplicationTeams.ToListAsync(Ct)));
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Empty(await ReadBack(rb => rb.PlayerApplicationTeams.ToListAsync(Ct)));
     }
 
-    // Same case as DeleteByIds_InRouteOrder_Is404AndKeepsTheRow.
+    // Same case as DeleteByIds_InRouteOrder_DeletesTheRow.
     [Fact]
-    public async Task DeleteByIds_WithTheIdsSwapped_RemovesTheRow()
+    public async Task DeleteByIds_WithTheIdsSwapped_Is404AndKeepsTheRow()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
         var graph = await SeedGraph();
@@ -358,8 +424,8 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         var response = await Client(actor).DeleteAsync(
             $"api/teams/{graph.Application.Id}/playerApplications/{graph.Team.Id}", Ct);
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.Empty(await ReadBack(rb => rb.PlayerApplicationTeams.ToListAsync(Ct)));
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Single(await ReadBack(rb => rb.PlayerApplicationTeams.ToListAsync(Ct)));
     }
 
     private async Task<(MselEntity Msel, TeamEntity Team, PlayerApplicationEntity Application,

@@ -942,11 +942,14 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         AssertStampedBetween(updated.DateModified, before, DateTime.UtcNow);
     }
 
-    /// <summary>Update with a mismatched id in the body is answered with a 500.</summary>
+    /// <summary>
+    /// The edit request has no id, so whatever id the body carries is ignored and the route's option is
+    /// written.
+    /// </summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Update_WithAMismatchedIdInTheBody_Is500(bool empty)
+    public async Task Update_WithAMismatchedIdInTheBody_UpdatesTheRoutesOption(bool empty)
     {
         var field = TestData.DataField();
         await Seed(field);
@@ -959,9 +962,12 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var response = await Put(
             Client(actor),
             option.Id,
-            BodyFor(option) with { Id = empty ? Guid.Empty : Guid.NewGuid() });
+            BodyFor(option) with { Id = empty ? Guid.Empty : Guid.NewGuid(), OptionName = "after" });
 
-        Assert.Equal("The property 'DataOptionEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await NewContext().DataOptions.AsNoTracking().SingleAsync(Ct);
+        Assert.Equal(option.Id, stored.Id);
+        Assert.Equal("after", stored.OptionName);
     }
 
     [Fact]
@@ -982,9 +988,12 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>An unknown <c>dataFieldId</c> in the body is reported before an unknown option id.</summary>
+    /// <summary>
+    /// The edit request names no field, so an unknown <c>dataFieldId</c> in the body is ignored and the
+    /// option stays on its own field.
+    /// </summary>
     [Fact]
-    public async Task Update_ForAnUnknownDataFieldInTheBody_Is404()
+    public async Task Update_WithAnUnknownDataFieldInTheBody_KeepsTheOptionOnItsField()
     {
         var field = TestData.DataField();
         await Seed(field);
@@ -999,12 +1008,16 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             option.Id,
             BodyFor(option) with { DataFieldId = Guid.NewGuid() });
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(field.Id, (await NewContext().DataOptions.AsNoTracking().SingleAsync(Ct)).DataFieldId);
     }
 
-    /// <summary>Update takes its permission decision from the request bodys data field.</summary>
+    /// <summary>
+    /// The decision is taken on the option's stored field, so owning another MSEL and naming one of its
+    /// columns in the body buys nothing.
+    /// </summary>
     [Fact]
-    public async Task Update_TakesItsPermissionDecisionFromTheRequestBodysDataField()
+    public async Task Update_OfAnotherMselsOption_NamingTheirOwnField_Is403AndLeavesItAlone()
     {
         var mine = TestData.Msel();
         var theirs = TestData.Msel();
@@ -1024,18 +1037,21 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             theirOption.Id,
             BodyFor(theirOption) with { DataFieldId = myField.Id, OptionName = "stolen" });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         await using var context = NewContext();
-        var stored = await context.DataOptions.SingleAsync(Ct);
+        var stored = await context.DataOptions.AsNoTracking().SingleAsync(Ct);
 
-        Assert.Equal(myField.Id, stored.DataFieldId);
-        Assert.Equal("stolen", stored.OptionName);
+        Assert.Equal(theirField.Id, stored.DataFieldId);
+        Assert.Equal("theirs", stored.OptionName);
     }
 
-    /// <summary>Update with a template field in the body moves a MSELs option into the shared template list.</summary>
+    /// <summary>
+    /// An MSEL's option needs MSEL rights, so a <c>ManageDataFields</c> holder naming a shared template in
+    /// the body cannot move it into the template list.
+    /// </summary>
     [Fact]
-    public async Task Update_WithATemplateFieldInTheBody_MovesAMselsOptionIntoTheSharedTemplateList()
+    public async Task Update_OfAMselsOption_WithOnlyManageDataFields_NamingATemplate_Is403AndLeavesItAlone()
     {
         var msel = TestData.Msel();
         await Seed(msel);
@@ -1054,15 +1070,18 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             option.Id,
             BodyFor(option) with { DataFieldId = template.Id });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         await using var context = NewContext();
 
-        Assert.Equal(template.Id, (await context.DataOptions.SingleAsync(Ct)).DataFieldId);
+        Assert.Equal(mselField.Id, (await context.DataOptions.AsNoTracking().SingleAsync(Ct)).DataFieldId);
     }
 
+    /// <summary>
+    /// An owner's edit that names a template field changes the option and keeps it on its own field.
+    /// </summary>
     [Fact]
-    public async Task Update_MovingAMselsOptionOntoATemplateField_AsAMselOwner_Is403()
+    public async Task Update_AsAMselOwner_NamingATemplateFieldInTheBody_KeepsTheOptionOnItsField()
     {
         var msel = TestData.Msel();
         await Seed(msel);
@@ -1079,9 +1098,13 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var response = await Put(
             Client(actor),
             option.Id,
-            BodyFor(option) with { DataFieldId = template.Id });
+            BodyFor(option) with { DataFieldId = template.Id, OptionName = "renamed" });
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var stored = await NewContext().DataOptions.AsNoTracking().SingleAsync(Ct);
+        Assert.Equal(mselField.Id, stored.DataFieldId);
+        Assert.Equal("renamed", stored.OptionName);
     }
 
     // Same case as Create_DoesNotMarkTheMselModified.
@@ -1333,8 +1356,8 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
     /// <remarks>
     /// <c>DeleteAsync</c> lines 185-188 resolve the field from the <em>stored</em> option, so unlike
-    /// <see cref="Update_TakesItsPermissionDecisionFromTheRequestBodysDataField"/> there is nothing to
-    /// spoof - a DELETE has no body. Both theory cases assert the same thing from opposite ends: the
+    /// <see cref="Update_OfAnotherMselsOption_NamingTheirOwnField_Is403AndLeavesItAlone"/> there is
+    /// nothing to spoof - a DELETE has no body. Both theory cases assert the same thing from opposite ends: the
     /// permission that answers is the one the stored option's field requires, not one the caller happens
     /// to hold for the other kind of field.
     /// </remarks>
@@ -2291,9 +2314,8 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     /// <c>with</c> expression.
     /// </summary>
     /// <remarks>
-    /// It carries the stored <c>Id</c>, which is load-bearing rather than tidy:
-    /// <see cref="Update_WithAMismatchedIdInTheBody_Is500"/> shows that an update whose body id does not
-    /// match the route is a 500, so every other PUT test has to send it.
+    /// It carries the stored <c>Id</c> and <c>DataFieldId</c>, as the UI does; an update ignores both
+    /// (<see cref="Update_WithAMismatchedIdInTheBody_UpdatesTheRoutesOption"/>).
     /// </remarks>
     private static OptionBody BodyFor(DataOptionEntity option) => new()
     {

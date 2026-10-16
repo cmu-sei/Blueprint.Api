@@ -54,20 +54,19 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// The filter is on <c>IsTemplate</c> alone, so a card that is both a template and attached to a MSEL is
-    /// listed here - which is how an exercise's own card reaches the template list a stranger may read.
+    /// A template belongs to no MSEL, so a MSEL's card flagged as a template - which a create can no longer
+    /// write - stays out of the template list a stranger may read.
     /// </remarks>
     [Fact]
-    public async Task Templates_IncludesAMselsCardIfItIsFlaggedAsATemplate()
+    public async Task Templates_LeavesOutAMselsCardFlaggedAsATemplate()
     {
         var msel = await SeedMsel();
-        var card = await SeedCard(msel.Id, isTemplate: true);
+        await SeedCard(msel.Id, isTemplate: true);
         var actor = await Actor().SeedAsync();
 
         var cards = await Read<List<ViewModels.Card>>(await Client(actor).GetAsync(Templates, Ct));
 
-        Assert.Equal(card.Id, Assert.Single(cards).Id);
-        Assert.Equal(msel.Id, Assert.Single(cards).MselId);
+        Assert.Empty(cards);
     }
 
     /// <remarks>
@@ -316,33 +315,33 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(card.Id, (await GetCard(Client(actor), card.Id)).Id);
     }
 
-    /// <summary>Get for an id that is not there is answered with a 500.</summary>
+    /// <remarks>
+    /// An unknown id is a 404, as it is on the PUT and DELETE routes.
+    /// </remarks>
     [Fact]
-    public async Task Get_ForAnIdThatIsNotThere_Is500RatherThanThe404TheDeadCheckPromises()
+    public async Task Get_ForAnIdThatIsNotThere_Is404()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(actor).GetAsync(Card(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Sequence contains no elements.", failure.Title);
-        Assert.Contains("CardService.GetAsync", failure.Detail);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Get for a template card is answered with a 500 for an ordinary caller.</summary>
+    /// <remarks>
+    /// A template card has no <c>MselId</c>, and every caller may already see it in
+    /// <c>GET cards/templates</c>, so reading it by its own id needs nothing either.
+    /// </remarks>
     [Fact]
-    public async Task Get_ForATemplateCard_Is500ForAnOrdinaryCaller()
+    public async Task Get_ForATemplateCard_Is200ForAnOrdinaryCaller()
     {
         var card = await SeedCard(null, isTemplate: true);
         var actor = await Actor().SeedAsync();
 
         var response = await Client(actor).GetAsync(Card(card.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselUserRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(card.Id, (await Read<ViewModels.Card>(response)).Id);
     }
 
     [Fact]
@@ -587,18 +586,17 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    /// <summary>Create for a MSEL that is not there is answered with a 500 for an ordinary caller.</summary>
+    /// <remarks>
+    /// The body names a MSEL that is not there, which grants no ownership, so the create is refused.
+    /// </remarks>
     [Fact]
-    public async Task Create_ForAMselThatIsNotThere_Is500ForAnOrdinaryCaller()
+    public async Task Create_ForAMselThatIsNotThere_Is403ForAnOrdinaryCaller()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Post(Client(actor), Body(Guid.NewGuid()));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -684,16 +682,13 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.Forbidden, (await Put(Client(actor), card.Id, BodyFor(card))).StatusCode);
     }
 
-    /// <remarks>
-    /// The permission branch runs before the row is looked up, so which status an unknown id gets depends on
-    /// who asks: the 404 is only reachable by a caller who would have been allowed to change the card if it
-    /// had been there. <c>DeleteAsync</c> is the other way round, and is the correct model
-    /// (<see cref="Delete_ForAnIdThatIsNotThere_Is404EvenForAStranger"/>).
-    /// </remarks>
+    /// <summary>
+    /// The card is looked up before the caller is authorized, so an unknown id is a 404 for everybody.
+    /// </summary>
     [Theory]
-    [InlineData(true, HttpStatusCode.NotFound)]
-    [InlineData(false, HttpStatusCode.Forbidden)]
-    public async Task Update_ForAnIdThatIsNotThere_Is404OrA403(bool owns, HttpStatusCode expected)
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Update_ForAnIdThatIsNotThere_Is404(bool owns)
     {
         var msel = await SeedMsel();
         var builder = Actor();
@@ -702,29 +697,34 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Put(Client(actor), id, Body(msel.Id) with { Id = id });
 
-        Assert.Equal(expected, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Update with a body id that is not the routes is answered with a 500.</summary>
+    /// <summary>
+    /// The edit request has no id, so a different id in the body, or none, is ignored and the route's
+    /// card is written.
+    /// </summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Update_WithABodyIdThatIsNotTheRoutes_Is500(bool omitted)
+    public async Task Update_WithABodyIdThatIsNotTheRoutes_UpdatesTheRoutesCard(bool omitted)
     {
         var msel = await SeedMsel();
         var card = await SeedCard(msel.Id);
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
         var response = await Put(
-            Client(actor), card.Id, BodyFor(card) with { Id = omitted ? Guid.Empty : Guid.NewGuid() });
+            Client(actor), card.Id, BodyFor(card) with { Id = omitted ? Guid.Empty : Guid.NewGuid(), Name = "renamed" });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.StartsWith("The property 'CardEntity.Id'", await Title(response));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("renamed", (await Stored(card.Id)).Name);
     }
 
-    /// <summary>Update chooses its permission branch from the request body.</summary>
+    /// <summary>
+    /// The decision is made on the card's stored MSEL, so owning the MSEL named in the body buys nothing.
+    /// </summary>
     [Fact]
-    public async Task Update_ChoosesItsPermissionBranchFromTheRequestBody()
+    public async Task Update_AsTheOwnerOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheCardAlone()
     {
         var mine = await SeedMsel();
         var theirs = await SeedMsel();
@@ -733,46 +733,66 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Put(Client(actor), card.Id, BodyFor(card) with { MselId = mine.Id, Name = "pulled" });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         var stored = await Stored(card.Id);
-        Assert.Equal(mine.Id, stored.MselId);
-        Assert.Equal("pulled", stored.Name);
-        Assert.Null((await StoredMsel(theirs.Id)).DateModified);
-        Assert.DoesNotContain(theirs.Id.ToString(), Hub.Recipients(MainHubMethods.CardUpdated, theirs.Id));
+        Assert.Equal(theirs.Id, stored.MselId);
+        Assert.Equal(card.Name, stored.Name);
     }
 
-    /// <summary>Update that omits the MSEL id with manage gallery cards only detaches the card.</summary>
+    /// <summary>
+    /// An owner's edit that names no MSEL, or another one, or the template flag, changes the card and
+    /// leaves it where it is.
+    /// </summary>
     [Fact]
-    public async Task Update_ThatOmitsTheMselId_WithManageGalleryCardsOnly_DetachesTheCard()
+    public async Task Update_AsAnOwner_NamingAnotherScopeInTheBody_KeepsTheCardInItsMsel()
     {
         var msel = await SeedMsel();
+        var other = await SeedMsel();
         var card = await SeedCard(msel.Id);
-        var team = TestData.Team(msel.Id);
-        await Seed(team);
-        await Seed(TestData.CardTeam(card.Id, team.Id));
-        var gallery = await Actor().WithSystemPermissions(SystemPermission.ManageGalleryCards).SeedAsync();
-        var root = await Actor().WithAllSystemPermissions().SeedAsync();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        var response = await Put(Client(gallery), card.Id, BodyFor(card) with { MselId = null });
+        var detach = await Put(Client(actor), card.Id, BodyFor(card) with { MselId = null, IsTemplate = true, Name = "one" });
+        var move = await Put(Client(actor), card.Id, BodyFor(card) with { MselId = other.Id, Name = "two" });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, detach.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, move.StatusCode);
         var stored = await Stored(card.Id);
-        Assert.Null(stored.MselId);
+        Assert.Equal(msel.Id, stored.MselId);
         Assert.False(stored.IsTemplate);
-        Assert.Empty(await Read<List<ViewModels.Card>>(await Client(root).GetAsync(Templates, Ct)));
-        Assert.Empty(await GetCards(Client(root), msel.Id));
-        Assert.Equal(1, await CountCardTeams(card.Id));
+        Assert.Equal("two", stored.Name);
     }
 
-    /// <summary>Update that detaches a card broadcasts to a group named by the empty string.</summary>
+    /// <summary>
+    /// A MSEL's card is decided by the MSEL's permissions whatever the body says, so the template
+    /// library's permission cannot reach it by omitting the MSEL.
+    /// </summary>
     [Fact]
-    public async Task Update_ThatDetachesACard_BroadcastsToAGroupNamedByTheEmptyString()
+    public async Task Update_ThatOmitsTheMselId_WithManageGalleryCardsOnly_Is403AndLeavesTheCardAlone()
     {
         var msel = await SeedMsel();
         var card = await SeedCard(msel.Id);
         var gallery = await Actor().WithSystemPermissions(SystemPermission.ManageGalleryCards).SeedAsync();
 
-        await Put(Client(gallery), card.Id, BodyFor(card) with { MselId = null });
+        var response = await Put(Client(gallery), card.Id, BodyFor(card) with { MselId = null, Name = "detached" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var stored = await Stored(card.Id);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.Equal(card.Name, stored.Name);
+    }
+
+    /// <remarks>
+    /// <c>CardHandler.GetGroups</c> calls <c>ToString()</c> on a <c>Guid?</c>, so a card with no MSEL - a
+    /// template - broadcasts to a group named by the empty string, which nobody joins: the same defect
+    /// <c>OrganizationHandler</c> and <c>DataFieldHandler</c> have.
+    /// </remarks>
+    [Fact]
+    public async Task Update_OfATemplateCard_BroadcastsToAGroupNamedByTheEmptyString()
+    {
+        var template = await SeedCard(null, isTemplate: true);
+        var gallery = await Actor().WithSystemPermissions(SystemPermission.ManageGalleryCards).SeedAsync();
+
+        await Put(Client(gallery), template.Id, BodyFor(template) with { Name = "renamed" });
 
         Assert.Equal(
             [string.Empty, MainHub.ADMIN_DATA_GROUP],
@@ -817,26 +837,42 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal("<script>alert(1)</script>ok", (await Stored(card.Id)).Description);
     }
 
-    /// <remarks>
-    /// A template card takes the Gallery-card branch, so the template library's manager may edit it and a
-    /// MSEL owner may not - and may not adopt it either, because naming a MSEL in the body moves the decision
-    /// to that MSEL, which they do own. So the second call succeeds: a MSEL owner cannot edit a template in
-    /// place but can take it.
-    /// </remarks>
+    /// <summary>
+    /// A template card is decided by the template library's permission, so a MSEL owner may not edit it,
+    /// and naming their MSEL in the body does not let them take it either.
+    /// </summary>
     [Fact]
-    public async Task Update_OfATemplateCard_IsRefusedToAMselOwnerUntilTheyClaimIt()
+    public async Task Update_OfATemplateCard_IsRefusedToAMselOwnerHoweverTheyAsk()
     {
         var msel = await SeedMsel();
         var template = await SeedCard(null, isTemplate: true);
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        var refused = await Put(Client(actor), template.Id, BodyFor(template) with { Name = "renamed" });
-        var allowed = await Put(Client(actor), template.Id, BodyFor(template) with { MselId = msel.Id });
+        var renamed = await Put(Client(actor), template.Id, BodyFor(template) with { Name = "renamed" });
+        var claimed = await Put(Client(actor), template.Id, BodyFor(template) with { MselId = msel.Id });
 
-        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
-        Assert.Equal(msel.Id, (await Stored(template.Id)).MselId);
-        Assert.True((await Stored(template.Id)).IsTemplate);
+        Assert.Equal(HttpStatusCode.Forbidden, renamed.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, claimed.StatusCode);
+        var stored = await Stored(template.Id);
+        Assert.Null(stored.MselId);
+        Assert.True(stored.IsTemplate);
+        Assert.Equal(template.Name, stored.Name);
+    }
+
+    [Fact]
+    public async Task Update_OfATemplateCard_WithManageGalleryCards_KeepsItATemplate()
+    {
+        var msel = await SeedMsel();
+        var template = await SeedCard(null, isTemplate: true);
+        var gallery = await Actor().WithSystemPermissions(SystemPermission.ManageGalleryCards).SeedAsync();
+
+        var response = await Put(Client(gallery), template.Id, BodyFor(template) with { MselId = msel.Id, IsTemplate = false, Name = "renamed" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await Stored(template.Id);
+        Assert.Null(stored.MselId);
+        Assert.True(stored.IsTemplate);
+        Assert.Equal("renamed", stored.Name);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1040,9 +1076,8 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     /// <remarks>
     /// Three fields are forced whatever the file says, which is what makes this route an import of
     /// <em>templates</em> rather than of cards: a fresh <c>Id</c>, <c>IsTemplate</c> true and <c>MselId</c>
-    /// null. So uploading a file downloaded from a live MSEL (which <c>DownloadJsonAsync</c> will happily
-    /// produce - see <see cref="DownloadJson_IncludesAMselsCardsDespiteBeingNamedTemplates"/>) turns its cards
-    /// into templates rather than restoring them.
+    /// null. The download exports only templates (see <see cref="DownloadJson_LeavesOutAMselsCards"/>), so
+    /// a round trip makes new templates of templates.
     /// </remarks>
     [Fact]
     public async Task UploadJson_ForcesAFreshIdATemplateFlagAndNoMsel()
@@ -1206,15 +1241,19 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal("application/octet-stream", response.Content.Headers.ContentType.MediaType);
     }
 
-    /// <summary>Download JSON includes a MSELs cards despite being named templates.</summary>
+    /// <summary>
+    /// Only templates are exported. A MSEL's card named in the request is left out, so the template
+    /// library's permission does not read a MSEL's cards.
+    /// </summary>
     [Fact]
-    public async Task DownloadJson_IncludesAMselsCardsDespiteBeingNamedTemplates()
+    public async Task DownloadJson_LeavesOutAMselsCards()
     {
         var msel = await SeedMsel();
         var card = await SeedCard(msel.Id);
+        var template = await SeedCard(null, isTemplate: true);
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageGalleryCards).SeedAsync();
 
-        Assert.Equal(card.Name, Assert.Single(await Downloaded(Client(actor), card.Id)));
+        Assert.Equal(template.Name, Assert.Single(await Downloaded(Client(actor), card.Id, template.Id)));
     }
 
     /// <remarks>
@@ -1241,12 +1280,16 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.DoesNotContain("\"Move\": \"3\"", json);
     }
 
-    /// <summary>The download's bytes feed back into the upload route, which reads with <c>ReferenceHandler.Preserve</c> and case-insensitive names.</summary>
+    /// <remarks>
+    /// The positive half of the finding above: <c>UploadJsonAsync</c> reads with
+    /// <c>ReferenceHandler.Preserve</c> and <c>PropertyNameCaseInsensitive</c>, so the bytes the download
+    /// route produces feed straight back into the upload route. The pair round-trips - with the fresh id the
+    /// upload forces.
+    /// </remarks>
     [Fact]
     public async Task DownloadJson_RoundTripsThroughTheUploadRoute()
     {
-        var msel = await SeedMsel();
-        var card = await SeedCard(msel.Id, move: 7, inject: 8);
+        var card = await SeedCard(null, move: 7, inject: 8, isTemplate: true);
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageGalleryCards).SeedAsync();
 
         var reimported = Assert.Single(await Read<List<ViewModels.Card>>(

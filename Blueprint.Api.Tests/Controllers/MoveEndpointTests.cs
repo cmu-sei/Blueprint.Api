@@ -151,17 +151,15 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 for a caller without ViewMsels.</summary>
+    /// <summary>Get by MSEL for a MSEL that is not there is refused to a caller without ViewMsels: a missing MSEL grants nothing.</summary>
     [Fact]
-    public async Task GetByMsel_ForAMselThatIsNotThere_Is500()
+    public async Task GetByMsel_ForAMselThatIsNotThere_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Client(actor).GetAsync(MovesOf(Guid.NewGuid()), Ct);
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselUserRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -437,20 +435,19 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
-    /// <summary>Create for a MSEL that is not there is answered with a 500 for a caller without EditMsels.</summary>
+    /// <summary>Create for a MSEL that is not there is refused to a caller without EditMsels: a missing MSEL grants no ownership.</summary>
     [Fact]
-    public async Task Create_ForAMselThatIsNotThere_Is500()
+    public async Task Create_ForAMselThatIsNotThere_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Post(Client(actor), Body(Guid.NewGuid(), moveNumber: 1));
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(await ReadBack(rb => rb.Moves.ToListAsync(Ct)));
     }
 
-    // Same case as Create_ForAMselThatIsNotThere_Is500.
+    /// <summary>A caller holding EditMsels skips the ownership check and reaches the insert, which the foreign key refuses.</summary>
     [Fact]
     public async Task Create_ForAMselThatIsNotThere_WithEditMsels_Is500()
     {
@@ -613,9 +610,11 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.InRange(stored.DateModified.Value, before, DateTime.UtcNow);
     }
 
-    /// <summary>Update chooses its permission branch from the request body.</summary>
+    /// <summary>
+    /// The decision is made on the move's stored MSEL, so owning the MSEL named in the body buys nothing.
+    /// </summary>
     [Fact]
-    public async Task Update_ChoosesItsPermissionBranchFromTheRequestBody()
+    public async Task Update_AsTheOwnerOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheMoveAlone()
     {
         var mine = await SeedMsel();
         var theirs = await SeedMsel();
@@ -627,29 +626,36 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             move.Id,
             BodyFor(move) with { MselId = mine.Id, MoveNumber = 9, Description = "taken" });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         var stored = await Stored(move.Id);
-        Assert.Equal(mine.Id, stored.MselId);
-        Assert.Equal(9, stored.MoveNumber);
-        Assert.Equal(0, await CountOn(theirs.Id));
+        Assert.Equal(theirs.Id, stored.MselId);
+        Assert.Equal(1, stored.MoveNumber);
+        Assert.Equal(move.Description, stored.Description);
     }
 
-    /// <summary>Update that moves a move to another MSEL tells the old MSEL nothing.</summary>
+    /// <summary>
+    /// An owner's edit that names another MSEL changes the move and leaves it in its MSEL, which is the
+    /// one marked modified and told about it.
+    /// </summary>
     [Fact]
-    public async Task Update_ThatMovesAMoveToAnotherMsel_TellsTheOldMselNothing()
+    public async Task Update_AsAnOwner_NamingAnotherMselInTheBody_KeepsTheMoveInItsMsel()
     {
         var mine = await SeedMsel();
-        var theirs = await SeedMsel();
-        var move = await SeedMove(theirs, moveNumber: 1);
+        var other = await SeedMsel();
+        var move = await SeedMove(mine, moveNumber: 1);
         var actor = await Actor().OnMsel(mine, MselRole.Owner).SeedAsync();
 
-        await Put(Client(actor), move.Id, BodyFor(move) with { MselId = mine.Id });
+        var response = await Put(Client(actor), move.Id, BodyFor(move) with { MselId = other.Id, Description = "after" });
 
-        Assert.Null((await StoredMsel(theirs.Id)).DateModified);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await Stored(move.Id);
+        Assert.Equal(mine.Id, stored.MselId);
+        Assert.Equal("after", stored.Description);
+        Assert.Equal(0, await CountOn(other.Id));
+        Assert.Null((await StoredMsel(other.Id)).DateModified);
         Assert.NotNull((await StoredMsel(mine.Id)).DateModified);
-        Assert.Equal([mine.Id.ToString(), MainHub.ADMIN_DATA_GROUP], Hub.Recipients(MainHubMethods.MoveUpdated, mine.Id));
-        Assert.Empty(Hub.Of(MainHubMethods.MoveDeleted, mine.Id));
+        Assert.Equal([mine.Id.ToString(), MainHub.ADMIN_DATA_GROUP], Hub.Recipients(MainHubMethods.MoveUpdated));
     }
 
     [Fact]
@@ -676,9 +682,9 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    // Same case as Update_ChoosesItsPermissionBranchFromTheRequestBody.
+    /// <summary>The move is looked up before the caller is authorized, so an unknown id is a 404 whatever MSEL the body names.</summary>
     [Fact]
-    public async Task Update_ForAnIdThatIsNotThere_WithABodyNamingAnotherMsel_Is403()
+    public async Task Update_ForAnIdThatIsNotThere_WithABodyNamingAnotherMsel_Is404()
     {
         var mine = await SeedMsel();
         var theirs = await SeedMsel();
@@ -686,14 +692,17 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Put(Client(actor), Guid.NewGuid(), Body(theirs.Id, moveNumber: 1));
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Update with a body id that is not the routes is answered with a 500.</summary>
+    /// <summary>
+    /// The edit request has no id, so a different id in the body, or none, is ignored and the route's
+    /// move is written.
+    /// </summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Update_WithABodyIdThatIsNotTheRoutes_Is500(bool omitted)
+    public async Task Update_WithABodyIdThatIsNotTheRoutes_UpdatesTheRoutesMove(bool omitted)
     {
         var msel = await SeedMsel();
         var move = await SeedMove(msel, moveNumber: 1);
@@ -704,8 +713,8 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             move.Id,
             BodyFor(move) with { Id = omitted ? Guid.Empty : Guid.NewGuid(), Description = "after" });
 
-        Assert.Equal("The property 'MoveEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
-        Assert.Equal(move.Description, (await Stored(move.Id)).Description);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("after", (await Stored(move.Id)).Description);
     }
 
     // Same case as Create_WithAMoveNumberTheMselAlreadyUses_Is500.

@@ -77,9 +77,8 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
     /// <remarks>
     /// The query gathers the MSEL's card ids and then the rows pointing at them, so a row whose <em>team</em>
-    /// belongs to another MSEL is still listed here - which is how the create route's missing check
-    /// (<see cref="Create_AcceptsATeamThatBelongsToADifferentMsel"/>) becomes visible to the MSEL that did
-    /// not ask for it.
+    /// belongs to another MSEL is still listed here. The create route now refuses such a row
+    /// (<see cref="Create_ForATeamOfAnotherMsel_Is404AndCreatesNothing"/>); this is one written before it did.
     /// </remarks>
     [Fact]
     public async Task GetByMsel_ListsARowWhoseTeamBelongsToAnotherMsel()
@@ -450,38 +449,41 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(0, await CountOn(card.Id));
     }
 
-    /// <summary>Create accepts a team that belongs to a different MSEL.</summary>
+    /// <summary>
+    /// The card and the team must belong to the same MSEL, even for an <c>EditMsels</c> holder. Another
+    /// MSEL's team is answered as a team that is not there, and nothing is written.
+    /// </summary>
     [Fact]
-    public async Task Create_AcceptsATeamThatBelongsToADifferentMsel()
+    public async Task Create_ForATeamOfAnotherMsel_Is404AndCreatesNothing()
     {
         var msel = await SeedMsel();
         var elsewhere = await SeedMsel();
         var card = await SeedCard(msel);
         var team = await SeedTeam(elsewhere);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        // Data-row gate: the card and the team are on different MSELs.
 
         var response = await Post(Client(actor), Body(card.Id, team.Id));
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.Equal(team.Id, (await Stored((await Read<ViewModels.CardTeam>(response)).Id)).TeamId);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(0, await CountOn(card.Id));
     }
 
-    /// <remarks>
-    /// A template card belongs to no MSEL and is not exercise content, and nothing stops a team being
-    /// attached to one - which creates the row that
-    /// <see cref="Get_ForARowOnATemplateCard_Is500ForAnOrdinaryCaller"/> then cannot read back.
-    /// </remarks>
+    /// <summary>
+    /// A template card belongs to no MSEL, so no team can be in the same MSEL as it.
+    /// </summary>
     [Fact]
-    public async Task Create_AcceptsATemplateCard()
+    public async Task Create_OnATemplateCard_Is404AndCreatesNothing()
     {
         var card = await SeedCard(null, isTemplate: true);
         var team = await SeedTeam(await SeedMsel());
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        // Data-row gate: a template card belongs to no MSEL, so no team row shares its MSEL.
 
         var response = await Post(Client(actor), Body(card.Id, team.Id));
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.Equal(1, await CountOn(card.Id));
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(0, await CountOn(card.Id));
     }
 
     /// <summary>Create for a pair that already exists is answered with a 500.</summary>
@@ -500,11 +502,10 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(1, await CountOn(row.CardId));
     }
 
-    /// <summary>Create for an id that is not there is answered with a 500.</summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Create_ForAnIdThatIsNotThere_Is500RatherThanA404(bool cardIsMissing)
+    public async Task Create_ForAnIdThatIsNotThere_Is404(bool cardIsMissing)
     {
         var msel = await SeedMsel();
         var card = await SeedCard(msel);
@@ -515,9 +516,7 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             ? Body(Guid.NewGuid(), team.Id)
             : Body(card.Id, Guid.NewGuid()));
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
-        Assert.Contains("CardTeamService.CreateAsync", failure.Detail);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal(0, await CountOn(card.Id));
     }
 
@@ -536,9 +535,12 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             Hub.Recipients(MainHubMethods.CardTeamCreated, msel.Id));
     }
 
-    /// <summary>Create on a template card broadcasts to a group named by the empty string.</summary>
+    /// <remarks>
+    /// A refused pairing writes no row, so nothing is broadcast - not even to the empty-string group
+    /// <c>CardTeamHandler.GetGroups</c> derives from a template card's null <c>MselId</c>.
+    /// </remarks>
     [Fact]
-    public async Task Create_OnATemplateCard_BroadcastsToAGroupNamedByTheEmptyString()
+    public async Task Create_OnATemplateCard_BroadcastsNothing()
     {
         var card = await SeedCard(null, isTemplate: true);
         var team = await SeedTeam(await SeedMsel());
@@ -546,9 +548,7 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         await Post(Client(actor), Body(card.Id, team.Id));
 
-        Assert.Equal(
-            [string.Empty, MainHub.ADMIN_DATA_GROUP],
-            Hub.Recipients(MainHubMethods.CardTeamCreated, string.Empty));
+        Assert.Empty(Hub.Recipients(MainHubMethods.CardTeamCreated));
     }
 
     /// <remarks>
@@ -614,11 +614,14 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
     }
 
-    /// <summary>Update with a body id that is not the routes is answered with a 500.</summary>
+    /// <summary>
+    /// The edit request has no id, so a missing or different one in the body is ignored and the route's
+    /// row is written.
+    /// </summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Update_WithABodyIdThatIsNotTheRoutes_Is500(bool omitted)
+    public async Task Update_WithABodyIdThatIsNotTheRoutes_UpdatesTheRoutesRow(bool omitted)
     {
         var msel = await SeedMsel();
         var row = await SeedCardTeam(msel);
@@ -626,32 +629,34 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Put(Client(actor), row.Id, BodyFor(row) with
         {
-            Id = omitted ? Guid.Empty : Guid.NewGuid()
+            Id = omitted ? Guid.Empty : Guid.NewGuid(),
+            CanPostArticles = true
         });
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.StartsWith("The property 'CardTeamEntity.Id'", await Title(response));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True((await Stored(row.Id)).CanPostArticles);
     }
 
-    /// <remarks>
-    /// <c>Id</c> is not the only key-shaped thing the profile maps: a PUT may rewrite <c>CardId</c> and
-    /// <c>TeamId</c> too, so "update which flags this team has on this card" and "point this row at a
-    /// different card entirely" are the same request. No permission is consulted for either, and nothing
-    /// checks the new card's MSEL.
-    /// </remarks>
+    /// <summary>
+    /// The edit request carries only the flags, so a body naming another MSEL's card or team leaves the
+    /// row's pairing alone.
+    /// </summary>
     [Fact]
-    public async Task Update_MayRepointTheRowAtAnotherMselsCard()
+    public async Task Update_WithAnotherMselsCardAndTeamInTheBody_LeavesThePairingAlone()
     {
         var msel = await SeedMsel();
         var elsewhere = await SeedMsel();
         var row = await SeedCardTeam(msel);
-        var other = await SeedCard(elsewhere);
+        var otherCard = await SeedCard(elsewhere);
+        var otherTeam = await SeedTeam(elsewhere);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var response = await Put(Client(actor), row.Id, BodyFor(row) with { CardId = other.Id });
+        var response = await Put(Client(actor), row.Id, BodyFor(row) with { CardId = otherCard.Id, TeamId = otherTeam.Id });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(other.Id, (await Stored(row.Id)).CardId);
+        var stored = await Stored(row.Id);
+        Assert.Equal(row.CardId, stored.CardId);
+        Assert.Equal(row.TeamId, stored.TeamId);
     }
 
     [Theory]
@@ -771,9 +776,8 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     // DELETE teams/{teamId}/cards/{cardId}
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Delete by ids with the ids in route order is answered with a 404 and keeps the row.</summary>
     [Fact]
-    public async Task DeleteByIds_InRouteOrder_Is404AndKeepsTheRow()
+    public async Task DeleteByIds_DeletesTheRowTheRouteNames()
     {
         var msel = await SeedMsel();
         var row = await SeedCardTeam(msel);
@@ -781,14 +785,12 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Client(actor).DeleteAsync(CardOfTeam(row.TeamId, row.CardId), Ct);
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Equal("Card Team not found", await Title(response));
-        Assert.NotNull(await Stored(row.Id));
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Null(await Stored(row.Id));
     }
 
-    // Same case as DeleteByIds_InRouteOrder_Is404AndKeepsTheRow.
     [Fact]
-    public async Task DeleteByIds_WithTheIdsTransposed_RemovesTheRow()
+    public async Task DeleteByIds_WithTheIdsTransposed_Is404AndKeepsTheRow()
     {
         var msel = await SeedMsel();
         var row = await SeedCardTeam(msel);
@@ -796,8 +798,8 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         var response = await Client(actor).DeleteAsync(CardOfTeam(row.CardId, row.TeamId), Ct);
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.Null(await Stored(row.Id));
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.NotNull(await Stored(row.Id));
     }
 
     [Fact]
@@ -807,20 +809,20 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var row = await SeedCardTeam(msel);
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        var response = await Client(actor).DeleteAsync(CardOfTeam(row.CardId, row.TeamId), Ct);
+        var response = await Client(actor).DeleteAsync(CardOfTeam(row.TeamId, row.CardId), Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotNull(await Stored(row.Id));
     }
 
-    // Same case as DeleteByIds_InRouteOrder_Is404AndKeepsTheRow.
     [Fact]
-    public async Task DeleteByIds_WhenItWorks_BroadcastsToTheMselGroup()
+    public async Task DeleteByIds_BroadcastsToTheMselGroup()
     {
         var msel = await SeedMsel();
         var row = await SeedCardTeam(msel);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        await Client(actor).DeleteAsync(CardOfTeam(row.CardId, row.TeamId), Ct);
+        await Client(actor).DeleteAsync(CardOfTeam(row.TeamId, row.CardId), Ct);
 
         Assert.Equal(
             [msel.Id.ToString(), MainHub.ADMIN_DATA_GROUP],

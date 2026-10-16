@@ -102,11 +102,10 @@ namespace Blueprint.Api.Controllers
         [HttpPost("cards")]
         [ProducesResponseType(typeof(Card), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createCard")]
-        public async Task<IActionResult> Create([FromBody] Card card, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] CardCreate card, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasGalleryCardPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageGalleryCards], ct);
-            card.CreatedBy = User.GetId();
             var createdCard = await _cardService.CreateAsync(card, hasMselPermission, hasGalleryCardPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdCard.Id }, createdCard);
         }
@@ -116,7 +115,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a Card with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the card parameter
+        /// The Card stays where it is: its MSEL and template flag cannot be changed
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -126,11 +125,10 @@ namespace Blueprint.Api.Controllers
         [HttpPut("cards/{id}")]
         [ProducesResponseType(typeof(Card), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateCard")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Card card, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CardEdit card, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasGalleryCardPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageGalleryCards], ct);
-            card.ModifiedBy = User.GetId();
             var updatedCard = await _cardService.UpdateAsync(id, card, hasMselPermission, hasGalleryCardPermission, ct);
             return Ok(updatedCard);
         }

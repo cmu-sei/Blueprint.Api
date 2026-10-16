@@ -194,9 +194,11 @@ public class ProficiencyLevelEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal("Proficiency Level not found", error.title);
     }
 
-    /// <summary>Update moves the level to whichever scale the body names.</summary>
+    /// <summary>
+    /// The edit request names no scale, so a PUT changes the level and leaves it on its scale.
+    /// </summary>
     [Fact]
-    public async Task Update_MovesTheLevelToWhicheverScaleTheBodyNames()
+    public async Task Update_NamingAnotherScaleInTheBody_KeepsTheLevelOnItsScale()
     {
         var actor = await Actor()
             .WithSystemPermissions(SystemPermission.ManageCompetencyFrameworks).SeedAsync();
@@ -210,8 +212,8 @@ public class ProficiencyLevelEndpointTests(DatabaseFixture fixture, BlueprintApp
             $"api/proficiencyLevels/{level.Id}", Body(otherScale.Id) with { id = level.Id }, Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var stored = await ReadBack(rb => rb.ProficiencyLevels.SingleAsync(x => x.Id == level.Id, Ct));
-        Assert.Equal(otherScale.Id, stored.ProficiencyScaleId);
+        var stored = await NewContext().ProficiencyLevels.SingleAsync(x => x.Id == level.Id, Ct);
+        Assert.Equal(scale.Id, stored.ProficiencyScaleId);
     }
 
     // ---------------------------------------------------------------------------------------------

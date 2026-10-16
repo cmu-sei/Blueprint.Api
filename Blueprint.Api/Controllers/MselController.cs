@@ -166,7 +166,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getMselData")]
         public async Task<IActionResult> GetData(Guid id, CancellationToken ct)
         {
-            var mselData = await _mselService.GetDataTableAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var mselData = await _mselService.GetDataTableAsync(id, hasSystemPermission, hasCreateMselsPermission, ct);
             return Ok(mselData);
         }
 
@@ -183,12 +185,11 @@ namespace Blueprint.Api.Controllers
         [HttpPost("msels")]
         [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createMsel")]
-        public async Task<IActionResult> Create([FromBody] Msel msel, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] MselCreate msel, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct))
                 throw new ForbiddenException();
 
-            msel.CreatedBy = User.GetId();
             var createdMsel = await _mselService.CreateAsync(msel, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdMsel.Id }, createdMsel);
         }
@@ -211,7 +212,8 @@ namespace Blueprint.Api.Controllers
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct))
                 throw new ForbiddenException();
 
-            var createdMsel = await _mselService.CopyAsync(id, ct);
+            var hasViewMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var createdMsel = await _mselService.CopyAsync(id, hasViewMselsPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdMsel.Id }, createdMsel);
         }
 
@@ -220,7 +222,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a Msel with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the msel parameter
+        /// The integration IDs and the Pushing, Pulling and Deployed statuses are set only by the integration pipeline.
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -230,10 +232,9 @@ namespace Blueprint.Api.Controllers
         [HttpPut("msels/{id}")]
         [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateMsel")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Msel msel, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] MselEdit msel, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            msel.ModifiedBy = User.GetId();
             var updatedMsel = await _mselService.UpdateAsync(id, msel, hasSystemPermission, ct);
             return Ok(updatedMsel);
         }
@@ -256,7 +257,7 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> AddUserMselRole([FromRoute] Guid userId, [FromRoute] Guid mselId, [FromRoute] MselRole mselRole, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            var msel = await _mselService.AddUserMselRoleAsync(userId, mselId, mselRole, hasSystemPermission, ct);
+            var msel = await _mselService.AddUserMselRoleAsync(mselId, userId, mselRole, hasSystemPermission, ct);
             return Ok(msel);
         }
 
@@ -278,7 +279,7 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> RemoveUserMselRole([FromRoute] Guid userId, [FromRoute] Guid mselId, [FromRoute] MselRole mselRole, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            var msel = await _mselService.RemoveUserMselRoleAsync(userId, mselId, mselRole, hasSystemPermission, ct);
+            var msel = await _mselService.RemoveUserMselRoleAsync(mselId, userId, mselRole, hasSystemPermission, ct);
             return Ok(msel);
         }
 
@@ -340,7 +341,9 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "downloadXlsx")]
         public async Task<IActionResult> DownloadXlsxAsync(Guid id, CancellationToken ct)
         {
-            (var stream, var fileName) = await _mselService.DownloadXlsxAsync(id, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            (var stream, var fileName) = await _mselService.DownloadXlsxAsync(id, hasSystemPermission, hasCreateMselsPermission, ct);
 
             // If this is wrapped in an Ok, it throws an exception
             return File(stream, "application/octet-stream", fileName);

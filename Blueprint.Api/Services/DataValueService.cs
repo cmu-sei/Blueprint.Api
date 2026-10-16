@@ -24,8 +24,8 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.DataValue>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.DataValue> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValue dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
-        Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValue dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
+        Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValueCreate dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
+        Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValueEdit dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
     }
 
@@ -57,8 +57,9 @@ namespace Blueprint.Api.Services
                 .Where(se => se.MselId == mselId)
                 .Select(se => se.Id)
                 .ToListAsync(ct);
+            // a value counts as this MSEL's only when its Data Field is the MSEL's too
             var dataValueEntities = await _context.DataValues
-                .Where(dv => scenarioEventIdList.Contains((Guid)dv.ScenarioEventId))
+                .Where(dv => scenarioEventIdList.Contains((Guid)dv.ScenarioEventId) && dv.DataField.MselId == mselId)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<DataValue>>(dataValueEntities).ToList();;
@@ -78,39 +79,46 @@ namespace Blueprint.Api.Services
             return _mapper.Map<DataValue>(item);
         }
 
-        public async Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValue dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
+        public async Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValueCreate dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
         {
+            // DataValues are always MSEL-specific (through ScenarioEvent), so a template field has no cells
             var mselId = await _context.DataFields
                 .Where(df => df.Id == dataValue.DataFieldId)
                 .Select(df => df.MselId)
                 .FirstOrDefaultAsync(ct);
-            // DataValues are always MSEL-specific (through ScenarioEvent)
+            if (mselId == null)
+                throw new EntityNotFoundException<DataField>($"DataField {dataValue.DataFieldId} was not found on a MSEL.");
+
             if (!hasMselPermission &&
                 !await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context) &&
                 !await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context))
                 throw new ForbiddenException();
 
-            dataValue.Id = dataValue.Id != Guid.Empty ? dataValue.Id : Guid.NewGuid();
-            dataValue.CreatedBy = _user.GetId();
-            var DataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
+            // the cell's Scenario Event must be on the Data Field's MSEL
+            if (!await _context.ScenarioEvents.AnyAsync(se => se.Id == dataValue.ScenarioEventId && se.MselId == mselId, ct))
+                throw new EntityNotFoundException<ScenarioEvent>($"ScenarioEvent {dataValue.ScenarioEventId} was not found in MSEL {mselId}.");
 
-            _context.DataValues.Add(DataValueEntity);
+            var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
+            dataValueEntity.Id = dataValue.Id != Guid.Empty ? dataValue.Id : Guid.NewGuid();
+            dataValueEntity.CreatedBy = _user.GetId();
+
+            _context.DataValues.Add(dataValueEntity);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(mselId, dataValue.CreatedBy, DateTime.UtcNow, _context, ct);
-            dataValue = await GetAsync(DataValueEntity.Id, true, ct);
+            await ServiceUtilities.SetMselModifiedAsync(mselId, dataValueEntity.CreatedBy, DateTime.UtcNow, _context, ct);
 
-            return dataValue;
+            return await GetAsync(dataValueEntity.Id, true, ct);
         }
 
-        public async Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValue dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
+        public async Task<ViewModels.DataValue> UpdateAsync(Guid id, ViewModels.DataValueEdit dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
         {
             var dataValueToUpdate = await _context.DataValues.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (dataValueToUpdate == null)
                 throw new EntityNotFoundException<DataValue>($"ID = {id}");
 
+            // a value whose field is a template's, not a MSEL's, is not a cell this endpoint edits
             var dataField = await _context.DataFields.SingleOrDefaultAsync(df => df.Id == dataValueToUpdate.DataFieldId);
-            if (dataField == null)
+            if (dataField == null || dataField.MselId == null)
                 throw new EntityNotFoundException<DataField>($"For DataValue ID = {id} DataField ID = {dataValueToUpdate.DataFieldId}");
 
             // Users with EditMsels permission or MSEL Owners can change every DataValue
@@ -135,14 +143,14 @@ namespace Blueprint.Api.Services
                 }
             }
 
-            dataValue.ModifiedBy = _user.GetId();
             var oldValue = dataValueToUpdate.Value;
             _mapper.Map(dataValue, dataValueToUpdate);
+            dataValueToUpdate.ModifiedBy = _user.GetId();
 
             _context.DataValues.Update(dataValueToUpdate);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataValue.ModifiedBy, DateTime.UtcNow, _context, ct);
+            await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataValueToUpdate.ModifiedBy, DateTime.UtcNow, _context, ct);
 
             // Emit xAPI statement for checkbox changes
             if (dataField.DataType == DataFieldType.Checkbox && oldValue != dataValueToUpdate.Value &&
@@ -162,9 +170,7 @@ namespace Blueprint.Api.Services
                 }
             }
 
-            dataValue = await GetAsync(dataValueToUpdate.Id, true, ct);
-
-            return dataValue;
+            return await GetAsync(dataValueToUpdate.Id, true, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)

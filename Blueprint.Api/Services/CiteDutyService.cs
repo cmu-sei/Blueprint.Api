@@ -29,8 +29,8 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.CiteDuty>> GetTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.CiteDuty>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.CiteDuty> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.CiteDuty> CreateAsync(ViewModels.CiteDuty citeDuty, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct);
-        Task<ViewModels.CiteDuty> UpdateAsync(Guid id, ViewModels.CiteDuty citeDuty, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct);
+        Task<ViewModels.CiteDuty> CreateAsync(ViewModels.CiteDutyCreate citeDuty, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct);
+        Task<ViewModels.CiteDuty> UpdateAsync(Guid id, ViewModels.CiteDutyEdit citeDuty, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.CiteDuty>> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
@@ -55,7 +55,7 @@ namespace Blueprint.Api.Services
         public async Task<IEnumerable<ViewModels.CiteDuty>> GetTemplatesAsync(CancellationToken ct)
         {
             var citeDutyEntities = await _context.CiteDuties
-                .Where(citeDuty => citeDuty.IsTemplate)
+                .Where(citeDuty => citeDuty.IsTemplate && citeDuty.MselId == null)
                 .ToListAsync(ct);
 
             return _mapper.Map<IEnumerable<CiteDuty>>(citeDutyEntities).ToList();;
@@ -97,8 +97,12 @@ namespace Blueprint.Api.Services
             return _mapper.Map<CiteDuty>(item);
         }
 
-        public async Task<ViewModels.CiteDuty> CreateAsync(ViewModels.CiteDuty citeDuty, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct)
+        public async Task<ViewModels.CiteDuty> CreateAsync(ViewModels.CiteDutyCreate citeDuty, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct)
         {
+            // a template belongs to no MSEL, so a MSEL's CITE duty cannot be listed as one
+            if (citeDuty.MselId.HasValue && citeDuty.IsTemplate)
+                throw new ConflictException("A CITE duty cannot belong to a MSEL and be a template.");
+
             if (citeDuty.MselId.HasValue)
             {
                 if (!hasMselPermission &&
@@ -111,46 +115,57 @@ namespace Blueprint.Api.Services
                 if (!hasCiteDutyPermission)
                     throw new ForbiddenException();
             }
-            citeDuty.Id = citeDuty.Id != Guid.Empty ? citeDuty.Id : Guid.NewGuid();
-            citeDuty.CreatedBy = _user.GetId();
+
+            // a CITE team must be one of the MSEL's own teams, and a template names no team at all
+            if (citeDuty.TeamId.HasValue)
+                await ServiceUtilities.EnsureTeamIsInMselAsync(citeDuty.TeamId.Value, citeDuty.MselId, _context, ct);
+
             var citeDutyEntity = _mapper.Map<CiteDutyEntity>(citeDuty);
+            citeDutyEntity.Id = citeDuty.Id != Guid.Empty ? citeDuty.Id : Guid.NewGuid();
+            citeDutyEntity.CreatedBy = _user.GetId();
 
             _context.CiteDuties.Add(citeDutyEntity);
             await _context.SaveChangesAsync(ct);
-            citeDuty = await GetAsync(citeDutyEntity.Id, true, ct);
+            var created = await GetAsync(citeDutyEntity.Id, true, ct);
 
-            return citeDuty;
+            return created;
         }
 
-        public async Task<ViewModels.CiteDuty> UpdateAsync(Guid id, ViewModels.CiteDuty citeDuty, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct)
+        public async Task<ViewModels.CiteDuty> UpdateAsync(Guid id, ViewModels.CiteDutyEdit citeDuty, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct)
         {
-            if (citeDuty.MselId.HasValue)
-            {
-                if (!hasMselPermission &&
-                    !await MselOwnerRequirement.IsMet(_user.GetId(), citeDuty.MselId, _context) &&
-                    !await MselEditorRequirement.IsMet(_user.GetId(), citeDuty.MselId, _context))
-                    throw new ForbiddenException();
-            }
-            else
-            {
-                if (!hasCiteDutyPermission)
-                    throw new ForbiddenException();
-            }
-
             var citeDutyToUpdate = await _context.CiteDuties.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (citeDutyToUpdate == null)
                 throw new EntityNotFoundException<CiteDuty>();
 
-            citeDuty.ModifiedBy = _user.GetId();
+            // decided on the stored row: a MSEL's CITE duty needs the MSEL permission or an owner or editor
+            // of that MSEL, and a template needs the template permission
+            if (citeDutyToUpdate.MselId.HasValue)
+            {
+                if (!hasMselPermission &&
+                    !await MselOwnerRequirement.IsMet(_user.GetId(), citeDutyToUpdate.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(_user.GetId(), citeDutyToUpdate.MselId, _context))
+                    throw new ForbiddenException();
+            }
+            else
+            {
+                if (!hasCiteDutyPermission)
+                    throw new ForbiddenException();
+            }
+
+            // a CITE team must be one of the MSEL's own teams, and a template names no team at all
+            if (citeDuty.TeamId.HasValue)
+                await ServiceUtilities.EnsureTeamIsInMselAsync(citeDuty.TeamId.Value, citeDutyToUpdate.MselId, _context, ct);
+
             _mapper.Map(citeDuty, citeDutyToUpdate);
+            citeDutyToUpdate.ModifiedBy = _user.GetId();
 
             _context.CiteDuties.Update(citeDutyToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            citeDuty = await GetAsync(citeDutyToUpdate.Id, true, ct);
+            var updated = await GetAsync(citeDutyToUpdate.Id, true, ct);
 
-            return citeDuty;
+            return updated;
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct)
@@ -182,8 +197,9 @@ namespace Blueprint.Api.Services
         public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct)
         {
             var idList = ids?.ToList() ?? new List<Guid>();
+            // only templates are exported: a MSEL's own rows are read through the MSEL
             var citeDutyEntities = await _context.CiteDuties
-                .Where(cd => idList.Contains(cd.Id))
+                .Where(cd => idList.Contains(cd.Id) && cd.MselId == null)
                 .ToListAsync(ct);
             var citeDuties = _mapper.Map<IEnumerable<ViewModels.CiteDuty>>(citeDutyEntities).ToList();
             // Strip team navigation; templates have no team and the property pulls in extra context.

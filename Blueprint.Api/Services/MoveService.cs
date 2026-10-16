@@ -23,8 +23,8 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.Move>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Move> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.Move> CreateAsync(ViewModels.Move move, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.Move> UpdateAsync(Guid id, ViewModels.Move move, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Move> CreateAsync(ViewModels.MoveCreate move, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Move> UpdateAsync(Guid id, ViewModels.MoveEdit move, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
     }
 
@@ -68,7 +68,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<Move>(item);
         }
 
-        public async Task<ViewModels.Move> CreateAsync(ViewModels.Move move, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.Move> CreateAsync(ViewModels.MoveCreate move, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
             if (!hasSystemPermission &&
@@ -78,45 +78,45 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
-            move.Id = move.Id != Guid.Empty ? move.Id : Guid.NewGuid();
-            move.CreatedBy = _user.GetId();
             var moveEntity = _mapper.Map<MoveEntity>(move);
+            moveEntity.Id = move.Id != Guid.Empty ? move.Id : Guid.NewGuid();
+            moveEntity.CreatedBy = _user.GetId();
             _context.Moves.Add(moveEntity);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(move.MselId, move.CreatedBy, DateTime.UtcNow, _context, ct);
-            move = await GetAsync(moveEntity.Id, true, ct);
+            await ServiceUtilities.SetMselModifiedAsync(moveEntity.MselId, moveEntity.CreatedBy, DateTime.UtcNow, _context, ct);
+            var created = await GetAsync(moveEntity.Id, true, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return move;
+            return created;
         }
 
-        public async Task<ViewModels.Move> UpdateAsync(Guid id, ViewModels.Move move, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.Move> UpdateAsync(Guid id, ViewModels.MoveEdit move, bool hasSystemPermission, CancellationToken ct)
         {
-            // user must be a Content Developer or a MSEL owner
-            if (!hasSystemPermission &&
-                !( await MselOwnerRequirement.IsMet(_user.GetId(), move.MselId, _context)) &&
-                !( await MoveEditorRequirement.IsMet(_user.GetId(), move.MselId, _context)))
-                throw new ForbiddenException();
-
             var moveToUpdate = await _context.Moves.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (moveToUpdate == null)
                 throw new EntityNotFoundException<Move>();
 
+            // user must be a Content Developer, or an owner or move editor of the move's MSEL
+            if (!hasSystemPermission &&
+                !( await MselOwnerRequirement.IsMet(_user.GetId(), moveToUpdate.MselId, _context)) &&
+                !( await MoveEditorRequirement.IsMet(_user.GetId(), moveToUpdate.MselId, _context)))
+                throw new ForbiddenException();
+
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
-            move.ModifiedBy = _user.GetId();
             _mapper.Map(move, moveToUpdate);
+            moveToUpdate.ModifiedBy = _user.GetId();
             _context.Moves.Update(moveToUpdate);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(moveToUpdate.MselId, moveToUpdate.ModifiedBy, DateTime.UtcNow, _context, ct);
-            move = await GetAsync(moveToUpdate.Id, true, ct);
+            var updated = await GetAsync(moveToUpdate.Id, true, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return move;
+            return updated;
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)

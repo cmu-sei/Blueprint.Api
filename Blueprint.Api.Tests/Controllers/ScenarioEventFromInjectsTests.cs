@@ -256,10 +256,8 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
 
     /// <summary>
     /// This caller reorders <em>after</em> saving the row, so the helper reads the server-stamped
-    /// <c>DateCreated</c> and each new row is appended to the end of its group. <c>CreateAsync</c> reorders
-    /// before saving and therefore inserts at the head - see
-    /// <c>ScenarioEventOrderingTests.Create_WithoutADateCreated_IsInsertedAtTheHeadInstead</c>. One line's
-    /// difference in placement.
+    /// <c>DateCreated</c> and each new row is appended to the end of its group, as <c>CreateAsync</c>'s
+    /// rows are - see <c>ScenarioEventOrderingTests.Create_WithoutADateCreated_IsAppendedToTheEndToo</c>.
     /// </summary>
     [Fact]
     public async Task CreateFromInjects_AppendsEachNewRowToTheEndOfItsGroup()
@@ -388,6 +386,101 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
         Assert.Empty(await FieldsOn(msel.Id));
     }
 
+    /// <summary>
+    /// Owning the destination MSEL is not permission to read the source: an inject only in a private
+    /// catalog the caller cannot see is answered as one that is not there, and nothing is written.
+    /// </summary>
+    [Fact]
+    public async Task CreateFromInjects_FromAPrivateCatalogTheCallerCannotSee_Is404AndCreatesNothing()
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var visible = await SeedInjects(1);
+        var hidden = await SeedInjects(1, isPublic: false);
+
+        var response = await Post(
+            Client(actor),
+            msel.Id,
+            visible.InjectType.Id,
+            [visible.Injects[0].Id, hidden.Injects[0].Id]);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Empty(await Rows(msel.Id));
+        Assert.Empty(await FieldsOn(msel.Id));
+    }
+
+    [Fact]
+    public async Task CreateFromInjects_FromAPrivateCatalogOfTheCallersUnit_Succeeds()
+    {
+        var msel = await SeedMsel();
+        var source = await SeedInjects(1, isPublic: false);
+        var unit = TestData.Unit();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner, unit).SeedAsync();
+        await Seed(TestData.CatalogUnit(unit.Id, source.Catalog.Id));
+
+        var rows = await FromInjects(Client(actor), msel, source);
+
+        Assert.Single(rows);
+    }
+
+    [Fact]
+    public async Task CreateFromInjects_FromAPrivateCatalogSharedOnlyWithAnotherUnitOfTheCallers_Is404()
+    {
+        var msel = await SeedMsel();
+        var source = await SeedInjects(1, isPublic: false);
+        var other = await SeedInjects(1, isPublic: false);
+        var unit = TestData.Unit();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner, unit).SeedAsync();
+        await Seed(TestData.CatalogUnit(unit.Id, other.Catalog.Id));
+
+        var response = await Post(Client(actor), msel.Id, source.InjectType.Id, [source.Injects[0].Id]);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Empty(await Rows(msel.Id));
+    }
+
+    [Fact]
+    public async Task CreateFromInjects_FromAPrivateCatalogTheCallerCreated_Succeeds()
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var source = await SeedInjects(1, isPublic: false, catalogCreatedBy: actor.Id);
+        // Data-row gate: the source catalog's CreatedBy is the caller.
+
+        var rows = await FromInjects(Client(actor), msel, source);
+
+        Assert.Single(rows);
+    }
+
+    [Fact]
+    public async Task CreateFromInjects_FromAPrivateCatalog_WithViewMsels_Succeeds()
+    {
+        var msel = await SeedMsel();
+        var source = await SeedInjects(1, isPublic: false);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var rows = await FromInjects(Client(actor), msel, source);
+
+        Assert.Single(rows);
+    }
+
+    /// <summary>
+    /// <c>ViewCatalogs</c> is not what the copy asks: it is refused like any other caller who cannot see
+    /// the catalog.
+    /// </summary>
+    [Fact]
+    public async Task CreateFromInjects_FromAPrivateCatalog_WithViewCatalogs_Is404()
+    {
+        var msel = await SeedMsel();
+        var source = await SeedInjects(1, isPublic: false);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
+
+        var response = await Post(Client(actor), msel.Id, source.InjectType.Id, [source.Injects[0].Id]);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Empty(await Rows(msel.Id));
+    }
+
     [Fact]
     public async Task CreateFromInjects_ForAnUnknownInjectType_Is404()
     {
@@ -399,17 +492,18 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Create from injects for an unknown MSEL is answered with a 500.</summary>
+    /// <summary>
+    /// The permission check runs first, and an unknown MSEL grants no ownership, so an ordinary caller is
+    /// refused before the service looks the MSEL up.
+    /// </summary>
     [Fact]
-    public async Task CreateFromInjects_ForAnUnknownMsel_Is500()
+    public async Task CreateFromInjects_ForAnUnknownMsel_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Post(Client(actor), Guid.NewGuid(), Guid.NewGuid(), []);
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>
@@ -854,9 +948,12 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal(3, stored.Iterations);
     }
 
-    /// <summary>Create with a steamfitter task leaves the rows task id null.</summary>
+    /// <summary>
+    /// <c>ScenarioEventEntity.SteamfitterTaskId</c> is a denormalized copy of the task's own
+    /// <c>ScenarioEventId</c> relationship, which a create fills in with the task's server-generated id.
+    /// </summary>
     [Fact]
-    public async Task Create_WithASteamfitterTask_LeavesTheRowsTaskIdNull()
+    public async Task Create_WithASteamfitterTask_SetsTheRowsTaskId()
     {
         var msel = await SeedMsel();
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
@@ -879,20 +976,104 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
             },
             Ct));
 
-        Assert.NotNull(await StoredTask(rows.Single().Id));
-        Assert.Null((await Stored(rows.Single().Id)).SteamfitterTaskId);
+        var task = await StoredTask(rows.Single().Id);
+        Assert.NotNull(task);
+        Assert.Equal(task.Id, (await Stored(rows.Single().Id)).SteamfitterTaskId);
     }
 
-    /// <summary>Update without the task in the body deletes the rows steamfitter task.</summary>
+    /// <summary>
+    /// A task's identity is the server's: a create naming another event's task gets a new task of its
+    /// own, and the named one stays where it was.
+    /// </summary>
     [Fact]
-    public async Task Update_WithoutTheTaskInTheBody_DeletesTheRowsSteamfitterTask()
+    public async Task Create_WithAnotherEventsTaskId_CreatesANewTaskAndLeavesThatOneAlone()
+    {
+        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
+
+        var rows = await Read<List<ScenarioEvent>>(await Client(scene.Actor).PostAsJsonAsync(
+            "/api/scenarioEvents",
+            new
+            {
+                MselId = scene.Destination.Id,
+                ScenarioEventType = EventType.Inject,
+                SteamfitterTask = new { scene.Task.Id, ScenarioEventId = scene.Rows[0].Id, Name = "taken" }
+            },
+            Ct));
+
+        var created = await StoredTask(rows.Single().Id);
+        Assert.NotEqual(scene.Task.Id, created.Id);
+        Assert.Equal("taken", created.Name);
+        var original = await StoredTask(scene.Rows[0].Id);
+        Assert.Equal(scene.Task.Id, original.Id);
+        Assert.Equal(scene.Task.Name, original.Name);
+    }
+
+    /// <summary>
+    /// The task is written by the service, not mapped, so a body that still targets Steamfitter but does
+    /// not mention the task - as the timeline's edits do - leaves the row's task as it was.
+    /// </summary>
+    [Fact]
+    public async Task Update_WithoutTheTaskInTheBody_KeepsTheRowsSteamfitterTask()
     {
         var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
 
         var response = await Update(scene, deltaSeconds: 60);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Null(await StoredTask(scene.Rows[0].Id));
+        var stored = await StoredTask(scene.Rows[0].Id);
+        Assert.Equal(scene.Task.Id, stored.Id);
+        Assert.Equal(scene.Task.Name, stored.Name);
+    }
+
+    /// <summary>
+    /// An event whose integration target no longer includes Steamfitter loses its task, which is how the
+    /// edit dialog removes one.
+    /// </summary>
+    [Fact]
+    public async Task Update_ThatNoLongerTargetsSteamfitter_RemovesTheRowsSteamfitterTask()
+    {
+        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
+        var row = scene.Rows[0];
+
+        var response = await Client(scene.Actor).PutAsJsonAsync(
+            $"/api/scenarioEvents/{row.Id}",
+            new { row.DeltaSeconds, row.GroupOrder, ScenarioEventType = EventType.Inject, IntegrationTarget = "Gallery" },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(await StoredTask(row.Id));
+    }
+
+    /// <summary>
+    /// A taskless event edited with another MSEL's task in its body gets a new task of its own. The named
+    /// task is neither changed nor moved.
+    /// </summary>
+    [Fact]
+    public async Task Update_OfATasklessEvent_WithAnotherMselsTaskInTheBody_LeavesThatTaskAlone()
+    {
+        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
+        var other = await SeedMsel();
+        var mine = TestData.ScenarioEvent(other.Id, 0);
+        await Seed(mine);
+        var owner = await Actor().OnMsel(other, MselRole.Owner).SeedAsync();
+
+        var response = await Client(owner).PutAsJsonAsync(
+            $"/api/scenarioEvents/{mine.Id}",
+            new
+            {
+                mine.GroupOrder,
+                mine.ScenarioEventType,
+                SteamfitterTask = new { scene.Task.Id, ScenarioEventId = scene.Rows[0].Id, Name = "taken" }
+            },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var original = await StoredTask(scene.Rows[0].Id);
+        Assert.Equal(scene.Task.Id, original.Id);
+        Assert.Equal(scene.Task.Name, original.Name);
+        var added = await StoredTask(mine.Id);
+        Assert.NotEqual(scene.Task.Id, added.Id);
+        Assert.Equal("taken", added.Name);
     }
 
     /// <summary>An update whose body carries the task back-fills the row's <c>SteamfitterTaskId</c>.</summary>
@@ -986,7 +1167,8 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
     private sealed record InjectSource(
         InjectTypeEntity InjectType,
         DataFieldEntity Field,
-        List<InjectEntity> Injects);
+        List<InjectEntity> Injects,
+        CatalogEntity Catalog);
 
     /// <summary>
     /// Two MSELs, a row or two on the first with one field and one cell each, and an actor whose ownership
@@ -1016,10 +1198,15 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
         DataFieldType injectFieldType = DataFieldType.String,
         string injectFieldValue = "seeded",
         bool isChosenFromList = false,
-        string[] optionNames = null)
+        string[] optionNames = null,
+        bool isPublic = true,
+        Guid? catalogCreatedBy = null)
     {
         var injectType = TestData.InjectType();
         await Seed(injectType);
+        // the injects are copied only from a catalog the caller can see; a public one by default
+        var catalog = TestData.Catalog(injectType.Id, createdBy: catalogCreatedBy, isPublic: isPublic);
+        await Seed(catalog);
 
         var field = TestData.DataField(
             injectTypeId: injectType.Id,
@@ -1039,10 +1226,11 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
             var inject = TestData.Inject(injectType.Id);
             await Seed(inject);
             await Seed(TestData.DataValueOnInject(field.Id, inject.Id, injectFieldValue));
+            await Seed(TestData.CatalogInject(catalog.Id, inject.Id));
             injects.Add(inject);
         }
 
-        return new InjectSource(injectType, field, injects);
+        return new InjectSource(injectType, field, injects, catalog);
     }
 
     /// <summary>
@@ -1082,13 +1270,15 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
             task = TestData.SteamfitterTask(seeded[0].Id);
             await Seed(task);
 
+            await using var context = NewContext();
+            var stored = await context.ScenarioEvents.SingleAsync(x => x.Id == seeded[0].Id, Ct);
+            stored.IntegrationTarget = "Steamfitter";
             if (backfillTaskId)
             {
-                await using var context = NewContext();
-                var stored = await context.ScenarioEvents.SingleAsync(x => x.Id == seeded[0].Id, Ct);
                 stored.SteamfitterTaskId = task.Id;
-                await context.SaveChangesAsync(Ct);
             }
+            await context.SaveChangesAsync(Ct);
+            seeded[0].IntegrationTarget = stored.IntegrationTarget;
         }
 
 
@@ -1146,6 +1336,7 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
                 DeltaSeconds = deltaSeconds,
                 row.GroupOrder,
                 row.ScenarioEventType,
+                row.IntegrationTarget,
                 Information = "edited",
                 CreatedBy = Guid.Empty,
                 DateCreated = DateTime.UtcNow,

@@ -71,9 +71,12 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         AssertAddressedOnlyOthersInGroup(harness);
     }
 
-    /// <summary>Join with manage users adds every MSEL in the installation.</summary>
+    /// <summary>
+    /// <see cref="SystemPermission.ViewMsels"/>, the permission every read route asks for, is what joins a
+    /// connection to every MSEL in the installation.
+    /// </summary>
     [Fact]
-    public async Task Join_WithManageUsers_AddsEveryMselInTheInstallation()
+    public async Task Join_WithViewMsels_AddsEveryMselInTheInstallation()
     {
         var actor = Guid.NewGuid();
         var strangers = TestData.Msel();
@@ -81,11 +84,41 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         await Seed(strangers, archived);
         var harness = Harness(actor);
 
-        await Hub(harness, SystemPermission.ManageUsers).Join();
+        await Hub(harness, SystemPermission.ViewMsels).Join();
 
         AssertGroups([strangers.Id.ToString(), actor.ToString()], Added(harness));
         Assert.DoesNotContain(archived.Id.ToString(), Added(harness));
         AssertAddressedOnlyOthersInGroup(harness);
+    }
+
+    /// <summary>
+    /// <see cref="SystemPermission.ManageUsers"/> administers accounts and says nothing about MSELs, so
+    /// its holder is joined only to the MSELs they belong to and never receives another exercise's edits.
+    /// </summary>
+    [Fact]
+    public async Task Join_WithManageUsers_AddsNoMselTheCallerIsNotOn()
+    {
+        var actor = Guid.NewGuid();
+        var strangers = TestData.Msel();
+        await Seed(strangers);
+        var harness = Harness(actor);
+
+        await Hub(harness, SystemPermission.ManageUsers).Join();
+
+        AssertGroups([actor.ToString()], Added(harness));
+    }
+
+    [Fact]
+    public async Task SelectMsel_WithManageUsers_ForAMselTheCallerIsNotOn_JoinsNothing()
+    {
+        var actor = Guid.NewGuid();
+        var strangers = TestData.Msel();
+        await Seed(strangers);
+        var harness = Harness(actor);
+
+        await Hub(harness, SystemPermission.ManageUsers).SelectMsel([strangers.Id]);
+
+        Assert.DoesNotContain(strangers.Id.ToString(), Added(harness));
     }
 
     [Fact]

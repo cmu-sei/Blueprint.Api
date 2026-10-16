@@ -110,24 +110,28 @@ public class MselOwnerRequirementTests(DatabaseFixture fixture) : DatabaseTestBa
         Assert.False(await MselOwnerRequirement.IsMet(actor.Id, msel.Id, Db));
     }
 
-    /// <summary>Is met for a MSEL that does not exist throws.</summary>
+    /// <remarks>
+    /// A MSEL that is not there grants nothing, so the caller's 403 stays a 403 - or a 404 where the
+    /// service looks the record up first. Same answer as
+    /// <see cref="MselViewRequirementTests.IsMet_ForAMselThatDoesNotExist_IsFalse"/>.
+    /// </remarks>
     [Fact]
-    public async Task IsMet_ForAMselThatDoesNotExist_Throws()
+    public async Task IsMet_ForAMselThatDoesNotExist_IsFalse()
     {
         var actor = await Actor().SeedAsync();
 
-        await Assert.ThrowsAsync<NullReferenceException>(
-            () => MselOwnerRequirement.IsMet(actor.Id, Guid.NewGuid(), Db));
+        Assert.False(await MselOwnerRequirement.IsMet(actor.Id, Guid.NewGuid(), Db));
     }
 
-    /// <summary>A null MSEL id throws.</summary>
+    /// <remarks>
+    /// A null id matches no MSEL, which is the ordinary shape of a request against an unscoped entity.
+    /// </remarks>
     [Fact]
-    public async Task IsMet_ForANullMselId_Throws()
+    public async Task IsMet_ForANullMselId_IsFalse()
     {
         var actor = await Actor().SeedAsync();
 
-        await Assert.ThrowsAsync<NullReferenceException>(
-            () => MselOwnerRequirement.IsMet(actor.Id, null, Db));
+        Assert.False(await MselOwnerRequirement.IsMet(actor.Id, null, Db));
     }
 
     [Fact]

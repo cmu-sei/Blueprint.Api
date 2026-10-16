@@ -12,7 +12,8 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<MselPageEntity, MselPage>();
 
-            CreateMap<MselPage, MselPageEntity>();
+            CreateMap<MselPageCreate, MselPageEntity>(AutoMapper.MemberList.Source);
+            CreateMap<MselPageEdit, MselPageEntity>(AutoMapper.MemberList.Source);
         }
     }
 }

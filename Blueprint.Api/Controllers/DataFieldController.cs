@@ -111,7 +111,7 @@ namespace Blueprint.Api.Controllers
         /// Creates a new DataField
         /// </summary>
         /// <remarks>
-        /// Creates a new DataField with the attributes specified
+        /// Creates a new DataField with the attributes specified. A DataField belongs to at most one of a MSEL, an inject type or the template list.
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -120,11 +120,10 @@ namespace Blueprint.Api.Controllers
         [HttpPost("dataFields")]
         [ProducesResponseType(typeof(DataField), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createDataField")]
-        public async Task<IActionResult> Create([FromBody] DataField dataField, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] DataFieldCreate dataField, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
-            dataField.CreatedBy = User.GetId();
             var result = await _dataFieldService.CreateAsync(dataField, hasMselPermission, hasDataFieldPermission, ct);
             return Ok(result);
         }
@@ -134,7 +133,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a DataField with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the dataField parameter
+        /// The DataField stays with its MSEL, inject type or template list; that cannot be changed.
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -144,11 +143,10 @@ namespace Blueprint.Api.Controllers
         [HttpPut("dataFields/{id}")]
         [ProducesResponseType(typeof(DataField), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateDataField")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] DataField dataField, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] DataFieldEdit dataField, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasDataFieldPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageDataFields], ct);
-            dataField.ModifiedBy = User.GetId();
             var result = await _dataFieldService.UpdateAsync(id, dataField, hasMselPermission, hasDataFieldPermission, ct);
             return Ok(result);
         }

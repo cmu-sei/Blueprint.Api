@@ -52,9 +52,12 @@ public class ScenarioEventOrderingTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(["A=0", "B=1", "C=2", "N=3"], await Orders(msel.Id));
     }
 
-    /// <summary>Create without a date created is inserted at the head instead.</summary>
+    /// <summary>
+    /// The same request without a <c>dateCreated</c> in the body is appended too: the creation time is the
+    /// server's, not the body's.
+    /// </summary>
     [Fact]
-    public async Task Create_WithoutADateCreated_IsInsertedAtTheHeadInstead()
+    public async Task Create_WithoutADateCreated_IsAppendedToTheEndToo()
     {
         var msel = await SeedMsel();
         await SeedGroup(msel, 0, "A", "B", "C");
@@ -63,7 +66,7 @@ public class ScenarioEventOrderingTests(DatabaseFixture fixture, BlueprintAppFac
 
         await CreateWithoutADate(Client(actor), msel.Id, "N", groupOrder: 0);
 
-        Assert.Equal(["N=0", "A=1", "B=2", "C=3"], await Orders(msel.Id));
+        Assert.Equal(["A=0", "B=1", "C=2", "N=3"], await Orders(msel.Id));
 
         var stored = await Stored(msel.Id, "N");
 
@@ -121,9 +124,9 @@ public class ScenarioEventOrderingTests(DatabaseFixture fixture, BlueprintAppFac
         await SeedAt(msel, 0, 9, "C");
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        await CreateWithoutADate(Client(actor), msel.Id, "N", groupOrder: 0);
+        await Create(Client(actor), msel.Id, "N", groupOrder: 5);
 
-        Assert.Equal(["N=0", "A=1", "B=2", "C=3"], await Orders(msel.Id));
+        Assert.Equal(["A=0", "N=5", "B=6", "C=7"], await Orders(msel.Id));
     }
 
     [Fact]
@@ -588,8 +591,7 @@ public class ScenarioEventOrderingTests(DatabaseFixture fixture, BlueprintAppFac
 
     /// <summary>
     /// Creates a row, as a client sending the whole view model does: with a <c>dateCreated</c> of now,
-    /// which the server overwrites and which decides where a row asking for position zero lands. See
-    /// <see cref="Create_WithoutADateCreated_IsInsertedAtTheHeadInstead"/>.
+    /// which the server ignores. See <see cref="Create_WithoutADateCreated_IsAppendedToTheEndToo"/>.
     /// </summary>
     private Task<List<ScenarioEvent>> Create(
         HttpClient client,

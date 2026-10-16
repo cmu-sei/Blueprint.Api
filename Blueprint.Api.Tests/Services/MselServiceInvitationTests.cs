@@ -325,6 +325,47 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.False(Assert.Single(DrainJoinQueue()).UseCite);
     }
 
+    /// <summary>
+    /// An invitation whose team belongs to another MSEL - written before invitations were checked -
+    /// enrolls nobody: the join is refused before any membership, seat or queued join.
+    /// </summary>
+    [Fact]
+    public async Task Join_WithAnInvitationToAnotherMselsTeam_Is403AndChangesNothing()
+    {
+        var msel = await SeedDeployed();
+        var other = await SeedDeployed();
+        var theirTeam = await SeedTeam(other);
+        var invitation = await SeedInvitation(msel, theirTeam);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Join(Client(actor), msel.Id);
+
+        // Data-row gate: the invitation's team belongs to another MSEL.
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        using var db = NewContext();
+        Assert.False(await db.TeamUsers.AnyAsync(tu => tu.UserId == actor.Id, Ct));
+        Assert.False(await db.UserMselRoles.AnyAsync(r => r.UserId == actor.Id, Ct));
+        Assert.Equal(0, (await db.Invitations.SingleAsync(i => i.Id == invitation.Id, Ct)).UserCount);
+        Assert.Empty(DrainJoinQueue());
+    }
+
+    [Fact]
+    public async Task Join_WithAnInvitationToAnotherMselsTeam_AndThatTeamsId_Is403()
+    {
+        var msel = await SeedDeployed();
+        var other = await SeedDeployed();
+        var theirTeam = await SeedTeam(other);
+        await SeedInvitation(msel, theirTeam);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Join(Client(actor), msel.Id, theirTeam.Id);
+
+        // Data-row gate: the invitation's team belongs to another MSEL.
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.False(await NewContext().TeamUsers.AnyAsync(tu => tu.TeamId == theirTeam.Id, Ct));
+        Assert.Empty(DrainJoinQueue());
+    }
+
     [Fact]
     public async Task Join_OfAnUnknownMsel_Is404()
     {

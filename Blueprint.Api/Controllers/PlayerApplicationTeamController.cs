@@ -121,7 +121,7 @@ namespace Blueprint.Api.Controllers
         [HttpPost("teamplayerApplications")]
         [ProducesResponseType(typeof(PlayerApplicationTeam), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createPlayerApplicationTeam")]
-        public async Task<IActionResult> Create([FromBody] PlayerApplicationTeam playerApplicationTeam, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] PlayerApplicationTeamCreate playerApplicationTeam, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
                 throw new ForbiddenException();
@@ -134,7 +134,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a PlayerApplicationTeam with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the playerApplicationTeam parameter
+        /// The Player Application and the Team cannot be changed.
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -144,7 +144,7 @@ namespace Blueprint.Api.Controllers
         [HttpPut("playerApplicationteams/{id}")]
         [ProducesResponseType(typeof(PlayerApplicationTeam), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updatePlayerApplicationTeam")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] PlayerApplicationTeam playerApplicationTeam, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] PlayerApplicationTeamEdit playerApplicationTeam, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
                 throw new ForbiddenException();
@@ -189,7 +189,7 @@ namespace Blueprint.Api.Controllers
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct))
                 throw new ForbiddenException();
-            await _playerApplicationTeamService.DeleteByIdsAsync(teamId, playerApplicationId, ct);
+            await _playerApplicationTeamService.DeleteByIdsAsync(playerApplicationId, teamId, ct);
             return NoContent();
         }
 

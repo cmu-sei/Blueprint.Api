@@ -76,7 +76,7 @@ namespace Blueprint.Api.Controllers
         /// Creates a new Invitation
         /// </summary>
         /// <remarks>
-        /// Creates a new Invitation with the attributes specified
+        /// Creates a new Invitation with the attributes specified. The team must belong to the Invitation's MSEL.
         /// <para />
         /// </remarks>
         /// <param name="invitation">The data to create the Invitation with</param>
@@ -84,7 +84,7 @@ namespace Blueprint.Api.Controllers
         [HttpPost("invitations")]
         [ProducesResponseType(typeof(Invitation), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createInvitation")]
-        public async Task<IActionResult> Create([FromBody] Invitation invitation, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] InvitationCreate invitation, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var createdInvitation = await _invitationService.CreateAsync(invitation, hasSystemPermission, ct);
@@ -95,7 +95,7 @@ namespace Blueprint.Api.Controllers
         /// Updates a Invitation
         /// </summary>
         /// <remarks>
-        /// Updates a Invitation with the attributes specified
+        /// Updates a Invitation with the attributes specified. The Invitation stays in its MSEL, and the team must belong to it.
         /// <para />
         /// </remarks>
         /// <param name="id">The Id of the Invitation to update</param>
@@ -104,7 +104,7 @@ namespace Blueprint.Api.Controllers
         [HttpPut("invitations/{id}")]
         [ProducesResponseType(typeof(Invitation), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateInvitation")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Invitation invitation, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] InvitationEdit invitation, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var updatedPage = await _invitationService.UpdateAsync(id, invitation, hasSystemPermission, ct);

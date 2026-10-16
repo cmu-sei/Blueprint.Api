@@ -86,9 +86,12 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Single(await GetFields(Client(actor), "/api/dataFields/templates"));
     }
 
-    /// <summary>Templates includes a MSEL scoped field flagged as a template.</summary>
+    /// <summary>
+    /// A template belongs to no MSEL, so a MSEL's column flagged <c>IsTemplate</c> - which a create can no
+    /// longer write - stays out of the shared template list any signed-in user may read.
+    /// </summary>
     [Fact]
-    public async Task Templates_IncludesAMselScopedFieldFlaggedAsATemplate()
+    public async Task Templates_LeavesOutAMselScopedFieldFlaggedAsATemplate()
     {
         var msel = TestData.Msel();
         await Seed(msel);
@@ -98,9 +101,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var actor = await Actor().SeedAsync();
 
-        var returned = Assert.Single(await GetFields(Client(actor), "/api/dataFields/templates"));
-
-        Assert.Equal(msel.Id, returned.MselId);
+        Assert.Empty(await GetFields(Client(actor), "/api/dataFields/templates"));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -559,23 +560,39 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>Create with is template on a MSEL field puts a MSELs column in the shared template list.</summary>
+    /// <summary>
+    /// A field belongs to one owner, so an MSEL's column cannot also be put in the installation's shared
+    /// template list.
+    /// </summary>
     [Fact]
-    public async Task Create_WithIsTemplateOnAMselField_PutsAMselsColumnInTheSharedTemplateList()
+    public async Task Create_WithIsTemplateOnAMselField_Is409AndCreatesNothing()
     {
         var msel = TestData.Msel();
         await Seed(msel);
 
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        var created = await Read<DataField>(
-            await Post(Client(owner), Body(msel.Id) with { IsTemplate = true }));
+        var response = await Post(Client(owner), Body(msel.Id) with { IsTemplate = true });
 
-        var stranger = await Actor().SeedAsync();
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Empty(await NewContext().DataFields.AsNoTracking().ToListAsync(Ct));
+    }
 
-        var templates = await GetFields(Client(stranger), "/api/dataFields/templates");
+    /// <summary>
+    /// An inject type's field cannot also be a template.
+    /// </summary>
+    [Fact]
+    public async Task Create_WithIsTemplateOnAnInjectTypeField_Is409AndCreatesNothing()
+    {
+        var injectType = TestData.InjectType();
+        await Seed(injectType);
 
-        Assert.Equal(created.Id, Assert.Single(templates).Id);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageDataFields).SeedAsync();
+
+        var response = await Post(Client(actor), Body() with { InjectTypeId = injectType.Id, IsTemplate = true });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Empty(await NewContext().DataFields.AsNoTracking().ToListAsync(Ct));
     }
 
     /// <summary>Create with no scope and is template false creates a field no list returns.</summary>
@@ -591,9 +608,12 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(created.Id, (await GetField(Client(actor), created.Id)).Id);
     }
 
-    /// <summary>Create with both a MSEL and an inject type is answered with a 500.</summary>
+    /// <summary>
+    /// A field cannot belong to an MSEL and an inject type at once. The service refuses the pair before
+    /// the MSEL branch can authorize it, so an MSEL owner cannot add a field to a global inject type.
+    /// </summary>
     [Fact]
-    public async Task Create_WithBothAMselAndAnInjectType_Is500()
+    public async Task Create_WithBothAMselAndAnInjectType_Is409AndCreatesNothing()
     {
         var msel = TestData.Msel();
         var injectType = TestData.InjectType();
@@ -603,21 +623,28 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await Post(Client(actor), Body(msel.Id) with { InjectTypeId = injectType.Id });
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
-        Assert.Contains("DataFieldService.CreateAsync", failure.Detail);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Empty(await NewContext().DataFields.AsNoTracking().ToListAsync(Ct));
     }
 
     [Fact]
-    public async Task Create_ForAnUnknownMsel_Is500()
+    public async Task Create_ForAnUnknownMsel_Is404()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
         var response = await Post(Client(actor), Body(Guid.NewGuid()));
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
-        Assert.Contains("DataFieldService.CreateAsync", failure.Detail);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Create_ForAnUnknownInjectType_Is404()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageDataFields).SeedAsync();
+
+        var response = await Post(Client(actor), Body() with { InjectTypeId = Guid.NewGuid() });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -884,9 +911,11 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Update with a mismatched body id is answered with a 500.</summary>
+    /// <summary>
+    /// The edit request has no id, so another id in the body is ignored and the route's field is written.
+    /// </summary>
     [Fact]
-    public async Task Update_WithAMismatchedBodyId_Is500()
+    public async Task Update_WithAMismatchedBodyId_UpdatesTheRoutesField()
     {
         var msel = TestData.Msel();
         await Seed(msel);
@@ -898,15 +927,19 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await Client(actor).PutAsJsonAsync(
             $"/api/dataFields/{field.Id}",
-            Body(msel.Id) with { Id = Guid.NewGuid() },
+            BodyFor(field) with { Id = Guid.NewGuid(), Name = "Renamed" },
             Ct);
 
-        Assert.Equal("The property 'DataFieldEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Renamed", (await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct)).Name);
     }
 
-    /// <summary>Update with no MSEL id in the body detaches a MSELs field for anyone holding manage data fields.</summary>
+    /// <summary>
+    /// A caller holding only <c>ManageDataFields</c> cannot edit an MSEL's column: the stored field
+    /// belongs to an MSEL, so MSEL rights are required whatever the body says.
+    /// </summary>
     [Fact]
-    public async Task Update_WithNoMselIdInTheBody_DetachesAMselsFieldForAnyoneHoldingManageDataFields()
+    public async Task Update_WithNoMselIdInTheBody_WithOnlyManageDataFields_Is403AndLeavesTheFieldAlone()
     {
         var msel = TestData.Msel();
         await Seed(msel);
@@ -921,23 +954,26 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             field.Id,
             BodyFor(field) with { MselId = null, Name = "Mine Now" });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         await using var context = NewContext();
         var stored = await context.DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct);
 
-        Assert.Null(stored.MselId);
-        Assert.Equal("Mine Now", stored.Name);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.Equal("Assigned To", stored.Name);
     }
 
-    /// <summary>Update with a MSEL id in the body moves a shared template onto the callers MSEL.</summary>
+    /// <summary>
+    /// A shared template needs <c>ManageDataFields</c>, so rights on an MSEL named in the body buy
+    /// nothing.
+    /// </summary>
     [Fact]
-    public async Task Update_WithAMselIdInTheBody_MovesASharedTemplateOntoTheCallersMsel()
+    public async Task Update_OfATemplate_AsAMselEditor_Is403AndLeavesItAlone()
     {
         var msel = TestData.Msel();
         await Seed(msel);
 
-        var template = TestData.DataField(name: "Shared Template");
+        var template = TestData.DataField(name: "Shared Template", isTemplate: true);
         await Seed(template);
 
         var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
@@ -947,18 +983,115 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             template.Id,
             BodyFor(template) with { MselId = msel.Id, IsTemplate = false });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         await using var context = NewContext();
         var stored = await context.DataFields.AsNoTracking().SingleAsync(x => x.Id == template.Id, Ct);
 
-        Assert.Equal(msel.Id, stored.MselId);
-        Assert.False(stored.IsTemplate);
+        Assert.Null(stored.MselId);
+        Assert.True(stored.IsTemplate);
     }
 
-    /// <summary>Update moving a field onto a MSEL adds no data values.</summary>
+    /// <summary>
+    /// An editor of one MSEL cannot edit another MSEL's column by naming their own MSEL in the body.
+    /// </summary>
     [Fact]
-    public async Task Update_MovingAFieldOntoAMsel_AddsNoDataValues()
+    public async Task Update_OfAnotherMselsField_AsAnEditorNamingTheirOwnMsel_Is403AndLeavesItAlone()
+    {
+        var mine = TestData.Msel();
+        var theirs = TestData.Msel();
+        await Seed(mine, theirs);
+
+        var field = TestData.DataField(mselId: theirs.Id, name: "Theirs");
+        await Seed(field);
+
+        var actor = await Actor().OnMsel(mine, MselRole.Editor).SeedAsync();
+
+        var response = await Put(Client(actor), field.Id, BodyFor(field) with { MselId = mine.Id, Name = "Mine Now" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        var stored = await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct);
+        Assert.Equal(theirs.Id, stored.MselId);
+        Assert.Equal("Theirs", stored.Name);
+    }
+
+    /// <summary>
+    /// An owner's edit cannot move the field: the owner fields in the body are ignored and the edit is
+    /// applied in place.
+    /// </summary>
+    [Fact]
+    public async Task Update_AsAnOwner_NamingAnotherOwnerInTheBody_KeepsTheFieldInItsMsel()
+    {
+        var msel = TestData.Msel();
+        var other = TestData.Msel();
+        var injectType = TestData.InjectType();
+        await Seed(msel, other, injectType);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        await Seed(field);
+
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(
+            Client(actor),
+            field.Id,
+            BodyFor(field) with { MselId = other.Id, InjectTypeId = injectType.Id, IsTemplate = true, Name = "Renamed" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var stored = await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.Null(stored.InjectTypeId);
+        Assert.False(stored.IsTemplate);
+        Assert.Equal("Renamed", stored.Name);
+    }
+
+    /// <summary>
+    /// The options are reconciled within the field: an id that names another field's option adds a new
+    /// option here and leaves the other field's alone.
+    /// </summary>
+    [Fact]
+    public async Task Update_WithAnotherFieldsOptionId_AddsANewOptionAndLeavesTheOtherAlone()
+    {
+        var msel = TestData.Msel();
+        var theirs = TestData.Msel();
+        await Seed(msel, theirs);
+
+        var field = TestData.DataField(mselId: msel.Id);
+        var theirField = TestData.DataField(mselId: theirs.Id);
+        await Seed(field, theirField);
+
+        var theirOption = TestData.DataOption(theirField.Id, "theirs");
+        await Seed(theirOption);
+
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(
+            Client(actor),
+            field.Id,
+            BodyFor(field) with
+            {
+                DataOptions = [new OptionBody { Id = theirOption.Id, DataFieldId = theirField.Id, OptionName = "mine" }]
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await using var context = NewContext();
+        var stored = await context.DataOptions.AsNoTracking().SingleAsync(x => x.Id == theirOption.Id, Ct);
+        Assert.Equal(theirField.Id, stored.DataFieldId);
+        Assert.Equal("theirs", stored.OptionName);
+        var added = await context.DataOptions.AsNoTracking().SingleAsync(x => x.DataFieldId == field.Id, Ct);
+        Assert.NotEqual(theirOption.Id, added.Id);
+        Assert.Equal("mine", added.OptionName);
+    }
+
+    /// <summary>
+    /// An MSEL owner's edit of a template is refused, so the template gains no data values on the MSEL's
+    /// events.
+    /// </summary>
+    [Fact]
+    public async Task Update_OfATemplate_AsAMselOwner_AddsNoDataValues()
     {
         var msel = TestData.Msel();
         await Seed(msel);
@@ -969,10 +1102,12 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        await Put(
+        var response = await Put(
             Client(actor),
             template.Id,
             BodyFor(template) with { MselId = msel.Id, IsTemplate = false });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         await using var context = NewContext();
 
@@ -1594,6 +1729,26 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.DoesNotContain("name", body);
     }
 
+    /// <summary>
+    /// The export is for fields that belong to no MSEL. An MSEL's column is read through the MSEL, so its
+    /// id exports nothing even for a <c>ManageDataFields</c> holder.
+    /// </summary>
+    [Fact]
+    public async Task DownloadJson_OfAMselsField_ExportsNothing()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var field = TestData.DataField(mselId: msel.Id, name: "Private Column");
+        await Seed(field);
+
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageDataFields).SeedAsync();
+
+        var body = await Download(Client(actor), field.Id);
+
+        Assert.DoesNotContain("Private Column", body);
+    }
+
     [Fact]
     public async Task DownloadJson_WithoutManageDataFields_Is403()
     {
@@ -1737,7 +1892,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     /// </summary>
     /// <remarks>
     /// A helper taking <c>Guid? mselId = null</c> would not do, and that is the whole reason this is
-    /// shaped as a record: <see cref="Update_WithNoMselIdInTheBody_DetachesAMselsFieldForAnyoneHoldingManageDataFields"/>
+    /// shaped as a record: <see cref="Update_WithNoMselIdInTheBody_WithOnlyManageDataFields_Is403AndLeavesTheFieldAlone"/>
     /// needs to send <c>mselId: null</c> deliberately, which such a helper cannot tell apart from a
     /// caller who did not mention it. Note the options default to none, because the service reconciles
     /// the collection rather than patching it - see

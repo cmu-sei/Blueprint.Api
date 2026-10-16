@@ -30,8 +30,8 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.DataOption>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.DataOption>> GetByDataFieldAsync(Guid dataFieldId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.DataOption> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
-        Task<ViewModels.DataOption> CreateAsync(ViewModels.DataOption dataOption, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
-        Task<ViewModels.DataOption> UpdateAsync(Guid id, ViewModels.DataOption dataOption, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
+        Task<ViewModels.DataOption> CreateAsync(ViewModels.DataOptionCreate dataOption, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
+        Task<ViewModels.DataOption> UpdateAsync(Guid id, ViewModels.DataOptionEdit dataOption, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
         Task<ViewModels.DataOptionImportPreview> PreviewImportAsync(Guid dataFieldId, IFormFile file, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
     }
@@ -103,7 +103,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<DataOption>(dataOption);
         }
 
-        public async Task<ViewModels.DataOption> CreateAsync(ViewModels.DataOption dataOption, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
+        public async Task<ViewModels.DataOption> CreateAsync(ViewModels.DataOptionCreate dataOption, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
         {
             var dataField = await _context.DataFields
                 .FindAsync(dataOption.DataFieldId);
@@ -123,27 +123,30 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            dataOption.Id = dataOption.Id != Guid.Empty ? dataOption.Id : Guid.NewGuid();
-            dataOption.CreatedBy = _user.GetId();
             var dataOptionEntity = _mapper.Map<DataOptionEntity>(dataOption);
+            dataOptionEntity.Id = dataOption.Id != Guid.Empty ? dataOption.Id : Guid.NewGuid();
+            dataOptionEntity.CreatedBy = _user.GetId();
             _context.DataOptions.Add(dataOptionEntity);
             await _context.SaveChangesAsync(ct);
             // update the dataField
             var dataFieldEntity = await _context.DataFields.FindAsync(dataOption.DataFieldId);
             dataField.ModifiedBy = dataFieldEntity.CreatedBy;
             await _context.SaveChangesAsync(ct);
-            dataOption = await GetAsync(dataOptionEntity.Id, true, false, ct);
 
-            return dataOption;
+            return await GetAsync(dataOptionEntity.Id, true, false, ct);
         }
 
-        public async Task<ViewModels.DataOption> UpdateAsync(Guid id, ViewModels.DataOption dataOption, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
+        public async Task<ViewModels.DataOption> UpdateAsync(Guid id, ViewModels.DataOptionEdit dataOption, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
         {
-            var dataField = await _context.DataFields
-                .FindAsync(dataOption.DataFieldId);
-            if (dataField == null)
-                throw new EntityNotFoundException<ViewModels.DataField>("DataField not found when updating a DataOption.  " + dataOption.DataFieldId.ToString());
+            // the option and its stored field, in one query
+            var dataOptionToUpdate = await _context.DataOptions
+                .Include(o => o.DataField)
+                .SingleOrDefaultAsync(v => v.Id == id, ct);
+            if (dataOptionToUpdate == null)
+                throw new EntityNotFoundException<DataOption>();
 
+            // the field's stored owner decides: a MSEL's owners and editors, or ManageDataFields for the rest
+            var dataField = dataOptionToUpdate.DataField;
             if (dataField.MselId.HasValue)
             {
                 if (!hasMselPermission &&
@@ -157,23 +160,12 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            var dataOptionToUpdate = await _context.DataOptions.SingleOrDefaultAsync(v => v.Id == id, ct);
-
-            if (dataOptionToUpdate == null)
-                throw new EntityNotFoundException<DataOption>();
-
-            dataOption.ModifiedBy = _user.GetId();
             _mapper.Map(dataOption, dataOptionToUpdate);
+            dataOptionToUpdate.ModifiedBy = _user.GetId();
             _context.DataOptions.Update(dataOptionToUpdate);
             await _context.SaveChangesAsync(ct);
-            // updated the dataField
-            var dataFieldEntity = await _context.DataFields.FindAsync(dataOption.DataFieldId);
-            dataField.ModifiedBy = dataFieldEntity.ModifiedBy;
-            await _context.SaveChangesAsync(ct);
 
-            dataOption = await GetAsync(dataOptionToUpdate.Id, true, false, ct);
-
-            return dataOption;
+            return await GetAsync(dataOptionToUpdate.Id, true, false, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)

@@ -78,17 +78,107 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    /// <summary>Download with no permission and no role on the MSEL is answered with a 200.</summary>
+    /// <summary>
+    /// The export is every event and every Data Value of the MSEL, so a caller with no permission and
+    /// no role on it is refused.
+    /// </summary>
     [Fact]
-    public async Task Download_WithNoPermissionAndNoRoleOnTheMsel_Is200()
+    public async Task Download_WithNoPermissionAndNoRoleOnTheMsel_Is403()
     {
         var msel = await SeedSheet(["Target"]);
         await SeedEvent(msel, 0, "the exercise's secret");
         var stranger = await Actor().SeedAsync();
 
-        var sheet = Read(await Download(Client(stranger), msel.Id));
+        var response = await Client(stranger).GetAsync($"/api/msels/{msel.Id}/xlsx", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Download_WithViewMsels_Is200()
+    {
+        var msel = await SeedSheet(["Target"]);
+        await SeedEvent(msel, 0, "the exercise's secret");
+        var viewer = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var sheet = Read(await Download(Client(viewer), msel.Id));
 
         Assert.Equal("the exercise's secret", sheet.Text(0, "Target"));
+    }
+
+    /// <summary>
+    /// <see cref="SystemPermission.EditMsels"/> is the neighbouring permission, and it does not grant a
+    /// read of every MSEL's contents.
+    /// </summary>
+    [Fact]
+    public async Task Download_WithEditMselsOnly_Is403()
+    {
+        var msel = await SeedSheet(["Target"]);
+        var editor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(editor).GetAsync($"/api/msels/{msel.Id}/xlsx", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Download_ForAViewerOfTheMsel_Is200()
+    {
+        var msel = await SeedSheet(["Target"]);
+        await SeedEvent(msel, 0, "the exercise's secret");
+        var viewer = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
+
+        var sheet = Read(await Download(Client(viewer), msel.Id));
+
+        Assert.Equal("the exercise's secret", sheet.Text(0, "Target"));
+    }
+
+    [Fact]
+    public async Task Download_ForAViewerOfAnotherMsel_Is403()
+    {
+        var msel = await SeedSheet(["Target"]);
+        var viewer = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
+
+        var response = await Client(viewer).GetAsync($"/api/msels/{msel.Id}/xlsx", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>
+    /// A template's contents follow the rule its events and Data Values already use: readable with
+    /// <c>CreateMsels</c>, the permission that lets a caller start a MSEL from it.
+    /// </summary>
+    [Fact]
+    public async Task Download_OfATemplate_WithCreateMsels_Is200()
+    {
+        var template = await SeedSheet(["Target"], m => m.IsTemplate = true);
+        var creator = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(creator).GetAsync($"/api/msels/{template.Id}/xlsx", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Download_OfATemplate_WithoutCreateMsels_Is403()
+    {
+        var template = await SeedSheet(["Target"], m => m.IsTemplate = true);
+        var stranger = await Actor().SeedAsync();
+
+        var response = await Client(stranger).GetAsync($"/api/msels/{template.Id}/xlsx", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Download_OfATemplate_WithEditMselsOnly_Is403()
+    {
+        var template = await SeedSheet(["Target"], m => m.IsTemplate = true);
+        var editor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(editor).GetAsync($"/api/msels/{template.Id}/xlsx", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -631,17 +721,18 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Replace of an unknown MSEL without edit MSELs is answered with a 500.</summary>
+    /// <summary>
+    /// The owner check runs first and a MSEL that is not there grants nothing, so a caller without
+    /// <c>EditMsels</c> is refused.
+    /// </summary>
     [Fact]
-    public async Task Replace_OfAnUnknownMsel_WithoutEditMsels_Is500()
+    public async Task Replace_OfAnUnknownMsel_WithoutEditMsels_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Put(Client(actor), Guid.NewGuid(), Workbook(["Target"], ["a"]));
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     // Same case as Replace_WithAHeadingThatIsNotADataField_Is500.
@@ -777,7 +868,7 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
     // ---------------------------------------------------------------------------------------------
 
     private async Task<TestActor> Author() =>
-        await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        await Actor().WithSystemPermissions(SystemPermission.ViewMsels, SystemPermission.EditMsels).SeedAsync();
 
     /// <summary>
     /// A MSEL with one Data Field per name, at display orders 1..n.

@@ -22,8 +22,8 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.ProficiencyLevel>> GetByScaleAsync(Guid scaleId, CancellationToken ct);
         Task<ViewModels.ProficiencyLevel> GetAsync(Guid id, CancellationToken ct);
-        Task<ViewModels.ProficiencyLevel> CreateAsync(ViewModels.ProficiencyLevel proficiencyLevel, CancellationToken ct);
-        Task<ViewModels.ProficiencyLevel> UpdateAsync(Guid id, ViewModels.ProficiencyLevel proficiencyLevel, CancellationToken ct);
+        Task<ViewModels.ProficiencyLevel> CreateAsync(ViewModels.ProficiencyLevelCreate proficiencyLevel, CancellationToken ct);
+        Task<ViewModels.ProficiencyLevel> UpdateAsync(Guid id, ViewModels.ProficiencyLevelEdit proficiencyLevel, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     }
 
@@ -58,11 +58,11 @@ namespace Blueprint.Api.Services
             return _mapper.Map<ProficiencyLevel>(item);
         }
 
-        public async Task<ViewModels.ProficiencyLevel> CreateAsync(ViewModels.ProficiencyLevel proficiencyLevel, CancellationToken ct)
+        public async Task<ViewModels.ProficiencyLevel> CreateAsync(ViewModels.ProficiencyLevelCreate proficiencyLevel, CancellationToken ct)
         {
-            proficiencyLevel.Id = proficiencyLevel.Id != Guid.Empty ? proficiencyLevel.Id : Guid.NewGuid();
-            proficiencyLevel.CreatedBy = _user.GetId();
             var entity = _mapper.Map<ProficiencyLevelEntity>(proficiencyLevel);
+            entity.Id = proficiencyLevel.Id != Guid.Empty ? proficiencyLevel.Id : Guid.NewGuid();
+            entity.CreatedBy = _user.GetId();
 
             _context.ProficiencyLevels.Add(entity);
             await _context.SaveChangesAsync(ct);
@@ -70,20 +70,20 @@ namespace Blueprint.Api.Services
             return await GetAsync(entity.Id, ct);
         }
 
-        public async Task<ViewModels.ProficiencyLevel> UpdateAsync(Guid id, ViewModels.ProficiencyLevel proficiencyLevel, CancellationToken ct)
+        public async Task<ViewModels.ProficiencyLevel> UpdateAsync(Guid id, ViewModels.ProficiencyLevelEdit proficiencyLevel, CancellationToken ct)
         {
             var entityToUpdate = await _context.ProficiencyLevels.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (entityToUpdate == null)
                 throw new EntityNotFoundException<ProficiencyLevel>();
 
-            proficiencyLevel.ModifiedBy = _user.GetId();
             _mapper.Map(proficiencyLevel, entityToUpdate);
+            entityToUpdate.ModifiedBy = _user.GetId();
 
             _context.ProficiencyLevels.Update(entityToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            return _mapper.Map(entityToUpdate, proficiencyLevel);
+            return _mapper.Map<ProficiencyLevel>(entityToUpdate);
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

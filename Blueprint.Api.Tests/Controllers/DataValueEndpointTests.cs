@@ -234,9 +234,12 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(cell.Value.Id, Assert.Single(values).Id);
     }
 
-    /// <summary>Get by MSEL returns a value whose data field belongs to another MSEL.</summary>
+    /// <summary>
+    /// A value whose scenario event is on this MSEL and whose data field is on another - a row the API no
+    /// longer writes, but which older data may hold - is not returned as one of this MSEL's cells.
+    /// </summary>
     [Fact]
-    public async Task GetByMsel_ReturnsAValueWhoseDataFieldBelongsToAnotherMsel()
+    public async Task GetByMsel_LeavesOutAValueWhoseDataFieldBelongsToAnotherMsel()
     {
         var cell = await SeedCell();
         var elsewhere = await SeedCell();
@@ -246,8 +249,7 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var values = await GetValues(Client(actor), cell.Msel.Id);
 
-        Assert.Equal(["before", "stray"], values.Select(x => x.Value).Order(StringComparer.Ordinal));
-        Assert.Contains(elsewhere.Field.Id, values.Select(x => x.DataFieldId));
+        Assert.Equal(["before"], values.Select(x => x.Value));
     }
 
     /// <summary>Get by MSEL for a unit member with no role is answered with a 200 while the same value by id is answered with a 403.</summary>
@@ -288,17 +290,18 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(cell.Value.Id, Assert.Single(values).Id);
     }
 
-    /// <summary>Get by MSEL for an unknown MSEL is answered with a 500.</summary>
+    /// <summary>
+    /// An unknown MSEL grants a caller who has to be checked against it nothing, so it is a 403. A caller
+    /// holding <c>ViewMsels</c> skips the check and gets an empty list (below).
+    /// </summary>
     [Fact]
-    public async Task GetByMsel_ForAnUnknownMsel_Is500()
+    public async Task GetByMsel_ForAnUnknownMsel_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}/datavalues", Ct);
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselUserRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -549,52 +552,66 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>Create for an unknown data field is answered with a 500.</summary>
     [Fact]
-    public async Task Create_ForAnUnknownDataField_Is500()
+    public async Task Create_ForAnUnknownDataField_Is404()
     {
         var cell = await SeedCell();
         var actor = await Actor().OnMsel(cell.Msel, MselRole.Owner).SeedAsync();
 
         var response = await Post(Client(actor), Body(Guid.NewGuid(), cell.Event.Id));
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Create for a data field on an inject type is answered with a 500.</summary>
+    /// <summary>
+    /// This endpoint writes the cells of a MSEL's grid. A data field with no MSEL - an inject type's -
+    /// has no cells here, whoever asks.
+    /// </summary>
     [Fact]
-    public async Task Create_ForADataFieldOnAnInjectType_Is500()
-    {
-        var cell = await SeedInjectCell();
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageDataFields).SeedAsync();
-        var inject = TestData.Inject(cell.InjectType.Id);
-        await Seed(inject);
-
-        var response = await Post(Client(actor), Body(cell.Field.Id, injectId: inject.Id));
-
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
-    }
-
-    [Fact]
-    public async Task Create_AValueOnAnInject_WithEditMsels_Is201()
+    public async Task Create_ForADataFieldOnAnInjectType_Is404()
     {
         var cell = await SeedInjectCell();
         var second = TestData.DataField(injectTypeId: cell.InjectType.Id, displayOrder: 2);
         await Seed(second);
+        var row = await SeedCell();
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var response = await Post(Client(actor), Body(second.Id, injectId: cell.Inject.Id));
+        var response = await Post(Client(actor), Body(second.Id, row.Event.Id));
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(await NewContext().DataValues.AnyAsync(x => x.DataFieldId == second.Id, Ct));
+    }
 
-        var stored = await Stored((await Read<DataValue>(response)).Id);
+    /// <summary>
+    /// A value is a cell of one MSEL: the data field's MSEL and the scenario event's must be the same.
+    /// Another MSEL's scenario event is answered as one that is not there, and nothing is written.
+    /// </summary>
+    [Fact]
+    public async Task Create_ForAnotherMselsScenarioEvent_Is404AndWritesNothing()
+    {
+        var cell = await SeedCell();
+        var elsewhere = await SeedCell();
+        var field = TestData.DataField(mselId: cell.Msel.Id, displayOrder: 2);
+        await Seed(field);
+        var actor = await Actor().OnMsel(cell.Msel, MselRole.Editor).SeedAsync();
 
-        Assert.Equal(cell.Inject.Id, stored.InjectId);
-        Assert.Null(stored.ScenarioEventId);
+        var response = await Post(Client(actor), Body(field.Id, elsewhere.Event.Id, "planted"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(await NewContext().DataValues.AnyAsync(x => x.ScenarioEventId == elsewhere.Event.Id && x.DataFieldId == field.Id, Ct));
+    }
+
+    [Fact]
+    public async Task Create_ForAnotherMselsScenarioEvent_WithEditMsels_Is404()
+    {
+        var cell = await SeedCell();
+        var elsewhere = await SeedCell();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Post(Client(actor), Body(cell.Field.Id, elsewhere.Event.Id, "planted"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Single(await NewContext().DataValues.Where(x => x.ScenarioEventId == elsewhere.Event.Id).ToListAsync(Ct));
     }
 
     /// <summary>Create a second value for the same cell is accepted.</summary>
@@ -618,15 +635,22 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(["before", "second"], stored.Order(StringComparer.Ordinal));
     }
 
-    /// <summary>Create without exactly one of a scenario event and an inject is answered with a 500.</summary>
+    /// <summary>
+    /// The create request names a scenario event and nothing else: without one it is refused by model
+    /// binding, and an inject in the body is ignored.
+    /// </summary>
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, true)]
-    public async Task Create_WithoutExactlyOneOfAScenarioEventAndAnInject_Is500(
+    [InlineData(false, false, HttpStatusCode.BadRequest)]
+    [InlineData(false, true, HttpStatusCode.BadRequest)]
+    [InlineData(true, true, HttpStatusCode.Created)]
+    public async Task Create_TheScenarioEventIsTheOnlyParent(
         bool withScenarioEvent,
-        bool withInject)
+        bool withInject,
+        HttpStatusCode expected)
     {
         var cell = await SeedCell();
+        var field = TestData.DataField(mselId: cell.Msel.Id, displayOrder: 2);
+        await Seed(field);
         var injectType = TestData.InjectType();
         await Seed(injectType);
         var inject = TestData.Inject(injectType.Id);
@@ -635,15 +659,14 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await Post(Client(actor), new ValueBody
         {
-            DataFieldId = cell.Field.Id,
+            DataFieldId = field.Id,
             ScenarioEventId = withScenarioEvent ? cell.Event.Id : null,
             InjectId = withInject ? inject.Id : null,
-            Value = "neither"
+            Value = "one parent"
         });
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
-        Assert.Contains("DataValueService.CreateAsync", failure.Detail);
+        Assert.Equal(expected, response.StatusCode);
+        Assert.False(await NewContext().DataValues.AnyAsync(x => x.InjectId == inject.Id, Ct));
     }
 
     [Fact]
@@ -713,9 +736,9 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal("broadcast", sent.Value);
     }
 
-    /// <summary>Create a value on an inject broadcasts to a group named by the empty guid.</summary>
+    /// <summary>A refused value on an inject is not broadcast anywhere.</summary>
     [Fact]
-    public async Task Create_AValueOnAnInject_BroadcastsToAGroupNamedByTheEmptyGuid()
+    public async Task Create_AValueOnAnInject_BroadcastsNothing()
     {
         var cell = await SeedInjectCell();
         var second = TestData.DataField(injectTypeId: cell.InjectType.Id, displayOrder: 2);
@@ -724,9 +747,7 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         await Post(Client(actor), Body(second.Id, injectId: cell.Inject.Id));
 
-        Assert.Equal(
-            [Guid.Empty.ToString(), MainHub.ADMIN_DATA_GROUP],
-            Hub.Recipients(MainHubMethods.DataValueCreated, Guid.Empty));
+        Assert.Empty(Hub.Recipients(MainHubMethods.DataValueCreated, Guid.Empty));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -836,9 +857,12 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    // Same case as Create_ForADataFieldOnAnInjectType_Is500.
+    /// <summary>
+    /// A value on an inject is not a cell of a MSEL's grid, so this endpoint does not edit it. Same case
+    /// as <see cref="Create_ForADataFieldOnAnInjectType_Is404"/>.
+    /// </summary>
     [Fact]
-    public async Task Update_AValueOnAnInject_WithoutEditMsels_Is500()
+    public async Task Update_AValueOnAnInject_WithoutEditMsels_Is404()
     {
         var cell = await SeedInjectCell();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageDataFields).SeedAsync();
@@ -848,8 +872,8 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             cell.Value.Id,
             BodyFor(cell.Value) with { Value = "after" });
 
-        var error = await AssertJsonError<ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", error.Title);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(cell.Value.Value, (await Stored(cell.Value.Id)).Value);
     }
 
     [Fact]
@@ -900,9 +924,12 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(cell.Value.CreatedBy, stored.CreatedBy);
     }
 
-    /// <summary>Update moves the value into another MSELs cell.</summary>
+    /// <summary>
+    /// The edit request carries only the value and its metadata, so the cell's data field and scenario
+    /// event stay what they were, whatever the body names.
+    /// </summary>
     [Fact]
-    public async Task Update_MovesTheValueIntoAnotherMselsCell()
+    public async Task Update_NamingAnotherMselsCell_KeepsTheValueInItsOwnCell()
     {
         var cell = await SeedCell();
         var elsewhere = await SeedCell();
@@ -922,18 +949,19 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var stored = await Stored(cell.Value.Id);
 
-        Assert.Equal(elsewhere.Field.Id, stored.DataFieldId);
-        Assert.Equal(elsewhere.Event.Id, stored.ScenarioEventId);
+        Assert.Equal(cell.Field.Id, stored.DataFieldId);
+        Assert.Equal(cell.Event.Id, stored.ScenarioEventId);
+        Assert.Equal("moved", stored.Value);
 
         var admin = await Actor().WithAllSystemPermissions().SeedAsync();
         var values = await GetValues(Client(admin), elsewhere.Msel.Id);
 
-        Assert.Contains(cell.Value.Id, values.Select(x => x.Id));
+        Assert.DoesNotContain(cell.Value.Id, values.Select(x => x.Id));
     }
 
-    /// <summary>Update with no id in the body is answered with a 500.</summary>
+    /// <summary>The edit request has no id: the route decides which value is written.</summary>
     [Fact]
-    public async Task Update_WithNoIdInTheBody_Is500()
+    public async Task Update_WithNoIdInTheBody_UpdatesTheRoutesValue()
     {
         var cell = await SeedCell();
         var actor = await Actor().OnMsel(cell.Msel, MselRole.Editor).SeedAsync();
@@ -943,7 +971,8 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             cell.Value.Id,
             BodyFor(cell.Value) with { Id = Guid.Empty, Value = "after" });
 
-        Assert.Equal("The property 'DataValueEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("after", (await Stored(cell.Value.Id)).Value);
     }
 
     [Fact]
@@ -1044,18 +1073,19 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>Delete a value on an inject is answered with a 500.</summary>
+    /// <summary>
+    /// Deleting a value on an inject is refused for anyone without <c>EditMsels</c>: the MSEL is resolved
+    /// from the data field, an inject type's field has none, and a missing MSEL grants no ownership.
+    /// </summary>
     [Fact]
-    public async Task Delete_AValueOnAnInject_Is500()
+    public async Task Delete_AValueOnAnInject_Is403()
     {
         var cell = await SeedInjectCell();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageDataFields).SeedAsync();
 
         var response = await Client(actor).DeleteAsync($"/api/dataValues/{cell.Value.Id}", Ct);
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.NotNull(await Stored(cell.Value.Id));
     }
 
@@ -1167,10 +1197,12 @@ public class DataValueXApiTests(DatabaseFixture fixture, XApiEnabledFactory fact
         await AssertRecordedNothing();
     }
 
-    /// <summary>A checkbox on an inject records no statement: there is no MSEL or scenario event to place it
-    /// in.</summary>
+    /// <summary>
+    /// A value on an inject is not a cell of a MSEL's grid, so this endpoint does not edit it, and
+    /// nothing is recorded.
+    /// </summary>
     [Fact]
-    public async Task Update_ACheckboxOnAnInject_RecordsNothing()
+    public async Task Update_ACheckboxOnAnInject_Is404AndRecordsNothing()
     {
         var cell = await SeedInjectCell(DataFieldType.Checkbox, value: "false");
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
@@ -1180,7 +1212,8 @@ public class DataValueXApiTests(DatabaseFixture fixture, XApiEnabledFactory fact
             cell.Value.Id,
             BodyFor(cell.Value) with { Value = "true" });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("false", (await Stored(cell.Value.Id)).Value);
         await AssertRecordedNothing();
     }
 

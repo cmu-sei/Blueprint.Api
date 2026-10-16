@@ -102,11 +102,10 @@ namespace Blueprint.Api.Controllers
         [HttpPost("organizations")]
         [ProducesResponseType(typeof(Organization), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createOrganization")]
-        public async Task<IActionResult> Create([FromBody] Organization organization, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] OrganizationCreate organization, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasOrganizationPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageOrganizations], ct);
-            organization.CreatedBy = User.GetId();
             var createdOrganization = await _organizationService.CreateAsync(organization, hasMselPermission, hasOrganizationPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdOrganization.Id }, createdOrganization);
         }
@@ -116,7 +115,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a Organization with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the organization parameter
+        /// The Organization stays where it is: its MSEL and template flag cannot be changed
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -126,11 +125,10 @@ namespace Blueprint.Api.Controllers
         [HttpPut("organizations/{id}")]
         [ProducesResponseType(typeof(Organization), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateOrganization")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Organization organization, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] OrganizationEdit organization, CancellationToken ct)
         {
             var hasMselPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var hasOrganizationPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageOrganizations], ct);
-            organization.ModifiedBy = User.GetId();
             var updatedOrganization = await _organizationService.UpdateAsync(id, organization, hasMselPermission, hasOrganizationPermission, ct);
             return Ok(updatedOrganization);
         }

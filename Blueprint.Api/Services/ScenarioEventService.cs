@@ -26,10 +26,10 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
-        Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, bool hasSystemPermission, CancellationToken ct);
-        Task<IEnumerable<ViewModels.ScenarioEvent>> CreateFromInjectsAsync(CreateFromInjectsForm createFromInjectsForm, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEventCreate scenarioEvent, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> CreateFromInjectsAsync(CreateFromInjectsForm createFromInjectsForm, bool hasSystemPermission, bool hasViewMselsPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> CopyScenarioEventsToMselAsync(Guid mselId, List<Guid> scenarioEventIdList, bool hasSystemPermission, CancellationToken ct);
-        Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEventEdit scenarioEvent, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<bool> BatchDeleteAsync(Guid[] idList, bool hasSystemPermission, CancellationToken ct);
         Task<Dictionary<Guid, int[]>> GetMovesAndInjects(Guid mselId, CancellationToken ct);
@@ -85,7 +85,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<ViewModels.ScenarioEvent>(item);
         }
 
-        public async Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEvent scenarioEvent, bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEventCreate scenarioEvent, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
             if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
@@ -94,9 +94,19 @@ namespace Blueprint.Api.Services
             // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
             // create the scenario event
-            scenarioEvent.Id = scenarioEvent.Id != Guid.Empty ? scenarioEvent.Id : Guid.NewGuid();
-            scenarioEvent.CreatedBy = _user.GetId();
             var scenarioEventEntity = _mapper.Map<ScenarioEventEntity>(scenarioEvent);
+            scenarioEventEntity.Id = scenarioEvent.Id != Guid.Empty ? scenarioEvent.Id : Guid.NewGuid();
+            scenarioEventEntity.CreatedBy = _user.GetId();
+            // a new event's task is a new task, whatever identity the body gave it
+            if (scenarioEvent.SteamfitterTask != null)
+            {
+                var steamfitterTaskEntity = _mapper.Map<SteamfitterTaskEntity>(scenarioEvent.SteamfitterTask);
+                steamfitterTaskEntity.Id = Guid.NewGuid();
+                steamfitterTaskEntity.ScenarioEventId = scenarioEventEntity.Id;
+                steamfitterTaskEntity.CreatedBy = scenarioEventEntity.CreatedBy;
+                scenarioEventEntity.SteamfitterTask = steamfitterTaskEntity;
+                scenarioEventEntity.SteamfitterTaskId = steamfitterTaskEntity.Id;
+            }
             _context.ScenarioEvents.Add(scenarioEventEntity);
             var scenarioEventEnitities = new List<ScenarioEventEntity>
             {
@@ -105,24 +115,24 @@ namespace Blueprint.Api.Services
             // handle any reordering that may be necessary
             scenarioEventEnitities.AddRange(await ReorderScenarioEvents(scenarioEventEntity, true, ct));
             await _context.SaveChangesAsync(ct);
-            // create the associated data values
-            var dataFieldIdList = _context.DataFields
-                .Where(df => df.MselId == scenarioEvent.MselId)
-                .Select(df => df.Id);
+            // create the associated data values, one for each of the MSEL's data fields
+            var dataFieldIdList = await _context.DataFields
+                .Where(df => df.MselId == scenarioEventEntity.MselId)
+                .Select(df => df.Id)
+                .ToListAsync(ct);
             foreach (var dataFieldId in dataFieldIdList)
             {
                 var dataValue = scenarioEvent.DataValues
                     .FirstOrDefault(dv => dv.DataFieldId == dataFieldId);
-                if (dataValue == null)
+                _context.DataValues.Add(new DataValueEntity
                 {
-                    dataValue = new DataValue();
-                    dataValue.DataFieldId = dataFieldId;
-                }
-                dataValue.Id = Guid.NewGuid();
-                dataValue.ScenarioEventId = scenarioEvent.Id;
-                dataValue.CreatedBy = scenarioEvent.CreatedBy;
-                var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
-                _context.DataValues.Add(dataValueEntity);
+                    Id = Guid.NewGuid(),
+                    DataFieldId = dataFieldId,
+                    ScenarioEventId = scenarioEventEntity.Id,
+                    Value = dataValue?.Value,
+                    CellMetadata = dataValue?.CellMetadata,
+                    CreatedBy = scenarioEventEntity.CreatedBy
+                });
             }
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
@@ -133,7 +143,7 @@ namespace Blueprint.Api.Services
             return  _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
 
-        public async Task<IEnumerable<ViewModels.ScenarioEvent>> CreateFromInjectsAsync(CreateFromInjectsForm createFromInjectsForm, bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> CreateFromInjectsAsync(CreateFromInjectsForm createFromInjectsForm, bool hasSystemPermission, bool hasViewMselsPermission, CancellationToken ct)
         {
             var userId = _user.GetId();
             // user must be a Content Developer or a MSEL owner
@@ -155,6 +165,21 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(m => m.Id == createFromInjectsForm.InjectTypeId);
             if (injectType == null)
                 throw new EntityNotFoundException<InjectTypeEntity>("Inject Type " + createFromInjectsForm.InjectTypeId.ToString() + " was not found.");
+
+            // get the injects, every one of which the user must be able to read, before anything is written
+            var injectIdList = createFromInjectsForm.InjectIdList ?? new List<Guid>();
+            var injects = await _context.Injects
+                .Include(m => m.DataValues)
+                .Where(x => injectIdList.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, ct);
+            var viewableInjectIds = hasViewMselsPermission
+                ? null
+                : await CatalogViewRequirement.ViewableInjectIdsAsync(userId, injects.Keys, _context, ct);
+            foreach (var injectId in injectIdList)
+            {
+                if (!injects.ContainsKey(injectId) || (viewableInjectIds != null && !viewableInjectIds.Contains(injectId)))
+                    throw new EntityNotFoundException<InjectEntity>("Inject " + injectId.ToString() + " was not found.");
+            }
 
             // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
@@ -251,14 +276,9 @@ namespace Blueprint.Api.Services
             }
             await _context.SaveChangesAsync(ct);
             // create a scenario event for each inject
-            foreach (var injectId in createFromInjectsForm.InjectIdList)
+            foreach (var injectId in injectIdList)
             {
-                // get the inject
-                var inject = await _context.Injects
-                    .Include(m => m.DataValues)
-                    .SingleOrDefaultAsync(x => x.Id == injectId);
-                if (inject == null)
-                    throw new EntityNotFoundException<InjectEntity>("Inject " + injectId.ToString() + " was not found.");
+                var inject = injects[injectId];
                 // create the new scenario event
                 var scenarioEventEntity = new ScenarioEventEntity()
                 {
@@ -491,20 +511,21 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<ViewModels.ScenarioEvent>>(scenarioEventEnitities);
         }
 
-        public async Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEvent scenarioEvent, bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEventEdit scenarioEvent, bool hasSystemPermission, CancellationToken ct)
         {
-            var canUpdateScenarioEvent = hasSystemPermission ||
-                (await MselOwnerRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context));
-            // check minimum permission
-            if (!canUpdateScenarioEvent &&
-                !(await MselApproverRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)) &&
-                !(await MselEditorRequirement.IsMet(_user.GetId(), scenarioEvent.MselId, _context)))
-                throw new ForbiddenException($"No update permissions");
-
             // make sure entity exists
             var scenarioEventToUpdate = await _context.ScenarioEvents.Include(m => m.SteamfitterTask).SingleOrDefaultAsync(v => v.Id == id, ct);
             if (scenarioEventToUpdate == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>($"ScenarioEvent not found {id}.");
+
+            // check minimum permission on the event's own MSEL
+            var mselId = scenarioEventToUpdate.MselId;
+            var canUpdateScenarioEvent = hasSystemPermission ||
+                (await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context));
+            if (!canUpdateScenarioEvent &&
+                !(await MselApproverRequirement.IsMet(_user.GetId(), mselId, _context)) &&
+                !(await MselEditorRequirement.IsMet(_user.GetId(), mselId, _context)))
+                throw new ForbiddenException($"No update permissions");
 
             // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
@@ -512,9 +533,37 @@ namespace Blueprint.Api.Services
             var updateOrdering = scenarioEventToUpdate.DeltaSeconds != scenarioEvent.DeltaSeconds ||
                 scenarioEventToUpdate.GroupOrder != scenarioEvent.GroupOrder;
             // update this scenario event
-            scenarioEvent.ModifiedBy = _user.GetId();
+            var modifiedBy = _user.GetId();
             _mapper.Map(scenarioEvent, scenarioEventToUpdate);
+            scenarioEventToUpdate.ModifiedBy = modifiedBy;
             _context.ScenarioEvents.Update(scenarioEventToUpdate);
+            // the task is this event's own: edit the stored one, or give a taskless event a new one
+            if (scenarioEvent.SteamfitterTask != null)
+            {
+                if (scenarioEventToUpdate.SteamfitterTask != null)
+                {
+                    _mapper.Map(scenarioEvent.SteamfitterTask, scenarioEventToUpdate.SteamfitterTask);
+                    scenarioEventToUpdate.SteamfitterTask.ModifiedBy = modifiedBy;
+                }
+                else
+                {
+                    var steamfitterTaskEntity = _mapper.Map<SteamfitterTaskEntity>(scenarioEvent.SteamfitterTask);
+                    steamfitterTaskEntity.Id = Guid.NewGuid();
+                    steamfitterTaskEntity.ScenarioEventId = scenarioEventToUpdate.Id;
+                    steamfitterTaskEntity.CreatedBy = modifiedBy;
+                    _context.SteamfitterTasks.Add(steamfitterTaskEntity);
+                    scenarioEventToUpdate.SteamfitterTaskId = steamfitterTaskEntity.Id;
+                }
+            }
+            else if (scenarioEventToUpdate.SteamfitterTask != null &&
+                !(scenarioEvent.IntegrationTarget ?? "").Contains("Steamfitter"))
+            {
+                // an event that no longer targets Steamfitter loses its task; an edit that only omits
+                // the task, as the timeline does, keeps it
+                _context.SteamfitterTasks.Remove(scenarioEventToUpdate.SteamfitterTask);
+                scenarioEventToUpdate.SteamfitterTask = null;
+                scenarioEventToUpdate.SteamfitterTaskId = null;
+            }
             var scenarioEventEnitities = new List<ScenarioEventEntity>
             {
                 scenarioEventToUpdate
@@ -530,9 +579,9 @@ namespace Blueprint.Api.Services
             {
                 scenarioEventToUpdate.SteamfitterTaskId = steamfitterTask.Id;
             }
-            // get the DataField IDs for this MSEL
+            // get the DataField IDs for the event's MSEL
             var dataFieldIdList = await _context.DataFields
-                .Where(df => df.MselId == scenarioEvent.MselId)
+                .Where(df => df.MselId == mselId)
                 .Select(df => df.Id)
                 .ToListAsync(ct);
             var cellMetadata = GetCellMetaDataForRow(scenarioEvent.RowMetadata);
@@ -540,18 +589,22 @@ namespace Blueprint.Api.Services
             foreach (var dataFieldId in dataFieldIdList)
             {
                 var dataValueToUpdate = await _context.DataValues
-                    .SingleOrDefaultAsync(dv => dv.ScenarioEventId == scenarioEvent.Id && dv.DataFieldId == dataFieldId, ct);
+                    .SingleOrDefaultAsync(dv => dv.ScenarioEventId == id && dv.DataFieldId == dataFieldId, ct);
                 var dataValue = scenarioEvent.DataValues
-                    .SingleOrDefault(dv => dv.ScenarioEventId == scenarioEvent.Id && dv.DataFieldId == dataFieldId);
+                    .SingleOrDefault(dv => dv.ScenarioEventId == id && dv.DataFieldId == dataFieldId);
                 if (dataValueToUpdate != null || dataValue != null)
                 {
                     if (dataValueToUpdate == null)
                     {
-                        dataValue.Id = Guid.NewGuid();
-                        dataValue.CreatedBy = (Guid)scenarioEvent.ModifiedBy;
-                        dataValue.CellMetadata = cellMetadata;
-                        var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
-                        _context.DataValues.Add(dataValueEntity);
+                        _context.DataValues.Add(new DataValueEntity
+                        {
+                            Id = Guid.NewGuid(),
+                            DataFieldId = dataFieldId,
+                            ScenarioEventId = id,
+                            Value = dataValue.Value,
+                            CellMetadata = cellMetadata,
+                            CreatedBy = modifiedBy
+                        });
                     }
                     else if (dataValue == null)
                     {

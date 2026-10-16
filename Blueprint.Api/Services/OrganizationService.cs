@@ -28,8 +28,8 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Organization>> GetTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Organization>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Organization> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.Organization> CreateAsync(ViewModels.Organization organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct);
-        Task<ViewModels.Organization> UpdateAsync(Guid id, ViewModels.Organization organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct);
+        Task<ViewModels.Organization> CreateAsync(ViewModels.OrganizationCreate organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct);
+        Task<ViewModels.Organization> UpdateAsync(Guid id, ViewModels.OrganizationEdit organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Organization>> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
@@ -92,8 +92,12 @@ namespace Blueprint.Api.Services
             return _mapper.Map<Organization>(item);
         }
 
-        public async Task<ViewModels.Organization> CreateAsync(ViewModels.Organization organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct)
+        public async Task<ViewModels.Organization> CreateAsync(ViewModels.OrganizationCreate organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct)
         {
+            // a template belongs to no MSEL, so a MSEL's organization cannot be listed as one
+            if (organization.MselId.HasValue && organization.IsTemplate)
+                throw new ConflictException("A organization cannot belong to a MSEL and be a template.");
+
             if (organization.MselId.HasValue)
             {
                 if (!hasMselPermission &&
@@ -109,59 +113,61 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
-            organization.Id = organization.Id != Guid.Empty ? organization.Id : Guid.NewGuid();
-            organization.CreatedBy = _user.GetId();
             var organizationEntity = _mapper.Map<OrganizationEntity>(organization);
+            organizationEntity.Id = organization.Id != Guid.Empty ? organization.Id : Guid.NewGuid();
+            organizationEntity.CreatedBy = _user.GetId();
             _context.Organizations.Add(organizationEntity);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            if (organization.MselId != null)
+            if (organizationEntity.MselId != null)
             {
-                await ServiceUtilities.SetMselModifiedAsync((Guid)organization.MselId, organization.CreatedBy, organization.DateCreated, _context, ct);
+                await ServiceUtilities.SetMselModifiedAsync((Guid)organizationEntity.MselId, organizationEntity.CreatedBy, organizationEntity.DateCreated, _context, ct);
             }
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
-            organization = await GetAsync(organizationEntity.Id, true, ct);
+            var created = await GetAsync(organizationEntity.Id, true, ct);
 
-            return organization;
+            return created;
         }
 
-        public async Task<ViewModels.Organization> UpdateAsync(Guid id, ViewModels.Organization organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct)
+        public async Task<ViewModels.Organization> UpdateAsync(Guid id, ViewModels.OrganizationEdit organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct)
         {
-            if (organization.MselId.HasValue)
-            {
-                if (!hasMselPermission &&
-                    !await MselOwnerRequirement.IsMet(_user.GetId(), organization.MselId, _context) &&
-                    !await MselEditorRequirement.IsMet(_user.GetId(), organization.MselId, _context))
-                    throw new ForbiddenException();
-            }
-            else
-            {
-                if (!hasOrganizationPermission)
-                    throw new ForbiddenException();
-            }
-
             var organizationToUpdate = await _context.Organizations.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (organizationToUpdate == null)
                 throw new EntityNotFoundException<Organization>();
 
+            // decided on the stored row: a MSEL's organization needs the MSEL permission or an owner or editor
+            // of that MSEL, and a template needs the template permission
+            if (organizationToUpdate.MselId.HasValue)
+            {
+                if (!hasMselPermission &&
+                    !await MselOwnerRequirement.IsMet(_user.GetId(), organizationToUpdate.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(_user.GetId(), organizationToUpdate.MselId, _context))
+                    throw new ForbiddenException();
+            }
+            else
+            {
+                if (!hasOrganizationPermission)
+                    throw new ForbiddenException();
+            }
+
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
-            organization.ModifiedBy = _user.GetId();
             _mapper.Map(organization, organizationToUpdate);
+            organizationToUpdate.ModifiedBy = _user.GetId();
             _context.Organizations.Update(organizationToUpdate);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
-            if (organization.MselId != null)
+            if (organizationToUpdate.MselId != null)
             {
                 await ServiceUtilities.SetMselModifiedAsync((Guid)organizationToUpdate.MselId, organizationToUpdate.ModifiedBy, organizationToUpdate.DateModified, _context, ct);
             }
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
-            organization = await GetAsync(organizationToUpdate.Id, true, ct);
+            var updated = await GetAsync(organizationToUpdate.Id, true, ct);
 
-            return organization;
+            return updated;
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct)
@@ -202,8 +208,9 @@ namespace Blueprint.Api.Services
         public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct)
         {
             var idList = ids?.ToList() ?? new List<Guid>();
+            // only templates are exported: a MSEL's own rows are read through the MSEL
             var organizationEntities = await _context.Organizations
-                .Where(o => idList.Contains(o.Id))
+                .Where(o => idList.Contains(o.Id) && o.MselId == null)
                 .ToListAsync(ct);
             var organizations = _mapper.Map<IEnumerable<ViewModels.Organization>>(organizationEntities).ToList();
 

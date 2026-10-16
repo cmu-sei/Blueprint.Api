@@ -29,8 +29,8 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.DataField>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct);
         Task<ViewModels.DataField> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
-        Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
+        Task<ViewModels.DataField> CreateAsync(ViewModels.DataFieldCreate dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
+        Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataFieldEdit dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
         Task<Guid> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.DataField>> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
@@ -55,7 +55,7 @@ namespace Blueprint.Api.Services
         public async Task<IEnumerable<ViewModels.DataField>> GetTemplatesAsync(CancellationToken ct)
         {
             var dataFieldEntities = await _context.DataFields
-                .Where(dataField => dataField.IsTemplate)
+                .Where(dataField => dataField.IsTemplate && dataField.MselId == null)
                 .Include(dataField => dataField.DataOptions)
                 .ToListAsync(ct);
 
@@ -108,12 +108,19 @@ namespace Blueprint.Api.Services
             return _mapper.Map<DataField>(item);
         }
 
-        public async Task<ViewModels.DataField> CreateAsync(ViewModels.DataField dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
+        public async Task<ViewModels.DataField> CreateAsync(ViewModels.DataFieldCreate dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
         {
             var userId = _user.GetId();
-            var dateNow = DateTime.UtcNow;
+            // a data field belongs to at most one of a MSEL, an inject type and the template list
+            var ownerCount = (dataField.MselId.HasValue ? 1 : 0) + (dataField.InjectTypeId.HasValue ? 1 : 0) + (dataField.IsTemplate ? 1 : 0);
+            if (ownerCount > 1)
+                throw new ConflictException("A data field can belong to only one of a MSEL, an inject type or the template list.");
+
             if (dataField.MselId.HasValue)
             {
+                if (!await _context.Msels.AnyAsync(m => m.Id == dataField.MselId, ct))
+                    throw new EntityNotFoundException<Msel>();
+
                 if (!hasMselPermission &&
                     !await MselOwnerRequirement.IsMet(userId, dataField.MselId, _context) &&
                     !await MselEditorRequirement.IsMet(userId, dataField.MselId, _context))
@@ -123,21 +130,24 @@ namespace Blueprint.Api.Services
             {
                 if (!hasDataFieldPermission)
                     throw new ForbiddenException();
+
+                if (dataField.InjectTypeId.HasValue && !await _context.InjectTypes.AnyAsync(it => it.Id == dataField.InjectTypeId, ct))
+                    throw new EntityNotFoundException<InjectType>();
             }
 
             // start a transaction
             await _context.Database.BeginTransactionAsync();
-            dataField.Id = dataField.Id != Guid.Empty ? dataField.Id : Guid.NewGuid();
-            dataField.CreatedBy = userId;
             var dataFieldEntity = _mapper.Map<DataFieldEntity>(dataField);
+            dataFieldEntity.Id = dataField.Id != Guid.Empty ? dataField.Id : Guid.NewGuid();
+            dataFieldEntity.CreatedBy = userId;
             _context.DataFields.Add(dataFieldEntity);
-            // update DataOptions
+            // add the DataOptions
             foreach (var dataOption in dataField.DataOptions)
             {
-                dataOption.DataFieldId = dataField.Id;
-                dataOption.Id = Guid.NewGuid();
-                dataOption.CreatedBy = userId;
                 var newDataOption = _mapper.Map<DataOptionEntity>(dataOption);
+                newDataOption.Id = Guid.NewGuid();
+                newDataOption.DataFieldId = dataFieldEntity.Id;
+                newDataOption.CreatedBy = userId;
                 _context.DataOptions.Add(newDataOption);
             }
             await _context.SaveChangesAsync(ct);
@@ -149,33 +159,34 @@ namespace Blueprint.Api.Services
                 // reorder the data fields
                 await Reorder(dataFieldEntity, false, ct);
                 // update the MSEL modified info
-                await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataField.CreatedBy, DateTime.UtcNow, _context, ct);
-                // commit the transaction
+                await ServiceUtilities.SetMselModifiedAsync(dataFieldEntity.MselId, userId, DateTime.UtcNow, _context, ct);
             }
             else if (dataFieldEntity.InjectTypeId != null)
             {
                 // reorder the data fields
                 await Reorder(dataFieldEntity, false, ct);
             }
+            // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
             return _mapper.Map<DataField>(dataFieldEntity);
         }
 
-        public async Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataField dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
+        public async Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataFieldEdit dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
         {
-            var exists = await _context.DataFields
-                .AnyAsync(v => v.Id == id, ct);
-            if (!exists)
+            var dataFieldToUpdate = await _context.DataFields
+                .Include(df => df.DataOptions)
+                .SingleOrDefaultAsync(v => v.Id == id, ct);
+            if (dataFieldToUpdate == null)
                 throw new EntityNotFoundException<DataField>();
 
+            // the field's stored owner decides: a MSEL's owners and editors, or ManageDataFields for the rest
             var userId = _user.GetId();
-            var dateNow = DateTime.UtcNow;
-            if (dataField.MselId.HasValue)
+            if (dataFieldToUpdate.MselId.HasValue)
             {
                 if (!hasMselPermission &&
-                    !await MselOwnerRequirement.IsMet(userId, dataField.MselId, _context) &&
-                    !await MselEditorRequirement.IsMet(userId, dataField.MselId, _context))
+                    !await MselOwnerRequirement.IsMet(userId, dataFieldToUpdate.MselId, _context) &&
+                    !await MselEditorRequirement.IsMet(userId, dataFieldToUpdate.MselId, _context))
                     throw new ForbiddenException();
             }
             else
@@ -186,49 +197,40 @@ namespace Blueprint.Api.Services
 
             // start a transaction
             await _context.Database.BeginTransactionAsync();
-            var existingDataOptions = await _context.DataOptions
-                .Where(dataField => dataField.DataFieldId == id)
-                .ToListAsync();
-            // update DataOptions
+            // update DataOptions, only ever this field's own
+            var existingDataOptions = dataFieldToUpdate.DataOptions.ToList();
             foreach (var dataOption in existingDataOptions)
             {
-                if(!dataField.DataOptions.Any(d => d.Id == dataOption.Id))
+                if (!dataField.DataOptions.Any(d => d.Id == dataOption.Id))
                 {
                     _context.DataOptions.Remove(dataOption);
                 }
             }
             foreach (var dataOption in dataField.DataOptions)
             {
-                dataOption.DataFieldId = id;
                 var existingDataOption = existingDataOptions
-                    .Where(d => d.Id == dataOption.Id)
-                    .SingleOrDefault();
+                    .SingleOrDefault(d => d.Id == dataOption.Id);
                 if (existingDataOption != null)
                 {
-                    dataOption.ModifiedBy = userId;
-                    _context.Entry(existingDataOption).CurrentValues.SetValues(dataOption);
+                    _mapper.Map(dataOption, existingDataOption);
+                    existingDataOption.ModifiedBy = userId;
                 }
                 else
                 {
-                    dataOption.Id = Guid.NewGuid();
-                    dataOption.CreatedBy = userId;
                     var newDataOption = _mapper.Map<DataOptionEntity>(dataOption);
+                    newDataOption.Id = Guid.NewGuid();
+                    newDataOption.DataFieldId = id;
+                    newDataOption.CreatedBy = userId;
                     _context.DataOptions.Add(newDataOption);
                 }
             }
             await _context.SaveChangesAsync(ct);
-            // get the existing dataField
-            var dataFieldToUpdate = await _context.DataFields
-                .Include(df => df.DataOptions)
-                .SingleOrDefaultAsync(v => v.Id == id, ct);
             // get the initial and final display order for this data field
-            var first = Math.Min(dataField.DisplayOrder, dataFieldToUpdate.DisplayOrder);
-            var last = Math.Max(dataField.DisplayOrder, dataFieldToUpdate.DisplayOrder);
             var updateDisplayOrder = dataFieldToUpdate.DisplayOrder != dataField.DisplayOrder;
             var newIndexIsGreater = dataField.DisplayOrder > dataFieldToUpdate.DisplayOrder;
             // update values
-            dataField.ModifiedBy = userId;
             _mapper.Map(dataField, dataFieldToUpdate);
+            dataFieldToUpdate.ModifiedBy = userId;
             _context.DataFields.Update(dataFieldToUpdate);
             await _context.SaveChangesAsync(ct);
             // reorder the data fields if necessary
@@ -237,11 +239,11 @@ namespace Blueprint.Api.Services
                 await Reorder(dataFieldToUpdate, newIndexIsGreater, ct);
             }
             // update the MSEL modified info
-            await ServiceUtilities.SetMselModifiedAsync(dataField.MselId, dataField.ModifiedBy, DateTime.UtcNow, _context, ct);
+            await ServiceUtilities.SetMselModifiedAsync(dataFieldToUpdate.MselId, userId, DateTime.UtcNow, _context, ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return _mapper.Map<DataField>(dataFieldToUpdate);;
+            return _mapper.Map<DataField>(dataFieldToUpdate);
         }
 
         public async Task<Guid> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
@@ -318,8 +320,9 @@ namespace Blueprint.Api.Services
         public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct)
         {
             var idList = ids?.ToList() ?? new List<Guid>();
+            // only fields that belong to no MSEL are exported; a MSEL's fields are read through the MSEL
             var dataFieldEntities = await _context.DataFields
-                .Where(df => idList.Contains(df.Id))
+                .Where(df => idList.Contains(df.Id) && df.MselId == null)
                 .Include(df => df.DataOptions)
                 .ToListAsync(ct);
             var dataFields = _mapper.Map<IEnumerable<ViewModels.DataField>>(dataFieldEntities).ToList();

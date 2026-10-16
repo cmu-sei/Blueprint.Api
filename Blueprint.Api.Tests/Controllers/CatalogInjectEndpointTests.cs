@@ -94,9 +94,12 @@ public class CatalogInjectEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(graph.Inject.Id, answered.InjectId);
     }
 
-    /// <summary>Get for a member of a unit the catalog is assigned to is answered with a 403 though they may list the same row.</summary>
+    /// <summary>
+    /// The single read authorizes the row's own catalog, so a unit member of the catalog reads the row as
+    /// they read the list.
+    /// </summary>
     [Fact]
-    public async Task Get_ForAMemberOfAUnitTheCatalogIsAssignedTo_Is403_ThoughTheyMayListTheSameRow()
+    public async Task Get_ForAMemberOfAUnitTheCatalogIsAssignedTo_Is200LikeTheList()
     {
         var graph = await SeedGraph();
         var actor = await Actor().InUnit(await UnitSharing(graph.Catalog.Id)).SeedAsync();
@@ -104,7 +107,7 @@ public class CatalogInjectEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         var response = await Client(actor).GetAsync(
             $"api/cataloginjects/{graph.CatalogInject.Id}", Ct);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var list = await Client(actor).GetAsync(
             $"api/catalogs/{graph.Catalog.Id}/cataloginjects", Ct);
@@ -112,10 +115,9 @@ public class CatalogInjectEndpointTests(DatabaseFixture fixture, BlueprintAppFac
     }
 
     /// <remarks>
-    /// The row's own id is its catalog's id, so the id the requirement reads names the catalog the row
-    /// is in. That makes the three ways <c>CatalogViewRequirement</c> admits a caller without
-    /// <c>ViewCatalogs</c> reachable on this route: a unit the catalog is shared with, the catalog's
-    /// creator, a public catalog.
+    /// A row keyed by its catalog's id reads the same as any other: the three ways
+    /// <c>CatalogViewRequirement</c> admits a caller without <c>ViewCatalogs</c> are a unit the catalog is
+    /// shared with, the catalog's creator and a public catalog.
     /// </remarks>
     [Fact]
     public async Task Get_ForAMemberOfAUnitSharingTheCatalog_OfARowKeyedByItsCatalogsId_Is200()
@@ -204,10 +206,44 @@ public class CatalogInjectEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>
+    /// A row whose own id happens to equal a catalog the caller can see is still judged by the catalog it
+    /// belongs to.
+    /// </summary>
+    [Fact]
+    public async Task Get_ForARowWhoseIdIsAnAccessibleCatalogsId_IsJudgedByItsOwnCatalog()
+    {
+        var actor = await Actor().SeedAsync();
+        var injectType = TestData.InjectType();
+        await Seed(injectType);
+        var visible = TestData.Catalog(injectType.Id, isPublic: true);
+        var hidden = TestData.Catalog(injectType.Id);
+        var inject = TestData.Inject(injectType.Id);
+        await Seed(visible, hidden, inject);
+        var row = TestData.CatalogInject(hidden.Id, inject.Id);
+        row.Id = visible.Id;
+        await Seed(row);
+        // Data-row gate: the public catalog shares the row's id; the row's own catalog is private.
+
+        var response = await Client(actor).GetAsync($"api/cataloginjects/{row.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     [Fact]
     public async Task Get_ForAnIdThatIsNotThere_Is404()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/cataloginjects/{Guid.NewGuid()}", Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_ForAnIdThatIsNotThere_WithoutAnyPermission_Is404()
+    {
+        var actor = await Actor().SeedAsync();
 
         var response = await Client(actor).GetAsync($"api/cataloginjects/{Guid.NewGuid()}", Ct);
 

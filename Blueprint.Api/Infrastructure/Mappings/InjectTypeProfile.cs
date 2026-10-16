@@ -13,6 +13,12 @@ namespace Blueprint.Api.Infrastructure.Mappings
             CreateMap<InjectTypeEntity, InjectType>();
 
             CreateMap<InjectType, InjectTypeEntity>();
+
+            // The write maps copy exactly the request's fields; a new inject type's fields are created by the service.
+            CreateMap<InjectTypeCreate, InjectTypeEntity>(AutoMapper.MemberList.Source)
+                .ForMember(x => x.DataFields, opt => opt.Ignore())
+                .ForSourceMember(x => x.DataFields, opt => opt.DoNotValidate());
+            CreateMap<InjectTypeEdit, InjectTypeEntity>(AutoMapper.MemberList.Source);
         }
     }
 }

@@ -25,8 +25,8 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.MselUnit>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.MselUnit> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
-        Task<ViewModels.MselUnit> CreateAsync(ViewModels.MselUnit mselUnit, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.MselUnit> UpdateAsync(Guid id, ViewModels.MselUnit mselUnit, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.MselUnit> CreateAsync(ViewModels.MselUnitCreate mselUnit, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.MselUnit> UpdateAsync(Guid id, ViewModels.MselUnitEdit mselUnit, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteByIdsAsync(Guid mselId, Guid unitId, bool hasSystemPermission, CancellationToken ct);
     }
@@ -85,7 +85,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<MselUnit>(item);
         }
 
-        public async Task<ViewModels.MselUnit> CreateAsync(ViewModels.MselUnit mselUnit, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.MselUnit> CreateAsync(ViewModels.MselUnitCreate mselUnit, bool hasSystemPermission, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(v => v.Id == mselUnit.MselId, ct);
             if (msel == null)
@@ -133,23 +133,23 @@ namespace Blueprint.Api.Services
             return await GetAsync(mselUnitEntity.Id, true, false, ct);
         }
 
-        public async Task<ViewModels.MselUnit> UpdateAsync(Guid id, ViewModels.MselUnit mselUnit, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.MselUnit> UpdateAsync(Guid id, ViewModels.MselUnitEdit mselUnit, bool hasSystemPermission, CancellationToken ct)
         {
-            // user must be a Content Developer or a MSEL owner
-            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselUnit.MselId, _context)))
-                throw new ForbiddenException();
-
             var mselUnitToUpdate = await _context.MselUnits.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (mselUnitToUpdate == null)
                 throw new EntityNotFoundException<MselUnit>();
 
+            // user must be a Content Developer or an owner of the pairing's MSEL
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselUnitToUpdate.MselId, _context)))
+                throw new ForbiddenException();
+
+            // the pairing has no editable fields, so the edit leaves the MSEL, the Unit and the Unit's own record alone
             _mapper.Map(mselUnit, mselUnitToUpdate);
 
             _context.MselUnits.Update(mselUnitToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            mselUnit = await GetAsync(mselUnitToUpdate.Id, true, false, ct);
-            return mselUnit;
+            return await GetAsync(mselUnitToUpdate.Id, true, false, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)

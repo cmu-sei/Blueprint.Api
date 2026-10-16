@@ -84,7 +84,7 @@ namespace Blueprint.Api.Controllers
         [HttpPost("mselpages")]
         [ProducesResponseType(typeof(MselPage), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createMselPage")]
-        public async Task<IActionResult> Create([FromBody] MselPage mselPage, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] MselPageCreate mselPage, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var createdMselPage = await _mselPageService.CreateAsync(mselPage, hasSystemPermission, ct);
@@ -95,7 +95,7 @@ namespace Blueprint.Api.Controllers
         /// Updates a MselPage
         /// </summary>
         /// <remarks>
-        /// Updates a MselPage with the attributes specified
+        /// Updates a MselPage with the attributes specified. The page stays in its MSEL: the MSEL cannot be changed.
         /// <para />
         /// </remarks>
         /// <param name="id">The Id of the MselPage to update</param>
@@ -104,7 +104,7 @@ namespace Blueprint.Api.Controllers
         [HttpPut("mselpages/{id}")]
         [ProducesResponseType(typeof(MselPage), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateMselPage")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] MselPage mselPage, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] MselPageEdit mselPage, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var updatedPage = await _mselPageService.UpdateAsync(id, mselPage, hasSystemPermission, ct);

@@ -12,8 +12,18 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<ScenarioEventEntity, ScenarioEvent>();
 
-            CreateMap<ScenarioEvent, ScenarioEventEntity>()
-                .ForMember(e => e.DataValues, opt => opt.Ignore());
+            // The write maps copy exactly the request's scalar fields. The cells and the task are
+            // written by ScenarioEventService for the stored event.
+            CreateMap<ScenarioEventCreate, ScenarioEventEntity>(AutoMapper.MemberList.Source)
+                .ForSourceMember(s => s.DataValues, opt => opt.DoNotValidate())
+                .ForSourceMember(s => s.SteamfitterTask, opt => opt.DoNotValidate())
+                .ForMember(e => e.DataValues, opt => opt.Ignore())
+                .ForMember(e => e.SteamfitterTask, opt => opt.Ignore());
+            CreateMap<ScenarioEventEdit, ScenarioEventEntity>(AutoMapper.MemberList.Source)
+                .ForSourceMember(s => s.DataValues, opt => opt.DoNotValidate())
+                .ForSourceMember(s => s.SteamfitterTask, opt => opt.DoNotValidate())
+                .ForMember(e => e.DataValues, opt => opt.Ignore())
+                .ForMember(e => e.SteamfitterTask, opt => opt.Ignore());
 
             CreateMap<ScenarioEventEntity, ScenarioEventEntity>()
                 .ForMember(e => e.Id, opt => opt.Ignore());

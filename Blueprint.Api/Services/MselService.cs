@@ -40,19 +40,19 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct);
-        Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct);
-        Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Msel> CreateAsync(ViewModels.MselCreate msel, CancellationToken ct);
+        Task<ViewModels.Msel> CopyAsync(Guid mselId, bool hasViewMselsPermission, CancellationToken ct);
+        Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.MselEdit msel, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> RemoveUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<Msel> UploadXlsxAsync(FileForm form, CancellationToken ct);
         Task<Msel> ReplaceAsync(MselFileForm form, Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, CancellationToken ct);
+        Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<MselImportResult> ImportJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
-        Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct);
+        Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct);
         Task CancelIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
@@ -244,26 +244,36 @@ namespace Blueprint.Api.Services
             return msel;
         }
 
-        public async Task<ViewModels.Msel> CreateAsync(ViewModels.Msel msel, CancellationToken ct)
+        public async Task<ViewModels.Msel> CreateAsync(ViewModels.MselCreate msel, CancellationToken ct)
         {
-            msel.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
-            msel.DateCreated = DateTime.UtcNow;
-            msel.CreatedBy = _user.GetId();
-            msel.DateModified = null;
-            msel.ModifiedBy = null;
+            if (IsPipelineStatus(msel.Status))
+                throw new ConflictException($"A MSEL cannot be created with status {msel.Status}, which only the integration pipeline sets.");
+
+            // the push deploys this directory as the service account, so only accept one the user can view in Caster
             if (msel.CasterDirectoryId != null)
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
+
+            // the integration IDs and status are not part of the request, so a new MSEL starts with none
             var mselEntity = _mapper.Map<MselEntity>(msel);
+            mselEntity.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
+            mselEntity.CreatedBy = _user.GetId();
 
             _context.Msels.Add(mselEntity);
             await _context.SaveChangesAsync(ct);
-            msel = await GetAsync(mselEntity.Id, true, ct);
 
-            return msel;
+            return await GetAsync(mselEntity.Id, true, ct);
         }
 
-        public async Task<ViewModels.Msel> CopyAsync(Guid mselId, CancellationToken ct)
+        public async Task<ViewModels.Msel> CopyAsync(Guid mselId, bool hasViewMselsPermission, CancellationToken ct)
         {
+            if (!await _context.Msels.AnyAsync(m => m.Id == mselId, ct))
+                throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
+
+            // a copy hands over the whole MSEL, so the caller must be able to view it.
+            // The caller already holds CreateMsels, which is what lets them view a template.
+            if (!hasViewMselsPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, true, _context)))
+                throw new ForbiddenException();
+
             var newMselEntity = await privateMselCopyAsync(mselId, null, ct);
             var msel = _mapper.Map<Msel>(newMselEntity);
             // add the needed parameters for Gallery integration
@@ -583,31 +593,36 @@ namespace Blueprint.Api.Services
             }
         }
 
-        public async Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.Msel msel, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.MselEdit msel, bool hasSystemPermission, CancellationToken ct)
         {
+            var mselToUpdate = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
+            if (mselToUpdate == null)
+                throw new EntityNotFoundException<Msel>();
+
             // user must be a Content Developer or a MSEL owner
             if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), id, _context)))
                 throw new ForbiddenException();
 
-            var mselToUpdate = await _context.Msels.SingleOrDefaultAsync(v => v.Id == id, ct);
-            if (mselToUpdate == null)
-                throw new EntityNotFoundException<Msel>();
+            // the integration pipeline owns its statuses, both moving into them and moving out of them
+            if (msel.Status != mselToUpdate.Status && (IsPipelineStatus(msel.Status) || IsPipelineStatus(mselToUpdate.Status)))
+                throw new ConflictException($"The MSEL status cannot be changed from {mselToUpdate.Status} to {msel.Status}. Only the integration pipeline sets Pushing, Pulling and Deployed, and moves a MSEL out of them.");
 
             // the push deploys this directory as the service account, so only accept one the user can view in Caster
             if (msel.CasterDirectoryId != null && msel.CasterDirectoryId != mselToUpdate.CasterDirectoryId)
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
 
             // okay to update this msel
-            msel.ModifiedBy = _user.GetId();
             _mapper.Map(msel, mselToUpdate);
+            mselToUpdate.ModifiedBy = _user.GetId();
 
             _context.Msels.Update(mselToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            msel = await GetAsync(mselToUpdate.Id, true, ct);
-
-            return msel;
+            return await GetAsync(mselToUpdate.Id, true, ct);
         }
+
+        private static bool IsPipelineStatus(MselItemStatus status) =>
+            status == MselItemStatus.Pushing || status == MselItemStatus.Pulling || status == MselItemStatus.Deployed;
 
         public async Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct)
         {
@@ -714,13 +729,16 @@ namespace Blueprint.Api.Services
             return _mapper.Map<Msel>(mselEntity);
         }
 
-        public async Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, CancellationToken ct)
+        public async Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var msel = await _context.Msels
                 .Where(f => f.Id == mselId)
                 .SingleOrDefaultAsync(ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
+            // the export holds every event and data value, so the caller must be able to view the MSEL's contents
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
+                throw new ForbiddenException();
             var filename = msel.Name.ToLower().EndsWith(".xlsx") ? msel.Name : msel.Name + ".xlsx";
 
             // get the MSEL data into a DataTable
@@ -908,13 +926,16 @@ namespace Blueprint.Api.Services
             return System.Tuple.Create(memoryStream, filename);
         }
 
-        public async Task<DataTable> GetDataTableAsync(Guid mselId, CancellationToken ct)
+        public async Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
             var msel = await _context.Msels
                 .Where(f => f.Id == mselId)
                 .SingleOrDefaultAsync(ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
+            // the data table holds every event and data value, so the caller must be able to view the MSEL's contents
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
+                throw new ForbiddenException();
             var scenarioEventList = await _context.ScenarioEvents
                 .Where(n => n.MselId == mselId)
                 .OrderBy(se => se.DeltaSeconds)
@@ -2636,12 +2657,14 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException($"No invitations exist for MSEL {mselId}.");
             }
 
+            // an invitation can only enroll the user in a team of its own MSEL
             var invitationList = allInvitations
                 .Where(i =>
                     !i.WasDeactivated &&
                     i.ExpirationDateTime > now &&
                     i.UserCount < i.MaxUsersAllowed &&
                     i.Msel.Status == MselItemStatus.Deployed &&
+                    i.Team != null && i.Team.MselId == mselId &&
                     (teamId == null || teamId == i.TeamId))
                 .ToList();
 
@@ -2654,6 +2677,7 @@ namespace Blueprint.Api.Services
                 if (inv.ExpirationDateTime <= now) reasons.Add($"expired (expiration: {inv.ExpirationDateTime}, now: {now})");
                 if (inv.UserCount >= inv.MaxUsersAllowed) reasons.Add($"at capacity ({inv.UserCount}/{inv.MaxUsersAllowed})");
                 if (inv.Msel.Status != MselItemStatus.Deployed) reasons.Add($"MSEL not deployed (status: {inv.Msel.Status})");
+                if (inv.Team == null || inv.Team.MselId != mselId) reasons.Add("team is not in this MSEL");
                 if (teamId != null && inv.TeamId != teamId) reasons.Add($"team mismatch (invitation team: {inv.TeamId}, requested: {teamId})");
                 throw new ForbiddenException($"Invitation is not valid: {string.Join(", ", reasons)}");
             }
@@ -2731,6 +2755,7 @@ namespace Blueprint.Api.Services
                     i.UserCount < i.MaxUsersAllowed &&
                     i.Msel.IsTemplate &&
                     i.MselId == mselId &&
+                    i.Team.MselId == mselId &&
                     (teamId == null || i.TeamId == teamId))
                 .ToListAsync(ct);
             var invitation = invitationList

@@ -15,6 +15,8 @@ namespace Blueprint.Api.Infrastructure.Mappings
             CreateMap<CiteAction, CiteActionEntity>()
                 .ForMember(ca => ca.Msel, opt => opt.Ignore())
                 .ForMember(ca => ca.Team, Options => Options.Ignore());
+            CreateMap<CiteActionCreate, CiteActionEntity>(AutoMapper.MemberList.Source);
+            CreateMap<CiteActionEdit, CiteActionEntity>(AutoMapper.MemberList.Source);
 
         }
     }

@@ -28,7 +28,8 @@ namespace Blueprint.Api.Infrastructure.Authorization
             }
             else if (requirement.RequiredPermissions == null || requirement.RequiredPermissions.Length == 0)
             {
-                context.Succeed(requirement);
+                // a requirement that names no permission grants nothing
+                context.Fail();
             }
             else if (requirement.RequiredPermissions.Any(p => context.User.HasClaim(AuthorizationConstants.PermissionClaimType, p.ToString())))
             {

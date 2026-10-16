@@ -27,9 +27,9 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Team>> GetMineAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Team>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Team>> GetByUserAsync(Guid userId, CancellationToken ct);
-        Task<ViewModels.Team> CreateAsync(ViewModels.Team team, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Team> CreateAsync(ViewModels.TeamCreate team, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Team> CreateFromUnitAsync(Guid unitId, Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.Team> UpdateAsync(Guid id, ViewModels.Team team, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Team> UpdateAsync(Guid id, ViewModels.TeamEdit team, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
     }
 
@@ -99,7 +99,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<Team>>(items);
         }
 
-        public async Task<ViewModels.Team> CreateAsync(ViewModels.Team team, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.Team> CreateAsync(ViewModels.TeamCreate team, bool hasSystemPermission, CancellationToken ct)
         {
             if (
                     !hasSystemPermission &&
@@ -107,10 +107,10 @@ namespace Blueprint.Api.Services
                )
                 throw new ForbiddenException();
 
-            team.Id = team.Id != Guid.Empty ? team.Id : Guid.NewGuid();
-            team.CreatedBy = _user.GetId();
             team.CasterTeamVariable = NormalizeCasterTeamVariable(team.CasterTeamVariable);
             var teamEntity = _mapper.Map<TeamEntity>(team);
+            teamEntity.Id = team.Id != Guid.Empty ? team.Id : Guid.NewGuid();
+            teamEntity.CreatedBy = _user.GetId();
 
             _context.Teams.Add(teamEntity);
             await _context.SaveChangesAsync(ct);
@@ -159,23 +159,22 @@ namespace Blueprint.Api.Services
             return await GetAsync(team.Id, ct);
         }
 
-        public async Task<ViewModels.Team> UpdateAsync(Guid id, ViewModels.Team team, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.Team> UpdateAsync(Guid id, ViewModels.TeamEdit team, bool hasSystemPermission, CancellationToken ct)
         {
             var teamToUpdate = await _context.Teams.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (teamToUpdate == null)
                 throw new EntityNotFoundException<Team>();
 
+            // user must be a Content Developer or an owner of the team's MSEL
             if (
                     !hasSystemPermission &&
-                    !(await MselOwnerRequirement.IsMet(_user.GetId(), team.MselId, _context))
+                    !(await MselOwnerRequirement.IsMet(_user.GetId(), teamToUpdate.MselId, _context))
             )
                 throw new ForbiddenException();
 
-            if (teamToUpdate.MselId != team.MselId)
-                throw new ArgumentException("The MselId of the team cannot be changed!");
-
             team.CasterTeamVariable = NormalizeCasterTeamVariable(team.CasterTeamVariable);
             _mapper.Map(team, teamToUpdate);
+            teamToUpdate.ModifiedBy = _user.GetId();
 
             _context.Teams.Update(teamToUpdate);
             await _context.SaveChangesAsync(ct);

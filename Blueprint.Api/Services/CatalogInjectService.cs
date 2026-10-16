@@ -67,14 +67,17 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.CatalogInject> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
-            if (!hasSystemPermission && !await CatalogViewRequirement.IsMet(_user.GetId(), id, _context))
-                throw new ForbiddenException();
-
             var item = await _context.CatalogInjects
                 .Include(m => m.Inject)
                 .ThenInclude(n => n.DataValues)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
+            if (item == null)
+                throw new EntityNotFoundException<CatalogInject>();
+
+            // the user must be able to view the catalog the row belongs to
+            if (!hasSystemPermission && !await CatalogViewRequirement.IsMet(_user.GetId(), item.CatalogId, _context))
+                throw new ForbiddenException();
 
             return _mapper.Map<CatalogInject>(item);
         }

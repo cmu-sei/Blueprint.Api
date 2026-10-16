@@ -23,8 +23,8 @@ namespace Blueprint.Api.Services
     {
         Task<IEnumerable<ViewModels.MselPage>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.MselPage> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
-        Task<ViewModels.MselPage> CreateAsync(ViewModels.MselPage mselPage, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.MselPage> UpdateAsync(Guid id, ViewModels.MselPage mselPage, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.MselPage> CreateAsync(ViewModels.MselPageCreate mselPage, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.MselPage> UpdateAsync(Guid id, ViewModels.MselPageEdit mselPage, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
     }
 
@@ -83,7 +83,7 @@ namespace Blueprint.Api.Services
             return _mapper.Map<MselPage>(item);
         }
 
-        public async Task<ViewModels.MselPage> CreateAsync(ViewModels.MselPage mselPage, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.MselPage> CreateAsync(ViewModels.MselPageCreate mselPage, bool hasSystemPermission, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(v => v.Id == mselPage.MselId, ct);
             if (msel == null)
@@ -102,24 +102,22 @@ namespace Blueprint.Api.Services
             return await GetAsync(mselPageEntity.Id, true, false, ct);
         }
 
-        public async Task<ViewModels.MselPage> UpdateAsync(Guid id, ViewModels.MselPage mselPage, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.MselPage> UpdateAsync(Guid id, ViewModels.MselPageEdit mselPage, bool hasSystemPermission, CancellationToken ct)
         {
-            // user must be a Content Developer or a MSEL owner
-            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselPage.MselId, _context)))
-                throw new ForbiddenException();
-
             var mselPageToUpdate = await _context.MselPages.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (mselPageToUpdate == null)
                 throw new EntityNotFoundException<MselPage>();
+
+            // user must be a Content Developer or an owner of the page's MSEL
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselPageToUpdate.MselId, _context)))
+                throw new ForbiddenException();
 
             _mapper.Map(mselPage, mselPageToUpdate);
 
             _context.MselPages.Update(mselPageToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            mselPage = await GetAsync(mselPageToUpdate.Id, true, false, ct);
-
-            return mselPage;
+            return await GetAsync(mselPageToUpdate.Id, true, false, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)

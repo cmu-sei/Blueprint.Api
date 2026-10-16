@@ -83,10 +83,9 @@ namespace Blueprint.Api.Controllers
         [HttpPost("playerApplications")]
         [ProducesResponseType(typeof(PlayerApplication), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createPlayerApplication")]
-        public async Task<IActionResult> Create([FromBody] PlayerApplication playerApplication, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] PlayerApplicationCreate playerApplication, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            playerApplication.CreatedBy = User.GetId();
             var createdPlayerApplication = await _playerApplicationService.CreateAsync(playerApplication, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdPlayerApplication.Id }, createdPlayerApplication);
         }
@@ -104,10 +103,9 @@ namespace Blueprint.Api.Controllers
         [HttpPost("playerApplications/push")]
         [ProducesResponseType(typeof(PlayerApplication), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createAndPushPlayerApplication")]
-        public async Task<IActionResult> CreateAndPush([FromBody] PlayerApplication playerApplication, CancellationToken ct)
+        public async Task<IActionResult> CreateAndPush([FromBody] PlayerApplicationCreate playerApplication, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            playerApplication.CreatedBy = User.GetId();
             var createdPlayerApplication = await _playerApplicationService.CreateAndPushAsync(playerApplication, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdPlayerApplication.Id }, createdPlayerApplication);
         }
@@ -117,7 +115,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a PlayerApplication with the attributes specified.
-        /// The ID from the route MUST MATCH the ID contained in the playerApplication parameter
+        /// The application stays in its MSEL: the MSEL cannot be changed.
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -127,10 +125,9 @@ namespace Blueprint.Api.Controllers
         [HttpPut("playerApplications/{id}")]
         [ProducesResponseType(typeof(PlayerApplication), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updatePlayerApplication")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] PlayerApplication playerApplication, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] PlayerApplicationEdit playerApplication, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            playerApplication.ModifiedBy = User.GetId();
             var updatedPlayerApplication = await _playerApplicationService.UpdateAsync(id, playerApplication, hasSystemPermission, ct);
             return Ok(updatedPlayerApplication);
         }

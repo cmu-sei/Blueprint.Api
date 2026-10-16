@@ -182,18 +182,19 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
             (await Error(response)).Title);
     }
 
-    /// <summary>Push for an unknown MSEL with no permission is answered with a 500.</summary>
+    /// <summary>
+    /// An unknown MSEL grants no ownership, so a caller without the system permission is refused - and
+    /// does not learn whether the MSEL exists.
+    /// </summary>
     [Fact]
-    public async Task Push_ForAnUnknownMsel_WithNoPermission_Is500()
+    public async Task Push_ForAnUnknownMsel_WithNoPermission_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Client(actor)
             .PostAsync($"/api/msels/{Guid.NewGuid()}/integrations", null, Ct);
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>Push for an already deployed MSEL is answered with a 500.</summary>

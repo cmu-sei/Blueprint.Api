@@ -27,8 +27,8 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.InjectType>> GetAsync(CancellationToken ct);
         Task<ViewModels.InjectType> GetAsync(Guid id, CancellationToken ct);
         // Task<IEnumerable<ViewModels.InjectType>> GetByUserIdAsync(Guid userId, CancellationToken ct);
-        Task<ViewModels.InjectType> CreateAsync(ViewModels.InjectType injectType, CancellationToken ct);
-        Task<ViewModels.InjectType> UpdateAsync(Guid id, ViewModels.InjectType injectType, CancellationToken ct);
+        Task<ViewModels.InjectType> CreateAsync(ViewModels.InjectTypeCreate injectType, CancellationToken ct);
+        Task<ViewModels.InjectType> UpdateAsync(Guid id, ViewModels.InjectTypeEdit injectType, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
         Task<IEnumerable<ViewModels.InjectType>> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
@@ -63,32 +63,50 @@ namespace Blueprint.Api.Services
             return _mapper.Map<InjectType>(item);
         }
 
-        public async Task<ViewModels.InjectType> CreateAsync(ViewModels.InjectType injectType, CancellationToken ct)
+        public async Task<ViewModels.InjectType> CreateAsync(ViewModels.InjectTypeCreate injectType, CancellationToken ct)
         {
-            injectType.Id = injectType.Id != Guid.Empty ? injectType.Id : Guid.NewGuid();
-            injectType.CreatedBy = _user.GetId();
+            var userId = _user.GetId();
             var injectTypeEntity = _mapper.Map<InjectTypeEntity>(injectType);
-
+            injectTypeEntity.Id = injectType.Id != Guid.Empty ? injectType.Id : Guid.NewGuid();
+            injectTypeEntity.CreatedBy = userId;
             _context.InjectTypes.Add(injectTypeEntity);
+
+            // the fields sent with a new inject type are always new fields of it
+            foreach (var dataField in injectType.DataFields ?? [])
+            {
+                var dataFieldEntity = _mapper.Map<DataFieldEntity>(dataField);
+                dataFieldEntity.Id = Guid.NewGuid();
+                dataFieldEntity.InjectTypeId = injectTypeEntity.Id;
+                dataFieldEntity.CreatedBy = userId;
+                _context.DataFields.Add(dataFieldEntity);
+                foreach (var dataOption in dataField.DataOptions ?? [])
+                {
+                    var dataOptionEntity = _mapper.Map<DataOptionEntity>(dataOption);
+                    dataOptionEntity.Id = Guid.NewGuid();
+                    dataOptionEntity.DataFieldId = dataFieldEntity.Id;
+                    dataOptionEntity.CreatedBy = userId;
+                    _context.DataOptions.Add(dataOptionEntity);
+                }
+            }
             await _context.SaveChangesAsync(ct);
 
             return await GetAsync(injectTypeEntity.Id, ct);
         }
 
-        public async Task<ViewModels.InjectType> UpdateAsync(Guid id, ViewModels.InjectType injectType, CancellationToken ct)
+        public async Task<ViewModels.InjectType> UpdateAsync(Guid id, ViewModels.InjectTypeEdit injectType, CancellationToken ct)
         {
             var injectTypeToUpdate = await _context.InjectTypes.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (injectTypeToUpdate == null)
                 throw new EntityNotFoundException<InjectType>();
 
-            injectType.ModifiedBy = _user.GetId();
             _mapper.Map(injectType, injectTypeToUpdate);
+            injectTypeToUpdate.ModifiedBy = _user.GetId();
 
             _context.InjectTypes.Update(injectTypeToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            return _mapper.Map(injectTypeToUpdate, injectType);
+            return _mapper.Map<InjectType>(injectTypeToUpdate);
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

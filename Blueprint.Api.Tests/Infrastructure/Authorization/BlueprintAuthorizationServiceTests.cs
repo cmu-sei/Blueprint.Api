@@ -117,13 +117,17 @@ public class BlueprintAuthorizationServiceTests
         Assert.False(await _service.AuthorizeAsync([SystemPermission.CreateMsels], Ct));
     }
 
-    /// <summary>An empty permission array authorizes any signed-in caller.</summary>
+    /// <remarks>
+    /// An empty array authorizes nobody, because <see cref="SystemPermissionHandler"/> fails an empty
+    /// requirement: a controller computing its permission array and arriving at none closes the action.
+    /// See <see cref="SystemPermissionHandlerTests.AnEmptyRequirement_FailsForAnyUser"/>.
+    /// </remarks>
     [Fact]
-    public async Task AuthorizeAsync_WithNoRequiredPermissions_IsTrueForAnyone()
+    public async Task AuthorizeAsync_WithNoRequiredPermissions_IsFalseForAnyone()
     {
         _userClaims.GetCurrentClaimsPrincipal().Returns(Principal());
 
-        Assert.True(await _service.AuthorizeAsync([], Ct));
+        Assert.False(await _service.AuthorizeAsync([], Ct));
     }
 
     /// <summary>

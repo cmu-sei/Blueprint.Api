@@ -12,8 +12,13 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<DataOptionEntity, DataOption>();
 
-            CreateMap<DataOption, DataOptionEntity>()
-                .ForMember(x => x.DataField, opt => opt.Ignore());
+            // The write maps copy exactly the request's fields.
+            CreateMap<DataOptionCreate, DataOptionEntity>(AutoMapper.MemberList.Source);
+            CreateMap<DataOptionEdit, DataOptionEntity>(AutoMapper.MemberList.Source);
+            // An option sent with its field: the service decides its id and its field.
+            CreateMap<DataFieldOption, DataOptionEntity>(AutoMapper.MemberList.Source)
+                .ForMember(x => x.Id, opt => opt.Ignore())
+                .ForSourceMember(x => x.Id, opt => opt.DoNotValidate());
 
         }
     }

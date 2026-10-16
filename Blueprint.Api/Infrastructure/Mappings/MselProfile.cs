@@ -15,22 +15,10 @@ namespace Blueprint.Api.Infrastructure.Mappings
                 .ForMember(m => m.Units, opt => opt.MapFrom(x => x.MselUnits.Select(y => y.Unit)))
                 .ForMember(m => m.Pages, opt => opt.ExplicitExpansion());
 
-            CreateMap<Msel, MselEntity>()
-                .ForMember(m => m.Cards, opt => opt.Ignore())
-                .ForMember(m => m.DataFields, opt => opt.Ignore())
-                .ForMember(m => m.Moves, opt => opt.Ignore())
-                .ForMember(m => m.Organizations, opt => opt.Ignore())
-                .ForMember(m => m.Pages, opt => opt.Ignore())
-                .ForMember(m => m.ScenarioEvents, opt => opt.Ignore())
-                .ForMember(m => m.Teams, opt => opt.Ignore())
-                .ForMember(m => m.MselUnits, opt => opt.Ignore())
-                .ForMember(m => m.MselCompetencies, opt => opt.Ignore())
-                .ForMember(m => m.UserMselRoles, opt => opt.Ignore())
-                // Only the integration service writes these. A stale UI save must not clear them,
-                // or Blueprint loses track of a deployed Caster workspace and its VMs.
-                .ForMember(m => m.CasterWorkspaceId, opt => opt.Ignore())
-                .ForMember(m => m.CasterRunId, opt => opt.Ignore())
-                .ForMember(m => m.DateCreated, opt => opt.Ignore());
+            // The write maps copy exactly the request's fields, so they are validated from the source
+            // side: everything else on the entity is left as it is.
+            CreateMap<MselCreate, MselEntity>(AutoMapper.MemberList.Source);
+            CreateMap<MselEdit, MselEntity>(AutoMapper.MemberList.Source);
 
             CreateMap<MselEntity, MselEntity>()
                 .ForMember(e => e.Id, opt => opt.Ignore());

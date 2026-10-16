@@ -123,10 +123,9 @@ namespace Blueprint.Api.Controllers
         [HttpPost("teams")]
         [ProducesResponseType(typeof(Team), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "createTeam")]
-        public async Task<IActionResult> Create([FromBody] Team team, CancellationToken ct)
+        public async Task<IActionResult> Create([FromBody] TeamCreate team, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            team.CreatedBy = User.GetId();
             var createdTeam = await _teamService.CreateAsync(team, hasSystemPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdTeam.Id }, createdTeam);
         }
@@ -166,7 +165,7 @@ namespace Blueprint.Api.Controllers
         [HttpPut("teams/{id}")]
         [ProducesResponseType(typeof(Team), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateTeam")]
-        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] Team team, CancellationToken ct)
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] TeamEdit team, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var updatedTeam = await _teamService.UpdateAsync(id, team, hasSystemPermission, ct);

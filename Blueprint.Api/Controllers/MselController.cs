@@ -364,6 +364,21 @@ namespace Blueprint.Api.Controllers
             return Ok(result);
         }
 
+        /// <summary> Import a json MSEL file and report what was imported, changed and skipped </summary>
+        /// <param name="form"> The files to upload and their settings </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/json/import")]
+        [ProducesResponseType(typeof(MselImportResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "importJsonMsel")]
+        public async Task<IActionResult> ImportJsonAsync([FromForm] FileForm form, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct))
+                throw new ForbiddenException();
+
+            var result = await _mselService.ImportJsonAsync(form, ct);
+            return Ok(result);
+        }
+
         /// <summary> Download a msel by id as json file </summary>
         /// <param name="id"> The id of the msel </param>
         /// <param name="ct"></param>

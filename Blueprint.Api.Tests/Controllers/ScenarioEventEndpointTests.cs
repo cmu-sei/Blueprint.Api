@@ -420,17 +420,17 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    /// <summary>Create for an unknown MSEL is answered with a 500.</summary>
+    /// <summary>
+    /// An MSEL that does not exist grants no role, so an ordinary caller is refused.
+    /// </summary>
     [Fact]
-    public async Task Create_ForAnUnknownMsel_Is500()
+    public async Task Create_ForAnUnknownMsel_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Post(Client(actor), Body(Guid.NewGuid()));
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>
@@ -675,9 +675,12 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Update chooses its permission branch from the request body and moves the row.</summary>
+    /// <summary>
+    /// The permission check runs on the row's stored MSEL, so owning the MSEL named in the body buys
+    /// nothing, and the row stays where it is.
+    /// </summary>
     [Fact]
-    public async Task Update_ChoosesItsPermissionBranchFromTheRequestBodyAndMovesTheRow()
+    public async Task Update_AsTheOwnerOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheRowAlone()
     {
         var row = await SeedRow();
         var mine = await SeedMsel();
@@ -688,20 +691,91 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
             row.Event.Id,
             BodyFor(row.Event) with { MselId = mine.Id, Information = "taken" });
 
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        var stored = await Stored(row.Event.Id);
+
+        Assert.Equal(row.Msel.Id, stored.MselId);
+        Assert.Equal(row.Event.Information, stored.Information);
+        Assert.Equal("before", Assert.Single(await CellsOn(row.Event.Id)).Value);
+        Assert.Null((await StoredMsel(mine.Id)).DateModified);
+        Assert.Null((await StoredMsel(row.Msel.Id)).DateModified);
+    }
+
+    /// <summary>
+    /// The editing roles count only on the row's own MSEL: holding one on another MSEL is refused.
+    /// </summary>
+    [Theory]
+    [InlineData(MselRole.Editor)]
+    [InlineData(MselRole.Approver)]
+    public async Task Update_WithAnEditingRoleOnAnotherMsel_Is403AndLeavesTheRowAlone(MselRole role)
+    {
+        var row = await SeedRow();
+        var actor = await Actor().OnNewMsel(role).SeedAsync();
+
+        var response = await Put(
+            Client(actor),
+            row.Event.Id,
+            BodyFor(row.Event) with { Information = "taken" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(row.Event.Information, (await Stored(row.Event.Id)).Information);
+    }
+
+    /// <summary>
+    /// An editor's change that names another MSEL is applied to the row, which stays in its own MSEL.
+    /// </summary>
+    [Fact]
+    public async Task Update_AsAnEditor_NamingAnotherMselInTheBody_KeepsTheRowInItsMsel()
+    {
+        var row = await SeedRow();
+        var other = await SeedMsel();
+        var actor = await Actor().OnMsel(row.Msel, MselRole.Editor).SeedAsync();
+
+        var response = await Put(
+            Client(actor),
+            row.Event.Id,
+            BodyFor(row.Event) with { MselId = other.Id, Information = "after" });
+
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var stored = await Stored(row.Event.Id);
 
-        Assert.Equal(mine.Id, stored.MselId);
-        Assert.Equal("taken", stored.Information);
-        Assert.Equal(row.Field.Id, Assert.Single(await CellsOn(row.Event.Id)).DataFieldId);
-        Assert.NotNull((await StoredMsel(mine.Id)).DateModified);
-        Assert.Null((await StoredMsel(row.Msel.Id)).DateModified);
+        Assert.Equal(row.Msel.Id, stored.MselId);
+        Assert.Equal("after", stored.Information);
+        Assert.Null((await StoredMsel(other.Id)).DateModified);
     }
 
-    /// <summary>Update with a different id in the body is answered with a 500.</summary>
+    /// <summary>
+    /// The cells written are the row's own MSEL's: a cell for another MSEL's data field is ignored.
+    /// </summary>
     [Fact]
-    public async Task Update_WithADifferentIdInTheBody_Is500()
+    public async Task Update_WithACellForAnotherMselsDataField_IgnoresIt()
+    {
+        var row = await SeedRow();
+        var other = await SeedMsel();
+        var foreignField = TestData.DataField(mselId: other.Id);
+        await Seed(foreignField);
+        var actor = await Actor().OnMsel(row.Msel, MselRole.Editor).SeedAsync();
+
+        var response = await Put(
+            Client(actor),
+            row.Event.Id,
+            BodyFor(row.Event) with
+            {
+                MselId = other.Id,
+                DataValues = [new ValueBody { DataFieldId = foreignField.Id, ScenarioEventId = row.Event.Id, Value = "planted" }]
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(row.Field.Id, Assert.Single(await CellsOn(row.Event.Id)).DataFieldId);
+    }
+
+    /// <summary>
+    /// The edit request has no id, so another id in the body is ignored and the route's row is written.
+    /// </summary>
+    [Fact]
+    public async Task Update_WithADifferentIdInTheBody_UpdatesTheRoutesRow()
     {
         var row = await SeedRow();
         var actor = await Actor().OnMsel(row.Msel, MselRole.Editor).SeedAsync();
@@ -709,9 +783,10 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         var response = await Put(
             Client(actor),
             row.Event.Id,
-            BodyFor(row.Event) with { Id = Guid.NewGuid() });
+            BodyFor(row.Event) with { Id = Guid.NewGuid(), Information = "after" });
 
-        Assert.Equal("The property 'ScenarioEventEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("after", (await Stored(row.Event.Id)).Information);
     }
 
     [Fact]

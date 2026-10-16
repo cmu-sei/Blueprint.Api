@@ -555,9 +555,9 @@ public static class TestData
     /// </summary>
     /// <remarks>
     /// <c>Id</c> is settable on purpose. It is the row's own primary key and nothing in the API should care
-    /// what it is - but <c>InjectService.GetAsync</c> compares it against a <em>user</em> id, so a test of
-    /// that comparison has to be able to choose it. See
-    /// <c>InjectEndpointTests.Get_ForACatalogUnitRowWhosePrimaryKeyEqualsTheCallersId_ReadsAnyInject</c>.
+    /// what it is, and a test that proves a key coinciding with a user id grants nothing has to be able to
+    /// choose it. See
+    /// <c>InjectEndpointTests.Get_ForACatalogUnitRowWhosePrimaryKeyEqualsTheCallersId_Is403</c>.
     /// </remarks>
     public static CatalogUnitEntity CatalogUnit(Guid unitId, Guid catalogId, Guid? id = null) =>
         new(unitId, catalogId) { Id = id ?? Guid.NewGuid() };

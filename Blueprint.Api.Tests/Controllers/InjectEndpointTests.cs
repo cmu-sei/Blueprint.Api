@@ -128,8 +128,8 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
 
     /// <remarks>
     /// The unit path is a <c>CatalogUnit</c> row plus a <c>UnitUser</c> row, with no role anywhere in it -
-    /// the whole conjunction <c>CatalogViewRequirementTests</c> pins. This is the seam
-    /// <see cref="Get_ForAUnitMemberOfTheCatalog_Is403"/> shows the single read failing to use.
+    /// the whole conjunction <c>CatalogViewRequirementTests</c> pins, and the single read uses it too
+    /// (<see cref="Get_ForAUnitMemberOfTheCatalog_Is200"/>).
     /// </remarks>
     [Fact]
     public async Task GetByCatalog_ForAPrivateCatalog_ForAMemberOfAUnitOnIt_Is200()
@@ -301,26 +301,55 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         Assert.Equal("cell", Assert.Single(answer.DataValues).Value);
     }
 
-    /// <summary>Get for the catalogs creator is answered with a 403.</summary>
+    /// <summary>
+    /// The single read follows the list route's rule: the creator of a catalog the inject is in reads it.
+    /// </summary>
     [Fact]
-    public async Task Get_ForTheCatalogsCreator_Is403()
+    public async Task Get_ForTheCatalogsCreator_Is200()
     {
         var actor = await Actor().SeedAsync();
         var type = await SeedInjectType();
-        var catalog = await SeedCatalog(type.Id, createdBy: actor.Id, isPublic: true);
+        var catalog = await SeedCatalog(type.Id, createdBy: actor.Id);
         var inject = await SeedInject(type.Id, catalog.Id);
+        // Data-row gate: the catalog's CreatedBy is the caller.
+
+        var response = await Client(actor).GetAsync(Inject(inject.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_ForTheCreatorOfAnotherCatalog_Is403()
+    {
+        var actor = await Actor().SeedAsync();
+        var type = await SeedInjectType();
+        await SeedCatalog(type.Id, createdBy: actor.Id);
+        var theirs = await SeedCatalog(type.Id);
+        var inject = await SeedInject(type.Id, theirs.Id);
+        // Data-row gate: the caller created another catalog, not the inject's.
 
         var response = await Client(actor).GetAsync(Inject(inject.Id), Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Equal(
-            HttpStatusCode.OK,
-            (await ClientFor(actor.Id, null).GetAsync(InjectsOf(catalog.Id), Ct)).StatusCode);
     }
 
-    /// <summary>Get for a unit member of the catalog is answered with a 403.</summary>
     [Fact]
-    public async Task Get_ForAUnitMemberOfTheCatalog_Is403()
+    public async Task Get_ForAnInjectWhenOnlyAnotherCatalogIsPublic_Is403()
+    {
+        var type = await SeedInjectType();
+        await SeedCatalog(type.Id, isPublic: true);
+        var theirs = await SeedCatalog(type.Id);
+        var inject = await SeedInject(type.Id, theirs.Id);
+        var actor = await Actor().SeedAsync();
+        // Data-row gate: the public catalog is another one; the inject's own catalog is private.
+
+        var response = await Client(actor).GetAsync(Inject(inject.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_ForAUnitMemberOfTheCatalog_Is200()
     {
         var type = await SeedInjectType();
         var catalog = await SeedCatalog(type.Id);
@@ -331,26 +360,52 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
 
         var response = await Client(actor).GetAsync(Inject(inject.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    /// <summary>Get for an inject in a public catalog is answered with a 403.</summary>
     [Fact]
-    public async Task Get_ForAnInjectInAPublicCatalog_Is403()
+    public async Task Get_ForAnInjectInAPublicCatalog_Is200()
     {
         var type = await SeedInjectType();
         var catalog = await SeedCatalog(type.Id, isPublic: true);
         var inject = await SeedInject(type.Id, catalog.Id);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
+        var actor = await Actor().SeedAsync();
+        // Data-row gate: the inject's catalog is public.
 
         var response = await Client(actor).GetAsync(Inject(inject.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    /// <summary>Get for a catalog unit row whose primary key equals the callers id reads any inject.</summary>
+    /// <summary>
+    /// A unit member of one private catalog reads its injects and not those only in another private
+    /// catalog, nor one in no catalog at all.
+    /// </summary>
     [Fact]
-    public async Task Get_ForACatalogUnitRowWhosePrimaryKeyEqualsTheCallersId_ReadsAnyInject()
+    public async Task Get_ForAUnitMemberOfOneCatalog_CannotReadAnInjectOnlyInAnother()
+    {
+        var type = await SeedInjectType();
+        var mine = await SeedCatalog(type.Id);
+        var theirs = await SeedCatalog(type.Id);
+        await SeedInject(type.Id, mine.Id);
+        var hidden = await SeedInject(type.Id, theirs.Id);
+        var orphan = await SeedInject(type.Id);
+        var unit = TestData.Unit();
+        await Seed(unit, TestData.CatalogUnit(unit.Id, mine.Id));
+        var actor = await Actor().InUnit(unit).SeedAsync();
+
+        Assert.Equal(
+            HttpStatusCode.Forbidden, (await Client(actor).GetAsync(Inject(hidden.Id), Ct)).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.Forbidden, (await ClientFor(actor.Id, null).GetAsync(Inject(orphan.Id), Ct)).StatusCode);
+    }
+
+    /// <summary>
+    /// A catalog unit row's own primary key means nothing: one that happens to equal the caller's id
+    /// grants no catalog, so neither inject is readable.
+    /// </summary>
+    [Fact]
+    public async Task Get_ForACatalogUnitRowWhosePrimaryKeyEqualsTheCallersId_Is403()
     {
         var actor = await Actor().SeedAsync();
         var stranger = await Actor().SeedAsync();
@@ -362,37 +417,33 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         await Seed(TestData.CatalogUnit(unit.Id, catalog.Id, id: actor.Id));
 
         Assert.Equal(
-            HttpStatusCode.OK, (await Client(actor).GetAsync(Inject(inCatalog.Id), Ct)).StatusCode);
+            HttpStatusCode.Forbidden, (await Client(actor).GetAsync(Inject(inCatalog.Id), Ct)).StatusCode);
         Assert.Equal(
-            HttpStatusCode.OK, (await ClientFor(actor.Id, null).GetAsync(Inject(orphan.Id), Ct)).StatusCode);
+            HttpStatusCode.Forbidden, (await ClientFor(actor.Id, null).GetAsync(Inject(orphan.Id), Ct)).StatusCode);
     }
 
-    /// <summary>Get for an id that is not there is answered with a 500.</summary>
     [Fact]
-    public async Task Get_ForAnIdThatIsNotThere_Is500RatherThanThe404TheDeadCheckPromises()
+    public async Task Get_ForAnIdThatIsNotThere_Is404()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(actor).GetAsync(Inject(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Sequence contains no elements.", failure.Title);
-        Assert.Contains("InjectService.GetAsync", failure.Detail);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Get for an id that is not there is that same 500 without any permission.</summary>
+    /// <summary>
+    /// The row is loaded before any permission decision is taken, so an unknown id is a 404 for any
+    /// caller.
+    /// </summary>
     [Fact]
-    public async Task Get_ForAnIdThatIsNotThere_IsThatSame500WithoutAnyPermission()
+    public async Task Get_ForAnIdThatIsNotThere_IsThatSame404WithoutAnyPermission()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Client(actor).GetAsync(Inject(Guid.NewGuid()), Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Sequence contains no elements.", failure.Title);
-        Assert.Contains("InjectService.GetAsync", failure.Detail);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------

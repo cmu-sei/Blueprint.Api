@@ -5,11 +5,11 @@ using System;
 using System.Net;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
-using Blueprint.Api.Tests.Infrastructure;
+using Blueprint.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace Blueprint.Api.Tests;
+namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary>
 /// A template belongs to no MSEL. The template lists ask the caller for nothing, so a MSEL's card, CITE
@@ -26,7 +26,7 @@ public class TemplateOwnershipTests(DatabaseFixture fixture, BlueprintAppFactory
     [InlineData("organizations")]
     public async Task Create_ForAMselAsATemplate_Is409AndCreatesNothing(string route)
     {
-        var msel = BlueprintAppFactory.Msel();
+        var msel = TestData.Msel();
         await Seed(msel);
         var actor = await Actor().WithAllSystemPermissions().SeedAsync();
         var id = Guid.NewGuid();

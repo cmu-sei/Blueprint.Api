@@ -8,11 +8,11 @@ using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
-using Blueprint.Api.Tests.Infrastructure;
+using Blueprint.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace Blueprint.Api.Tests;
+namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary>
 /// The integration IDs, the integration status and the pipeline statuses belong to the push and pull
@@ -78,7 +78,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
     [Fact]
     public async Task Update_AsAnOwner_WithIntegrationIdsInTheBody_LeavesTheStoredIdsAlone()
     {
-        var msel = BlueprintAppFactory.Msel(status: MselItemStatus.Approved);
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
         await Seed(msel);
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
@@ -92,7 +92,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
     [Fact]
     public async Task Update_AsAnOwner_WithIntegrationIdsInTheBody_ThenPull_ReachesNoSiblingApi()
     {
-        var msel = BlueprintAppFactory.Msel(status: MselItemStatus.Approved);
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
         await Seed(msel);
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
         await Client(owner).PutAsJsonAsync(
@@ -111,7 +111,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
     [Fact]
     public async Task Update_OfADeployedMsel_WithOtherIntegrationIdsInTheBody_KeepsItsOwn()
     {
-        var msel = BlueprintAppFactory.Msel(status: MselItemStatus.Deployed);
+        var msel = TestData.Msel(status: MselItemStatus.Deployed);
         var ownViewId = Guid.NewGuid();
         var ownEvaluationId = Guid.NewGuid();
         msel.PlayerViewId = ownViewId;
@@ -144,7 +144,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
     public async Task Update_IntoOrOutOfAPipelineStatus_Is409AndLeavesTheMselAlone(
         MselItemStatus stored, MselItemStatus requested)
     {
-        var msel = BlueprintAppFactory.Msel(status: stored);
+        var msel = TestData.Msel(status: stored);
         await Seed(msel);
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
@@ -165,7 +165,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
     [InlineData(MselItemStatus.Archived, MselItemStatus.Pending)]
     public async Task Update_BetweenWorkflowStatuses_Is200(MselItemStatus stored, MselItemStatus requested)
     {
-        var msel = BlueprintAppFactory.Msel(status: stored);
+        var msel = TestData.Msel(status: stored);
         await Seed(msel);
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
@@ -185,7 +185,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
     [InlineData(MselItemStatus.Deployed)]
     public async Task Update_KeepingAPipelineStatus_Is200(MselItemStatus status)
     {
-        var msel = BlueprintAppFactory.Msel(status: status);
+        var msel = TestData.Msel(status: status);
         await Seed(msel);
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
@@ -234,7 +234,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
         harness.Handler.Paths.Where(x => !x.StartsWith("realms/")).ToArray();
 
     private IntegrationServiceHarness Harness() =>
-        new(Session, new TestHttpHandler()
+        new(Session, new SiblingApiHandler()
             .AnswersJson(IntegrationServiceHarness.DiscoveryPath, """
                 {
                   "issuer": "http://localhost:8080/realms/crucible",

@@ -42,28 +42,68 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal($"/api/msels/{copy.Id}", response.Headers.Location?.AbsolutePath);
     }
 
-    /// <summary>Copy of a MSEL the caller cannot see is answered with a 201 and hands over its contents.</summary>
+    /// <summary>
+    /// Copying hands over the whole MSEL, so <see cref="SystemPermission.CreateMsels"/> alone is not
+    /// enough: the caller must also be able to view the source.
+    /// </summary>
     [Fact]
-    public async Task Copy_OfAMselTheCallerCannotSee_Is201AndHandsOverItsContents()
+    public async Task Copy_OfAMselTheCallerCannotSee_Is403AndCreatesNothing()
     {
         var graph = await SeedGraph();
         // CreateMsels alone, which is the point: this actor has no way to view the MSEL.
         var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var before = await NewContext().Msels.CountAsync(Ct);
 
-        // Proof the caller cannot read it the honest way.
-        var read = await Client(actor).GetAsync($"/api/msels/{graph.Msel.Id}", Ct);
-        Assert.Equal(HttpStatusCode.Forbidden, read.StatusCode);
+        var response = await Client(actor).PostAsync($"/api/msels/{graph.Msel.Id}/copy", null, Ct);
 
-        var copy = await Copy(Client(actor), graph.Msel.Id);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(before, await NewContext().Msels.CountAsync(Ct));
+    }
 
-        var events = await ReadBack(rb => rb.ScenarioEvents
-            .Where(x => x.MselId == copy.Id)
-            .Include(x => x.DataValues)
-            .SelectMany(x => x.DataValues)
-            .Select(x => x.Value)
-            .ToListAsync(Ct));
+    [Fact]
+    public async Task Copy_OfAMselTheCallerViews_WithCreateMsels_Is201()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor()
+            .WithSystemPermissions(SystemPermission.CreateMsels)
+            .OnMsel(msel, MselRole.Viewer)
+            .SeedAsync();
 
-        Assert.Contains(GraphSeed.SecretValue, events);
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/copy", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Copy_ByAViewerOfAnotherMsel_WithCreateMsels_Is403()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor()
+            .WithSystemPermissions(SystemPermission.CreateMsels)
+            .OnNewMsel(MselRole.Viewer)
+            .SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/copy", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>
+    /// A template is what <see cref="SystemPermission.CreateMsels"/> lets a caller start from, so it
+    /// needs no other access.
+    /// </summary>
+    [Fact]
+    public async Task Copy_OfATemplate_WithCreateMselsOnly_Is201()
+    {
+        var template = TestData.Msel(isTemplate: true);
+        await Seed(template);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{template.Id}/copy", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     /// <summary>The owner of a MSEL who lacks CreateMsels is refused the copy.</summary>

@@ -5,6 +5,7 @@ using System;
 using System.Net;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -20,15 +21,16 @@ public class TemplateOwnershipTests(DatabaseFixture fixture, BlueprintAppFactory
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
 {
     [Theory]
-    [InlineData("cards")]
-    [InlineData("citeActions")]
-    [InlineData("citeDuties")]
-    [InlineData("organizations")]
-    public async Task Create_ForAMselAsATemplate_Is409AndCreatesNothing(string route)
+    [InlineData("cards", SystemPermission.ManageGalleryCards)]
+    [InlineData("citeActions", SystemPermission.ManageCiteActions)]
+    [InlineData("citeDuties", SystemPermission.ManageCiteDuties)]
+    [InlineData("organizations", SystemPermission.ManageOrganizations)]
+    public async Task Create_ForAMselAsATemplate_Is409AndCreatesNothing(string route, SystemPermission templatePermission)
     {
         var msel = TestData.Msel();
         await Seed(msel);
-        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+        // both tiers, so the refusal is the template rule and not a missing permission
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, templatePermission).SeedAsync();
         var id = Guid.NewGuid();
 
         var response = await Client(actor).PostAsJsonAsync($"/api/{route}", new
@@ -50,13 +52,13 @@ public class TemplateOwnershipTests(DatabaseFixture fixture, BlueprintAppFactory
     }
 
     [Theory]
-    [InlineData("cards")]
-    [InlineData("citeActions")]
-    [InlineData("citeDuties")]
-    [InlineData("organizations")]
-    public async Task Create_AsATemplateWithNoMsel_Is201(string route)
+    [InlineData("cards", SystemPermission.ManageGalleryCards)]
+    [InlineData("citeActions", SystemPermission.ManageCiteActions)]
+    [InlineData("citeDuties", SystemPermission.ManageCiteDuties)]
+    [InlineData("organizations", SystemPermission.ManageOrganizations)]
+    public async Task Create_AsATemplateWithNoMsel_Is201(string route, SystemPermission templatePermission)
     {
-        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+        var actor = await Actor().WithSystemPermissions(templatePermission).SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync($"/api/{route}", new
         {

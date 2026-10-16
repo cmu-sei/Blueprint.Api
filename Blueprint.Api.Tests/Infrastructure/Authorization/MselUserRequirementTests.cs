@@ -111,23 +111,24 @@ public class MselUserRequirementTests(DatabaseFixture fixture) : DatabaseTestBas
         Assert.False(await MselUserRequirement.IsMet(actor.Id, msel.Id, Db));
     }
 
-    /// <summary>Is met for a MSEL that does not exist throws.</summary>
+    /// <remarks>
+    /// A MSEL that is not there grants nothing, the same answer as
+    /// <see cref="MselOwnerRequirementTests.IsMet_ForAMselThatDoesNotExist_IsFalse"/>.
+    /// </remarks>
     [Fact]
-    public async Task IsMet_ForAMselThatDoesNotExist_Throws()
+    public async Task IsMet_ForAMselThatDoesNotExist_IsFalse()
     {
         var actor = await Actor().SeedAsync();
 
-        await Assert.ThrowsAsync<NullReferenceException>(
-            () => MselUserRequirement.IsMet(actor.Id, Guid.NewGuid(), Db));
+        Assert.False(await MselUserRequirement.IsMet(actor.Id, Guid.NewGuid(), Db));
     }
 
-    /// <summary>A null MSEL id throws.</summary>
     [Fact]
-    public async Task IsMet_ForANullMselId_Throws()
+    public async Task IsMet_ForANullMselId_IsFalse()
     {
         var actor = await Actor().SeedAsync();
 
-        await Assert.ThrowsAsync<NullReferenceException>(
-            () => MselUserRequirement.IsMet(actor.Id, null, Db));
+        Assert.False(await MselUserRequirement.IsMet(actor.Id, null, Db));
     }
+
 }

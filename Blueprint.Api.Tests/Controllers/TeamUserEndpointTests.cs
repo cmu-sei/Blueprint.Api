@@ -89,17 +89,20 @@ public class TeamUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Single(await GetRows(Client(actor), TeamUsersOf(msel.Id)));
     }
 
-    /// <summary>Get by MSEL for a MSEL that is not there is answered with a 500 for a caller without ViewMsels.</summary>
+    /// <remarks>
+    /// An unknown MSEL id grants an ordinary caller nothing, so it is a 403, and an empty list for a
+    /// <c>ViewMsels</c> holder whose permission short-circuits the check.
+    /// </remarks>
     [Fact]
-    public async Task GetByMsel_ForAMselThatIsNotThere_Is500()
+    public async Task GetByMsel_ForAMselThatIsNotThere_Is403ForAnOrdinaryCaller()
     {
         var stranger = await Actor().SeedAsync();
+        var privileged = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(stranger).GetAsync(TeamUsersOf(Guid.NewGuid()), Ct);
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselUserRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(await GetRows(Client(privileged), TeamUsersOf(Guid.NewGuid())));
     }
 
     [Fact]

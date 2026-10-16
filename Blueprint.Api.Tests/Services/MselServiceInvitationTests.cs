@@ -340,6 +340,7 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
 
         var response = await Join(Client(actor), msel.Id);
 
+        // Data-row gate: the invitation's team belongs to another MSEL.
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         using var db = NewContext();
         Assert.False(await db.TeamUsers.AnyAsync(tu => tu.UserId == actor.Id, Ct));
@@ -359,6 +360,7 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
 
         var response = await Join(Client(actor), msel.Id, theirTeam.Id);
 
+        // Data-row gate: the invitation's team belongs to another MSEL.
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.False(await NewContext().TeamUsers.AnyAsync(tu => tu.TeamId == theirTeam.Id, Ct));
         Assert.Empty(DrainJoinQueue());

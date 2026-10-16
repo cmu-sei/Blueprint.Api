@@ -409,18 +409,18 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         Assert.Contains("UserMselRoleService.CreateAsync", failure.Detail);
     }
 
-    /// <summary>Create for a MSEL that is not there is answered with a 500 for a caller without ManageMsels.</summary>
+    /// <remarks>
+    /// Without the permission, a MSEL that is not there grants no ownership, so the caller is refused.
+    /// </remarks>
     [Fact]
-    public async Task Create_ForAMselThatIsNotThere_WithoutManageMsels_Is500()
+    public async Task Create_ForAMselThatIsNotThere_WithoutManageMsels_Is403()
     {
-        var actor = await Actor().OnNewMsel(MselRole.Owner).SeedAsync();
+        var actor = await Actor().SeedAsync();
         var subject = await SeedUser();
 
         var response = await Post(Client(actor), Body(subject.Id, Guid.NewGuid(), MselRole.Editor));
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     // Same case as Create_ForAMselThatIsNotThere_WithoutManageMsels_Is500.
@@ -719,18 +719,18 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Set integration roles for a MSEL that is not there without manage MSELs is answered with a 500.</summary>
+    /// <remarks>
+    /// Without the permission, a MSEL that is not there grants no ownership, so the request is refused.
+    /// </remarks>
     [Fact]
-    public async Task SetIntegrationRoles_ForAMselThatIsNotThere_WithoutManageMsels_Is500()
+    public async Task SetIntegrationRoles_ForAMselThatIsNotThere_WithoutManageMsels_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await SetIntegrationRoles(
             Client(actor), Guid.NewGuid(), actor.Id, new { citeEvaluationRole = "Inject" });
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>Set integration roles with a partial body clears the roles it does not mention.</summary>

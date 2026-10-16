@@ -95,15 +95,19 @@ public class SystemPermissionHandlerTests
         Assert.True(context.HasFailed);
     }
 
-    /// <summary>An empty requirement succeeds for any signed-in user.</summary>
+    /// <remarks>
+    /// A requirement that names no permission grants nothing, so a caller that computed its permission
+    /// array and got an empty one is refused rather than let through.
+    /// </remarks>
     [Fact]
-    public async Task AnEmptyRequirement_SucceedsForAnyUser()
+    public async Task AnEmptyRequirement_FailsForAnyUser()
     {
         var context = Context(Principal());
 
         await new SystemPermissionHandler().HandleAsync(context);
 
-        Assert.True(context.HasSucceeded);
+        Assert.False(context.HasSucceeded);
+        Assert.True(context.HasFailed);
     }
 
     /// <remarks>
@@ -111,14 +115,15 @@ public class SystemPermissionHandlerTests
     /// <c>new SystemPermissionRequirement(null)</c> produces.
     /// </remarks>
     [Fact]
-    public async Task ANullRequirementList_SucceedsForAnyUser()
+    public async Task ANullRequirementList_FailsForAnyUser()
     {
         var requirement = new SystemPermissionRequirement(null);
         var context = new AuthorizationHandlerContext([requirement], Principal(), null);
 
         await new SystemPermissionHandler().HandleAsync(context);
 
-        Assert.True(context.HasSucceeded);
+        Assert.False(context.HasSucceeded);
+        Assert.True(context.HasFailed);
     }
 
     /// <summary>

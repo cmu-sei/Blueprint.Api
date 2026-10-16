@@ -159,6 +159,55 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     // PUT invitations/{id}
     // ---------------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// An invitation names a team of its own MSEL. Another MSEL's team is answered as a team that is not
+    /// there, and nothing is written.
+    /// </summary>
+    [Fact]
+    public async Task Create_ForATeamOfAnotherMsel_Is404AndCreatesNothing()
+    {
+        var mine = TestData.Msel();
+        await Seed(mine);
+        var actor = await Actor().OnMsel(mine, MselRole.Owner).SeedAsync();
+        var (_, theirTeam) = await SeedMselAndTeam();
+
+        var response = await Client(actor).PostAsJsonAsync("api/invitations", Body(mine.Id, theirTeam.Id), Ct);
+
+        // Data-row gate: the team row belongs to another MSEL.
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(await NewContext().Invitations.AnyAsync(x => x.TeamId == theirTeam.Id, Ct));
+    }
+
+    [Fact]
+    public async Task Create_ForATeamOfAnotherMsel_WithEditMsels_Is404()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var (msel, _) = await SeedMselAndTeam();
+        var (_, otherTeam) = await SeedMselAndTeam();
+
+        var response = await Client(actor).PostAsJsonAsync("api/invitations", Body(msel.Id, otherTeam.Id), Ct);
+
+        // Data-row gate: the team row belongs to another MSEL.
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(await NewContext().Invitations.AnyAsync(x => x.MselId == msel.Id, Ct));
+    }
+
+    /// <summary>
+    /// The use count is the server's: an invitation starts with no seats taken, whatever the body says.
+    /// </summary>
+    [Fact]
+    public async Task Create_WithAUserCountInTheBody_StartsAtZero()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var (msel, team) = await SeedMselAndTeam();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/invitations", Body(msel.Id, team.Id) with { userCount = 5 }, Ct);
+
+        var created = await response.Content.ReadFromJsonAsync<ViewModels.Invitation>(JsonOptions, Ct);
+        Assert.Equal(0, (await NewContext().Invitations.SingleAsync(x => x.Id == created.Id, Ct)).UserCount);
+    }
+
     [Fact]
     public async Task Update_WithEditMsels_Is200()
     {
@@ -192,9 +241,12 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Update decides from the request body and steals the row.</summary>
+    /// <summary>
+    /// The decision is made on the invitation's stored MSEL, so owning the MSEL named in the body buys
+    /// nothing.
+    /// </summary>
     [Fact]
-    public async Task Update_DecidesFromTheRequestBodyAndStealsTheRow()
+    public async Task Update_AsTheOwnerOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheRowAlone()
     {
         var mine = TestData.Msel();
         await Seed(mine);
@@ -210,10 +262,68 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             Body(mine.Id, myTeam.Id, "stolen.test") with { id = invitation.Id },
             Ct);
 
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var stored = await NewContext().Invitations.SingleAsync(x => x.Id == invitation.Id, Ct);
+        Assert.Equal(theirs.Id, stored.MselId);
+        Assert.Equal(theirTeam.Id, stored.TeamId);
+        Assert.Equal(invitation.EmailDomain, stored.EmailDomain);
+    }
+
+    /// <summary>
+    /// An owner's edit that names another MSEL changes the invitation and leaves it in its MSEL.
+    /// </summary>
+    [Fact]
+    public async Task Update_AsAnOwner_NamingAnotherMselInTheBody_KeepsTheInvitationInItsMsel()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var (other, _) = await SeedMselAndTeam();
+        var invitation = TestData.Invitation(msel.Id, team.Id);
+        await Seed(invitation);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/invitations/{invitation.Id}", Body(other.Id, team.Id, "after.test") with { id = invitation.Id }, Ct);
+
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var stored = await ReadBack(rb => rb.Invitations.SingleAsync(x => x.Id == invitation.Id, Ct));
-        Assert.Equal(mine.Id, stored.MselId);
-        Assert.Equal("stolen.test", stored.EmailDomain);
+        var stored = await NewContext().Invitations.SingleAsync(x => x.Id == invitation.Id, Ct);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.Equal("after.test", stored.EmailDomain);
+    }
+
+    [Fact]
+    public async Task Update_ToATeamOfAnotherMsel_Is404AndLeavesTheRowAlone()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var (_, theirTeam) = await SeedMselAndTeam();
+        var invitation = TestData.Invitation(msel.Id, team.Id);
+        await Seed(invitation);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/invitations/{invitation.Id}", Body(msel.Id, theirTeam.Id) with { id = invitation.Id }, Ct);
+
+        // Data-row gate: the team row belongs to another MSEL.
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(team.Id, (await NewContext().Invitations.SingleAsync(x => x.Id == invitation.Id, Ct)).TeamId);
+    }
+
+    /// <summary>
+    /// The use count is the server's, so an owner cannot hand an invitation its seats back.
+    /// </summary>
+    [Fact]
+    public async Task Update_WithAUserCountInTheBody_KeepsTheStoredCount()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var invitation = TestData.Invitation(msel.Id, team.Id);
+        invitation.UserCount = 7;
+        await Seed(invitation);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/invitations/{invitation.Id}", Body(msel.Id, team.Id) with { id = invitation.Id, userCount = 0 }, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(7, (await NewContext().Invitations.SingleAsync(x => x.Id == invitation.Id, Ct)).UserCount);
     }
 
     // ---------------------------------------------------------------------------------------------

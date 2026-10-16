@@ -24,7 +24,6 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
     private static readonly string[] MapsWithUnmappedMembers =
     [
         "Card -> CardEntity: CardTeams",
-        "CardTeam -> CardTeamEntity: Team, Card",
         "Catalog -> CatalogEntity: InjectType, CatalogUnits, CatalogInjects",
         "CatalogEntity -> Catalog: Units",
         "CatalogInject -> CatalogInjectEntity: Catalog",
@@ -35,17 +34,9 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
         "DataValue -> DataValueEntity: ScenarioEvent, Inject",
         "GroupMembership -> GroupMembershipEntity: Group, User",
         "Injectm -> InjectEntity: InjectType, RequiresInject, CatalogInjects",
-        "Invitation -> InvitationEntity: Msel, Team",
-        "Msel -> MselEntity: CiteScoringModelName",
         "MselCompetency -> MselCompetencyEntity: Msel",
         "MselEntity -> Msel: GalleryArticleParameters, GallerySourceTypes, GalleryItemStatuses",
-        "MselPage -> MselPageEntity: Msel",
-        "MselUnit -> MselUnitEntity: Msel",
-        "PlayerApplication -> PlayerApplicationEntity: Msel, PlayerApplicationTeams",
-        "PlayerApplicationTeam -> PlayerApplicationTeamEntity: Team, PlayerApplication",
         "ProficiencyLevel -> ProficiencyLevelEntity: ProficiencyScale",
-        "ScenarioEvent -> ScenarioEventEntity: Msel, Inject",
-        "Team -> TeamEntity: Msel, CiteTeamTypeName, CiteActions, CiteDuties, TeamCompetencies",
         "TeamCompetency -> TeamCompetencyEntity: Team",
         "TeamUser -> TeamUserEntity: User, Team",
         "TeamUserEntity -> TeamUser: DateCreated, DateModified, CreatedBy, ModifiedBy",
@@ -122,7 +113,7 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
     [InlineData(false)]
     public void Configuration_ExactlyOneProperty_IsTheShapeTheNullSourceRuleSelects(bool hosted) =>
         Assert.Equal(
-            ["Team -> TeamEntity.MselId"],
+            ["TeamCreate -> TeamEntity.MselId"],
             [
                 .. from map in TypeMaps(hosted)
                    from property in map.PropertyMaps
@@ -137,51 +128,62 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
 
     /// <summary>
     /// The one property the rule protects, as behaviour. <c>TeamEntity.MselId</c> is a required foreign
-    /// key and <c>Team.MselId</c> is nullable, so a <c>PUT</c> whose body omits it must not move the team
-    /// off its MSEL - it could not be saved if it did.
+    /// key and <c>TeamCreate.MselId</c> is nullable, so a create request that omits it leaves the
+    /// destination's value alone rather than writing a null it could not save.
     /// </summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void Map_ATeamWithNoMselId_LeavesTheEntitysMselIdAlone(bool hosted)
+    public void Map_ATeamCreateWithNoMselId_LeavesTheEntitysMselIdAlone(bool hosted)
     {
         var mselId = Guid.NewGuid();
         var entity = new TeamEntity { Id = Guid.NewGuid(), Name = "Blue", MselId = mselId };
 
-        Mapper(hosted).Map(new Team { Id = entity.Id, Name = "Red", MselId = null }, entity);
+        Mapper(hosted).Map(new TeamCreate { Name = "Red", MselId = null }, entity);
 
         Assert.Equal(mselId, entity.MselId);
         Assert.Equal("Red", entity.Name);
     }
 
     /// <summary>
-    /// And a body that does name an MSEL moves the team, so the rule is about nulls and not about the
-    /// member.
+    /// The edit request has no MSEL, so it cannot move a team, and has no identity either.
     /// </summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void Map_ATeamWithAnMselId_MovesTheEntityToIt(bool hosted)
+    public void Map_ATeamEdit_LeavesTheEntitysMselAndIdAlone(bool hosted)
     {
-        var entity = new TeamEntity { Id = Guid.NewGuid(), MselId = Guid.NewGuid() };
+        var id = Guid.NewGuid();
         var mselId = Guid.NewGuid();
+        var entity = new TeamEntity { Id = id, Name = "Blue", MselId = mselId };
 
-        Mapper(hosted).Map(new Team { Id = entity.Id, MselId = mselId }, entity);
+        Mapper(hosted).Map(new TeamEdit { Name = "Red" }, entity);
 
+        Assert.Equal(id, entity.Id);
         Assert.Equal(mselId, entity.MselId);
+        Assert.Equal("Red", entity.Name);
     }
 
-    /// <summary>A body with no <c>MselId</c> detaches the organization from its MSEL.</summary>
+    /// <summary>
+    /// The edit request has no MSEL, template flag or id, so mapping it onto a stored organization changes
+    /// the editable fields and cannot detach it from its MSEL. <c>MselId</c> is <c>Guid?</c> on the
+    /// entity, where the global null-source rule would not have protected it.
+    /// </summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void Map_AnOrganizationWithNoMselId_DetachesItFromItsMsel(bool hosted)
+    public void Map_AnOrganizationEdit_LeavesTheEntitysMselAndTemplateFlagAlone(bool hosted)
     {
-        var entity = new OrganizationEntity { Id = Guid.NewGuid(), MselId = Guid.NewGuid() };
+        var id = Guid.NewGuid();
+        var mselId = Guid.NewGuid();
+        var entity = new OrganizationEntity { Id = id, MselId = mselId, IsTemplate = false };
 
-        Mapper(hosted).Map(new Organization { Id = entity.Id, MselId = null }, entity);
+        Mapper(hosted).Map(new OrganizationEdit { Name = "Renamed" }, entity);
 
-        Assert.Null(entity.MselId);
+        Assert.Equal(id, entity.Id);
+        Assert.Equal(mselId, entity.MselId);
+        Assert.False(entity.IsTemplate);
+        Assert.Equal("Renamed", entity.Name);
     }
 
     /// <summary>
@@ -269,22 +271,38 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
     }
 
     /// <summary>
-    /// <c>DateCreated</c> is ignored on the write map, so a client cannot even propose one. Note this is
-    /// belt and braces rather than the protection itself: <c>BlueprintContext.SaveEntries</c> restores
-    /// every audit field from <c>OriginalValues</c> on save regardless. The other three are mapped and
-    /// then overwritten there.
+    /// The edit request has no identity, audit, integration or collection fields, so mapping it onto a
+    /// stored MSEL changes the editable fields and leaves everything the server owns as it was.
     /// </summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void Map_MselToMselEntity_IgnoresDateCreated(bool hosted)
+    public void Map_MselEditToMselEntity_LeavesTheServerOwnedFieldsAlone(bool hosted)
     {
         var created = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var entity = new MselEntity { Id = Guid.NewGuid(), DateCreated = created };
+        var entity = TestData.Msel();
+        var id = entity.Id;
+        var createdBy = Guid.NewGuid();
+        entity.DateCreated = created;
+        entity.CreatedBy = createdBy;
+        entity.PlayerViewId = Guid.NewGuid();
+        entity.GalleryCollectionId = Guid.NewGuid();
+        entity.GalleryExhibitId = Guid.NewGuid();
+        entity.CiteEvaluationId = Guid.NewGuid();
+        entity.SteamfitterScenarioId = Guid.NewGuid();
+        entity.IntegrationStatus = "Pushing Integrations";
+        var stored = (entity.PlayerViewId, entity.GalleryCollectionId, entity.GalleryExhibitId,
+            entity.CiteEvaluationId, entity.SteamfitterScenarioId);
 
-        Mapper(hosted).Map(new Msel { Id = entity.Id, DateCreated = new DateTime(1999, 1, 1) }, entity);
+        Mapper(hosted).Map(new MselEdit { Name = "renamed" }, entity);
 
+        Assert.Equal("renamed", entity.Name);
+        Assert.Equal(id, entity.Id);
         Assert.Equal(created, entity.DateCreated);
+        Assert.Equal(createdBy, entity.CreatedBy);
+        Assert.Equal(stored, (entity.PlayerViewId, entity.GalleryCollectionId, entity.GalleryExhibitId,
+            entity.CiteEvaluationId, entity.SteamfitterScenarioId));
+        Assert.Equal("Pushing Integrations", entity.IntegrationStatus);
     }
 
     /// <summary>

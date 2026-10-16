@@ -422,17 +422,17 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(0, await CountOn(msel.Id));
     }
 
-    /// <summary>Create for a MSEL that is not there is answered with a 500.</summary>
+    /// <remarks>
+    /// A MSEL that is not there grants no ownership, so naming one is refused.
+    /// </remarks>
     [Fact]
-    public async Task Create_ForAMselThatIsNotThere_Is500()
+    public async Task Create_ForAMselThatIsNotThere_Is403()
     {
         var actor = await Actor().SeedAsync();
 
         var response = await Post(Client(actor), Body(Guid.NewGuid()));
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>Create that omits the MSEL id is answered with a 500.</summary>
@@ -662,21 +662,20 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(0, await CountOn(msel.Id));
     }
 
-    /// <summary>Creating a team from a unit for a MSEL that is not there is answered with a 500 for a caller without EditMsels.</summary>
+    /// <summary>
+    /// A MSEL that is not there grants no ownership, so a caller without <c>EditMsels</c> is refused.
+    /// </summary>
     [Fact]
-    public async Task CreateFromUnit_ForAMselThatIsNotThere_Is500()
+    public async Task CreateFromUnit_ForAMselThatIsNotThere_Is403()
     {
         var stranger = await Actor().SeedAsync();
         var unit = await SeedUnit(stranger.Id);
 
         var response = await PostFromUnit(Client(stranger), Guid.NewGuid(), unit.Id);
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Object reference not set to an instance of an object.", failure.Title);
-        Assert.Contains("MselOwnerRequirement.IsMet", failure.Detail);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    // Same case as CreateFromUnit_ForAMselThatIsNotThere_Is500.
     [Fact]
     public async Task CreateFromUnit_ForAMselThatIsNotThere_WithEditMsels_Is500()
     {
@@ -780,44 +779,68 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(team.Name, (await Stored(team.Id)).Name);
     }
 
-    /// <summary>Update chooses its permission branch from the request body and then refuses the steal.</summary>
+    /// <summary>
+    /// The decision is made on the team's stored MSEL, so owning another MSEL buys nothing, and the
+    /// body's MSEL is ignored.
+    /// </summary>
     [Fact]
-    public async Task Update_ChoosesItsPermissionBranchFromTheRequestBodyAndThenRefusesTheSteal()
+    public async Task Update_AsTheOwnerOfAnotherMsel_NamingItInTheBody_Is403AndLeavesTheTeamAlone()
     {
         var target = await SeedMsel();
         var team = await SeedTeam(target);
         var mine = await SeedMsel();
         var actor = await Actor().OnMsel(mine, MselRole.Owner).SeedAsync();
 
-        var response = await Put(Client(actor), team.Id, BodyFor(team) with { MselId = mine.Id });
+        var response = await Put(Client(actor), team.Id, BodyFor(team) with { Name = "Stolen", MselId = mine.Id });
 
-        Assert.Equal("The MselId of the team cannot be changed!", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
-        Assert.Equal(target.Id, (await Stored(team.Id)).MselId);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var stored = await Stored(team.Id);
+        Assert.Equal(target.Id, stored.MselId);
+        Assert.Equal(team.Name, stored.Name);
     }
 
-    /// <summary>Update that omits the MSEL id is answered with a 500.</summary>
+    /// <summary>
+    /// An owner's edit that names another MSEL renames the team and leaves it where it is.
+    /// </summary>
     [Fact]
-    public async Task Update_ThatOmitsTheMselId_Is500()
+    public async Task Update_AsAnOwner_NamingAnotherMselInTheBody_KeepsTheTeamInItsMsel()
+    {
+        var msel = await SeedMsel();
+        var team = await SeedTeam(msel);
+        var other = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), team.Id, BodyFor(team) with { Name = "Renamed", MselId = other.Id });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await Stored(team.Id);
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.Equal("Renamed", stored.Name);
+    }
+
+    [Fact]
+    public async Task Update_ThatOmitsTheMselId_Is200()
     {
         var msel = await SeedMsel();
         var team = await SeedTeam(msel);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var response = await Put(Client(actor), team.Id, BodyFor(team) with { MselId = null });
+        var response = await Put(Client(actor), team.Id, BodyFor(team) with { Name = "Renamed", MselId = null });
 
-        Assert.Equal("The MselId of the team cannot be changed!", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(msel.Id, (await Stored(team.Id)).MselId);
     }
 
-    /// <summary>Update stamps the date but lets the client claim the modifier.</summary>
+    /// <summary>
+    /// The audit fields are the server's: the modifier is the caller, whatever the body claims.
+    /// </summary>
     [Fact]
-    public async Task Update_StampsTheDateButLetsTheClientClaimTheModifier()
+    public async Task Update_StampsTheCallerAsTheModifier()
     {
         var msel = await SeedMsel();
         var team = await SeedTeam(msel);
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
         var created = await Stored(team.Id);
-        var somebodyElse = Guid.NewGuid();
         var before = DateTime.UtcNow;
 
         await Put(Client(actor), team.Id, BodyFor(team) with
@@ -825,20 +848,20 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             Name = "Renamed",
             CreatedBy = Guid.NewGuid(),
             DateCreated = new DateTime(1999, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-            ModifiedBy = somebodyElse
+            ModifiedBy = Guid.NewGuid()
         });
 
         var stored = await Stored(team.Id);
 
         Assert.Equal(created.CreatedBy, stored.CreatedBy);
         Assert.Equal(created.DateCreated, stored.DateCreated);
-        Assert.Equal(somebodyElse, stored.ModifiedBy);
+        Assert.Equal(actor.Id, stored.ModifiedBy);
         AssertStampedBetween(stored.DateModified, before, DateTime.UtcNow);
     }
 
-    // Same case as Update_StampsTheDateButLetsTheClientClaimTheModifier.
+    /// <summary>A body that mentions no modifier still records the caller as the modifier.</summary>
     [Fact]
-    public async Task Update_ThatMentionsNoModifier_RecordsNone()
+    public async Task Update_ThatMentionsNoModifier_RecordsTheCaller()
     {
         var msel = await SeedMsel();
         var team = await SeedTeam(msel);
@@ -848,21 +871,24 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var stored = await Stored(team.Id);
 
-        Assert.Null(stored.ModifiedBy);
+        Assert.Equal(actor.Id, stored.ModifiedBy);
         Assert.NotNull(stored.DateModified);
     }
 
-    /// <summary>Update with a body id that is not the routes is answered with a 500.</summary>
+    /// <summary>
+    /// The edit request has no id, so another id in the body is ignored and the route's team is written.
+    /// </summary>
     [Fact]
-    public async Task Update_WithABodyIdThatIsNotTheRoutes_Is500()
+    public async Task Update_WithABodyIdThatIsNotTheRoutes_UpdatesTheRoutesTeam()
     {
         var msel = await SeedMsel();
         var team = await SeedTeam(msel);
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        var response = await Put(Client(actor), team.Id, BodyFor(team) with { Id = Guid.NewGuid() });
+        var response = await Put(Client(actor), team.Id, BodyFor(team) with { Id = Guid.NewGuid(), Name = "Renamed" });
 
-        Assert.Equal("The property 'TeamEntity.Id' is part of a key and so cannot be modified or marked as modified. To change the principal of an existing entity with an identifying foreign key, first delete the dependent and invoke 'SaveChanges', and then associate the dependent with the new principal.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Renamed", (await Stored(team.Id)).Name);
     }
 
     [Fact]

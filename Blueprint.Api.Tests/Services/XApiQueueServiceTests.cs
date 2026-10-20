@@ -77,6 +77,80 @@ public class XApiQueueServiceTests(DatabaseFixture fixture) : DatabaseTestBase(f
     }
 
     // ---------------------------------------------------------------------------------------------
+    // EnqueueRangeAsync
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>A batch is queued in a single save, every row pending with no retries, whatever the
+    /// caller handed it.</summary>
+    [Fact]
+    public async Task EnqueueRange_StoresEveryStatementInOneSave()
+    {
+        var batch = new[]
+        {
+            Statement(verb: "asserted"),
+            Statement(verb: "asserted", status: XApiQueueStatus.Failed, queuedAt: Ancient),
+            Statement(verb: "asserted"),
+        };
+        batch[1].RetryCount = 4;
+        var saves = 0;
+        Db.SavedChanges += (_, _) => saves++;
+
+        await Service().EnqueueRangeAsync(batch, Ct);
+
+        Assert.Equal(1, saves);
+        foreach (var statement in batch)
+        {
+            var stored = await Stored(statement.Id);
+            Assert.NotNull(stored);
+            Assert.Equal(XApiQueueStatus.Pending, stored.Status);
+            Assert.Equal(0, stored.RetryCount);
+            Assert.NotEqual(Ancient, stored.QueuedAt);
+        }
+    }
+
+    /// <summary>A batch whose save fails queues none of it - not the rows before the one that failed,
+    /// and not later, on the next save through the same context.</summary>
+    [Fact]
+    public async Task EnqueueRange_WhenTheSaveFails_QueuesNone()
+    {
+        // Seeded through another context: on Db the clash would be a tracking error, not a failed save.
+        var existing = Statement(verb: "already-queued");
+        await using (var seeding = NewContext())
+        {
+            seeding.XApiQueuedStatements.Add(existing);
+            await seeding.SaveChangesAsync(Ct);
+        }
+        var first = Statement(verb: "asserted");
+        // Same key as a row already stored, so PostgreSQL refuses the insert.
+        var clash = Statement(verb: "asserted");
+        clash.Id = existing.Id;
+        var last = Statement(verb: "asserted");
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => Service().EnqueueRangeAsync([first, clash, last], Ct));
+
+        Assert.Null(await Stored(first.Id));
+        Assert.Null(await Stored(last.Id));
+        Assert.Equal("already-queued", (await Stored(existing.Id)).Verb);
+        Assert.DoesNotContain(Db.ChangeTracker.Entries<XApiQueuedStatementEntity>(), x => x.State == EntityState.Added);
+
+        await Db.SaveChangesAsync(Ct);
+        await using var cold = NewContext();
+        Assert.Equal(1, await cold.XApiQueuedStatements.CountAsync(Ct));
+    }
+
+    /// <summary>An empty batch saves nothing.</summary>
+    [Fact]
+    public async Task EnqueueRange_WithNothing_SavesNothing()
+    {
+        var saves = 0;
+        Db.SavedChanges += (_, _) => saves++;
+
+        await Service().EnqueueRangeAsync([], Ct);
+
+        Assert.Equal(0, saves);
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // DequeueAsync
     // ---------------------------------------------------------------------------------------------
 

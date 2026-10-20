@@ -269,6 +269,7 @@ public class XApiEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
                 x.ProficiencyLevelId == Guid.Empty &&
                 x.ScenarioEventId == null &&
                 x.TeamId == null &&
+                x.UserIds == null &&
                 x.Comment == null &&
                 x.MoveNumber == null &&
                 x.GroupNumber == null),

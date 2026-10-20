@@ -16,6 +16,12 @@ namespace Blueprint.Api.Services
     public interface IXApiQueueService
     {
         Task EnqueueAsync(XApiQueuedStatementEntity statement, CancellationToken ct = default);
+
+        /// <summary>
+        /// Queues every one of <paramref name="statements"/> in one save, so either all of them are queued
+        /// or, when the save fails, none is.
+        /// </summary>
+        Task EnqueueRangeAsync(IEnumerable<XApiQueuedStatementEntity> statements, CancellationToken ct = default);
         Task<List<XApiQueuedStatementEntity>> DequeueAsync(int batchSize = 10, CancellationToken ct = default);
         Task MarkCompletedAsync(Guid statementId, CancellationToken ct = default);
         Task MarkFailedAsync(Guid statementId, string errorMessage, bool isTransientError, CancellationToken ct = default);
@@ -49,6 +55,38 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
 
             _logger.LogDebug("Enqueued xAPI statement {StatementId} for verb {Verb}", statement.Id, statement.Verb);
+        }
+
+        public async Task EnqueueRangeAsync(IEnumerable<XApiQueuedStatementEntity> statements, CancellationToken ct = default)
+        {
+            var batch = statements.ToList();
+            if (batch.Count == 0)
+                return;
+
+            var queuedAt = DateTime.UtcNow;
+            foreach (var statement in batch)
+            {
+                statement.QueuedAt = queuedAt;
+                statement.Status = XApiQueueStatus.Pending;
+                statement.RetryCount = 0;
+            }
+
+            _context.XApiQueuedStatements.AddRange(batch);
+            try
+            {
+                await _context.SaveChangesAsync(ct);
+            }
+            catch
+            {
+                // Nothing was saved. Stop tracking the batch so a later save in this request does not
+                // queue part of it after all.
+                foreach (var statement in batch)
+                    _context.Entry(statement).State = EntityState.Detached;
+                throw;
+            }
+
+            foreach (var statement in batch)
+                _logger.LogDebug("Enqueued xAPI statement {StatementId} for verb {Verb}", statement.Id, statement.Verb);
         }
 
         public async Task<List<XApiQueuedStatementEntity>> DequeueAsync(int batchSize = 10, CancellationToken ct = default)

@@ -213,6 +213,7 @@ public class Startup
         services.AddSingleton<ICompetencyFrameworkImportProgressService, CompetencyFrameworkImportProgressService>();
         services.AddScoped<IProficiencyScaleService, ProficiencyScaleService>();
         services.AddScoped<IProficiencyLevelService, ProficiencyLevelService>();
+        services.AddScoped<IAttackReleaseService, AttackReleaseService>();
         services.AddScoped<ICardService, CardService>();
         services.AddScoped<ICardTeamService, CardTeamService>();
         services.AddScoped<ICatalogService, CatalogService>();
@@ -234,6 +235,7 @@ public class Startup
         services.AddScoped<IMselPageService, MselPageService>();
         services.AddScoped<IMselUnitService, MselUnitService>();
         services.AddScoped<IMselCompetencyService, MselCompetencyService>();
+        services.AddScoped<IMselAttackTechniqueService, MselAttackTechniqueService>();
         services.AddScoped<ITeamCompetencyService, TeamCompetencyService>();
         services.AddScoped<IMoveService, MoveService>();
         services.AddScoped<IOrganizationService, OrganizationService>();

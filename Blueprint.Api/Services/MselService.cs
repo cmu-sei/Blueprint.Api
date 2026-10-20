@@ -313,6 +313,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
+                .Include(m => m.MselAttackTechniques)
                 .Include(m => m.Pages)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
@@ -447,6 +448,14 @@ namespace Blueprint.Api.Services
                 mselCompetency.MselId = mselEntity.Id;
                 mselCompetency.Msel = null;
                 mselCompetency.Competency = null;
+            }
+            // copy the MSEL's ATT&CK technique pool
+            foreach (var mselAttackTechnique in mselEntity.MselAttackTechniques)
+            {
+                mselAttackTechnique.Id = Guid.NewGuid();
+                mselAttackTechnique.MselId = mselEntity.Id;
+                mselAttackTechnique.Msel = null;
+                mselAttackTechnique.AttackTechnique = null;
             }
             // copy Gallery Cards
             foreach (var card in mselEntity.Cards)
@@ -2085,6 +2094,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
+                .Include(m => m.MselAttackTechniques)
                 .Include(m => m.Pages)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
@@ -2164,6 +2174,29 @@ namespace Blueprint.Api.Services
             {
                 mselCompetency.Msel = null;
                 mselCompetency.Competency = null;
+            }
+            // A technique's id is the same on every installation that imported its ATT&CK release, so the pool
+            // carries over wherever that release is loaded. Drop the rest rather than fail the import.
+            foreach (var mselAttackTechnique in mselEntity.MselAttackTechniques)
+            {
+                mselAttackTechnique.Msel = null;
+                mselAttackTechnique.AttackTechnique = null;
+            }
+            if (mselEntity.MselAttackTechniques.Count > 0)
+            {
+                var fileTechniqueIds = mselEntity.MselAttackTechniques.Select(t => t.AttackTechniqueId).ToList();
+                var knownTechniqueIds = (await _context.AttackTechniques
+                    .Where(t => fileTechniqueIds.Contains(t.Id))
+                    .Select(t => t.Id)
+                    .ToListAsync(ct)).ToHashSet();
+                var missingTechniques = fileTechniqueIds.Count(id => !knownTechniqueIds.Contains(id));
+                if (missingTechniques > 0)
+                {
+                    mselEntity.MselAttackTechniques = mselEntity.MselAttackTechniques
+                        .Where(t => knownTechniqueIds.Contains(t.AttackTechniqueId))
+                        .ToList();
+                    AddChange(result, "attackTechniques", $"{missingTechniques} ATT&CK techniques were not imported because their ATT&CK release is not loaded here. Import the release, then add them to the MSEL.");
+                }
             }
 
             // Validate and fix scoring model linkage if MSEL uses CITE integration.

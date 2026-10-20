@@ -59,7 +59,8 @@ namespace Blueprint.Api.Data.Enumerations
         // 160 is not reused: it was DeliveryMethod, then IntegrationTarget, and older databases may still hold it
         Competency = 170,    // competencies (e.g., NICE Framework tasks) for tracking and xAPI logging
         IpAddress = 180,    // a single IPv4 or IPv6 address
-        Network = 190    // an IPv4 or IPv6 network in CIDR form (10.1.0.0/24)
+        Network = 190,    // an IPv4 or IPv6 network in CIDR form (10.1.0.0/24)
+        AttackTechnique = 200    // MITRE ATT&CK techniques from the MSEL's technique pool (T1059.001)
     }
 
     public enum MselRole

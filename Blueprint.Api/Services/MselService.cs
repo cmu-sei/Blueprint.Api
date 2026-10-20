@@ -51,6 +51,7 @@ namespace Blueprint.Api.Services
         Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<MselImportResult> ImportJsonAsync(FileForm form, CancellationToken ct);
+        Task<MselImportResult> ImportDraftAsync(MselDraftImport draftImport, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
         Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
@@ -78,6 +79,7 @@ namespace Blueprint.Api.Services
         private readonly IXApiService _xApiService;
         private readonly ICiteApiClient _citeApiClient;
         private readonly ICasterService _casterService;
+        private readonly AiOptions _aiOptions;
 
         public MselService(
             BlueprintContext context,
@@ -92,7 +94,8 @@ namespace Blueprint.Api.Services
             IMapper mapper,
             IXApiService xApiService,
             ICiteApiClient citeApiClient,
-            ICasterService casterService)
+            ICasterService casterService,
+            AiOptions aiOptions)
         {
             _context = context;
             _clientOptions = clientOptions;
@@ -107,6 +110,7 @@ namespace Blueprint.Api.Services
             _xApiService = xApiService;
             _citeApiClient = citeApiClient;
             _casterService = casterService;
+            _aiOptions = aiOptions;
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct)
@@ -288,8 +292,13 @@ namespace Blueprint.Api.Services
 
         private async Task<MselEntity> privateMselCopyAsync(Guid mselId, Guid? currentUserTeamId, CancellationToken ct)
         {
-            var currentUserId = _user.GetId();
-            var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == _user.GetId())).Name;
+            var mselEntity = await LoadMselGraphAsync(mselId, ct);
+            return await privateMselCopyAsync(mselEntity, currentUserTeamId, ct);
+        }
+
+        // the whole MSEL, untracked, ready to be given new IDs and saved as a copy
+        private async Task<MselEntity> LoadMselGraphAsync(Guid mselId, CancellationToken ct)
+        {
             var mselEntity = await _context.Msels
                 .AsNoTracking()
                 .Include(m => m.DataFields)
@@ -319,7 +328,7 @@ namespace Blueprint.Api.Services
             if (mselEntity == null)
                 throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
 
-            return await privateMselCopyAsync(mselEntity, currentUserTeamId, ct);
+            return mselEntity;
         }
 
         private async Task<MselEntity> privateMselCopyAsync(MselEntity mselEntity, Guid? currentUserTeamId, CancellationToken ct, bool keepName = false)
@@ -2166,6 +2175,142 @@ namespace Blueprint.Api.Services
                 mselCompetency.Competency = null;
             }
 
+            return await ImportEntityAsync(mselEntity, result, ct);
+        }
+
+        public async Task<MselImportResult> ImportDraftAsync(MselDraftImport draftImport, CancellationToken ct)
+        {
+            var result = new MselImportResult();
+            var draft = draftImport.Draft ?? throw new ArgumentException("The draft is empty.");
+            var template = await MselDraftService.LoadTemplateAsync(_context, _user.GetId(), draftImport.TemplateMselId, ct);
+
+            // the planner may have edited the draft since it was generated, so check it again
+            var warnings = new List<string>();
+            MselDraftRules.Normalize(draft, template, _aiOptions.MaxInjects, warnings);
+            foreach (var warning in warnings)
+                AddChange(result, "draft", warning);
+
+            // the template supplies the columns, teams, integrations and pages; the draft supplies the moves and rows
+            var mselEntity = await LoadMselGraphAsync(template.Id, ct);
+            mselEntity.Name = draft.Name;
+            mselEntity.Description = draft.Description;
+            mselEntity.DurationSeconds = draft.DurationMinutes * 60;
+            if (mselEntity.StartTime == default)
+            {
+                var now = DateTime.UtcNow;
+                mselEntity.StartTime = new DateTime(now.Year, now.Month, now.Day, now.Hour, 0, 0, DateTimeKind.Utc).AddHours(1);
+            }
+            mselEntity.ScenarioEvents = new HashSet<ScenarioEventEntity>();
+            mselEntity.Moves = new HashSet<MoveEntity>();
+            // like a JSON import, team members are not carried over
+            foreach (var team in mselEntity.Teams)
+            {
+                team.TeamUsers = [];
+                team.UserTeamRoles = [];
+            }
+
+            var templateTeams = new HashSet<string>(mselEntity.Teams.Select(t => t.ShortName), StringComparer.OrdinalIgnoreCase);
+            foreach (var team in draft.Teams.Where(t => !templateTeams.Contains(t.ShortName)))
+            {
+                mselEntity.Teams.Add(new TeamEntity
+                {
+                    Id = Guid.NewGuid(),
+                    Name = string.IsNullOrWhiteSpace(team.Name) ? team.ShortName : team.Name,
+                    ShortName = team.ShortName,
+                    Description = team.Description
+                });
+            }
+            var templateOrgs = new HashSet<string>(mselEntity.Organizations.Select(o => o.ShortName), StringComparer.OrdinalIgnoreCase);
+            foreach (var organization in draft.Organizations.Where(o => !templateOrgs.Contains(o.ShortName)))
+            {
+                mselEntity.Organizations.Add(new OrganizationEntity
+                {
+                    Id = Guid.NewGuid(),
+                    Name = string.IsNullOrWhiteSpace(organization.Name) ? organization.ShortName : organization.Name,
+                    ShortName = organization.ShortName,
+                    Description = organization.Description,
+                    Summary = organization.Description
+                });
+            }
+            foreach (var move in draft.Moves)
+            {
+                mselEntity.Moves.Add(new MoveEntity
+                {
+                    Id = Guid.NewGuid(),
+                    MoveNumber = move.MoveNumber,
+                    Description = move.Description,
+                    SituationDescription = move.SituationDescription,
+                    DeltaSeconds = move.StartMinutes * 60
+                });
+            }
+
+            // one data value per column, as when a planner adds a row
+            foreach (var group in draft.Injects.GroupBy(i => i.Minutes))
+            {
+                var groupOrder = 0;
+                foreach (var inject in group)
+                {
+                    var deltaSeconds = inject.Minutes * 60;
+                    var scenarioEvent = new ScenarioEventEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        DeltaSeconds = deltaSeconds,
+                        GroupOrder = groupOrder++,
+                        ScenarioEventType = Enum.Parse<EventType>(inject.EventType, true)
+                    };
+                    foreach (var dataField in mselEntity.DataFields)
+                    {
+                        string value;
+                        if (!inject.Values.TryGetValue(dataField.Name, out value))
+                        {
+                            value = dataField.DataType switch
+                            {
+                                DataFieldType.Status => MselItemStatus.Pending.ToString(),
+                                DataFieldType.DateTime when MselDraftRules.IsServerFilled(dataField) =>
+                                    mselEntity.StartTime.AddSeconds(deltaSeconds).ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                                _ => null
+                            };
+                        }
+                        scenarioEvent.DataValues.Add(new DataValueEntity
+                        {
+                            Id = Guid.NewGuid(),
+                            DataFieldId = dataField.Id,
+                            Value = value
+                        });
+                    }
+                    mselEntity.ScenarioEvents.Add(scenarioEvent);
+                }
+            }
+
+            // competencies are matched by ID number; the model can name ones this Blueprint does not have
+            if (draft.Competencies.Any())
+            {
+                var codes = draft.Competencies.Select(c => c.ToLower()).ToList();
+                var competencies = await _context.Competencies
+                    .Where(c => codes.Contains(c.IdNumber.ToLower()))
+                    .ToListAsync(ct);
+                var existing = new HashSet<Guid>(mselEntity.MselCompetencies.Select(mc => mc.CompetencyId));
+                foreach (var competency in competencies.GroupBy(c => c.IdNumber.ToLower()).Select(g => g.First()))
+                {
+                    if (existing.Add(competency.Id))
+                        mselEntity.MselCompetencies.Add(new MselCompetencyEntity { Id = Guid.NewGuid(), CompetencyId = competency.Id });
+                }
+                var unknown = draft.Competencies.Where(c => !competencies.Any(k => k.IdNumber.Equals(c, StringComparison.OrdinalIgnoreCase))).ToList();
+                if (unknown.Any())
+                    AddChange(result, "competencies", $"These competencies are not in this Blueprint and were not linked: {string.Join(", ", unknown)}.");
+            }
+
+            AddChange(result, "draft", $"Drafted with AI from the \"{template.Name}\" template. Review every row before pushing.");
+            foreach (var note in draft.PlannerNotes)
+                AddChange(result, "plannerNotes", note);
+
+            return await ImportEntityAsync(mselEntity, result, ct);
+        }
+
+        // Checks an incoming MSEL against this environment (CITE, Caster, names) and saves it as a new copy.
+        // Shared by JSON import and AI draft import so both report the same way.
+        private async Task<MselImportResult> ImportEntityAsync(MselEntity mselEntity, MselImportResult result, CancellationToken ct)
+        {
             // Validate and fix scoring model linkage if MSEL uses CITE integration.
             // Mirror team type handling by allowing plain-name remap when the ID is
             // missing or stale after moving content between environments.

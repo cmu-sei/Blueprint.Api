@@ -114,6 +114,10 @@ public class Startup
             .Configure<XApiOptions>(Configuration.GetSection("XApiOptions"))
             .AddScoped(config => config.GetService<IOptionsMonitor<XApiOptions>>().CurrentValue);
 
+        services
+            .Configure<AiOptions>(Configuration.GetSection("AiOptions"))
+            .AddScoped(config => config.GetService<IOptionsMonitor<AiOptions>>().CurrentValue);
+
         services.AddScoped<IClaimsTransformation, AuthorizationClaimsTransformer>();
         services.AddScoped<IUserClaimsService, UserClaimsService>();
 
@@ -231,6 +235,8 @@ public class Startup
         services.AddScoped<IInvitationService, InvitationService>();
         services.AddScoped<IInjectTypeService, InjectTypeService>();
         services.AddScoped<IMselService, MselService>();
+        services.AddScoped<IMselDraftService, MselDraftService>();
+        services.AddScoped<IAiModelClient, BedrockAiModelClient>();
         services.AddScoped<IMselPageService, MselPageService>();
         services.AddScoped<IMselUnitService, MselUnitService>();
         services.AddScoped<IMselCompetencyService, MselCompetencyService>();

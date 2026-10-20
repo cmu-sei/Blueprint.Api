@@ -23,17 +23,20 @@ namespace Blueprint.Api.Controllers
     public class MselController : BaseController
     {
         private readonly IMselService _mselService;
+        private readonly IMselDraftService _mselDraftService;
         private readonly IIntegrationNameService _integrationNameService;
         private readonly IBlueprintAuthorizationService _authorizationService;
 
         public MselController(
             IMselService mselService,
+            IMselDraftService mselDraftService,
             ICiteService citeService,
             IPlayerService playerService,
             IIntegrationNameService integrationNameService,
             IBlueprintAuthorizationService authorizationService)
         {
             _mselService = mselService;
+            _mselDraftService = mselDraftService;
             _integrationNameService = integrationNameService;
             _authorizationService = authorizationService;
         }
@@ -376,6 +379,39 @@ namespace Blueprint.Api.Controllers
                 throw new ForbiddenException();
 
             var result = await _mselService.ImportJsonAsync(form, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Draft a MSEL with AI from a template and a description </summary>
+        /// <remarks>
+        /// Nothing is saved. The planner reviews and edits the draft, then creates the MSEL with importMselDraft.
+        /// </remarks>
+        /// <param name="request"> The template and the planner's description of the exercise </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/ai-draft")]
+        [ProducesResponseType(typeof(MselDraftResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "draftMsel")]
+        public async Task<IActionResult> DraftAsync([FromBody] MselDraftRequest request, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct))
+                throw new ForbiddenException();
+
+            var result = await _mselDraftService.DraftAsync(request, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Create a MSEL from a reviewed draft and report what was imported, changed and skipped </summary>
+        /// <param name="draftImport"> The template and the reviewed draft </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/ai-draft/import")]
+        [ProducesResponseType(typeof(MselImportResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "importMselDraft")]
+        public async Task<IActionResult> ImportDraftAsync([FromBody] MselDraftImport draftImport, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct))
+                throw new ForbiddenException();
+
+            var result = await _mselService.ImportDraftAsync(draftImport, ct);
             return Ok(result);
         }
 

@@ -23,6 +23,7 @@
 
   <!-- Application and data access. -->
   <ItemGroup>
+    <PackageVersion Include="AWSSDK.BedrockRuntime" Version="4.0.101.12" />
     <PackageVersion Include="AutoMapper" Version="13.0.1" /> <!-- DO NOT UPDATE. Version 15+ requires a license. Plan to migrate to something else. -->
     <PackageVersion Include="MediatR" Version="12.4.1" /> <!-- DO NOT UPDATE. Version 13+ requires a license. Plan to migrate to something else. -->
     <PackageVersion Include="Crucible.Common.EntityEvents" Version="0.2.0" />

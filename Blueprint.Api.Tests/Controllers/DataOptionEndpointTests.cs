@@ -965,7 +965,7 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             BodyFor(option) with { Id = empty ? Guid.Empty : Guid.NewGuid(), OptionName = "after" });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var stored = await NewContext().DataOptions.AsNoTracking().SingleAsync(Ct);
+        var stored = await ReadBack(db => db.DataOptions.AsNoTracking().SingleAsync(Ct));
         Assert.Equal(option.Id, stored.Id);
         Assert.Equal("after", stored.OptionName);
     }
@@ -1009,7 +1009,7 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             BodyFor(option) with { DataFieldId = Guid.NewGuid() });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(field.Id, (await NewContext().DataOptions.AsNoTracking().SingleAsync(Ct)).DataFieldId);
+        Assert.Equal(field.Id, (await ReadBack(db => db.DataOptions.AsNoTracking().SingleAsync(Ct))).DataFieldId);
     }
 
     /// <summary>
@@ -1102,7 +1102,7 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var stored = await NewContext().DataOptions.AsNoTracking().SingleAsync(Ct);
+        var stored = await ReadBack(db => db.DataOptions.AsNoTracking().SingleAsync(Ct));
         Assert.Equal(mselField.Id, stored.DataFieldId);
         Assert.Equal("renamed", stored.OptionName);
     }

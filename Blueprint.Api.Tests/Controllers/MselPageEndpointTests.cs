@@ -236,7 +236,7 @@ public class MselPageEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        var stored = await NewContext().MselPages.SingleAsync(x => x.Id == page.Id, Ct);
+        var stored = await ReadBack(db => db.MselPages.SingleAsync(x => x.Id == page.Id, Ct));
         Assert.Equal(theirs.Id, stored.MselId);
         Assert.Equal(page.Name, stored.Name);
     }
@@ -259,7 +259,7 @@ public class MselPageEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var stored = await NewContext().MselPages.SingleAsync(x => x.Id == page.Id, Ct);
+        var stored = await ReadBack(db => db.MselPages.SingleAsync(x => x.Id == page.Id, Ct));
         Assert.Equal(msel.Id, stored.MselId);
         Assert.Equal("renamed", stored.Name);
     }

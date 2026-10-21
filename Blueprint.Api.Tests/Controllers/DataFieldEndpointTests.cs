@@ -575,7 +575,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var response = await Post(Client(owner), Body(msel.Id) with { IsTemplate = true });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Empty(await NewContext().DataFields.AsNoTracking().ToListAsync(Ct));
+        Assert.Empty(await ReadBack(db => db.DataFields.AsNoTracking().ToListAsync(Ct)));
     }
 
     /// <summary>
@@ -592,7 +592,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var response = await Post(Client(actor), Body() with { InjectTypeId = injectType.Id, IsTemplate = true });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Empty(await NewContext().DataFields.AsNoTracking().ToListAsync(Ct));
+        Assert.Empty(await ReadBack(db => db.DataFields.AsNoTracking().ToListAsync(Ct)));
     }
 
     /// <summary>Create with no scope and is template false creates a field no list returns.</summary>
@@ -624,7 +624,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var response = await Post(Client(actor), Body(msel.Id) with { InjectTypeId = injectType.Id });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Empty(await NewContext().DataFields.AsNoTracking().ToListAsync(Ct));
+        Assert.Empty(await ReadBack(db => db.DataFields.AsNoTracking().ToListAsync(Ct)));
     }
 
     [Fact]
@@ -843,6 +843,36 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
+    public async Task Update_OnAMsel_AsAnEditor_ChangesTheField()
+    {
+        var msel = TestData.Msel();
+        var field = TestData.DataField(msel.Id, name: "Before");
+        await Seed(msel, field);
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var response = await Put(Client(actor), field.Id, BodyFor(field) with { Name = "After" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("After", (await Read<DataField>(response)).Name);
+        Assert.Equal("After", (await ReadBack(db => db.DataFields.SingleAsync(x => x.Id == field.Id, Ct))).Name);
+    }
+
+    [Fact]
+    public async Task Delete_OnAMsel_AsAnEditor_DeletesIt()
+    {
+        var msel = TestData.Msel();
+        var field = TestData.DataField(msel.Id);
+        await Seed(msel, field);
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/dataFields/{field.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(field.Id, await Read<Guid>(response));
+        Assert.False(await ReadBack(db => db.DataFields.AnyAsync(x => x.Id == field.Id, Ct)));
+    }
+
+    [Fact]
     public async Task Update_OnAMsel_AsTheOwner_ChangesTheField()
     {
         var msel = TestData.Msel();
@@ -931,7 +961,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("Renamed", (await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct)).Name);
+        Assert.Equal("Renamed", (await ReadBack(db => db.DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct))).Name);
     }
 
     /// <summary>
@@ -1011,7 +1041,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
-        var stored = await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct);
+        var stored = await ReadBack(db => db.DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct));
         Assert.Equal(theirs.Id, stored.MselId);
         Assert.Equal("Theirs", stored.Name);
     }
@@ -1040,7 +1070,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var stored = await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct);
+        var stored = await ReadBack(db => db.DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct));
         Assert.Equal(msel.Id, stored.MselId);
         Assert.Null(stored.InjectTypeId);
         Assert.False(stored.IsTemplate);

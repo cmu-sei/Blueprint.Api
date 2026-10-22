@@ -15,6 +15,7 @@ using System.Threading.Tasks;
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
@@ -193,6 +194,20 @@ namespace Blueprint.Api.Services
             {
                 if (!hasDataFieldPermission)
                     throw new ForbiddenException();
+            }
+
+            // a DateTime field's values are shown as dates, so a field holding other text, such as a
+            // team name, can't become one until those values are changed
+            if (dataField.DataType == DataFieldType.DateTime && dataFieldToUpdate.DataType != DataFieldType.DateTime)
+            {
+                var notDates = (await _context.DataValues
+                    .Where(dv => dv.DataFieldId == id && dv.Value != null && dv.Value.Trim() != "")
+                    .Select(dv => dv.Value)
+                    .ToListAsync(ct))
+                    .Where(v => !ServiceUtilities.IsDateTimeValue(v))
+                    .ToList();
+                if (notDates.Count > 0)
+                    throw new ConflictException($"{dataFieldToUpdate.Name} can't be changed to DateTime: {notDates.Count} of its values aren't dates, for example \"{notDates[0]}\".");
             }
 
             // start a transaction

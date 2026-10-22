@@ -37,6 +37,8 @@ namespace Blueprint.Api.Services
         public bool UsePlayer { get; set; }
         public bool UseGallery { get; set; }
         public bool UseCite { get; set; }
+        public bool UseRocketChat { get; set; }
+        public bool UseMatrix { get; set; }
     }
 
 }

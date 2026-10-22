@@ -1164,6 +1164,14 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("language");
 
+                    b.Property<string>("MatrixRoomId")
+                        .HasColumnType("text")
+                        .HasColumnName("matrix_room_id");
+
+                    b.Property<string>("MatrixSpaceId")
+                        .HasColumnType("text")
+                        .HasColumnName("matrix_space_id");
+
                     b.Property<Guid?>("ModifiedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("modified_by");
@@ -1183,6 +1191,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<Guid?>("PlayerViewId")
                         .HasColumnType("uuid")
                         .HasColumnName("player_view_id");
+
+                    b.Property<string>("RocketChatRoomId")
+                        .HasColumnType("text")
+                        .HasColumnName("rocket_chat_room_id");
 
                     b.Property<bool>("ShowGroupOnAssessorView")
                         .HasColumnType("boolean")
@@ -1268,9 +1280,17 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("use_gallery");
 
+                    b.Property<bool>("UseMatrix")
+                        .HasColumnType("boolean")
+                        .HasColumnName("use_matrix");
+
                     b.Property<bool>("UsePlayer")
                         .HasColumnType("boolean")
                         .HasColumnName("use_player");
+
+                    b.Property<bool>("UseRocketChat")
+                        .HasColumnType("boolean")
+                        .HasColumnName("use_rocket_chat");
 
                     b.Property<bool>("UseSteamfitter")
                         .HasColumnType("boolean")
@@ -1965,6 +1985,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("email");
 
+                    b.Property<string>("MatrixRoomId")
+                        .HasColumnType("text")
+                        .HasColumnName("matrix_room_id");
+
                     b.Property<Guid?>("ModifiedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("modified_by");
@@ -1976,6 +2000,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<string>("Name")
                         .HasColumnType("text")
                         .HasColumnName("name");
+
+                    b.Property<string>("RocketChatRoomId")
+                        .HasColumnType("text")
+                        .HasColumnName("rocket_chat_room_id");
 
                     b.Property<string>("ShortName")
                         .HasColumnType("text")

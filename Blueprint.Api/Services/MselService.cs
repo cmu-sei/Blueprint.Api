@@ -339,6 +339,9 @@ namespace Blueprint.Api.Services
             mselEntity.SteamfitterScenarioId = null;
             mselEntity.CasterWorkspaceId = null;
             mselEntity.CasterRunId = null;
+            mselEntity.RocketChatRoomId = null;
+            mselEntity.MatrixSpaceId = null;
+            mselEntity.MatrixRoomId = null;
             mselEntity.Status = MselItemStatus.Pending;
             // copy DataFields
             foreach (var dataField in mselEntity.DataFields)
@@ -397,6 +400,8 @@ namespace Blueprint.Api.Services
                 team.MselId = mselEntity.Id;
                 team.Msel = null;
                 team.CreatedBy = mselEntity.CreatedBy;
+                team.RocketChatRoomId = null;
+                team.MatrixRoomId = null;
                 // copy TeamUsers
                 foreach (var teamUser in team.TeamUsers)
                 {
@@ -2413,6 +2418,10 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to push integrations.");
             if (msel.PlayerViewId != null)
                 throw new InvalidOperationException($"MSEL {mselId} is already deployed.");
+            if (msel.UseRocketChat && !IntegrationRocketChatExtensions.IsConfigured(_clientOptions))
+                throw new InvalidOperationException("Rocket.Chat is not configured. Set ClientSettings RocketChatUrl, RocketChatUserId and RocketChatAuthToken.");
+            if (msel.UseMatrix && !IntegrationMatrixExtensions.IsConfigured(_clientOptions))
+                throw new InvalidOperationException("Matrix is not configured. Set ClientSettings MatrixUrl, MatrixAccessToken and MatrixOidcAuthProvider.");
             if (msel.UseCaster)
             {
                 await ValidateCasterSetupAsync(msel, ct);
@@ -2619,7 +2628,9 @@ namespace Blueprint.Api.Services
                         TeamId = invitation.TeamId,
                         UsePlayer = msel.UsePlayer,
                         UseGallery = msel.UseGallery,
-                        UseCite = msel.UseCite && invitation.Team.CiteTeamTypeId != null
+                        UseCite = msel.UseCite && invitation.Team.CiteTeamTypeId != null,
+                        UseRocketChat = msel.UseRocketChat,
+                        UseMatrix = msel.UseMatrix
                     };
                     _joinQueue.Add(joinInformation);
                 }
@@ -2774,6 +2785,10 @@ namespace Blueprint.Api.Services
             var template = await _context.Msels.AsNoTracking().SingleAsync(m => m.Id == mselId, ct);
             if (template.UseCaster)
                 await ValidateCasterSetupAsync(template, ct);
+            if (template.UseRocketChat && !IntegrationRocketChatExtensions.IsConfigured(_clientOptions))
+                throw new InvalidOperationException("Rocket.Chat is not configured. Set ClientSettings RocketChatUrl, RocketChatUserId and RocketChatAuthToken.");
+            if (template.UseMatrix && !IntegrationMatrixExtensions.IsConfigured(_clientOptions))
+                throw new InvalidOperationException("Matrix is not configured. Set ClientSettings MatrixUrl, MatrixAccessToken and MatrixOidcAuthProvider.");
 
             // clone the template MSEL
             var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct);

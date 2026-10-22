@@ -38,6 +38,14 @@ namespace Blueprint.Api.Data.Models
         public Guid? CasterWorkspaceId { get; set; }
         public Guid? CasterRunId { get; set; }
         public IntegrationType CasterIntegrationType { get; set; }
+        public bool UseRocketChat { get; set; }
+        // the exercise-wide Rocket.Chat room; each team's room is on the team
+        public string RocketChatRoomId { get; set; }
+        public bool UseMatrix { get; set; }
+        // the Matrix space that holds the exercise room and the team rooms
+        public string MatrixSpaceId { get; set; }
+        // the exercise-wide Matrix room; each team's room is on the team
+        public string MatrixRoomId { get; set; }
         public bool IsTemplate { get; set; }
         public DateTime StartTime { get; set; }
         public int DurationSeconds { get; set; }

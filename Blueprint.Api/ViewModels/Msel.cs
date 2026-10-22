@@ -39,6 +39,11 @@ namespace Blueprint.Api.ViewModels
         public Guid? CasterWorkspaceId { get; set; }
         public Guid? CasterRunId { get; set; }
         public IntegrationType CasterIntegrationType { get; set; }
+        public bool UseRocketChat { get; set; }
+        public string RocketChatRoomId { get; set; }
+        public bool UseMatrix { get; set; }
+        public string MatrixSpaceId { get; set; }
+        public string MatrixRoomId { get; set; }
         public bool IsTemplate { get; set; }
         public DateTime StartTime { get; set; }
 

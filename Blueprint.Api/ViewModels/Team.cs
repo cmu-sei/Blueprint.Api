@@ -18,6 +18,8 @@ namespace Blueprint.Api.ViewModels
         public bool canTeamLeaderInvite { get; set; }
         public bool canTeamMemberInvite { get; set; }
         public string CasterTeamVariable { get; set; }
+        public string RocketChatRoomId { get; set; }
+        public string MatrixRoomId { get; set; }
         public User[] Users { get; set; }
         public CardTeam[] CardTeams { get; set; }
         public PlayerApplicationTeam[] PlayerApplicationTeams { get; set; }

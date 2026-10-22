@@ -176,6 +176,46 @@ namespace Blueprint.Api.Services
                     }
                 }
 
+                var rocketChatRoomIds = await dbContext.Teams
+                    .Where(t => t.MselId == mselId && t.RocketChatRoomId != null)
+                    .Select(t => t.RocketChatRoomId)
+                    .ToListAsync(freshCt);
+                if (msel.RocketChatRoomId != null)
+                    rocketChatRoomIds.Add(msel.RocketChatRoomId);
+                if (rocketChatRoomIds.Any())
+                {
+                    try
+                    {
+                        await SendIntegrationStatusAsync(dbContext, mselId, "Cancelling - pulling Rocket.Chat Rooms", freshCt);
+                        var rocketChatClient = IntegrationRocketChatExtensions.GetRocketChatClient(_httpClientFactory, _clientOptions.CurrentValue);
+                        await IntegrationRocketChatExtensions.PullFromRocketChatAsync(rocketChatRoomIds, rocketChatClient, freshCt);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        _logger.LogError(ex, $"Cancel cleanup: Rocket.Chat pull failed ({mselId})");
+                    }
+                }
+
+                // the space goes last, after the rooms in it
+                var matrixRoomIds = await dbContext.Teams
+                    .Where(t => t.MselId == mselId && t.MatrixRoomId != null)
+                    .Select(t => t.MatrixRoomId)
+                    .ToListAsync(freshCt);
+                matrixRoomIds.AddRange(new[] { msel.MatrixRoomId, msel.MatrixSpaceId }.Where(id => id != null));
+                if (matrixRoomIds.Any())
+                {
+                    try
+                    {
+                        await SendIntegrationStatusAsync(dbContext, mselId, "Cancelling - pulling Matrix Rooms", freshCt);
+                        var matrixClient = IntegrationMatrixExtensions.GetMatrixClient(_httpClientFactory, _clientOptions.CurrentValue);
+                        await IntegrationMatrixExtensions.PullFromMatrixAsync(matrixRoomIds, matrixClient, freshCt);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        _logger.LogError(ex, $"Cancel cleanup: Matrix pull failed ({mselId})");
+                    }
+                }
+
                 if (msel.PlayerViewId != null)
                 {
                     try
@@ -205,8 +245,16 @@ namespace Blueprint.Api.Services
                     finalMsel.SteamfitterScenarioId = null;
                     finalMsel.CasterWorkspaceId = null;
                     finalMsel.CasterRunId = null;
+                    finalMsel.RocketChatRoomId = null;
+                    finalMsel.MatrixSpaceId = null;
+                    finalMsel.MatrixRoomId = null;
                     finalMsel.IntegrationStatus = null;
                     finalMsel.Status = Data.Enumerations.MselItemStatus.Approved;
+                    await finalContext.Teams
+                        .Where(t => t.MselId == mselId && (t.RocketChatRoomId != null || t.MatrixRoomId != null))
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(t => t.RocketChatRoomId, (string)null)
+                            .SetProperty(t => t.MatrixRoomId, (string)null), freshCt);
                     await finalContext.SaveChangesAsync(freshCt);
                 }
 
@@ -399,6 +447,28 @@ namespace Blueprint.Api.Services
                                 await SteamfitterProcess(msel, steamfitterApiClient, blueprintContext, ct);
                             }
 
+                            // Rocket.Chat processing
+                            if (msel.UseRocketChat)
+                            {
+                                ct.ThrowIfCancellationRequested();
+                                currentProcessStep = "Rocket.Chat - create rooms";
+                                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Rocket.Chat Rooms", ct);
+                                var rocketChatClient = IntegrationRocketChatExtensions.GetRocketChatClient(_httpClientFactory, _clientOptions.CurrentValue);
+                                var keycloakClient = IntegrationKeycloakExtensions.GetKeycloakAdminClient(_httpClientFactory, scope.ServiceProvider.GetRequiredService<Infrastructure.Options.ResourceOwnerAuthorizationOptions>().Authority, tokenResponse);
+                                await IntegrationRocketChatExtensions.PushToRocketChatAsync(msel, rocketChatClient, keycloakClient, blueprintContext, ct);
+                            }
+
+                            // Matrix processing
+                            if (msel.UseMatrix)
+                            {
+                                ct.ThrowIfCancellationRequested();
+                                currentProcessStep = "Matrix - create rooms";
+                                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Matrix Rooms", ct);
+                                var matrixClient = IntegrationMatrixExtensions.GetMatrixClient(_httpClientFactory, _clientOptions.CurrentValue);
+                                var keycloakClient = IntegrationKeycloakExtensions.GetKeycloakAdminClient(_httpClientFactory, scope.ServiceProvider.GetRequiredService<Infrastructure.Options.ResourceOwnerAuthorizationOptions>().Authority, tokenResponse);
+                                await IntegrationMatrixExtensions.PushToMatrixAsync(msel, matrixClient, keycloakClient, _clientOptions.CurrentValue.MatrixOidcAuthProvider, blueprintContext, ct);
+                            }
+
                             // Player processing part 2
                             if (msel.UsePlayer)
                             {
@@ -561,6 +631,38 @@ namespace Blueprint.Api.Services
                     _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
                 }
             }
+            // Pull from Rocket.Chat
+            var rocketChatRoomIds = msel.Teams.Select(t => t.RocketChatRoomId).Append(msel.RocketChatRoomId).Where(id => id != null).ToList();
+            if (rocketChatRoomIds.Any())
+            {
+                try
+                {
+                    currentProcessStep = "Rocket.Chat - delete rooms";
+                    await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Rocket.Chat Rooms", ct);
+                    var rocketChatClient = IntegrationRocketChatExtensions.GetRocketChatClient(_httpClientFactory, _clientOptions.CurrentValue);
+                    await IntegrationRocketChatExtensions.PullFromRocketChatAsync(rocketChatRoomIds, rocketChatClient, ct);
+                }
+                catch (System.Exception ex)
+                {
+                    _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
+                }
+            }
+            // Pull from Matrix, the space last after the rooms in it
+            var matrixRoomIds = msel.Teams.Select(t => t.MatrixRoomId).Append(msel.MatrixRoomId).Append(msel.MatrixSpaceId).Where(id => id != null).ToList();
+            if (matrixRoomIds.Any())
+            {
+                try
+                {
+                    currentProcessStep = "Matrix - delete rooms";
+                    await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Matrix Rooms", ct);
+                    var matrixClient = IntegrationMatrixExtensions.GetMatrixClient(_httpClientFactory, _clientOptions.CurrentValue);
+                    await IntegrationMatrixExtensions.PullFromMatrixAsync(matrixRoomIds, matrixClient, ct);
+                }
+                catch (System.Exception ex)
+                {
+                    _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
+                }
+            }
             // Pull from Player
             if (msel.PlayerViewId != null)
             {
@@ -592,8 +694,16 @@ namespace Blueprint.Api.Services
                 finalMsel.SteamfitterScenarioId = null;
                 finalMsel.CasterWorkspaceId = null;
                 finalMsel.CasterRunId = null;
+                finalMsel.RocketChatRoomId = null;
+                finalMsel.MatrixSpaceId = null;
+                finalMsel.MatrixRoomId = null;
                 finalMsel.IntegrationStatus = null;
                 finalMsel.Status = integrationInformation.FinalStatus;
+                await finalContext.Teams
+                    .Where(t => t.MselId == mselId && (t.RocketChatRoomId != null || t.MatrixRoomId != null))
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(t => t.RocketChatRoomId, (string)null)
+                        .SetProperty(t => t.MatrixRoomId, (string)null), ct);
                 await finalContext.SaveChangesAsync(ct);
             }
         }

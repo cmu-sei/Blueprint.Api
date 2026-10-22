@@ -37,6 +37,8 @@ namespace Blueprint.Api.ViewModels
         /// <summary>The Caster directory a push deploys from, which the caller must be able to view.</summary>
         public Guid? CasterDirectoryId { get; set; }
         public IntegrationType CasterIntegrationType { get; set; }
+        public bool UseRocketChat { get; set; }
+        public bool UseMatrix { get; set; }
         public bool IsTemplate { get; set; }
         public DateTime StartTime { get; set; }
 

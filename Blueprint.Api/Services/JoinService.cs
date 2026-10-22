@@ -129,6 +129,28 @@ namespace Blueprint.Api.Services
                         currentProcessStep = "Cite - add user to team";
                         await IntegrationCiteExtensions.AddUserToTeamAsync(joinInformation.UserId, joinInformation.TeamId, citeApiClient, blueprintContext, ct);
                     }
+                    // Join Rocket.Chat
+                    if (joinInformation.UseRocketChat)
+                    {
+                        currentProcessStep = "Rocket.Chat - get API clients";
+                        var rocketChatClient = IntegrationRocketChatExtensions.GetRocketChatClient(_httpClientFactory, _clientOptions.CurrentValue);
+                        var keycloakClient = IntegrationKeycloakExtensions.GetKeycloakAdminClient(_httpClientFactory, scope.ServiceProvider.GetRequiredService<Infrastructure.Options.ResourceOwnerAuthorizationOptions>().Authority, tokenResponse);
+
+                        // add user to the team and exercise rooms
+                        currentProcessStep = "Rocket.Chat - add user to rooms";
+                        await IntegrationRocketChatExtensions.AddUserToTeamAsync(joinInformation.UserId, joinInformation.TeamId, rocketChatClient, keycloakClient, blueprintContext, ct);
+                    }
+                    // Join Matrix
+                    if (joinInformation.UseMatrix)
+                    {
+                        currentProcessStep = "Matrix - get API clients";
+                        var matrixClient = IntegrationMatrixExtensions.GetMatrixClient(_httpClientFactory, _clientOptions.CurrentValue);
+                        var keycloakClient = IntegrationKeycloakExtensions.GetKeycloakAdminClient(_httpClientFactory, scope.ServiceProvider.GetRequiredService<Infrastructure.Options.ResourceOwnerAuthorizationOptions>().Authority, tokenResponse);
+
+                        // add user to the space, the exercise room and the team room
+                        currentProcessStep = "Matrix - add user to rooms";
+                        await IntegrationMatrixExtensions.AddUserToTeamAsync(joinInformation.UserId, joinInformation.TeamId, matrixClient, keycloakClient, _clientOptions.CurrentValue.MatrixOidcAuthProvider, blueprintContext, ct);
+                    }
                 }
             }
             catch (System.Exception ex)

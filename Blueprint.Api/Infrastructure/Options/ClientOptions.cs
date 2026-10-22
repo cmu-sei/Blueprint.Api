@@ -15,6 +15,8 @@ namespace Blueprint.Api.Infrastructure.Options
         public string PlayerApiUrl { get; set; }
         public string SteamfitterApiUrl { get; set; }
         public string CasterApiUrl { get; set; }
+        public string RocketChatUrl { get; set; }
+        public string MatrixUrl { get; set; }
 
         public string CiteUiUrl { get; set; }
         public string GalleryUiUrl { get; set; }
@@ -37,6 +39,20 @@ namespace Blueprint.Api.Infrastructure.Options
         public int CasterPlanMaxWaitMinutes { get; set; } = 15;
         public int CasterApplyMaxWaitMinutes { get; set; } = 120;
         public int CasterDestroyMaxWaitMinutes { get; set; } = 60;
+
+        // Rocket.Chat takes no Keycloak tokens, so a push signs in as a bot user with a
+        // personal access token. The bot needs the admin role, or create-p, delete-p,
+        // add-user-to-any-p-room and view-full-other-user-info.
+        public string RocketChatUserId { get; set; }
+        public string RocketChatAuthToken { get; set; }
+
+        // A push signs in to the Matrix homeserver as a bot user with its access token. The bot
+        // must be a Synapse server admin, since accounts, joins and room deletes use the admin API.
+        public string MatrixAccessToken { get; set; }
+        // The Synapse auth provider of the Keycloak sign-in, "oidc-" followed by its idp_id.
+        // Accounts made for users who have not signed in yet are linked to their Keycloak
+        // subject under it, so their first sign-in lands in that account.
+        public string MatrixOidcAuthProvider { get; set; }
     }
 }
 

@@ -28,6 +28,8 @@ namespace Blueprint.Api.Data.Models
         public bool canTeamMemberInvite { get; set; }
         // the template variable this team's Player team ID is written to; null writes it under the team's own name
         public string CasterTeamVariable { get; set; }
+        public string RocketChatRoomId { get; set; }
+        public string MatrixRoomId { get; set; }
         public ICollection<TeamUserEntity> TeamUsers { get; set; } = new List<TeamUserEntity>();
         public virtual ICollection<CardTeamEntity> CardTeams { get; set; } = new HashSet<CardTeamEntity>();
         public virtual ICollection<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; } = new HashSet<PlayerApplicationTeamEntity>();

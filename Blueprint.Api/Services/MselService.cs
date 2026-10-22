@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -989,10 +990,44 @@ namespace Blueprint.Api.Services
                 // remove the header row from the sheet data before creating the scenario events
                 sheetData.RemoveChild<Row>(headerRow);
                 // create the sceanrio events and data values
+                var dataTypesBeforeValues = msel.DataFields.ToDictionary(df => df.Id, df => df.DataType);
                 await CreateScenarioEventsAsync(msel.Id, sheetData, workbookPart, msel.DataFields, sheetLayout);
+                KeepTextOutOfImportedDateTimeFields(msel.DataFields, dataTypesBeforeValues);
             }
             await _context.SaveChangesAsync(ct);
             return msel;
+        }
+
+        /// <summary>
+        /// Keeps text out of a DateTime field. A column formatted as dates in Excel can still hold a team
+        /// or a name in some rows, and a DateTime field shows its values as dates, so a field left holding
+        /// text goes back to the type it had before the values were read, or to String if that was
+        /// DateTime. The cells holding text are recorded with that type too, so the export writes them as
+        /// text rather than as dates.
+        /// </summary>
+        private void KeepTextOutOfImportedDateTimeFields(IEnumerable<DataFieldEntity> dataFields, Dictionary<Guid, DataFieldType> dataTypesBeforeValues)
+        {
+            foreach (var dataField in dataFields.Where(df => df.DataType == DataFieldType.DateTime))
+            {
+                var textValues = _context.DataValues.Local
+                    .Where(dv => dv.DataFieldId == dataField.Id &&
+                        !string.IsNullOrWhiteSpace(dv.Value) && !ServiceUtilities.IsDateTimeValue(dv.Value))
+                    .ToList();
+                if (textValues.Count == 0)
+                    continue;
+                var dataTypeBefore = dataTypesBeforeValues[dataField.Id];
+                dataField.DataType = dataTypeBefore == DataFieldType.DateTime ? DataFieldType.String : dataTypeBefore;
+                foreach (var dataValue in textValues)
+                {
+                    // cell metadata is "color,tint,weight,type"
+                    var metadataParts = (dataValue.CellMetadata ?? "").Split(",");
+                    if (metadataParts.Length == 4)
+                    {
+                        metadataParts[3] = ((int)dataField.DataType).ToString();
+                        dataValue.CellMetadata = string.Join(",", metadataParts);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -1337,7 +1372,7 @@ namespace Blueprint.Api.Services
                     {
                         try
                         {
-                            currentCellValue = DateTime.FromOADate(int.Parse(currentCellValue)).ToString("M/d/yyyy");
+                            currentCellValue = DateTime.FromOADate(int.Parse(currentCellValue)).ToString("M/d/yyyy", CultureInfo.InvariantCulture);
                         }
                         catch (System.Exception)
                         {

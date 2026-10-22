@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -874,22 +875,17 @@ namespace Blueprint.Api.Services
                         {
                             var metadataParts = cellMetadata == null ? new string[0] : cellMetadata.Split(",");
                             var dataFieldType = metadataParts.Count() >= 3 ? (DataFieldType)int.Parse(metadataParts[3]) : DataFieldType.String;
+                            // a value that doesn't fit its type, such as a team in a DateTime field, is written as
+                            // text, since a typed cell holding text is a workbook Excel has to repair
+                            if (!ServiceUtilities.FitsCellType(dataFieldType, stringValue))
+                            {
+                                dataFieldType = DataFieldType.String;
+                            }
                             switch (dataFieldType)
                             {
                                 case DataFieldType.DateTime:
                                     cell.DataType = CellValues.Date;
-                                    var dateParts = stringValue.Split("/");
-                                    if (dateParts.Count() == 1)
-                                    {
-                                        cell.CellValue = new CellValue(stringValue);
-                                    }
-                                    else
-                                    {
-                                        cell.CellValue = new CellValue(dateParts[2] + "-" +
-                                            dateParts[0].PadLeft(2, '0') + "-" +
-                                            dateParts[1].PadLeft(2, '0') +
-                                            "T00:00:00");
-                                    }
+                                    cell.CellValue = new CellValue(ServiceUtilities.ToCellDateTime(stringValue));
                                     break;
                                 case DataFieldType.Boolean:
                                     cell.DataType = CellValues.Boolean;
@@ -990,9 +986,43 @@ namespace Blueprint.Api.Services
                 sheetData.RemoveChild<Row>(headerRow);
                 // create the sceanrio events and data values
                 await CreateScenarioEventsAsync(msel.Id, sheetData, workbookPart, msel.DataFields, sheetLayout);
+                KeepTextOutOfImportedDateTimeFields(msel.DataFields);
             }
             await _context.SaveChangesAsync(ct);
             return msel;
+        }
+
+        /// <summary>
+        /// Keeps text out of a DateTime field. A column formatted as dates in Excel can still hold a team
+        /// or a name in some rows, and a DateTime field shows its values as dates, so a field left holding
+        /// text becomes a String field. The type it had before the values were read is no help, since an
+        /// Integer, Double or Boolean field can't hold text either. The cells holding text are recorded as
+        /// String too, so the export writes them as text rather than as dates.
+        /// </summary>
+        private void KeepTextOutOfImportedDateTimeFields(IEnumerable<DataFieldEntity> dataFields)
+        {
+            var dateTimeFieldIds = dataFields
+                .Where(df => df.DataType == DataFieldType.DateTime)
+                .Select(df => df.Id)
+                .ToHashSet();
+            var textValuesByField = _context.DataValues.Local
+                .Where(dv => dateTimeFieldIds.Contains(dv.DataFieldId) &&
+                    !string.IsNullOrWhiteSpace(dv.Value) && !ServiceUtilities.IsDateTimeValue(dv.Value))
+                .ToLookup(dv => dv.DataFieldId);
+            foreach (var dataField in dataFields.Where(df => textValuesByField.Contains(df.Id)))
+            {
+                dataField.DataType = DataFieldType.String;
+                foreach (var dataValue in textValuesByField[dataField.Id])
+                {
+                    // cell metadata is "color,tint,weight,type", and the type is always the last part
+                    var metadata = dataValue.CellMetadata ?? "";
+                    var lastComma = metadata.LastIndexOf(',');
+                    if (lastComma >= 0)
+                    {
+                        dataValue.CellMetadata = metadata[..(lastComma + 1)] + (int)DataFieldType.String;
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -1128,7 +1158,7 @@ namespace Blueprint.Api.Services
                             IsChosenFromList = false,
                             OnScenarioEventList = true,
                             OnExerciseView = true,
-                            CellMetadata = cellColor + "," + cellTint + ",bold," + (int)cellDataType,
+                            CellMetadata = ServiceUtilities.CellMetadata(cellColor, cellTint, "bold", cellDataType),
                             ColumnMetadata = columnMetadata
                         };
                         msel.DataFields.Add(dataField);
@@ -1337,7 +1367,10 @@ namespace Blueprint.Api.Services
                     {
                         try
                         {
-                            currentCellValue = DateTime.FromOADate(int.Parse(currentCellValue)).ToString("M/d/yyyy");
+                            var dateTime = DateTime.FromOADate(double.Parse(currentCellValue, CultureInfo.InvariantCulture));
+                            currentCellValue = dateTime.TimeOfDay == TimeSpan.Zero
+                                ? dateTime.ToString("M/d/yyyy", CultureInfo.InvariantCulture)
+                                : dateTime.ToString("M/d/yyyy H:mm", CultureInfo.InvariantCulture);
                         }
                         catch (System.Exception)
                         {
@@ -1365,7 +1398,7 @@ namespace Blueprint.Api.Services
                     }
                     Font font = (Font)styles.Stylesheet.Fonts.ChildElements[(int)cellFormat.FontId.Value];
                     var fontWeight = font.Bold == null ? "normal" : "bold";
-                    cellMetadata = cellColor + "," + cellTint + "," + fontWeight + "," + (int)dataField.DataType;
+                    cellMetadata = ServiceUtilities.CellMetadata(cellColor, cellTint, fontWeight, dataField.DataType);
                 }
 
                 var dataValue = new DataValueEntity()
@@ -1700,7 +1733,7 @@ namespace Blueprint.Api.Services
                 PatternFill patternFill = new PatternFill() { PatternType = PatternValues.Solid };
                 var rgb = styleParts[0] == "" ? "FFFFFF" : styleParts[0];
                 Double tint;
-                double.TryParse(styleParts[1], out tint);
+                double.TryParse(styleParts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out tint);
                 ForegroundColor foregroundColor = new ForegroundColor() { Rgb = rgb, Tint = tint };
                 BackgroundColor backgroundColor = new BackgroundColor() { Indexed = (UInt32Value)64U };
                 patternFill.Append(foregroundColor);

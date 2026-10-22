@@ -895,6 +895,56 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             (await context.DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct)).Name);
     }
 
+    /// <summary>
+    /// A DateTime field's values are shown as dates, so a field holding a team name among its values
+    /// is refused the change rather than left with text the UI cannot show.
+    /// </summary>
+    [Fact]
+    public async Task Update_ToDateTime_WithAValueThatIsNotADate_Is409AndLeavesTheFieldAlone()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var field = TestData.DataField(mselId: msel.Id, name: "Assigned To");
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        await Seed(field, scenarioEvent);
+        await Seed(TestData.DataValue(field.Id, scenarioEvent.Id, "TEAM1"));
+
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), field.Id, BodyFor(field) with { DataType = DataFieldType.DateTime });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("TEAM1", await response.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(
+            DataFieldType.String,
+            (await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct)).DataType);
+    }
+
+    /// <summary>
+    /// The dates a field already holds, in the form the date picker saves and the form the xlsx import
+    /// writes, and an empty value, do not stand in the way of the change.
+    /// </summary>
+    [Fact]
+    public async Task Update_ToDateTime_WithOnlyDatesAndEmptyValues_ChangesTheField()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var field = TestData.DataField(mselId: msel.Id, name: "When");
+        var events = new[] { TestData.ScenarioEvent(msel.Id), TestData.ScenarioEvent(msel.Id), TestData.ScenarioEvent(msel.Id) };
+        await Seed(field, events[0], events[1], events[2]);
+        await Seed(
+            TestData.DataValue(field.Id, events[0].Id, "2026-10-12T16:00:00.000Z"),
+            TestData.DataValue(field.Id, events[1].Id, "3/15/2023"),
+            TestData.DataValue(field.Id, events[2].Id, ""));
+
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var updated = await Read<DataField>(
+            await Put(Client(actor), field.Id, BodyFor(field) with { DataType = DataFieldType.DateTime }));
+
+        Assert.Equal(DataFieldType.DateTime, updated.DataType);
+    }
+
     [Fact]
     public async Task Update_OnAMsel_with_EditMsels_and_no_role_changes_the_field()
     {

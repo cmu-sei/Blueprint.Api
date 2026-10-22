@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -515,6 +516,70 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.NotEqual("Date", cell.DataType);
     }
 
+    /// <summary>
+    /// A serial date with a time of day keeps its time and its field stays DateTime, rather than the
+    /// fraction making it text that turns the whole column into a String.
+    /// </summary>
+    [Fact]
+    public async Task Upload_OfASerialDateWithATime_KeepsTheTimeAndTheDateTimeField()
+    {
+        var actor = await Author();
+
+        var msel = await Upload(Client(actor), Workbook(
+            ["When"], dateColumn: 0,
+            ["45000.75"],
+            ["45001"]));
+
+        await using var db = NewContext();
+        var field = await db.DataFields.SingleAsync(df => df.MselId == msel.Id, Ct);
+        Assert.Equal(DataFieldType.DateTime, field.DataType);
+        Assert.Equal(
+            ["3/15/2023 18:00", "3/16/2023"],
+            (await db.DataValues.Where(dv => dv.DataFieldId == field.Id).Select(dv => dv.Value).ToListAsync(Ct)).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>A date with a time of day is exported as a date cell holding both.</summary>
+    [Fact]
+    public async Task Download_OfADateWithATime_WritesTheDateAndTime()
+    {
+        var actor = await Author();
+        var msel = await Upload(Client(actor), Workbook(
+            ["When"], dateColumn: 0,
+            ["45000.75"]));
+
+        var sheet = Read(await Download(Client(actor), msel.Id));
+
+        Assert.Equal(new SheetCell("2023-03-15T18:00:00", "Date"), sheet.Cell(0, "When"));
+    }
+
+    /// <summary>
+    /// A field that holds text is exported as text even when its type says otherwise, since a number,
+    /// boolean or date cell holding text is a workbook Excel has to repair.
+    /// </summary>
+    [Theory]
+    [InlineData(DataFieldType.Integer)]
+    [InlineData(DataFieldType.Double)]
+    [InlineData(DataFieldType.Boolean)]
+    [InlineData(DataFieldType.DateTime)]
+    public async Task Download_OfTextInATypedField_WritesItAsText(DataFieldType dataType)
+    {
+        var msel = await SeedSheet(["Target"]);
+        var scenarioEvent = await SeedEvent(msel, 0, "TEAM1");
+        await using (var db = NewContext())
+        {
+            var dataValue = await db.DataValues.SingleAsync(dv => dv.ScenarioEventId == scenarioEvent.Id, Ct);
+            dataValue.CellMetadata = $",0,normal,{(int)dataType}";
+            await db.SaveChangesAsync(Ct);
+        }
+        var actor = await Author();
+
+        var sheet = Read(await Download(Client(actor), msel.Id));
+
+        var cell = sheet.Cell(0, "Target");
+        Assert.Equal("TEAM1", cell.Text);
+        Assert.Contains(cell.DataType, new[] { "String", "SharedString", "InlineString" });
+    }
+
     [Fact]
     public async Task Upload_DoesNotTurnTheTimeColumnIntoADataField()
     {
@@ -693,6 +758,31 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
         var actor = await Author();
 
         var response = await Put(Client(actor), msel.Id, Workbook(["When"], ["TEAM1"]));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await using var db = NewContext();
+        Assert.Equal(
+            DataFieldType.String,
+            (await db.DataFields.SingleAsync(df => df.MselId == msel.Id, Ct)).DataType);
+    }
+
+    /// <summary>
+    /// Text in a date-formatted column makes its field a String, not the Integer it was before, since an
+    /// Integer field can't hold text either.
+    /// </summary>
+    [Fact]
+    public async Task Replace_PuttingTextInADateFormattedColumnOfAnIntegerField_MakesItAString()
+    {
+        var msel = await SeedSheet(["Count"]);
+        await using (var arrange = NewContext())
+        {
+            var field = await arrange.DataFields.SingleAsync(df => df.MselId == msel.Id, Ct);
+            field.DataType = DataFieldType.Integer;
+            await arrange.SaveChangesAsync(Ct);
+        }
+        var actor = await Author();
+
+        var response = await Put(Client(actor), msel.Id, Workbook(["Count"], dateColumn: 0, ["45000"], ["TEAM1"]));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         await using var db = NewContext();
@@ -1151,7 +1241,7 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
                 CellReference = Reference(i + 1, rowIndex),
                 StyleIndex = i == dateColumn ? DateStyle : 0U
             };
-            if (i == dateColumn && int.TryParse(values[i], out _))
+            if (i == dateColumn && double.TryParse(values[i], NumberStyles.Float, CultureInfo.InvariantCulture, out _))
             {
                 cell.CellValue = new CellValue(values[i]);
             }

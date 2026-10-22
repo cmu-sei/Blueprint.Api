@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
 
@@ -32,6 +33,40 @@ namespace Blueprint.Api.Services
         public static bool IsDateTimeValue(string value) =>
             DateTimeOffset.TryParseExact(value?.Trim(), DateTimeValueFormats, CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal, out _);
+
+        // the forms the xlsx import writes, which a workbook's date cell can't hold as they are
+        private static readonly string[] ImportedDateTimeFormats = ["M/d/yyyy", "M/d/yyyy H:mm", "M/d/yyyy h:mm tt"];
+
+        /// <summary>
+        /// A DateTime value as an xlsx date cell holds it: an M/d/yyyy value, with its time if it has one,
+        /// becomes yyyy-MM-ddTHH:mm:ss, and an ISO 8601 value is already in that form.
+        /// </summary>
+        public static string ToCellDateTime(string value)
+        {
+            var text = value.Trim();
+            return DateTime.TryParseExact(text, ImportedDateTimeFormats, CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var dateTime)
+                ? dateTime.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture)
+                : text;
+        }
+
+        /// <summary>
+        /// A cell's metadata, "color,tint,weight,type". The tint is written without the server's regional
+        /// settings, since a decimal comma would add a part and move the type out of the last place.
+        /// </summary>
+        public static string CellMetadata(string color, double tint, string fontWeight, DataFieldType dataType) =>
+            string.Join(",", color, tint.ToString(CultureInfo.InvariantCulture), fontWeight, (int)dataType);
+
+        /// <summary>True when a value can be written as an xlsx cell of its Data Field's type.</summary>
+        public static bool FitsCellType(DataFieldType dataType, string value) => dataType switch
+        {
+            DataFieldType.DateTime => IsDateTimeValue(value),
+            DataFieldType.Integer or DataFieldType.Double =>
+                double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _),
+            DataFieldType.Boolean => value.Trim() is "0" or "1" ||
+                bool.TryParse(value.Trim(), out _),
+            _ => true,
+        };
 
         public static async Task SetMselModifiedAsync(Guid? id, Guid? modifiedBy, DateTime? dateModified, BlueprintContext context, CancellationToken ct)
         {

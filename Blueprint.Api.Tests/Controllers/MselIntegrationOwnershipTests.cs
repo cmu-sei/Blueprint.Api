@@ -72,7 +72,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
         var response = await Client(creator).PostAsJsonAsync("/api/msels", ForeignBody(id, status), JsonOptions, Ct);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.False(await NewContext().Msels.AnyAsync(x => x.Id == id, Ct));
+        Assert.False(await ReadBack(db => db.Msels.AnyAsync(x => x.Id == id, Ct)));
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
     };
 
     private async Task<MselEntity> Stored(Guid id) =>
-        await NewContext().Msels.AsNoTracking().SingleAsync(x => x.Id == id, Ct);
+        await ReadBack(db => db.Msels.AsNoTracking().SingleAsync(x => x.Id == id, Ct));
 
     private static void AssertNoIntegrations(MselEntity msel)
     {

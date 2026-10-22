@@ -21,6 +21,13 @@ dotnet test --filter "FullyQualifiedName~.MoveEndpointTests.GetByMsel_ForEveryMs
 
 `~` is a substring match on the whole name, namespace included, so `~TeamEndpointTests` also selects `CardTeamEndpointTests`; the leading dot (`~.TeamEndpointTests`) keeps one class name from matching another that ends with it. Filters OR with `|`.
 
+## Site accounting checks
+
+The workspace's shared `check-repo.js scan` builds a Roslyn site inventory and temporarily instruments
+the production sites named by test documentation. It runs the claiming tests, restores every source
+byte for byte and rebuilds the test project. Run the shared `api-testing/verify.sh` from the workspace
+to include this check together with the suite, harness self-tests and coverage run.
+
 # Coverage
 
 ```bash

@@ -165,9 +165,68 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Contains("CiteDutyService.GetAsync", failure.Detail);
     }
 
+    [Fact]
+    public async Task Get_is_forbidden_for_a_caller_holding_Viewer_only_in_another_msel()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var duty = TestData.CiteDuty(msel.Id, team.Id);
+        await Seed(duty);
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/citeDuties/{duty.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // POST citeDuties
     // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Create_ForAnOwnerOfTheMsel_Is201()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/citeDuties",
+            Body(msel.Id, team.Id) with { name = "owner duty" }, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<ViewModels.CiteDuty>(JsonOptions, Ct);
+        var stored = await ReadBack(db => db.CiteDuties.SingleAsync(x => x.Id == created.Id, Ct));
+        Assert.Equal(msel.Id, stored.MselId);
+        Assert.Equal(team.Id, stored.TeamId);
+        Assert.Equal("owner duty", stored.Name);
+    }
+
+    [Fact]
+    public async Task Update_ForAnOwnerOfTheMsel_Is200()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var duty = TestData.CiteDuty(msel.Id, team.Id);
+        await Seed(duty);
+
+        var response = await Client(actor).PutAsJsonAsync($"api/citeDuties/{duty.Id}",
+            Body(msel.Id, team.Id) with { id = duty.Id, name = "owner edit" }, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("owner edit", (await ReadBack(db => db.CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct))).Name);
+    }
+
+    [Fact]
+    public async Task Delete_ForAnOwnerOfTheMsel_Is204()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var duty = TestData.CiteDuty(msel.Id, team.Id);
+        await Seed(duty);
+
+        var response = await Client(actor).DeleteAsync($"api/citeDuties/{duty.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.False(await ReadBack(db => db.CiteDuties.AnyAsync(x => x.Id == duty.Id, Ct)));
+    }
 
     [Fact]
     public async Task Create_ForAnEditorOfTheMsel_Is201()
@@ -214,7 +273,7 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var response = await Client(actor).PostAsJsonAsync("api/citeDuties", Body(msel.Id, theirTeam.Id), Ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.False(await NewContext().CiteDuties.AnyAsync(Ct));
+        Assert.False(await ReadBack(db => db.CiteDuties.AnyAsync(Ct)));
     }
 
     /// <summary>
@@ -231,7 +290,7 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             "api/citeDuties", Body(null, team.Id) with { isTemplate = true }, Ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.False(await NewContext().CiteDuties.AnyAsync(Ct));
+        Assert.False(await ReadBack(db => db.CiteDuties.AnyAsync(Ct)));
     }
 
     /// <summary>Create for a MSEL that is not there is answered with a 500.</summary>
@@ -301,7 +360,7 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        var stored = await NewContext().CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct);
+        var stored = await ReadBack(db => db.CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct));
         Assert.Equal(theirs.Id, stored.MselId);
         Assert.Equal(theirTeam.Id, stored.TeamId);
         Assert.Equal(duty.Name, stored.Name);
@@ -325,7 +384,7 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        var stored = await NewContext().CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct);
+        var stored = await ReadBack(db => db.CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct));
         Assert.Equal(msel.Id, stored.MselId);
         Assert.False(stored.IsTemplate);
         Assert.Equal(duty.Name, stored.Name);
@@ -349,7 +408,7 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var stored = await NewContext().CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct);
+        var stored = await ReadBack(db => db.CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct));
         Assert.Equal(msel.Id, stored.MselId);
         Assert.False(stored.IsTemplate);
         Assert.Equal("after", stored.Name);
@@ -373,7 +432,7 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             $"api/citeDuties/{duty.Id}", Body(msel.Id, theirTeam.Id) with { id = duty.Id }, Ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Equal(team.Id, (await NewContext().CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct)).TeamId);
+        Assert.Equal(team.Id, (await ReadBack(db => db.CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct))).TeamId);
     }
 
     /// <summary>
@@ -395,8 +454,8 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(theirTeam.Name, (await NewContext().Teams.SingleAsync(x => x.Id == theirTeam.Id, Ct)).Name);
-        Assert.Equal("renamed", (await NewContext().CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct)).Name);
+        Assert.Equal(theirTeam.Name, (await ReadBack(db => db.Teams.SingleAsync(x => x.Id == theirTeam.Id, Ct))).Name);
+        Assert.Equal("renamed", (await ReadBack(db => db.CiteDuties.SingleAsync(x => x.Id == duty.Id, Ct))).Name);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -501,7 +560,7 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Null(created[0].TeamId);
         Assert.True(created[0].IsTemplate);
         Assert.Equal("exported", created[0].Name);
-        Assert.Equal(2, await NewContext().CiteDuties.CountAsync(Ct));
+        Assert.Equal(2, await ReadBack(db => db.CiteDuties.CountAsync(Ct)));
     }
 
     // ---------------------------------------------------------------------------------------------

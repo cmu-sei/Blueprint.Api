@@ -579,7 +579,7 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var response = await Post(Client(actor), Body(second.Id, row.Event.Id));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.False(await NewContext().DataValues.AnyAsync(x => x.DataFieldId == second.Id, Ct));
+        Assert.False(await ReadBack(db => db.DataValues.AnyAsync(x => x.DataFieldId == second.Id, Ct)));
     }
 
     /// <summary>
@@ -598,7 +598,7 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var response = await Post(Client(actor), Body(field.Id, elsewhere.Event.Id, "planted"));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.False(await NewContext().DataValues.AnyAsync(x => x.ScenarioEventId == elsewhere.Event.Id && x.DataFieldId == field.Id, Ct));
+        Assert.False(await ReadBack(db => db.DataValues.AnyAsync(x => x.ScenarioEventId == elsewhere.Event.Id && x.DataFieldId == field.Id, Ct)));
     }
 
     [Fact]
@@ -611,7 +611,7 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var response = await Post(Client(actor), Body(cell.Field.Id, elsewhere.Event.Id, "planted"));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Single(await NewContext().DataValues.Where(x => x.ScenarioEventId == elsewhere.Event.Id).ToListAsync(Ct));
+        Assert.Single(await ReadBack(db => db.DataValues.Where(x => x.ScenarioEventId == elsewhere.Event.Id).ToListAsync(Ct)));
     }
 
     /// <summary>Create a second value for the same cell is accepted.</summary>
@@ -666,7 +666,7 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         });
 
         Assert.Equal(expected, response.StatusCode);
-        Assert.False(await NewContext().DataValues.AnyAsync(x => x.InjectId == inject.Id, Ct));
+        Assert.False(await ReadBack(db => db.DataValues.AnyAsync(x => x.InjectId == inject.Id, Ct)));
     }
 
     [Fact]

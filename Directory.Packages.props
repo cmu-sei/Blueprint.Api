@@ -26,8 +26,8 @@
   <ItemGroup>
     <PackageVersion Include="AutoMapper" Version="13.0.1" /> <!-- DO NOT UPDATE. Version 15+ requires a license. Plan to migrate to something else. -->
     <PackageVersion Include="MediatR" Version="12.4.1" /> <!-- DO NOT UPDATE. Version 13+ requires a license. Plan to migrate to something else. -->
-    <PackageVersion Include="Crucible.Common.EntityEvents" Version="0.2.0" />
-    <PackageVersion Include="Crucible.Common.ServiceDefaults" Version="0.0.2" />
+    <PackageVersion Include="Crucible.Common.EntityEvents" Version="0.2.1" />
+    <PackageVersion Include="Crucible.Common.ServiceDefaults" Version="0.0.3" />
     <PackageVersion Include="HtmlSanitizer" Version="9.2.1039" />
     <PackageVersion Include="Microsoft.Build" Version="18.0.2" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
@@ -113,10 +113,6 @@
        which would turn every entry in this file into a pin and downgrade packages that other
        dependencies need newer (System.ComponentModel.Annotations, Newtonsoft.Json). -->
   <ItemGroup>
-    <!-- Through Crucible.Common.ServiceDefaults 0.0.2, which carries 1.15.0. The exporter pulls
-         OpenTelemetry and OpenTelemetry.Api up to the same patch with it. -->
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
-    <PackageVersion Include="OpenTelemetry.Api" Version="1.15.3" />
     <!-- Through Microsoft.VisualStudio.Web.CodeGeneration.Design, which carries 6.12.1. -->
     <PackageVersion Include="NuGet.Packaging" Version="6.12.5" />
     <PackageVersion Include="NuGet.Protocol" Version="6.12.5" />

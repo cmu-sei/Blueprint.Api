@@ -608,6 +608,10 @@ namespace Blueprint.Api.Services
             if (msel.Status != mselToUpdate.Status && (IsPipelineStatus(msel.Status) || IsPipelineStatus(mselToUpdate.Status)))
                 throw new ConflictException($"The MSEL status cannot be changed from {mselToUpdate.Status} to {msel.Status}. Only the integration pipeline sets Pushing, Pulling and Deployed, and moves a MSEL out of them.");
 
+            // the integrations were built from these settings, and nothing rebuilds them but a pull and a new push
+            if (HasIntegrations(mselToUpdate) && IntegrationSettingsChanged(msel, mselToUpdate))
+                throw new ConflictException("The integration settings cannot be changed while the MSEL is pushed, or is being pushed or pulled. Remove Integrations first.");
+
             // the push deploys this directory as the service account, so only accept one the user can view in Caster
             if (msel.CasterDirectoryId != null && msel.CasterDirectoryId != mselToUpdate.CasterDirectoryId)
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
@@ -624,6 +628,25 @@ namespace Blueprint.Api.Services
 
         private static bool IsPipelineStatus(MselItemStatus status) =>
             status == MselItemStatus.Pushing || status == MselItemStatus.Pulling || status == MselItemStatus.Deployed;
+
+        // a failed push leaves its partial integrations, and a failed pull leaves what it could not remove
+        private static bool HasIntegrations(MselEntity msel) =>
+            IsPipelineStatus(msel.Status) ||
+            msel.PlayerViewId != null ||
+            msel.GalleryCollectionId != null ||
+            msel.GalleryExhibitId != null ||
+            msel.CiteEvaluationId != null ||
+            msel.SteamfitterScenarioId != null ||
+            msel.CasterWorkspaceId != null;
+
+        private static bool IntegrationSettingsChanged(ViewModels.MselEdit msel, MselEntity stored) =>
+            msel.UsePlayer != stored.UsePlayer ||
+            msel.UseGallery != stored.UseGallery ||
+            msel.UseCite != stored.UseCite ||
+            msel.CiteScoringModelId != stored.CiteScoringModelId ||
+            msel.UseSteamfitter != stored.UseSteamfitter ||
+            msel.UseCaster != stored.UseCaster ||
+            msel.CasterDirectoryId != stored.CasterDirectoryId;
 
         public async Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct)
         {

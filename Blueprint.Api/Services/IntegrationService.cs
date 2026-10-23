@@ -633,9 +633,7 @@ namespace Blueprint.Api.Services
             await sendStatus("Caster - creating workspace");
             var workspace = await IntegrationCasterExtensions.CreateWorkspaceAsync(msel, casterApiClient, CancellationToken.None);
             msel.CasterWorkspaceId = workspace.Id;
-            await blueprintContext.Msels
-                .Where(m => m.Id == msel.Id)
-                .ExecuteUpdateAsync(s => s.SetProperty(m => m.CasterWorkspaceId, workspace.Id), CancellationToken.None);
+            await SaveCasterIdAsync(msel.Id, m => m.CasterWorkspaceId = workspace.Id);
 
             // the variables terraform needs to attach VMs to this view and its teams
             await sendStatus("Caster - writing variables");
@@ -649,11 +647,23 @@ namespace Blueprint.Api.Services
             await sendStatus("Caster - creating run");
             var run = await IntegrationCasterExtensions.CreateRunAsync(workspace.Id, false, casterApiClient, ct);
             msel.CasterRunId = run.Id;
-            await blueprintContext.Msels
-                .Where(m => m.Id == msel.Id)
-                .ExecuteUpdateAsync(s => s.SetProperty(m => m.CasterRunId, run.Id), CancellationToken.None);
+            await SaveCasterIdAsync(msel.Id, m => m.CasterRunId = run.Id);
 
             await IntegrationCasterExtensions.PlanAndApplyAsync(run.Id, casterClientSource, _clientOptions.CurrentValue, _clientOptions.CurrentValue.CasterApplyMaxWaitMinutes, sendStatus, ct);
+        }
+
+        /// <summary>
+        /// Records a Caster id in a fresh scope/context, so SaveChangesAsync sends MselUpdated and an open
+        /// MSEL page can link to the workspace while the run is still going, or after it fails.
+        /// Not cancelled, for the same reason as the workspace itself.
+        /// </summary>
+        private async STT.Task SaveCasterIdAsync(Guid mselId, Action<MselEntity> setId)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            using var context = scope.ServiceProvider.GetRequiredService<BlueprintContext>();
+            var msel = await context.Msels.FindAsync(new object[] { mselId }, CancellationToken.None);
+            setId(msel);
+            await context.SaveChangesAsync(CancellationToken.None);
         }
 
         /// <summary>

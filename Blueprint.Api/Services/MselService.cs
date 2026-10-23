@@ -56,6 +56,7 @@ namespace Blueprint.Api.Services
         Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Msel> RetryCasterAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task CancelIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> ArchiveAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
@@ -2492,6 +2493,33 @@ namespace Blueprint.Api.Services
 
             return _mapper.Map<ViewModels.Msel>(msel);
         }
+
+        /// <summary>
+        /// Redoes the Caster step of a push that failed there. Caster runs last, so everything else the push
+        /// makes is already in place, and a fix made in Caster since is picked up by the new run.
+        /// </summary>
+        public async Task<ViewModels.Msel> RetryCasterAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        {
+            // user must be a Content Developer or a MSEL owner
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+                throw new ForbiddenException();
+            var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == mselId, ct);
+            if (msel == null)
+                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found.");
+            // a pull's Caster errors read "ERROR: Caster - pull ...", but a pull never leaves the MSEL Pushing
+            if (msel.Status != MselItemStatus.Pushing || msel.IntegrationStatus?.StartsWith(CasterPushErrorPrefix) != true ||
+                !msel.UseCaster || msel.CasterDirectoryId == null)
+                throw new ConflictException("Only a push that failed at its Caster step can retry Caster.");
+            await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
+            msel.IntegrationStatus = "Retrying Caster";
+            await _context.SaveChangesAsync(ct);
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = true, CasterOnly = true, FinalStatus = MselItemStatus.Deployed, UserId = _user.GetId() });
+
+            return _mapper.Map<ViewModels.Msel>(msel);
+        }
+
+        // the start of the status a push leaves when its Caster step fails
+        public const string CasterPushErrorPrefix = "ERROR: Caster - ";
 
         public async Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct)
         {

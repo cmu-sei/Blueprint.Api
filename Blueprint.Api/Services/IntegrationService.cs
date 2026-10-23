@@ -298,13 +298,15 @@ namespace Blueprint.Api.Services
                         .AsSplitQuery()
                         .SingleOrDefaultAsync(m => m.Id == integrationInformation.MselId);
                     var isAPush = integrationInformation.IsPush;
+                    // a Caster retry redoes the Caster step alone: every step before it already succeeded
+                    var casterOnly = integrationInformation.CasterOnly;
                     currentProcessStep = "Try processing the MSEL";
                     try
                     {
                         PlayerApiClient playerApiClient = null;
                         currentProcessStep = "Getting Auth Token with scope " + scope;
                         var tokenResponse = await ApiClientsExtensions.GetToken(scope);
-                        if (isAPush)
+                        if (isAPush && !casterOnly)
                         {
                             // Pre-generate integration object IDs and save before calling remote APIs
                             // the view is created under the queue item's ID when it has one, so the MSEL has to use it too
@@ -348,17 +350,17 @@ namespace Blueprint.Api.Services
                             // Pre-fetch user lists from external services in parallel
                             HashSet<Guid> playerUserIds = null, galleryUserIds = null, citeUserIds = null;
                             var userFetchTasks = new List<STT.Task>();
-                            if (msel.UsePlayer)
+                            if (msel.UsePlayer && !casterOnly)
                                 userFetchTasks.Add(STT.Task.Run(async () =>
                                 {
                                     playerUserIds = (await playerApiClient.GetUsersAsync(ct)).Select(u => u.Id).ToHashSet();
                                 }));
-                            if (msel.UseGallery)
+                            if (msel.UseGallery && !casterOnly)
                                 userFetchTasks.Add(STT.Task.Run(async () =>
                                 {
                                     galleryUserIds = (await galleryApiClient.GetUsersAsync(ct)).Select(u => u.Id).ToHashSet();
                                 }));
-                            if (msel.UseCite)
+                            if (msel.UseCite && !casterOnly)
                                 userFetchTasks.Add(STT.Task.Run(async () =>
                                 {
                                     citeUserIds = (await citeApiClient.GetUsersAsync(ct)).Select(u => u.Id).ToHashSet();
@@ -366,7 +368,7 @@ namespace Blueprint.Api.Services
                             await STT.Task.WhenAll(userFetchTasks);
 
                             // Player processing part 1
-                            if (msel.UsePlayer)
+                            if (msel.UsePlayer && !casterOnly)
                             {
                                 ct.ThrowIfCancellationRequested();
                                 currentProcessStep = "Player - begin processing part 1";
@@ -374,7 +376,7 @@ namespace Blueprint.Api.Services
                             }
 
                             // Gallery processing
-                            if (msel.UseGallery)
+                            if (msel.UseGallery && !casterOnly)
                             {
                                 ct.ThrowIfCancellationRequested();
                                 currentProcessStep = "Gallery - get scenario event service";
@@ -384,7 +386,7 @@ namespace Blueprint.Api.Services
                             }
 
                             // CITE processing
-                            if (msel.UseCite)
+                            if (msel.UseCite && !casterOnly)
                             {
                                 ct.ThrowIfCancellationRequested();
                                 currentProcessStep = "CITE - begin processing";
@@ -392,7 +394,7 @@ namespace Blueprint.Api.Services
                             }
 
                             // Steamfitter processing
-                            if (msel.UseSteamfitter)
+                            if (msel.UseSteamfitter && !casterOnly)
                             {
                                 ct.ThrowIfCancellationRequested();
                                 currentProcessStep = "Steamfitter - begin processing";
@@ -400,7 +402,7 @@ namespace Blueprint.Api.Services
                             }
 
                             // Player processing part 2
-                            if (msel.UsePlayer)
+                            if (msel.UsePlayer && !casterOnly)
                             {
                                 ct.ThrowIfCancellationRequested();
                                 await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Player Applications", ct);
@@ -628,12 +630,26 @@ namespace Blueprint.Api.Services
             };
             var casterApiClient = await casterClientSource.GetAsync(ct);
 
-            // create the workspace and record it at once, so a failure from here on can be cleaned up.
-            // Neither is cancelled: a workspace Caster created but Blueprint never recorded would be orphaned.
-            await sendStatus("Caster - creating workspace");
-            var workspace = await IntegrationCasterExtensions.CreateWorkspaceAsync(msel, casterApiClient, CancellationToken.None);
-            msel.CasterWorkspaceId = workspace.Id;
-            await SaveCasterIdAsync(msel.Id, m => m.CasterWorkspaceId = workspace.Id);
+            // a retry picks up the workspace the failed push made, and terraform plans against what it built
+            var workspace = msel.CasterWorkspaceId == null
+                ? null
+                : await IntegrationCasterExtensions.FindWorkspaceAsync((Guid)msel.CasterWorkspaceId, casterApiClient, ct);
+            var isRetry = workspace != null;
+            if (isRetry)
+            {
+                // a timed-out run can still be going, and Caster refuses a new run until it stops
+                await sendStatus("Caster - stopping active runs");
+                await IntegrationCasterExtensions.StopActiveRunsAsync(workspace.Id, casterClientSource, _clientOptions.CurrentValue, ct);
+            }
+            else
+            {
+                // create the workspace and record it at once, so a failure from here on can be cleaned up.
+                // Neither is cancelled: a workspace Caster created but Blueprint never recorded would be orphaned.
+                await sendStatus("Caster - creating workspace");
+                workspace = await IntegrationCasterExtensions.CreateWorkspaceAsync(msel, casterApiClient, CancellationToken.None);
+                msel.CasterWorkspaceId = workspace.Id;
+                await SaveCasterIdAsync(msel.Id, m => m.CasterWorkspaceId = workspace.Id);
+            }
 
             // the variables terraform needs to attach VMs to this view and its teams
             await sendStatus("Caster - writing variables");
@@ -642,7 +658,10 @@ namespace Blueprint.Api.Services
                 .Where(t => t.MselId == msel.Id && t.CasterTeamVariable != null)
                 .ToDictionaryAsync(t => t.Id, t => t.CasterTeamVariable, ct);
             var varsFileContent = await IntegrationCasterExtensions.GetVarsFileContentAsync((Guid)msel.PlayerViewId, userId, user?.Name, teamVariables, playerApiClient, ct);
-            await IntegrationCasterExtensions.CreateVarsFileAsync(workspace, varsFileContent, casterApiClient, ct);
+            if (isRetry)
+                await IntegrationCasterExtensions.ReplaceVarsFileAsync(workspace, varsFileContent, casterApiClient, ct);
+            else
+                await IntegrationCasterExtensions.CreateVarsFileAsync(workspace, varsFileContent, casterApiClient, ct);
 
             await sendStatus("Caster - creating run");
             var run = await IntegrationCasterExtensions.CreateRunAsync(workspace.Id, false, casterApiClient, ct);
@@ -924,6 +943,8 @@ namespace Blueprint.Api.Services
         // the user who pushed or launched the MSEL; Caster passes it to terraform as user_id
         public Guid? UserId { get; set; }
         public Data.Enumerations.MselItemStatus FinalStatus { get; set; }
+        // a push that redoes only the Caster step, after the rest of the push succeeded and Caster failed
+        public bool CasterOnly { get; set; }
     }
 
 }

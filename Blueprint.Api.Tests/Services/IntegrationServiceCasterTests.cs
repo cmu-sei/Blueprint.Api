@@ -267,8 +267,8 @@ public class IntegrationServiceCasterTests(DatabaseFixture fixture) : DatabaseTe
             [
                 "Pulling Integrations",
                 "Pulling Caster Workspace",
-                "Caster - stopping active runs",
-                "Caster - deleting workspace",
+                "Pulling Caster Workspace - stopping active runs",
+                "Pulling Caster Workspace - deleting workspace",
                 "Pulling Player View"
             ],
             Statuses(harness, msel.Id));
@@ -366,6 +366,25 @@ public class IntegrationServiceCasterTests(DatabaseFixture fixture) : DatabaseTe
         Assert.True(
             paths.IndexOf($"DELETE caster/api/workspaces/{WorkspaceId}") <
             paths.IndexOf($"DELETE player/api/views/{PlayerViewId}"));
+    }
+
+    /// <summary>The cancel's Caster steps read as cancelling, so the UI does not offer Cancel Push again.</summary>
+    [Fact]
+    public async Task CancelPush_OfACasterMsel_AnnouncesTheCasterStepsAsCancelling()
+    {
+        var msel = await SeedDeployedCasterMsel();
+        var harness = PullHarness();
+
+        harness.Service.CancelPush(msel.Id);
+        await harness.WaitForFinalStatus(msel.Id, MselItemStatus.Approved, Ct);
+
+        Assert.Equal(
+            [
+                "Cancelling - pulling Caster Workspace",
+                "Cancelling - pulling Caster Workspace - stopping active runs",
+                "Cancelling - pulling Caster Workspace - deleting workspace"
+            ],
+            Statuses(harness, msel.Id).Where(x => x.Contains("Caster")));
     }
 
     [Fact]

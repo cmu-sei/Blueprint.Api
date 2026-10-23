@@ -125,7 +125,7 @@ namespace Blueprint.Api.Services
                 if (msel.CasterWorkspaceId != null)
                 {
                     var casterClientSource = new CasterClientSource(_httpClientFactory, _clientOptions.CurrentValue.CasterApiUrl, () => ApiClientsExtensions.GetToken(scope));
-                    if (!await TryPullFromCasterAsync(dbContext, mselId, (Guid)msel.CasterWorkspaceId, casterClientSource, freshCt))
+                    if (!await TryPullFromCasterAsync(dbContext, mselId, (Guid)msel.CasterWorkspaceId, casterClientSource, "Cancelling - pulling", freshCt))
                         return;
                 }
 
@@ -510,7 +510,7 @@ namespace Blueprint.Api.Services
             if (msel.CasterWorkspaceId != null)
             {
                 var casterClientSource = new CasterClientSource(_httpClientFactory, _clientOptions.CurrentValue.CasterApiUrl, () => ApiClientsExtensions.GetToken(scope));
-                if (!await TryPullFromCasterAsync(blueprintContext, mselId, (Guid)msel.CasterWorkspaceId, casterClientSource, ct))
+                if (!await TryPullFromCasterAsync(blueprintContext, mselId, (Guid)msel.CasterWorkspaceId, casterClientSource, "Pulling", ct))
                     return;
                 // the destroy can outlast the token the other pulls were given
                 tokenResponse = await ApiClientsExtensions.GetToken(scope);
@@ -671,17 +671,20 @@ namespace Blueprint.Api.Services
         /// swallowed: it is reported and false is returned, so the caller stops before deleting the
         /// Player view and clearing the IDs. Otherwise the VMs would keep running with nothing
         /// pointing at them. Running Remove Integrations again retries.
+        /// Every step's status starts with <paramref name="statusPrefix"/>, which the UI reads to tell
+        /// a pull or a cancel from a push (and so not offer Cancel Push).
         /// </summary>
-        private async STT.Task<bool> TryPullFromCasterAsync(BlueprintContext blueprintContext, Guid mselId, Guid casterWorkspaceId, CasterClientSource casterClientSource, CancellationToken ct)
+        private async STT.Task<bool> TryPullFromCasterAsync(BlueprintContext blueprintContext, Guid mselId, Guid casterWorkspaceId, CasterClientSource casterClientSource, string statusPrefix, CancellationToken ct)
         {
             try
             {
-                await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Caster Workspace", ct);
+                var step = $"{statusPrefix} Caster Workspace";
+                await SendIntegrationStatusAsync(blueprintContext, mselId, step, ct);
                 await IntegrationCasterExtensions.DestroyWorkspaceAsync(
                     casterWorkspaceId,
                     casterClientSource,
                     _clientOptions.CurrentValue,
-                    status => SendIntegrationStatusAsync(blueprintContext, mselId, status, ct),
+                    status => SendIntegrationStatusAsync(blueprintContext, mselId, $"{step} - {(status.StartsWith("Caster - ") ? status["Caster - ".Length..] : status)}", ct),
                     ct);
                 return true;
             }

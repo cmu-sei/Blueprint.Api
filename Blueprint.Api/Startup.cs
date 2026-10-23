@@ -236,6 +236,7 @@ public class Startup
         services.AddScoped<IInjectTypeService, InjectTypeService>();
         services.AddScoped<IMselService, MselService>();
         services.AddScoped<IMselDraftService, MselDraftService>();
+        services.AddScoped<IDataValueDraftService, DataValueDraftService>();
         services.AddScoped<IAiModelClient, BedrockAiModelClient>();
         services.AddScoped<IMselPageService, MselPageService>();
         services.AddScoped<IMselUnitService, MselUnitService>();

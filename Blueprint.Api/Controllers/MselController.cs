@@ -24,12 +24,14 @@ namespace Blueprint.Api.Controllers
     {
         private readonly IMselService _mselService;
         private readonly IMselDraftService _mselDraftService;
+        private readonly IDataValueDraftService _dataValueDraftService;
         private readonly IIntegrationNameService _integrationNameService;
         private readonly IBlueprintAuthorizationService _authorizationService;
 
         public MselController(
             IMselService mselService,
             IMselDraftService mselDraftService,
+            IDataValueDraftService dataValueDraftService,
             ICiteService citeService,
             IPlayerService playerService,
             IIntegrationNameService integrationNameService,
@@ -37,6 +39,7 @@ namespace Blueprint.Api.Controllers
         {
             _mselService = mselService;
             _mselDraftService = mselDraftService;
+            _dataValueDraftService = dataValueDraftService;
             _integrationNameService = integrationNameService;
             _authorizationService = authorizationService;
         }
@@ -412,6 +415,24 @@ namespace Blueprint.Api.Controllers
                 throw new ForbiddenException();
 
             var result = await _mselService.ImportDraftAsync(draftImport, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Write one text field of an inject with AI </summary>
+        /// <remarks>
+        /// Nothing is saved. The model sees the MSEL's scenario, moves and other injects, and the inject's
+        /// current values from the request, and the planner decides whether to use what it writes.
+        /// </remarks>
+        /// <param name="mselId"> The id of the MSEL the inject belongs to </param>
+        /// <param name="request"> The field, the inject's current values, and what to do </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{mselId}/ai-draft/value")]
+        [ProducesResponseType(typeof(DataValueDraftResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "draftDataValue")]
+        public async Task<IActionResult> DraftDataValueAsync([FromRoute] Guid mselId, [FromBody] DataValueDraftRequest request, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var result = await _dataValueDraftService.DraftAsync(mselId, request, hasSystemPermission, ct);
             return Ok(result);
         }
 

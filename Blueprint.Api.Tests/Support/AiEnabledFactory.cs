@@ -1,0 +1,36 @@
+// Copyright 2026 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
+
+using Blueprint.Api.Services;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
+
+namespace Blueprint.Api.Tests.Support;
+
+/// <summary>
+/// A host with AI drafting turned on and <see cref="Model"/> answering for Bedrock, so a request can be
+/// followed to the prompt it sends and back to what the planner is shown.
+/// </summary>
+/// <remarks>
+/// <c>AiOptions</c> is bound from configuration in <c>Startup.ConfigureServices</c>, so turning it on is a
+/// <c>UseSetting</c>, as in <see cref="XApiEnabledFactory"/>. The substitute is not cleared by
+/// <c>ResetForTest</c>; the test class clears it.
+/// </remarks>
+public class AiEnabledFactory(DatabaseFixture database) : BlueprintAppFactory(database)
+{
+    public IAiModelClient Model { get; } = Substitute.For<IAiModelClient>();
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+
+        builder.UseSetting("AiOptions:Enabled", "true");
+        builder.UseSetting("AiOptions:ModelId", "test-model");
+
+        builder.ConfigureTestServices(services =>
+            services.Replace(ServiceDescriptor.Singleton(Model)));
+    }
+}

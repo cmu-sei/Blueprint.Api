@@ -328,6 +328,11 @@ namespace Blueprint.Api.Services
             var newGuidValues = new Dictionary<Guid, Guid>();
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId)).Name;
+            // the image is stored apart from the MSEL, so copy it here; an imported file has no image
+            // in this database, and then the copy has none either
+            var sourceImage = mselEntity.ImageDateModified == null ? null :
+                await _context.MselImages.AsNoTracking().SingleOrDefaultAsync(i => i.MselId == mselEntity.Id, ct);
+            mselEntity.ImageDateModified = sourceImage == null ? null : mselEntity.ImageDateModified;
             mselEntity.Id = Guid.NewGuid();
             mselEntity.CreatedBy = currentUserId;
             if (!keepName)
@@ -512,6 +517,10 @@ namespace Blueprint.Api.Services
             }
 
             _context.Msels.Add(mselEntity);
+            if (sourceImage != null)
+            {
+                _context.MselImages.Add(new MselImageEntity { MselId = mselEntity.Id, Data = sourceImage.Data, ContentType = sourceImage.ContentType });
+            }
             _context.SkipEventPublishing = true;
             await _context.SaveChangesAsync(ct);
             _context.SkipEventPublishing = false;

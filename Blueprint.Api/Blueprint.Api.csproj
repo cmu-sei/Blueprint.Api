@@ -53,6 +53,13 @@
     <PackageReference Include="TinCan" />
     <PackageReference Include="Newtonsoft.Json" />
   </ItemGroup>
+  <!-- Security pins for vulnerable transitive dependencies; see Directory.Packages.props. -->
+  <ItemGroup>
+    <PackageReference Include="NuGet.Packaging" />
+    <PackageReference Include="NuGet.Protocol" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+    <PackageReference Include="Microsoft.OpenApi" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Blueprint.Api.Data\Blueprint.Api.Data.csproj" />
     <ProjectReference Include="..\Blueprint.Api.Migrations.PostgreSQL\Blueprint.Api.Migrations.PostgreSQL.csproj" />

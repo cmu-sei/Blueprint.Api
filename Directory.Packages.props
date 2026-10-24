@@ -7,8 +7,9 @@
   application's own framework reference expects. Without this file, that version and the
   application's ASP.NET Core version would be two numbers kept in step by hand.
 
-  Nothing here is a version bump. Every entry is the version the project files already carried when
-  this file was introduced, so adopting central management changed no dependency.
+  When this file was introduced every entry was the version the project files already carried, so
+  adopting central management changed no dependency. Versions have moved since only to clear the
+  NuGet audit (`dotnet list package` with its vulnerable and transitive switches).
 -->
 <Project>
 
@@ -25,11 +26,11 @@
   <ItemGroup>
     <PackageVersion Include="AutoMapper" Version="13.0.1" /> <!-- DO NOT UPDATE. Version 15+ requires a license. Plan to migrate to something else. -->
     <PackageVersion Include="MediatR" Version="12.4.1" /> <!-- DO NOT UPDATE. Version 13+ requires a license. Plan to migrate to something else. -->
-    <PackageVersion Include="Crucible.Common.EntityEvents" Version="0.2.0" />
-    <PackageVersion Include="Crucible.Common.ServiceDefaults" Version="0.0.2" />
-    <PackageVersion Include="HtmlSanitizer" Version="9.1.887-beta" />
+    <PackageVersion Include="Crucible.Common.EntityEvents" Version="0.2.1" />
+    <PackageVersion Include="Crucible.Common.ServiceDefaults" Version="0.0.3" />
+    <PackageVersion Include="HtmlSanitizer" Version="9.2.1039" />
     <PackageVersion Include="Microsoft.Build" Version="18.0.2" />
-    <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="Open-XML-SDK" Version="2.9.1" />
     <PackageVersion Include="Z.EntityFramework.Plus.EFCore" Version="10.105.0" />
   </ItemGroup>
@@ -46,12 +47,12 @@
   <!-- EF Core and its providers. All four providers ship in the image: Postgres is production, and
        Database:Provider selects among them. -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.13" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
   </ItemGroup>
 
@@ -62,10 +63,10 @@
     <PackageVersion Include="AspNetCore.HealthChecks.SqlServer" Version="9.0.0" />
     <PackageVersion Include="IdentityServer4.AccessTokenValidation" Version="3.0.1" />
     <PackageVersion Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.23.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.VisualStudio.Web.CodeGeneration.Design" Version="10.0.0-rc.1.25458.5" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.VisualStudio.Web.CodeGeneration.Design" Version="10.0.2" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.0.1" />
     <PackageVersion Include="Swashbuckle.AspNetCore.Annotations" Version="10.0.1" />
   </ItemGroup>
@@ -89,11 +90,11 @@
     <!-- Hosts the application in process for the endpoint tests. Tied to the ASP.NET Core version, so
          it tracks Microsoft.AspNetCore.Authentication.JwtBearer above rather than the test-tool
          versions around it. -->
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
     <!-- The SignalR client, for connecting to MainHub the way the Angular UI does. Tied to the
          ASP.NET Core version for the same reason Mvc.Testing is: it has to speak the protocol the
          hosted server negotiates. -->
-    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageVersion Include="NSubstitute" Version="6.0.0" />
     <!-- Coverage collection, and inert until it is asked for: it is a VSTest data collector, so a
@@ -103,6 +104,24 @@
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.15.0" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
+  </ItemGroup>
+
+  <!-- Security pins. Blueprint.Api references these only to raise a package that otherwise arrives
+       through another dependency at a vulnerable version; the test project inherits them through
+       its project reference. Each can go once the dependency that brings it in carries a fixed
+       version of its own. Pinned this way rather than with CentralPackageTransitivePinningEnabled,
+       which would turn every entry in this file into a pin and downgrade packages that other
+       dependencies need newer (System.ComponentModel.Annotations, Newtonsoft.Json). -->
+  <ItemGroup>
+    <!-- Through Microsoft.VisualStudio.Web.CodeGeneration.Design, which carries 6.12.1. -->
+    <PackageVersion Include="NuGet.Packaging" Version="6.12.5" />
+    <PackageVersion Include="NuGet.Protocol" Version="6.12.5" />
+    <!-- Through Microsoft.Data.SqlClient, which carries 9.0.11 even under EF Core 10.0.13. -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <!-- Through Swashbuckle.AspNetCore 10.0.1, which carries 2.3.0. Swashbuckle 10.2.1+ carries
+         2.7.5 itself, but 10.3.1 fails to generate the schema for the DataTable that
+         MselController.GetData returns, so Swashbuckle stays put and only the OpenAPI model moves. -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
   </ItemGroup>
 
 </Project>

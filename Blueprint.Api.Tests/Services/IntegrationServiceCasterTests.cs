@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
 using Xunit;
 
@@ -225,6 +226,98 @@ public class IntegrationServiceCasterTests(DatabaseFixture fixture) : DatabaseTe
     }
 
     // ---------------------------------------------------------------------------------------------
+    // Retry Caster
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>A retry redoes the Caster step alone, in the workspace the failed push made, and finishes
+    /// the push.</summary>
+    [Fact]
+    public async Task RetryCaster_OfAFailedCasterPush_RunsOnlyTheCasterStepsInTheWorkspaceItHas()
+    {
+        var msel = await SeedFailedCasterPush();
+        var harness = RetryHarness();
+
+        await RetryAsync(harness, msel.Id);
+
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.Equal(
+            [
+                "Caster - stopping active runs",
+                "Caster - writing variables",
+                "Caster - creating run",
+                "Caster - planning",
+                "Caster - applying"
+            ],
+            Statuses(harness, msel.Id));
+        Assert.Null(deployed.IntegrationStatus);
+        Assert.Equal(PlayerViewId, deployed.PlayerViewId);
+        Assert.Equal(WorkspaceId, deployed.CasterWorkspaceId);
+        Assert.Equal(RunId, deployed.CasterRunId);
+        Assert.DoesNotContain(harness.Handler.Sent, x => x.Method == HttpMethod.Post && x.Path.StartsWith("player/"));
+        Assert.DoesNotContain(harness.Handler.Sent, x => x.Method == HttpMethod.Post && x.Path == "caster/api/workspaces");
+    }
+
+    /// <summary>The variables file is rewritten, so a fix to the team variables reaches terraform; the
+    /// workspace's other files, and other workspaces' variables files, are left alone.</summary>
+    [Fact]
+    public async Task RetryCaster_OfAFailedCasterPush_ReplacesOnlyTheWorkspacesVariablesFile()
+    {
+        var team = Guid.NewGuid();
+        var msel = await SeedFailedCasterPush(team);
+        var name = $"blueprint-{msel.Id}";
+        var harness = RetryHarness(name, x => x.AnswersJson(
+            "GET player/api/views/*/teams", $$"""[{"id":"{{team}}","name":"Blue Cell"}]"""));
+
+        await RetryAsync(harness, msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var deleted = harness.Handler.Sent.Where(x => x.Method == HttpMethod.Delete).Select(x => x.Path).ToList();
+        Assert.Equal([$"caster/api/files/{OldVarsFileId}"], deleted);
+        var sent = harness.Handler.Sent.ToList();
+        Assert.True(
+            sent.FindIndex(x => x.Method == HttpMethod.Delete) < sent.FindIndex(x => x.Method == HttpMethod.Post && x.Path == "caster/api/files"),
+            "The old variables file has to go before the new one is written.");
+        var file = Body(Assert.Single(sent, x => x.Method == HttpMethod.Post && x.Path == "caster/api/files").Body);
+        Assert.Equal($"{name}.auto.tfvars", file["name"].GetString());
+        Assert.Contains($"view_id = \"{PlayerViewId}\"", file["content"].GetString());
+        Assert.Contains($"blue = \"{team}\"", file["content"].GetString());
+    }
+
+    /// <summary>A push that failed before Caster made the workspace, or one deleted in Caster since, gets
+    /// the whole Caster step.</summary>
+    [Fact]
+    public async Task RetryCaster_WhenTheWorkspaceIsGone_CreatesOne()
+    {
+        var msel = await SeedFailedCasterPush();
+        var harness = PushHarness(x => x.Answers($"GET caster/api/workspaces/{WorkspaceId}", HttpStatusCode.NotFound));
+
+        await RetryAsync(harness, msel.Id);
+
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.Equal("Caster - creating workspace", Statuses(harness, msel.Id)[0]);
+        Assert.Single(harness.Handler.Sent, x => x.Method == HttpMethod.Post && x.Path == "caster/api/workspaces");
+        Assert.DoesNotContain(harness.Handler.Sent, x => x.Method == HttpMethod.Delete);
+        Assert.Equal(RunId, deployed.CasterRunId);
+    }
+
+    /// <summary>A retry that fails again reports it the same way, so it can be retried again.</summary>
+    [Fact]
+    public async Task RetryCaster_WhenThePlanFailsAgain_ReportsItAsACasterError()
+    {
+        var msel = await SeedFailedCasterPush();
+        var harness = RetryHarness(first: x => x.AnswersJson($"GET caster/api/runs/{RunId}", Run("Failed")));
+
+        await RetryAsync(harness, msel.Id);
+
+        var failed = await harness.WaitForError(msel.Id, Ct);
+
+        Assert.StartsWith("ERROR: Caster - planning failed - ", failed.IntegrationStatus);
+        Assert.Equal(MselItemStatus.Pushing, failed.Status);
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Pull
     // ---------------------------------------------------------------------------------------------
 
@@ -267,8 +360,8 @@ public class IntegrationServiceCasterTests(DatabaseFixture fixture) : DatabaseTe
             [
                 "Pulling Integrations",
                 "Pulling Caster Workspace",
-                "Caster - stopping active runs",
-                "Caster - deleting workspace",
+                "Pulling Caster Workspace - stopping active runs",
+                "Pulling Caster Workspace - deleting workspace",
                 "Pulling Player View"
             ],
             Statuses(harness, msel.Id));
@@ -368,6 +461,25 @@ public class IntegrationServiceCasterTests(DatabaseFixture fixture) : DatabaseTe
             paths.IndexOf($"DELETE player/api/views/{PlayerViewId}"));
     }
 
+    /// <summary>The cancel's Caster steps read as cancelling, so the UI does not offer Cancel Push again.</summary>
+    [Fact]
+    public async Task CancelPush_OfACasterMsel_AnnouncesTheCasterStepsAsCancelling()
+    {
+        var msel = await SeedDeployedCasterMsel();
+        var harness = PullHarness();
+
+        harness.Service.CancelPush(msel.Id);
+        await harness.WaitForFinalStatus(msel.Id, MselItemStatus.Approved, Ct);
+
+        Assert.Equal(
+            [
+                "Cancelling - pulling Caster Workspace",
+                "Cancelling - pulling Caster Workspace - stopping active runs",
+                "Cancelling - pulling Caster Workspace - deleting workspace"
+            ],
+            Statuses(harness, msel.Id).Where(x => x.Contains("Caster")));
+    }
+
     [Fact]
     public async Task CancelPush_WhenTheCasterDestroyFails_StopsAndKeepsEveryId()
     {
@@ -428,6 +540,60 @@ public class IntegrationServiceCasterTests(DatabaseFixture fixture) : DatabaseTe
         await Seed(msel);
 
         return msel;
+    }
+
+    private static readonly Guid OldVarsFileId = Guid.Parse("cccccccc-0000-0000-0000-000000000004");
+
+    /// <summary>A MSEL whose push made the Player view and the Caster workspace, and failed at the plan.</summary>
+    private async Task<MselEntity> SeedFailedCasterPush(Guid? teamId = null)
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Pushing);
+        msel.UsePlayer = true;
+        msel.UseCaster = true;
+        msel.CasterDirectoryId = DirectoryId;
+        msel.PlayerViewId = PlayerViewId;
+        msel.CasterWorkspaceId = WorkspaceId;
+        msel.CasterRunId = Guid.NewGuid();
+        msel.IntegrationStatus = "ERROR: Caster - planning failed - the plan did not finish";
+        await Seed(msel);
+
+        var team = TestData.Team(msel.Id);
+        team.Id = teamId ?? team.Id;
+        team.CasterTeamVariable = "blue";
+        await Seed(team);
+
+        return msel;
+    }
+
+    /// <summary>
+    /// The push's rules, plus the workspace the failed push left: no active runs, and a directory holding
+    /// its variables file, another of its files, and another workspace's variables file of the same name.
+    /// </summary>
+    private IntegrationServiceHarness RetryHarness(string workspaceName = "ws", Func<SiblingApiHandler, SiblingApiHandler> first = null) =>
+        PushHarness(x => (first is null ? x : first(x))
+            .AnswersJson($"GET caster/api/workspaces/{WorkspaceId}/runs", "[]")
+            .AnswersJson($"GET caster/api/workspaces/{WorkspaceId}",
+                $$"""{"id":"{{WorkspaceId}}","name":"{{workspaceName}}","directoryId":"{{DirectoryId}}"}""")
+            .AnswersJson($"GET caster/api/directories/{DirectoryId}/files", $$"""
+                [
+                  {"id":"{{OldVarsFileId}}","name":"{{workspaceName}}.auto.tfvars","directoryId":"{{DirectoryId}}","workspaceId":"{{WorkspaceId}}"},
+                  {"id":"{{Guid.NewGuid()}}","name":"main.tf","directoryId":"{{DirectoryId}}","workspaceId":"{{WorkspaceId}}"},
+                  {"id":"{{Guid.NewGuid()}}","name":"{{workspaceName}}.auto.tfvars","directoryId":"{{DirectoryId}}","workspaceId":"{{Guid.NewGuid()}}"}
+                ]
+                """)
+            .Answers($"DELETE caster/api/files/{OldVarsFileId}", HttpStatusCode.NoContent));
+
+    /// <summary>Queues the push Retry Caster queues, and starts the worker.</summary>
+    private static async Task RetryAsync(IntegrationServiceHarness harness, Guid mselId)
+    {
+        await harness.StartAsync();
+        harness.Queue.Add(new IntegrationInformation
+        {
+            MselId = mselId,
+            IsPush = true,
+            CasterOnly = true,
+            FinalStatus = MselItemStatus.Deployed
+        });
     }
 
     /// <remarks>

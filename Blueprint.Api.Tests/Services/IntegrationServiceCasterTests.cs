@@ -243,6 +243,7 @@ public class IntegrationServiceCasterTests(DatabaseFixture fixture) : DatabaseTe
 
         Assert.Equal(
             [
+                "Retrying Caster",
                 "Caster - stopping active runs",
                 "Caster - writing variables",
                 "Caster - creating run",
@@ -296,7 +297,7 @@ public class IntegrationServiceCasterTests(DatabaseFixture fixture) : DatabaseTe
 
         var deployed = await harness.WaitForDeployment(msel.Id, Ct);
 
-        Assert.Equal("Caster - creating workspace", Statuses(harness, msel.Id)[0]);
+        Assert.Equal(["Retrying Caster", "Caster - creating workspace"], Statuses(harness, msel.Id).Take(2));
         Assert.Single(harness.Handler.Sent, x => x.Method == HttpMethod.Post && x.Path == "caster/api/workspaces");
         Assert.DoesNotContain(harness.Handler.Sent, x => x.Method == HttpMethod.Delete);
         Assert.Equal(RunId, deployed.CasterRunId);

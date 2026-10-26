@@ -49,6 +49,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Replaces the Msel's image with a PNG, JPEG, GIF or WebP file of 2 MB or less, and returns the updated Msel.
+        /// A larger file answers 400, except that a request body over 2 MB + 64 KB is refused with 413 before it is read.
         /// </remarks>
         /// <param name="id">The id of the Msel</param>
         /// <param name="form">The image to upload</param>

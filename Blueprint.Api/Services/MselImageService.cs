@@ -8,9 +8,9 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
@@ -32,13 +32,13 @@ namespace Blueprint.Api.Services
 
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
+        private readonly IMselService _mselService;
 
-        public MselImageService(BlueprintContext context, IPrincipal user, IMapper mapper)
+        public MselImageService(BlueprintContext context, IPrincipal user, IMselService mselService)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
+            _mselService = mselService;
         }
 
         public async Task<MselImageEntity> GetAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -81,19 +81,35 @@ namespace Blueprint.Api.Services
             if (contentType == null)
                 throw new BadRequestException("The image must be a PNG, JPEG, GIF or WebP file.");
 
-            var image = await _context.MselImages.SingleOrDefaultAsync(i => i.MselId == mselId, ct);
-            if (image == null)
-            {
-                image = new MselImageEntity { MselId = mselId };
-                _context.MselImages.Add(image);
-            }
-            image.Data = data;
-            image.ContentType = contentType;
+            // Overwrite the image in place, so the old one, up to MaxImageBytes, is never read back;
+            // add a row only when the MSEL has none.
+            var replaced = await ReplaceImageAsync(mselId, data, contentType, ct);
+            var added = replaced ? null : _context.MselImages.Add(new MselImageEntity { MselId = mselId, Data = data, ContentType = contentType });
             msel.ImageDateModified = DateTime.UtcNow;
             msel.ModifiedBy = _user.GetId();
-            await _context.SaveChangesAsync(ct);
+            try
+            {
+                await _context.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex) when (added != null && ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+            {
+                // another first upload added the row after this one looked, so overwrite that row instead
+                added.State = EntityState.Detached;
+                await ReplaceImageAsync(mselId, data, contentType, ct);
+                await _context.SaveChangesAsync(ct);
+            }
 
-            return _mapper.Map<ViewModels.Msel>(msel);
+            // the whole MSEL, as MselService.UpdateAsync returns it, not just its own row
+            return await _mselService.GetAsync(mselId, true, ct);
+        }
+
+        private async Task<bool> ReplaceImageAsync(Guid mselId, byte[] data, string contentType, CancellationToken ct)
+        {
+            return await _context.MselImages
+                .Where(i => i.MselId == mselId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(i => i.Data, data)
+                    .SetProperty(i => i.ContentType, contentType), ct) > 0;
         }
 
         public async Task<ViewModels.Msel> DeleteAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -107,7 +123,7 @@ namespace Blueprint.Api.Services
             msel.ModifiedBy = _user.GetId();
             await _context.SaveChangesAsync(ct);
 
-            return _mapper.Map<ViewModels.Msel>(msel);
+            return await _mselService.GetAsync(mselId, true, ct);
         }
 
         // the same people who can change the MSEL's other details in MselService.UpdateAsync

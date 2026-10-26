@@ -8,6 +8,8 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
@@ -51,6 +53,38 @@ public class MselImageEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var stored = await ReadBack(db => db.MselImages.SingleAsync(i => i.MselId == msel.Id, Ct));
         Assert.Equal(Png, stored.Data);
         Assert.Equal("image/png", stored.ContentType);
+    }
+
+    /// <summary>
+    /// Set answers the whole MSEL, as an update does, including the Owner role a creator holds without a
+    /// role row. A bare mapping of the MSEL row leaves that role out.
+    /// </summary>
+    [Fact]
+    public async Task Set_AnswersTheWholeMsel()
+    {
+        var actor = await Actor().SeedAsync();
+        var msel = await SeedMsel(withImage: false, createdBy: actor.Id);
+
+        var response = await Client(actor).PutAsync($"api/msels/{msel.Id}/image", ImagePart(Png, "image/png"), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var answered = await response.Content.ReadFromJsonAsync<ViewModels.Msel>(JsonOptions, Ct);
+        Assert.Contains(answered.UserMselRoles, r => r.UserId == actor.Id && r.Role == MselRole.Owner);
+    }
+
+    /// <summary>Set over an existing image replaces it, leaving one row with the new bytes and type.</summary>
+    [Fact]
+    public async Task Set_OverAnExistingImage_ReplacesIt()
+    {
+        var msel = await SeedMsel(withImage: true);
+        byte[] gif = [0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00];
+
+        var response = await RootClient.PutAsync($"api/msels/{msel.Id}/image", ImagePart(gif, "image/gif"), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await ReadBack(db => db.MselImages.SingleAsync(i => i.MselId == msel.Id, Ct));
+        Assert.Equal(gif, stored.Data);
+        Assert.Equal("image/gif", stored.ContentType);
     }
 
     /// <summary>Set with an SVG is a 400, because SVG can carry script, and nothing is stored.</summary>
@@ -160,6 +194,52 @@ public class MselImageEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.False(await ReadBack(db => db.MselImages.AnyAsync(i => i.MselId == msel.Id, Ct)));
     }
 
+    /// <summary>
+    /// Delete answers the whole MSEL, as an update does, including the Owner role a creator holds without a
+    /// role row. A bare mapping of the MSEL row leaves that role out.
+    /// </summary>
+    [Fact]
+    public async Task Delete_AnswersTheWholeMsel()
+    {
+        var actor = await Actor().SeedAsync();
+        var msel = await SeedMsel(withImage: true, createdBy: actor.Id);
+
+        var response = await Client(actor).DeleteAsync($"api/msels/{msel.Id}/image", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var answered = await response.Content.ReadFromJsonAsync<ViewModels.Msel>(JsonOptions, Ct);
+        Assert.Contains(answered.UserMselRoles, r => r.UserId == actor.Id && r.Role == MselRole.Owner);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // POST msels/json
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// An imported file's MSEL ID and image date are the importer's to write, so naming another MSEL's
+    /// ID, even one the importer cannot view, must not copy that MSEL's image.
+    /// </summary>
+    [Fact]
+    public async Task Import_NamingAnotherMselsIdAndImageDate_CopiesNoImage()
+    {
+        var other = await SeedMsel(withImage: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = TestData.Msel();
+        file.Id = other.Id;
+        file.Name = "Imported " + Guid.NewGuid();
+        file.ImageDateModified = other.ImageDateModified;
+        var json = JsonSerializer.SerializeToNode(file, new JsonSerializerOptions { ReferenceHandler = ReferenceHandler.IgnoreCycles });
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent(json.ToJsonString(), Encoding.UTF8, "application/json"), "ToUpload", "copy.json");
+
+        var response = await Client(actor).PostAsync("api/msels/json", form, Ct);
+
+        Assert.True(response.IsSuccessStatusCode, $"import answered {response.StatusCode}");
+        var imported = await ReadBack(db => db.Msels.SingleAsync(m => m.Name == file.Name, Ct));
+        Assert.Null(imported.ImageDateModified);
+        Assert.False(await ReadBack(db => db.MselImages.AnyAsync(i => i.MselId == imported.Id, Ct)));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // POST msels/{id}/copy
     // ---------------------------------------------------------------------------------------------
@@ -180,9 +260,11 @@ public class MselImageEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(Png, stored.Data);
     }
 
-    private async Task<MselEntity> SeedMsel(bool withImage = false)
+    private async Task<MselEntity> SeedMsel(bool withImage = false, Guid? createdBy = null)
     {
         var msel = TestData.Msel();
+        if (createdBy != null)
+            msel.CreatedBy = (Guid)createdBy;
         if (withImage)
         {
             msel.ImageDateModified = DateTime.UtcNow;

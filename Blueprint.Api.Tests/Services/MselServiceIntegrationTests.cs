@@ -580,6 +580,127 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
     }
 
     // ---------------------------------------------------------------------------------------------
+    // POST msels/{id}/integrations/caster/retry
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task RetryCaster_OfAPushThatFailedAtCaster_MarksItRetryingAndEnqueuesACasterOnlyPush()
+    {
+        var msel = await SeedFailedCasterPush();
+        Factory.Caster.ShowsDirectory((Guid)msel.CasterDirectoryId);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations/caster/retry", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Retrying Caster", (await Read<Msel>(response)).IntegrationStatus);
+
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct));
+        Assert.Equal(MselItemStatus.Pushing, stored.Status);
+        Assert.Equal("Retrying Caster", stored.IntegrationStatus);
+
+        var queued = Enqueued(msel.Id);
+        Assert.True(queued.IsPush);
+        Assert.True(queued.CasterOnly);
+        Assert.Equal(MselItemStatus.Deployed, queued.FinalStatus);
+        Assert.Equal(actor.Id, queued.UserId);
+    }
+
+    [Fact]
+    public async Task RetryCaster_WithManageMselsPermission_Is200()
+    {
+        var msel = await SeedFailedCasterPush();
+        Factory.Caster.ShowsDirectory((Guid)msel.CasterDirectoryId);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations/caster/retry", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(Enqueued(msel.Id).CasterOnly);
+    }
+
+    /// <summary>
+    /// A pull's Caster errors share the prefix, but leave the MSEL Deployed or Pulling, and a failure at
+    /// another app's step leaves nothing for Caster to retry.
+    /// </summary>
+    [Theory]
+    [InlineData(MselItemStatus.Deployed, "ERROR: Caster - pull workspace failed - boom")]
+    [InlineData(MselItemStatus.Pulling, "ERROR: Caster - pull workspace failed - boom")]
+    [InlineData(MselItemStatus.Pushing, "ERROR: Gallery - create collection failed - boom")]
+    [InlineData(MselItemStatus.Pushing, "Caster - planning")]
+    public async Task RetryCaster_OfAnythingButAFailedCasterPush_Is409AndEnqueuesNothing(MselItemStatus status, string integrationStatus)
+    {
+        var msel = await SeedFailedCasterPush(m => { m.Status = status; m.IntegrationStatus = integrationStatus; });
+        Factory.Caster.ShowsDirectory((Guid)msel.CasterDirectoryId);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations/caster/retry", null, Ct);
+
+        Assert.Equal(
+            "Only a push that failed at its Caster step can retry Caster.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        Assert.Equal(
+            integrationStatus,
+            (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).IntegrationStatus);
+        AssertNothingEnqueued();
+    }
+
+    [Fact]
+    public async Task RetryCaster_OfAMselThatDoesNotUseCaster_Is409()
+    {
+        var msel = await SeedFailedCasterPush(m => m.UseCaster = false);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations/caster/retry", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        AssertNothingEnqueued();
+    }
+
+    [Fact]
+    public async Task RetryCaster_AsAnEditor_Is403()
+    {
+        var msel = await SeedFailedCasterPush();
+        Factory.Caster.ShowsDirectory((Guid)msel.CasterDirectoryId);
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations/caster/retry", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        AssertNothingEnqueued();
+    }
+
+    /// <summary>The directory is checked again, since the retry runs in Caster as the caller.</summary>
+    [Fact]
+    public async Task RetryCaster_WithADirectoryCasterWillNotShowTheCaller_Is403AndLeavesTheError()
+    {
+        var msel = await SeedFailedCasterPush();
+        Factory.Caster.RefusesDirectory((Guid)msel.CasterDirectoryId);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations/caster/retry", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(
+            msel.IntegrationStatus,
+            (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).IntegrationStatus);
+        AssertNothingEnqueued();
+    }
+
+    [Fact]
+    public async Task RetryCaster_ForAnUnknownMsel_WithManageMselsPermission_Is404()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+        var unknown = Guid.NewGuid();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{unknown}/integrations/caster/retry", null, Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal($"MSEL {unknown} was not found.", (await Error(response)).Title);
+        AssertNothingEnqueued();
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // POST msels/{id}/integrations/cancel
     // ---------------------------------------------------------------------------------------------
 
@@ -742,6 +863,7 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
     [InlineData("POST", "msels/00000000-0000-0000-0000-000000000001/integrations")]
     [InlineData("DELETE", "msels/00000000-0000-0000-0000-000000000001/integrations")]
     [InlineData("POST", "msels/00000000-0000-0000-0000-000000000001/integrations/cancel")]
+    [InlineData("POST", "msels/00000000-0000-0000-0000-000000000001/integrations/caster/retry")]
     [InlineData("GET", "msels/00000000-0000-0000-0000-000000000001/integrations/names")]
     public async Task EveryRoute_Unauthenticated_Is401(string method, string route)
     {
@@ -766,6 +888,17 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
 
         return msel;
     }
+
+    /// <summary>A Caster MSEL whose push got as far as the workspace and failed at the plan.</summary>
+    private Task<MselEntity> SeedFailedCasterPush(Action<MselEntity> arrange = null) =>
+        SeedCasterMsel(m =>
+        {
+            m.Status = MselItemStatus.Pushing;
+            m.IntegrationStatus = "ERROR: Caster - planning failed - the plan did not finish";
+            m.PlayerViewId = Guid.NewGuid();
+            m.CasterWorkspaceId = Guid.NewGuid();
+            arrange?.Invoke(m);
+        });
 
     /// <summary>
     /// A team the duplicate-user check looks at. Only a team mapped to a CITE team type counts.

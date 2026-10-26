@@ -143,6 +143,27 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(team.Id, stored.TeamId);
     }
 
+    /// <summary>The CITE team role an invitation gives its joiners is stored with it, and can be changed.</summary>
+    [Fact]
+    public async Task CreateThenUpdate_StoresTheCiteTeamRole()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var (msel, team) = await SeedMselAndTeam();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/invitations", Body(msel.Id, team.Id) with { citeTeamRole = "Submitter" }, Ct);
+        var created = await response.Content.ReadFromJsonAsync<ViewModels.Invitation>(JsonOptions, Ct);
+        Assert.Equal("Submitter", created.CiteTeamRole);
+
+        await Client(actor).PutAsJsonAsync(
+            $"api/invitations/{created.Id}",
+            Body(msel.Id, team.Id) with { id = created.Id, citeTeamRole = "Contributor" },
+            Ct);
+
+        var stored = await ReadBack(rb => rb.Invitations.SingleAsync(x => x.Id == created.Id, Ct));
+        Assert.Equal("Contributor", stored.CiteTeamRole);
+    }
+
     [Fact]
     public async Task Create_ForAMselThatIsNotThere_Is404()
     {
@@ -651,6 +672,7 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         public int maxUsersAllowed { get; init; }
         public int userCount { get; init; }
         public bool isTeamLeader { get; init; }
+        public string citeTeamRole { get; init; }
         public bool wasDeactivated { get; init; }
     }
 }

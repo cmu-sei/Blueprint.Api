@@ -56,6 +56,7 @@ namespace Blueprint.Api.Services
         Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Msel> RetryCasterAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task CancelIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> ArchiveAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
@@ -608,6 +609,10 @@ namespace Blueprint.Api.Services
             if (msel.Status != mselToUpdate.Status && (IsPipelineStatus(msel.Status) || IsPipelineStatus(mselToUpdate.Status)))
                 throw new ConflictException($"The MSEL status cannot be changed from {mselToUpdate.Status} to {msel.Status}. Only the integration pipeline sets Pushing, Pulling and Deployed, and moves a MSEL out of them.");
 
+            // the integrations were built from these settings, and nothing rebuilds them but a pull and a new push
+            if (HasIntegrations(mselToUpdate) && IntegrationSettingsChanged(msel, mselToUpdate))
+                throw new ConflictException("The integration settings cannot be changed while the MSEL is pushed, or is being pushed or pulled. Remove Integrations first.");
+
             // the push deploys this directory as the service account, so only accept one the user can view in Caster
             if (msel.CasterDirectoryId != null && msel.CasterDirectoryId != mselToUpdate.CasterDirectoryId)
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
@@ -624,6 +629,25 @@ namespace Blueprint.Api.Services
 
         private static bool IsPipelineStatus(MselItemStatus status) =>
             status == MselItemStatus.Pushing || status == MselItemStatus.Pulling || status == MselItemStatus.Deployed;
+
+        // a failed push leaves its partial integrations, and a failed pull leaves what it could not remove
+        private static bool HasIntegrations(MselEntity msel) =>
+            IsPipelineStatus(msel.Status) ||
+            msel.PlayerViewId != null ||
+            msel.GalleryCollectionId != null ||
+            msel.GalleryExhibitId != null ||
+            msel.CiteEvaluationId != null ||
+            msel.SteamfitterScenarioId != null ||
+            msel.CasterWorkspaceId != null;
+
+        private static bool IntegrationSettingsChanged(ViewModels.MselEdit msel, MselEntity stored) =>
+            msel.UsePlayer != stored.UsePlayer ||
+            msel.UseGallery != stored.UseGallery ||
+            msel.UseCite != stored.UseCite ||
+            msel.CiteScoringModelId != stored.CiteScoringModelId ||
+            msel.UseSteamfitter != stored.UseSteamfitter ||
+            msel.UseCaster != stored.UseCaster ||
+            msel.CasterDirectoryId != stored.CasterDirectoryId;
 
         public async Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct)
         {
@@ -2469,6 +2493,41 @@ namespace Blueprint.Api.Services
 
             return _mapper.Map<ViewModels.Msel>(msel);
         }
+
+        /// <summary>
+        /// Redoes the Caster step of a push that failed there. Caster runs last, so everything else the push
+        /// makes is already in place, and a fix made in Caster since is picked up by the new run.
+        /// </summary>
+        public async Task<ViewModels.Msel> RetryCasterAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        {
+            // user must be a Content Developer or a MSEL owner
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+                throw new ForbiddenException();
+            var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == mselId, ct);
+            if (msel == null)
+                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found.");
+            // a pull's Caster errors read "ERROR: Caster - pull ...", but a pull never leaves the MSEL Pushing
+            if (msel.Status != MselItemStatus.Pushing || msel.IntegrationStatus?.StartsWith(CasterPushErrorPrefix) != true ||
+                !msel.UseCaster || msel.CasterDirectoryId == null)
+                throw new ConflictException("Only a push that failed at its Caster step can retry Caster.");
+            await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
+            // Claim the retry in one conditional update, and only queue it if this request won. Two retries
+            // (a double-click, or two planners) would run two Caster threads on the same workspace, and a
+            // cancel would reach only one of them.
+            var failedStatus = msel.IntegrationStatus;
+            var claimed = await _context.Msels
+                .Where(m => m.Id == mselId && m.Status == MselItemStatus.Pushing && m.IntegrationStatus == failedStatus)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.IntegrationStatus, "Retrying Caster"), ct);
+            if (claimed == 0)
+                throw new ConflictException("This push is no longer waiting for a Caster retry; one may already be running.");
+            msel.IntegrationStatus = "Retrying Caster";
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = true, CasterOnly = true, FinalStatus = MselItemStatus.Deployed, UserId = _user.GetId() });
+
+            return _mapper.Map<ViewModels.Msel>(msel);
+        }
+
+        // the start of the status a push leaves when its Caster step fails
+        public const string CasterPushErrorPrefix = "ERROR: Caster - ";
 
         public async Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct)
         {

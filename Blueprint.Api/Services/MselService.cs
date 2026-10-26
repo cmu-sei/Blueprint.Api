@@ -2511,8 +2511,16 @@ namespace Blueprint.Api.Services
                 !msel.UseCaster || msel.CasterDirectoryId == null)
                 throw new ConflictException("Only a push that failed at its Caster step can retry Caster.");
             await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
+            // Claim the retry in one conditional update, and only queue it if this request won. Two retries
+            // (a double-click, or two planners) would run two Caster threads on the same workspace, and a
+            // cancel would reach only one of them.
+            var failedStatus = msel.IntegrationStatus;
+            var claimed = await _context.Msels
+                .Where(m => m.Id == mselId && m.Status == MselItemStatus.Pushing && m.IntegrationStatus == failedStatus)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.IntegrationStatus, "Retrying Caster"), ct);
+            if (claimed == 0)
+                throw new ConflictException("This push is no longer waiting for a Caster retry; one may already be running.");
             msel.IntegrationStatus = "Retrying Caster";
-            await _context.SaveChangesAsync(ct);
             _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = true, CasterOnly = true, FinalStatus = MselItemStatus.Deployed, UserId = _user.GetId() });
 
             return _mapper.Map<ViewModels.Msel>(msel);

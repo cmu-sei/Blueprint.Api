@@ -253,6 +253,22 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
             "the applications should be created last of all");
     }
 
+    /// <summary>The push sends the MSEL's own applications. A template names no MSEL, so it is never one of
+    /// them and never reaches Player.</summary>
+    [Fact]
+    public async Task Push_SendsTheMselsApplicationsAndNoTemplate()
+    {
+        var msel = await SeedPushableMsel();
+        await Seed(TestData.PlayerApplicationTemplate("A template"));
+        var harness = Harness();
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var application = Assert.Single(harness.Handler.Sent, x => x.Path.EndsWith("/applications"));
+        Assert.Equal("Console", Body(application.Body)["name"].GetString());
+    }
+
     /// <summary>A MSEL team named Admin takes the place of Player's own: the view is created without one, and
     /// that team alone gets the role Player gives its Admin team.</summary>
     [Fact]

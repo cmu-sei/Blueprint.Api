@@ -44,14 +44,14 @@ namespace Blueprint.Api.Tests.Controllers;
 /// action's authorization check, so a JSON body would assert nothing. Add a row per route as each
 /// remaining service is covered; do not add per-service 401/403 tests.
 /// <para />
-/// Four routes are deliberately absent because each resolves no authorization at all and so cannot
+/// Five routes are deliberately absent because each resolves no authorization at all and so cannot
 /// satisfy <see cref="EveryRoute_is_forbidden_for_a_caller_holding_every_permission_but_the_named_one"/>: <c>GET lmt/resource/{mselId}</c>
 /// (<c>LmtController</c> is <c>[AllowAnonymous]</c> - see <see cref="LmtEndpointTests"/>),
-/// <c>GET my-catalogs</c>, <c>GET citeActions/templates</c> and <c>GET citeDuties/templates</c>. The
-/// latter three are covered by the happy-path test in their own files, which is where the absence of a
-/// check is recorded.
+/// <c>GET my-catalogs</c>, <c>GET citeActions/templates</c>, <c>GET citeDuties/templates</c> and
+/// <c>GET playerApplications/templates</c>. The latter four are covered by the happy-path test in their
+/// own files, which is where the absence of a check is recorded.
 /// <para />
-/// A fifth is absent for a different reason: <c>POST playerApplications/push</c> does resolve
+/// A sixth is absent for a different reason: <c>POST playerApplications/push</c> does resolve
 /// <c>EditMsels</c>, but it is covered end to end by <see cref="PlayerServiceTests"/>, including its
 /// refusals, and a row here would both duplicate that and push an application as a side effect of an
 /// authorization assertion.
@@ -156,8 +156,9 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         { "POST", "api/citeDuties/json", "ManageCiteDuties", "@file" },
         { "POST", "api/citeDuties/json/download", "ManageCiteDuties", "[]" },
 
-        // PlayerApplicationService / PlayerApplicationController - reads want ViewMsels, writes EditMsels.
-        // POST playerApplications/push is absent, see above.
+        // PlayerApplicationService / PlayerApplicationController - reads want ViewMsels, writes EditMsels
+        // because every body here names a MSEL, and the two file routes ManagePlayerApplications.
+        // POST playerApplications/push and GET playerApplications/templates are absent, see above.
         { "GET", "api/msels/{msel}/playerApplications", "ViewMsels", null },
         { "GET", "api/playerApplications/{playerapplication}", "ViewMsels", null },
         {
@@ -169,6 +170,8 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             """{"id":"{playerapplication}","mselId":"{msel}","name":"{unique}","url":"http://application.example/"}"""
         },
         { "DELETE", "api/playerApplications/{playerapplication}", "EditMsels", null },
+        { "POST", "api/playerApplications/json", "ManagePlayerApplications", "@file" },
+        { "POST", "api/playerApplications/json/download", "ManagePlayerApplications", "[]" },
 
         // PlayerApplicationTeamService / PlayerApplicationTeamController - reads want ViewMsels, writes
         // EditMsels, every one of them a hard guard in the controller: the service checks nothing.

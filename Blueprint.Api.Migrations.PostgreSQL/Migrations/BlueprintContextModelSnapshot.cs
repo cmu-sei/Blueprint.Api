@@ -18,7 +18,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.0")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "hstore");
@@ -1514,6 +1514,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("icon");
 
+                    b.Property<bool>("IsTemplate")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_template");
+
                     b.Property<bool?>("LoadInBackground")
                         .HasColumnType("boolean")
                         .HasColumnName("load_in_background");
@@ -1522,7 +1526,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("modified_by");
 
-                    b.Property<Guid>("MselId")
+                    b.Property<Guid?>("MselId")
                         .HasColumnType("uuid")
                         .HasColumnName("msel_id");
 
@@ -1895,7 +1899,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                             Description = "Can view all MSELs, but cannot make any changes.",
                             Immutable = false,
                             Name = "Observer",
-                            Permissions = new[] { 2, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27 }
+                            Permissions = new[] { 2, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29 }
                         });
                 });
 
@@ -2704,8 +2708,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
                         .WithMany("PlayerApplications")
                         .HasForeignKey("MselId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("Msel");
                 });

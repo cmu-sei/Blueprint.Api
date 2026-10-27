@@ -309,6 +309,18 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         Assert.Contains(string.Empty, _hub.Recipients(MainHubMethods.CardTeamCreated, string.Empty));
     }
 
+    /// <summary>A Player application template has no MSEL, so it is told to the admin data group alone,
+    /// and not to the empty-string group the other MSEL-less rows above reach.</summary>
+    [Fact]
+    public async Task APlayerApplicationTemplate_IsBroadcastToTheAdminDataGroupOnly()
+    {
+        await Created(TestData.PlayerApplicationTemplate());
+
+        Assert.Equal(
+            [MainHub.ADMIN_DATA_GROUP],
+            _hub.Recipients(MainHubMethods.PlayerApplicationCreated, string.Empty, MainHub.ADMIN_DATA_GROUP));
+    }
+
     /// <summary>A row whose parent is gone is broadcast to the all zero guids group.</summary>
     [Fact]
     public async Task ARowWhoseParentIsGone_IsBroadcastToTheAllZeroGuidsGroup()

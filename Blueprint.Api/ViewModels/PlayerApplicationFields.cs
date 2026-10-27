@@ -6,9 +6,9 @@ using System;
 namespace Blueprint.Api.ViewModels
 {
     /// <summary>
-    /// The fields a Player Application's create and edit requests share. The owning MSEL is not one of
-    /// them: only <see cref="PlayerApplicationCreate"/> names it, so an edit cannot move an application to
-    /// another MSEL.
+    /// The fields a Player Application's create and edit requests share. The owning MSEL and the template
+    /// flag are not among them: only <see cref="PlayerApplicationCreate"/> names them, so an edit cannot move
+    /// an application to another MSEL or between a MSEL and the templates.
     /// </summary>
     public abstract class PlayerApplicationFields
     {
@@ -22,7 +22,9 @@ namespace Blueprint.Api.ViewModels
     public class PlayerApplicationCreate : PlayerApplicationFields
     {
         public Guid Id { get; set; }
-        public Guid MselId { get; set; }
+        /// <summary>The MSEL the application belongs to, or null for a template.</summary>
+        public Guid? MselId { get; set; }
+        public bool IsTemplate { get; set; }
     }
 
     public class PlayerApplicationEdit : PlayerApplicationFields

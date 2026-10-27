@@ -138,6 +138,21 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         Assert.Empty(await response.Content.ReadFromJsonAsync<List<ViewModels.PlayerApplicationTeam>>(JsonOptions, Ct));
     }
 
+    /// <summary>A template belongs to no MSEL and so to no team: its list is empty for anyone, rather than
+    /// the 500 a MSEL lookup on a null id would give a caller without <c>ViewMsels</c>.</summary>
+    [Fact]
+    public async Task GetByPlayerApplication_OfATemplate_IsAnEmptyList()
+    {
+        var stranger = await Actor().SeedAsync();
+        var template = TestData.PlayerApplicationTemplate();
+        await Seed(template);
+
+        var response = await Client(stranger).GetAsync($"api/playerApplications/{template.Id}/teamplayerApplications", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(await response.Content.ReadFromJsonAsync<List<ViewModels.PlayerApplicationTeam>>(JsonOptions, Ct));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // GET teamplayerApplications/{id}
     // ---------------------------------------------------------------------------------------------
@@ -268,6 +283,22 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.False(await ReadBack(db => db.PlayerApplicationTeams.AnyAsync(x => x.PlayerApplicationId == application.Id, Ct)));
+    }
+
+    /// <summary>A template is copied into a MSEL before any team sees it, so it takes no team row.</summary>
+    [Fact]
+    public async Task Create_ForATemplate_Is404AndCreatesNothing()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var graph = await SeedGraph();
+        var template = TestData.PlayerApplicationTemplate();
+        await Seed(template);
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/teamplayerApplications", Body(template.Id, graph.Team.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(await ReadBack(db => db.PlayerApplicationTeams.AnyAsync(x => x.PlayerApplicationId == template.Id, Ct)));
     }
 
     [Fact]

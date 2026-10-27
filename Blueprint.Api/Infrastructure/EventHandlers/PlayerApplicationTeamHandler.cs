@@ -44,7 +44,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 .Where(c => c.Id == playerApplicationTeamEntity.PlayerApplicationId)
                 .Select(c => c.MselId)
                 .SingleOrDefaultAsync();
-            groupIds.Add(mselId.ToString());
+            // MselId is nullable for templates; a row whose application is gone still goes to the all-zero group
+            groupIds.Add(mselId.GetValueOrDefault().ToString());
             // the admin data group gets everything
             groupIds.Add(MainHub.ADMIN_DATA_GROUP);
 

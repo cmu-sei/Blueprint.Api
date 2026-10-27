@@ -12,6 +12,10 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<PlayerApplicationEntity, PlayerApplication>();
 
+            CreateMap<PlayerApplication, PlayerApplicationEntity>()
+                .ForMember(pa => pa.Msel, opt => opt.Ignore())
+                .ForMember(pa => pa.PlayerApplicationTeams, opt => opt.Ignore());
+
             CreateMap<PlayerApplicationCreate, PlayerApplicationEntity>(AutoMapper.MemberList.Source);
             CreateMap<PlayerApplicationEdit, PlayerApplicationEntity>(AutoMapper.MemberList.Source);
         }

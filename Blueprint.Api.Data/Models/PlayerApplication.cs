@@ -15,13 +15,14 @@ namespace Blueprint.Api.Data.Models
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
-        public Guid MselId { get; set; }
+        public Guid? MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
         public string Name { get; set; }
         public string Url { get; set; }
         public string Icon { get; set; }
         public bool? Embeddable { get; set; }
         public bool? LoadInBackground { get; set; }
+        public bool IsTemplate { get; set; }
         public virtual ICollection<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; } = new HashSet<PlayerApplicationTeamEntity>();
     }
 

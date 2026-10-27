@@ -329,6 +329,11 @@ namespace Blueprint.Api.Services
             var newGuidValues = new Dictionary<Guid, Guid>();
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId)).Name;
+            // the image is stored apart from the MSEL, so copy it here; a source with no image, or whose
+            // date points at none, gives a copy with none (ImportJsonAsync clears the file's date first)
+            var sourceImage = mselEntity.ImageDateModified == null ? null :
+                await _context.MselImages.AsNoTracking().SingleOrDefaultAsync(i => i.MselId == mselEntity.Id, ct);
+            mselEntity.ImageDateModified = sourceImage == null ? null : mselEntity.ImageDateModified;
             mselEntity.Id = Guid.NewGuid();
             mselEntity.CreatedBy = currentUserId;
             if (!keepName)
@@ -513,6 +518,10 @@ namespace Blueprint.Api.Services
             }
 
             _context.Msels.Add(mselEntity);
+            if (sourceImage != null)
+            {
+                _context.MselImages.Add(new MselImageEntity { MselId = mselEntity.Id, Data = sourceImage.Data, ContentType = sourceImage.ContentType });
+            }
             _context.SkipEventPublishing = true;
             await _context.SaveChangesAsync(ct);
             _context.SkipEventPublishing = false;
@@ -2204,6 +2213,10 @@ namespace Blueprint.Api.Services
                 ReferenceHandler = ReferenceHandler.Preserve
             };
             var mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
+            // The file carries no image, only its source MSEL's ID and image date. Both are the
+            // importer's to write, so keeping the date would copy whatever image that ID has here,
+            // even one of a MSEL the importer cannot view.
+            mselEntity.ImageDateModified = null;
             var droppedTeamUsers = mselEntity.Teams.Sum(t => t.TeamUsers?.Count ?? 0);
             if (droppedTeamUsers > 0)
                 AddChange(result, "teams", $"{droppedTeamUsers} team members were not imported. Add users to the teams before pushing.");

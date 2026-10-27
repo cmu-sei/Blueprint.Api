@@ -2703,7 +2703,7 @@ namespace Blueprint.Api.Services
                 // Player/Gallery/Cite joins below are queued only for a first join, so a user who
                 // reached the Player View some other way would otherwise be a member of every
                 // application except Blueprint, with no way for the invitation link to fix it.
-                await AddUserToMselTeamAsync(mselId, invitation.TeamId, userId, ct);
+                var citeTeamRole = await AddUserToMselTeamAsync(mselId, invitation, userId, ct);
 
                 // Only a first join consumes an invitation seat and needs the other applications
                 // updated - a returning user is already counted and already on those teams.
@@ -2724,7 +2724,8 @@ namespace Blueprint.Api.Services
                         TeamId = invitation.TeamId,
                         UsePlayer = msel.UsePlayer,
                         UseGallery = msel.UseGallery,
-                        UseCite = msel.UseCite && invitation.Team.CiteTeamTypeId != null
+                        UseCite = msel.UseCite && invitation.Team.CiteTeamTypeId != null,
+                        CiteTeamRole = citeTeamRole
                     };
                     _joinQueue.Add(joinInformation);
                 }
@@ -2809,11 +2810,14 @@ namespace Blueprint.Api.Services
         /// <summary>
         /// Makes the user a member of the invited Blueprint team and gives them a MSEL role, if they do
         /// not have those already. Membership is checked across every team of the MSEL, because an
-        /// invitation must not put a user on a second team of the same MSEL. Changes are staged only -
-        /// the caller saves them.
+        /// invitation must not put a user on a second team of the same MSEL. A user on the invitation's
+        /// team with no team role there is given the invitation's. Changes are staged only - the caller
+        /// saves them.
         /// </summary>
-        private async Task AddUserToMselTeamAsync(Guid mselId, Guid teamId, Guid userId, CancellationToken ct)
+        /// <returns>The user's team role on the invitation's team, or null for none, which CITE makes Member.</returns>
+        private async Task<string> AddUserToMselTeamAsync(Guid mselId, InvitationEntity invitation, Guid userId, CancellationToken ct)
         {
+            var teamId = invitation.TeamId;
             var mselTeamIds = await _context.Teams
                 .Where(t => t.MselId == mselId)
                 .Select(t => t.Id)
@@ -2841,6 +2845,22 @@ namespace Blueprint.Api.Services
                     Role = MselRole.Viewer
                 });
             }
+
+            // Someone joining through an invitation gets its team role, unless they already hold one on
+            // that team; a planner's choice on the Teams tab is not overwritten by a join.
+            var teamRole = await _context.UserTeamRoles
+                .Where(utr => utr.TeamId == teamId && utr.UserId == userId)
+                .Select(utr => utr.Role)
+                .FirstOrDefaultAsync(ct);
+            // Only for the invitation's team: a user already on another team of the MSEL stays there.
+            var isOnInvitationTeam = !isOnAMselTeam ||
+                await _context.TeamUsers.AnyAsync(tu => tu.TeamId == teamId && tu.UserId == userId, ct);
+            if (teamRole == null && isOnInvitationTeam && !string.IsNullOrWhiteSpace(invitation.CiteTeamRole))
+            {
+                teamRole = invitation.CiteTeamRole;
+                _context.UserTeamRoles.Add(new UserTeamRoleEntity(userId, teamId, teamRole));
+            }
+            return teamRole;
         }
 
         public async Task<Msel> LaunchMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct)

@@ -37,6 +37,8 @@ namespace Blueprint.Api.Services
         public bool UsePlayer { get; set; }
         public bool UseGallery { get; set; }
         public bool UseCite { get; set; }
+        // the CITE team role, by name, the user joins with; empty gives Member
+        public string CiteTeamRole { get; set; }
     }
 
 }

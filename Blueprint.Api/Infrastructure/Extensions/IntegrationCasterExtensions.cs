@@ -346,6 +346,41 @@ namespace Blueprint.Api.Infrastructure.Extensions
             await casterApiClient.CreateFileAsync(createFileCommand, ct);
         }
 
+        /// <summary>
+        /// Replaces the workspace's variables file, so a retry writes the variables as they are now,
+        /// and creates it if the failed push never got that far.
+        /// </summary>
+        public static async STT.Task ReplaceVarsFileAsync(Workspace workspace, string varsFileContent, CasterApiClient casterApiClient, CancellationToken ct)
+        {
+            var name = $"{workspace.Name}.auto.tfvars";
+            var files = await casterApiClient.GetFilesByDirectoryAsync(workspace.DirectoryId, false, false, ct);
+            foreach (var file in files.Where(f => f.WorkspaceId == workspace.Id && f.Name == name))
+            {
+                try
+                {
+                    await casterApiClient.DeleteFileAsync(file.Id, ct);
+                }
+                catch (Caster.Api.Client.ApiException ex) when (ex.StatusCode == (int)HttpStatusCode.NoContent)
+                {
+                    // the generated client choking on an empty 204
+                }
+            }
+            await CreateVarsFileAsync(workspace, varsFileContent, casterApiClient, ct);
+        }
+
+        /// <summary>The workspace, or null when Caster no longer has it.</summary>
+        public static async STT.Task<Workspace> FindWorkspaceAsync(Guid workspaceId, CasterApiClient casterApiClient, CancellationToken ct)
+        {
+            try
+            {
+                return await casterApiClient.GetWorkspaceAsync(workspaceId, ct);
+            }
+            catch (Caster.Api.Client.ApiException ex) when (ex.StatusCode == (int)HttpStatusCode.NotFound)
+            {
+                return null;
+            }
+        }
+
         public static async STT.Task<Run> CreateRunAsync(Guid workspaceId, bool isDestroy, CasterApiClient casterApiClient, CancellationToken ct)
         {
             var runCommand = new CreateRunCommand()
@@ -472,7 +507,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
             }
         }
 
-        private static async STT.Task StopActiveRunsAsync(Guid workspaceId, CasterClientSource casterClientSource, ClientOptions clientOptions, CancellationToken ct)
+        /// <summary>
+        /// Brings every run in the workspace to a terminal state, as a destroy or a new run needs.
+        /// </summary>
+        public static async STT.Task StopActiveRunsAsync(Guid workspaceId, CasterClientSource casterClientSource, ClientOptions clientOptions, CancellationToken ct)
         {
             var runs = await casterClientSource.GetWorkspaceRunStatusesAsync(workspaceId, ct);
             foreach (var run in runs.Where(r => !_terminalStatuses.Contains(r.Status)))

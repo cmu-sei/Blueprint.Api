@@ -25,6 +25,8 @@ namespace Blueprint.Api.Data.Models
         public int MaxUsersAllowed { get; set; }
         public int UserCount { get; set; }
         public bool IsTeamLeader { get; set; }
+        // the CITE team role, by name, that someone joining through this invitation gets; empty gives Member
+        public string CiteTeamRole { get; set; }
         public bool WasDeactivated { get; set; }
     }
 

@@ -121,7 +121,7 @@ public class MselAssistInjectEndpointTests(DatabaseFixture fixture, AiEnabledFac
         Assert.Contains(result.Warnings, w => w.Contains("only the MSEL's owner can change its competencies"));
     }
 
-    /// <summary>The model is told what the planner may change, the columns it may write, and each inject by reference.</summary>
+    /// <summary>The model is told what the planner may change, the columns it may write, each inject by reference, and each move on both clocks.</summary>
     [Fact]
     public async Task Ask_ShowsTheModelTheColumnsAndInjectsByReference()
     {
@@ -137,7 +137,7 @@ public class MselAssistInjectEndpointTests(DatabaseFixture fixture, AiEnabledFac
         Assert.DoesNotContain("- Delivery Time:", _prompt);
         Assert.Contains("- E1 minute 10 Inject: Title: Phishing wave | Details: Users report a fake payroll email. | Priority: High", _prompt);
         Assert.Contains("- E2 minute 75 Information:", _prompt);
-        Assert.Contains("- Move 2 at minute 60: Escalation", _prompt);
+        Assert.Contains("- Move 2 at minute 60, scenario time 2026-01-01T00:00:00Z: Escalation", _prompt);
     }
 
     /// <summary>A new inject gets the model's values, a Pending status and a delivery time from the MSEL's start.</summary>
@@ -240,7 +240,7 @@ public class MselAssistInjectEndpointTests(DatabaseFixture fixture, AiEnabledFac
         Assert.Contains(result.Warnings, w => w.Contains("a new inject needs a time"));
     }
 
-    /// <summary>Moves are added and edited through the move service, keeping what the edit does not name.</summary>
+    /// <summary>Moves are added and edited through the move service, keeping what the edit does not name, and the scenario clock with them.</summary>
     [Fact]
     public async Task Apply_AddsAndEditsMoves()
     {
@@ -249,7 +249,7 @@ public class MselAssistInjectEndpointTests(DatabaseFixture fixture, AiEnabledFac
 
         var result = await Read<MselAssistApplyResult>(await Apply(moveEditor, msel.Id,
             new MselChange { Op = "move.add", Move = 3, Minutes = 150, Description = "Disclosure", Situation = "The press has the story." },
-            new MselChange { Op = "move.update", Target = "2", Situation = "Attackers pivot to the cloud." },
+            new MselChange { Op = "move.update", Target = "2", Situation = "Attackers pivot to the cloud.", SituationTime = "2026-03-05T09:00:00Z" },
             new MselChange { Op = "move.add", Move = 1, Description = "Duplicate" }));
 
         Assert.Equal([true, true, false], result.Results.Select(r => r.Applied));
@@ -260,6 +260,8 @@ public class MselAssistInjectEndpointTests(DatabaseFixture fixture, AiEnabledFac
         Assert.Equal("The press has the story.", added.SituationDescription);
         var edited = await db.Moves.SingleAsync(m => m.MselId == msel.Id && m.MoveNumber == 2, Ct);
         Assert.Equal("Attackers pivot to the cloud.", edited.SituationDescription);
+        Assert.Equal(new DateTime(2026, 3, 5, 9, 0, 0, DateTimeKind.Utc), edited.SituationTime?.ToUniversalTime());
+        Assert.Null(added.SituationTime);
         Assert.Equal("Escalation", edited.Description);
         Assert.Equal(60 * 60, edited.DeltaSeconds);
     }

@@ -81,6 +81,8 @@ namespace Blueprint.Api.Services
         private const string SystemPrompt =
 @"You help an exercise planner change an existing Master Scenario Event List (MSEL) in Blueprint.
 A MSEL is organized as Move > Group > Inject. Moves are time-bounded phases; an inject belongs to the move whose start it follows.
+Moves run on two clocks: the exercise clock (minutes from the start, real time) and the scenario clock (the story's date and time
+when the move opens, which can jump ahead between moves). Date anything in the story on the scenario clock within its move.
 Injects that share a delivery time form a group. Teams are the participant groups (and EXCON, exercise control). Organizations are the
 scenario's actors: the agencies, companies, media outlets and threat actors that send or appear in injects. Gallery cards group articles
 on the participants' Gallery wall; a card's move and inject numbers say when it first appears. Competencies are framework work roles
@@ -312,6 +314,7 @@ Rules:
                         MoveNumber = change.Move.Value,
                         Description = change.Description,
                         SituationDescription = change.Situation,
+                        SituationTime = MselDraftRules.ParseUtc(change.SituationTime),
                         DeltaSeconds = (change.Minutes ?? 0) * 60
                     }, permissions.EditMsels, ct);
                     break;
@@ -325,7 +328,7 @@ Rules:
                         SituationDescription = change.Situation ?? move.SituationDescription,
                         DeltaSeconds = change.Minutes.HasValue ? change.Minutes.Value * 60 : move.DeltaSeconds,
                         MoveStartTime = move.MoveStartTime,
-                        SituationTime = move.SituationTime
+                        SituationTime = MselDraftRules.ParseUtc(change.SituationTime) ?? move.SituationTime
                     }, permissions.EditMsels, ct);
                     break;
                 }
@@ -459,7 +462,9 @@ Rules:
 
             sb.AppendLine().AppendLine("Moves:");
             foreach (var move in msel.Moves.OrderBy(m => m.MoveNumber))
-                sb.AppendLine($"- Move {move.MoveNumber} at minute {move.DeltaSeconds / 60}: {move.Description} Situation: {DataValueDraftService.StripHtml(move.SituationDescription)}");
+                sb.AppendLine($"- Move {move.MoveNumber} at minute {move.DeltaSeconds / 60}" +
+                    (move.SituationTime.HasValue ? $", scenario time {move.SituationTime.Value.ToUniversalTime():yyyy-MM-ddTHH:mm:ssZ}" : "") +
+                    $": {move.Description} Situation: {DataValueDraftService.StripHtml(move.SituationDescription)}");
 
             sb.AppendLine().AppendLine("Teams:");
             foreach (var team in msel.Teams.OrderBy(t => t.ShortName))
@@ -546,6 +551,7 @@ Rules:
                             ["idNumber"] = new JsonObject { ["type"] = "string", ["description"] = "A competency's ID number." },
                             ["minutes"] = new JsonObject { ["type"] = "integer", ["description"] = "A move's start, or an inject's time, in minutes from the start of the exercise." },
                             ["situation"] = new JsonObject { ["type"] = "string", ["description"] = "A move's situation description." },
+                            ["situationTime"] = new JsonObject { ["type"] = "string", ["description"] = "The scenario date and time when a move opens, in ISO 8601 UTC; the scenario clock can jump ahead between moves." },
                             ["eventType"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Inject", "Information", "Facilitation") },
                             ["values"] = new JsonObject
                             {
@@ -708,16 +714,19 @@ Rules:
                     case MoveAdd:
                         change.Minutes = Math.Max(0, change.Minutes ?? 0);
                         change.Label = $"Add move {change.Move} at {Time(change.Minutes.Value)}: {change.Description}";
-                        problem = change.Move == null || change.Move < 0 ? "a new move needs a number"
+                        problem = ScenarioTimeProblem(change) ?? (change.Move == null || change.Move < 0 ? "a new move needs a number"
                             : change.Description == null ? "a new move needs a description"
-                            : !moves.Add(change.Move.Value) ? $"there is already a move {change.Move}" : null;
+                            : !moves.Add(change.Move.Value) ? $"there is already a move {change.Move}" : null);
+                        if (change.SituationTime != null)
+                            change.Label += $" (scenario time {change.SituationTime})";
                         break;
                     case MoveUpdate:
                         change.Move ??= int.TryParse(change.Target, out var number) ? number : null;
                         change.Minutes = change.Minutes.HasValue ? Math.Max(0, change.Minutes.Value) : null;
+                        problem = ScenarioTimeProblem(change);
                         change.Label = $"Edit move {change.Move}" + Describe(change);
-                        problem = change.Move == null || !moves.Contains(change.Move.Value) ? $"there is no move {change.Move?.ToString() ?? change.Target}"
-                            : change.Description == null && change.Situation == null && change.Minutes == null ? "it changes nothing" : null;
+                        problem ??= change.Move == null || !moves.Contains(change.Move.Value) ? $"there is no move {change.Move?.ToString() ?? change.Target}"
+                            : change.Description == null && change.Situation == null && change.Minutes == null && change.SituationTime == null ? "it changes nothing" : null;
                         break;
                     case InjectAdd:
                     {
@@ -835,6 +844,18 @@ Rules:
             return null;
         }
 
+        // a scenario time the model wrote, in the form Blueprint keeps; one that is not a time is the problem
+        private static string ScenarioTimeProblem(MselChange change)
+        {
+            if (change.SituationTime == null)
+                return null;
+            var time = MselDraftRules.ParseUtc(change.SituationTime);
+            if (time == null)
+                return $"\"{change.SituationTime}\" is not a date and time";
+            change.SituationTime = time.Value.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            return null;
+        }
+
         private static string Describe(MselChange change)
         {
             var parts = new List<string>();
@@ -843,6 +864,7 @@ Rules:
             if (change.Summary != null) parts.Add("summary");
             if (change.Description != null) parts.Add("description");
             if (change.Situation != null) parts.Add("situation");
+            if (change.SituationTime != null) parts.Add($"scenario time {change.SituationTime}");
             if (change.Op != MoveUpdate && change.Move != null) parts.Add($"move {change.Move}");
             if (change.Inject != null) parts.Add($"inject {change.Inject}");
             if (change.Op == MoveUpdate && change.Minutes != null) parts.Add($"start {Time(change.Minutes.Value)}");
@@ -862,6 +884,7 @@ Rules:
             IdNumber = Text(change?.IdNumber),
             Minutes = change?.Minutes,
             Situation = Text(change?.Situation),
+            SituationTime = Text(change?.SituationTime),
             EventType = Text(change?.EventType),
             Values = change?.Values == null ? null : new Dictionary<string, string>(change.Values, StringComparer.OrdinalIgnoreCase),
             ScenarioEventId = change?.ScenarioEventId

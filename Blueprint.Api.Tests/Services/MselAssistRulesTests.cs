@@ -150,6 +150,23 @@ public class MselAssistRulesTests
         Assert.Contains(_warnings, w => w.Contains("an empty change is not a change the assistant can make"));
     }
 
+    /// <summary>A move's scenario time is kept in UTC and named in the label; one that is not a time leaves the change out.</summary>
+    [Fact]
+    public void Review_ReadsAMovesScenarioTimeAsUtc()
+    {
+        var state = State();
+        state.Msel.Moves.Add(new MoveEntity { Id = Guid.NewGuid(), MselId = state.Msel.Id, MoveNumber = 1, Description = "Detection" });
+
+        var kept = Review(state,
+            new MselChange { Op = "move.update", Target = "1", SituationTime = "2026-03-05T04:00:00-05:00" },
+            new MselChange { Op = "move.add", Move = 2, Description = "Recovery", SituationTime = "next week" });
+
+        var change = Assert.Single(kept);
+        Assert.Equal("2026-03-05T09:00:00Z", change.SituationTime);
+        Assert.Equal("Edit move 1: scenario time 2026-03-05T09:00:00Z", change.Label);
+        Assert.Contains(_warnings, w => w.Contains("left out, \"next week\" is not a date and time"));
+    }
+
     private List<MselChange> Review(MselAssistState state, params MselChange[] changes) =>
         MselAssistRules.Review(state, changes, _warnings);
 

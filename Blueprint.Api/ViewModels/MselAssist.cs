@@ -63,6 +63,9 @@ namespace Blueprint.Api.ViewModels
         /// <summary>A move's situation description</summary>
         public string Situation { get; set; }
 
+        /// <summary>The scenario date and time when a move opens, in ISO 8601 UTC</summary>
+        public string SituationTime { get; set; }
+
         /// <summary>An inject's event type: Inject, Information or Facilitation</summary>
         public string EventType { get; set; }
 

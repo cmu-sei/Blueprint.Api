@@ -66,13 +66,15 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselEntity>();
 
             // if AllCanView is set, user must be on a MSEL team,
-            // otherwise, the user must be a Content Developer or a MSEL Viewer
+            // otherwise, the user must be a Content Developer or a MSEL contributor. MselViewRequirement
+            // would also let in everyone on one of the MSEL's teams, so a participant could read a
+            // page meant only for the MSEL's contributors.
             if (mselPage.AllCanView)
             {
                 if (!(await MselUserRequirement.IsMet(_user.GetId(), mselPage.MselId, _context)))
                     throw new ForbiddenException();
             }
-            else if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselPage.MselId, hasCreateMselsPermission, _context)))
+            else if (!hasSystemPermission && !(await MselContributorRequirement.IsMet(_user.GetId(), mselPage.MselId, hasCreateMselsPermission, _context)))
             {
                 throw new ForbiddenException();
             }

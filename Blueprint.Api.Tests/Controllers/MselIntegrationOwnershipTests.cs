@@ -72,7 +72,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
         var response = await Client(creator).PostAsJsonAsync("/api/msels", ForeignBody(id, status), JsonOptions, Ct);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.False(await NewContext().Msels.AnyAsync(x => x.Id == id, Ct));
+        Assert.False(await ReadBack(db => db.Msels.AnyAsync(x => x.Id == id, Ct)));
     }
 
     [Fact]
@@ -117,6 +117,8 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
         msel.PlayerViewId = ownViewId;
         msel.CiteEvaluationId = ownEvaluationId;
         msel.IntegrationStatus = null;
+        // the body's integration settings, which cannot change while deployed
+        msel.UsePlayer = msel.UseGallery = msel.UseCite = msel.UseSteamfitter = true;
         await Seed(msel);
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
@@ -198,7 +200,100 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal(status, row.Status);
     }
 
+    /// <summary>
+    /// What a push built follows the settings it read, and only a pull and a new push rebuild it. So the
+    /// settings stay as they are while anything the push made is still there: a failed push leaves the
+    /// MSEL Pushing, and a failed pull leaves the ids it could not remove.
+    /// </summary>
+    [Theory]
+    [InlineData(MselItemStatus.Pushing, false)]
+    [InlineData(MselItemStatus.Pulling, false)]
+    [InlineData(MselItemStatus.Deployed, false)]
+    [InlineData(MselItemStatus.Approved, true)]
+    public async Task Update_ChangingTheCasterDirectory_WhileIntegrated_Is409AndLeavesTheMselAlone(
+        MselItemStatus status, bool leftoverWorkspace)
+    {
+        var msel = IntegratedCasterMsel(status, leftoverWorkspace);
+        await Seed(msel);
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(owner).PutAsJsonAsync(
+            $"/api/msels/{msel.Id}", CasterBody(msel, "Renamed", casterDirectoryId: Guid.NewGuid()), JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var row = await Stored(msel.Id);
+        Assert.Equal(msel.CasterDirectoryId, row.CasterDirectoryId);
+        Assert.Equal(msel.Name, row.Name);
+    }
+
+    [Fact]
+    public async Task Update_TurningOffAnIntegration_WhilePushing_Is409()
+    {
+        var msel = IntegratedCasterMsel(MselItemStatus.Pushing, leftoverWorkspace: false);
+        await Seed(msel);
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(owner).PutAsJsonAsync(
+            $"/api/msels/{msel.Id}", CasterBody(msel, msel.Name, useCaster: false), JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.True((await Stored(msel.Id)).UseCaster);
+    }
+
+    /// <summary>The UI sends the stored settings back on every save, so an integrated MSEL can still be renamed.</summary>
+    [Fact]
+    public async Task Update_KeepingTheIntegrationSettings_WhilePushing_Is200()
+    {
+        var msel = IntegratedCasterMsel(MselItemStatus.Pushing, leftoverWorkspace: false);
+        await Seed(msel);
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(owner).PutAsJsonAsync(
+            $"/api/msels/{msel.Id}", CasterBody(msel, "Renamed"), JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Renamed", (await Stored(msel.Id)).Name);
+    }
+
+    [Fact]
+    public async Task Update_ChangingTheIntegrationSettings_OfAMselWithNoIntegrations_Is200()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        await Seed(msel);
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(owner).PutAsJsonAsync(
+            $"/api/msels/{msel.Id}", new { name = msel.Name, status = msel.Status, useGallery = true }, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True((await Stored(msel.Id)).UseGallery);
+    }
+
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A Player and Caster MSEL as a push leaves it: with its workspace, or for <paramref name="leftoverWorkspace"/>
+    /// back to Approved with the workspace a failed pull could not remove.
+    /// </summary>
+    private static MselEntity IntegratedCasterMsel(MselItemStatus status, bool leftoverWorkspace)
+    {
+        var msel = TestData.Msel(status: status);
+        msel.UsePlayer = true;
+        msel.UseCaster = true;
+        msel.CasterDirectoryId = Guid.NewGuid();
+        msel.CasterWorkspaceId = Guid.NewGuid();
+        msel.PlayerViewId = leftoverWorkspace ? null : Guid.NewGuid();
+        return msel;
+    }
+
+    private static object CasterBody(MselEntity msel, string name, bool useCaster = true, Guid? casterDirectoryId = null) => new
+    {
+        name,
+        status = msel.Status,
+        usePlayer = msel.UsePlayer,
+        useCaster,
+        casterDirectoryId = casterDirectoryId ?? msel.CasterDirectoryId
+    };
 
     private static object ForeignBody(Guid id, MselItemStatus status, string name = "Bound") => new
     {
@@ -218,7 +313,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
     };
 
     private async Task<MselEntity> Stored(Guid id) =>
-        await NewContext().Msels.AsNoTracking().SingleAsync(x => x.Id == id, Ct);
+        await ReadBack(db => db.Msels.AsNoTracking().SingleAsync(x => x.Id == id, Ct));
 
     private static void AssertNoIntegrations(MselEntity msel)
     {

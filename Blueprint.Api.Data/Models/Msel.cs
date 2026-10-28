@@ -72,6 +72,7 @@ namespace Blueprint.Api.Data.Models
         public string EducationalUse { get; set; }
         public string CourseMode { get; set; }
         public string Language { get; set; }
+        public DateTime? ImageDateModified { get; set; }
         public virtual ICollection<CardEntity> Cards { get; set; } = new HashSet<CardEntity>();
         public virtual ICollection<CiteDutyEntity> CiteDuties { get; set; } = new HashSet<CiteDutyEntity>();
         public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();

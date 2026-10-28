@@ -309,6 +309,83 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
     }
 
     /// <summary>
+    /// Someone joining through an invitation gets its CITE team role, recorded as their team role in
+    /// blueprint and queued for CITE.
+    /// </summary>
+    [Fact]
+    public async Task Join_GivesTheJoinerTheInvitationsTeamRole()
+    {
+        var msel = await SeedDeployed(m => m.UseCite = true);
+        var team = await SeedTeam(msel, t => t.CiteTeamTypeId = Guid.NewGuid());
+        await SeedInvitation(msel, team, i => i.CiteTeamRole = "Submitter");
+        var actor = await Actor().SeedAsync();
+
+        await Join(Client(actor), msel.Id);
+
+        Assert.Equal("Submitter", Assert.Single(DrainJoinQueue()).CiteTeamRole);
+        Assert.Equal(["Submitter"], await TeamRoles(team, actor.Id));
+    }
+
+    /// <summary>A team role a planner already gave the joiner is kept, and is the one CITE gets.</summary>
+    [Fact]
+    public async Task Join_WhenTheJoinerAlreadyHasATeamRole_KeepsIt()
+    {
+        var msel = await SeedDeployed(m => m.UseCite = true);
+        var team = await SeedTeam(msel, t => t.CiteTeamTypeId = Guid.NewGuid());
+        await SeedInvitation(msel, team, i => i.CiteTeamRole = "Submitter");
+        var actor = await Actor().OnTeam(team).SeedAsync();
+        await using (var seed = NewContext())
+        {
+            seed.UserTeamRoles.Add(new UserTeamRoleEntity(actor.Id, team.Id, "Contributor"));
+            await seed.SaveChangesAsync(Ct);
+        }
+
+        await Join(Client(actor), msel.Id);
+
+        Assert.Equal("Contributor", Assert.Single(DrainJoinQueue()).CiteTeamRole);
+        Assert.Equal(["Contributor"], await TeamRoles(team, actor.Id));
+    }
+
+    /// <summary>An invitation with no team role records none; CITE then gives the joiner Member.</summary>
+    [Fact]
+    public async Task Join_WithAnInvitationThatNamesNoTeamRole_RecordsNone()
+    {
+        var msel = await SeedDeployed(m => m.UseCite = true);
+        var team = await SeedTeam(msel, t => t.CiteTeamTypeId = Guid.NewGuid());
+        await SeedInvitation(msel, team);
+        var actor = await Actor().SeedAsync();
+
+        await Join(Client(actor), msel.Id);
+
+        Assert.Null(Assert.Single(DrainJoinQueue()).CiteTeamRole);
+        Assert.Empty(await TeamRoles(team, actor.Id));
+    }
+
+    /// <summary>A joiner who stays on another team of the MSEL gets no team role on the invited one.</summary>
+    [Fact]
+    public async Task Join_WhenTheUserIsAlreadyOnAnotherTeamOfTheMsel_RecordsNoTeamRole()
+    {
+        var msel = await SeedDeployed();
+        var invited = await SeedTeam(msel);
+        var existing = await SeedTeam(msel);
+        await SeedInvitation(msel, invited, i => i.CiteTeamRole = "Submitter");
+        var actor = await Actor().OnTeam(existing).SeedAsync();
+
+        await Join(Client(actor), msel.Id);
+
+        Assert.Empty(await TeamRoles(invited, actor.Id));
+    }
+
+    private async Task<List<string>> TeamRoles(TeamEntity team, Guid userId)
+    {
+        await using var db = NewContext();
+        return await db.UserTeamRoles
+            .Where(utr => utr.TeamId == team.Id && utr.UserId == userId)
+            .Select(utr => utr.Role)
+            .ToListAsync(Ct);
+    }
+
+    /// <summary>
     /// CITE is the one integration the team has to be configured for: a team with no CITE team type is
     /// not sent to CITE even when the MSEL uses it.
     /// </summary>
@@ -362,7 +439,7 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
 
         // Data-row gate: the invitation's team belongs to another MSEL.
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.False(await NewContext().TeamUsers.AnyAsync(tu => tu.TeamId == theirTeam.Id, Ct));
+        Assert.False(await ReadBack(db => db.TeamUsers.AnyAsync(tu => tu.TeamId == theirTeam.Id, Ct)));
         Assert.Empty(DrainJoinQueue());
     }
 

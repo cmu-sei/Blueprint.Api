@@ -575,7 +575,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var response = await Post(Client(owner), Body(msel.Id) with { IsTemplate = true });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Empty(await NewContext().DataFields.AsNoTracking().ToListAsync(Ct));
+        Assert.Empty(await ReadBack(db => db.DataFields.AsNoTracking().ToListAsync(Ct)));
     }
 
     /// <summary>
@@ -592,7 +592,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var response = await Post(Client(actor), Body() with { InjectTypeId = injectType.Id, IsTemplate = true });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Empty(await NewContext().DataFields.AsNoTracking().ToListAsync(Ct));
+        Assert.Empty(await ReadBack(db => db.DataFields.AsNoTracking().ToListAsync(Ct)));
     }
 
     /// <summary>Create with no scope and is template false creates a field no list returns.</summary>
@@ -624,7 +624,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var response = await Post(Client(actor), Body(msel.Id) with { InjectTypeId = injectType.Id });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Empty(await NewContext().DataFields.AsNoTracking().ToListAsync(Ct));
+        Assert.Empty(await ReadBack(db => db.DataFields.AsNoTracking().ToListAsync(Ct)));
     }
 
     [Fact]
@@ -843,6 +843,36 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
+    public async Task Update_OnAMsel_AsAnEditor_ChangesTheField()
+    {
+        var msel = TestData.Msel();
+        var field = TestData.DataField(msel.Id, name: "Before");
+        await Seed(msel, field);
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var response = await Put(Client(actor), field.Id, BodyFor(field) with { Name = "After" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("After", (await Read<DataField>(response)).Name);
+        Assert.Equal("After", (await ReadBack(db => db.DataFields.SingleAsync(x => x.Id == field.Id, Ct))).Name);
+    }
+
+    [Fact]
+    public async Task Delete_OnAMsel_AsAnEditor_DeletesIt()
+    {
+        var msel = TestData.Msel();
+        var field = TestData.DataField(msel.Id);
+        await Seed(msel, field);
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/dataFields/{field.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(field.Id, await Read<Guid>(response));
+        Assert.False(await ReadBack(db => db.DataFields.AnyAsync(x => x.Id == field.Id, Ct)));
+    }
+
+    [Fact]
     public async Task Update_OnAMsel_AsTheOwner_ChangesTheField()
     {
         var msel = TestData.Msel();
@@ -863,6 +893,56 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(
             "After",
             (await context.DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct)).Name);
+    }
+
+    /// <summary>
+    /// A DateTime field's values are shown as dates, so a field holding a team name among its values
+    /// is refused the change rather than left with text the UI cannot show.
+    /// </summary>
+    [Fact]
+    public async Task Update_ToDateTime_WithAValueThatIsNotADate_Is409AndLeavesTheFieldAlone()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var field = TestData.DataField(mselId: msel.Id, name: "Assigned To");
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        await Seed(field, scenarioEvent);
+        await Seed(TestData.DataValue(field.Id, scenarioEvent.Id, "TEAM1"));
+
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), field.Id, BodyFor(field) with { DataType = DataFieldType.DateTime });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("TEAM1", await response.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(
+            DataFieldType.String,
+            (await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct)).DataType);
+    }
+
+    /// <summary>
+    /// The dates a field already holds, in the form the date picker saves and the form the xlsx import
+    /// writes, and an empty value, do not stand in the way of the change.
+    /// </summary>
+    [Fact]
+    public async Task Update_ToDateTime_WithOnlyDatesAndEmptyValues_ChangesTheField()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var field = TestData.DataField(mselId: msel.Id, name: "When");
+        var events = new[] { TestData.ScenarioEvent(msel.Id), TestData.ScenarioEvent(msel.Id), TestData.ScenarioEvent(msel.Id) };
+        await Seed(field, events[0], events[1], events[2]);
+        await Seed(
+            TestData.DataValue(field.Id, events[0].Id, "2026-10-12T16:00:00.000Z"),
+            TestData.DataValue(field.Id, events[1].Id, "3/15/2023"),
+            TestData.DataValue(field.Id, events[2].Id, ""));
+
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var updated = await Read<DataField>(
+            await Put(Client(actor), field.Id, BodyFor(field) with { DataType = DataFieldType.DateTime }));
+
+        Assert.Equal(DataFieldType.DateTime, updated.DataType);
     }
 
     [Fact]
@@ -931,7 +1011,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("Renamed", (await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct)).Name);
+        Assert.Equal("Renamed", (await ReadBack(db => db.DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct))).Name);
     }
 
     /// <summary>
@@ -1011,7 +1091,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
-        var stored = await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct);
+        var stored = await ReadBack(db => db.DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct));
         Assert.Equal(theirs.Id, stored.MselId);
         Assert.Equal("Theirs", stored.Name);
     }
@@ -1040,7 +1120,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var stored = await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct);
+        var stored = await ReadBack(db => db.DataFields.AsNoTracking().SingleAsync(x => x.Id == field.Id, Ct));
         Assert.Equal(msel.Id, stored.MselId);
         Assert.Null(stored.InjectTypeId);
         Assert.False(stored.IsTemplate);

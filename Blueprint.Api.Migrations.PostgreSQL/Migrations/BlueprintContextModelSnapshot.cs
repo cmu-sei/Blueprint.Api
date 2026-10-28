@@ -18,7 +18,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.0")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "hstore");
@@ -1070,6 +1070,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("uuid_generate_v4()");
 
+                    b.Property<string>("CiteTeamRole")
+                        .HasColumnType("text")
+                        .HasColumnName("cite_team_role");
+
                     b.Property<string>("EmailDomain")
                         .HasColumnType("text")
                         .HasColumnName("email_domain");
@@ -1318,6 +1322,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("header_row_metadata");
 
+                    b.Property<DateTime?>("ImageDateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("image_date_modified");
+
                     b.Property<string>("IntegrationStatus")
                         .HasColumnType("text")
                         .HasColumnName("integration_status");
@@ -1453,6 +1461,25 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("msels");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselImageEntity", b =>
+                {
+                    b.Property<Guid>("MselId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("msel_id");
+
+                    b.Property<string>("ContentType")
+                        .HasColumnType("text")
+                        .HasColumnName("content_type");
+
+                    b.Property<byte[]>("Data")
+                        .HasColumnType("bytea")
+                        .HasColumnName("data");
+
+                    b.HasKey("MselId");
+
+                    b.ToTable("msel_images");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselPageEntity", b =>
@@ -2860,6 +2887,15 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Competency");
 
                     b.Navigation("Msel");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselImageEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.MselEntity", null)
+                        .WithOne()
+                        .HasForeignKey("Blueprint.Api.Data.Models.MselImageEntity", "MselId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselPageEntity", b =>

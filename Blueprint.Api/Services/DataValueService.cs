@@ -127,12 +127,13 @@ namespace Blueprint.Api.Services
                 // to change the assignedTeam, user must have EditMsels permission or be a MSEL owner
                 if (dataField.DataType == DataFieldType.Team)
                     throw new ForbiddenException("Cannot change the Assigned Team.");
-                // Evaluators can update checkboxes
-                if (dataField.DataType == DataFieldType.Checkbox &&
+                // Evaluators update checkboxes, as they assess, and only they do; a checkbox needs nothing else
+                var isCheckbox = dataField.DataType == DataFieldType.Checkbox;
+                if (isCheckbox &&
                     !(await EvaluatorRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
                     throw new ForbiddenException("Cannot change this value.");
                 // MSEL Approvers can change everything else
-                if (!(await MselApproverRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
+                if (!isCheckbox && !(await MselApproverRequirement.IsMet(_user.GetId(), dataField.MselId, _context)))
                 {
                     // to change the status, user must be a MSEL approver
                     if (dataField.DataType == DataFieldType.Status)

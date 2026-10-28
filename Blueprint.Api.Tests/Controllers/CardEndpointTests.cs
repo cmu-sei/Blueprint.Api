@@ -131,10 +131,10 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// <c>MselViewRequirement</c> accepts a unit member holding any of five roles and refuses
-    /// <c>MselRole.Evaluator</c>, which is absent from its list - so the person evaluating a running exercise
-    /// cannot read the cards its articles are filed under. Pinned across the board in
-    /// <c>MselViewRequirementTests</c>; asserted here because this is where it is felt.
+    /// <c>MselViewRequirement</c> accepts a unit member holding any MSEL role, <c>MselRole.Evaluator</c>
+    /// included - so the person evaluating a running exercise can read the cards its articles are filed
+    /// under. Pinned across the board in <c>MselViewRequirementTests</c>; asserted here because this is where
+    /// it is felt.
     /// </remarks>
     [Theory]
     [InlineData(MselRole.Owner, HttpStatusCode.OK)]
@@ -142,7 +142,7 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     [InlineData(MselRole.Approver, HttpStatusCode.OK)]
     [InlineData(MselRole.MoveEditor, HttpStatusCode.OK)]
     [InlineData(MselRole.Viewer, HttpStatusCode.OK)]
-    [InlineData(MselRole.Evaluator, HttpStatusCode.Forbidden)]
+    [InlineData(MselRole.Evaluator, HttpStatusCode.OK)]
     public async Task GetByMsel_TheRolesThatMayListAMselsCards(MselRole role, HttpStatusCode expected)
     {
         var msel = await SeedMsel();

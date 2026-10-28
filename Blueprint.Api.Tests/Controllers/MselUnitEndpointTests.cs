@@ -698,7 +698,7 @@ public class MselUnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var stored = await NewContext().Units.SingleAsync(x => x.Id == unit.Id, Ct);
+        var stored = await ReadBack(db => db.Units.SingleAsync(x => x.Id == unit.Id, Ct));
         Assert.Equal(unit.Name, stored.Name);
         Assert.Equal(unit.ShortName, stored.ShortName);
     }

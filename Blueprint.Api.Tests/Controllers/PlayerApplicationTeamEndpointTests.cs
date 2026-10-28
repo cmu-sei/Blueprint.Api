@@ -267,7 +267,7 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
             "api/teamplayerApplications", Body(application.Id, team.Id), Ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.False(await NewContext().PlayerApplicationTeams.AnyAsync(x => x.PlayerApplicationId == application.Id, Ct));
+        Assert.False(await ReadBack(db => db.PlayerApplicationTeams.AnyAsync(x => x.PlayerApplicationId == application.Id, Ct)));
     }
 
     [Fact]
@@ -280,7 +280,7 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
             "api/teamplayerApplications", Body(Guid.NewGuid(), graph.Team.Id), Ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Equal(1, await NewContext().PlayerApplicationTeams.CountAsync(x => x.TeamId == graph.Team.Id, Ct));
+        Assert.Equal(1, await ReadBack(db => db.PlayerApplicationTeams.CountAsync(x => x.TeamId == graph.Team.Id, Ct)));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -308,8 +308,7 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var stored = await NewContext().PlayerApplicationTeams
-            .SingleAsync(x => x.Id == graph.Row.Id, Ct);
+        var stored = await ReadBack(db => db.PlayerApplicationTeams.SingleAsync(x => x.Id == graph.Row.Id, Ct));
         Assert.Equal(graph.Application.Id, stored.PlayerApplicationId);
         Assert.Equal(graph.Team.Id, stored.TeamId);
     }
@@ -335,7 +334,7 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(2, (await NewContext().PlayerApplicationTeams.SingleAsync(x => x.Id == graph.Row.Id, Ct)).DisplayOrder);
+        Assert.Equal(2, (await ReadBack(db => db.PlayerApplicationTeams.SingleAsync(x => x.Id == graph.Row.Id, Ct))).DisplayOrder);
     }
 
     /// <summary>Update without a display order is answered with a 500.</summary>
@@ -414,7 +413,6 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         Assert.Empty(await ReadBack(rb => rb.PlayerApplicationTeams.ToListAsync(Ct)));
     }
 
-    // Same case as DeleteByIds_InRouteOrder_DeletesTheRow.
     [Fact]
     public async Task DeleteByIds_WithTheIdsSwapped_Is404AndKeepsTheRow()
     {

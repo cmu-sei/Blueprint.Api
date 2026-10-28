@@ -143,6 +143,27 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(team.Id, stored.TeamId);
     }
 
+    /// <summary>The CITE team role an invitation gives its joiners is stored with it, and can be changed.</summary>
+    [Fact]
+    public async Task CreateThenUpdate_StoresTheCiteTeamRole()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var (msel, team) = await SeedMselAndTeam();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/invitations", Body(msel.Id, team.Id) with { citeTeamRole = "Submitter" }, Ct);
+        var created = await response.Content.ReadFromJsonAsync<ViewModels.Invitation>(JsonOptions, Ct);
+        Assert.Equal("Submitter", created.CiteTeamRole);
+
+        await Client(actor).PutAsJsonAsync(
+            $"api/invitations/{created.Id}",
+            Body(msel.Id, team.Id) with { id = created.Id, citeTeamRole = "Contributor" },
+            Ct);
+
+        var stored = await ReadBack(rb => rb.Invitations.SingleAsync(x => x.Id == created.Id, Ct));
+        Assert.Equal("Contributor", stored.CiteTeamRole);
+    }
+
     [Fact]
     public async Task Create_ForAMselThatIsNotThere_Is404()
     {
@@ -175,7 +196,7 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         // Data-row gate: the team row belongs to another MSEL.
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.False(await NewContext().Invitations.AnyAsync(x => x.TeamId == theirTeam.Id, Ct));
+        Assert.False(await ReadBack(db => db.Invitations.AnyAsync(x => x.TeamId == theirTeam.Id, Ct)));
     }
 
     [Fact]
@@ -189,7 +210,7 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         // Data-row gate: the team row belongs to another MSEL.
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.False(await NewContext().Invitations.AnyAsync(x => x.MselId == msel.Id, Ct));
+        Assert.False(await ReadBack(db => db.Invitations.AnyAsync(x => x.MselId == msel.Id, Ct)));
     }
 
     /// <summary>
@@ -205,7 +226,7 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             "api/invitations", Body(msel.Id, team.Id) with { userCount = 5 }, Ct);
 
         var created = await response.Content.ReadFromJsonAsync<ViewModels.Invitation>(JsonOptions, Ct);
-        Assert.Equal(0, (await NewContext().Invitations.SingleAsync(x => x.Id == created.Id, Ct)).UserCount);
+        Assert.Equal(0, (await ReadBack(db => db.Invitations.SingleAsync(x => x.Id == created.Id, Ct))).UserCount);
     }
 
     [Fact]
@@ -263,7 +284,7 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        var stored = await NewContext().Invitations.SingleAsync(x => x.Id == invitation.Id, Ct);
+        var stored = await ReadBack(db => db.Invitations.SingleAsync(x => x.Id == invitation.Id, Ct));
         Assert.Equal(theirs.Id, stored.MselId);
         Assert.Equal(theirTeam.Id, stored.TeamId);
         Assert.Equal(invitation.EmailDomain, stored.EmailDomain);
@@ -285,7 +306,7 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             $"api/invitations/{invitation.Id}", Body(other.Id, team.Id, "after.test") with { id = invitation.Id }, Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var stored = await NewContext().Invitations.SingleAsync(x => x.Id == invitation.Id, Ct);
+        var stored = await ReadBack(db => db.Invitations.SingleAsync(x => x.Id == invitation.Id, Ct));
         Assert.Equal(msel.Id, stored.MselId);
         Assert.Equal("after.test", stored.EmailDomain);
     }
@@ -304,7 +325,7 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         // Data-row gate: the team row belongs to another MSEL.
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Equal(team.Id, (await NewContext().Invitations.SingleAsync(x => x.Id == invitation.Id, Ct)).TeamId);
+        Assert.Equal(team.Id, (await ReadBack(db => db.Invitations.SingleAsync(x => x.Id == invitation.Id, Ct))).TeamId);
     }
 
     /// <summary>
@@ -323,7 +344,7 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             $"api/invitations/{invitation.Id}", Body(msel.Id, team.Id) with { id = invitation.Id, userCount = 0 }, Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(7, (await NewContext().Invitations.SingleAsync(x => x.Id == invitation.Id, Ct)).UserCount);
+        Assert.Equal(7, (await ReadBack(db => db.Invitations.SingleAsync(x => x.Id == invitation.Id, Ct))).UserCount);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -651,6 +672,7 @@ public class InvitationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         public int maxUsersAllowed { get; init; }
         public int userCount { get; init; }
         public bool isTeamLeader { get; init; }
+        public string citeTeamRole { get; init; }
         public bool wasDeactivated { get; init; }
     }
 }

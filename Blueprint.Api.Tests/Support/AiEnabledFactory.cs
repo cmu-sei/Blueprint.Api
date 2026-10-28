@@ -27,8 +27,8 @@ public class AiEnabledFactory(DatabaseFixture database) : BlueprintAppFactory(da
     {
         base.ConfigureWebHost(builder);
 
-        builder.UseSetting("AiOptions:Enabled", "true");
-        builder.UseSetting("AiOptions:ModelId", "test-model");
+        builder.UseSetting("Ai:Enabled", "true");
+        builder.UseSetting("Ai:ModelId", "test-model");
 
         builder.ConfigureTestServices(services =>
             services.Replace(ServiceDescriptor.Singleton(Model)));

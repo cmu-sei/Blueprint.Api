@@ -51,7 +51,9 @@ public class ArticleDraftEndpointTests(DatabaseFixture fixture, AiEnabledFactory
         var result = await Read<ArticleDraftResult>(await Post(template.Id, 0));
 
         Assert.Equal("Details", result.FieldName);
-        Assert.StartsWith("<table width=\"720\"><tbody><tr><td bgcolor=\"#FDB516\"><b>EXERCISE</b></td></tr></tbody></table>", result.Html);
+        // on white paper with dark ink, so it reads the same in light and dark themes
+        Assert.StartsWith("<table width=\"720\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" bgcolor=\"#FFFFFF\"><tbody><tr><td><font color=\"#1A1A1A\"><table width=\"720\"><tbody><tr><td bgcolor=\"#FDB516\"><b>EXERCISE</b></td></tr></tbody></table>", result.Html);
+        Assert.EndsWith("</font></td></tr></tbody></table>", result.Html);
         Assert.Contains("<img src=\"data:image/svg+xml;base64,", result.Html);
         Assert.Contains("alt=\"Harbour Herald masthead\"", result.Html);
         Assert.Empty(GalleryArticleHtml.Problems(result.Html));

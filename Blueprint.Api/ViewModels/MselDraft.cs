@@ -61,6 +61,8 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
         public string ShortName { get; set; }
         public string Description { get; set; }
+        /// <summary>One line on who they are; when empty, the description's text is used</summary>
+        public string Summary { get; set; }
     }
 
     public class MselDraftCard
@@ -137,6 +139,32 @@ namespace Blueprint.Api.ViewModels
         /// <summary>The article, in the HTML Gallery shows as written; each graphic is an SVG data URI image</summary>
         public string Html { get; set; }
         /// <summary>Corrections made to the model's HTML, and its assumptions</summary>
+        public List<string> Notes { get; set; } = new List<string>();
+    }
+
+    /// <summary>
+    /// A team's or organization's profile to write: on a MSEL (MselId), or on a draft that is not one yet (Draft).
+    /// Nothing is saved.
+    /// </summary>
+    public class ProfileDraftRequest
+    {
+        public Guid? MselId { get; set; }
+        public MselDraft Draft { get; set; }
+        /// <summary>team or organization</summary>
+        public string Kind { get; set; }
+        public string ShortName { get; set; }
+        public string Name { get; set; }
+        public string Summary { get; set; }
+        /// <summary>The description as it is now, which the profile keeps unless told otherwise</summary>
+        public string Description { get; set; }
+        /// <summary>What the planner wants changed or added</summary>
+        public string Instruction { get; set; }
+    }
+
+    public class ProfileDraftResult
+    {
+        /// <summary>The profile, in the HTML Blueprint keeps; the logo is an SVG data URI image</summary>
+        public string Html { get; set; }
         public List<string> Notes { get; set; } = new List<string>();
     }
 }

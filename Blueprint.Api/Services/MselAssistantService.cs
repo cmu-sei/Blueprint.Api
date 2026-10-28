@@ -795,7 +795,7 @@ Rules:
                 // an article's body keeps its layout; other HTML is kept to simple formatting
                 if (field.DataType == DataFieldType.Html && value != null)
                     value = field.GalleryArticleParameter == nameof(GalleryArticleParameter.Description)
-                        ? GalleryArticleHtml.Prepare(value, warnings)
+                        ? GalleryArticleHtml.Prepare(value, warnings, GalleryArticleHtml.ArticleWidth)
                         : DataValueDraftService.CleanHtml(value);
                 if (!string.IsNullOrEmpty(value))
                     cleaned[field.Name] = value;

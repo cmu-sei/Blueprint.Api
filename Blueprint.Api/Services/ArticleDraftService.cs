@@ -73,6 +73,9 @@ HTML rules, because Gallery strips everything else:
   Use align on p, div and td, valign on td, and width and height on table, td and img.
 - Allowed tags: div, p, h1 to h6, b, strong, i, em, u, br, hr, ul, ol, li, blockquote, table, tbody, tr, td, th, font, a, img, svg.
 - Rounded corners, letter spacing, flexbox and CSS text transforms are not available; write upper case in the text itself.
+- Gallery and Blueprint show the article in light and dark themes, so it is placed on white paper with dark text for you, as a real
+  document would be. Give every coloured band, masthead and box its own bgcolor, and colour text only with dark colours on light
+  cells or white on dark cells, never a colour that depends on the page behind it.
 - Draw logos, mastheads, avatars, maps, charts and network diagrams as inline <svg> with width, height and viewBox, and an
   aria-label saying what it shows. Keep each one simple: shapes, paths and short text in Arial or Georgia. Use only &amp; &lt; &gt;
   &quot; and numeric entities inside SVG. No external images, links to fonts, or scripts.
@@ -116,7 +119,7 @@ Answer only by calling the tool.";
             var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, BuildPrompt(draft, template, values), ToolName,
                 "Submit the article's HTML.", Schema(), ct);
             var result = new ArticleDraftResult { FieldName = body.Name };
-            result.Html = GalleryArticleHtml.Prepare(GetString(input, "html"), result.Notes);
+            result.Html = GalleryArticleHtml.Prepare(GetString(input, "html"), result.Notes, GalleryArticleHtml.ArticleWidth);
             if (string.IsNullOrWhiteSpace(result.Html))
                 throw new InvalidOperationException("The model wrote no article. Try again.");
             if (input.TryGetProperty("notes", out var notes) && notes.ValueKind == JsonValueKind.Array)

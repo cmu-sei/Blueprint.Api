@@ -105,4 +105,33 @@ public class GalleryArticleHtmlTests
 
         Assert.Equal(html.Replace(" face=\"Georgia, serif\"", ""), sanitizer.Sanitize(html));
     }
+
+    /// <summary>A document is placed on white paper with dark ink, so a dark theme's page colour and text colour do not show through.</summary>
+    [Fact]
+    public void Prepare_WithAPaperWidth_PutsTheDocumentOnWhitePaperWithDarkInk()
+    {
+        var html = GalleryArticleHtml.Prepare("<h2>Port closed</h2><p>Ships wait offshore.</p>", _notes, 720);
+
+        Assert.Equal("<table width=\"720\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" bgcolor=\"#FFFFFF\"><tbody><tr><td>" +
+            "<font color=\"#1A1A1A\"><h2>Port closed</h2><p>Ships wait offshore.</p></font></td></tr></tbody></table>", html);
+    }
+
+    /// <summary>Preparing a document again, as an edit does, does not add a second sheet of paper.</summary>
+    [Fact]
+    public void Prepare_OfADocumentAlreadyOnPaper_AddsNoMorePaper()
+    {
+        var once = GalleryArticleHtml.Prepare("<table width=\"720\"><tbody><tr><td bgcolor=\"#003366\"><font color=\"#FFFFFF\">MASTHEAD</font></td></tr></tbody></table>", _notes, 720);
+
+        Assert.Equal(once, GalleryArticleHtml.Prepare(once, _notes, 720));
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(once, "bgcolor=\"#FFFFFF\""));
+    }
+
+    /// <summary>A document whose own outer table is white still gets the ink, as its text sets no colour.</summary>
+    [Fact]
+    public void Prepare_OfAWhiteTableWithoutInk_StillAddsTheInk()
+    {
+        var html = GalleryArticleHtml.Prepare("<table bgcolor=\"#FFFFFF\"><tbody><tr><td>Plain text</td></tr></tbody></table>", _notes, 680);
+
+        Assert.StartsWith("<table width=\"680\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" bgcolor=\"#FFFFFF\"><tbody><tr><td><font color=\"#1A1A1A\"><table", html);
+    }
 }

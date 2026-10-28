@@ -239,6 +239,7 @@ public class Startup
         services.AddScoped<IDataValueDraftService, DataValueDraftService>();
         services.AddScoped<IMselAssistantService, MselAssistantService>();
         services.AddScoped<IArticleDraftService, ArticleDraftService>();
+        services.AddScoped<IProfileDraftService, ProfileDraftService>();
         services.AddScoped<IAiModelClient, BedrockAiModelClient>();
         services.AddScoped<IMselPageService, MselPageService>();
         services.AddScoped<IMselImageService, MselImageService>();

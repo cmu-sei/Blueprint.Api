@@ -2308,7 +2308,10 @@ namespace Blueprint.Api.Services
                     Name = string.IsNullOrWhiteSpace(organization.Name) ? organization.ShortName : organization.Name,
                     ShortName = organization.ShortName,
                     Description = organization.Description,
-                    Summary = organization.Description
+                    // a written profile is a page; the summary stays one plain line
+                    Summary = string.IsNullOrWhiteSpace(organization.Summary)
+                        ? OneLine(DataValueDraftService.StripHtml(organization.Description))
+                        : organization.Summary.Trim()
                 });
             }
             // the draft's cards go on the wall after the template's; every team sees every card, and EXCON may post to them
@@ -2433,6 +2436,9 @@ namespace Blueprint.Api.Services
 
             return await ImportEntityAsync(mselEntity, result, ct);
         }
+
+        private static string OneLine(string text) =>
+            string.IsNullOrEmpty(text) || text.Length <= 200 ? text : text[..200] + "...";
 
         // Checks an incoming MSEL against this environment (CITE, Caster, names) and saves it as a new copy.
         // Shared by JSON import and AI draft import so both report the same way.

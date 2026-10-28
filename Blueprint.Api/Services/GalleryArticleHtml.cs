@@ -20,6 +20,10 @@ namespace Blueprint.Api.Services
     /// </summary>
     public static class GalleryArticleHtml
     {
+        public const int ArticleWidth = 720;
+        public const int ProfileWidth = 680;
+        public const string PaperColor = "#FFFFFF";
+        public const string InkColor = "#1A1A1A";
         private const int DefaultSvgWidth = 120;
         private const int DefaultSvgHeight = 40;
         private static readonly HtmlParser Parser = new();
@@ -27,9 +31,10 @@ namespace Blueprint.Api.Services
 
         /// <summary>
         /// Returns the HTML with everything the sanitizers would strip removed, and inline SVG turned into images.
-        /// Each correction is added to notes.
+        /// Each correction is added to notes. With a paper width, the HTML is also placed on white paper with dark
+        /// text, so it reads the same in light and dark themes as a real document would.
         /// </summary>
-        public static string Prepare(string html, List<string> notes = null)
+        public static string Prepare(string html, List<string> notes = null, int? paperWidth = null)
         {
             if (string.IsNullOrWhiteSpace(html))
                 return html;
@@ -82,7 +87,32 @@ namespace Blueprint.Api.Services
                 }
             }
 
-            return body.InnerHtml.Trim();
+            var prepared = body.InnerHtml.Trim();
+            return paperWidth.HasValue ? OnPaper(prepared, paperWidth.Value) : prepared;
+        }
+
+        /// <summary>
+        /// Places the HTML on a white table with dark default text, unless it already is. Text and cells that set no
+        /// colour of their own otherwise take the page's, which in a dark theme is light text on a dark background.
+        /// </summary>
+        public static string OnPaper(string html, int width)
+        {
+            if (string.IsNullOrWhiteSpace(html) || IsOnPaper(html))
+                return html;
+            return $"<table width=\"{width}\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" bgcolor=\"{PaperColor}\"><tbody><tr><td>" +
+                $"<font color=\"{InkColor}\">{html}</font></td></tr></tbody></table>";
+        }
+
+        // the paper: one white table, holding one cell, holding only the ink
+        private static bool IsOnPaper(string html)
+        {
+            var body = Parser.ParseDocument($"<body>{html}</body>").Body;
+            if (body.ChildElementCount != 1 || body.FirstElementChild is not { LocalName: "table" } table
+                || !string.Equals(table.GetAttribute("bgcolor"), PaperColor, StringComparison.OrdinalIgnoreCase))
+                return false;
+            var cells = table.QuerySelectorAll("td").Where(td => td.Closest("table") == table).ToList();
+            return cells.Count == 1 && cells[0].ChildElementCount == 1 && cells[0].FirstElementChild is { LocalName: "font" } ink
+                && string.Equals(ink.GetAttribute("color"), InkColor, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>The problems that would keep the HTML from showing in Gallery as written, empty when there are none</summary>

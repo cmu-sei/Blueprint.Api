@@ -27,6 +27,7 @@ namespace Blueprint.Api.Controllers
         private readonly IDataValueDraftService _dataValueDraftService;
         private readonly IMselAssistantService _mselAssistantService;
         private readonly IArticleDraftService _articleDraftService;
+        private readonly IProfileDraftService _profileDraftService;
         private readonly IIntegrationNameService _integrationNameService;
         private readonly IBlueprintAuthorizationService _authorizationService;
 
@@ -36,6 +37,7 @@ namespace Blueprint.Api.Controllers
             IDataValueDraftService dataValueDraftService,
             IMselAssistantService mselAssistantService,
             IArticleDraftService articleDraftService,
+            IProfileDraftService profileDraftService,
             ICiteService citeService,
             IPlayerService playerService,
             IIntegrationNameService integrationNameService,
@@ -46,6 +48,7 @@ namespace Blueprint.Api.Controllers
             _dataValueDraftService = dataValueDraftService;
             _mselAssistantService = mselAssistantService;
             _articleDraftService = articleDraftService;
+            _profileDraftService = profileDraftService;
             _integrationNameService = integrationNameService;
             _authorizationService = authorizationService;
         }
@@ -425,6 +428,25 @@ namespace Blueprint.Api.Controllers
                 throw new ForbiddenException();
 
             var result = await _articleDraftService.DraftAsync(request, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Write a team's or organization's profile with AI </summary>
+        /// <remarks>
+        /// Nothing is saved. For a MSEL's team or organization, the same roles that may edit it may have it written; for
+        /// a draft that is not a MSEL yet, the planner needs CreateMsels. The logo comes back as an SVG data URI image.
+        /// </remarks>
+        /// <param name="request"> The team or organization, and the MSEL or draft it belongs to </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/ai-draft/profile")]
+        [ProducesResponseType(typeof(ProfileDraftResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "draftProfile")]
+        public async Task<IActionResult> DraftProfileAsync([FromBody] ProfileDraftRequest request, CancellationToken ct)
+        {
+            var permissions = new ProfileDraftPermissions(
+                EditMsels: await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct),
+                CreateMsels: await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct));
+            var result = await _profileDraftService.DraftAsync(request, permissions, ct);
             return Ok(result);
         }
 

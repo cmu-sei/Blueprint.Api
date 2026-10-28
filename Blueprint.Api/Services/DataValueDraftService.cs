@@ -114,7 +114,7 @@ Answer only by calling the tool.";
             var result = input.Deserialize<DataValueDraftResult>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
                 ?? new DataValueDraftResult();
             result.Notes = (result.Notes ?? new List<string>()).Where(n => !string.IsNullOrWhiteSpace(n)).ToList();
-            result.Value = isArticle ? GalleryArticleHtml.Prepare(result.Value, result.Notes)
+            result.Value = isArticle ? GalleryArticleHtml.Prepare(result.Value, result.Notes, GalleryArticleHtml.ArticleWidth)
                 : field.DataType == DataFieldType.Html ? CleanHtml(result.Value) : result.Value?.Trim();
             if (string.IsNullOrWhiteSpace(StripHtml(result.Value)))
                 throw new InvalidOperationException("The model returned an empty value. Try again or add an instruction.");

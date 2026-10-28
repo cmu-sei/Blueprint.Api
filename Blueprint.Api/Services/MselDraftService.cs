@@ -49,6 +49,16 @@ Rules:
 - Use team and organization short names exactly as you define them, and only the columns you are given.
 - Put any assumption you had to make, or question for the planner, in plannerNotes.
 - Include an EXCON team for exercise control alongside the participant teams, unless the template already has one.
+- The exercise runs on two clocks. The exercise clock is real time: startMinutes and each inject's minutes. The scenario clock is
+  the story's date and time: each move's situationTime. The scenario clock can jump ahead between moves (move 2 is the next morning,
+  move 3 is a week later) while the exercise clock runs on. Give every move a situationTime, in order, and date anything in the
+  story (articles, emails, reports) on the scenario clock within its move.
+- Write a read-in for participants to read before the first move: the scenario background, who they are and what they are
+  responsible for, the organizations they will deal with, the rules of play, and how the two clocks work, with the scenario date
+  and time the exercise opens. Use headings, short paragraphs, lists and a table where one helps; no images.
+When the MSEL uses CITE:
+- For each move, list the actions each participant team should take, as short imperative sentences the team checks off in CITE
+  (for example: Isolate the affected hosts; Notify the state fusion center). Three to six actions per team per move.
 When the MSEL uses Gallery:
 - Most participant-facing injects are Gallery articles: news stories, social posts, emails, phone calls, intel and situation reports, orders.
   Pick the source type that matches the document, and name the outlet, account or office in the source name.
@@ -79,7 +89,7 @@ Answer only by calling the tool.";
             if (competencies.Count > _aiOptions.MaxCompetencies)
                 throw new ArgumentException($"The chosen frameworks have {competencies.Count} competencies, more than the {_aiOptions.MaxCompetencies} a draft can choose from. Choose fewer frameworks.");
             var fields = MselDraftRules.DraftedFields(template).ToList();
-            var schema = BuildSchema(fields, _aiOptions.MaxInjects, competencies, MselDraftRules.UsesCards(template));
+            var schema = BuildSchema(fields, _aiOptions.MaxInjects, competencies, MselDraftRules.UsesCards(template), template.UseCite);
             var prompt = BuildPrompt(request.Prompt, template, fields, _aiOptions.MaxInjects, competencies);
 
             var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, prompt, ToolName,
@@ -163,7 +173,7 @@ Answer only by calling the tool.";
         // an enum makes the model's choice exact, but a whole framework would double the prompt
         private const int MaxCompetencyEnum = 200;
 
-        private static JsonObject BuildSchema(List<DataFieldEntity> fields, int maxInjects, Dictionary<string, CompetencyEntity> competencies, bool useCards)
+        private static JsonObject BuildSchema(List<DataFieldEntity> fields, int maxInjects, Dictionary<string, CompetencyEntity> competencies, bool useCards, bool useCite)
         {
             var valueProperties = new JsonObject();
             foreach (var field in fields)
@@ -238,8 +248,9 @@ Answer only by calling the tool.";
                     ["moveNumber"] = Int("0, 1, 2 ... in time order"),
                     ["description"] = Str("Move title, e.g. Initial Detection"),
                     ["situationDescription"] = Str("The situation at the start of the move, as briefed to participants"),
-                    ["startMinutes"] = Int("Minutes from exercise start; the first move is 0")
-                }, "moveNumber", "description", "situationDescription", "startMinutes"), "Phases of the exercise in time order"),
+                    ["startMinutes"] = Int("Minutes from exercise start; the first move is 0"),
+                    ["situationTime"] = Str("The scenario date and time when the move opens, in ISO 8601 UTC, e.g. 2026-03-04T08:00:00Z; later than the move before")
+                }, "moveNumber", "description", "situationDescription", "startMinutes", "situationTime"), "Phases of the exercise in time order"),
                 ["teams"] = Arr(Obj(teamProperties, "name", "shortName"), "Participant teams; reuse the template's teams when they fit"),
                 ["organizations"] = Arr(Obj(new JsonObject
                 {
@@ -254,8 +265,16 @@ Answer only by calling the tool.";
                     ["description"] = "MSEL rows in time order",
                     ["items"] = Obj(injectProperties, "minutes", "eventType", "values")
                 },
+                ["readIn"] = Str("The participants' read-in, in HTML: background, roles, organizations, rules of play, the two clocks"),
                 ["plannerNotes"] = Arr(Str("Assumption or open question"), "Things the planner should check")
             };
+            if (useCite)
+                properties["citeActions"] = Arr(Obj(new JsonObject
+                {
+                    ["moveNumber"] = Int("The move the action belongs to"),
+                    ["team"] = Str("The short name of the participant team that takes the action"),
+                    ["description"] = Str("The action, as a short imperative sentence")
+                }, "moveNumber", "team", "description"), "What each participant team should do in each move, for CITE");
             if (useCards)
                 properties["cards"] = Arr(Obj(new JsonObject
                 {
@@ -263,7 +282,7 @@ Answer only by calling the tool.";
                     ["description"] = Str("One sentence: whose articles or which thread the card holds")
                 }, "name", "description"), "Gallery cards in wall order, starting with Exercise Control; reuse the template's cards when they fit");
             AddCompetencies(properties, "Every competency the exercise lets participants demonstrate");
-            return Obj(properties, "name", "description", "durationMinutes", "moves", "teams", "organizations", "injects");
+            return Obj(properties, "name", "description", "durationMinutes", "moves", "teams", "organizations", "injects", "readIn");
         }
 
         public static string BuildPrompt(string plannerPrompt, MselEntity template, List<DataFieldEntity> fields, int maxInjects, Dictionary<string, CompetencyEntity> competencies)
@@ -442,6 +461,7 @@ Answer only by calling the tool.";
             draft.Cards ??= new List<MselDraftCard>();
             draft.Competencies ??= new List<string>();
             draft.PlannerNotes ??= new List<string>();
+            draft.CiteActions ??= new List<MselDraftCiteAction>();
 
             // teams and organizations: unique short names, without the commas that separate team lists
             draft.Teams = UniqueByShortName(draft.Teams, t => t.ShortName, (t, s) => t.ShortName = s, t => t.Name, warnings, "team");
@@ -483,6 +503,31 @@ Answer only by calling the tool.";
             {
                 draft.Moves.Insert(0, new MselDraftMove { MoveNumber = 0, Description = "Start of exercise", StartMinutes = 0 });
                 warnings.Add("Added a move at minute 0 so every inject belongs to a move.");
+            }
+            // the scenario clock: each move's time in UTC, never earlier than the move before
+            DateTime? previousTime = null;
+            foreach (var move in draft.Moves)
+            {
+                var time = ParseUtc(move.SituationTime);
+                if (time == null && !string.IsNullOrWhiteSpace(move.SituationTime))
+                    warnings.Add($"Move {move.MoveNumber}'s scenario time \"{move.SituationTime.Trim()}\" is not a date and time; left blank.");
+                else if (time < previousTime)
+                {
+                    warnings.Add($"Move {move.MoveNumber}'s scenario time is earlier than the move before; left blank.");
+                    time = null;
+                }
+                move.SituationTime = time?.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+                previousTime = time ?? previousTime;
+            }
+
+            // the read-in becomes a page, which shows on the same white paper as the articles in either theme
+            if (string.IsNullOrWhiteSpace(draft.ReadIn))
+                draft.ReadIn = null;
+            else
+            {
+                var readInNotes = new List<string>();
+                draft.ReadIn = GalleryArticleHtml.Prepare(draft.ReadIn.Trim(), readInNotes, GalleryArticleHtml.ArticleWidth);
+                warnings.AddRange(readInNotes.Select(n => $"Read-in: {n}"));
             }
 
             if (draft.Injects.Count > maxInjects)
@@ -527,6 +572,51 @@ Answer only by calling the tool.";
                 warnings.Add($"Took injects off cards the draft does not have: {string.Join(", ", unknownCards)}.");
             if (droppedColumns.Any())
                 warnings.Add($"Dropped values for columns the template does not have: {string.Join(", ", droppedColumns)}.");
+
+            // an article dated outside its move's stretch of the scenario clock reads out of order on the wall
+            var postedField = fields.Values.FirstOrDefault(f => f.GalleryArticleParameter == nameof(GalleryArticleParameter.DatePosted));
+            if (postedField != null)
+            {
+                var misdated = new SortedSet<int>();
+                foreach (var inject in draft.Injects)
+                {
+                    if (!inject.Values.TryGetValue(postedField.Name, out var posted) || ParseUtc(posted) is not DateTime postedTime)
+                        continue;
+                    var index = draft.Moves.FindLastIndex(m => m.StartMinutes <= inject.Minutes);
+                    var opens = ParseUtc(draft.Moves[index].SituationTime);
+                    var closes = index + 1 < draft.Moves.Count ? ParseUtc(draft.Moves[index + 1].SituationTime) : null;
+                    if (postedTime < opens || postedTime >= closes)
+                        misdated.Add(draft.Moves[index].MoveNumber);
+                }
+                if (misdated.Any())
+                    warnings.Add($"Some articles are dated outside their move's scenario time; check {postedField.Name} in move {string.Join(", ", misdated)}.");
+            }
+
+            // CITE actions: a team and move the draft has, a description, and no repeats
+            if (!template.UseCite)
+                draft.CiteActions = new List<MselDraftCiteAction>();
+            else
+            {
+                var moveNumbers = new HashSet<int>(draft.Moves.Select(m => m.MoveNumber));
+                var actions = new List<MselDraftCiteAction>();
+                var droppedActions = 0;
+                foreach (var action in draft.CiteActions.Where(a => a != null))
+                {
+                    action.Description = action.Description?.Trim();
+                    action.Team = teamNames.FirstOrDefault(n => n.Equals(action.Team?.Trim(), StringComparison.OrdinalIgnoreCase));
+                    if (action.Team == null || !moveNumbers.Contains(action.MoveNumber) || string.IsNullOrEmpty(action.Description) ||
+                        actions.Any(a => a.MoveNumber == action.MoveNumber && a.Team == action.Team && a.Description.Equals(action.Description, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        droppedActions++;
+                        continue;
+                    }
+                    actions.Add(action);
+                }
+                if (droppedActions > 0)
+                    warnings.Add($"Dropped {droppedActions} CITE {(droppedActions == 1 ? "action" : "actions")} with an unknown team or move, no description, or a repeat.");
+                // OrderBy is stable, so each team's actions keep the model's order
+                draft.CiteActions = actions.OrderBy(a => a.MoveNumber).ToList();
+            }
 
             var lastInject = draft.Injects.Any() ? draft.Injects.Max(i => i.Minutes) : 0;
             var lastMove = draft.Moves.Max(m => m.StartMinutes);
@@ -596,12 +686,16 @@ Answer only by calling the tool.";
                 case DataFieldType.Double:
                     return double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
                 case DataFieldType.DateTime:
-                    return DateTime.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var dt)
-                        ? dt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ") : null;
+                    return ParseUtc(value)?.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
                 default:
                     return value;
             }
         }
+
+        /// <summary>A date and time in UTC; one without a zone is taken as UTC</summary>
+        public static DateTime? ParseUtc(string value) =>
+            DateTime.TryParse(value?.Trim(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var time)
+                ? time : null;
 
         private static string Known(HashSet<string> names, string value, DataFieldEntity field, List<string> warnings)
         {

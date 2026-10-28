@@ -2355,9 +2355,53 @@ namespace Blueprint.Api.Services
                     MoveNumber = move.MoveNumber,
                     Description = move.Description,
                     SituationDescription = move.SituationDescription,
+                    SituationTime = MselDraftRules.ParseUtc(move.SituationTime),
                     DeltaSeconds = move.StartMinutes * 60
                 });
             }
+
+            // the read-in is a page every participant can see, and part of the playbook
+            if (draft.ReadIn != null)
+            {
+                var pageName = "Read-In";
+                for (var n = 2; mselEntity.Pages.Any(p => p.Name.Equals(pageName, StringComparison.OrdinalIgnoreCase)); n++)
+                    pageName = $"Read-In {n}";
+                mselEntity.Pages.Add(new MselPageEntity
+                {
+                    Id = Guid.NewGuid(),
+                    MselId = mselEntity.Id,
+                    Name = pageName,
+                    Content = draft.ReadIn,
+                    AllCanView = true,
+                    IncludeInPlaybook = true
+                });
+            }
+
+            // CITE actions go after the template's, numbered within each team's move
+            var teamsByShortName = new Dictionary<string, TeamEntity>(StringComparer.OrdinalIgnoreCase);
+            foreach (var team in mselEntity.Teams.Where(t => t.ShortName != null))
+                teamsByShortName.TryAdd(team.ShortName, team);
+            foreach (var group in draft.CiteActions.GroupBy(a => (a.MoveNumber, Team: teamsByShortName[a.Team])))
+            {
+                var actionNumber = mselEntity.CiteActions
+                    .Where(a => a.MoveNumber == group.Key.MoveNumber && a.TeamId == group.Key.Team.Id)
+                    .Select(a => a.ActionNumber).DefaultIfEmpty(0).Max();
+                foreach (var action in group)
+                {
+                    mselEntity.CiteActions.Add(new CiteActionEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        MselId = mselEntity.Id,
+                        TeamId = group.Key.Team.Id,
+                        MoveNumber = action.MoveNumber,
+                        ActionNumber = ++actionNumber,
+                        Description = action.Description
+                    });
+                }
+            }
+            var noTeamType = draft.CiteActions.Select(a => teamsByShortName[a.Team]).Where(t => t.CiteTeamTypeId == null).Select(t => t.ShortName).Distinct().ToList();
+            if (noTeamType.Any())
+                AddChange(result, "citeActions", $"Give {string.Join(", ", noTeamType)} a CITE team type, or CITE will not get their actions.");
 
             // each inject's competencies go in the first Competency column, which needs an option for each
             var competencyField = mselEntity.DataFields

@@ -32,6 +32,10 @@ namespace Blueprint.Api.ViewModels
         /// <summary>Gallery cards, in the order the wall shows them; each Gallery article names one</summary>
         public List<MselDraftCard> Cards { get; set; } = new List<MselDraftCard>();
         public List<MselDraftInject> Injects { get; set; } = new List<MselDraftInject>();
+        /// <summary>The read-in participants get before the first move, in HTML; it becomes a page of the MSEL</summary>
+        public string ReadIn { get; set; }
+        /// <summary>What each team should do in each move, which CITE lists for the team to check off</summary>
+        public List<MselDraftCiteAction> CiteActions { get; set; } = new List<MselDraftCiteAction>();
         /// <summary>Competency ID numbers the exercise exercises, from the competencies it may choose from</summary>
         public List<string> Competencies { get; set; } = new List<string>();
         /// <summary>Assumptions and open questions the model wants the planner to check</summary>
@@ -45,6 +49,11 @@ namespace Blueprint.Api.ViewModels
         public string SituationDescription { get; set; }
         /// <summary>Minutes from the start of the exercise</summary>
         public int StartMinutes { get; set; }
+        /// <summary>
+        /// The scenario's date and time when the move opens, in ISO 8601 UTC. It runs on its own clock and can jump
+        /// ahead of the exercise clock, e.g. the next move is the next morning.
+        /// </summary>
+        public string SituationTime { get; set; }
     }
 
     public class MselDraftTeam
@@ -65,6 +74,13 @@ namespace Blueprint.Api.ViewModels
         public string Summary { get; set; }
     }
 
+    public class MselDraftCiteAction
+    {
+        public int MoveNumber { get; set; }
+        /// <summary>The short name of the team that should take the action</summary>
+        public string Team { get; set; }
+        public string Description { get; set; }
+    }
     public class MselDraftCard
     {
         public string Name { get; set; }

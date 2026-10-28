@@ -311,25 +311,27 @@ Answer only by calling the tool.";
                 _ => false
             };
 
-        // the article parameters a Gallery push needs, with the names and types the seeded Integrated Exercise uses,
-        // and the template column names that already mean the same thing
-        private static readonly (GalleryArticleParameter Parameter, string Name, DataFieldType DataType, string[] SameAs)[] _galleryFields =
+        // The article parameters a Gallery push needs, mapped as the exercises built with the blueprint-ttx loader map
+        // them: a short Description is the article's summary and the Details are its body. Each lists the column names
+        // that mean it, the first being the one added when none exists, and the column types that can carry it.
+        private static readonly (GalleryArticleParameter Parameter, string[] Names, DataFieldType[] Types)[] _galleryFields =
         [
-            (GalleryArticleParameter.Name, "Name", DataFieldType.String, ["Title"]),
-            (GalleryArticleParameter.Summary, "Summary", DataFieldType.String, []),
-            (GalleryArticleParameter.Description, "Description", DataFieldType.String, ["Details"]),
-            (GalleryArticleParameter.FromOrg, "From Org", DataFieldType.Organization, []),
-            (GalleryArticleParameter.ToOrg, "To Org", DataFieldType.TeamsMultiple, []),
-            (GalleryArticleParameter.SourceType, "Source Type", DataFieldType.SourceType, []),
-            (GalleryArticleParameter.SourceName, "Source Name", DataFieldType.String, []),
-            (GalleryArticleParameter.DatePosted, "Date Posted", DataFieldType.DateTime, []),
-            (GalleryArticleParameter.CardId, "Card", DataFieldType.Card, [])
+            (GalleryArticleParameter.Name, ["Title", "Name"], [DataFieldType.String]),
+            (GalleryArticleParameter.Summary, ["Description", "Summary"], [DataFieldType.String, DataFieldType.Html]),
+            (GalleryArticleParameter.Description, ["Details"], [DataFieldType.Html, DataFieldType.String]),
+            (GalleryArticleParameter.FromOrg, ["From Org"], [DataFieldType.Organization]),
+            (GalleryArticleParameter.ToOrg, ["To Org"], [DataFieldType.TeamsMultiple]),
+            (GalleryArticleParameter.SourceType, ["SourceType", "Source Type"], [DataFieldType.SourceType]),
+            (GalleryArticleParameter.SourceName, ["Source Name"], [DataFieldType.String]),
+            (GalleryArticleParameter.DatePosted, ["Simulated Time", "Date Posted"], [DataFieldType.DateTime]),
+            (GalleryArticleParameter.CardId, ["Card"], [DataFieldType.Card])
         ];
 
         /// <summary>
         /// A MSEL that uses Gallery needs columns mapped to the article parameters, or its injects never become
-        /// articles. Maps a same-named column the template already has, and adds a column for any still missing.
-        /// Names are fixed, so the template a draft was written from and the MSEL it is imported into match.
+        /// articles. Maps a column the template already has under one of the parameter's names, and adds a column
+        /// for any still missing. Names are fixed, so the template a draft was written from and the MSEL it is
+        /// imported into match.
         /// </summary>
         public static void AddGalleryFields(MselEntity msel)
         {
@@ -337,11 +339,11 @@ Answer only by calling the tool.";
                 return;
             var mapped = new HashSet<string>(msel.DataFields.Select(f => f.GalleryArticleParameter).Where(p => !string.IsNullOrEmpty(p)));
             var displayOrder = msel.DataFields.Select(f => f.DisplayOrder).DefaultIfEmpty(0).Max();
-            foreach (var (parameter, name, dataType, sameAs) in _galleryFields.Where(g => !mapped.Contains(g.Parameter.ToString())))
+            foreach (var (parameter, names, types) in _galleryFields.Where(g => !mapped.Contains(g.Parameter.ToString())))
             {
-                var existing = sameAs.Prepend(name)
+                var existing = names
                     .Select(n => msel.DataFields.FirstOrDefault(f => string.IsNullOrEmpty(f.GalleryArticleParameter)
-                        && f.DataType == dataType
+                        && types.Contains(f.DataType)
                         && f.Name.Trim().Equals(n, StringComparison.OrdinalIgnoreCase)))
                     .FirstOrDefault(f => f != null);
                 if (existing != null)
@@ -349,12 +351,13 @@ Answer only by calling the tool.";
                     existing.GalleryArticleParameter = parameter.ToString();
                     continue;
                 }
+                var name = names[0];
                 msel.DataFields.Add(new DataFieldEntity
                 {
                     Id = Guid.NewGuid(),
                     MselId = msel.Id,
                     Name = msel.DataFields.Any(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) ? $"Gallery {name}" : name,
-                    DataType = dataType,
+                    DataType = types[0],
                     DisplayOrder = ++displayOrder,
                     GalleryArticleParameter = parameter.ToString()
                 });

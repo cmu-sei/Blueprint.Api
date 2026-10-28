@@ -111,14 +111,15 @@ public class IntegrationSteamfitterExtensionsTests
         Assert.Equal(msel.Description, form["description"].GetString());
     }
 
+    /// <summary>Steamfitter sets a new scenario's status itself, so none is sent.</summary>
     [Fact]
-    public async Task CreateScenario_AlwaysAsksForAnActiveScenario()
+    public async Task CreateScenario_SendsNoStatus()
     {
         var handler = Scenarios();
 
         await IntegrationSteamfitterExtensions.CreateScenarioAsync(Msel(), Client(handler), null, Ct);
 
-        Assert.Equal("Active", Body(Assert.Single(handler.Sent).Body)["status"].GetString());
+        Assert.False(Body(Assert.Single(handler.Sent).Body).ContainsKey("status"));
     }
 
     /// <summary>The scenario carries the Player view id and, as its view name, the MSEL's name.</summary>

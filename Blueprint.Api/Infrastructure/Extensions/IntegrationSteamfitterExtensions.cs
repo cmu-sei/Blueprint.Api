@@ -81,12 +81,11 @@ namespace Blueprint.Api.Infrastructure.Extensions
         {
             var startDate = DateTime.UtcNow;
             startDate = msel.StartTime < startDate ? startDate : msel.StartTime;
-            ScenarioForm scenarioForm = new ScenarioForm()
+            ScenarioCreate scenarioForm = new ScenarioCreate()
             {
                 Id = msel.SteamfitterScenarioId,
                 Name = msel.Name,
                 Description = msel.Description,
-                Status = ScenarioStatus.Active,
                 StartDate = startDate,
                 EndDate = startDate.AddSeconds(msel.DurationSeconds),
                 ViewId = msel.PlayerViewId,
@@ -154,7 +153,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             moveString = moveString.Substring(moveString.Length - 2);
             var groupString = groupNumber < 0 ? "-1" : "00" + groupNumber.ToString();
             groupString = groupString.Substring(groupString.Length - 2);
-            var taskForm = new TaskForm()
+            var taskForm = new TaskCreate()
             {
                 ScenarioId = msel.SteamfitterScenarioId,
                 Name = moveString + "-" + groupString + " " + steamfitterTaskEntity.Name,
@@ -199,7 +198,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             if (msel.UseCite)
             {
                 actionParameters["Url"] = citeApiUrl + "evaluations/" + msel.CiteEvaluationId + "/move/" + moveNumber;
-                var taskForm = new TaskForm()
+                var taskForm = new TaskCreate()
                 {
                     ScenarioId = msel.SteamfitterScenarioId,
                     Name = moveString + "-00 CITE Move Change",
@@ -226,7 +225,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             if (msel.UseGallery)
             {
                 actionParameters["Url"] = galleryApiUrl + "exhibits/" + msel.GalleryExhibitId + "/move/" + moveNumber + "/inject/0";
-                var taskForm = new TaskForm()
+                var taskForm = new TaskCreate()
                 {
                     ScenarioId = msel.SteamfitterScenarioId,
                     Name = moveString + "-00 Gallery Move Change",
@@ -274,7 +273,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             if (msel.UseGallery)
             {
                 actionParameters["Url"] = galleryApiUrl + "exhibits/" + msel.GalleryExhibitId + "/move/" + moveNumber + "/inject/" + groupNumber;
-                var taskForm = new TaskForm()
+                var taskForm = new TaskCreate()
                 {
                     ScenarioId = msel.SteamfitterScenarioId,
                     Name = moveString + "-" + groupString + " Gallery Inject Change",

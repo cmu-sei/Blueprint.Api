@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -56,6 +57,7 @@ namespace Blueprint.Api.Services
         Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.Msel> RetryCasterAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task CancelIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> ArchiveAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Msel>> GetMyJoinInvitationMselsAsync(CancellationToken ct);
@@ -336,6 +338,11 @@ namespace Blueprint.Api.Services
             var newGuidValues = new Dictionary<Guid, Guid>();
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == currentUserId)).Name;
+            // the image is stored apart from the MSEL, so copy it here; a source with no image, or whose
+            // date points at none, gives a copy with none (ImportJsonAsync clears the file's date first)
+            var sourceImage = mselEntity.ImageDateModified == null ? null :
+                await _context.MselImages.AsNoTracking().SingleOrDefaultAsync(i => i.MselId == mselEntity.Id, ct);
+            mselEntity.ImageDateModified = sourceImage == null ? null : mselEntity.ImageDateModified;
             mselEntity.Id = Guid.NewGuid();
             mselEntity.CreatedBy = currentUserId;
             if (!keepName)
@@ -520,6 +527,10 @@ namespace Blueprint.Api.Services
             }
 
             _context.Msels.Add(mselEntity);
+            if (sourceImage != null)
+            {
+                _context.MselImages.Add(new MselImageEntity { MselId = mselEntity.Id, Data = sourceImage.Data, ContentType = sourceImage.ContentType });
+            }
             _context.SkipEventPublishing = true;
             await _context.SaveChangesAsync(ct);
             _context.SkipEventPublishing = false;
@@ -616,6 +627,10 @@ namespace Blueprint.Api.Services
             if (msel.Status != mselToUpdate.Status && (IsPipelineStatus(msel.Status) || IsPipelineStatus(mselToUpdate.Status)))
                 throw new ConflictException($"The MSEL status cannot be changed from {mselToUpdate.Status} to {msel.Status}. Only the integration pipeline sets Pushing, Pulling and Deployed, and moves a MSEL out of them.");
 
+            // the integrations were built from these settings, and nothing rebuilds them but a pull and a new push
+            if (HasIntegrations(mselToUpdate) && IntegrationSettingsChanged(msel, mselToUpdate))
+                throw new ConflictException("The integration settings cannot be changed while the MSEL is pushed, or is being pushed or pulled. Remove Integrations first.");
+
             // the push deploys this directory as the service account, so only accept one the user can view in Caster
             if (msel.CasterDirectoryId != null && msel.CasterDirectoryId != mselToUpdate.CasterDirectoryId)
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
@@ -632,6 +647,25 @@ namespace Blueprint.Api.Services
 
         private static bool IsPipelineStatus(MselItemStatus status) =>
             status == MselItemStatus.Pushing || status == MselItemStatus.Pulling || status == MselItemStatus.Deployed;
+
+        // a failed push leaves its partial integrations, and a failed pull leaves what it could not remove
+        private static bool HasIntegrations(MselEntity msel) =>
+            IsPipelineStatus(msel.Status) ||
+            msel.PlayerViewId != null ||
+            msel.GalleryCollectionId != null ||
+            msel.GalleryExhibitId != null ||
+            msel.CiteEvaluationId != null ||
+            msel.SteamfitterScenarioId != null ||
+            msel.CasterWorkspaceId != null;
+
+        private static bool IntegrationSettingsChanged(ViewModels.MselEdit msel, MselEntity stored) =>
+            msel.UsePlayer != stored.UsePlayer ||
+            msel.UseGallery != stored.UseGallery ||
+            msel.UseCite != stored.UseCite ||
+            msel.CiteScoringModelId != stored.CiteScoringModelId ||
+            msel.UseSteamfitter != stored.UseSteamfitter ||
+            msel.UseCaster != stored.UseCaster ||
+            msel.CasterDirectoryId != stored.CasterDirectoryId;
 
         public async Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct)
         {
@@ -883,22 +917,17 @@ namespace Blueprint.Api.Services
                         {
                             var metadataParts = cellMetadata == null ? new string[0] : cellMetadata.Split(",");
                             var dataFieldType = metadataParts.Count() >= 3 ? (DataFieldType)int.Parse(metadataParts[3]) : DataFieldType.String;
+                            // a value that doesn't fit its type, such as a team in a DateTime field, is written as
+                            // text, since a typed cell holding text is a workbook Excel has to repair
+                            if (!ServiceUtilities.FitsCellType(dataFieldType, stringValue))
+                            {
+                                dataFieldType = DataFieldType.String;
+                            }
                             switch (dataFieldType)
                             {
                                 case DataFieldType.DateTime:
                                     cell.DataType = CellValues.Date;
-                                    var dateParts = stringValue.Split("/");
-                                    if (dateParts.Count() == 1)
-                                    {
-                                        cell.CellValue = new CellValue(stringValue);
-                                    }
-                                    else
-                                    {
-                                        cell.CellValue = new CellValue(dateParts[2] + "-" +
-                                            dateParts[0].PadLeft(2, '0') + "-" +
-                                            dateParts[1].PadLeft(2, '0') +
-                                            "T00:00:00");
-                                    }
+                                    cell.CellValue = new CellValue(ServiceUtilities.ToCellDateTime(stringValue));
                                     break;
                                 case DataFieldType.Boolean:
                                     cell.DataType = CellValues.Boolean;
@@ -999,9 +1028,43 @@ namespace Blueprint.Api.Services
                 sheetData.RemoveChild<Row>(headerRow);
                 // create the sceanrio events and data values
                 await CreateScenarioEventsAsync(msel.Id, sheetData, workbookPart, msel.DataFields, sheetLayout);
+                KeepTextOutOfImportedDateTimeFields(msel.DataFields);
             }
             await _context.SaveChangesAsync(ct);
             return msel;
+        }
+
+        /// <summary>
+        /// Keeps text out of a DateTime field. A column formatted as dates in Excel can still hold a team
+        /// or a name in some rows, and a DateTime field shows its values as dates, so a field left holding
+        /// text becomes a String field. The type it had before the values were read is no help, since an
+        /// Integer, Double or Boolean field can't hold text either. The cells holding text are recorded as
+        /// String too, so the export writes them as text rather than as dates.
+        /// </summary>
+        private void KeepTextOutOfImportedDateTimeFields(IEnumerable<DataFieldEntity> dataFields)
+        {
+            var dateTimeFieldIds = dataFields
+                .Where(df => df.DataType == DataFieldType.DateTime)
+                .Select(df => df.Id)
+                .ToHashSet();
+            var textValuesByField = _context.DataValues.Local
+                .Where(dv => dateTimeFieldIds.Contains(dv.DataFieldId) &&
+                    !string.IsNullOrWhiteSpace(dv.Value) && !ServiceUtilities.IsDateTimeValue(dv.Value))
+                .ToLookup(dv => dv.DataFieldId);
+            foreach (var dataField in dataFields.Where(df => textValuesByField.Contains(df.Id)))
+            {
+                dataField.DataType = DataFieldType.String;
+                foreach (var dataValue in textValuesByField[dataField.Id])
+                {
+                    // cell metadata is "color,tint,weight,type", and the type is always the last part
+                    var metadata = dataValue.CellMetadata ?? "";
+                    var lastComma = metadata.LastIndexOf(',');
+                    if (lastComma >= 0)
+                    {
+                        dataValue.CellMetadata = metadata[..(lastComma + 1)] + (int)DataFieldType.String;
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -1137,7 +1200,7 @@ namespace Blueprint.Api.Services
                             IsChosenFromList = false,
                             OnScenarioEventList = true,
                             OnExerciseView = true,
-                            CellMetadata = cellColor + "," + cellTint + ",bold," + (int)cellDataType,
+                            CellMetadata = ServiceUtilities.CellMetadata(cellColor, cellTint, "bold", cellDataType),
                             ColumnMetadata = columnMetadata
                         };
                         msel.DataFields.Add(dataField);
@@ -1346,7 +1409,10 @@ namespace Blueprint.Api.Services
                     {
                         try
                         {
-                            currentCellValue = DateTime.FromOADate(int.Parse(currentCellValue)).ToString("M/d/yyyy");
+                            var dateTime = DateTime.FromOADate(double.Parse(currentCellValue, CultureInfo.InvariantCulture));
+                            currentCellValue = dateTime.TimeOfDay == TimeSpan.Zero
+                                ? dateTime.ToString("M/d/yyyy", CultureInfo.InvariantCulture)
+                                : dateTime.ToString("M/d/yyyy H:mm", CultureInfo.InvariantCulture);
                         }
                         catch (System.Exception)
                         {
@@ -1374,7 +1440,7 @@ namespace Blueprint.Api.Services
                     }
                     Font font = (Font)styles.Stylesheet.Fonts.ChildElements[(int)cellFormat.FontId.Value];
                     var fontWeight = font.Bold == null ? "normal" : "bold";
-                    cellMetadata = cellColor + "," + cellTint + "," + fontWeight + "," + (int)dataField.DataType;
+                    cellMetadata = ServiceUtilities.CellMetadata(cellColor, cellTint, fontWeight, dataField.DataType);
                 }
 
                 var dataValue = new DataValueEntity()
@@ -1709,7 +1775,7 @@ namespace Blueprint.Api.Services
                 PatternFill patternFill = new PatternFill() { PatternType = PatternValues.Solid };
                 var rgb = styleParts[0] == "" ? "FFFFFF" : styleParts[0];
                 Double tint;
-                double.TryParse(styleParts[1], out tint);
+                double.TryParse(styleParts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out tint);
                 ForegroundColor foregroundColor = new ForegroundColor() { Rgb = rgb, Tint = tint };
                 BackgroundColor backgroundColor = new BackgroundColor() { Indexed = (UInt32Value)64U };
                 patternFill.Append(foregroundColor);
@@ -2156,6 +2222,10 @@ namespace Blueprint.Api.Services
                 ReferenceHandler = ReferenceHandler.Preserve
             };
             var mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
+            // The file carries no image, only its source MSEL's ID and image date. Both are the
+            // importer's to write, so keeping the date would copy whatever image that ID has here,
+            // even one of a MSEL the importer cannot view.
+            mselEntity.ImageDateModified = null;
             var droppedTeamUsers = mselEntity.Teams.Sum(t => t.TeamUsers?.Count ?? 0);
             if (droppedTeamUsers > 0)
                 AddChange(result, "teams", $"{droppedTeamUsers} team members were not imported. Add users to the teams before pushing.");
@@ -2603,6 +2673,41 @@ namespace Blueprint.Api.Services
             return _mapper.Map<ViewModels.Msel>(msel);
         }
 
+        /// <summary>
+        /// Redoes the Caster step of a push that failed there. Caster runs last, so everything else the push
+        /// makes is already in place, and a fix made in Caster since is picked up by the new run.
+        /// </summary>
+        public async Task<ViewModels.Msel> RetryCasterAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        {
+            // user must be a Content Developer or a MSEL owner
+            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+                throw new ForbiddenException();
+            var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == mselId, ct);
+            if (msel == null)
+                throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found.");
+            // a pull's Caster errors read "ERROR: Caster - pull ...", but a pull never leaves the MSEL Pushing
+            if (msel.Status != MselItemStatus.Pushing || msel.IntegrationStatus?.StartsWith(CasterPushErrorPrefix) != true ||
+                !msel.UseCaster || msel.CasterDirectoryId == null)
+                throw new ConflictException("Only a push that failed at its Caster step can retry Caster.");
+            await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
+            // Claim the retry in one conditional update, and only queue it if this request won. Two retries
+            // (a double-click, or two planners) would run two Caster threads on the same workspace, and a
+            // cancel would reach only one of them.
+            var failedStatus = msel.IntegrationStatus;
+            var claimed = await _context.Msels
+                .Where(m => m.Id == mselId && m.Status == MselItemStatus.Pushing && m.IntegrationStatus == failedStatus)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.IntegrationStatus, "Retrying Caster"), ct);
+            if (claimed == 0)
+                throw new ConflictException("This push is no longer waiting for a Caster retry; one may already be running.");
+            msel.IntegrationStatus = "Retrying Caster";
+            _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = true, CasterOnly = true, FinalStatus = MselItemStatus.Deployed, UserId = _user.GetId() });
+
+            return _mapper.Map<ViewModels.Msel>(msel);
+        }
+
+        // the start of the status a push leaves when its Caster step fails
+        public const string CasterPushErrorPrefix = "ERROR: Caster - ";
+
         public async Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
@@ -2764,7 +2869,7 @@ namespace Blueprint.Api.Services
                 // Player/Gallery/Cite joins below are queued only for a first join, so a user who
                 // reached the Player View some other way would otherwise be a member of every
                 // application except Blueprint, with no way for the invitation link to fix it.
-                await AddUserToMselTeamAsync(mselId, invitation.TeamId, userId, ct);
+                var citeTeamRole = await AddUserToMselTeamAsync(mselId, invitation, userId, ct);
 
                 // Only a first join consumes an invitation seat and needs the other applications
                 // updated - a returning user is already counted and already on those teams.
@@ -2785,7 +2890,8 @@ namespace Blueprint.Api.Services
                         TeamId = invitation.TeamId,
                         UsePlayer = msel.UsePlayer,
                         UseGallery = msel.UseGallery,
-                        UseCite = msel.UseCite && invitation.Team.CiteTeamTypeId != null
+                        UseCite = msel.UseCite && invitation.Team.CiteTeamTypeId != null,
+                        CiteTeamRole = citeTeamRole
                     };
                     _joinQueue.Add(joinInformation);
                 }
@@ -2870,11 +2976,14 @@ namespace Blueprint.Api.Services
         /// <summary>
         /// Makes the user a member of the invited Blueprint team and gives them a MSEL role, if they do
         /// not have those already. Membership is checked across every team of the MSEL, because an
-        /// invitation must not put a user on a second team of the same MSEL. Changes are staged only -
-        /// the caller saves them.
+        /// invitation must not put a user on a second team of the same MSEL. A user on the invitation's
+        /// team with no team role there is given the invitation's. Changes are staged only - the caller
+        /// saves them.
         /// </summary>
-        private async Task AddUserToMselTeamAsync(Guid mselId, Guid teamId, Guid userId, CancellationToken ct)
+        /// <returns>The user's team role on the invitation's team, or null for none, which CITE makes Member.</returns>
+        private async Task<string> AddUserToMselTeamAsync(Guid mselId, InvitationEntity invitation, Guid userId, CancellationToken ct)
         {
+            var teamId = invitation.TeamId;
             var mselTeamIds = await _context.Teams
                 .Where(t => t.MselId == mselId)
                 .Select(t => t.Id)
@@ -2902,6 +3011,22 @@ namespace Blueprint.Api.Services
                     Role = MselRole.Viewer
                 });
             }
+
+            // Someone joining through an invitation gets its team role, unless they already hold one on
+            // that team; a planner's choice on the Teams tab is not overwritten by a join.
+            var teamRole = await _context.UserTeamRoles
+                .Where(utr => utr.TeamId == teamId && utr.UserId == userId)
+                .Select(utr => utr.Role)
+                .FirstOrDefaultAsync(ct);
+            // Only for the invitation's team: a user already on another team of the MSEL stays there.
+            var isOnInvitationTeam = !isOnAMselTeam ||
+                await _context.TeamUsers.AnyAsync(tu => tu.TeamId == teamId && tu.UserId == userId, ct);
+            if (teamRole == null && isOnInvitationTeam && !string.IsNullOrWhiteSpace(invitation.CiteTeamRole))
+            {
+                teamRole = invitation.CiteTeamRole;
+                _context.UserTeamRoles.Add(new UserTeamRoleEntity(userId, teamId, teamRole));
+            }
+            return teamRole;
         }
 
         public async Task<Msel> LaunchMselByInvitationAsync(Guid mselId, Guid? teamId, CancellationToken ct)

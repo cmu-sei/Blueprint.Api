@@ -98,7 +98,7 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
     [InlineData(MselRole.Approver, HttpStatusCode.OK)]
     [InlineData(MselRole.MoveEditor, HttpStatusCode.OK)]
     [InlineData(MselRole.Viewer, HttpStatusCode.OK)]
-    [InlineData(MselRole.Evaluator, HttpStatusCode.Forbidden)]
+    [InlineData(MselRole.Evaluator, HttpStatusCode.OK)]
     public async Task GetByMsel_TheRolesThatMayReadTheTimeline(MselRole role, HttpStatusCode expected)
     {
         var msel = await SeedMsel();

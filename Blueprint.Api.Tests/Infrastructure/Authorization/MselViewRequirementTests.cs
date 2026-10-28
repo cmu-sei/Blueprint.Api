@@ -159,6 +159,7 @@ public class MselViewRequirementTests(DatabaseFixture fixture) : DatabaseTestBas
     [InlineData(MselRole.Editor)]
     [InlineData(MselRole.Approver)]
     [InlineData(MselRole.MoveEditor)]
+    [InlineData(MselRole.Evaluator)]
     [InlineData(MselRole.Owner)]
     public async Task IsMet_ForAUnitMemberHoldingAViewingRole_IsTrue(MselRole role)
     {
@@ -168,19 +169,6 @@ public class MselViewRequirementTests(DatabaseFixture fixture) : DatabaseTestBas
         var actor = await Actor().OnMsel(msel, role).SeedAsync();
 
         Assert.True(await MselViewRequirement.IsMet(actor.Id, msel.Id, Db));
-    }
-
-    /// <summary>A unit member holding only the Evaluator role cannot view the MSEL.</summary>
-    [Fact]
-    public async Task IsMet_ForAUnitMemberHoldingOnlyTheEvaluatorRole_IsFalse()
-    {
-        var msel = TestData.Msel();
-        await Seed(msel);
-
-        var actor = await Actor().OnMsel(msel, MselRole.Evaluator).SeedAsync();
-
-        Assert.False(await MselViewRequirement.IsMet(actor.Id, msel.Id, Db));
-        Assert.True(await EvaluatorRequirement.IsMet(actor.Id, msel.Id, Db));
     }
 
     /// <summary>

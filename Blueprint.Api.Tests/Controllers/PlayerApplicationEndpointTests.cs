@@ -101,6 +101,19 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
         Assert.Equal("console", answered.Name);
     }
 
+    [Fact]
+    public async Task Get_is_forbidden_for_a_caller_holding_Viewer_only_in_another_msel()
+    {
+        var msel = await SeedMsel();
+        var application = TestData.PlayerApplication(msel.Id);
+        await Seed(application);
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/playerApplications/{application.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     /// <summary>Get for a unit member with no role is answered with a 200 though they may not list the same row.</summary>
     [Fact]
     public async Task Get_ForAUnitMemberWithNoRole_Is200_ThoughTheyMayNotListTheSameRow()
@@ -223,7 +236,7 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
             Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        var stored = await NewContext().PlayerApplications.SingleAsync(x => x.Id == application.Id, Ct);
+        var stored = await ReadBack(db => db.PlayerApplications.SingleAsync(x => x.Id == application.Id, Ct));
         Assert.Equal(theirs.Id, stored.MselId);
         Assert.Equal(application.Name, stored.Name);
     }
@@ -246,7 +259,7 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var stored = await NewContext().PlayerApplications.SingleAsync(x => x.Id == application.Id, Ct);
+        var stored = await ReadBack(db => db.PlayerApplications.SingleAsync(x => x.Id == application.Id, Ct));
         Assert.Equal(msel.Id, stored.MselId);
         Assert.Equal("renamed", stored.Name);
     }

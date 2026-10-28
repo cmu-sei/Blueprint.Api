@@ -293,6 +293,7 @@ namespace Blueprint.Api.Hubs
         public const string MselUpdated = "MselUpdated";
         public const string MselDeleted = "MselDeleted";
         public const string IntegrationStatusUpdated = "IntegrationStatusUpdated";
+        public const string CasterIdsUpdated = "CasterIdsUpdated";
 
         public const string MoveCreated = "MoveCreated";
         public const string MoveUpdated = "MoveUpdated";

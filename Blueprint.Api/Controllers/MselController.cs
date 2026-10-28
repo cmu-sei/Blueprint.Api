@@ -521,6 +521,27 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Retry the Caster step of a failed push
+        /// </summary>
+        /// <remarks>
+        /// Redoes only the Caster step of a push that failed there: a new run in the push's workspace, or a
+        /// new workspace if the push never made one. The other integrations stay as the push left them.
+        /// <para />
+        /// Accessible only to a ContentDeveloper or MSEL owner
+        /// </remarks>
+        /// <param name="id">The id of the MSEL</param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{id}/integrations/caster/retry")]
+        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "retryCasterIntegration")]
+        public async Task<IActionResult> RetryCasterIntegration(Guid id, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
+            var msel = await _mselService.RetryCasterAsync(id, hasSystemPermission, ct);
+            return Ok(msel);
+        }
+
+        /// <summary>
         /// Cancel pushing integrations and remove any partial integrations
         /// </summary>
         /// <remarks>

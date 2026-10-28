@@ -52,12 +52,12 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         var graph = await SeedGraph();
         // CreateMsels alone, which is the point: this actor has no way to view the MSEL.
         var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
-        var before = await NewContext().Msels.CountAsync(Ct);
+        var before = await ReadBack(db => db.Msels.CountAsync(Ct));
 
         var response = await Client(actor).PostAsync($"/api/msels/{graph.Msel.Id}/copy", null, Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Equal(before, await NewContext().Msels.CountAsync(Ct));
+        Assert.Equal(before, await ReadBack(db => db.Msels.CountAsync(Ct)));
     }
 
     [Fact]

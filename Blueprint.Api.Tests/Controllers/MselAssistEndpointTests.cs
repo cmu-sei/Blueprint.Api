@@ -39,7 +39,7 @@ public class MselAssistEndpointTests(DatabaseFixture fixture, AiEnabledFactory f
 
     /// <summary>The model sees the MSEL and the work roles it may add; the planner gets labelled changes and nothing is saved.</summary>
     [Fact]
-    public async Task Ask_ByAnEditor_ProposesLabelledChangesAndSavesNothing()
+    public async Task Ask_ByTheOwner_ProposesLabelledChangesAndSavesNothing()
     {
         var (msel, _) = await SeedMsel();
         await SeedWorkRole("CS-511", "Cyber Defense Analyst");
@@ -53,9 +53,9 @@ public class MselAssistEndpointTests(DatabaseFixture fixture, AiEnabledFactory f
                 new { op = "team.add", shortName = "BLUE" }
             }
         });
-        var editor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        var result = await Read<MselAssistResult>(await Ask(editor, msel.Id, "Add a CERT team"));
+        var result = await Read<MselAssistResult>(await Ask(owner, msel.Id, "Add a CERT team"));
 
         Assert.Equal("Adding a CERT team with the analyst work role.", result.Reply);
         Assert.Equal(["Add team CERT (National CERT)", "Add CS-511 Cyber Defense Analyst to team CERT"], result.Changes.Select(c => c.Label));
@@ -158,7 +158,8 @@ public class MselAssistEndpointTests(DatabaseFixture fixture, AiEnabledFactory f
             new MselChange { Op = "card.add", Name = "Patch Status" }));
 
         var refused = Assert.Single(result.Results, r => !r.Applied);
-        Assert.Contains("there is already a team CERT", refused.Label);
+        Assert.Equal("Add team CERT (CERT)", refused.Label);
+        Assert.Equal("No longer possible: there is already a team CERT.", refused.Error);
         Assert.True(Assert.Single(result.Results, r => r.Applied).Applied);
         Assert.Equal(1, await ReadBack(db => db.Teams.CountAsync(t => t.MselId == msel.Id && t.ShortName == "CERT", Ct)));
     }

@@ -499,7 +499,7 @@ Answer only by calling the tool.";
                 warnings.Add("The template has no Competency column, so each inject's competencies are kept only on the MSEL.");
         }
 
-        private static string CleanValue(DataFieldEntity field, string value, HashSet<string> teamNames, HashSet<string> orgNames, List<string> warnings)
+        public static string CleanValue(DataFieldEntity field, string value, HashSet<string> teamNames, HashSet<string> orgNames, List<string> warnings)
         {
             if (string.IsNullOrEmpty(value))
                 return null;

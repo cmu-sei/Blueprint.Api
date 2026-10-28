@@ -441,8 +441,8 @@ namespace Blueprint.Api.Controllers
 
         /// <summary> Ask AI for changes to a MSEL </summary>
         /// <remarks>
-        /// Nothing is saved. The model sees the MSEL's teams, organizations, Gallery cards, competencies, moves and inject
-        /// titles, and proposes changes for the planner to review, or asks one question.
+        /// Nothing is saved. The model sees the MSEL's teams, organizations, Gallery cards, competencies, moves, columns and
+        /// injects, and proposes changes the planner may make for them to review, or asks one question.
         /// </remarks>
         /// <param name="mselId"> The id of the MSEL to change </param>
         /// <param name="request"> What to change, and the conversation so far </param>
@@ -452,15 +452,14 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "askMselAssistant")]
         public async Task<IActionResult> AskAssistantAsync([FromRoute] Guid mselId, [FromBody] MselAssistRequest request, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            var result = await _mselAssistantService.AskAsync(mselId, request, hasSystemPermission, ct);
+            var result = await _mselAssistantService.AskAsync(mselId, request, await AssistPermissionsAsync(ct), ct);
             return Ok(result);
         }
 
         /// <summary> Apply the AI changes the planner kept </summary>
         /// <remarks>
         /// Each change is checked again against the MSEL as it is now and made through the same rules as the matching
-        /// team, organization, card or competency endpoint. Returns whether each one was applied.
+        /// team, organization, card, competency, move or scenario event endpoint. Returns whether each one was applied.
         /// </remarks>
         /// <param name="mselId"> The id of the MSEL to change </param>
         /// <param name="apply"> The changes to make </param>
@@ -470,14 +469,16 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "applyMselAssistantChanges")]
         public async Task<IActionResult> ApplyAssistantAsync([FromRoute] Guid mselId, [FromBody] MselAssistApply apply, CancellationToken ct)
         {
-            var permissions = new MselAssistPermissions(
-                EditMsels: await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct),
-                ManageMsels: await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct),
-                ManageOrganizations: await _authorizationService.AuthorizeAsync([SystemPermission.ManageOrganizations], ct),
-                ManageGalleryCards: await _authorizationService.AuthorizeAsync([SystemPermission.ManageGalleryCards], ct));
-            var result = await _mselAssistantService.ApplyAsync(mselId, apply, permissions, ct);
+            var result = await _mselAssistantService.ApplyAsync(mselId, apply, await AssistPermissionsAsync(ct), ct);
             return Ok(result);
         }
+
+        // the permissions the team, organization, card, competency, move and scenario event endpoints check
+        private async Task<MselAssistPermissions> AssistPermissionsAsync(CancellationToken ct) => new(
+            EditMsels: await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct),
+            ManageMsels: await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct),
+            ManageOrganizations: await _authorizationService.AuthorizeAsync([SystemPermission.ManageOrganizations], ct),
+            ManageGalleryCards: await _authorizationService.AuthorizeAsync([SystemPermission.ManageGalleryCards], ct));
 
         /// <summary> Download a msel by id as json file </summary>
         /// <param name="id"> The id of the msel </param>

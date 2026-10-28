@@ -12,6 +12,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
@@ -24,37 +25,82 @@ namespace Blueprint.Api.Services
 {
     public interface IMselAssistantService
     {
-        Task<MselAssistResult> AskAsync(Guid mselId, MselAssistRequest request, bool hasSystemPermission, CancellationToken ct);
+        Task<MselAssistResult> AskAsync(Guid mselId, MselAssistRequest request, MselAssistPermissions permissions, CancellationToken ct);
         Task<MselAssistApplyResult> ApplyAsync(Guid mselId, MselAssistApply apply, MselAssistPermissions permissions, CancellationToken ct);
     }
 
     /// <summary>The system permissions the change endpoints check, so applying a change is allowed exactly when making it by hand is</summary>
     public record MselAssistPermissions(bool EditMsels, bool ManageMsels, bool ManageOrganizations, bool ManageGalleryCards);
 
+    /// <summary>
+    /// Which kinds of change the planner may make on this MSEL, by the rules of the services that make them. A change
+    /// the planner may not make is left out of a proposal with the reason, rather than failing when applied.
+    /// </summary>
+    public record MselAssistAccess(bool Teams, bool OrganizationsAndCards, bool Competencies, bool Moves, bool AddInjects, bool EditInjects)
+    {
+        public bool Any => Teams || OrganizationsAndCards || Competencies || Moves || AddInjects || EditInjects;
+
+        public static readonly MselAssistAccess All = new(true, true, true, true, true, true);
+
+        /// <summary>Why the planner may not make a change of this kind, or null when they may</summary>
+        public string Refusal(string op) => op switch
+        {
+            MselAssistRules.TeamAdd or MselAssistRules.TeamUpdate when !Teams => "only the MSEL's owner can change its teams",
+            MselAssistRules.OrganizationAdd or MselAssistRules.OrganizationUpdate or MselAssistRules.CardAdd or MselAssistRules.CardUpdate
+                when !OrganizationsAndCards => "only the MSEL's owner or an editor can change its organizations and Gallery cards",
+            MselAssistRules.CompetencyAdd or MselAssistRules.CompetencyRemove when !Competencies => "only the MSEL's owner can change its competencies",
+            MselAssistRules.MoveAdd or MselAssistRules.MoveUpdate when !Moves => "only the MSEL's owner or a move editor can change its moves",
+            MselAssistRules.InjectAdd when !AddInjects => "only the MSEL's owner can add injects",
+            MselAssistRules.InjectUpdate when !EditInjects => "only the MSEL's owner, an editor or an approver can edit injects",
+            _ => null
+        };
+
+        /// <summary>What the planner may change, in words the model reads</summary>
+        public string Describe()
+        {
+            var parts = new List<string>();
+            if (Teams) parts.Add("teams");
+            if (OrganizationsAndCards) parts.Add("organizations and Gallery cards");
+            if (Competencies) parts.Add("competencies");
+            if (Moves) parts.Add("moves");
+            if (AddInjects) parts.Add("new injects");
+            if (EditInjects) parts.Add("existing injects");
+            return string.Join(", ", parts);
+        }
+    }
+
     public class MselAssistantService : IMselAssistantService
     {
         private const string ToolName = "propose_msel_changes";
         // the conversation is resent each turn; older turns are dropped first
         private const int MaxHistoryMessages = 20;
-        private const int MaxInjectsShown = 200;
+        private const int MaxInjectsShown = 300;
+        // each inject value shown to the model is cut to this, so a long article does not crowd out the rest
+        private const int MaxValueLength = 300;
 
         private const string SystemPrompt =
 @"You help an exercise planner change an existing Master Scenario Event List (MSEL) in Blueprint.
-A MSEL is organized as Move > Group > Inject. Teams are the participant groups (and EXCON, exercise control). Organizations are the
+A MSEL is organized as Move > Group > Inject. Moves are time-bounded phases; an inject belongs to the move whose start it follows.
+Injects that share a delivery time form a group. Teams are the participant groups (and EXCON, exercise control). Organizations are the
 scenario's actors: the agencies, companies, media outlets and threat actors that send or appear in injects. Gallery cards group articles
 on the participants' Gallery wall; a card's move and inject numbers say when it first appears. Competencies are framework work roles
 and tasks (DCWF or NICE) linked to the MSEL as a whole or to a team.
-You can propose these changes: add or edit a team, add or edit an organization, add or edit a Gallery card, and add or remove a
-competency on the MSEL or on a team.
+You can propose these changes: add or edit a team, an organization or a Gallery card; add or remove a competency on the MSEL or a team;
+add or edit a move; add an inject or edit an existing one.
 Rules:
 - Answer only by calling the tool. Put a short reply to the planner in reply: what you propose and why, in plain words.
-- Change only what the planner asked for, plus what that needs (a new team named in the request needs to exist before a competency is put on it).
+- Change only what the planner asked for, plus what that needs (a new team named in the request must exist before a competency is put on it).
 - If the request is ambiguous in a way that changes the result, ask one short question and propose no changes.
-- If the planner asks for something you cannot change yet (injects, moves, data fields, integrations, users, pages), say so in reply.
-- Refer to existing teams and organizations by their short names and to cards by their names, exactly as listed.
+- If the planner asks for something you cannot change (deleting injects or moves, data fields, integrations, users, pages), say so in reply.
+- Only propose kinds of change the planner is allowed to make, listed with the MSEL.
+- Refer to existing teams and organizations by their short names, cards by their names, moves by their numbers and injects by their
+  references (E1, E2, ...), exactly as listed.
 - Short names are short, upper case and unique. Team and card descriptions are plain text; organization descriptions are HTML paragraphs.
 - Use competency ID numbers exactly as listed. Prefer a work role for a team's role in the exercise and tasks for specific actions.
-- Use fictional organizations and people unless the planner names real ones.";
+- An inject's values are keyed by column name and follow the column's description. For an edit, give only the columns that change.
+- Keep injects consistent with the scenario, the moves and the injects around them: the same organizations, people, places and times.
+- Every inject needs a clear purpose: what participants receive, who sends it, and what they are expected to do.
+- Use fictional organizations, people, domains and IP addresses (RFC 5737 / RFC 1918 ranges) unless the planner names real ones.";
 
         private readonly BlueprintContext _context;
         private readonly IAiModelClient _aiModelClient;
@@ -64,6 +110,8 @@ Rules:
         private readonly ICardService _cardService;
         private readonly IMselCompetencyService _mselCompetencyService;
         private readonly ITeamCompetencyService _teamCompetencyService;
+        private readonly IMoveService _moveService;
+        private readonly IScenarioEventService _scenarioEventService;
         private readonly ClaimsPrincipal _user;
 
         public MselAssistantService(
@@ -75,6 +123,8 @@ Rules:
             ICardService cardService,
             IMselCompetencyService mselCompetencyService,
             ITeamCompetencyService teamCompetencyService,
+            IMoveService moveService,
+            IScenarioEventService scenarioEventService,
             IPrincipal user)
         {
             _context = context;
@@ -85,20 +135,22 @@ Rules:
             _cardService = cardService;
             _mselCompetencyService = mselCompetencyService;
             _teamCompetencyService = teamCompetencyService;
+            _moveService = moveService;
+            _scenarioEventService = scenarioEventService;
             _user = user as ClaimsPrincipal;
         }
 
-        public async Task<MselAssistResult> AskAsync(Guid mselId, MselAssistRequest request, bool hasSystemPermission, CancellationToken ct)
+        public async Task<MselAssistResult> AskAsync(Guid mselId, MselAssistRequest request, MselAssistPermissions permissions, CancellationToken ct)
         {
             if (!_aiOptions.Enabled)
                 throw new InvalidOperationException("AI drafting is not enabled on this server.");
             if (string.IsNullOrWhiteSpace(request?.Prompt))
                 throw new ArgumentException("Say what to change.");
-            await AuthorizeAsync(mselId, hasSystemPermission, ct);
+            var access = await AuthorizeAsync(mselId, permissions, ct);
 
             var state = await LoadStateAsync(mselId, ct);
-            var workRoles = await LoadWorkRolesAsync(ct);
-            var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, BuildPrompt(request, state, workRoles), ToolName,
+            var workRoles = access.Competencies ? await LoadWorkRolesAsync(ct) : new List<CompetencyEntity>();
+            var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, BuildPrompt(request, state, workRoles, access), ToolName,
                 "Propose changes to the MSEL for the planner to review, or ask one question.", BuildSchema(), ct);
 
             var proposed = input.TryGetProperty("changes", out var changes) && changes.ValueKind == JsonValueKind.Array
@@ -110,7 +162,7 @@ Rules:
                 Question = GetString(input, "question")
             };
             await AddCompetenciesAsync(state, proposed, ct);
-            result.Changes = MselAssistRules.Review(state, proposed, result.Warnings);
+            result.Changes = MselAssistRules.Review(state, proposed, access, result.Warnings);
             if (!string.IsNullOrWhiteSpace(result.Question))
                 result.Changes.Clear();
             return result;
@@ -118,26 +170,29 @@ Rules:
 
         public async Task<MselAssistApplyResult> ApplyAsync(Guid mselId, MselAssistApply apply, MselAssistPermissions permissions, CancellationToken ct)
         {
-            await AuthorizeAsync(mselId, permissions.EditMsels, ct);
+            var access = await AuthorizeAsync(mselId, permissions, ct);
             var result = new MselAssistApplyResult();
             var changes = apply?.Changes ?? new List<MselChange>();
 
             // checked again against the MSEL as it is now, as it may have changed since the proposal
             var state = await LoadStateAsync(mselId, ct);
             await AddCompetenciesAsync(state, changes, ct);
-            var dropped = new List<string>();
-            var valid = MselAssistRules.Review(state, changes, dropped);
-            result.Results.AddRange(dropped.Select(d => new MselChangeResult { Label = d, Applied = false, Error = "No longer possible" }));
-
-            foreach (var change in valid)
+            foreach (var (change, problem) in MselAssistRules.ReviewEach(state, changes, access, new List<string>()))
             {
                 var outcome = new MselChangeResult { Label = change.Label };
+                if (problem != null)
+                {
+                    outcome.Error = $"No longer possible: {problem}.";
+                    result.Results.Add(outcome);
+                    continue;
+                }
                 try
                 {
                     await ApplyChangeAsync(mselId, change, state, permissions, ct);
                     outcome.Applied = true;
                 }
-                catch (Exception ex) when (ex is ForbiddenException or EntityNotFoundException<TeamEntity> or ArgumentException or InvalidOperationException or DbUpdateException)
+                catch (Exception ex) when (ex is ForbiddenException or ArgumentException or InvalidOperationException or DbUpdateException
+                    || ex.GetType().Name.StartsWith("EntityNotFoundException"))
                 {
                     outcome.Error = ex is ForbiddenException ? "You do not have permission to make this change." : ex.Message;
                 }
@@ -245,19 +300,104 @@ Rules:
                         await _teamCompetencyService.DeleteByIdsAsync(teamId, competencyId, permissions.ManageMsels, ct);
                     break;
                 }
+                case MselAssistRules.MoveAdd:
+                    await _moveService.CreateAsync(new MoveCreate
+                    {
+                        Id = Guid.NewGuid(),
+                        MselId = mselId,
+                        MoveNumber = change.Move.Value,
+                        Description = change.Description,
+                        SituationDescription = change.Situation,
+                        DeltaSeconds = (change.Minutes ?? 0) * 60
+                    }, permissions.EditMsels, ct);
+                    break;
+                case MselAssistRules.MoveUpdate:
+                {
+                    var move = await _context.Moves.AsNoTracking().SingleAsync(m => m.MselId == mselId && m.MoveNumber == change.Move, ct);
+                    await _moveService.UpdateAsync(move.Id, new MoveEdit
+                    {
+                        MoveNumber = move.MoveNumber,
+                        Description = change.Description ?? move.Description,
+                        SituationDescription = change.Situation ?? move.SituationDescription,
+                        DeltaSeconds = change.Minutes.HasValue ? change.Minutes.Value * 60 : move.DeltaSeconds,
+                        MoveStartTime = move.MoveStartTime,
+                        SituationTime = move.SituationTime
+                    }, permissions.EditMsels, ct);
+                    break;
+                }
+                case MselAssistRules.InjectAdd:
+                {
+                    var deltaSeconds = change.Minutes.Value * 60;
+                    var cells = new List<ScenarioEventCell>();
+                    foreach (var field in state.Msel.DataFields)
+                    {
+                        var value = change.Values.GetValueOrDefault(field.Name) ?? MselAssistRules.ServerValue(field, state.Msel, deltaSeconds);
+                        if (value != null)
+                            cells.Add(new ScenarioEventCell { DataFieldId = field.Id, Value = value });
+                    }
+                    await _scenarioEventService.CreateAsync(new ScenarioEventCreate
+                    {
+                        Id = Guid.NewGuid(),
+                        MselId = mselId,
+                        DeltaSeconds = deltaSeconds,
+                        ScenarioEventType = Enum.Parse<EventType>(change.EventType),
+                        DataValues = cells
+                    }, permissions.EditMsels, ct);
+                    break;
+                }
+                case MselAssistRules.InjectUpdate:
+                {
+                    var inject = await _context.ScenarioEvents.AsNoTracking()
+                        .Include(e => e.DataValues)
+                        .SingleAsync(e => e.MselId == mselId && e.Id == change.ScenarioEventId, ct);
+                    var deltaSeconds = change.Minutes.HasValue ? change.Minutes.Value * 60 : inject.DeltaSeconds;
+                    // the edit writes every cell it carries, so it carries the current ones with the changed ones in place
+                    var cells = new List<ScenarioEventCell>();
+                    foreach (var field in state.Msel.DataFields)
+                    {
+                        var value = inject.DataValues.FirstOrDefault(v => v.DataFieldId == field.Id)?.Value;
+                        if (change.Values != null && change.Values.TryGetValue(field.Name, out var changed))
+                            value = changed;
+                        else if (change.Minutes.HasValue && field.DataType == DataFieldType.DateTime && MselDraftRules.IsServerFilled(field))
+                            value = MselAssistRules.ServerValue(field, state.Msel, deltaSeconds);
+                        cells.Add(new ScenarioEventCell { DataFieldId = field.Id, ScenarioEventId = inject.Id, Value = value });
+                    }
+                    await _scenarioEventService.UpdateAsync(inject.Id, new ScenarioEventEdit
+                    {
+                        DeltaSeconds = deltaSeconds,
+                        GroupOrder = inject.GroupOrder,
+                        IsHidden = inject.IsHidden,
+                        RowMetadata = inject.RowMetadata,
+                        ScenarioEventType = change.EventType != null ? Enum.Parse<EventType>(change.EventType) : inject.ScenarioEventType,
+                        IntegrationTarget = inject.IntegrationTarget,
+                        Information = inject.Information,
+                        DataValues = cells
+                    }, permissions.EditMsels, ct);
+                    break;
+                }
             }
         }
 
-        // the same roles that may edit the MSEL may ask for changes to it
-        private async Task AuthorizeAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        // anyone who may make some kind of change may ask; the review leaves out what they may not make
+        private async Task<MselAssistAccess> AuthorizeAsync(Guid mselId, MselAssistPermissions permissions, CancellationToken ct)
         {
             if (!await _context.Msels.AnyAsync(m => m.Id == mselId, ct))
                 throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId);
             var userId = _user.GetId();
-            if (!hasSystemPermission &&
-                !await MselOwnerRequirement.IsMet(userId, mselId, _context) &&
-                !await MselEditorRequirement.IsMet(userId, mselId, _context))
+            var owner = await MselOwnerRequirement.IsMet(userId, mselId, _context);
+            var editor = await MselEditorRequirement.IsMet(userId, mselId, _context);
+            var approver = await MselApproverRequirement.IsMet(userId, mselId, _context);
+            var moveEditor = await MoveEditorRequirement.IsMet(userId, mselId, _context);
+            var access = new MselAssistAccess(
+                Teams: permissions.EditMsels || owner,
+                OrganizationsAndCards: permissions.EditMsels || owner || editor,
+                Competencies: permissions.ManageMsels || owner,
+                Moves: permissions.EditMsels || owner || moveEditor,
+                AddInjects: permissions.EditMsels || owner,
+                EditInjects: permissions.EditMsels || owner || editor || approver);
+            if (!access.Any)
                 throw new ForbiddenException();
+            return access;
         }
 
         private async Task<MselAssistState> LoadStateAsync(Guid mselId, CancellationToken ct)
@@ -269,7 +409,7 @@ Rules:
                 .Include(m => m.Cards)
                 .Include(m => m.Moves)
                 .Include(m => m.MselCompetencies).ThenInclude(mc => mc.Competency)
-                .Include(m => m.DataFields)
+                .Include(m => m.DataFields).ThenInclude(f => f.DataOptions)
                 .Include(m => m.ScenarioEvents).ThenInclude(e => e.DataValues)
                 .AsSplitQuery()
                 .SingleAsync(m => m.Id == mselId, ct);
@@ -303,7 +443,7 @@ Rules:
                 state.Competencies.TryAdd(match.Key, match.OrderByDescending(c => frameworks.Contains(c.CompetencyFrameworkId)).First());
         }
 
-        private static string BuildPrompt(MselAssistRequest request, MselAssistState state, List<CompetencyEntity> workRoles)
+        private static string BuildPrompt(MselAssistRequest request, MselAssistState state, List<CompetencyEntity> workRoles, MselAssistAccess access)
         {
             var msel = state.Msel;
             var sb = new StringBuilder();
@@ -311,10 +451,11 @@ Rules:
             if (!string.IsNullOrWhiteSpace(msel.Description))
                 sb.AppendLine($"Description: {DataValueDraftService.StripHtml(msel.Description)}");
             sb.AppendLine($"Integrations: {string.Join(", ", new[] { msel.UseGallery ? "Gallery" : null, msel.UseCite ? "CITE" : null, msel.UsePlayer ? "Player" : null, msel.UseSteamfitter ? "Steamfitter" : null }.Where(x => x != null))}");
+            sb.AppendLine($"The planner may change: {access.Describe()}.");
 
             sb.AppendLine().AppendLine("Moves:");
             foreach (var move in msel.Moves.OrderBy(m => m.MoveNumber))
-                sb.AppendLine($"- Move {move.MoveNumber} at minute {move.DeltaSeconds / 60}: {move.Description}");
+                sb.AppendLine($"- Move {move.MoveNumber} at minute {move.DeltaSeconds / 60}: {move.Description} Situation: {DataValueDraftService.StripHtml(move.SituationDescription)}");
 
             sb.AppendLine().AppendLine("Teams:");
             foreach (var team in msel.Teams.OrderBy(t => t.ShortName))
@@ -333,21 +474,33 @@ Rules:
 
             sb.AppendLine().AppendLine("MSEL competencies: " + string.Join(", ", msel.MselCompetencies.Select(mc => $"{mc.Competency.IdNumber} {mc.Competency.ShortName}")));
 
-            // the injects give the model the story; only their first text field is sent
-            var titleField = msel.DataFields
-                .Where(f => f.DataType == Data.Enumerations.DataFieldType.String && !f.IsChosenFromList)
-                .OrderBy(f => f.Name.Equals("Title", StringComparison.OrdinalIgnoreCase) ? 0 : 1).ThenBy(f => f.DisplayOrder)
-                .FirstOrDefault();
-            sb.AppendLine().AppendLine("Injects:");
-            foreach (var inject in msel.ScenarioEvents.OrderBy(e => e.DeltaSeconds).Take(MaxInjectsShown))
+            var fields = MselDraftRules.DraftedFields(msel).ToList();
+            sb.AppendLine().AppendLine("Inject columns (name: what to write):");
+            foreach (var field in fields)
             {
-                var title = titleField == null ? null : inject.DataValues.FirstOrDefault(v => v.DataFieldId == titleField.Id)?.Value;
-                sb.AppendLine($"- minute {inject.DeltaSeconds / 60}: {DataValueDraftService.StripHtml(title)}");
+                var options = MselDraftRules.AllowedOptions(field);
+                sb.AppendLine($"- {field.Name}: {MselDraftRules.Describe(field)}" + (options == null ? "" : $". One of: {string.Join(", ", options)}"));
             }
+            sb.AppendLine("Event types: Inject, Information, Facilitation.");
 
-            sb.AppendLine().AppendLine("Work roles that can be added (ID number, name, framework):");
-            foreach (var role in workRoles)
-                sb.AppendLine($"- {role.IdNumber} {role.ShortName} ({role.CompetencyFramework.Name})");
+            sb.AppendLine().AppendLine("Injects (reference, minute, event type, values):");
+            foreach (var (reference, inject) in state.Injects.Take(MaxInjectsShown))
+            {
+                var values = fields
+                    .Select(f => (f.Name, Value: Shorten(DataValueDraftService.StripHtml(inject.DataValues.FirstOrDefault(v => v.DataFieldId == f.Id)?.Value))))
+                    .Where(v => !string.IsNullOrEmpty(v.Value))
+                    .Select(v => $"{v.Name}: {v.Value}");
+                sb.AppendLine($"- {reference} minute {inject.DeltaSeconds / 60} {inject.ScenarioEventType}: {string.Join(" | ", values)}");
+            }
+            if (state.Injects.Count > MaxInjectsShown)
+                sb.AppendLine($"({state.Injects.Count - MaxInjectsShown} later injects are not shown.)");
+
+            if (workRoles.Count > 0)
+            {
+                sb.AppendLine().AppendLine("Work roles that can be added (ID number, name, framework):");
+                foreach (var role in workRoles)
+                    sb.AppendLine($"- {role.IdNumber} {role.ShortName} ({role.CompetencyFramework.Name})");
+            }
 
             var history = (request.History ?? new List<MselAssistMessage>()).TakeLast(MaxHistoryMessages).ToList();
             if (history.Count > 0)
@@ -359,6 +512,9 @@ Rules:
             sb.AppendLine().AppendLine("Planner's request:").AppendLine(request.Prompt.Trim());
             return sb.ToString();
         }
+
+        private static string Shorten(string value) =>
+            string.IsNullOrEmpty(value) || value.Length <= MaxValueLength ? value : value[..MaxValueLength] + "...";
 
         private static JsonObject BuildSchema() => new()
         {
@@ -376,14 +532,23 @@ Rules:
                         ["properties"] = new JsonObject
                         {
                             ["op"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselAssistRules.Ops.Select(o => (JsonNode)o).ToArray()) },
-                            ["target"] = new JsonObject { ["type"] = "string", ["description"] = "For an update, the short name of the team or organization, or the name of the card. For a competency, the team's short name, or empty for the MSEL." },
+                            ["target"] = new JsonObject { ["type"] = "string", ["description"] = "For a team or organization edit, its short name; for a card edit, its name; for an inject edit, its reference (E1, E2, ...). For a competency, the team's short name, or empty for the MSEL." },
                             ["shortName"] = new JsonObject { ["type"] = "string", ["description"] = "A team's or organization's short name, new or changed." },
                             ["name"] = new JsonObject { ["type"] = "string" },
-                            ["description"] = new JsonObject { ["type"] = "string" },
+                            ["description"] = new JsonObject { ["type"] = "string", ["description"] = "A team's, organization's, card's or move's description." },
                             ["summary"] = new JsonObject { ["type"] = "string", ["description"] = "An organization's one-line summary." },
-                            ["move"] = new JsonObject { ["type"] = "integer", ["description"] = "A card's move." },
+                            ["move"] = new JsonObject { ["type"] = "integer", ["description"] = "A card's move, or the number of the move to add or edit." },
                             ["inject"] = new JsonObject { ["type"] = "integer", ["description"] = "A card's inject number within its move." },
-                            ["idNumber"] = new JsonObject { ["type"] = "string", ["description"] = "A competency's ID number." }
+                            ["idNumber"] = new JsonObject { ["type"] = "string", ["description"] = "A competency's ID number." },
+                            ["minutes"] = new JsonObject { ["type"] = "integer", ["description"] = "A move's start, or an inject's time, in minutes from the start of the exercise." },
+                            ["situation"] = new JsonObject { ["type"] = "string", ["description"] = "A move's situation description." },
+                            ["eventType"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Inject", "Information", "Facilitation") },
+                            ["values"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["description"] = "An inject's values by column name. For an edit, only the columns that change.",
+                                ["additionalProperties"] = new JsonObject { ["type"] = "string" }
+                            }
                         },
                         ["required"] = new JsonArray("op")
                     }
@@ -401,14 +566,27 @@ Rules:
     /// <summary>What the review checks changes against: the MSEL as loaded, and the competencies the changes may name</summary>
     public class MselAssistState
     {
-        public MselAssistState(MselEntity msel) => Msel = msel;
+        public MselAssistState(MselEntity msel)
+        {
+            Msel = msel;
+            Injects = msel.ScenarioEvents
+                .OrderBy(e => e.DeltaSeconds).ThenBy(e => e.GroupOrder).ThenBy(e => e.Id)
+                .Select((e, i) => ($"E{i + 1}", e))
+                .ToList();
+        }
+
         public MselEntity Msel { get; }
+
+        /// <summary>The injects in time order, each with the reference (E1, E2, ...) the model uses for it</summary>
+        public List<(string Reference, ScenarioEventEntity Inject)> Injects { get; }
+
         public Dictionary<string, CompetencyEntity> Competencies { get; } = new Dictionary<string, CompetencyEntity>(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
     /// Checks proposed changes against the MSEL, in order, as if each earlier one had been applied. Drops what cannot be
-    /// applied, with a warning, and labels the rest for the planner. Shared by the proposal and by apply.
+    /// applied, or what the planner may not make, with a warning, and labels the rest for the planner. Shared by the
+    /// proposal and by apply.
     /// </summary>
     public static class MselAssistRules
     {
@@ -420,19 +598,46 @@ Rules:
         public const string CardUpdate = "card.update";
         public const string CompetencyAdd = "competency.add";
         public const string CompetencyRemove = "competency.remove";
-        public static readonly string[] Ops = [TeamAdd, TeamUpdate, OrganizationAdd, OrganizationUpdate, CardAdd, CardUpdate, CompetencyAdd, CompetencyRemove];
+        public const string MoveAdd = "move.add";
+        public const string MoveUpdate = "move.update";
+        public const string InjectAdd = "inject.add";
+        public const string InjectUpdate = "inject.update";
+        public static readonly string[] Ops = [TeamAdd, TeamUpdate, OrganizationAdd, OrganizationUpdate, CardAdd, CardUpdate, CompetencyAdd, CompetencyRemove, MoveAdd, MoveUpdate, InjectAdd, InjectUpdate];
 
-        public static List<MselChange> Review(MselAssistState state, IEnumerable<MselChange> proposed, List<string> warnings)
+        public static List<MselChange> Review(MselAssistState state, IEnumerable<MselChange> proposed, List<string> warnings) =>
+            Review(state, proposed, MselAssistAccess.All, warnings);
+
+        public static List<MselChange> Review(MselAssistState state, IEnumerable<MselChange> proposed, MselAssistAccess access, List<string> warnings)
         {
+            var kept = new List<MselChange>();
+            foreach (var (change, problem) in ReviewEach(state, proposed, access, warnings))
+            {
+                if (problem != null)
+                    warnings.Add($"{change.Label}: left out, {problem}.");
+                else
+                    kept.Add(change);
+            }
+            return kept;
+        }
+
+        /// <summary>
+        /// Each change, in order, labelled and with why it cannot be made (null when it can). Notes about single values,
+        /// such as an option that does not exist, go to notes; the change is kept without them.
+        /// </summary>
+        public static List<(MselChange Change, string Problem)> ReviewEach(MselAssistState state, IEnumerable<MselChange> proposed, MselAssistAccess access, List<string> notes)
+        {
+            var warnings = notes;
             var msel = state.Msel;
             var teams = msel.Teams.Select(t => t.ShortName).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var organizations = msel.Organizations.Select(o => o.ShortName).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var cards = msel.Cards.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var moves = msel.Moves.Select(m => m.MoveNumber).ToHashSet();
+            var fields = MselDraftRules.DraftedFields(msel).ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
             // competency links as "<team short name or empty>|<id number>"
             var links = msel.MselCompetencies.Select(mc => "|" + mc.Competency.IdNumber)
                 .Concat(msel.Teams.SelectMany(t => t.TeamCompetencies.Select(tc => t.ShortName + "|" + tc.Competency.IdNumber)))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var kept = new List<MselChange>();
+            var reviewed = new List<(MselChange, string)>();
 
             foreach (var raw in proposed ?? Enumerable.Empty<MselChange>())
             {
@@ -496,18 +701,115 @@ Rules:
                         }
                         break;
                     }
+                    case MoveAdd:
+                        change.Minutes = Math.Max(0, change.Minutes ?? 0);
+                        change.Label = $"Add move {change.Move} at {Time(change.Minutes.Value)}: {change.Description}";
+                        problem = change.Move == null || change.Move < 0 ? "a new move needs a number"
+                            : change.Description == null ? "a new move needs a description"
+                            : !moves.Add(change.Move.Value) ? $"there is already a move {change.Move}" : null;
+                        break;
+                    case MoveUpdate:
+                        change.Move ??= int.TryParse(change.Target, out var number) ? number : null;
+                        change.Minutes = change.Minutes.HasValue ? Math.Max(0, change.Minutes.Value) : null;
+                        change.Label = $"Edit move {change.Move}" + Describe(change);
+                        problem = change.Move == null || !moves.Contains(change.Move.Value) ? $"there is no move {change.Move?.ToString() ?? change.Target}"
+                            : change.Description == null && change.Situation == null && change.Minutes == null ? "it changes nothing" : null;
+                        break;
+                    case InjectAdd:
+                    {
+                        change.EventType = EventTypeOrDefault(change.EventType) ?? nameof(Data.Enumerations.EventType.Inject);
+                        change.Values = CleanValues(change.Values, fields, teams, organizations, warnings);
+                        change.Label = $"Add {Kind(change.EventType)} at {Time(change.Minutes ?? 0)}: {Title(change.Values)}";
+                        problem = change.Minutes == null || change.Minutes < 0 ? "a new inject needs a time"
+                            : change.Values.Count == 0 ? "a new inject needs values" : null;
+                        break;
+                    }
+                    case InjectUpdate:
+                    {
+                        var target = state.Injects.FirstOrDefault(i =>
+                            change.ScenarioEventId.HasValue ? i.Inject.Id == change.ScenarioEventId : string.Equals(i.Reference, change.Target, StringComparison.OrdinalIgnoreCase));
+                        change.Values = CleanValues(change.Values, fields, teams, organizations, warnings);
+                        change.Minutes = change.Minutes.HasValue ? Math.Max(0, change.Minutes.Value) : null;
+                        change.EventType = change.EventType == null ? null : EventTypeOrDefault(change.EventType);
+                        if (target.Inject == null)
+                        {
+                            change.Label = $"Edit inject {change.Target}";
+                            problem = $"there is no inject {change.Target}";
+                            break;
+                        }
+                        change.Target = target.Reference;
+                        change.ScenarioEventId = target.Inject.Id;
+                        var current = fields.Values.ToDictionary(f => f.Name, f => target.Inject.DataValues.FirstOrDefault(v => v.DataFieldId == f.Id)?.Value, StringComparer.OrdinalIgnoreCase);
+                        // a value the inject already has is no change
+                        foreach (var same in change.Values.Where(v => current.GetValueOrDefault(v.Key) == v.Value).Select(v => v.Key).ToList())
+                            change.Values.Remove(same);
+                        if (change.Minutes == target.Inject.DeltaSeconds / 60)
+                            change.Minutes = null;
+                        if (change.EventType == target.Inject.ScenarioEventType.ToString())
+                            change.EventType = null;
+                        var parts = change.Values.Keys.ToList();
+                        if (change.Minutes.HasValue) parts.Add($"time {Time(change.Minutes.Value)}");
+                        if (change.EventType != null) parts.Add($"type {change.EventType}");
+                        change.Label = $"Edit {target.Reference} ({Title(current)})" + (parts.Count > 0 ? ": " + string.Join(", ", parts) : "");
+                        problem = parts.Count == 0 ? "it changes nothing" : null;
+                        break;
+                    }
                     default:
                         problem = $"{change.Op ?? "an empty change"} is not a change the assistant can make";
                         change.Label = change.Op ?? "Unknown change";
                         break;
                 }
 
-                if (problem != null)
-                    warnings.Add($"{change.Label}: left out, {problem}.");
-                else
-                    kept.Add(change);
+                problem ??= access.Refusal(change.Op);
+                reviewed.Add((change, problem));
             }
-            return kept;
+            return reviewed;
+        }
+
+        /// <summary>The value the server gives a column the model is not asked for: Pending status, and the delivery time from the MSEL's start</summary>
+        public static string ServerValue(DataFieldEntity field, MselEntity msel, int deltaSeconds) => field.DataType switch
+        {
+            DataFieldType.Status => MselItemStatus.Pending.ToString(),
+            DataFieldType.DateTime when MselDraftRules.IsServerFilled(field) => msel.StartTime.AddSeconds(deltaSeconds).ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            _ => null
+        };
+
+        // the model's values, by the columns' exact names, checked as a draft's are; unknown columns are reported
+        private static Dictionary<string, string> CleanValues(Dictionary<string, string> values, Dictionary<string, DataFieldEntity> fields,
+            HashSet<string> teams, HashSet<string> organizations, List<string> warnings)
+        {
+            var cleaned = new Dictionary<string, string>();
+            var actors = new HashSet<string>(organizations.Concat(teams), StringComparer.OrdinalIgnoreCase);
+            foreach (var (name, raw) in values ?? new Dictionary<string, string>())
+            {
+                if (!fields.TryGetValue(name, out var field))
+                {
+                    warnings.Add($"Left out a value for {name}, which is not a column the assistant can write.");
+                    continue;
+                }
+                var value = MselDraftRules.CleanValue(field, raw?.Trim(), teams, actors, warnings);
+                if (field.DataType == DataFieldType.Html && value != null)
+                    value = DataValueDraftService.CleanHtml(value);
+                if (!string.IsNullOrEmpty(value))
+                    cleaned[field.Name] = value;
+            }
+            return cleaned;
+        }
+
+        private static string EventTypeOrDefault(string value) =>
+            Enum.TryParse<EventType>(value, true, out var type) && Enum.IsDefined(type) ? type.ToString() : null;
+
+        private static string Kind(string eventType) => eventType == nameof(Data.Enumerations.EventType.Inject) ? "inject" : eventType.ToLowerInvariant();
+
+        private static string Time(int minutes) => $"{minutes / 60}:{minutes % 60:00}";
+
+        // the inject's title for a label: its Title or Name column, else its first value
+        private static string Title(Dictionary<string, string> values)
+        {
+            var title = values.FirstOrDefault(v => v.Key.Equals("Title", StringComparison.OrdinalIgnoreCase) || v.Key.Equals("Name", StringComparison.OrdinalIgnoreCase)).Value
+                ?? values.Values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+            title = DataValueDraftService.StripHtml(title);
+            return string.IsNullOrEmpty(title) ? "untitled" : title.Length <= 80 ? title : title[..80] + "...";
         }
 
         // the target must exist, and a new short name must not belong to another
@@ -533,8 +835,10 @@ Rules:
             if (change.Name != null) parts.Add($"name \"{change.Name}\"");
             if (change.Summary != null) parts.Add("summary");
             if (change.Description != null) parts.Add("description");
-            if (change.Move != null) parts.Add($"move {change.Move}");
+            if (change.Situation != null) parts.Add("situation");
+            if (change.Op != MoveUpdate && change.Move != null) parts.Add($"move {change.Move}");
             if (change.Inject != null) parts.Add($"inject {change.Inject}");
+            if (change.Op == MoveUpdate && change.Minutes != null) parts.Add($"start {Time(change.Minutes.Value)}");
             return parts.Count == 0 ? "" : ": " + string.Join(", ", parts);
         }
 
@@ -548,7 +852,12 @@ Rules:
             Summary = Text(change?.Summary),
             Move = change?.Move,
             Inject = change?.Inject,
-            IdNumber = Text(change?.IdNumber)
+            IdNumber = Text(change?.IdNumber),
+            Minutes = change?.Minutes,
+            Situation = Text(change?.Situation),
+            EventType = Text(change?.EventType),
+            Values = change?.Values == null ? null : new Dictionary<string, string>(change.Values, StringComparer.OrdinalIgnoreCase),
+            ScenarioEventId = change?.ScenarioEventId
         };
 
         private static string Text(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

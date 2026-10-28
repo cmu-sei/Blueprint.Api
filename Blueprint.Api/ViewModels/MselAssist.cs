@@ -40,11 +40,13 @@ namespace Blueprint.Api.ViewModels
 
     /// <summary>
     /// One proposed change. Op says what it does; Target names the existing team, organization or card it changes,
-    /// or for a competency the team it belongs to (empty for the MSEL itself).
+    /// the number of the move, or the inject's reference (E1, E2, ...), or for a competency the team it belongs to
+    /// (empty for the MSEL itself).
     /// </summary>
     public class MselChange
     {
-        /// <summary>team.add, team.update, organization.add, organization.update, card.add, card.update, competency.add or competency.remove</summary>
+        /// <summary>team.add, team.update, organization.add, organization.update, card.add, card.update, competency.add,
+        /// competency.remove, move.add, move.update, inject.add or inject.update</summary>
         public string Op { get; set; }
         public string Target { get; set; }
         public string ShortName { get; set; }
@@ -54,6 +56,21 @@ namespace Blueprint.Api.ViewModels
         public int? Move { get; set; }
         public int? Inject { get; set; }
         public string IdNumber { get; set; }
+
+        /// <summary>A move's start, or an inject's time, in minutes from the start of the exercise</summary>
+        public int? Minutes { get; set; }
+
+        /// <summary>A move's situation description</summary>
+        public string Situation { get; set; }
+
+        /// <summary>An inject's event type: Inject, Information or Facilitation</summary>
+        public string EventType { get; set; }
+
+        /// <summary>An inject's values by column name; for an edit, only the columns that change</summary>
+        public Dictionary<string, string> Values { get; set; }
+
+        /// <summary>The inject an edit changes, set by the server from Target so a later apply finds the same one</summary>
+        public System.Guid? ScenarioEventId { get; set; }
 
         /// <summary>The change as the planner reads it, written by the server</summary>
         public string Label { get; set; }

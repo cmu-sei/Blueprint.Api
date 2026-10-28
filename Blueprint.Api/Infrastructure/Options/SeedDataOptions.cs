@@ -20,6 +20,13 @@ namespace Blueprint.Api.Infrastructure.Options
         public List<DataFieldEntity> DataFields { get; set; }
         public List<DataOptionEntity> DataOptions { get; set; }
         public List<UserMselRoleEntity> UserMselRoles { get; set; }
+        public List<InjectTypeEntity> InjectTypes { get; set; }
+        public List<CardEntity> Cards { get; set; }
+        public List<CardTeamEntity> CardTeams { get; set; }
+        public List<CiteDutyEntity> CiteDuties { get; set; }
+        public List<CiteActionEntity> CiteActions { get; set; }
+        public List<PlayerApplicationEntity> PlayerApplications { get; set; }
+        public List<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; }
     }
 }
 

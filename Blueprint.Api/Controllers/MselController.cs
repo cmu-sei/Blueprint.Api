@@ -25,6 +25,7 @@ namespace Blueprint.Api.Controllers
         private readonly IMselService _mselService;
         private readonly IMselDraftService _mselDraftService;
         private readonly IDataValueDraftService _dataValueDraftService;
+        private readonly IMselAssistantService _mselAssistantService;
         private readonly IIntegrationNameService _integrationNameService;
         private readonly IBlueprintAuthorizationService _authorizationService;
 
@@ -32,6 +33,7 @@ namespace Blueprint.Api.Controllers
             IMselService mselService,
             IMselDraftService mselDraftService,
             IDataValueDraftService dataValueDraftService,
+            IMselAssistantService mselAssistantService,
             ICiteService citeService,
             IPlayerService playerService,
             IIntegrationNameService integrationNameService,
@@ -40,6 +42,7 @@ namespace Blueprint.Api.Controllers
             _mselService = mselService;
             _mselDraftService = mselDraftService;
             _dataValueDraftService = dataValueDraftService;
+            _mselAssistantService = mselAssistantService;
             _integrationNameService = integrationNameService;
             _authorizationService = authorizationService;
         }
@@ -433,6 +436,46 @@ namespace Blueprint.Api.Controllers
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var result = await _dataValueDraftService.DraftAsync(mselId, request, hasSystemPermission, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Ask AI for changes to a MSEL </summary>
+        /// <remarks>
+        /// Nothing is saved. The model sees the MSEL's teams, organizations, Gallery cards, competencies, moves and inject
+        /// titles, and proposes changes for the planner to review, or asks one question.
+        /// </remarks>
+        /// <param name="mselId"> The id of the MSEL to change </param>
+        /// <param name="request"> What to change, and the conversation so far </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{mselId}/ai-assist")]
+        [ProducesResponseType(typeof(MselAssistResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "askMselAssistant")]
+        public async Task<IActionResult> AskAssistantAsync([FromRoute] Guid mselId, [FromBody] MselAssistRequest request, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var result = await _mselAssistantService.AskAsync(mselId, request, hasSystemPermission, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Apply the AI changes the planner kept </summary>
+        /// <remarks>
+        /// Each change is checked again against the MSEL as it is now and made through the same rules as the matching
+        /// team, organization, card or competency endpoint. Returns whether each one was applied.
+        /// </remarks>
+        /// <param name="mselId"> The id of the MSEL to change </param>
+        /// <param name="apply"> The changes to make </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{mselId}/ai-assist/apply")]
+        [ProducesResponseType(typeof(MselAssistApplyResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "applyMselAssistantChanges")]
+        public async Task<IActionResult> ApplyAssistantAsync([FromRoute] Guid mselId, [FromBody] MselAssistApply apply, CancellationToken ct)
+        {
+            var permissions = new MselAssistPermissions(
+                EditMsels: await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct),
+                ManageMsels: await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct),
+                ManageOrganizations: await _authorizationService.AuthorizeAsync([SystemPermission.ManageOrganizations], ct),
+                ManageGalleryCards: await _authorizationService.AuthorizeAsync([SystemPermission.ManageGalleryCards], ct));
+            var result = await _mselAssistantService.ApplyAsync(mselId, apply, permissions, ct);
             return Ok(result);
         }
 

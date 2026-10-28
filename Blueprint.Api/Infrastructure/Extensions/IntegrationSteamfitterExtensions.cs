@@ -134,7 +134,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     break;
                 case SteamfitterIntegrationType.Email:
                     action = TaskAction.Send_email;
-                    apiUrl = "stackstorm";
+                    apiUrl = "email";
                     break;
                 case SteamfitterIntegrationType.SituationUpdate:
                     action = TaskAction.Http_put;

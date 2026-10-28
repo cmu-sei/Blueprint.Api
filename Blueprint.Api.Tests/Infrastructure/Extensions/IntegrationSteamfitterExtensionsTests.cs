@@ -442,10 +442,10 @@ public class IntegrationSteamfitterExtensionsTests
         Assert.Equal($"\"id\":\"{EvaluationId}\"", form["expectedOutput"].GetString());
     }
 
-    /// <summary>An email task is sent with <c>apiUrl</c> <c>stackstorm</c> and its parameters as
+    /// <summary>An email task is sent with <c>apiUrl</c> <c>email</c> and its parameters as
     /// stored.</summary>
     [Fact]
-    public async Task CreateScenarioTasks_ForAnEmail_AsksSteamfitterForStackstorm()
+    public async Task CreateScenarioTasks_ForAnEmail_AsksSteamfitterForItsEmailApi()
     {
         var entity = Task_("email", SteamfitterIntegrationType.Email,
             new Dictionary<string, string> { ["To"] = "someone@example.test" });
@@ -457,7 +457,7 @@ public class IntegrationSteamfitterExtensionsTests
         var form = Body(Assert.Single(handler.Sent).Body);
 
         Assert.Equal("Send_email", form["action"].GetString());
-        Assert.Equal("stackstorm", form["apiUrl"].GetString());
+        Assert.Equal("email", form["apiUrl"].GetString());
         Assert.Equal(
             "someone@example.test",
             form["actionParameters"].GetProperty("To").GetString());

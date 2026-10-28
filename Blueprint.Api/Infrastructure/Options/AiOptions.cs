@@ -12,6 +12,8 @@ namespace Blueprint.Api.Infrastructure.Options
         public string ModelId { get; set; }
         public int MaxTokens { get; set; } = 16000;
         public int MaxInjects { get; set; } = 60;
+        // the most competencies a draft may choose from; each one is a line of the prompt
+        public int MaxCompetencies { get; set; } = 2500;
         public int TimeoutSeconds { get; set; } = 300;
     }
 }

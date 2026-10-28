@@ -2186,7 +2186,8 @@ namespace Blueprint.Api.Services
 
             // the planner may have edited the draft since it was generated, so check it again
             var warnings = new List<string>();
-            MselDraftRules.Normalize(draft, template, _aiOptions.MaxInjects, warnings);
+            var competencies = await MselDraftService.LoadCompetencyChoicesAsync(_context, template.Id, draftImport.CompetencyFrameworkIds, ct);
+            MselDraftRules.Normalize(draft, template, _aiOptions.MaxInjects, competencies, warnings);
             foreach (var warning in warnings)
                 AddChange(result, "draft", warning);
 
@@ -2220,6 +2221,13 @@ namespace Blueprint.Api.Services
                     Description = team.Description
                 });
             }
+            foreach (var draftTeam in draft.Teams.Where(t => t.Competencies.Any()))
+            {
+                var team = mselEntity.Teams.First(t => t.ShortName.Equals(draftTeam.ShortName, StringComparison.OrdinalIgnoreCase));
+                var existing = new HashSet<Guid>(team.TeamCompetencies.Select(tc => tc.CompetencyId));
+                foreach (var id in draftTeam.Competencies.Where(id => existing.Add(competencies[id].Id)))
+                    team.TeamCompetencies.Add(new TeamCompetencyEntity { Id = Guid.NewGuid(), TeamId = team.Id, CompetencyId = competencies[id].Id });
+            }
             var templateOrgs = new HashSet<string>(mselEntity.Organizations.Select(o => o.ShortName), StringComparer.OrdinalIgnoreCase);
             foreach (var organization in draft.Organizations.Where(o => !templateOrgs.Contains(o.ShortName)))
             {
@@ -2244,6 +2252,29 @@ namespace Blueprint.Api.Services
                 });
             }
 
+            // each inject's competencies go in the first Competency column, which needs an option for each
+            var competencyField = mselEntity.DataFields
+                .Where(f => f.DataType == DataFieldType.Competency)
+                .OrderBy(f => f.DisplayOrder)
+                .FirstOrDefault();
+            if (competencyField != null)
+            {
+                var options = new HashSet<string>(competencyField.DataOptions.Select(o => o.OptionName), StringComparer.OrdinalIgnoreCase);
+                var displayOrder = competencyField.DataOptions.Select(o => o.DisplayOrder).DefaultIfEmpty(0).Max();
+                foreach (var id in draft.Injects.SelectMany(i => i.Competencies).Where(options.Add))
+                {
+                    competencyField.DataOptions.Add(new DataOptionEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        DataFieldId = competencyField.Id,
+                        OptionName = id,
+                        OptionValue = competencies[id].ShortName,
+                        OptionDescription = competencies[id].Description,
+                        DisplayOrder = ++displayOrder
+                    });
+                }
+            }
+
             // one data value per column, as when a planner adds a row
             foreach (var group in draft.Injects.GroupBy(i => i.Minutes))
             {
@@ -2261,7 +2292,9 @@ namespace Blueprint.Api.Services
                     foreach (var dataField in mselEntity.DataFields)
                     {
                         string value;
-                        if (!inject.Values.TryGetValue(dataField.Name, out value))
+                        if (dataField == competencyField)
+                            value = inject.Competencies.Any() ? string.Join(", ", inject.Competencies) : null;
+                        else if (!inject.Values.TryGetValue(dataField.Name, out value))
                         {
                             value = dataField.DataType switch
                             {
@@ -2282,23 +2315,10 @@ namespace Blueprint.Api.Services
                 }
             }
 
-            // competencies are matched by ID number; the model can name ones this Blueprint does not have
-            if (draft.Competencies.Any())
-            {
-                var codes = draft.Competencies.Select(c => c.ToLower()).ToList();
-                var competencies = await _context.Competencies
-                    .Where(c => codes.Contains(c.IdNumber.ToLower()))
-                    .ToListAsync(ct);
-                var existing = new HashSet<Guid>(mselEntity.MselCompetencies.Select(mc => mc.CompetencyId));
-                foreach (var competency in competencies.GroupBy(c => c.IdNumber.ToLower()).Select(g => g.First()))
-                {
-                    if (existing.Add(competency.Id))
-                        mselEntity.MselCompetencies.Add(new MselCompetencyEntity { Id = Guid.NewGuid(), CompetencyId = competency.Id });
-                }
-                var unknown = draft.Competencies.Where(c => !competencies.Any(k => k.IdNumber.Equals(c, StringComparison.OrdinalIgnoreCase))).ToList();
-                if (unknown.Any())
-                    AddChange(result, "competencies", $"These competencies are not in this Blueprint and were not linked: {string.Join(", ", unknown)}.");
-            }
+            // Normalize kept only competencies from the list, and the MSEL's list includes every one used
+            var mselCompetencies = new HashSet<Guid>(mselEntity.MselCompetencies.Select(mc => mc.CompetencyId));
+            foreach (var id in draft.Competencies.Where(id => mselCompetencies.Add(competencies[id].Id)))
+                mselEntity.MselCompetencies.Add(new MselCompetencyEntity { Id = Guid.NewGuid(), MselId = mselEntity.Id, CompetencyId = competencies[id].Id });
 
             AddChange(result, "draft", $"Drafted with AI from the \"{template.Name}\" template. Review every row before pushing.");
             foreach (var note in draft.PlannerNotes)

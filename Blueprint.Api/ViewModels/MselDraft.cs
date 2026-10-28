@@ -13,6 +13,11 @@ namespace Blueprint.Api.ViewModels
         public Guid TemplateMselId { get; set; }
         /// <summary>The planner's description of the exercise</summary>
         public string Prompt { get; set; }
+        /// <summary>
+        /// Frameworks whose competencies the draft may assign. When empty, the template's own MSEL
+        /// competencies are used; when the template has none, no competencies are assigned.
+        /// </summary>
+        public List<Guid> CompetencyFrameworkIds { get; set; } = new List<Guid>();
     }
 
     /// <summary>A drafted MSEL in a flat form the model can fill and the planner can edit before creating it</summary>
@@ -25,7 +30,7 @@ namespace Blueprint.Api.ViewModels
         public List<MselDraftTeam> Teams { get; set; } = new List<MselDraftTeam>();
         public List<MselDraftOrganization> Organizations { get; set; } = new List<MselDraftOrganization>();
         public List<MselDraftInject> Injects { get; set; } = new List<MselDraftInject>();
-        /// <summary>Competency ID numbers (DCWF or NICE) the exercise exercises; unknown ones are dropped at import</summary>
+        /// <summary>Competency ID numbers the exercise exercises, from the competencies it may choose from</summary>
         public List<string> Competencies { get; set; } = new List<string>();
         /// <summary>Assumptions and open questions the model wants the planner to check</summary>
         public List<string> PlannerNotes { get; set; } = new List<string>();
@@ -45,6 +50,8 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
         public string ShortName { get; set; }
         public string Description { get; set; }
+        /// <summary>Competency ID numbers the team is expected to demonstrate</summary>
+        public List<string> Competencies { get; set; } = new List<string>();
     }
 
     public class MselDraftOrganization
@@ -62,6 +69,15 @@ namespace Blueprint.Api.ViewModels
         public string EventType { get; set; } = "Inject";
         /// <summary>Values keyed by the template's column (data field) name</summary>
         public Dictionary<string, string> Values { get; set; } = new Dictionary<string, string>();
+        /// <summary>Competency ID numbers participants demonstrate by acting on the inject</summary>
+        public List<string> Competencies { get; set; } = new List<string>();
+    }
+
+    /// <summary>A competency the draft assigned, named so the planner can review it</summary>
+    public class MselDraftCompetency
+    {
+        public string IdNumber { get; set; }
+        public string ShortName { get; set; }
     }
 
     /// <summary>A template column the draft fills</summary>
@@ -81,6 +97,8 @@ namespace Blueprint.Api.ViewModels
         public List<MselDraftField> Fields { get; set; } = new List<MselDraftField>();
         /// <summary>Things the server corrected or dropped from the model's answer</summary>
         public List<string> Warnings { get; set; } = new List<string>();
+        /// <summary>The competencies the draft assigned, with their names</summary>
+        public List<MselDraftCompetency> Competencies { get; set; } = new List<MselDraftCompetency>();
     }
 
     /// <summary>A reviewed draft to create as a new MSEL</summary>
@@ -88,5 +106,7 @@ namespace Blueprint.Api.ViewModels
     {
         public Guid TemplateMselId { get; set; }
         public MselDraft Draft { get; set; }
+        /// <summary>The frameworks the draft chose from, so its competencies are checked against the same list</summary>
+        public List<Guid> CompetencyFrameworkIds { get; set; } = new List<Guid>();
     }
 }

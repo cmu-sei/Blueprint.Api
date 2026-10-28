@@ -66,9 +66,12 @@ Answer only by calling the tool.";
                 throw new ArgumentException("Describe the exercise to draft.");
 
             var template = await LoadTemplateAsync(_context, _user.GetId(), request.TemplateMselId, ct);
+            var competencies = await LoadCompetencyChoicesAsync(_context, template.Id, request.CompetencyFrameworkIds, ct);
+            if (competencies.Count > _aiOptions.MaxCompetencies)
+                throw new ArgumentException($"The chosen frameworks have {competencies.Count} competencies, more than the {_aiOptions.MaxCompetencies} a draft can choose from. Choose fewer frameworks.");
             var fields = MselDraftRules.DraftedFields(template).ToList();
-            var schema = BuildSchema(fields, _aiOptions.MaxInjects);
-            var prompt = BuildPrompt(request.Prompt, template, fields, _aiOptions.MaxInjects);
+            var schema = BuildSchema(fields, _aiOptions.MaxInjects, competencies);
+            var prompt = BuildPrompt(request.Prompt, template, fields, _aiOptions.MaxInjects, competencies);
 
             var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, prompt, ToolName,
                 "Submit the drafted MSEL for the planner to review.", schema, ct);
@@ -87,8 +90,43 @@ Answer only by calling the tool.";
                     Options = f.DataOptions.OrderBy(o => o.DisplayOrder).Select(o => o.OptionValue).ToList()
                 }).ToList()
             };
-            MselDraftRules.Normalize(draft, template, _aiOptions.MaxInjects, result.Warnings);
+            MselDraftRules.Normalize(draft, template, _aiOptions.MaxInjects, competencies, result.Warnings);
+            result.Competencies = draft.Competencies
+                .Select(id => new MselDraftCompetency { IdNumber = id, ShortName = competencies[id].ShortName })
+                .ToList();
             return result;
+        }
+
+        /// <summary>
+        /// The competencies a draft may assign, keyed by ID number: the leaves of the chosen frameworks,
+        /// else the template's own MSEL competencies. Shared with import, which checks the same list.
+        /// </summary>
+        public static async Task<Dictionary<string, CompetencyEntity>> LoadCompetencyChoicesAsync(BlueprintContext context, Guid templateMselId, List<Guid> frameworkIds, CancellationToken ct)
+        {
+            List<CompetencyEntity> competencies;
+            if (frameworkIds?.Any() == true)
+            {
+                // categories (Tasks, Skills, work role groups) are not something a participant demonstrates
+                competencies = await context.Competencies
+                    .AsNoTracking()
+                    .Where(c => frameworkIds.Contains(c.CompetencyFrameworkId) && !c.Children.Any())
+                    .OrderBy(c => c.CompetencyFramework.Name).ThenBy(c => c.SortOrder).ThenBy(c => c.IdNumber)
+                    .ToListAsync(ct);
+            }
+            else
+            {
+                competencies = await context.MselCompetencies
+                    .AsNoTracking()
+                    .Where(mc => mc.MselId == templateMselId)
+                    .Select(mc => mc.Competency)
+                    .OrderBy(c => c.SortOrder).ThenBy(c => c.IdNumber)
+                    .ToListAsync(ct);
+            }
+            // an ID number shared by two frameworks resolves to the first, as the planner sees it listed
+            var choices = new Dictionary<string, CompetencyEntity>(StringComparer.OrdinalIgnoreCase);
+            foreach (var competency in competencies.Where(c => !string.IsNullOrWhiteSpace(c.IdNumber)))
+                choices.TryAdd(competency.IdNumber.Trim(), competency);
+            return choices;
         }
 
         /// <summary>Loads a template with its columns, teams and organizations, if the user may draft from it</summary>
@@ -110,7 +148,10 @@ Answer only by calling the tool.";
             return template;
         }
 
-        private static JsonObject BuildSchema(List<DataFieldEntity> fields, int maxInjects)
+        // an enum makes the model's choice exact, but a whole framework would double the prompt
+        private const int MaxCompetencyEnum = 200;
+
+        private static JsonObject BuildSchema(List<DataFieldEntity> fields, int maxInjects, Dictionary<string, CompetencyEntity> competencies)
         {
             var valueProperties = new JsonObject();
             foreach (var field in fields)
@@ -135,8 +176,45 @@ Answer only by calling the tool.";
                 ["required"] = new JsonArray(required.Select(r => (JsonNode)r).ToArray())
             };
             JsonObject Arr(JsonObject items, string description) => new JsonObject { ["type"] = "array", ["description"] = description, ["items"] = items };
+            JsonObject CompetencyId()
+            {
+                var id = Str("An ID number from the competency list");
+                if (competencies.Count <= MaxCompetencyEnum)
+                    id["enum"] = new JsonArray(competencies.Keys.Select(k => (JsonNode)k).ToArray());
+                return id;
+            }
+            void AddCompetencies(JsonObject properties, string description)
+            {
+                if (competencies.Any())
+                    properties["competencies"] = Arr(CompetencyId(), description);
+            }
 
-            return Obj(new JsonObject
+            var teamProperties = new JsonObject
+            {
+                ["name"] = Str("Participant team name"),
+                ["shortName"] = Str("Short name used in team columns, no commas"),
+                ["description"] = Str("Role of the team")
+            };
+            AddCompetencies(teamProperties, "Competencies the team is expected to demonstrate");
+            var injectProperties = new JsonObject
+            {
+                ["minutes"] = Int("Delivery time in minutes from exercise start"),
+                ["eventType"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["enum"] = new JsonArray("Inject", "Information", "Facilitation"),
+                    ["description"] = "Inject goes to participants; Information is background for controllers; Facilitation is a controller action"
+                },
+                ["values"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["description"] = "Column values keyed by column name",
+                    ["properties"] = valueProperties
+                }
+            };
+            AddCompetencies(injectProperties, "Competencies participants demonstrate by acting on this inject; empty for injects that only set the scene");
+
+            var properties = new JsonObject
             {
                 ["name"] = Str("Short exercise name"),
                 ["description"] = Str("One paragraph: scenario, audience and objectives"),
@@ -148,12 +226,7 @@ Answer only by calling the tool.";
                     ["situationDescription"] = Str("The situation at the start of the move, as briefed to participants"),
                     ["startMinutes"] = Int("Minutes from exercise start; the first move is 0")
                 }, "moveNumber", "description", "situationDescription", "startMinutes"), "Phases of the exercise in time order"),
-                ["teams"] = Arr(Obj(new JsonObject
-                {
-                    ["name"] = Str("Participant team name"),
-                    ["shortName"] = Str("Short name used in team columns, no commas"),
-                    ["description"] = Str("Role of the team")
-                }, "name", "shortName"), "Participant teams; reuse the template's teams when they fit"),
+                ["teams"] = Arr(Obj(teamProperties, "name", "shortName"), "Participant teams; reuse the template's teams when they fit"),
                 ["organizations"] = Arr(Obj(new JsonObject
                 {
                     ["name"] = Str("Fictional organization name"),
@@ -165,29 +238,15 @@ Answer only by calling the tool.";
                     ["type"] = "array",
                     ["maxItems"] = maxInjects,
                     ["description"] = "MSEL rows in time order",
-                    ["items"] = Obj(new JsonObject
-                    {
-                        ["minutes"] = Int("Delivery time in minutes from exercise start"),
-                        ["eventType"] = new JsonObject
-                        {
-                            ["type"] = "string",
-                            ["enum"] = new JsonArray("Inject", "Information", "Facilitation"),
-                            ["description"] = "Inject goes to participants; Information is background for controllers; Facilitation is a controller action"
-                        },
-                        ["values"] = new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["description"] = "Column values keyed by column name",
-                            ["properties"] = valueProperties
-                        }
-                    }, "minutes", "eventType", "values")
+                    ["items"] = Obj(injectProperties, "minutes", "eventType", "values")
                 },
-                ["competencies"] = Arr(Str("A DCWF or NICE ID number, e.g. 511 or T0161"), "Competencies the exercise lets participants demonstrate"),
                 ["plannerNotes"] = Arr(Str("Assumption or open question"), "Things the planner should check")
-            }, "name", "description", "durationMinutes", "moves", "teams", "organizations", "injects");
+            };
+            AddCompetencies(properties, "Every competency the exercise lets participants demonstrate");
+            return Obj(properties, "name", "description", "durationMinutes", "moves", "teams", "organizations", "injects");
         }
 
-        private static string BuildPrompt(string plannerPrompt, MselEntity template, List<DataFieldEntity> fields, int maxInjects)
+        public static string BuildPrompt(string plannerPrompt, MselEntity template, List<DataFieldEntity> fields, int maxInjects, Dictionary<string, CompetencyEntity> competencies)
         {
             var sb = new StringBuilder();
             sb.AppendLine($"Template: {template.Name}");
@@ -207,10 +266,23 @@ Answer only by calling the tool.";
                 sb.AppendLine($"Template organizations (short names): {string.Join(", ", template.Organizations.Select(o => o.ShortName))}");
             sb.AppendLine($"Columns to fill for each inject: {string.Join(", ", fields.Select(f => f.Name))}");
             sb.AppendLine($"Write at most {maxInjects} injects.");
+            if (competencies.Any())
+            {
+                sb.AppendLine();
+                sb.AppendLine("Assign competencies only from this list (ID: name). Tag each inject with what participants demonstrate by acting on it, each team with what it is expected to demonstrate, and list every one you used for the MSEL.");
+                foreach (var (id, competency) in competencies)
+                    sb.AppendLine($"{id}: {Shorten(competency.ShortName ?? competency.Description, 120)}");
+            }
             sb.AppendLine();
             sb.AppendLine("The planner's request:");
             sb.AppendLine(plannerPrompt.Trim());
             return sb.ToString();
+        }
+
+        private static string Shorten(string value, int length)
+        {
+            value = (value ?? "").Trim();
+            return value.Length <= length ? value : value[..length] + "...";
         }
     }
 
@@ -232,6 +304,8 @@ Answer only by calling the tool.";
                 DataFieldType.Status => true,
                 DataFieldType.User => true,
                 DataFieldType.Card => true,
+                // filled from each inject's competencies, which are checked against the list
+                DataFieldType.Competency => true,
                 _ => false
             };
 
@@ -276,7 +350,7 @@ Answer only by calling the tool.";
         /// Puts a draft into a shape import can trust: known columns and names only, times in range,
         /// at most maxInjects rows. Every correction is reported.
         /// </summary>
-        public static void Normalize(MselDraft draft, MselEntity template, int maxInjects, List<string> warnings)
+        public static void Normalize(MselDraft draft, MselEntity template, int maxInjects, IReadOnlyDictionary<string, CompetencyEntity> competencies, List<string> warnings)
         {
             draft.Name = string.IsNullOrWhiteSpace(draft.Name) ? "AI draft" : draft.Name.Trim();
             draft.Moves ??= new List<MselDraftMove>();
@@ -342,11 +416,32 @@ Answer only by calling the tool.";
                 warnings.Add($"Set the duration to {draft.DurationMinutes} minutes to cover the last inject.");
             }
 
-            draft.Competencies = draft.Competencies
-                .Where(c => !string.IsNullOrWhiteSpace(c))
-                .Select(c => c.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            // competencies: only the ones the draft could choose from, and the MSEL holds every one used
+            var unknownCompetencies = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            List<string> KnownCompetencies(List<string> ids)
+            {
+                var known = new List<string>();
+                foreach (var id in (ids ?? new List<string>()).Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()))
+                {
+                    if (!competencies.TryGetValue(id, out var competency))
+                        unknownCompetencies.Add(id);
+                    else if (!known.Contains(competency.IdNumber, StringComparer.OrdinalIgnoreCase))
+                        known.Add(competency.IdNumber.Trim());
+                }
+                return known;
+            }
+            foreach (var inject in draft.Injects)
+                inject.Competencies = KnownCompetencies(inject.Competencies);
+            foreach (var team in draft.Teams)
+                team.Competencies = KnownCompetencies(team.Competencies);
+            draft.Competencies = KnownCompetencies(draft.Competencies
+                .Concat(draft.Injects.SelectMany(i => i.Competencies))
+                .Concat(draft.Teams.SelectMany(t => t.Competencies))
+                .ToList());
+            if (unknownCompetencies.Any())
+                warnings.Add($"Dropped competencies that are not in the list the draft could choose from: {string.Join(", ", unknownCompetencies)}.");
+            if (draft.Injects.Any(i => i.Competencies.Any()) && !template.DataFields.Any(f => f.DataType == DataFieldType.Competency))
+                warnings.Add("The template has no Competency column, so each inject's competencies are kept only on the MSEL.");
         }
 
         private static string CleanValue(DataFieldEntity field, string value, HashSet<string> teamNames, HashSet<string> orgNames, List<string> warnings)

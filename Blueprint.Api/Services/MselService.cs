@@ -2193,6 +2193,7 @@ namespace Blueprint.Api.Services
 
             // the template supplies the columns, teams, integrations and pages; the draft supplies the moves and rows
             var mselEntity = await LoadMselGraphAsync(template.Id, ct);
+            MselDraftRules.AddGalleryFields(mselEntity);
             mselEntity.Name = draft.Name;
             mselEntity.Description = draft.Description;
             mselEntity.DurationSeconds = draft.DurationMinutes * 60;

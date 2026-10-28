@@ -145,6 +145,8 @@ Answer only by calling the tool.";
             // the caller holds CreateMsels, which is what lets them view a template
             if (!await MselViewRequirement.IsMet(userId, templateMselId, true, context))
                 throw new ForbiddenException();
+            // untracked, so the columns added here go into the draft and never into the template
+            MselDraftRules.AddGalleryFields(template);
             return template;
         }
 
@@ -308,6 +310,56 @@ Answer only by calling the tool.";
                 DataFieldType.Competency => true,
                 _ => false
             };
+
+        // the article parameters a Gallery push needs, with the names and types the seeded Integrated Exercise uses,
+        // and the template column names that already mean the same thing
+        private static readonly (GalleryArticleParameter Parameter, string Name, DataFieldType DataType, string[] SameAs)[] _galleryFields =
+        [
+            (GalleryArticleParameter.Name, "Name", DataFieldType.String, ["Title"]),
+            (GalleryArticleParameter.Summary, "Summary", DataFieldType.String, []),
+            (GalleryArticleParameter.Description, "Description", DataFieldType.String, ["Details"]),
+            (GalleryArticleParameter.FromOrg, "From Org", DataFieldType.Organization, []),
+            (GalleryArticleParameter.ToOrg, "To Org", DataFieldType.TeamsMultiple, []),
+            (GalleryArticleParameter.SourceType, "Source Type", DataFieldType.SourceType, []),
+            (GalleryArticleParameter.SourceName, "Source Name", DataFieldType.String, []),
+            (GalleryArticleParameter.DatePosted, "Date Posted", DataFieldType.DateTime, []),
+            (GalleryArticleParameter.CardId, "Card", DataFieldType.Card, [])
+        ];
+
+        /// <summary>
+        /// A MSEL that uses Gallery needs columns mapped to the article parameters, or its injects never become
+        /// articles. Maps a same-named column the template already has, and adds a column for any still missing.
+        /// Names are fixed, so the template a draft was written from and the MSEL it is imported into match.
+        /// </summary>
+        public static void AddGalleryFields(MselEntity msel)
+        {
+            if (!msel.UseGallery)
+                return;
+            var mapped = new HashSet<string>(msel.DataFields.Select(f => f.GalleryArticleParameter).Where(p => !string.IsNullOrEmpty(p)));
+            var displayOrder = msel.DataFields.Select(f => f.DisplayOrder).DefaultIfEmpty(0).Max();
+            foreach (var (parameter, name, dataType, sameAs) in _galleryFields.Where(g => !mapped.Contains(g.Parameter.ToString())))
+            {
+                var existing = sameAs.Prepend(name)
+                    .Select(n => msel.DataFields.FirstOrDefault(f => string.IsNullOrEmpty(f.GalleryArticleParameter)
+                        && f.DataType == dataType
+                        && f.Name.Trim().Equals(n, StringComparison.OrdinalIgnoreCase)))
+                    .FirstOrDefault(f => f != null);
+                if (existing != null)
+                {
+                    existing.GalleryArticleParameter = parameter.ToString();
+                    continue;
+                }
+                msel.DataFields.Add(new DataFieldEntity
+                {
+                    Id = Guid.NewGuid(),
+                    MselId = msel.Id,
+                    Name = msel.DataFields.Any(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) ? $"Gallery {name}" : name,
+                    DataType = dataType,
+                    DisplayOrder = ++displayOrder,
+                    GalleryArticleParameter = parameter.ToString()
+                });
+            }
+        }
 
         public static IEnumerable<DataFieldEntity> DraftedFields(MselEntity template) =>
             template.DataFields

@@ -427,9 +427,9 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         Assert.Equal(created, HandledEntities(typeof(EntityDeleted<>)));
     }
 
-    /// <summary>Twenty of the forty four entities raise events no handler receives.</summary>
+    /// <summary>Twenty four of the forty eight entities raise events no handler receives.</summary>
     [Fact]
-    public void TwentyOfTheFortyFourEntities_RaiseEventsNoHandlerReceives()
+    public void TwentyFourOfTheFortyEightEntities_RaiseEventsNoHandlerReceives()
     {
         var tracked = typeof(BlueprintContext).GetProperties()
             .Where(x => x.PropertyType.IsGenericType
@@ -441,10 +441,13 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(44, tracked.Count);
+        Assert.Equal(48, tracked.Count);
         Assert.Equal(
             new[]
             {
+                "AttackReleaseEntity",
+                "AttackTacticEntity",
+                "AttackTechniqueEntity",
                 "CatalogInjectEntity",
                 "CatalogUnitEntity",
                 "CompetencyEntity",
@@ -452,6 +455,7 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
                 "CompetencyRelationshipEntity",
                 "DataOptionEntity",
                 "InvitationEntity",
+                "MselAttackTechniqueEntity",
                 "MselCompetencyEntity",
                 "MselImageEntity",
                 "MselPageEntity",

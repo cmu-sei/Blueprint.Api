@@ -120,6 +120,18 @@ public class MselDraftGalleryFieldTests
         Assert.All(msel.DataFields, f => Assert.Null(f.GalleryArticleParameter));
     }
 
+    /// <summary>A styled article is HTML, so a text column that becomes the article body becomes an Html column.</summary>
+    [Fact]
+    public void AddGalleryFields_MakesATextArticleBodyAnHtmlColumn()
+    {
+        var msel = StandardMsel(useGallery: true);
+
+        MselDraftRules.AddGalleryFields(msel);
+
+        Assert.Equal(DataFieldType.Html, Field(msel, "Details").DataType);
+        Assert.Equal(DataFieldType.String, Field(msel, "Description").DataType);
+    }
+
     // the columns of the seeded Standard MSEL template that matter here
     private static MselEntity StandardMsel(bool useGallery)
     {

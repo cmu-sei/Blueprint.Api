@@ -1,0 +1,158 @@
+// Copyright 2026 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
+
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Data.Models;
+using Blueprint.Api.Services;
+using Blueprint.Api.Tests.Support;
+using Blueprint.Api.ViewModels;
+using NSubstitute;
+using NSubstitute.ClearExtensions;
+using Xunit;
+
+namespace Blueprint.Api.Tests.Controllers;
+
+/// <summary>
+/// <c>POST msels/ai-draft/article</c> - one of a reviewed draft's Gallery articles written out as a document of its
+/// source type, in HTML Gallery shows as written. Nothing is saved.
+/// </summary>
+public class ArticleDraftEndpointTests(DatabaseFixture fixture, AiEnabledFactory factory)
+    : ApiTestBase(fixture, factory), IClassFixture<AiEnabledFactory>
+{
+    private readonly IAiModelClient _model = factory.Model;
+    private string _system;
+    private string _prompt;
+
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        _model.ClearSubstitute();
+    }
+
+    /// <summary>The model gets the article's facts and the scenario; its HTML comes back ready for Gallery.</summary>
+    [Fact]
+    public async Task Draft_WritesTheArticleAsGalleryReadyHtml()
+    {
+        var template = await SeedTemplate();
+        Answer(new
+        {
+            html = "<table width=\"720\"><tr><td bgcolor=\"#FDB516\" style=\"padding:4px\"><b>EXERCISE</b></td></tr></table>" +
+                   "<svg viewBox=\"0 0 200 40\" aria-label=\"Harbour Herald masthead\"><text x=\"0\" y=\"30\">Harbour Herald</text></svg><p>Cables cut.</p>",
+            notes = new[] { "Assumed the outlet is regional." }
+        });
+
+        var result = await Read<ArticleDraftResult>(await Post(template.Id, 0));
+
+        Assert.Equal("Details", result.FieldName);
+        Assert.StartsWith("<table width=\"720\"><tbody><tr><td bgcolor=\"#FDB516\"><b>EXERCISE</b></td></tr></tbody></table>", result.Html);
+        Assert.Contains("<img src=\"data:image/svg+xml;base64,", result.Html);
+        Assert.Contains("alt=\"Harbour Herald masthead\"", result.Html);
+        Assert.Empty(GalleryArticleHtml.Problems(result.Html));
+        Assert.Contains("Removed 1 style attribute, which Gallery does not show.", result.Notes);
+        Assert.Contains("Assumed the outlet is regional.", result.Notes);
+
+        Assert.Contains("Exercise: Deep Bite", _prompt);
+        Assert.Contains("- NEWS: Harbour Herald, the regional paper", _prompt);
+        Assert.Contains("- BLUE: Blue team, participant team.", _prompt);
+        Assert.Contains("Source type: News", _prompt);
+        Assert.Contains("Source name: Harbour Herald", _prompt);
+        Assert.Contains("Sent to: BLUE", _prompt);
+        Assert.Contains("Headline or subject: Cables cut off the islands", _prompt);
+        Assert.Contains("Draft text:\nTwo cables were cut overnight.", _prompt.ReplaceLineEndings("\n"));
+        Assert.Contains("EXERCISE · EXERCISE · EXERCISE", _system);
+    }
+
+    [Fact]
+    public async Task Draft_OfAnInjectNotInTheDraft_IsABadRequest()
+    {
+        var template = await SeedTemplate();
+
+        var response = await Post(template.Id, 5);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(_model.ReceivedCalls());
+    }
+
+    [Fact]
+    public async Task Draft_WithoutCreateMsels_IsForbidden()
+    {
+        var template = await SeedTemplate();
+        var actor = await Actor().SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("/api/msels/ai-draft/article", Request(template.Id, 0), JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    private void Answer(object answer) =>
+        _model.InvokeToolAsync(default, default, default, default, default, default)
+            .ReturnsForAnyArgs(callInfo =>
+            {
+                _system = callInfo.ArgAt<string>(0);
+                _prompt = callInfo.ArgAt<string>(1);
+                return JsonSerializer.SerializeToElement(answer);
+            });
+
+    private async Task<HttpResponseMessage> Post(Guid templateId, int index)
+    {
+        var planner = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        return await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/article", Request(templateId, index), JsonOptions, Ct);
+    }
+
+    private static ArticleDraftRequest Request(Guid templateId, int index) => new()
+    {
+        TemplateMselId = templateId,
+        InjectIndex = index,
+        Draft = new MselDraft
+        {
+            Name = "Deep Bite",
+            Description = "Undersea cables are cut.",
+            Teams = [new MselDraftTeam { ShortName = "BLUE", Name = "Blue team" }],
+            Organizations = [new MselDraftOrganization { ShortName = "NEWS", Name = "Harbour Herald", Description = "the regional paper" }],
+            Injects =
+            [
+                new MselDraftInject
+                {
+                    Minutes = 10,
+                    Values = new Dictionary<string, string>
+                    {
+                        ["Title"] = "Cables cut off the islands",
+                        ["Description"] = "Two islands lose internet.",
+                        ["Details"] = "<p>Two cables were cut overnight.</p>",
+                        ["SourceType"] = "News",
+                        ["Source Name"] = "Harbour Herald",
+                        ["From Org"] = "NEWS",
+                        ["To Org"] = "BLUE"
+                    }
+                }
+            ]
+        }
+    };
+
+    private async Task<T> Read<T>(HttpResponseMessage response)
+    {
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync(Ct));
+        return await response.Content.ReadFromJsonAsync<T>(JsonOptions, Ct);
+    }
+
+    // a Gallery template with the Standard MSEL's columns; drafting maps them to the article
+    private async Task<MselEntity> SeedTemplate()
+    {
+        var template = TestData.Msel(isTemplate: true);
+        template.UseGallery = true;
+        await Seed(template,
+            TestData.DataField(template.Id, name: "Title", displayOrder: 1),
+            TestData.DataField(template.Id, name: "Description", displayOrder: 2),
+            TestData.DataField(template.Id, name: "Details", displayOrder: 3),
+            TestData.DataField(template.Id, dataType: DataFieldType.Organization, name: "From Org", displayOrder: 4),
+            TestData.DataField(template.Id, dataType: DataFieldType.TeamsMultiple, name: "To Org", displayOrder: 5));
+        return template;
+    }
+}

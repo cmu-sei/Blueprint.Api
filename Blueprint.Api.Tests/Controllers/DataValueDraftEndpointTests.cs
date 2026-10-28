@@ -28,6 +28,7 @@ public class DataValueDraftEndpointTests(DatabaseFixture fixture, AiEnabledFacto
     : ApiTestBase(fixture, factory), IClassFixture<AiEnabledFactory>
 {
     private readonly IAiModelClient _model = factory.Model;
+    private string _system;
     private string _prompt;
 
     public override async ValueTask InitializeAsync()
@@ -100,6 +101,22 @@ public class DataValueDraftEndpointTests(DatabaseFixture fixture, AiEnabledFacto
     }
 
     /// <summary>Only the formatting the editor offers comes back: scripts, attributes and unknown tags go.</summary>
+    /// <summary>With Gallery, the article body is written as a document of its source type, and its layout is kept.</summary>
+    [Fact]
+    public async Task Draft_OfAGalleryArticleBody_WritesTheDocumentAndKeepsItsLayout()
+    {
+        Answer("""{"value":"<table width=\"720\" style=\"x\"><tr><td bgcolor=\"#FDB516\"><font size=\"2\"><b>EXERCISE</b></font></td></tr></table><svg viewBox=\"0 0 40 40\" aria-label=\"Logo\"></svg>"}""");
+        var (msel, title, body, _) = await SeedMsel(useGallery: true);
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var result = await Read<DataValueDraftResult>(await Post(actor, msel.Id, Request(body, title, "Port closure")));
+
+        Assert.Contains("This field is the body of a Gallery article.", _system);
+        Assert.Contains("EXERCISE · EXERCISE · EXERCISE", _system);
+        Assert.StartsWith("<table width=\"720\"><tbody><tr><td bgcolor=\"#FDB516\"><font size=\"2\"><b>EXERCISE</b></font></td></tr></tbody></table><img src=\"data:image/svg+xml;base64,", result.Value);
+        Assert.Contains("Removed 1 style attribute, which Gallery does not show.", result.Notes);
+    }
+
     [Fact]
     public async Task Draft_StripsWhatTheEditorWouldNotWrite()
     {
@@ -167,6 +184,7 @@ public class DataValueDraftEndpointTests(DatabaseFixture fixture, AiEnabledFacto
         _model.InvokeToolAsync(default, default, default, default, default, default)
             .ReturnsForAnyArgs(callInfo =>
             {
+                _system = callInfo.ArgAt<string>(0);
                 _prompt = callInfo.ArgAt<string>(1);
                 return JsonDocument.Parse(json).RootElement.Clone();
             });
@@ -187,9 +205,10 @@ public class DataValueDraftEndpointTests(DatabaseFixture fixture, AiEnabledFacto
         };
 
     /// <summary>A MSEL with a scenario, a title, an Html body and a list field, and one inject either side of 30 minutes.</summary>
-    private async Task<(MselEntity, DataFieldEntity Title, DataFieldEntity Body, DataFieldEntity SourceType)> SeedMsel()
+    private async Task<(MselEntity, DataFieldEntity Title, DataFieldEntity Body, DataFieldEntity SourceType)> SeedMsel(bool useGallery = false)
     {
         var msel = TestData.Msel();
+        msel.UseGallery = useGallery;
         msel.Description = "Hurricane Zeta reaches the coast of Avalon.";
         var title = TestData.DataField(msel.Id, name: "Title", displayOrder: 1);
         title.GalleryArticleParameter = "Name";

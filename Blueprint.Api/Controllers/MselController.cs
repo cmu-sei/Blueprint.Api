@@ -26,6 +26,7 @@ namespace Blueprint.Api.Controllers
         private readonly IMselDraftService _mselDraftService;
         private readonly IDataValueDraftService _dataValueDraftService;
         private readonly IMselAssistantService _mselAssistantService;
+        private readonly IArticleDraftService _articleDraftService;
         private readonly IIntegrationNameService _integrationNameService;
         private readonly IBlueprintAuthorizationService _authorizationService;
 
@@ -34,6 +35,7 @@ namespace Blueprint.Api.Controllers
             IMselDraftService mselDraftService,
             IDataValueDraftService dataValueDraftService,
             IMselAssistantService mselAssistantService,
+            IArticleDraftService articleDraftService,
             ICiteService citeService,
             IPlayerService playerService,
             IIntegrationNameService integrationNameService,
@@ -43,6 +45,7 @@ namespace Blueprint.Api.Controllers
             _mselDraftService = mselDraftService;
             _dataValueDraftService = dataValueDraftService;
             _mselAssistantService = mselAssistantService;
+            _articleDraftService = articleDraftService;
             _integrationNameService = integrationNameService;
             _authorizationService = authorizationService;
         }
@@ -403,6 +406,25 @@ namespace Blueprint.Api.Controllers
                 throw new ForbiddenException();
 
             var result = await _mselDraftService.DraftAsync(request, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Write one of a draft's Gallery articles as a document of its source type </summary>
+        /// <remarks>
+        /// Nothing is saved. The article comes back as HTML Gallery shows as written, for the planner to review before
+        /// creating the MSEL. Each graphic is an SVG data URI image.
+        /// </remarks>
+        /// <param name="request"> The template, the reviewed draft, and which inject is the article </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/ai-draft/article")]
+        [ProducesResponseType(typeof(ArticleDraftResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "draftMselArticle")]
+        public async Task<IActionResult> DraftArticleAsync([FromBody] ArticleDraftRequest request, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct))
+                throw new ForbiddenException();
+
+            var result = await _articleDraftService.DraftAsync(request, ct);
             return Ok(result);
         }
 

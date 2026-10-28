@@ -120,4 +120,23 @@ namespace Blueprint.Api.ViewModels
         /// <summary>The frameworks the draft chose from, so its competencies are checked against the same list</summary>
         public List<Guid> CompetencyFrameworkIds { get; set; } = new List<Guid>();
     }
+
+    /// <summary>One of a reviewed draft's Gallery articles, to be written out as a document of its source type</summary>
+    public class ArticleDraftRequest
+    {
+        public Guid TemplateMselId { get; set; }
+        public MselDraft Draft { get; set; }
+        /// <summary>The position of the article among the draft's injects</summary>
+        public int InjectIndex { get; set; }
+    }
+
+    public class ArticleDraftResult
+    {
+        /// <summary>The column the HTML goes in</summary>
+        public string FieldName { get; set; }
+        /// <summary>The article, in the HTML Gallery shows as written; each graphic is an SVG data URI image</summary>
+        public string Html { get; set; }
+        /// <summary>Corrections made to the model's HTML, and its assumptions</summary>
+        public List<string> Notes { get; set; } = new List<string>();
+    }
 }

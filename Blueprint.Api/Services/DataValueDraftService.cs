@@ -104,12 +104,18 @@ Answer only by calling the tool.";
                 .ToListAsync(ct);
 
             var prompt = BuildPrompt(msel, field, request, others);
-            var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, prompt, ToolName,
+            // a Gallery article's body is the whole document, laid out for its source type
+            var isArticle = ArticleFields.Body(msel)?.Id == field.Id;
+            var system = isArticle
+                ? SystemPrompt + "\n\nThis field is the body of a Gallery article. Write it as the full document:\n\n" + ArticleDraftService.SystemPrompt
+                : SystemPrompt;
+            var input = await _aiModelClient.InvokeToolAsync(system, prompt, ToolName,
                 $"Submit the new value of {field.Name} for the planner to review.", BuildSchema(field), ct);
             var result = input.Deserialize<DataValueDraftResult>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
                 ?? new DataValueDraftResult();
-            result.Value = field.DataType == DataFieldType.Html ? CleanHtml(result.Value) : result.Value?.Trim();
             result.Notes = (result.Notes ?? new List<string>()).Where(n => !string.IsNullOrWhiteSpace(n)).ToList();
+            result.Value = isArticle ? GalleryArticleHtml.Prepare(result.Value, result.Notes)
+                : field.DataType == DataFieldType.Html ? CleanHtml(result.Value) : result.Value?.Trim();
             if (string.IsNullOrWhiteSpace(StripHtml(result.Value)))
                 throw new InvalidOperationException("The model returned an empty value. Try again or add an instruction.");
             return result;

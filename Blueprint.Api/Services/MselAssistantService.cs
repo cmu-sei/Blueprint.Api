@@ -145,12 +145,16 @@ Rules:
             if (!_aiOptions.Enabled)
                 throw new InvalidOperationException("AI drafting is not enabled on this server.");
             if (string.IsNullOrWhiteSpace(request?.Prompt))
-                throw new ArgumentException("Say what to change.");
+                throw new BadRequestException("Say what to change.");
             var access = await AuthorizeAsync(mselId, permissions, ct);
 
             var state = await LoadStateAsync(mselId, ct);
             var workRoles = access.Competencies ? await LoadWorkRolesAsync(ct) : new List<CompetencyEntity>();
-            var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, BuildPrompt(request, state, workRoles, access), ToolName,
+            // the body of a Gallery article is a whole document, laid out for its source type
+            var articleBody = ArticleFields.Body(state.Msel);
+            var system = articleBody == null ? SystemPrompt
+                : SystemPrompt + $"\n\nThe {articleBody.Name} column of a Gallery article (an inject with a source type) holds the whole document. Write it this way:\n\n" + ArticleDraftService.SystemPrompt;
+            var input = await _aiModelClient.InvokeToolAsync(system, BuildPrompt(request, state, workRoles, access), ToolName,
                 "Propose changes to the MSEL for the planner to review, or ask one question.", BuildSchema(), ct);
 
             var proposed = input.TryGetProperty("changes", out var changes) && changes.ValueKind == JsonValueKind.Array
@@ -788,8 +792,11 @@ Rules:
                     continue;
                 }
                 var value = MselDraftRules.CleanValue(field, raw?.Trim(), teams, actors, warnings);
+                // an article's body keeps its layout; other HTML is kept to simple formatting
                 if (field.DataType == DataFieldType.Html && value != null)
-                    value = DataValueDraftService.CleanHtml(value);
+                    value = field.GalleryArticleParameter == nameof(GalleryArticleParameter.Description)
+                        ? GalleryArticleHtml.Prepare(value, warnings)
+                        : DataValueDraftService.CleanHtml(value);
                 if (!string.IsNullOrEmpty(value))
                     cleaned[field.Name] = value;
             }

@@ -2311,6 +2311,39 @@ namespace Blueprint.Api.Services
                     Summary = organization.Description
                 });
             }
+            // the draft's cards go on the wall after the template's; every team sees every card, and EXCON may post to them
+            var cardsByName = new Dictionary<string, CardEntity>(StringComparer.OrdinalIgnoreCase);
+            foreach (var card in mselEntity.Cards)
+                cardsByName.TryAdd(card.Name.Trim(), card);
+            var cardOrder = mselEntity.Cards.Select(c => c.Inject).DefaultIfEmpty(0).Max();
+            foreach (var draftCard in draft.Cards.Where(c => !cardsByName.ContainsKey(c.Name)))
+            {
+                var card = new CardEntity
+                {
+                    Id = Guid.NewGuid(),
+                    MselId = mselEntity.Id,
+                    Name = draftCard.Name,
+                    Description = draftCard.Description,
+                    Move = 0,
+                    Inject = ++cardOrder
+                };
+                mselEntity.Cards.Add(card);
+                cardsByName[card.Name] = card;
+            }
+            foreach (var card in mselEntity.Cards)
+            {
+                foreach (var team in mselEntity.Teams.Where(t => !card.CardTeams.Any(ct => ct.TeamId == t.Id)))
+                {
+                    card.CardTeams.Add(new CardTeamEntity(card.Id, team.Id)
+                    {
+                        Id = Guid.NewGuid(),
+                        IsShownOnWall = true,
+                        CanPostArticles = team.ShortName.Equals("EXCON", StringComparison.OrdinalIgnoreCase)
+                    });
+                }
+            }
+            var cardField = mselEntity.DataFields.FirstOrDefault(f => f.GalleryArticleParameter == nameof(GalleryArticleParameter.CardId));
+
             foreach (var move in draft.Moves)
             {
                 mselEntity.Moves.Add(new MoveEntity
@@ -2365,6 +2398,9 @@ namespace Blueprint.Api.Services
                         string value;
                         if (dataField == competencyField)
                             value = inject.Competencies.Any() ? string.Join(", ", inject.Competencies) : null;
+                        // the card's ID, which the copy below moves to the new card's ID
+                        else if (dataField == cardField)
+                            value = inject.Card != null && cardsByName.TryGetValue(inject.Card, out var injectCard) ? injectCard.Id.ToString() : null;
                         else if (!inject.Values.TryGetValue(dataField.Name, out value))
                         {
                             value = dataField.DataType switch

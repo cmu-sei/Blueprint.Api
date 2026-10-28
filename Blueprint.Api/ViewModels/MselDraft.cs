@@ -29,6 +29,8 @@ namespace Blueprint.Api.ViewModels
         public List<MselDraftMove> Moves { get; set; } = new List<MselDraftMove>();
         public List<MselDraftTeam> Teams { get; set; } = new List<MselDraftTeam>();
         public List<MselDraftOrganization> Organizations { get; set; } = new List<MselDraftOrganization>();
+        /// <summary>Gallery cards, in the order the wall shows them; each Gallery article names one</summary>
+        public List<MselDraftCard> Cards { get; set; } = new List<MselDraftCard>();
         public List<MselDraftInject> Injects { get; set; } = new List<MselDraftInject>();
         /// <summary>Competency ID numbers the exercise exercises, from the competencies it may choose from</summary>
         public List<string> Competencies { get; set; } = new List<string>();
@@ -61,6 +63,13 @@ namespace Blueprint.Api.ViewModels
         public string Description { get; set; }
     }
 
+    public class MselDraftCard
+    {
+        public string Name { get; set; }
+        /// <summary>What the card's articles are about, shown on the wall</summary>
+        public string Description { get; set; }
+    }
+
     public class MselDraftInject
     {
         /// <summary>Minutes from the start of the exercise; the move follows from the time</summary>
@@ -71,6 +80,8 @@ namespace Blueprint.Api.ViewModels
         public Dictionary<string, string> Values { get; set; } = new Dictionary<string, string>();
         /// <summary>Competency ID numbers participants demonstrate by acting on the inject</summary>
         public List<string> Competencies { get; set; } = new List<string>();
+        /// <summary>The name of the Gallery card the article goes on; empty for an inject that is not a Gallery article</summary>
+        public string Card { get; set; }
     }
 
     /// <summary>A competency the draft assigned, named so the planner can review it</summary>

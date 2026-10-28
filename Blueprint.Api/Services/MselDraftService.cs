@@ -48,6 +48,15 @@ Rules:
 - Spread injects across the moves; the first move starts at minute 0.
 - Use team and organization short names exactly as you define them, and only the columns you are given.
 - Put any assumption you had to make, or question for the planner, in plannerNotes.
+- Include an EXCON team for exercise control alongside the participant teams, unless the template already has one.
+When the MSEL uses Gallery:
+- Most participant-facing injects are Gallery articles: news stories, social posts, emails, phone calls, intel and situation reports, orders.
+  Pick the source type that matches the document, and name the outlet, account or office in the source name.
+- From Org is the short name of the organization or team the article comes from. To Org is the team short names it goes to, or ALL.
+- The summary is one plain-text sentence for the wall. The description or details column is the full document.
+- Group the articles on 4 to 6 Gallery cards, one per source or thread participants follow: for example Exercise Control (read-in and
+  facilitator messages), the organization under attack, Public and Media, Government and Law Enforcement, and the coordinating body.
+  List the cards in the order the wall should show them, starting with Exercise Control, and put every Gallery article on one card.
 Answer only by calling the tool.";
 
         public MselDraftService(BlueprintContext context, IAiModelClient aiModelClient, AiOptions aiOptions, IPrincipal user)
@@ -70,7 +79,7 @@ Answer only by calling the tool.";
             if (competencies.Count > _aiOptions.MaxCompetencies)
                 throw new ArgumentException($"The chosen frameworks have {competencies.Count} competencies, more than the {_aiOptions.MaxCompetencies} a draft can choose from. Choose fewer frameworks.");
             var fields = MselDraftRules.DraftedFields(template).ToList();
-            var schema = BuildSchema(fields, _aiOptions.MaxInjects, competencies);
+            var schema = BuildSchema(fields, _aiOptions.MaxInjects, competencies, MselDraftRules.UsesCards(template));
             var prompt = BuildPrompt(request.Prompt, template, fields, _aiOptions.MaxInjects, competencies);
 
             var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, prompt, ToolName,
@@ -138,6 +147,7 @@ Answer only by calling the tool.";
                 .ThenInclude(df => df.DataOptions)
                 .Include(m => m.Teams)
                 .Include(m => m.Organizations)
+                .Include(m => m.Cards)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == templateMselId, ct);
             if (template == null)
@@ -153,7 +163,7 @@ Answer only by calling the tool.";
         // an enum makes the model's choice exact, but a whole framework would double the prompt
         private const int MaxCompetencyEnum = 200;
 
-        private static JsonObject BuildSchema(List<DataFieldEntity> fields, int maxInjects, Dictionary<string, CompetencyEntity> competencies)
+        private static JsonObject BuildSchema(List<DataFieldEntity> fields, int maxInjects, Dictionary<string, CompetencyEntity> competencies, bool useCards)
         {
             var valueProperties = new JsonObject();
             foreach (var field in fields)
@@ -215,6 +225,8 @@ Answer only by calling the tool.";
                 }
             };
             AddCompetencies(injectProperties, "Competencies participants demonstrate by acting on this inject; empty for injects that only set the scene");
+            if (useCards)
+                injectProperties["card"] = Str("The name of the Gallery card the article goes on, exactly as listed in cards; empty if the inject is not a Gallery article");
 
             var properties = new JsonObject
             {
@@ -244,6 +256,12 @@ Answer only by calling the tool.";
                 },
                 ["plannerNotes"] = Arr(Str("Assumption or open question"), "Things the planner should check")
             };
+            if (useCards)
+                properties["cards"] = Arr(Obj(new JsonObject
+                {
+                    ["name"] = Str("Card name shown on the Gallery wall, e.g. Public and Media"),
+                    ["description"] = Str("One sentence: whose articles or which thread the card holds")
+                }, "name", "description"), "Gallery cards in wall order, starting with Exercise Control; reuse the template's cards when they fit");
             AddCompetencies(properties, "Every competency the exercise lets participants demonstrate");
             return Obj(properties, "name", "description", "durationMinutes", "moves", "teams", "organizations", "injects");
         }
@@ -266,6 +284,8 @@ Answer only by calling the tool.";
                 sb.AppendLine($"Template teams (short names): {string.Join(", ", template.Teams.Select(t => t.ShortName))}");
             if (template.Organizations.Any())
                 sb.AppendLine($"Template organizations (short names): {string.Join(", ", template.Organizations.Select(o => o.ShortName))}");
+            if (MselDraftRules.UsesCards(template) && template.Cards.Any())
+                sb.AppendLine($"Template Gallery cards: {string.Join("; ", template.Cards.OrderBy(c => c.Move).ThenBy(c => c.Inject).Select(c => $"{c.Name} ({c.Description})"))}");
             sb.AppendLine($"Columns to fill for each inject: {string.Join(", ", fields.Select(f => f.Name))}");
             sb.AppendLine($"Write at most {maxInjects} injects.");
             if (competencies.Any())
@@ -364,6 +384,10 @@ Answer only by calling the tool.";
             }
         }
 
+        /// <summary>Whether the draft puts Gallery articles on cards: the MSEL uses Gallery and has a column for the card</summary>
+        public static bool UsesCards(MselEntity template) =>
+            template.UseGallery && template.DataFields.Any(f => f.GalleryArticleParameter == nameof(GalleryArticleParameter.CardId));
+
         public static IEnumerable<DataFieldEntity> DraftedFields(MselEntity template) =>
             template.DataFields
                 .Where(f => !IsServerFilled(f))
@@ -412,6 +436,7 @@ Answer only by calling the tool.";
             draft.Teams ??= new List<MselDraftTeam>();
             draft.Organizations ??= new List<MselDraftOrganization>();
             draft.Injects ??= new List<MselDraftInject>();
+            draft.Cards ??= new List<MselDraftCard>();
             draft.Competencies ??= new List<string>();
             draft.PlannerNotes ??= new List<string>();
 
@@ -420,6 +445,31 @@ Answer only by calling the tool.";
             draft.Organizations = UniqueByShortName(draft.Organizations, o => o.ShortName, (o, s) => o.ShortName = s, o => o.Name, warnings, "organization");
             var teamNames = new HashSet<string>(template.Teams.Select(t => t.ShortName).Concat(draft.Teams.Select(t => t.ShortName)), StringComparer.OrdinalIgnoreCase);
             var orgNames = new HashSet<string>(template.Organizations.Select(o => o.ShortName).Concat(draft.Organizations.Select(o => o.ShortName)).Concat(teamNames), StringComparer.OrdinalIgnoreCase);
+
+            // cards: unique names in wall order; an article may name one of these or one of the template's
+            var cardNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (UsesCards(template))
+            {
+                foreach (var card in template.Cards)
+                    cardNames.TryAdd(card.Name.Trim(), card.Name.Trim());
+                var cards = new List<MselDraftCard>();
+                foreach (var card in draft.Cards.Where(c => !string.IsNullOrWhiteSpace(c?.Name)))
+                {
+                    card.Name = card.Name.Trim();
+                    if (cards.Any(c => c.Name.Equals(card.Name, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        warnings.Add($"Dropped the second card named \"{card.Name}\".");
+                        continue;
+                    }
+                    cards.Add(card);
+                    cardNames.TryAdd(card.Name, card.Name);
+                }
+                draft.Cards = cards;
+            }
+            else
+            {
+                draft.Cards = new List<MselDraftCard>();
+            }
 
             // moves: unique numbers in time order, and one at minute 0 so every inject has a move
             draft.Moves = draft.Moves
@@ -440,6 +490,7 @@ Answer only by calling the tool.";
 
             var fields = DraftedFields(template).ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
             var droppedColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var unknownCards = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var inject in draft.Injects)
             {
                 inject.Minutes = Math.Max(0, inject.Minutes);
@@ -458,8 +509,19 @@ Answer only by calling the tool.";
                         values[field.Name] = value;
                 }
                 inject.Values = values;
+                if (string.IsNullOrWhiteSpace(inject.Card))
+                    inject.Card = null;
+                else if (cardNames.TryGetValue(inject.Card.Trim(), out var cardName))
+                    inject.Card = cardName;
+                else
+                {
+                    unknownCards.Add(inject.Card.Trim());
+                    inject.Card = null;
+                }
             }
             draft.Injects = draft.Injects.OrderBy(i => i.Minutes).ToList();
+            if (unknownCards.Any())
+                warnings.Add($"Took injects off cards the draft does not have: {string.Join(", ", unknownCards)}.");
             if (droppedColumns.Any())
                 warnings.Add($"Dropped values for columns the template does not have: {string.Join(", ", droppedColumns)}.");
 

@@ -63,6 +63,8 @@ Lay the document out for its source type:
   REQUESTED, with confidence levels where an analyst would give them.
 - Reporting: a bulletin, advisory or situation report: the issuing body's letterhead with its logo, a reference number and date, the
   title, a TLP marking, then headed sections: Summary, Affected Systems, Recommended Actions, Indicators (as a table), and Contact.
+  A press release or official statement from the same kind of body has its letterhead and logo, FOR IMMEDIATE RELEASE, a dateline,
+  the title, the statement, a quote from a named spokesperson, and a media contact block.
 - Orders: a tasking order: the issuing headquarters' letterhead, ORDER or TASKING number, date-time group and references, then
   numbered paragraphs: Situation, Mission, Execution with numbered tasks and deadlines, Coordinating Instructions, Acknowledge.
 

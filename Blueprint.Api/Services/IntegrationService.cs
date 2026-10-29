@@ -425,6 +425,14 @@ namespace Blueprint.Api.Services
                                 var casterClientSource = new CasterClientSource(_httpClientFactory, _clientOptions.CurrentValue.CasterApiUrl, () => ApiClientsExtensions.GetToken(scope));
                                 await CasterProcess(msel, integrationInformation.UserId ?? msel.CreatedBy, scope, casterClientSource, blueprintContext, step => currentProcessStep = step, ct);
                             }
+                            // Start the Steamfitter Scenario last, so that a Caster retry that finishes the push starts it too
+                            if (msel.UseSteamfitter && msel.SteamfitterScenarioId != null &&
+                                IntegrationSteamfitterExtensions.StartsWithThePush(msel, DateTime.UtcNow))
+                            {
+                                ct.ThrowIfCancellationRequested();
+                                currentProcessStep = "Steamfitter - start scenario";
+                                await StartSteamfitterScenarioAsync(msel, scope, blueprintContext, ct);
+                            }
                             // Use a fresh scope/context for completion so SaveChangesAsync triggers
                             // the full MselUpdated SignalR notification with minimal tracked entities.
                             using (var finalScope = _scopeFactory.CreateScope())
@@ -920,6 +928,25 @@ namespace Blueprint.Api.Services
             {
                 _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
                 throw;
+            }
+        }
+
+        // A Scenario that cannot be started does not fail the push: everything was created, and a facilitator
+        // can still start it in Steamfitter. The MSEL Info page shows it as not started.
+        private async STT.Task StartSteamfitterScenarioAsync(MselEntity msel, IServiceScope scope, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Starting Scenario in Steamfitter", ct);
+            try
+            {
+                // a fresh token, because the Caster step can outlast the one the push started with
+                var tokenResponse = await ApiClientsExtensions.GetToken(scope);
+                var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
+                await IntegrationSteamfitterExtensions.StartScenarioAsync((Guid)msel.SteamfitterScenarioId, steamfitterApiClient, ct);
+            }
+            catch (System.Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, $"Steamfitter - start scenario failed ({msel.Id}); the push continues");
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, $"Steamfitter Scenario was not started - {ex.Message}", ct);
             }
         }
 

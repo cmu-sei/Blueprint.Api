@@ -484,8 +484,127 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
     }
 
     // ---------------------------------------------------------------------------------------------
+    // Starting the Steamfitter scenario
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>A MSEL that does not ask for it leaves the scenario for a facilitator to start, as every
+    /// push did before the setting existed.</summary>
+    [Fact]
+    public async Task Push_OfAScenarioStartedManually_NeitherReadsNorStartsIt()
+    {
+        var msel = await SeedPushableMsel();
+        var harness = Harness(Scenario("ready"));
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.DoesNotContain(harness.Handler.Sent, IsAScenarioRead);
+        Assert.DoesNotContain(harness.Handler.Sent, IsAStart);
+    }
+
+    /// <remarks>
+    /// Last, after the Player applications: the scenario then starts only once everything a facilitator
+    /// needs exists, and a Caster retry that finishes the push reaches the same step.
+    /// </remarks>
+    [Fact]
+    public async Task Push_ToStartOnThePush_StartsTheScenarioAsItsLastStep()
+    {
+        var msel = await SeedPushableMsel(x => x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.OnPush);
+        var harness = Harness(Scenario("ready"));
+
+        await harness.PushAsync(msel.Id);
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+
+        var last = harness.Handler.Sent.Last(x => !x.Path.StartsWith("realms/"));
+        Assert.Equal(System.Net.Http.HttpMethod.Put, last.Method);
+        Assert.Equal($"steamfitter/api/scenarios/{deployed.SteamfitterScenarioId}/start", last.Path);
+        Assert.Equal("Starting Scenario in Steamfitter", Statuses(harness, msel.Id).Last());
+        Assert.Null(deployed.IntegrationStatus);
+    }
+
+    [Fact]
+    public async Task Push_ToStartAtAStartTimeStillToCome_LeavesTheScenarioReady()
+    {
+        var msel = await SeedPushableMsel(x =>
+        {
+            x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.AtStartTime;
+            x.StartTime = DateTime.UtcNow.AddHours(1);
+        });
+        var harness = Harness(Scenario("ready"));
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.DoesNotContain(harness.Handler.Sent, IsAStart);
+    }
+
+    /// <summary>A start time already past, as a launch from an invitation always has, starts the scenario
+    /// with the push rather than waiting for <c>SteamfitterStartService</c>.</summary>
+    [Fact]
+    public async Task Push_ToStartAtAStartTimeAlreadyPast_StartsTheScenario()
+    {
+        var msel = await SeedPushableMsel(x =>
+        {
+            x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.AtStartTime;
+            x.StartTime = DateTime.UtcNow.AddMinutes(-5);
+        });
+        var harness = Harness(Scenario("ready"));
+
+        await harness.PushAsync(msel.Id);
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.Contains(harness.Handler.Sent, x => IsAStart(x) && x.Path.Contains(deployed.SteamfitterScenarioId.ToString()));
+    }
+
+    /// <summary>Starting a scenario again would reset its start date, so one already running is left be.</summary>
+    [Fact]
+    public async Task Push_ToStartOnThePush_OfAScenarioAlreadyActive_DoesNotStartItAgain()
+    {
+        var msel = await SeedPushableMsel(x => x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.OnPush);
+        var harness = Harness(Scenario("active"));
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.Contains(harness.Handler.Sent, IsAScenarioRead);
+        Assert.DoesNotContain(harness.Handler.Sent, IsAStart);
+    }
+
+    /// <remarks>
+    /// Everything was created, and a facilitator can still start the scenario in Steamfitter, so the push
+    /// finishes. The failure is announced as it happens and then cleared like any other status: a status
+    /// left on a deployed MSEL would hold the MSEL Info page and the launch page on it.
+    /// </remarks>
+    [Fact]
+    public async Task Push_WhenTheScenarioCannotBeStarted_StillDeploysTheMsel()
+    {
+        var msel = await SeedPushableMsel(x => x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.OnPush);
+        var harness = Harness(x => Scenario("ready")(x.Answers("PUT steamfitter/api/scenarios/*/start", HttpStatusCode.Forbidden)));
+
+        await harness.PushAsync(msel.Id);
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.Equal(MselItemStatus.Deployed, deployed.Status);
+        Assert.Null(deployed.IntegrationStatus);
+        Assert.Contains(Statuses(harness, msel.Id), x => x.StartsWith("Steamfitter Scenario was not started - "));
+        Assert.DoesNotContain(Statuses(harness, msel.Id), x => x.StartsWith("ERROR"));
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>Steamfitter answering a read of the pushed scenario with <paramref name="status"/>, and a start.</summary>
+    private static Func<SiblingApiHandler, SiblingApiHandler> Scenario(string status) => x => x
+        .AnswersJson("GET steamfitter/api/scenarios/*", $$"""{"id":"{{StubId}}","name":"s","status":"{{status}}"}""")
+        .AnswersJson("PUT steamfitter/api/scenarios/*/start", $$"""{"id":"{{StubId}}","name":"s","status":"active"}""");
+
+    private static bool IsAScenarioRead(SentRequest x) =>
+        x.Method == System.Net.Http.HttpMethod.Get && x.Path.StartsWith("steamfitter/api/scenarios/");
+
+    private static bool IsAStart(SentRequest x) =>
+        x.Method == System.Net.Http.HttpMethod.Put && x.Path.StartsWith("steamfitter/api/scenarios/") && x.Path.EndsWith("/start");
+
 
     private static readonly Guid StubId = Guid.Parse("99999999-9999-9999-9999-999999999999");
 

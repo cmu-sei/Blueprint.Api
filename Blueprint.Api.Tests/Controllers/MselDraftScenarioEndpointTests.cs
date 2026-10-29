@@ -129,16 +129,23 @@ public class MselDraftScenarioEndpointTests(DatabaseFixture fixture, AiEnabledFa
         Assert.Equal(1, await db.MselPages.CountAsync(p => p.MselId == template.Id, Ct));
     }
 
-    /// <summary>An article dated outside its move's stretch of the scenario clock is reported by move.</summary>
+    /// <summary>
+    /// An article dated outside its move's stretch of the scenario clock, or not dated, is dated as far into the move's
+    /// scenario time as it is into the move's exercise time; one dated inside its move keeps its date.
+    /// </summary>
     [Fact]
-    public async Task Draft_WithGallery_ReportsArticlesDatedOutsideTheirMove()
+    public async Task Draft_WithGallery_DatesEachArticleWithinItsMove()
     {
         var template = await SeedTemplate(useCite: false, useGallery: true);
         Answer(Draft());
 
         var result = await Read<MselDraftResult>(await PostDraft(template.Id));
 
-        Assert.Contains(result.Warnings, w => w == "Some articles are dated outside their move's scenario time; check Simulated Time in move 0.");
+        Assert.Equal(
+            ["2026-03-04T10:00:00.000Z", "2026-03-04T08:20:00.000Z", "2026-03-05T09:10:00.000Z"],
+            result.Draft.Injects.Select(i => i.Values["Simulated Time"]));
+        Assert.Contains(result.Warnings, w => w == "Moved Simulated Time into the move's scenario time for articles in move 0.");
+        Assert.Contains(result.Warnings, w => w == "Dated 1 undated article by its move's scenario time.");
     }
 
     private void Answer(string json) =>
@@ -170,7 +177,9 @@ public class MselDraftScenarioEndpointTests(DatabaseFixture fixture, AiEnabledFa
             {
                 // move 0 runs from 3/4 08:00 to 3/5 09:00 on the scenario clock
                 new { minutes = 10, eventType = "Inject", values = new Dictionary<string, string> { ["Title"] = "Cable cut", ["Simulated Time"] = "2026-03-04T10:00:00Z" } },
-                new { minutes = 20, eventType = "Inject", values = new Dictionary<string, string> { ["Title"] = "Too late", ["Simulated Time"] = "2026-03-06T10:00:00Z" } }
+                new { minutes = 20, eventType = "Inject", values = new Dictionary<string, string> { ["Title"] = "Too late", ["Simulated Time"] = "2026-03-06T10:00:00Z" } },
+                // move 1 opens 3/5 09:00 at minute 30
+                new { minutes = 40, eventType = "Inject", values = new Dictionary<string, string> { ["Title"] = "Undated", ["SourceType"] = "News" } }
             },
             readIn = "<h2>Background</h2><p>The cables run under the strait.</p><script>alert(1)</script>",
             citeActions = new[]

@@ -573,23 +573,37 @@ Answer only by calling the tool.";
             if (droppedColumns.Any())
                 warnings.Add($"Dropped values for columns the template does not have: {string.Join(", ", droppedColumns)}.");
 
-            // an article dated outside its move's stretch of the scenario clock reads out of order on the wall
+            // an article dated outside its move's stretch of the scenario clock reads out of order on the wall, so it is
+            // dated as far into the move's scenario time as it is into the move's exercise time; an undated one is too
             var postedField = fields.Values.FirstOrDefault(f => f.GalleryArticleParameter == nameof(GalleryArticleParameter.DatePosted));
             if (postedField != null)
             {
-                var misdated = new SortedSet<int>();
+                var redated = new SortedSet<int>();
+                var dated = 0;
                 foreach (var inject in draft.Injects)
                 {
-                    if (!inject.Values.TryGetValue(postedField.Name, out var posted) || ParseUtc(posted) is not DateTime postedTime)
-                        continue;
                     var index = draft.Moves.FindLastIndex(m => m.StartMinutes <= inject.Minutes);
-                    var opens = ParseUtc(draft.Moves[index].SituationTime);
+                    var move = draft.Moves[index];
+                    if (ParseUtc(move.SituationTime) is not DateTime opens)
+                        continue;
                     var closes = index + 1 < draft.Moves.Count ? ParseUtc(draft.Moves[index + 1].SituationTime) : null;
-                    if (postedTime < opens || postedTime >= closes)
-                        misdated.Add(draft.Moves[index].MoveNumber);
+                    var hasDate = inject.Values.TryGetValue(postedField.Name, out var posted);
+                    if (!hasDate && !ArticleFields.IsArticle(template, inject.Values))
+                        continue;
+                    var postedTime = ParseUtc(posted);
+                    if (postedTime >= opens && !(postedTime >= closes))
+                        continue;
+                    var time = opens.AddMinutes(inject.Minutes - move.StartMinutes);
+                    inject.Values[postedField.Name] = (time >= closes ? opens : time).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+                    if (hasDate)
+                        redated.Add(move.MoveNumber);
+                    else
+                        dated++;
                 }
-                if (misdated.Any())
-                    warnings.Add($"Some articles are dated outside their move's scenario time; check {postedField.Name} in move {string.Join(", ", misdated)}.");
+                if (redated.Any())
+                    warnings.Add($"Moved {postedField.Name} into the move's scenario time for articles in move {string.Join(", ", redated)}.");
+                if (dated > 0)
+                    warnings.Add($"Dated {dated} undated {(dated == 1 ? "article" : "articles")} by {(dated == 1 ? "its" : "their")} move's scenario time.");
             }
 
             // CITE actions: a team and move the draft has, a description, and no repeats

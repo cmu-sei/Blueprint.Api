@@ -2360,22 +2360,31 @@ namespace Blueprint.Api.Services
                 });
             }
 
-            // the read-in is a page every participant can see, and part of the playbook
-            if (draft.ReadIn != null)
+            // the read-in and the team and organization profiles are pages every participant can see, and part of the playbook
+            void AddPage(string name, string content)
             {
-                var pageName = "Read-In";
+                if (content == null)
+                    return;
+                var pageName = name;
                 for (var n = 2; mselEntity.Pages.Any(p => p.Name.Equals(pageName, StringComparison.OrdinalIgnoreCase)); n++)
-                    pageName = $"Read-In {n}";
+                    pageName = $"{name} {n}";
                 mselEntity.Pages.Add(new MselPageEntity
                 {
                     Id = Guid.NewGuid(),
                     MselId = mselEntity.Id,
                     Name = pageName,
-                    Content = draft.ReadIn,
+                    Content = content,
                     AllCanView = true,
                     IncludeInPlaybook = true
                 });
             }
+            AddPage($"{mselEntity.Name} Read-In", draft.ReadIn);
+            AddPage("Organization Profiles", MselDraftRules.ProfilesPage("Organization Profiles",
+                "These profiles describe the organizations, agencies, media outlets and other scenario actors participants may need to reference during the exercise. They are background material, not injects.",
+                mselEntity.Organizations.Select(o => ($"{o.Name} ({o.ShortName})", o.Description))));
+            AddPage("Team Profiles", MselDraftRules.ProfilesPage("Team Profiles",
+                "These profiles describe the participant teams and exercise control. They are background material for facilitators and players, not injects.",
+                mselEntity.Teams.Select(t => ($"{t.Name} ({t.ShortName})", t.Description))));
 
             // CITE actions go after the template's, numbered within each team's move
             var teamsByShortName = new Dictionary<string, TeamEntity>(StringComparer.OrdinalIgnoreCase);

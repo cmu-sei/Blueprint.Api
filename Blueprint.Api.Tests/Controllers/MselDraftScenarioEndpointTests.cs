@@ -91,8 +91,9 @@ public class MselDraftScenarioEndpointTests(DatabaseFixture fixture, AiEnabledFa
     }
 
     /// <summary>
-    /// Import keeps each move's scenario time, adds the read-in as a page participants can see and the playbook
-    /// includes, and numbers the actions after the template's, noting the teams CITE has no type for.
+    /// Import keeps each move's scenario time; adds the read-in and the organization and team profiles as pages
+    /// participants can see and the playbook includes, on white paper; and numbers the actions after the template's,
+    /// noting the teams CITE has no type for.
     /// </summary>
     [Fact]
     public async Task Import_AddsTheReadInPageSituationTimesAndCiteActions()
@@ -112,11 +113,17 @@ public class MselDraftScenarioEndpointTests(DatabaseFixture fixture, AiEnabledFa
             moves.Select(m => m.SituationTime?.ToUniversalTime()));
 
         var pages = await db.MselPages.Where(p => p.MselId == mselId).OrderBy(p => p.Name).ToListAsync(Ct);
-        Assert.Equal(["Read-In", "Read-In 2"], pages.Select(p => p.Name));
-        var readIn = pages[1];
-        Assert.True(readIn.AllCanView);
-        Assert.True(readIn.IncludeInPlaybook);
-        Assert.Contains("<h2>Background</h2>", readIn.Content);
+        Assert.Equal(["Deep Bite Read-In", "Organization Profiles", "Read-In", "Team Profiles"], pages.Select(p => p.Name));
+        Assert.All(pages.Where(p => p.Name != "Read-In"), p =>
+        {
+            Assert.True(p.AllCanView);
+            Assert.True(p.IncludeInPlaybook);
+            Assert.StartsWith("<table", p.Content);
+        });
+        Assert.Contains("<h2>Background</h2>", pages[0].Content);
+        Assert.Contains("<h2>Organization Profiles</h2>", pages[1].Content);
+        Assert.Contains("<article><h3>Harbor Daily (NEWS)</h3><p><strong>Type:</strong> Local paper</p></article>", pages[1].Content);
+        Assert.Contains("<article><h3>Security operations (SOC)</h3><p>Watches the network &amp; the hosts.</p></article>", pages[3].Content);
 
         var actions = await db.CiteActions.Include(a => a.Team).Where(a => a.MselId == mselId)
             .OrderBy(a => a.MoveNumber).ThenBy(a => a.Team.ShortName).ThenBy(a => a.ActionNumber).ToListAsync(Ct);
@@ -171,8 +178,8 @@ public class MselDraftScenarioEndpointTests(DatabaseFixture fixture, AiEnabledFa
                 new { moveNumber = 2, description = "Back", situationDescription = "Odd", startMinutes = 60, situationTime = "2026-03-01T09:00:00Z" },
                 new { moveNumber = 3, description = "Later", situationDescription = "Recovery", startMinutes = 90, situationTime = "soon" }
             },
-            teams = new[] { new { name = "Security operations", shortName = "SOC" } },
-            organizations = Array.Empty<object>(),
+            teams = new[] { new { name = "Security operations", shortName = "SOC", description = "Watches the network & the hosts." } },
+            organizations = new[] { new { name = "Harbor Daily", shortName = "NEWS", description = "<p><strong>Type:</strong> Local paper</p>" } },
             injects = new object[]
             {
                 // move 0 runs from 3/4 08:00 to 3/5 09:00 on the scenario clock

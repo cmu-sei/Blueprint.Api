@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Security.Claims;
 using System.Security.Principal;
 using System.Text;
@@ -705,6 +706,25 @@ Answer only by calling the tool.";
                     return value;
             }
         }
+
+        /// <summary>
+        /// A page of profiles, as the exercises built with blueprint-ttx have: a heading, a line on what the page is, then
+        /// each team's or organization's profile under its name, on white paper. Null when none has a profile.
+        /// </summary>
+        public static string ProfilesPage(string title, string intro, IEnumerable<(string Heading, string Profile)> profiles)
+        {
+            var articles = profiles
+                .Where(p => !string.IsNullOrWhiteSpace(p.Profile))
+                .Select(p => $"<br><hr><br><article><h3>{WebUtility.HtmlEncode(p.Heading)}</h3>" +
+                    (_markup.IsMatch(p.Profile) ? p.Profile.Trim() : $"<p>{WebUtility.HtmlEncode(p.Profile.Trim())}</p>") + "</article>")
+                .ToList();
+            if (!articles.Any())
+                return null;
+            var html = $"<section><h2>{WebUtility.HtmlEncode(title)}</h2><p>{WebUtility.HtmlEncode(intro)}</p>{string.Concat(articles)}</section>";
+            return GalleryArticleHtml.Prepare(html, null, GalleryArticleHtml.ArticleWidth);
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex _markup = new(@"<[a-zA-Z]");
 
         /// <summary>A date and time in UTC; one without a zone is taken as UTC</summary>
         public static DateTime? ParseUtc(string value) =>

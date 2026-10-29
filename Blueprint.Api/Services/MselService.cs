@@ -2446,9 +2446,6 @@ namespace Blueprint.Api.Services
                     });
                 }
             }
-            var noTeamType = draft.CiteActions.Select(a => teamsByShortName[a.Team]).Where(t => t.CiteTeamTypeId == null).Select(t => t.ShortName).Distinct().ToList();
-            if (noTeamType.Any())
-                AddChange(result, "citeActions", $"Give {string.Join(", ", noTeamType)} a CITE team type, or CITE will not get their actions.");
 
             // each inject's competencies go in the first Competency column, which needs an option for each
             var competencyField = mselEntity.DataFields
@@ -2522,6 +2519,9 @@ namespace Blueprint.Api.Services
             var mselCompetencies = new HashSet<Guid>(mselEntity.MselCompetencies.Select(mc => mc.CompetencyId));
             foreach (var id in draft.Competencies.Where(id => mselCompetencies.Add(competencies[id].Id)))
                 mselEntity.MselCompetencies.Add(new MselCompetencyEntity { Id = Guid.NewGuid(), MselId = mselEntity.Id, CompetencyId = competencies[id].Id });
+
+            // CITE team types and the scoring model the planner chose, made in CITE now so the push finds them
+            await MselDraftCite.ApplyAsync(mselEntity, draft, _citeApiClient, (field, message) => AddChange(result, field, message), ct);
 
             AddChange(result, "draft", $"Drafted with AI from the \"{template.Name}\" template. Review every row before pushing.");
             foreach (var note in draft.PlannerNotes)

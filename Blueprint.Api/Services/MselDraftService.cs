@@ -465,13 +465,16 @@ Answer only by calling the tool.";
         public const string MissionImpact = "MissionImpact";
         public const string Likelihood = "Likelihood";
         public const string NoAssessment = "None";
-        private static readonly string[] _assessments = [QuestionsByMove, MissionImpact, Likelihood, NoAssessment];
+        // the scoring model the template already links
+        public const string TemplateModel = "Template";
+        private static readonly string[] _assessments = [QuestionsByMove, MissionImpact, Likelihood, NoAssessment, TemplateModel];
         private static readonly string[] _formats = ["Discussion", "Functional", "Hybrid"];
         private static readonly string[] _expectedActionNames = ["Expected Actions", "Expected Action"];
 
         /// <summary>
         /// The planner's design choices in a form drafting and import can trust. Without CITE there is no assessment;
-        /// with CITE and none chosen, it is questions by move, the default discussion model of the author-ttx workflow.
+        /// with CITE and none chosen, it is the template's scoring model when it links one, else questions by move, the
+        /// default discussion model of the author-ttx workflow.
         /// </summary>
         public static MselDraftDesign CleanDesign(MselDraftDesign design, MselEntity template)
         {
@@ -482,7 +485,9 @@ Answer only by calling the tool.";
             {
                 Format = Pick(design.Format, _formats),
                 Structure = Text(design.Structure),
-                CiteAssessment = !template.UseCite ? NoAssessment : Pick(design.CiteAssessment, _assessments) ?? QuestionsByMove,
+                CiteAssessment = !template.UseCite ? NoAssessment
+                    : Pick(design.CiteAssessment, _assessments) is string chosen && (chosen != TemplateModel || template.CiteScoringModelId != null) ? chosen
+                    : template.CiteScoringModelId != null ? TemplateModel : QuestionsByMove,
                 Moves = design.Moves is int moves ? Math.Clamp(moves, 1, 12) : null,
                 DurationMinutes = design.DurationMinutes is int minutes ? Math.Clamp(minutes, 15, 2880) : null,
                 ScenarioSpan = Text(design.ScenarioSpan),
@@ -497,7 +502,7 @@ Answer only by calling the tool.";
             const string open = "open";
             yield return $"Format: {design.Format switch { "Discussion" => "a discussion-based tabletop: participants talk through decisions, no hands-on tasks", "Functional" => "functional: participants work hands-on in the range", "Hybrid" => "hybrid: discussion moves with some hands-on work in the range", _ => open }}";
             yield return $"Participant structure: {design.Structure ?? open}";
-            yield return $"CITE assessment: {design.CiteAssessment switch { QuestionsByMove => "questions by move: write citeQuestions for every move", MissionImpact => "the DoD Cyber Table Top mission impact matrix: teams score mission impact each move, so write no discussion questions", Likelihood => "the DoD Cyber Table Top likelihood matrix: teams score each attack's cost and chance of success, so write no discussion questions", NoAssessment => "none", _ => open }}";
+            yield return $"CITE assessment: {design.CiteAssessment switch { QuestionsByMove => "questions by move: write citeQuestions for every move", MissionImpact => "the DoD Cyber Table Top mission impact matrix: teams score mission impact each move, so write no discussion questions", Likelihood => "the DoD Cyber Table Top likelihood matrix: teams score each attack's cost and chance of success, so write no discussion questions", TemplateModel => "the template's own scoring model, so write no discussion questions", NoAssessment => "none", _ => open }}";
             yield return $"Moves: {(design.Moves?.ToString() ?? open)}";
             yield return $"Exercise length in real time: {(design.DurationMinutes is int minutes ? $"{minutes} minutes" : open)}";
             yield return $"Scenario time the exercise covers: {design.ScenarioSpan ?? open}";

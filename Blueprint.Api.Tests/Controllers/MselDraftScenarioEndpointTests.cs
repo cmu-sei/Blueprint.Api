@@ -92,8 +92,7 @@ public class MselDraftScenarioEndpointTests(DatabaseFixture fixture, AiEnabledFa
 
     /// <summary>
     /// Import keeps each move's scenario time; adds the read-in and the organization and team profiles as pages
-    /// participants can see and the playbook includes, on white paper; and numbers the actions after the template's,
-    /// noting the teams CITE has no type for.
+    /// participants can see and the playbook includes, on white paper; and numbers the actions after the template's.
     /// </summary>
     [Fact]
     public async Task Import_AddsTheReadInPageSituationTimesAndCiteActions()
@@ -131,7 +130,6 @@ public class MselDraftScenarioEndpointTests(DatabaseFixture fixture, AiEnabledFa
         Assert.Equal(
             [(0, "BLUE", 1, "Template action"), (0, "BLUE", 2, "Open an incident ticket"), (0, "BLUE", 3, "Brief leadership"), (1, "SOC", 1, "Isolate the affected hosts")],
             actions.Select(a => (a.MoveNumber, a.Team.ShortName, a.ActionNumber, a.Description)));
-        Assert.Contains(imported.Changes, c => c.Message == "Give BLUE, SOC a CITE team type, or CITE will not get their actions.");
         // the template keeps only its own
         Assert.Equal(1, await db.CiteActions.CountAsync(a => a.MselId == template.Id, Ct));
         Assert.Equal(1, await db.MselPages.CountAsync(p => p.MselId == template.Id, Ct));

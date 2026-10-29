@@ -484,6 +484,104 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
     }
 
     // ---------------------------------------------------------------------------------------------
+    // A MSEL's own scoring model
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A MSEL with its own scoring model creates it in CITE, makes the evaluation from it, then deletes it: CITE
+    /// copied it into the evaluation, and the pull deletes that copy with the evaluation.
+    /// </summary>
+    [Fact]
+    public async Task Push_OfAMselWithItsOwnScoringModel_CreatesItForTheEvaluationThenDeletesIt()
+    {
+        var msel = await SeedPushableMsel(m => m.CiteScoringModelId = null);
+        await Seed(TestData.MselScoringModel(msel.Id, "Harbor Questions"));
+        var harness = Harness(ScoringModels);
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var cite = harness.Handler.Sent.Where(x => x.Path.StartsWith("cite/api/scoringmodels") || x.Path == "cite/api/evaluations").ToList();
+        Assert.Equal(
+            [
+                (System.Net.Http.HttpMethod.Post, "cite/api/scoringmodels"),
+                (System.Net.Http.HttpMethod.Post, "cite/api/evaluations"),
+                (System.Net.Http.HttpMethod.Delete, $"cite/api/scoringmodels/{UploadedScoringModelId}")
+            ],
+            cite.Select(x => (x.Method, x.Path)));
+        Assert.Equal("Harbor Questions", Body(cite[0].Body)["description"].GetString());
+        Assert.Equal(UploadedScoringModelId.ToString(), Body(cite[1].Body)["scoringModelId"].GetString());
+        Assert.Contains("Pushing Scoring Model to CITE", Statuses(harness, msel.Id));
+    }
+
+    /// <summary>A linked model is pushed as before: nothing is created in CITE or deleted from it.</summary>
+    [Fact]
+    public async Task Push_OfAMselLinkingACiteScoringModel_CreatesNoScoringModel()
+    {
+        var msel = await SeedPushableMsel();
+        var harness = Harness(ScoringModels);
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.DoesNotContain(harness.Handler.Paths, x => x.StartsWith("cite/api/scoringmodels"));
+        var evaluation = harness.Handler.Sent.Single(x => x.Path == "cite/api/evaluations");
+        Assert.Equal(msel.CiteScoringModelId.ToString(), Body(evaluation.Body)["scoringModelId"].GetString());
+        Assert.DoesNotContain("Pushing Scoring Model to CITE", Statuses(harness, msel.Id));
+    }
+
+    /// <summary>A model CITE will not delete is left there unused, which does not fail the push.</summary>
+    [Fact]
+    public async Task Push_WhenCiteRefusesToDeleteTheModel_StillDeploys()
+    {
+        var msel = await SeedPushableMsel(m => m.CiteScoringModelId = null);
+        await Seed(TestData.MselScoringModel(msel.Id));
+        var harness = Harness(x => ScoringModels(x.Answers($"DELETE cite/api/scoringmodels/{UploadedScoringModelId}", HttpStatusCode.Forbidden)));
+
+        await harness.PushAsync(msel.Id);
+
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+        Assert.Equal(MselItemStatus.Deployed, deployed.Status);
+    }
+
+    /// <summary>An evaluation CITE refuses fails the push, and the model made for it is deleted all the same.</summary>
+    [Fact]
+    public async Task Push_WhenTheEvaluationFails_DeletesTheModelMadeForIt()
+    {
+        var msel = await SeedPushableMsel(m => m.CiteScoringModelId = null);
+        await Seed(TestData.MselScoringModel(msel.Id));
+        var harness = Harness(x => ScoringModels(x.AnswersJson("POST cite/api/evaluations", "no", HttpStatusCode.InternalServerError)));
+
+        await harness.PushAsync(msel.Id);
+
+        var failed = await harness.WaitForError(msel.Id, Ct);
+        Assert.StartsWith("ERROR: CITE - begin processing failed", failed.IntegrationStatus);
+        Assert.Contains(harness.Handler.Sent, x => x.Method == System.Net.Http.HttpMethod.Delete && x.Path == $"cite/api/scoringmodels/{UploadedScoringModelId}");
+    }
+
+    /// <summary>A model CITE refuses to create fails the push before an evaluation is asked for.</summary>
+    [Fact]
+    public async Task Push_WhenCiteRefusesTheModel_CreatesNoEvaluation()
+    {
+        var msel = await SeedPushableMsel(m => m.CiteScoringModelId = null);
+        await Seed(TestData.MselScoringModel(msel.Id));
+        var harness = Harness(x => x.AnswersJson("POST cite/api/scoringmodels", "no", HttpStatusCode.Forbidden));
+
+        await harness.PushAsync(msel.Id);
+
+        await harness.WaitForError(msel.Id, Ct);
+        Assert.DoesNotContain(harness.Handler.Sent, x => x.Method != System.Net.Http.HttpMethod.Get && x.Path == "cite/api/evaluations");
+    }
+
+    private static readonly Guid UploadedScoringModelId = Guid.Parse("12121212-1212-1212-1212-121212121212");
+
+    /// <summary>CITE creating a scoring model, and deleting it.</summary>
+    private static SiblingApiHandler ScoringModels(SiblingApiHandler handler) =>
+        handler
+            .AnswersJson("POST cite/api/scoringmodels", $$"""{"id":"{{UploadedScoringModelId}}","description":"m"}""", HttpStatusCode.Created)
+            .Answers($"DELETE cite/api/scoringmodels/{UploadedScoringModelId}", HttpStatusCode.NoContent);
+
+    // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------
 

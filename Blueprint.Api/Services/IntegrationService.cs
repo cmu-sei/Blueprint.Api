@@ -292,6 +292,7 @@ namespace Blueprint.Api.Services
                         .Include(m => m.Moves)
                         .Include(m => m.CiteActions)
                         .Include(m => m.CiteDuties)
+                        .Include(m => m.ScoringModel).ThenInclude(sm => sm.Categories).ThenInclude(c => c.Options)
                         .Include(m => m.Teams).ThenInclude(t => t.TeamUsers).ThenInclude(tu => tu.User)
                         .Include(m => m.Teams).ThenInclude(t => t.UserTeamRoles)
                         .Include(m => m.UserMselRoles)
@@ -775,9 +776,29 @@ namespace Blueprint.Api.Services
             var currentProcessStep = "CITE - create evaluation";
             try
             {
+                // A MSEL that authors its own scoring model creates it in CITE for the evaluation, which takes a
+                // copy of it. The original is deleted straight away, so all the push leaves in CITE is the
+                // evaluation and its copy, which the pull deletes together.
+                Guid? uploadedScoringModelId = null;
+                if (msel.ScoringModel != null)
+                {
+                    currentProcessStep = "CITE - create scoring model";
+                    await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Scoring Model to CITE", ct);
+                    uploadedScoringModelId = await IntegrationCiteExtensions.CreateScoringModelAsync(msel, citeApiClient, ct);
+                    currentProcessStep = "CITE - create evaluation";
+                }
                 // create the Cite Evaluation
                 await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Evaluation to CITE", ct);
-                var evaluation = await IntegrationCiteExtensions.CreateEvaluationAsync(msel, citeApiClient, blueprintContext, ct);
+                Evaluation evaluation;
+                try
+                {
+                    evaluation = await IntegrationCiteExtensions.CreateEvaluationAsync(msel, citeApiClient, blueprintContext, ct, uploadedScoringModelId);
+                }
+                finally
+                {
+                    if (uploadedScoringModelId != null)
+                        await DeleteUploadedScoringModelAsync(msel.Id, (Guid)uploadedScoringModelId, citeApiClient);
+                }
                 // create the Cite Moves
                 currentProcessStep = "CITE - create moves";
                 await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Moves to CITE", ct);
@@ -808,6 +829,20 @@ namespace Blueprint.Api.Services
             {
                 _logger.LogError(ex, $"{currentProcessStep} ({msel.Id})");
                 throw;
+            }
+        }
+
+        // also when the push is cancelled or the evaluation failed, so the token is not the push's; a refusal
+        // leaves the model in CITE, unused, which is no reason to fail the push
+        private async STT.Task DeleteUploadedScoringModelAsync(Guid mselId, Guid scoringModelId, CiteApiClient citeApiClient)
+        {
+            try
+            {
+                await IntegrationCiteExtensions.DeleteScoringModelAsync(scoringModelId, citeApiClient, CancellationToken.None);
+            }
+            catch (System.Exception ex)
+            {
+                _logger.LogWarning(ex, $"CITE - the scoring model {scoringModelId} pushed for MSEL {mselId} could not be deleted after the evaluation was created");
             }
         }
 

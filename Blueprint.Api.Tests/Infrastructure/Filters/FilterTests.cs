@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Filters;
@@ -14,6 +15,8 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -33,12 +36,12 @@ public class FilterTests
     private static ActionContext ActionContextFor(ModelStateDictionary modelState) =>
         new(new DefaultHttpContext(), new RouteData(), new ActionDescriptor(), modelState);
 
-    private static JsonExceptionFilter Filter(string environment)
+    private static JsonExceptionFilter Filter(string environment, ILogger<JsonExceptionFilter> logger = null)
     {
         var env = Substitute.For<IWebHostEnvironment>();
         env.EnvironmentName.Returns(environment);
 
-        return new JsonExceptionFilter(env);
+        return new JsonExceptionFilter(env, logger ?? NullLogger<JsonExceptionFilter>.Instance);
     }
 
     private static ApiError ErrorFrom(ExceptionContext context) =>
@@ -47,6 +50,31 @@ public class FilterTests
     // -------------------------------------------------------------------------------------------------
     // JsonExceptionFilter
     // -------------------------------------------------------------------------------------------------
+
+    /// <summary>An unexpected error is logged with its exception, so it is not only in the response the caller got.</summary>
+    [Fact]
+    public void JsonExceptionFilter_LogsAnUnexpectedError()
+    {
+        var logger = Substitute.For<ILogger<JsonExceptionFilter>>();
+        var exception = new InvalidOperationException("The model's draft could not be read.");
+
+        Filter("Production", logger).OnException(ExceptionFor(exception));
+
+        var log = Assert.Single(logger.ReceivedCalls(), c => c.GetMethodInfo().Name == nameof(ILogger.Log));
+        Assert.Equal(LogLevel.Error, log.GetArguments()[0]);
+        Assert.Same(exception, log.GetArguments()[3]);
+    }
+
+    /// <summary>An error the API means to send, such as a 403, is not logged as a failure.</summary>
+    [Fact]
+    public void JsonExceptionFilter_DoesNotLogAnExpectedError()
+    {
+        var logger = Substitute.For<ILogger<JsonExceptionFilter>>();
+
+        Filter("Production", logger).OnException(ExceptionFor(new ForbiddenException()));
+
+        Assert.DoesNotContain(logger.ReceivedCalls(), c => c.GetMethodInfo().Name == nameof(ILogger.Log));
+    }
 
     /// <remarks>
     /// Setting <c>context.Result</c> is what marks the exception handled, so this is the assertion that

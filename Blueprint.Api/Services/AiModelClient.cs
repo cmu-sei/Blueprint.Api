@@ -112,7 +112,24 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 catch (JsonException)
                 {
                 }
+                // a list of strings written as one plain string is a list of that one string
+                if (node is JsonValue && type == "array" && schema?["items"]?["type"]?.GetValue<string>() == "string")
+                    node = string.IsNullOrWhiteSpace(text) ? new JsonArray() : new JsonArray(JsonValue.Create(text));
             }
+            // the other shapes a model writes a value in: a number as text, text as a number, a single item for a list
+            if (node is JsonValue scalar)
+            {
+                if (type == "integer" && scalar.TryGetValue<string>(out var digits))
+                    node = int.TryParse(digits.Trim(), out var number) ? JsonValue.Create(number) : null;
+                else if (type == "string" && !scalar.TryGetValue<string>(out _))
+                    node = JsonValue.Create(scalar.ToJsonString());
+                else if (type == "array" && !scalar.TryGetValue<string>(out _))
+                    node = new JsonArray(scalar.DeepClone());
+            }
+            else if (type == "string" && node is JsonObject or JsonArray)
+                node = JsonValue.Create(node.ToJsonString());
+            else if (type == "array" && node is JsonObject single)
+                node = new JsonArray(single.DeepClone());
             if (node is JsonArray array && schema?["items"] is JsonNode items)
             {
                 for (var i = 0; i < array.Count; i++)

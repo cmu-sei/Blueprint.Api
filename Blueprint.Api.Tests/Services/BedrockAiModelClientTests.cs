@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Linq;
 using System.Text.Json;
 using Blueprint.Api.Services;
 using Xunit;
@@ -145,6 +146,35 @@ public class BedrockAiModelClientTests
         Assert.Equal("[1,2]", repaired.GetProperty("name").GetString());
         Assert.Equal("not json", repaired.GetProperty("moves").GetString());
     }
+
+    /// <summary>
+    /// The shapes a model writes values in besides the schema's: one string for a list of strings, a number as text,
+    /// a single object for a list, and an object for text. Each comes back in the schema's shape, so the draft reads.
+    /// </summary>
+    [Fact]
+    public void RepairStringifiedJson_CoercesValuesToTheSchemasShape()
+    {
+        var input = Parse("""{"name":{"title":"Draft"},"assumptions":"Repair takes weeks","empty":" ","moves":{"moveNumber":"2","decisions":"Choose a lead"}}""");
+
+        var repaired = BedrockAiModelClient.RepairStringifiedJson(input, CoercionSchema());
+
+        Assert.Equal("{\"title\":\"Draft\"}", repaired.GetProperty("name").GetString());
+        Assert.Equal(["Repair takes weeks"], repaired.GetProperty("assumptions").EnumerateArray().Select(a => a.GetString()));
+        Assert.Equal(0, repaired.GetProperty("empty").GetArrayLength());
+        var move = Assert.Single(repaired.GetProperty("moves").EnumerateArray());
+        Assert.Equal(2, move.GetProperty("moveNumber").GetInt32());
+        Assert.Equal(["Choose a lead"], move.GetProperty("decisions").EnumerateArray().Select(a => a.GetString()));
+        Assert.NotNull(JsonSerializer.Deserialize<Blueprint.Api.ViewModels.MselDraft>(repaired.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }));
+    }
+
+    private static System.Text.Json.Nodes.JsonObject CoercionSchema() =>
+        System.Text.Json.Nodes.JsonNode.Parse("""
+            {"type":"object","properties":{
+              "name":{"type":"string"},
+              "assumptions":{"type":"array","items":{"type":"string"}},
+              "empty":{"type":"array","items":{"type":"string"}},
+              "moves":{"type":"array","items":{"type":"object","properties":{"moveNumber":{"type":"integer"},"decisions":{"type":"array","items":{"type":"string"}}}}}}}
+            """).AsObject();
 
     private static System.Text.Json.Nodes.JsonObject Schema() =>
         System.Text.Json.Nodes.JsonNode.Parse("""

@@ -125,8 +125,16 @@ Answer only by calling the tool.";
 
             var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, prompt, ToolName,
                 "Submit the drafted MSEL for the planner to review.", schema, ct);
-            var draft = input.Deserialize<MselDraft>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-                ?? new MselDraft();
+            MselDraft draft;
+            try
+            {
+                draft = input.Deserialize<MselDraft>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new MselDraft();
+            }
+            catch (JsonException ex)
+            {
+                // say which part of the answer could not be read, rather than a bare JSON error
+                throw new InvalidOperationException($"The model's draft could not be read at {ex.Path ?? "its top level"}. Draft again; the answer differs each time.", ex);
+            }
             // the planner's choices, not the model's, decide what import builds
             draft.Design = design;
 

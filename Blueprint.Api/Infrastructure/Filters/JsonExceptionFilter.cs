@@ -4,6 +4,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
@@ -15,10 +16,12 @@ namespace Blueprint.Api.Infrastructure.Filters
     public class JsonExceptionFilter : IExceptionFilter
     {
         private readonly IWebHostEnvironment _env;
+        private readonly ILogger<JsonExceptionFilter> _logger;
 
-        public JsonExceptionFilter(IWebHostEnvironment env)
+        public JsonExceptionFilter(IWebHostEnvironment env, ILogger<JsonExceptionFilter> logger)
         {
             _env = env;
+            _logger = logger;
         }
 
         public void OnException(ExceptionContext context)
@@ -28,6 +31,8 @@ namespace Blueprint.Api.Infrastructure.Filters
 
             if(error.Status == (int)HttpStatusCode.InternalServerError)
             {
+                // an unexpected error is otherwise only in the response the caller got
+                _logger.LogError(context.Exception, "Unhandled error on {Method} {Path}", context.HttpContext.Request.Method, context.HttpContext.Request.Path);
                 if (_env.IsDevelopment())
                 {
                     error.Title = context.Exception.Message;

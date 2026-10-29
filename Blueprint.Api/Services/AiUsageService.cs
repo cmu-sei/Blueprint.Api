@@ -178,6 +178,21 @@ namespace Blueprint.Api.Services
                 .ExecuteUpdateAsync(u => u.SetProperty(x => x.MselId, mselId), ct);
         }
 
+        /// <summary>
+        /// A model's price. Environment variable names can't hold a model id's dots or hyphens, so a price keyed
+        /// us_anthropic_claude_sonnet_5_5 is the price of us.anthropic.claude-sonnet-5-5.
+        /// </summary>
+        public static AiPrice PriceFor(IReadOnlyDictionary<string, AiPrice> prices, string model)
+        {
+            if (string.IsNullOrEmpty(model))
+                return null;
+            if (prices.TryGetValue(model, out var price))
+                return price;
+            static string Letters(string s) => new string(s.Where(char.IsLetterOrDigit).ToArray());
+            var key = Letters(model);
+            return prices.FirstOrDefault(p => Letters(p.Key).Equals(key, StringComparison.OrdinalIgnoreCase)).Value;
+        }
+
         /// <summary>Totals for a MSEL, by operation, with a cost estimate where every model used has a price</summary>
         public static AiUsageSummary Summarize(Guid mselId, string mselName, List<AiUsageEntity> rows, IReadOnlyDictionary<string, AiPrice> prices)
         {
@@ -186,7 +201,7 @@ namespace Blueprint.Api.Services
                 decimal total = 0;
                 foreach (var call in calls)
                 {
-                    if (!prices.TryGetValue(call.Model ?? "", out var price))
+                    if (PriceFor(prices, call.Model) is not AiPrice price)
                         return null;
                     total += call.InputTokens * price.InputPerMillion / 1_000_000m
                         + call.OutputTokens * price.OutputPerMillion / 1_000_000m
@@ -221,7 +236,7 @@ namespace Blueprint.Api.Services
                 CacheWriteTokens = all.CacheWriteTokens,
                 Images = all.Images,
                 EstimatedCostMicros = all.EstimatedCostMicros,
-                Unpriced = rows.Select(r => r.Model).Where(m => m != null && !prices.ContainsKey(m)).Distinct().Order().ToList(),
+                Unpriced = rows.Select(r => r.Model).Where(m => m != null && PriceFor(prices, m) == null).Distinct().Order().ToList(),
                 FirstCall = rows.Count > 0 ? rows.Min(r => r.DateCreated) : null,
                 LastCall = rows.Count > 0 ? rows.Max(r => r.DateCreated) : null,
                 ByOperation = rows.GroupBy(r => r.Operation ?? "other").OrderBy(g => g.Key).Select(g => Totals(g.Key, g.ToList())).ToList()

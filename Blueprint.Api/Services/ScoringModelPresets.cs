@@ -1,0 +1,215 @@
+// Copyright 2026 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Data.Models;
+
+namespace Blueprint.Api.Services
+{
+    /// <summary>
+    /// The scoring models a MSEL's own CITE scoring model can start from, transcribed from CITE's seed data and the
+    /// DoD Cyber Table Top guide. Each call answers a new, unsaved model with no ids; the caller sets the MSEL.
+    /// </summary>
+    public static class ScoringModelPresets
+    {
+        public const string MissionImpactName = "DoD CTT Mission Impact Assessment";
+        public const string LikelihoodName = "DoD CTT Likelihood Assessment Matrix";
+        // the name CITE's own seed data gives it
+        public const string NcissName = "CISA NCISS";
+        public const string QuestionsHeading = "Please respond to the following discussion questions:";
+        public const string AarHeading = "After-action review: for each objective, what went well and what would your team do differently?";
+
+        /// <summary>
+        /// The proven questions-by-move shape: one category a move, shown only in that move, its questions as options with
+        /// comment boxes, scores hidden and nothing to select; then, unless <paramref name="afterActionQuestions"/> is
+        /// null, an after-action review category in the last move.
+        /// </summary>
+        public static MselScoringModelEntity QuestionsByMove(string description,
+            IEnumerable<(int MoveNumber, IEnumerable<string> Questions)> moves, IEnumerable<string> afterActionQuestions)
+        {
+            var byMove = moves.OrderBy(m => m.MoveNumber).ToList();
+            var categories = byMove.Select((m, i) => Category(i + 1, QuestionsHeading, "{max}", 1, m.MoveNumber, m.MoveNumber,
+                CiteScoringOptionSelection.None, m.Questions.Select(q => (q, 1.0)))).ToList();
+            if (afterActionQuestions != null && byMove.Any())
+            {
+                var last = byMove.Last().MoveNumber;
+                categories.Add(Category(categories.Count + 1, AarHeading, "{max}", 1, last, last, CiteScoringOptionSelection.None,
+                    afterActionQuestions.Select(q => (q, 1.0))));
+            }
+            return new MselScoringModelEntity
+            {
+                Description = description,
+                CalculationEquation = "{average}",
+                HideScoresOnScoreSheet = true,
+                DisplayCommentTextBoxes = true,
+                DisplayScoringModelByMoveNumber = true,
+                ShowPastSituationDescriptions = false,
+                UseSubmit = true,
+                UseUserScore = true,
+                UseTeamScore = true,
+                UseOfficialScore = false,
+                RightSideDisplay = CiteRightSideDisplay.Scoresheet,
+                Categories = categories
+            };
+        }
+
+        /// <summary>The DoD Cyber Table Top mission impact assessment, weighted toward mission capability, scored each move</summary>
+        public static MselScoringModelEntity MissionImpact() => new()
+        {
+            Description = MissionImpactName,
+            CalculationEquation = "100 > {sum} > 0",
+            DisplayScoringModelByMoveNumber = true,
+            ShowPastSituationDescriptions = true,
+            UseSubmit = true,
+            UseUserScore = true,
+            UseTeamScore = true,
+            UseOfficialScore = true,
+            RightSideDisplay = CiteRightSideDisplay.ScoreSummary,
+            Categories =
+            [
+                Category(1, "Mission Capability Impact", "{max}", 8, 1, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("Non-Mission Capable - Mission cannot be completed", 5),
+                    ("Severely Degraded - Mission completion questionable", 4),
+                    ("Partial Mission Capable - Primary objective achievable with delays", 3),
+                    ("Minor Impact - 1-2 secondary objectives degraded", 2),
+                    ("Fully Mission Capable - All objectives achievable on time", 1)
+                ]),
+                Category(2, "Time to Recover/Restore", "{max}", 6, 1, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("Permanent/Mission failure", 5),
+                    ("Days (< 1 week)", 4),
+                    ("Hours (< 24 hrs)", 3),
+                    ("Minutes (< 30 min)", 2),
+                    ("Immediate/No recovery needed", 1)
+                ]),
+                Category(3, "System Availability Impact", "{max}", 3, 1, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("0% - Complete system failure", 5),
+                    ("25% - Critical systems compromised", 4),
+                    ("50% - Some critical functions degraded", 3),
+                    ("75% - Non-critical systems affected", 2),
+                    ("100% - All systems operational", 1)
+                ]),
+                Category(4, "Data Integrity Impact", "{max}", 3, 1, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("Complete data destruction/exfiltration", 5),
+                    ("Critical data loss or manipulation", 4),
+                    ("Significant data corruption", 3),
+                    ("Minor data inconsistencies", 2),
+                    ("No data corruption or loss", 1)
+                ])
+            ]
+        };
+
+        /// <summary>The DoD Cyber Table Top likelihood matrix: attack cost plus attack success, with the matrix beside the score sheet</summary>
+        public static MselScoringModelEntity Likelihood() => new()
+        {
+            Description = LikelihoodName,
+            CalculationEquation = "5 > {sum} > 1",
+            ShowPastSituationDescriptions = true,
+            UseSubmit = true,
+            UseUserScore = true,
+            UseTeamScore = true,
+            RightSideDisplay = CiteRightSideDisplay.HtmlBlock,
+            RightSideHtmlBlock = LikelihoodMatrixHtml,
+            Categories =
+            [
+                Category(1, "Attack Cost / Level of Effort", "{sum}", 1, 1, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("Nascent - Limited threat: nearly anyone can build; low cost or easy to develop", 2),
+                    ("Moderate - Moderate threat: criminal-level organization can build; moderate cost or many can develop", 1),
+                    ("Advanced - Advanced threat: nation-state organization can build; high cost or hard to develop", 0)
+                ]),
+                Category(2, "Attack Success Likelihood", "{sum}", 1, 1, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("Low - Rarely works", 1),
+                    ("Medium - Sometimes works", 2),
+                    ("High - Always works", 3)
+                ])
+            ]
+        };
+
+        /// <summary>
+        /// The CISA National Cyber Incident Scoring System, as CITE's seed data defines it: eight weighted factors, the score
+        /// scaled from 0 to 100 between the lowest and highest possible.
+        /// </summary>
+        public static MselScoringModelEntity Nciss() => new()
+        {
+            Description = NcissName,
+            CalculationEquation = "100.0 > 100.0 * ({sum} - {minPossible}) / ({maxPossible} - {minPossible}) > 0.0",
+            DisplayScoringModelByMoveNumber = true,
+            ShowPastSituationDescriptions = true,
+            UseSubmit = true,
+            UseUserScore = true,
+            UseTeamScore = true,
+            UseOfficialScore = true,
+            RightSideDisplay = CiteRightSideDisplay.ScoreSummary,
+            Categories =
+            [
+                Category(1, "Functional Impact", "{max}", 6, 0, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("No Impact", 0), ("No Impact to Services", 20), ("Minimal Impact to Non-Critical Services", 35),
+                    ("Minimal Impact to Critical Services", 40), ("Significant Impact to Non-Critical Services", 50),
+                    ("Denial of Non-Critical Services", 60), ("Significant Impact to Critical Services", 70),
+                    ("Denial of Critical Services or Loss of Control", 100)
+                ]),
+                Category(2, "Observed Activity", "{max}", 5, 0, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("None", 0), ("Prepare", 40), ("Engage", 70), ("Presence", 80), ("Effect", 100)
+                ]),
+                Category(3, "Location of Observed Activity", "{max}", 4, 0, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("Level 1 - Business DMZ", 30), ("Level 2 - Business Network", 40), ("Unknown", 50),
+                    ("Level 3 - Business Network Management", 60), ("Level 4 - Critical System DMZ", 70),
+                    ("Level 5 - Critical System Management", 80), ("Level 6 - Critical Systems", 90), ("Level 7 - Safety Systems", 100)
+                ]),
+                Category(4, "Actor Characterization", "{max}", 4, 0, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("Hacktivists", 20), ("Unwitting Insider", 30), ("Criminal", 40), ("Unknown", 50),
+                    ("Witting Insider", 65), ("APT", 80), ("APT (Targeted)", 100)
+                ]),
+                Category(5, "Information Impact", "{max}", 2, 0, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("No Impact", 0), ("Suspected But Not Identified", 10), ("Privacy Data Loss", 20),
+                    ("Proprietary Information Loss", 50), ("Destruction of Non-Critical System", 60),
+                    ("Critical Systems Data Breach", 70), ("Core Credential Compromise", 80), ("Destruction of Critical System", 100)
+                ]),
+                Category(6, "Recoverability", "{max}", 4, 0, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("Regular", 20), ("Supplemented", 40), ("Extended", 60), ("Not Recoverable", 100)
+                ]),
+                Category(7, "Cross Sector Dependency", "{max}", 3, 0, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("Agriculture and Food", 20), ("Banking and Finance", 35), ("Chemical", 20), ("Commercial Facilities", 30),
+                    ("Communications", 75), ("Critical Manufacturing", 50), ("Dams", 25), ("Defense Industrial Base", 35),
+                    ("Emergency Services", 25), ("Energy", 100), ("Government Facilities", 40), ("Healthcare and Public Health", 30),
+                    ("Information Technology", 80), ("Nuclear Reactors, Materials and Waste", 15), ("Transportation Systems", 75), ("Water", 60)
+                ]),
+                Category(8, "Potential Impact", "{max}", 6, 0, 999, CiteScoringOptionSelection.Single,
+                [
+                    ("Minimal", 0), ("Low", 25), ("Moderate", 50), ("High", 75), ("Severe", 100)
+                ])
+            ]
+        };
+
+        private static MselScoringCategoryEntity Category(int order, string description, string equation, double weight, int firstMove, int lastMove,
+            CiteScoringOptionSelection selection, IEnumerable<(string Description, double Value)> options) => new()
+            {
+                DisplayOrder = order,
+                Description = description,
+                CalculationEquation = equation,
+                ScoringWeight = weight,
+                MoveNumberFirstDisplay = firstMove,
+                MoveNumberLastDisplay = lastMove,
+                ScoringOptionSelection = selection,
+                Options = options.Select((o, i) => new MselScoringOptionEntity { DisplayOrder = i + 1, Description = o.Description, Value = o.Value }).ToList()
+            };
+
+        // the DoD Cyber Table Top likelihood matrix, as reproduced in the SEACAT Project CYBERCLAW white paper, Fig. 1
+        public const string LikelihoodMatrixHtml = @"<h3>DoD CTT Likelihood Assessment</h3><table border=""1"" cellpadding=""6"" cellspacing=""0"" width=""100%""><tr><td colspan=""2""></td><td colspan=""3"" align=""center"" bgcolor=""#DDEBF7""><font color=""#000000""><b>Attack Success Likelihood</b></font></td></tr><tr><td colspan=""2"" bgcolor=""#BFBFBF""><font color=""#000000""><b>Attack Cost / Level of Effort</b></font></td><td align=""center"" bgcolor=""#E2EFDA""><font color=""#000000""><b>Low</b><br>Rarely works</font></td><td align=""center"" bgcolor=""#E2EFDA""><font color=""#000000""><b>Medium</b><br>Sometimes works</font></td><td align=""center"" bgcolor=""#E2EFDA""><font color=""#000000""><b>High</b><br>Always works</font></td></tr><tr><td bgcolor=""#F4B6B6""><font color=""#000000"">Nearly anyone can build: Nascent - Limited threat</font></td><td bgcolor=""#F4B6B6""><font color=""#000000"">Low cost or easy to develop</font></td><td align=""center"" bgcolor=""#FFC000""><font color=""#000000""><b><font size=""5"">3</font></b><br><small>Example: Network DoS</small></font></td><td align=""center"" bgcolor=""#FF8C00""><font color=""#000000""><b><font size=""5"">4</font></b></font></td><td align=""center"" bgcolor=""#FF0000""><font color=""#000000""><b><font size=""5"">5</font></b><br><small>Example: Flash implant delivered via website/email</small></font></td></tr><tr><td bgcolor=""#FCE9C8""><font color=""#000000"">Criminal level organization can build: Moderate threat</font></td><td bgcolor=""#FCE9C8""><font color=""#000000"">Moderate cost or many can develop</font></td><td align=""center"" bgcolor=""#FFFF00""><font color=""#000000""><b><font size=""5"">2</font></b></font></td><td align=""center"" bgcolor=""#FFC000""><font color=""#000000""><b><font size=""5"">3</font></b></font></td><td align=""center"" bgcolor=""#FF8C00""><font color=""#000000""><b><font size=""5"">4</font></b></font></td></tr><tr><td bgcolor=""#D8E7C8""><font color=""#000000"">Nation state organization can build: Advanced threat</font></td><td bgcolor=""#D8E7C8""><font color=""#000000"">High cost or hard to develop</font></td><td align=""center"" bgcolor=""#00B050""><font color=""#000000""><b><font size=""5"">1</font></b><br><small>Example: RF inject of malware into sensor or radio</small></font></td><td align=""center"" bgcolor=""#FFFF00""><font color=""#000000""><b><font size=""5"">2</font></b></font></td><td align=""center"" bgcolor=""#FFC000""><font color=""#000000""><b><font size=""5"">3</font></b><br><small>Example: Supply chain implant in HW or firmware</small></font></td></tr></table><p><small>Source: DoD Cyber Table Top Guide likelihood assessment, as reproduced in SEACAT Project CYBERCLAW White Paper, Fig. 1. Score = Attack Cost value + Attack Success value (1-5).</small></p>";
+    }
+}

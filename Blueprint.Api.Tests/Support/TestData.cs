@@ -857,6 +857,47 @@ public static class TestData
     }
 
     /// <summary>
+    /// The scoring model a MSEL authors itself: two questions for move 1, in one category, shown in that move
+    /// only. Keyed by its MSEL, so a second one for the same MSEL is a 500.
+    /// </summary>
+    /// <remarks>The categories and options cascade from the model, and the model from the MSEL.</remarks>
+    public static MselScoringModelEntity MselScoringModel(Guid mselId, string description = null, Guid? createdBy = null)
+    {
+        var categoryId = Guid.NewGuid();
+
+        return new MselScoringModelEntity
+        {
+            MselId = mselId,
+            Description = description ?? $"scoring-model-{mselId}",
+            CalculationEquation = "{average}",
+            DisplayCommentTextBoxes = true,
+            DisplayScoringModelByMoveNumber = true,
+            RightSideDisplay = CiteRightSideDisplay.Scoresheet,
+            CreatedBy = createdBy ?? Guid.NewGuid(),
+            Categories =
+            [
+                new MselScoringCategoryEntity
+                {
+                    Id = categoryId,
+                    MselScoringModelId = mselId,
+                    DisplayOrder = 1,
+                    Description = "Please respond to the following discussion questions:",
+                    CalculationEquation = "{max}",
+                    ScoringWeight = 1,
+                    MoveNumberFirstDisplay = 1,
+                    MoveNumberLastDisplay = 1,
+                    ScoringOptionSelection = CiteScoringOptionSelection.None,
+                    Options =
+                    [
+                        new MselScoringOptionEntity { Id = Guid.NewGuid(), MselScoringCategoryId = categoryId, DisplayOrder = 1, Description = "Who do you call first?", Value = 1 },
+                        new MselScoringOptionEntity { Id = Guid.NewGuid(), MselScoringCategoryId = categoryId, DisplayOrder = 2, Description = "What do you tell the press?", Value = 1 }
+                    ]
+                }
+            ]
+        };
+    }
+
+    /// <summary>
     /// A competency assigned to a team - the team-level twin of <see cref="MselCompetency"/>.
     /// <c>(TeamId, CompetencyId)</c> is uniquely indexed, so a duplicate pair is a 500.
     /// </summary>

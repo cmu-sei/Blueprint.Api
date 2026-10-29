@@ -73,6 +73,8 @@ namespace Blueprint.Api.Data.Models
         public string CourseMode { get; set; }
         public string Language { get; set; }
         public DateTime? ImageDateModified { get; set; }
+        // the CITE scoring model the MSEL authors itself, pushed to CITE instead of CiteScoringModelId
+        public virtual MselScoringModelEntity ScoringModel { get; set; }
         public virtual ICollection<CardEntity> Cards { get; set; } = new HashSet<CardEntity>();
         public virtual ICollection<CiteDutyEntity> CiteDuties { get; set; } = new HashSet<CiteDutyEntity>();
         public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();

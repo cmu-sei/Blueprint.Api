@@ -59,8 +59,11 @@ Rules:
 - Put any assumption you had to make, or conflict you found, in notes, not in the value.
 Answer only by calling the tool.";
 
-        public DataValueDraftService(BlueprintContext context, IAiModelClient aiModelClient, IAiImageClient aiImageClient, AiOptions aiOptions, IPrincipal user, ILogger<DataValueDraftService> logger)
+        private readonly IAiUsageContext _usage;
+
+        public DataValueDraftService(BlueprintContext context, IAiModelClient aiModelClient, IAiImageClient aiImageClient, AiOptions aiOptions, IPrincipal user, ILogger<DataValueDraftService> logger, IAiUsageContext usage)
         {
+            _usage = usage;
             _context = context;
             _aiModelClient = aiModelClient;
             _aiImageClient = aiImageClient;
@@ -111,6 +114,7 @@ Answer only by calling the tool.";
             var prompt = BuildPrompt(msel, field, request, others);
             // a Gallery article's body is the whole document, laid out for its source type
             var isArticle = ArticleFields.Body(msel)?.Id == field.Id;
+            _usage.Use("value", mselId);
             // an article gets a news photo where it calls for one, as a drafted article does
             var photos = isArticle && _aiImageClient.IsConfigured;
             var system = isArticle

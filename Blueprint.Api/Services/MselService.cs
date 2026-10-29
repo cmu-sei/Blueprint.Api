@@ -80,6 +80,7 @@ namespace Blueprint.Api.Services
         private readonly IJoinQueue _joinQueue;
         private readonly IXApiService _xApiService;
         private readonly ICiteApiClient _citeApiClient;
+        private readonly IAiUsageService _aiUsageService;
         private readonly ICasterService _casterService;
         private readonly AiOptions _aiOptions;
 
@@ -96,6 +97,7 @@ namespace Blueprint.Api.Services
             IMapper mapper,
             IXApiService xApiService,
             ICiteApiClient citeApiClient,
+            IAiUsageService aiUsageService,
             ICasterService casterService,
             AiOptions aiOptions)
         {
@@ -111,6 +113,7 @@ namespace Blueprint.Api.Services
             _joinQueue = joinQueue;
             _xApiService = xApiService;
             _citeApiClient = citeApiClient;
+            _aiUsageService = aiUsageService;
             _casterService = casterService;
             _aiOptions = aiOptions;
         }
@@ -2633,6 +2636,9 @@ namespace Blueprint.Api.Services
 
             var imported = await ImportEntityAsync(mselEntity, result, ct);
             await ShareDraftAsync(imported, ct);
+            // the calls that wrote the draft now count toward the MSEL
+            if (draft.DraftId != Guid.Empty)
+                await _aiUsageService.LinkDraftAsync(draft.DraftId, imported.Msel.Id, ct);
             return imported;
         }
 

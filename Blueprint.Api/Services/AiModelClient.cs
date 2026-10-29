@@ -40,11 +40,13 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
 
         private readonly AiOptions _options;
         private readonly ILogger<BedrockAiModelClient> _logger;
+        private readonly IAiUsageRecorder _usage;
 
-        public BedrockAiModelClient(AiOptions options, ILogger<BedrockAiModelClient> logger)
+        public BedrockAiModelClient(AiOptions options, ILogger<BedrockAiModelClient> logger, IAiUsageRecorder usage)
         {
             _options = options;
             _logger = logger;
+            _usage = usage;
         }
 
         public async Task<JsonElement> InvokeToolAsync(string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct)
@@ -172,6 +174,8 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 toolName, modelId, StopReason(result),
                 result.TryGetProperty("stop_details", out var details) ? details.GetRawText() : null,
                 result.TryGetProperty("usage", out var usage) ? usage.GetRawText() : null);
+            // every call is billed, a refused one or one retried on the fallback model too
+            await _usage.RecordAsync(modelId, result, 0, ct);
             return result;
         }
 

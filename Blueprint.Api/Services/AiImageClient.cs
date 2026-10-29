@@ -36,10 +36,12 @@ namespace Blueprint.Api.Services
             "recognizable face, celebrity, cartoon, illustration";
 
         private readonly AiOptions _options;
+        private readonly IAiUsageRecorder _usage;
 
-        public BedrockAiImageClient(AiOptions options)
+        public BedrockAiImageClient(AiOptions options, IAiUsageRecorder usage = null)
         {
             _options = options;
+            _usage = usage;
         }
 
         public bool IsConfigured => _options.Enabled && !string.IsNullOrWhiteSpace(_options.ImageModelId);
@@ -68,6 +70,8 @@ namespace Blueprint.Api.Services
                 Accept = "application/json",
                 Body = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(body))
             }, ct);
+            if (_usage != null)
+                await _usage.RecordAsync(_options.ImageModelId, default, 1, ct);
             return ReadPhoto(JsonDocument.Parse(response.Body).RootElement);
         }
 

@@ -32,6 +32,10 @@ public class AiEnabledFactory(DatabaseFixture database) : BlueprintAppFactory(da
 
         builder.UseSetting("Ai:Enabled", "true");
         builder.UseSetting("Ai:ModelId", "test-model");
+        // a price for the test model, so usage can be costed; the image model has a per-image price
+        builder.UseSetting("Ai:Prices:test-model:InputPerMillion", "2");
+        builder.UseSetting("Ai:Prices:test-model:OutputPerMillion", "10");
+        builder.UseSetting("Ai:Prices:test-image:PerImage", "0.04");
 
         builder.ConfigureTestServices(services =>
         {

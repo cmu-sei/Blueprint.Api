@@ -53,6 +53,8 @@ namespace Blueprint.Api.ViewModels
     /// <summary>A drafted MSEL in a flat form the model can fill and the planner can edit before creating it</summary>
     public class MselDraft
     {
+        /// <summary>Identifies the draft's AI calls until it becomes a MSEL, which then takes them over</summary>
+        public Guid DraftId { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
         public int DurationMinutes { get; set; }

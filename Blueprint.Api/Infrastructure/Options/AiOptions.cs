@@ -1,6 +1,8 @@
 // Copyright 2026 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
+using System.Collections.Generic;
+
 namespace Blueprint.Api.Infrastructure.Options
 {
     public class AiOptions
@@ -22,5 +24,18 @@ namespace Blueprint.Api.Infrastructure.Options
         public string ImageModelId { get; set; }
         // Stability's image models are offered in fewer regions than the text models
         public string ImageRegion { get; set; } = "us-west-2";
+        // what each model costs, keyed by model or inference profile id, so the AI usage of a MSEL can be priced;
+        // a model without a price is counted in tokens only
+        public Dictionary<string, AiPrice> Prices { get; set; } = new Dictionary<string, AiPrice>();
+    }
+
+    /// <summary>A model's price in US dollars: per million tokens of each kind, and per image</summary>
+    public class AiPrice
+    {
+        public decimal InputPerMillion { get; set; }
+        public decimal OutputPerMillion { get; set; }
+        public decimal CacheReadPerMillion { get; set; }
+        public decimal CacheWritePerMillion { get; set; }
+        public decimal PerImage { get; set; }
     }
 }

@@ -127,8 +127,10 @@ Rules:
             ITeamCompetencyService teamCompetencyService,
             IMoveService moveService,
             IScenarioEventService scenarioEventService,
-            IPrincipal user)
+            IPrincipal user,
+            IAiUsageContext usage)
         {
+            _usage = usage;
             _context = context;
             _aiModelClient = aiModelClient;
             _aiOptions = aiOptions;
@@ -142,8 +144,11 @@ Rules:
             _user = user as ClaimsPrincipal;
         }
 
+        private readonly IAiUsageContext _usage;
+
         public async Task<MselAssistResult> AskAsync(Guid mselId, MselAssistRequest request, MselAssistPermissions permissions, CancellationToken ct)
         {
+            _usage.Use("assist", mselId);
             if (!_aiOptions.Enabled)
                 throw new InvalidOperationException("AI drafting is not enabled on this server.");
             if (string.IsNullOrWhiteSpace(request?.Prompt))

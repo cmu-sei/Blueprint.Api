@@ -116,8 +116,11 @@ Answer only by calling the tool.";
         private readonly ClaimsPrincipal _user;
         private readonly ILogger<ArticleDraftService> _logger;
 
-        public ArticleDraftService(BlueprintContext context, IAiModelClient aiModelClient, IAiImageClient aiImageClient, AiOptions aiOptions, IPrincipal user, ILogger<ArticleDraftService> logger)
+        private readonly IAiUsageContext _usage;
+
+        public ArticleDraftService(BlueprintContext context, IAiModelClient aiModelClient, IAiImageClient aiImageClient, AiOptions aiOptions, IPrincipal user, ILogger<ArticleDraftService> logger, IAiUsageContext usage)
         {
+            _usage = usage;
             _context = context;
             _aiModelClient = aiModelClient;
             _aiImageClient = aiImageClient;
@@ -140,6 +143,7 @@ Answer only by calling the tool.";
             var inject = draft.Injects[request.InjectIndex];
             var values = inject.Values ?? new Dictionary<string, string>();
 
+            _usage.Use("article", draftId: draft.DraftId == Guid.Empty ? null : draft.DraftId);
             var photos = _aiImageClient.IsConfigured;
             var input = await _aiModelClient.InvokeToolAsync(photos ? SystemPrompt + "\n\n" + PhotoRules : SystemPrompt,
                 BuildPrompt(draft, template, values), ToolName, "Submit the article's HTML.", Schema(photos), ct);

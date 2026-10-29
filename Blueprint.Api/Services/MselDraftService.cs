@@ -37,6 +37,7 @@ namespace Blueprint.Api.Services
         private readonly IAiModelClient _aiModelClient;
         private readonly AiOptions _aiOptions;
         private readonly ClaimsPrincipal _user;
+        private readonly IAiUsageContext _usage;
 
         private const string SystemPrompt =
 @"You design and draft Master Scenario Event Lists (MSELs) for Crucible cyber exercises in Blueprint, the way an exercise design
@@ -98,12 +99,13 @@ When the MSEL uses Gallery:
   appears on the wall with its first article.
 Answer only by calling the tool.";
 
-        public MselDraftService(BlueprintContext context, IAiModelClient aiModelClient, AiOptions aiOptions, IPrincipal user)
+        public MselDraftService(BlueprintContext context, IAiModelClient aiModelClient, AiOptions aiOptions, IPrincipal user, IAiUsageContext usage)
         {
             _context = context;
             _aiModelClient = aiModelClient;
             _aiOptions = aiOptions;
             _user = user as ClaimsPrincipal;
+            _usage = usage;
         }
 
         public async Task<MselDraftResult> DraftAsync(MselDraftRequest request, CancellationToken ct)
@@ -123,6 +125,9 @@ Answer only by calling the tool.";
                 design.CiteAssessment == MselDraftRules.QuestionsByMove);
             var prompt = BuildPrompt(request.Prompt, template, fields, _aiOptions.MaxInjects, competencies, design);
 
+            // the draft's calls are counted under its own ID until it becomes a MSEL
+            var draftId = Guid.NewGuid();
+            _usage.Use("draft", draftId: draftId);
             var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, prompt, ToolName,
                 "Submit the drafted MSEL for the planner to review.", schema, ct);
             MselDraft draft;
@@ -137,6 +142,7 @@ Answer only by calling the tool.";
             }
             // the planner's choices, not the model's, decide what import builds
             draft.Design = design;
+            draft.DraftId = draftId;
 
             var result = new MselDraftResult
             {

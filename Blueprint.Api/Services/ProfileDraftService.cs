@@ -82,8 +82,11 @@ Answer only by calling the tool.";
         private readonly AiOptions _aiOptions;
         private readonly ClaimsPrincipal _user;
 
-        public ProfileDraftService(BlueprintContext context, IAiModelClient aiModelClient, AiOptions aiOptions, IPrincipal user)
+        private readonly IAiUsageContext _usage;
+
+        public ProfileDraftService(BlueprintContext context, IAiModelClient aiModelClient, AiOptions aiOptions, IPrincipal user, IAiUsageContext usage)
         {
+            _usage = usage;
             _context = context;
             _aiModelClient = aiModelClient;
             _aiOptions = aiOptions;
@@ -102,6 +105,7 @@ Answer only by calling the tool.";
             var context = request.MselId.HasValue
                 ? await LoadMselContextAsync(request, permissions, ct)
                 : DraftContext(request, permissions);
+            _usage.Use("profile", request.MselId, request.Draft?.DraftId is Guid draftId && draftId != Guid.Empty ? draftId : null);
             var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, BuildPrompt(request, context), ToolName,
                 "Submit the profile's HTML.", Schema(), ct);
 

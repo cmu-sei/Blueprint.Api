@@ -167,6 +167,20 @@ public class BedrockAiModelClientTests
         Assert.NotNull(JsonSerializer.Deserialize<Blueprint.Api.ViewModels.MselDraft>(repaired.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }));
     }
 
+    /// <summary>An object written as a paragraph becomes that paragraph in the object's first required text field.</summary>
+    [Fact]
+    public void RepairStringifiedJson_PutsAParagraphInTheObjectsFirstTextField()
+    {
+        var schema = System.Text.Json.Nodes.JsonNode.Parse("""
+            {"type":"object","properties":{"scenario":{"type":"object","properties":{"problem":{"type":"string"},"premise":{"type":"string"}},"required":["problem","premise"]}}}
+            """).AsObject();
+        var input = Parse("""{"scenario":"Two cables to the islands are cut by a dragged anchor."}""");
+
+        var repaired = BedrockAiModelClient.RepairStringifiedJson(input, schema);
+
+        Assert.Equal("Two cables to the islands are cut by a dragged anchor.", repaired.GetProperty("scenario").GetProperty("problem").GetString());
+    }
+
     private static System.Text.Json.Nodes.JsonObject CoercionSchema() =>
         System.Text.Json.Nodes.JsonNode.Parse("""
             {"type":"object","properties":{

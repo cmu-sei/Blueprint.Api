@@ -130,16 +130,8 @@ Answer only by calling the tool.";
             _usage.Use("draft", draftId: draftId);
             var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, prompt, ToolName,
                 "Submit the drafted MSEL for the planner to review.", schema, ct);
-            MselDraft draft;
-            try
-            {
-                draft = input.Deserialize<MselDraft>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new MselDraft();
-            }
-            catch (JsonException ex)
-            {
-                // say which part of the answer could not be read, rather than a bare JSON error
-                throw new InvalidOperationException($"The model's draft could not be read at {ex.Path ?? "its top level"}. Draft again; the answer differs each time.", ex);
-            }
+            var unreadable = new List<string>();
+            var draft = MselDraftRules.ReadDraft(input, unreadable);
             // the planner's choices, not the model's, decide what import builds
             draft.Design = design;
             draft.DraftId = draftId;
@@ -156,6 +148,7 @@ Answer only by calling the tool.";
                     Options = f.DataOptions.OrderBy(o => o.DisplayOrder).Select(o => o.OptionValue).ToList()
                 }).ToList()
             };
+            result.Warnings.AddRange(unreadable);
             MselDraftRules.Normalize(draft, template, _aiOptions.MaxInjects, competencies, result.Warnings);
             result.Competencies = draft.Competencies
                 .Select(id => new MselDraftCompetency { IdNumber = id, ShortName = competencies[id].ShortName })
@@ -1019,6 +1012,62 @@ Answer only by calling the tool.";
 
         private static List<string> Lines(List<string> lines) =>
             (lines ?? new List<string>()).Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()).Distinct().ToList();
+
+        /// <summary>
+        /// Reads the model's draft. A part of it that cannot be read is left out and named in warnings, so one bad
+        /// field does not cost the whole draft: the call that wrote it is the expensive part.
+        /// </summary>
+        public static MselDraft ReadDraft(JsonElement input, List<string> warnings)
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var node = JsonNode.Parse(input.GetRawText());
+            for (var attempt = 0; attempt < 20; attempt++)
+            {
+                try
+                {
+                    return node.Deserialize<MselDraft>(options) ?? new MselDraft();
+                }
+                catch (JsonException ex) when (!string.IsNullOrEmpty(ex.Path) && ex.Path != "$" && RemoveAt(node, ex.Path))
+                {
+                    warnings.Add($"Left out the model's {ex.Path.TrimStart('$', '.')}, which it wrote in a form the draft cannot use. Check it before creating the MSEL.");
+                }
+            }
+            throw new InvalidOperationException("The model's draft could not be read. Draft again; the answer differs each time.");
+        }
+
+        // removes the value at a System.Text.Json path such as $.moves[2].expectedDecisions or $.scenario
+        private static bool RemoveAt(JsonNode root, string path)
+        {
+            var steps = System.Text.RegularExpressions.Regex.Matches(path, @"\.([^.\[]+)|\['([^']+)'\]|\[(\d+)\]")
+                .Select(m => m.Groups[3].Success ? (object)int.Parse(m.Groups[3].Value) : m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)
+                .ToList();
+            if (!steps.Any())
+                return false;
+            JsonNode parent = root;
+            foreach (var step in steps.Take(steps.Count - 1))
+            {
+                parent = step is int i ? (parent as JsonArray)?.ElementAtOrDefault(i) : FindProperty(parent as JsonObject, (string)step);
+                if (parent == null)
+                    return false;
+            }
+            switch (steps[^1])
+            {
+                case int index when parent is JsonArray array && index < array.Count:
+                    array.RemoveAt(index);
+                    return true;
+                case string name when parent is JsonObject obj && FindKey(obj, name) is string key:
+                    obj.Remove(key);
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static string FindKey(JsonObject obj, string name) =>
+            obj?.Select(p => p.Key).FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
+
+        private static JsonNode FindProperty(JsonObject obj, string name) =>
+            FindKey(obj, name) is string key ? obj[key] : null;
 
         /// <summary>A date and time in UTC; one without a zone is taken as UTC</summary>
         public static DateTime? ParseUtc(string value) =>

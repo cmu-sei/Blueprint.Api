@@ -100,6 +100,11 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             return JsonSerializer.SerializeToElement(Repair(node, schema));
         }
 
+        private static string FirstRequiredText(JsonNode schema) =>
+            (schema?["required"] as JsonArray)?
+                .Select(r => r?.GetValue<string>())
+                .FirstOrDefault(r => r != null && schema["properties"]?[r]?["type"]?.GetValue<string>() == "string");
+
         private static JsonNode Repair(JsonNode node, JsonNode schema)
         {
             var type = schema?["type"]?.GetValue<string>();
@@ -117,6 +122,9 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 // a list of strings written as one plain string is a list of that one string
                 if (node is JsonValue && type == "array" && schema?["items"]?["type"]?.GetValue<string>() == "string")
                     node = string.IsNullOrWhiteSpace(text) ? new JsonArray() : new JsonArray(JsonValue.Create(text));
+                // an object written as a paragraph is that paragraph in the object's first required text field
+                else if (node is JsonValue && type == "object" && FirstRequiredText(schema) is string field)
+                    node = string.IsNullOrWhiteSpace(text) ? null : new JsonObject { [field] = text };
             }
             // the other shapes a model writes a value in: a number as text, text as a number, a single item for a list
             if (node is JsonValue scalar)

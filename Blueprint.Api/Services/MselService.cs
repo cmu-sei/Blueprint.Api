@@ -2439,6 +2439,10 @@ namespace Blueprint.Api.Services
             if (mselEntity.UseGallery) AddChange(result, "useGallery", "Gallery integration is on.");
             if (mselEntity.UseCite) AddChange(result, "useCite", "CITE integration is on.");
             if (mselEntity.UseSteamfitter) AddChange(result, "useSteamfitter", "Steamfitter integration is on.");
+            if (mselEntity.UseSteamfitter && mselEntity.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.OnPush)
+                AddChange(result, "steamfitterScenarioStartMode", "The Steamfitter scenario starts when the push finishes.");
+            if (mselEntity.UseSteamfitter && mselEntity.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.AtStartTime)
+                AddChange(result, "steamfitterScenarioStartMode", "The Steamfitter scenario starts at the MSEL start time.");
 
             result.Imported = new MselImportCounts
             {

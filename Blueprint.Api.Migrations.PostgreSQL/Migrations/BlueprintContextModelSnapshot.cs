@@ -1256,6 +1256,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("steamfitter_scenario_id");
 
+                    b.Property<int>("SteamfitterScenarioStartMode")
+                        .HasColumnType("integer")
+                        .HasColumnName("steamfitter_scenario_start_mode");
+
                     b.Property<string>("Subject")
                         .HasColumnType("text")
                         .HasColumnName("subject");

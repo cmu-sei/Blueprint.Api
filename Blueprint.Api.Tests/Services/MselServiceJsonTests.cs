@@ -115,6 +115,37 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal("the headline", Single(exportedEvent, "DataValues").GetProperty("Value").GetString());
     }
 
+    [Fact]
+    public async Task Download_ThenUpload_KeepsWhenTheSteamfitterScenarioStarts()
+    {
+        var msel = TestData.Msel();
+        msel.UseSteamfitter = true;
+        msel.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.AtStartTime;
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, SystemPermission.CreateMsels).SeedAsync();
+        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
+        var file = (await ReadExport(response)).GetRawText();
+
+        var imported = await Upload(Client(actor), file);
+
+        Assert.Equal((int)SteamfitterScenarioStartMode.AtStartTime,
+            JsonDocument.Parse(file).RootElement.GetProperty("SteamfitterScenarioStartMode").GetInt32());
+        Assert.Equal(SteamfitterScenarioStartMode.AtStartTime, imported.SteamfitterScenarioStartMode);
+    }
+
+    /// <summary>A file from before the setting existed imports as a scenario someone starts by hand.</summary>
+    [Fact]
+    public async Task Upload_OfAFileWithoutTheSteamfitterStartMode_StartsTheScenarioManually()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(Exported(m => m.UseSteamfitter = true)).AsObject();
+        file.Remove("SteamfitterScenarioStartMode");
+
+        var imported = await Upload(Client(actor), file.ToJsonString());
+
+        Assert.Equal(SteamfitterScenarioStartMode.Manual, imported.SteamfitterScenarioStartMode);
+    }
+
     /// <summary>Text outside ASCII survives the export, as <c>\uXXXX</c> escapes in an ASCII file.</summary>
     [Fact]
     public async Task Download_KeepsTextOutsideAscii()
@@ -1054,6 +1085,38 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         var result = await Import(Client(actor), file);
 
         Assert.Equal(["usePlayer", "useSteamfitter"], result.Changes.Select(c => c.Field).Order());
+    }
+
+    /// <summary>
+    /// A scenario that starts itself runs its tasks as soon as a facilitator clicks them, so the report says so.
+    /// </summary>
+    [Theory]
+    [InlineData(SteamfitterScenarioStartMode.OnPush, "The Steamfitter scenario starts when the push finishes.")]
+    [InlineData(SteamfitterScenarioStartMode.AtStartTime, "The Steamfitter scenario starts at the MSEL start time.")]
+    public async Task Import_ReportsAScenarioThatStartsItself(SteamfitterScenarioStartMode mode, string message)
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            m.UseSteamfitter = true;
+            m.SteamfitterScenarioStartMode = mode;
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(message, Assert.Single(result.Changes, c => c.Field == "steamfitterScenarioStartMode").Message);
+        Assert.Equal(mode, result.Msel.SteamfitterScenarioStartMode);
+    }
+
+    [Fact]
+    public async Task Import_OfAManuallyStartedScenario_ReportsNothingAboutIt()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var result = await Import(Client(actor), Exported(m => m.UseSteamfitter = true));
+
+        Assert.DoesNotContain(result.Changes, c => c.Field == "steamfitterScenarioStartMode");
+        Assert.Equal(SteamfitterScenarioStartMode.Manual, result.Msel.SteamfitterScenarioStartMode);
     }
 
     [Fact]

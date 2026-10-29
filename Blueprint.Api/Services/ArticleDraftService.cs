@@ -150,17 +150,22 @@ Answer only by calling the tool.";
             if (input.TryGetProperty("notes", out var notes) && notes.ValueKind == JsonValueKind.Array)
                 result.Notes.AddRange(notes.EnumerateArray().Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()));
             if (photos)
-            {
-                var photo = input.TryGetProperty("photo", out var p) && p.ValueKind == JsonValueKind.Object ? p : default;
-                result.Html = await PlacePhotoAsync(result.Html,
-                    photo.ValueKind == JsonValueKind.Object ? GetString(photo, "scene") : null,
-                    photo.ValueKind == JsonValueKind.Object ? GetString(photo, "caption") : null, result.Notes, ct);
-            }
+                result.Html = await PlacePhotoAsync(_aiImageClient, _logger, result.Html, input, result.Notes, ct);
             return result;
         }
 
-        // the photo goes where the model marked its place; an article without a place for it gets none, so none is paid for
-        private async Task<string> PlacePhotoAsync(string html, string scene, string caption, List<string> notes, CancellationToken ct)
+        /// <summary>
+        /// Makes the photo the model described and puts it where the model marked its place. An article without a place
+        /// for it gets none, so none is paid for; one the image model will not make leaves the article without a photo.
+        /// </summary>
+        public static Task<string> PlacePhotoAsync(IAiImageClient images, ILogger logger, string html, JsonElement input, List<string> notes, CancellationToken ct)
+        {
+            var photo = input.TryGetProperty("photo", out var p) && p.ValueKind == JsonValueKind.Object ? p : default;
+            var described = photo.ValueKind == JsonValueKind.Object;
+            return PlacePhotoAsync(images, logger, html, described ? GetString(photo, "scene") : null, described ? GetString(photo, "caption") : null, notes, ct);
+        }
+
+        private static async Task<string> PlacePhotoAsync(IAiImageClient images, ILogger logger, string html, string scene, string caption, List<string> notes, CancellationToken ct)
         {
             if (!html.Contains(PhotoMarker))
             {
@@ -173,11 +178,11 @@ Answer only by calling the tool.";
             {
                 try
                 {
-                    photo = await _aiImageClient.PhotoAsync(scene, ct);
+                    photo = await images.PhotoAsync(scene, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    _logger.LogWarning(ex, "No photo was made for a drafted article");
+                    logger.LogWarning(ex, "No photo was made for a drafted article");
                     notes.Add($"No photo was made: {ex.Message}");
                 }
             }
@@ -229,19 +234,22 @@ Answer only by calling the tool.";
                 ["notes"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" }, ["description"] = "Assumptions the planner should check." }
             };
             if (photos)
-                properties["photo"] = new JsonObject
-                {
-                    ["type"] = "object",
-                    ["description"] = "The article's one news photo, when it should have one; its place is marked " + PhotoMarker + " in the HTML.",
-                    ["properties"] = new JsonObject
-                    {
-                        ["scene"] = new JsonObject { ["type"] = "string", ["description"] = "What the photo shows, for the photo model; no text, signs, logos or identifiable people." },
-                        ["caption"] = new JsonObject { ["type"] = "string", ["description"] = "The caption under the photo." }
-                    },
-                    ["required"] = new JsonArray("scene", "caption")
-                };
+                properties["photo"] = PhotoProperty();
             return new JsonObject { ["type"] = "object", ["properties"] = properties, ["required"] = new JsonArray("html") };
         }
+
+        /// <summary>The tool input property an article's photo is described in, when the server has an image model</summary>
+        public static JsonObject PhotoProperty() => new JsonObject
+        {
+            ["type"] = "object",
+            ["description"] = "The article's one news photo, when it should have one; its place is marked " + PhotoMarker + " in the HTML.",
+            ["properties"] = new JsonObject
+            {
+                ["scene"] = new JsonObject { ["type"] = "string", ["description"] = "What the photo shows, for the photo model; no text, signs, logos or identifiable people." },
+                ["caption"] = new JsonObject { ["type"] = "string", ["description"] = "The caption under the photo." }
+            },
+            ["required"] = new JsonArray("scene", "caption")
+        };
 
         private static string GetString(JsonElement element, string property) =>
             element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;

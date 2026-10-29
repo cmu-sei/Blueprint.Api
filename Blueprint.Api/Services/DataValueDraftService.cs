@@ -22,6 +22,7 @@ using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blueprint.Api.Services
 {
@@ -41,8 +42,10 @@ namespace Blueprint.Api.Services
         private const int ExcerptLength = 400;
         private readonly BlueprintContext _context;
         private readonly IAiModelClient _aiModelClient;
+        private readonly IAiImageClient _aiImageClient;
         private readonly AiOptions _aiOptions;
         private readonly ClaimsPrincipal _user;
+        private readonly ILogger<DataValueDraftService> _logger;
 
         private const string SystemPrompt =
 @"You write one field of one inject in a Master Scenario Event List (MSEL) for a Crucible cyber exercise in Blueprint.
@@ -56,12 +59,14 @@ Rules:
 - Put any assumption you had to make, or conflict you found, in notes, not in the value.
 Answer only by calling the tool.";
 
-        public DataValueDraftService(BlueprintContext context, IAiModelClient aiModelClient, AiOptions aiOptions, IPrincipal user)
+        public DataValueDraftService(BlueprintContext context, IAiModelClient aiModelClient, IAiImageClient aiImageClient, AiOptions aiOptions, IPrincipal user, ILogger<DataValueDraftService> logger)
         {
             _context = context;
             _aiModelClient = aiModelClient;
+            _aiImageClient = aiImageClient;
             _aiOptions = aiOptions;
             _user = user as ClaimsPrincipal;
+            _logger = logger;
         }
 
         public async Task<DataValueDraftResult> DraftAsync(Guid mselId, DataValueDraftRequest request, bool hasSystemPermission, CancellationToken ct)
@@ -106,11 +111,18 @@ Answer only by calling the tool.";
             var prompt = BuildPrompt(msel, field, request, others);
             // a Gallery article's body is the whole document, laid out for its source type
             var isArticle = ArticleFields.Body(msel)?.Id == field.Id;
+            // an article gets a news photo where it calls for one, as a drafted article does
+            var photos = isArticle && _aiImageClient.IsConfigured;
             var system = isArticle
                 ? SystemPrompt + "\n\nThis field is the body of a Gallery article. Write it as the full document:\n\n" + ArticleDraftService.SystemPrompt
                 : SystemPrompt;
+            if (photos)
+                system += "\n\n" + ArticleDraftService.PhotoRules;
+            var schema = BuildSchema(field);
+            if (photos)
+                ((JsonObject)schema["properties"])["photo"] = ArticleDraftService.PhotoProperty();
             var input = await _aiModelClient.InvokeToolAsync(system, prompt, ToolName,
-                $"Submit the new value of {field.Name} for the planner to review.", BuildSchema(field), ct);
+                $"Submit the new value of {field.Name} for the planner to review.", schema, ct);
             var result = input.Deserialize<DataValueDraftResult>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
                 ?? new DataValueDraftResult();
             result.Notes = (result.Notes ?? new List<string>()).Where(n => !string.IsNullOrWhiteSpace(n)).ToList();
@@ -118,6 +130,8 @@ Answer only by calling the tool.";
                 : field.DataType == DataFieldType.Html ? CleanHtml(result.Value) : result.Value?.Trim();
             if (string.IsNullOrWhiteSpace(StripHtml(result.Value)))
                 throw new InvalidOperationException("The model returned an empty value. Try again or add an instruction.");
+            if (photos)
+                result.Value = await ArticleDraftService.PlacePhotoAsync(_aiImageClient, _logger, result.Value, input, result.Notes, ct);
             return result;
         }
 

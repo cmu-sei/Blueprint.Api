@@ -28,13 +28,16 @@ public class DataValueDraftEndpointTests(DatabaseFixture fixture, AiEnabledFacto
     : ApiTestBase(fixture, factory), IClassFixture<AiEnabledFactory>
 {
     private readonly IAiModelClient _model = factory.Model;
+    private readonly IAiImageClient _images = factory.Images;
     private string _system;
     private string _prompt;
+    private string _schema;
 
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
         _model.ClearSubstitute();
+        _images.ClearSubstitute();
         Answer("""{"value":"<p>Port of Avalon closed.</p>","notes":["Assumed the port is in Avalon."]}""");
     }
 
@@ -101,6 +104,31 @@ public class DataValueDraftEndpointTests(DatabaseFixture fixture, AiEnabledFacto
     }
 
     /// <summary>Only the formatting the editor offers comes back: scripts, attributes and unknown tags go.</summary>
+    /// <summary>
+    /// With an image model, an article body written with AI gets its news photo where the model marked it, as a drafted
+    /// article does; other text fields are not offered one.
+    /// </summary>
+    [Fact]
+    public async Task Draft_OfAGalleryArticleBody_WithAnImageModel_PutsInThePhoto()
+    {
+        _images.IsConfigured.Returns(true);
+        _images.PhotoAsync(Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>()).Returns("data:image/jpeg;base64,PHOTO");
+        Answer("""{"value":"<p>[[PHOTO]]</p><p>Port of Avalon closed.</p>","photo":{"scene":"an empty container port under storm clouds","caption":"The port on Monday."}}""");
+        var (msel, title, body, _) = await SeedMsel(useGallery: true);
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var result = await Read<DataValueDraftResult>(await Post(actor, msel.Id, Request(body, title, "Port closure")));
+
+        Assert.Contains("the photo model cannot spell", _system);
+        Assert.Contains("\"photo\"", _schema);
+        await _images.Received(1).PhotoAsync("an empty container port under storm clouds", Arg.Any<System.Threading.CancellationToken>());
+        Assert.Contains("<img src=\"data:image/jpeg;base64,PHOTO\" width=\"720\" height=\"405\" alt=\"The port on Monday.\">", result.Value);
+        Assert.DoesNotContain("[[PHOTO]]", result.Value);
+
+        await Read<DataValueDraftResult>(await Post(actor, msel.Id, Request(title, title, "Port closure")));
+        Assert.DoesNotContain("\"photo\"", _schema);
+    }
+
     /// <summary>With Gallery, the article body is written as a document of its source type, and its layout is kept.</summary>
     [Fact]
     public async Task Draft_OfAGalleryArticleBody_WritesTheDocumentAndKeepsItsLayout()
@@ -186,6 +214,7 @@ public class DataValueDraftEndpointTests(DatabaseFixture fixture, AiEnabledFacto
             {
                 _system = callInfo.ArgAt<string>(0);
                 _prompt = callInfo.ArgAt<string>(1);
+                _schema = callInfo.ArgAt<System.Text.Json.Nodes.JsonObject>(4)?.ToJsonString();
                 return JsonDocument.Parse(json).RootElement.Clone();
             });
 

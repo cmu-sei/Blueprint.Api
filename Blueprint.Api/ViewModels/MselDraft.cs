@@ -18,6 +18,31 @@ namespace Blueprint.Api.ViewModels
         /// competencies are used; when the template has none, no competencies are assigned.
         /// </summary>
         public List<Guid> CompetencyFrameworkIds { get; set; } = new List<Guid>();
+        /// <summary>The planner's answers to the design questions; anything left empty the model decides and notes</summary>
+        public MselDraftDesign Design { get; set; } = new MselDraftDesign();
+    }
+
+    /// <summary>
+    /// The design decisions that change an exercise most, asked before drafting as the author-ttx workflow does.
+    /// Every one is optional.
+    /// </summary>
+    public class MselDraftDesign
+    {
+        /// <summary>Discussion (a tabletop), Functional (hands-on in the range) or Hybrid</summary>
+        public string Format { get; set; }
+        /// <summary>How participants are organized: one combined staff, functional cells, parallel teams...</summary>
+        public string Structure { get; set; }
+        /// <summary>The CITE scoring model: None, QuestionsByMove, MissionImpact or Likelihood</summary>
+        public string CiteAssessment { get; set; }
+        public int? Moves { get; set; }
+        /// <summary>How long the exercise runs in real time, in minutes</summary>
+        public int? DurationMinutes { get; set; }
+        /// <summary>How much scenario time the exercise covers, in the planner's words, e.g. "three days"</summary>
+        public string ScenarioSpan { get; set; }
+        /// <summary>Whether the last move is a brief to leadership</summary>
+        public bool? LeadershipBrief { get; set; }
+        /// <summary>Whether to add Team Profiles and Organization Profiles pages</summary>
+        public bool ProfilePages { get; set; } = true;
     }
 
     /// <summary>A drafted MSEL in a flat form the model can fill and the planner can edit before creating it</summary>
@@ -26,6 +51,11 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
         public string Description { get; set; }
         public int DurationMinutes { get; set; }
+        /// <summary>The design the draft was written to, so import builds the same pages and CITE model</summary>
+        public MselDraftDesign Design { get; set; } = new MselDraftDesign();
+        public MselDraftScenario Scenario { get; set; } = new MselDraftScenario();
+        /// <summary>What participants are trained to do; each inject and the AAR trace back to one</summary>
+        public List<MselDraftObjective> Objectives { get; set; } = new List<MselDraftObjective>();
         public List<MselDraftMove> Moves { get; set; } = new List<MselDraftMove>();
         public List<MselDraftTeam> Teams { get; set; } = new List<MselDraftTeam>();
         public List<MselDraftOrganization> Organizations { get; set; } = new List<MselDraftOrganization>();
@@ -54,6 +84,38 @@ namespace Blueprint.Api.ViewModels
         /// ahead of the exercise clock, e.g. the next move is the next morning.
         /// </summary>
         public string SituationTime { get; set; }
+        /// <summary>What the move is for: the reasoning it makes participants do</summary>
+        public string Purpose { get; set; }
+        /// <summary>The decisions participants are expected to reach in the move</summary>
+        public List<string> ExpectedDecisions { get; set; } = new List<string>();
+        /// <summary>Notes for controllers and facilitators, never shown to participants</summary>
+        public string ControllerNotes { get; set; }
+        /// <summary>Discussion questions for the move, when the CITE assessment is questions by move</summary>
+        public List<string> CiteQuestions { get; set; } = new List<string>();
+    }
+
+    public class MselDraftScenario
+    {
+        /// <summary>The one-line problem</summary>
+        public string Problem { get; set; }
+        public string Premise { get; set; }
+        /// <summary>The operational environment: political, military, economic, social, information, infrastructure, physical, time</summary>
+        public string Environment { get; set; }
+        /// <summary>How far the scenario may escalate</summary>
+        public string EscalationCeiling { get; set; }
+        public List<string> Assumptions { get; set; } = new List<string>();
+    }
+
+    /// <summary>A training objective as task, condition and standard</summary>
+    public class MselDraftObjective
+    {
+        /// <summary>O1, O2 ... referred to by injects</summary>
+        public string Id { get; set; }
+        public string Task { get; set; }
+        public string Condition { get; set; }
+        public string Standard { get; set; }
+        /// <summary>Competency ID numbers the objective exercises</summary>
+        public List<string> Competencies { get; set; } = new List<string>();
     }
 
     public class MselDraftTeam
@@ -100,6 +162,10 @@ namespace Blueprint.Api.ViewModels
         public List<string> Competencies { get; set; } = new List<string>();
         /// <summary>The name of the Gallery card the article goes on; empty for an inject that is not a Gallery article</summary>
         public string Card { get; set; }
+        /// <summary>What participants are expected to do when they get the inject</summary>
+        public string ExpectedAction { get; set; }
+        /// <summary>The ID of the objective the inject serves</summary>
+        public string Objective { get; set; }
     }
 
     /// <summary>A competency the draft assigned, named so the planner can review it</summary>

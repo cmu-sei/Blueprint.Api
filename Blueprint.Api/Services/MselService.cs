@@ -2263,7 +2263,7 @@ namespace Blueprint.Api.Services
 
             // the template supplies the columns, teams, integrations and pages; the draft supplies the moves and rows
             var mselEntity = await LoadMselGraphAsync(template.Id, ct);
-            MselDraftRules.AddGalleryFields(mselEntity);
+            MselDraftRules.AddDraftFields(mselEntity);
             mselEntity.Name = draft.Name;
             mselEntity.Description = draft.Description;
             mselEntity.DurationSeconds = draft.DurationMinutes * 60;
@@ -2455,6 +2455,8 @@ namespace Blueprint.Api.Services
                         if (dataField == competencyField)
                             value = inject.Competencies.Any() ? string.Join(", ", inject.Competencies) : null;
                         // the card's ID, which the copy below moves to the new card's ID
+                        else if (MselDraftRules.IsExpectedActionField(dataField))
+                            value = inject.ExpectedAction;
                         else if (dataField == cardField)
                             value = inject.Card != null && cardsByName.TryGetValue(inject.Card, out var injectCard) ? injectCard.Id.ToString() : null;
                         else if (!inject.Values.TryGetValue(dataField.Name, out value))

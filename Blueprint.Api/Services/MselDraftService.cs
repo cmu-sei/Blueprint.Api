@@ -39,9 +39,25 @@ namespace Blueprint.Api.Services
         private readonly ClaimsPrincipal _user;
 
         private const string SystemPrompt =
-@"You draft Master Scenario Event Lists (MSELs) for Crucible cyber exercises in Blueprint.
+@"You design and draft Master Scenario Event Lists (MSELs) for Crucible cyber exercises in Blueprint, the way an exercise design
+team would: the scenario first, then the training objectives, then the moves and the injects that drive them.
 A MSEL is organized as Move > Group > Inject. Moves are time-bounded phases of the exercise. Injects that share a delivery time form a group.
 Write for an exercise planner who will review and edit every line before anything reaches participants.
+
+Design:
+- Start from the problem, the premise and the operational environment (political, military, economic, social, information,
+  infrastructure, physical environment and time), and set an escalation ceiling the scenario never passes. Keep one scenario thread.
+- Write 3 to 6 training objectives as task, condition and standard: the task participants perform, the conditions and resources they
+  have, and the standard that shows it was done well (how fast, how complete, to what result). Number them O1, O2 ...
+- Give each move a purpose (the reasoning it makes participants do), a situation update, the decisions participants are expected
+  to reach, and controller notes for the facilitators.
+- Make every inject earn its place: it forces a decision or action that serves an objective. Give each inject its expected action
+  and the objective it serves. Keep participants inside the role being trained: the adversary acts; participants decide, coordinate
+  and do their own staff work.
+- Keep everything traceable: scenario, move, inject, expected action, objective, competency.
+- Follow the planner's design choices. Where they leave something open, choose a conservative default and say what you chose in
+  plannerNotes.
+
 Rules:
 - Use fictional organizations, people, domains and IP addresses (RFC 5737 / RFC 1918 ranges, example.com style domains). Never use real personal data.
 - Describe adversary activity at the level a defender would observe it. Never include working exploit code, malware, or real credentials.
@@ -56,10 +72,13 @@ Rules:
   story (articles, emails, reports) on the scenario clock within its move.
 - Write a read-in for participants to read before the first move: the scenario background, who they are and what they are
   responsible for, the organizations they will deal with, the rules of play, and how the two clocks work, with the scenario date
-  and time the exercise opens. Use headings, short paragraphs, lists and a table where one helps; no images.
+  and time the exercise opens. Use headings, short paragraphs, lists and a table where one helps; no images. Open the MSEL with an
+  Information inject at minute 0 from EXCON telling participants to read the read-in page before play starts.
 When the MSEL uses CITE:
-- For each move, list the actions each participant team should take, as short imperative sentences the team checks off in CITE
-  (for example: Isolate the affected hosts; Notify the state fusion center). Three to six actions per team per move.
+- For each move, list the tasks each participant team must complete, as short imperative sentences the team checks off in CITE
+  (for example: Isolate the affected hosts; Notify the state fusion center). They are tasks, never questions. Three to six per team per move.
+- When the assessment is questions by move, write 3 to 5 open discussion questions for each move in citeQuestions: questions that
+  make the team reason through the move's decisions and objectives, not questions with a single right answer.
 When the MSEL uses Gallery:
 - Most participant-facing injects are Gallery articles: news stories, social posts, emails, phone calls, intel and situation reports, orders.
   Pick the source type that matches the document, and name the outlet, account or office in the source name.
@@ -90,13 +109,17 @@ Answer only by calling the tool.";
             if (competencies.Count > _aiOptions.MaxCompetencies)
                 throw new ArgumentException($"The chosen frameworks have {competencies.Count} competencies, more than the {_aiOptions.MaxCompetencies} a draft can choose from. Choose fewer frameworks.");
             var fields = MselDraftRules.DraftedFields(template).ToList();
-            var schema = BuildSchema(fields, _aiOptions.MaxInjects, competencies, MselDraftRules.UsesCards(template), template.UseCite);
-            var prompt = BuildPrompt(request.Prompt, template, fields, _aiOptions.MaxInjects, competencies);
+            var design = MselDraftRules.CleanDesign(request.Design, template);
+            var schema = BuildSchema(fields, _aiOptions.MaxInjects, competencies, MselDraftRules.UsesCards(template), template.UseCite,
+                design.CiteAssessment == MselDraftRules.QuestionsByMove);
+            var prompt = BuildPrompt(request.Prompt, template, fields, _aiOptions.MaxInjects, competencies, design);
 
             var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, prompt, ToolName,
                 "Submit the drafted MSEL for the planner to review.", schema, ct);
             var draft = input.Deserialize<MselDraft>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
                 ?? new MselDraft();
+            // the planner's choices, not the model's, decide what import builds
+            draft.Design = design;
 
             var result = new MselDraftResult
             {
@@ -167,14 +190,14 @@ Answer only by calling the tool.";
             if (!await MselViewRequirement.IsMet(userId, templateMselId, true, context))
                 throw new ForbiddenException();
             // untracked, so the columns added here go into the draft and never into the template
-            MselDraftRules.AddGalleryFields(template);
+            MselDraftRules.AddDraftFields(template);
             return template;
         }
 
         // an enum makes the model's choice exact, but a whole framework would double the prompt
         private const int MaxCompetencyEnum = 200;
 
-        private static JsonObject BuildSchema(List<DataFieldEntity> fields, int maxInjects, Dictionary<string, CompetencyEntity> competencies, bool useCards, bool useCite)
+        private static JsonObject BuildSchema(List<DataFieldEntity> fields, int maxInjects, Dictionary<string, CompetencyEntity> competencies, bool useCards, bool useCite, bool citeQuestions)
         {
             var valueProperties = new JsonObject();
             foreach (var field in fields)
@@ -236,22 +259,44 @@ Answer only by calling the tool.";
                 }
             };
             AddCompetencies(injectProperties, "Competencies participants demonstrate by acting on this inject; empty for injects that only set the scene");
+            injectProperties["expectedAction"] = Str("What participants are expected to do when they get the inject; empty for one that only sets the scene");
+            injectProperties["objective"] = Str("The ID of the objective the inject serves, e.g. O2");
             if (useCards)
                 injectProperties["card"] = Str("The name of the Gallery card the article goes on, exactly as listed in cards; empty if the inject is not a Gallery article");
 
+            var objectiveProperties = new JsonObject
+            {
+                ["id"] = Str("O1, O2 ..."),
+                ["task"] = Str("What participants do"),
+                ["condition"] = Str("The situation and resources they do it with"),
+                ["standard"] = Str("How well, how fast or to what result")
+            };
+            AddCompetencies(objectiveProperties, "Competencies the objective exercises");
             var properties = new JsonObject
             {
                 ["name"] = Str("Short exercise name"),
                 ["description"] = Str("One paragraph: scenario, audience and objectives"),
                 ["durationMinutes"] = Int("Total exercise length in minutes"),
+                ["scenario"] = Obj(new JsonObject
+                {
+                    ["problem"] = Str("The one-line problem participants face"),
+                    ["premise"] = Str("The scenario premise: what has happened and why it matters"),
+                    ["environment"] = Str("The operational environment: political, military, economic, social, information, infrastructure, physical environment and time"),
+                    ["escalationCeiling"] = Str("How far the scenario may escalate, and what it never does"),
+                    ["assumptions"] = Arr(Str("A scenario assumption"), "What the scenario takes as given")
+                }, "problem", "premise", "environment", "escalationCeiling"),
+                ["objectives"] = Arr(Obj(objectiveProperties, "id", "task", "condition", "standard"), "3 to 6 training objectives"),
                 ["moves"] = Arr(Obj(new JsonObject
                 {
                     ["moveNumber"] = Int("0, 1, 2 ... in time order"),
                     ["description"] = Str("Move title, e.g. Initial Detection"),
                     ["situationDescription"] = Str("The situation at the start of the move, as briefed to participants"),
                     ["startMinutes"] = Int("Minutes from exercise start; the first move is 0"),
-                    ["situationTime"] = Str("The scenario date and time when the move opens, in ISO 8601 UTC, e.g. 2026-03-04T08:00:00Z; later than the move before")
-                }, "moveNumber", "description", "situationDescription", "startMinutes", "situationTime"), "Phases of the exercise in time order"),
+                    ["situationTime"] = Str("The scenario date and time when the move opens, in ISO 8601 UTC, e.g. 2026-03-04T08:00:00Z; later than the move before"),
+                    ["purpose"] = Str("What the move is for: the reasoning it makes participants do"),
+                    ["expectedDecisions"] = Arr(Str("A decision participants are expected to reach"), "The decisions the move should produce"),
+                    ["controllerNotes"] = Str("Notes for controllers and facilitators: what to watch for, when to push, what to hold back")
+                }, "moveNumber", "description", "situationDescription", "startMinutes", "situationTime", "purpose", "expectedDecisions"), "Phases of the exercise in time order"),
                 ["teams"] = Arr(Obj(teamProperties, "name", "shortName"), "Participant teams; reuse the template's teams when they fit"),
                 ["organizations"] = Arr(Obj(new JsonObject
                 {
@@ -269,13 +314,16 @@ Answer only by calling the tool.";
                 ["readIn"] = Str("The participants' read-in, in HTML: background, roles, organizations, rules of play, the two clocks"),
                 ["plannerNotes"] = Arr(Str("Assumption or open question"), "Things the planner should check")
             };
+            if (citeQuestions)
+                ((JsonObject)properties["moves"]["items"]["properties"])["citeQuestions"] =
+                    Arr(Str("An open discussion question"), "3 to 5 discussion questions for the move, for CITE");
             if (useCite)
                 properties["citeActions"] = Arr(Obj(new JsonObject
                 {
                     ["moveNumber"] = Int("The move the action belongs to"),
                     ["team"] = Str("The short name of the participant team that takes the action"),
-                    ["description"] = Str("The action, as a short imperative sentence")
-                }, "moveNumber", "team", "description"), "What each participant team should do in each move, for CITE");
+                    ["description"] = Str("The task, as a short imperative sentence")
+                }, "moveNumber", "team", "description"), "The tasks each participant team must complete in each move, for CITE");
             if (useCards)
                 properties["cards"] = Arr(Obj(new JsonObject
                 {
@@ -283,10 +331,10 @@ Answer only by calling the tool.";
                     ["description"] = Str("One sentence: whose articles or which thread the card holds")
                 }, "name", "description"), "Gallery cards in wall order, starting with Exercise Control; reuse the template's cards when they fit");
             AddCompetencies(properties, "Every competency the exercise lets participants demonstrate");
-            return Obj(properties, "name", "description", "durationMinutes", "moves", "teams", "organizations", "injects", "readIn");
+            return Obj(properties, "name", "description", "durationMinutes", "scenario", "objectives", "moves", "teams", "organizations", "injects", "readIn");
         }
 
-        public static string BuildPrompt(string plannerPrompt, MselEntity template, List<DataFieldEntity> fields, int maxInjects, Dictionary<string, CompetencyEntity> competencies)
+        public static string BuildPrompt(string plannerPrompt, MselEntity template, List<DataFieldEntity> fields, int maxInjects, Dictionary<string, CompetencyEntity> competencies, MselDraftDesign design = null)
         {
             var sb = new StringBuilder();
             sb.AppendLine($"Template: {template.Name}");
@@ -308,6 +356,10 @@ Answer only by calling the tool.";
                 sb.AppendLine($"Template Gallery cards: {string.Join("; ", template.Cards.OrderBy(c => c.Move).ThenBy(c => c.Inject).Select(c => $"{c.Name} ({c.Description})"))}");
             sb.AppendLine($"Columns to fill for each inject: {string.Join(", ", fields.Select(f => f.Name))}");
             sb.AppendLine($"Write at most {maxInjects} injects.");
+            sb.AppendLine();
+            sb.AppendLine("The planner's design choices (decide anything marked open, and note what you chose):");
+            foreach (var line in MselDraftRules.DescribeDesign(design ?? new MselDraftDesign()))
+                sb.AppendLine($"- {line}");
             if (competencies.Any())
             {
                 sb.AppendLine();
@@ -348,6 +400,8 @@ Answer only by calling the tool.";
                 DataFieldType.Card => true,
                 // filled from each inject's competencies, which are checked against the list
                 DataFieldType.Competency => true,
+                // filled from each inject's expected action
+                DataFieldType.String or DataFieldType.Html when IsExpectedActionField(field) => true,
                 _ => false
             };
 
@@ -407,6 +461,74 @@ Answer only by calling the tool.";
                 body.DataType = DataFieldType.Html;
         }
 
+        public const string QuestionsByMove = "QuestionsByMove";
+        public const string MissionImpact = "MissionImpact";
+        public const string Likelihood = "Likelihood";
+        public const string NoAssessment = "None";
+        private static readonly string[] _assessments = [QuestionsByMove, MissionImpact, Likelihood, NoAssessment];
+        private static readonly string[] _formats = ["Discussion", "Functional", "Hybrid"];
+        private static readonly string[] _expectedActionNames = ["Expected Actions", "Expected Action"];
+
+        /// <summary>
+        /// The planner's design choices in a form drafting and import can trust. Without CITE there is no assessment;
+        /// with CITE and none chosen, it is questions by move, the default discussion model of the author-ttx workflow.
+        /// </summary>
+        public static MselDraftDesign CleanDesign(MselDraftDesign design, MselEntity template)
+        {
+            design ??= new MselDraftDesign();
+            string Pick(string value, string[] allowed) => allowed.FirstOrDefault(a => a.Equals(value?.Trim(), StringComparison.OrdinalIgnoreCase));
+            string Text(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim().Length > 300 ? value.Trim()[..300] : value.Trim();
+            return new MselDraftDesign
+            {
+                Format = Pick(design.Format, _formats),
+                Structure = Text(design.Structure),
+                CiteAssessment = !template.UseCite ? NoAssessment : Pick(design.CiteAssessment, _assessments) ?? QuestionsByMove,
+                Moves = design.Moves is int moves ? Math.Clamp(moves, 1, 12) : null,
+                DurationMinutes = design.DurationMinutes is int minutes ? Math.Clamp(minutes, 15, 2880) : null,
+                ScenarioSpan = Text(design.ScenarioSpan),
+                LeadershipBrief = design.LeadershipBrief,
+                ProfilePages = design.ProfilePages
+            };
+        }
+
+        /// <summary>The design choices as the model is told them, one line each</summary>
+        public static IEnumerable<string> DescribeDesign(MselDraftDesign design)
+        {
+            const string open = "open";
+            yield return $"Format: {design.Format switch { "Discussion" => "a discussion-based tabletop: participants talk through decisions, no hands-on tasks", "Functional" => "functional: participants work hands-on in the range", "Hybrid" => "hybrid: discussion moves with some hands-on work in the range", _ => open }}";
+            yield return $"Participant structure: {design.Structure ?? open}";
+            yield return $"CITE assessment: {design.CiteAssessment switch { QuestionsByMove => "questions by move: write citeQuestions for every move", MissionImpact => "the DoD Cyber Table Top mission impact matrix: teams score mission impact each move, so write no discussion questions", Likelihood => "the DoD Cyber Table Top likelihood matrix: teams score each attack's cost and chance of success, so write no discussion questions", NoAssessment => "none", _ => open }}";
+            yield return $"Moves: {(design.Moves?.ToString() ?? open)}";
+            yield return $"Exercise length in real time: {(design.DurationMinutes is int minutes ? $"{minutes} minutes" : open)}";
+            yield return $"Scenario time the exercise covers: {design.ScenarioSpan ?? open}";
+            yield return $"Final move is a brief to leadership: {design.LeadershipBrief switch { true => "yes", false => "no", _ => open }}";
+        }
+
+        /// <summary>The column a draft writes each inject's expected action to; shown to controllers, not on the exercise view</summary>
+        public static bool IsExpectedActionField(DataFieldEntity field) =>
+            field.DataType is DataFieldType.String or DataFieldType.Html
+            && _expectedActionNames.Any(n => field.Name.Trim().Equals(n, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>The template's columns plus those a draft needs: the Gallery article columns, and Expected Actions</summary>
+        public static void AddDraftFields(MselEntity msel)
+        {
+            AddGalleryFields(msel);
+            if (msel.DataFields.Any(IsExpectedActionField))
+                return;
+            msel.DataFields.Add(new DataFieldEntity
+            {
+                Id = Guid.NewGuid(),
+                MselId = msel.Id,
+                Name = "Expected Actions",
+                Description = "What participants are expected to do; for controllers",
+                DataType = DataFieldType.String,
+                DisplayOrder = msel.DataFields.Select(f => f.DisplayOrder).DefaultIfEmpty(0).Max() + 1,
+                OnScenarioEventList = true,
+                OnExerciseView = false,
+                IsShownOnDefaultTab = true
+            });
+        }
+
         /// <summary>Whether the draft puts Gallery articles on cards: the MSEL uses Gallery and has a column for the card</summary>
         public static bool UsesCards(MselEntity template) =>
             template.UseGallery && template.DataFields.Any(f => f.GalleryArticleParameter == nameof(GalleryArticleParameter.CardId));
@@ -463,6 +585,23 @@ Answer only by calling the tool.";
             draft.Competencies ??= new List<string>();
             draft.PlannerNotes ??= new List<string>();
             draft.CiteActions ??= new List<MselDraftCiteAction>();
+            draft.Design = CleanDesign(draft.Design, template);
+            draft.Scenario ??= new MselDraftScenario();
+            draft.Scenario.Assumptions = Lines(draft.Scenario.Assumptions);
+            draft.Objectives ??= new List<MselDraftObjective>();
+
+            // objectives: a task each, and a unique ID injects can name
+            var objectives = new List<MselDraftObjective>();
+            foreach (var objective in draft.Objectives.Where(o => !string.IsNullOrWhiteSpace(o?.Task)))
+            {
+                var id = objective.Id?.Trim().ToUpperInvariant();
+                if (string.IsNullOrEmpty(id) || objectives.Any(o => o.Id == id))
+                    id = $"O{Enumerable.Range(1, 100).First(n => objectives.All(o => o.Id != $"O{n}"))}";
+                objective.Id = id;
+                objective.Task = objective.Task.Trim();
+                objectives.Add(objective);
+            }
+            draft.Objectives = objectives;
 
             // teams and organizations: unique short names, without the commas that separate team lists
             draft.Teams = UniqueByShortName(draft.Teams, t => t.ShortName, (t, s) => t.ShortName = s, t => t.Name, warnings, "team");
@@ -505,6 +644,17 @@ Answer only by calling the tool.";
                 draft.Moves.Insert(0, new MselDraftMove { MoveNumber = 0, Description = "Start of exercise", StartMinutes = 0 });
                 warnings.Add("Added a move at minute 0 so every inject belongs to a move.");
             }
+            // what each move asks of participants and facilitators; discussion questions only for a questions-by-move assessment
+            foreach (var move in draft.Moves)
+            {
+                move.ExpectedDecisions = Lines(move.ExpectedDecisions);
+                move.CiteQuestions = draft.Design.CiteAssessment == QuestionsByMove ? Lines(move.CiteQuestions) : new List<string>();
+                move.Purpose = string.IsNullOrWhiteSpace(move.Purpose) ? null : move.Purpose.Trim();
+                move.ControllerNotes = string.IsNullOrWhiteSpace(move.ControllerNotes) ? null : move.ControllerNotes.Trim();
+            }
+            if (draft.Design.CiteAssessment == QuestionsByMove && draft.Moves.Any(m => !m.CiteQuestions.Any()))
+                warnings.Add($"No discussion questions for move {string.Join(", ", draft.Moves.Where(m => !m.CiteQuestions.Any()).Select(m => m.MoveNumber))}; add them before creating the MSEL, or CITE shows those moves empty.");
+
             // the scenario clock: each move's time in UTC, never earlier than the move before
             DateTime? previousTime = null;
             foreach (var move in draft.Moves)
@@ -569,6 +719,24 @@ Answer only by calling the tool.";
                 }
             }
             draft.Injects = draft.Injects.OrderBy(i => i.Minutes).ToList();
+            var objectiveIds = new HashSet<string>(draft.Objectives.Select(o => o.Id), StringComparer.OrdinalIgnoreCase);
+            var unknownObjectives = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var inject in draft.Injects)
+            {
+                inject.ExpectedAction = string.IsNullOrWhiteSpace(inject.ExpectedAction) ? null : inject.ExpectedAction.Trim();
+                var objective = inject.Objective?.Trim();
+                if (string.IsNullOrEmpty(objective))
+                    inject.Objective = null;
+                else if (objectiveIds.Contains(objective))
+                    inject.Objective = objectiveIds.First(id => id.Equals(objective, StringComparison.OrdinalIgnoreCase));
+                else
+                {
+                    unknownObjectives.Add(objective);
+                    inject.Objective = null;
+                }
+            }
+            if (unknownObjectives.Any())
+                warnings.Add($"Took injects off objectives the draft does not have: {string.Join(", ", unknownObjectives)}.");
             if (unknownCards.Any())
                 warnings.Add($"Took injects off cards the draft does not have: {string.Join(", ", unknownCards)}.");
             if (droppedColumns.Any())
@@ -659,9 +827,12 @@ Answer only by calling the tool.";
                 inject.Competencies = KnownCompetencies(inject.Competencies);
             foreach (var team in draft.Teams)
                 team.Competencies = KnownCompetencies(team.Competencies);
+            foreach (var objective in draft.Objectives)
+                objective.Competencies = KnownCompetencies(objective.Competencies);
             draft.Competencies = KnownCompetencies(draft.Competencies
                 .Concat(draft.Injects.SelectMany(i => i.Competencies))
                 .Concat(draft.Teams.SelectMany(t => t.Competencies))
+                .Concat(draft.Objectives.SelectMany(o => o.Competencies))
                 .ToList());
             if (unknownCompetencies.Any())
                 warnings.Add($"Dropped competencies that are not in the list the draft could choose from: {string.Join(", ", unknownCompetencies)}.");
@@ -725,6 +896,9 @@ Answer only by calling the tool.";
         }
 
         private static readonly System.Text.RegularExpressions.Regex _markup = new(@"<[a-zA-Z]");
+
+        private static List<string> Lines(List<string> lines) =>
+            (lines ?? new List<string>()).Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()).Distinct().ToList();
 
         /// <summary>A date and time in UTC; one without a zone is taken as UTC</summary>
         public static DateTime? ParseUtc(string value) =>

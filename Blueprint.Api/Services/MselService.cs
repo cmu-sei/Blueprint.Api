@@ -2470,8 +2470,27 @@ namespace Blueprint.Api.Services
                 }
             }
 
+            // with Steamfitter, STARTEX and ENDEX rows tell every participant in Player when play starts and stops,
+            // the move-boundary notifications the blueprint-ttx loader adds
+            var rows = draft.Injects.ToList();
+            var notifications = new Dictionary<MselDraftInject, (string Title, string Text)>();
+            var titleField = MselDraftRules.TitleField(mselEntity);
+            if (mselEntity.UseSteamfitter)
+            {
+                MselDraftInject Boundary(int minutes, string title, string text)
+                {
+                    var row = new MselDraftInject { Minutes = minutes, EventType = nameof(EventType.Facilitation) };
+                    if (titleField != null)
+                        row.Values[titleField.Name] = title;
+                    notifications[row] = (title, text);
+                    return row;
+                }
+                rows.Insert(0, Boundary(0, "STARTEX", "STARTEX: the exercise has started. Review the new material in Gallery and Player."));
+                rows.Add(Boundary(draft.DurationMinutes, "ENDEX", "ENDEX: the exercise has ended. Thank you for taking part."));
+            }
+
             // one data value per column, as when a planner adds a row
-            foreach (var group in draft.Injects.GroupBy(i => i.Minutes))
+            foreach (var group in rows.GroupBy(i => i.Minutes))
             {
                 var groupOrder = 0;
                 foreach (var inject in group)
@@ -2484,14 +2503,35 @@ namespace Blueprint.Api.Services
                         GroupOrder = groupOrder++,
                         ScenarioEventType = Enum.Parse<EventType>(inject.EventType, true)
                     };
+                    // the push sends only the rows whose integration target names the application
+                    if (mselEntity.UseGallery && ArticleFields.IsArticle(mselEntity, inject.Values))
+                        scenarioEvent.IntegrationTarget = "Gallery";
+                    if (notifications.TryGetValue(inject, out var notification))
+                    {
+                        scenarioEvent.IntegrationTarget = "Steamfitter";
+                        scenarioEvent.SteamfitterTaskId = Guid.NewGuid();
+                        scenarioEvent.SteamfitterTask = new SteamfitterTaskEntity
+                        {
+                            Id = scenarioEvent.SteamfitterTaskId.Value,
+                            ScenarioEventId = scenarioEvent.Id,
+                            Name = $"{notification.Title} notification",
+                            Description = "Tells every participant in Player",
+                            TaskType = SteamfitterIntegrationType.Notification,
+                            Action = SteamfitterTaskAction.http_post,
+                            TriggerCondition = SteamfitterTaskTrigger.Time,
+                            ActionParameters = new Dictionary<string, string> { ["notificationText"] = notification.Text },
+                            Iterations = 1,
+                            UserExecutable = true
+                        };
+                    }
                     foreach (var dataField in mselEntity.DataFields)
                     {
                         string value;
                         if (dataField == competencyField)
                             value = inject.Competencies.Any() ? string.Join(", ", inject.Competencies) : null;
-                        // the card's ID, which the copy below moves to the new card's ID
                         else if (MselDraftRules.IsExpectedActionField(dataField))
                             value = inject.ExpectedAction;
+                        // the card's ID, which the copy below moves to the new card's ID
                         else if (dataField == cardField)
                             value = inject.Card != null && cardsByName.TryGetValue(inject.Card, out var injectCard) ? injectCard.Id.ToString() : null;
                         else if (!inject.Values.TryGetValue(dataField.Name, out value))

@@ -348,6 +348,8 @@ Rules:
                         MselId = mselId,
                         DeltaSeconds = deltaSeconds,
                         ScenarioEventType = Enum.Parse<EventType>(change.EventType),
+                        // the push sends a row to Gallery only when its integration target says so
+                        IntegrationTarget = state.Msel.UseGallery && ArticleFields.IsArticle(state.Msel, change.Values) ? "Gallery" : null,
                         DataValues = cells
                     }, permissions.EditMsels, ct);
                     break;
@@ -376,7 +378,7 @@ Rules:
                         IsHidden = inject.IsHidden,
                         RowMetadata = inject.RowMetadata,
                         ScenarioEventType = change.EventType != null ? Enum.Parse<EventType>(change.EventType) : inject.ScenarioEventType,
-                        IntegrationTarget = inject.IntegrationTarget,
+                        IntegrationTarget = GalleryTarget(state.Msel, inject.IntegrationTarget, cells),
                         Information = inject.Information,
                         DataValues = cells
                     }, permissions.EditMsels, ct);
@@ -448,6 +450,17 @@ Rules:
                 .ToListAsync(ct);
             foreach (var match in found.GroupBy(c => c.IdNumber.ToLowerInvariant()))
                 state.Competencies.TryAdd(match.Key, match.OrderByDescending(c => frameworks.Contains(c.CompetencyFrameworkId)).First());
+        }
+
+        // an edit that makes a row a Gallery article also sends it to Gallery; the row's other targets stay
+        private static string GalleryTarget(MselEntity msel, string target, List<ScenarioEventCell> cells)
+        {
+            var values = cells.Where(c => c.Value != null)
+                .Join(msel.DataFields, c => c.DataFieldId, f => f.Id, (c, f) => (f.Name, c.Value))
+                .ToDictionary(v => v.Name, v => v.Value);
+            if (!msel.UseGallery || !ArticleFields.IsArticle(msel, values) || (target?.Contains("Gallery") ?? false))
+                return target;
+            return string.IsNullOrEmpty(target) ? "Gallery" : target + "|Gallery";
         }
 
         private static string BuildPrompt(MselAssistRequest request, MselAssistState state, List<CompetencyEntity> workRoles, MselAssistAccess access)

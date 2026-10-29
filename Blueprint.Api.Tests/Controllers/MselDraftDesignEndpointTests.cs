@@ -192,6 +192,38 @@ public class MselDraftDesignEndpointTests(DatabaseFixture fixture, AiEnabledFact
         Assert.Equal(teams, apps["Exercise Timeline"].PlayerApplicationTeams.Select(t => t.TeamId).Order());
     }
 
+    /// <summary>
+    /// The push sends only rows whose integration target names the application: Gallery articles get Gallery; with
+    /// Steamfitter, STARTEX and ENDEX rows carry a Player notification each.
+    /// </summary>
+    [Fact]
+    public async Task Import_TargetsArticlesAtGalleryAndNotifiesAtStartexAndEndex()
+    {
+        var template = await SeedTemplate(useCite: false, useGallery: true, useSteamfitter: true);
+        var draft = JsonSerializer.Deserialize<MselDraft>(Draft(), JsonOptions);
+        draft.Injects[0].Values["SourceType"] = "News";
+        var planner = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/import", new MselDraftImport { TemplateMselId = template.Id, Draft = draft }, JsonOptions, Ct);
+
+        var mselId = (await Read<MselImportResult>(response)).Msel.Id;
+        await using var db = NewContext();
+        var title = await db.DataFields.SingleAsync(f => f.MselId == mselId && f.Name == "Title", Ct);
+        var events = await db.ScenarioEvents.Include(e => e.DataValues).Include(e => e.SteamfitterTask)
+            .Where(e => e.MselId == mselId).OrderBy(e => e.DeltaSeconds).ThenBy(e => e.GroupOrder).ToListAsync(Ct);
+        string Title(ScenarioEventEntity e) => e.DataValues.Single(v => v.DataFieldId == title.Id).Value;
+        Assert.Equal(["STARTEX", "Outage", "Press call", "ENDEX"], events.Select(Title));
+        Assert.Equal(["Steamfitter", "Gallery", null, "Steamfitter"], events.Select(e => e.IntegrationTarget));
+        Assert.Equal([0, 5 * 60, 70 * 60, 120 * 60], events.Select(e => e.DeltaSeconds));
+        var startex = events[0].SteamfitterTask;
+        Assert.Equal(SteamfitterIntegrationType.Notification, startex.TaskType);
+        Assert.Equal(SteamfitterTaskTrigger.Time, startex.TriggerCondition);
+        Assert.Equal("STARTEX notification", startex.Name);
+        Assert.StartsWith("STARTEX: the exercise has started.", startex.ActionParameters["notificationText"]);
+        Assert.StartsWith("ENDEX:", events[3].SteamfitterTask.ActionParameters["notificationText"]);
+        Assert.Null(events[1].SteamfitterTask);
+    }
+
     /// <summary>Copying a MSEL keeps a Player application that links to one of its pages pointing at the copy's page.</summary>
     [Fact]
     public async Task Copy_PointsAPageApplicationAtTheCopysPage()
@@ -268,11 +300,13 @@ public class MselDraftDesignEndpointTests(DatabaseFixture fixture, AiEnabledFact
     }
 
     // a template with team BLUE and a Title column
-    private async Task<MselEntity> SeedTemplate(bool useCite, bool usePlayer = false)
+    private async Task<MselEntity> SeedTemplate(bool useCite, bool usePlayer = false, bool useGallery = false, bool useSteamfitter = false)
     {
         var template = TestData.Msel(isTemplate: true);
         template.UseCite = useCite;
         template.UsePlayer = usePlayer;
+        template.UseGallery = useGallery;
+        template.UseSteamfitter = useSteamfitter;
         var blue = TestData.Team(template.Id);
         blue.ShortName = "BLUE";
         await Seed(template, blue, TestData.DataField(template.Id, name: "Title", displayOrder: 1));

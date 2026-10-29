@@ -509,6 +509,12 @@ Answer only by calling the tool.";
             yield return $"Final move is a brief to leadership: {design.LeadershipBrief switch { true => "yes", false => "no", _ => open }}";
         }
 
+        /// <summary>The column that names a row: the Gallery title, else a text column called Title, Message or Name</summary>
+        public static DataFieldEntity TitleField(MselEntity msel) =>
+            msel.DataFields.FirstOrDefault(f => f.GalleryArticleParameter == nameof(GalleryArticleParameter.Name))
+            ?? msel.DataFields.OrderBy(f => f.DisplayOrder).FirstOrDefault(f => f.DataType == DataFieldType.String
+                && new[] { "title", "message", "name" }.Contains(f.Name.Trim().ToLowerInvariant()));
+
         /// <summary>The column a draft writes each inject's expected action to; shown to controllers, not on the exercise view</summary>
         public static bool IsExpectedActionField(DataFieldEntity field) =>
             field.DataType is DataFieldType.String or DataFieldType.Html

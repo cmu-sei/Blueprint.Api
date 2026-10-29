@@ -1020,7 +1020,7 @@ Answer only by calling the tool.";
         public static MselDraft ReadDraft(JsonElement input, List<string> warnings)
         {
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var node = JsonNode.Parse(input.GetRawText());
+            var node = BedrockAiModelClient.ToNode(input);
             for (var attempt = 0; attempt < 20; attempt++)
             {
                 try

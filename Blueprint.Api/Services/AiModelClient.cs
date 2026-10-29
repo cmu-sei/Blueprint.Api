@@ -87,7 +87,17 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             if (StopReason(response) == "refusal" && !string.IsNullOrWhiteSpace(_options.FallbackModelId))
                 response = await InvokeAsync(client, _options.FallbackModelId, body, toolName, ct);
 
-            return RepairStringifiedJson(ReadToolInput(response), inputSchema);
+            var input = ReadToolInput(response);
+            try
+            {
+                return RepairStringifiedJson(input, inputSchema);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // the answer was paid for; what reads it next copes with what the repair could not fix
+                _logger.LogWarning(ex, "Could not repair the {Tool} answer from {Model}; using it as written", toolName, _options.ModelId);
+                return input;
+            }
         }
 
         /// <summary>
@@ -96,8 +106,34 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
         /// </summary>
         public static JsonElement RepairStringifiedJson(JsonElement input, JsonObject schema)
         {
-            var node = JsonNode.Parse(input.GetRawText());
+            var node = ToNode(input);
             return JsonSerializer.SerializeToElement(Repair(node, schema));
+        }
+
+        /// <summary>
+        /// An editable copy of a model's JSON. A model sometimes repeats a key in one object; JSON allows it, but a
+        /// <see cref="JsonObject"/> throws the first time it is read, so the copy keeps the last value, as a JSON reader does.
+        /// </summary>
+        public static JsonNode ToNode(JsonElement element)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    var obj = new JsonObject();
+                    foreach (var property in element.EnumerateObject())
+                        obj[property.Name] = ToNode(property.Value);
+                    return obj;
+                case JsonValueKind.Array:
+                    var array = new JsonArray();
+                    foreach (var item in element.EnumerateArray())
+                        array.Add(ToNode(item));
+                    return array;
+                case JsonValueKind.Undefined:
+                case JsonValueKind.Null:
+                    return null;
+                default:
+                    return JsonValue.Create(element.Clone());
+            }
         }
 
         private static string FirstRequiredText(JsonNode schema) =>
@@ -112,7 +148,8 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             {
                 try
                 {
-                    var parsed = JsonNode.Parse(text);
+                    using var document = JsonDocument.Parse(text);
+                    var parsed = ToNode(document.RootElement);
                     if ((type == "array" && parsed is JsonArray) || (type == "object" && parsed is JsonObject))
                         node = parsed;
                 }
@@ -271,7 +308,7 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             foreach (var (index, block) in _blocks)
             {
                 if (_partialJson.TryGetValue(index, out var json))
-                    block["input"] = json.Length == 0 ? new JsonObject() : JsonNode.Parse(json.ToString());
+                    block["input"] = json.Length == 0 ? new JsonObject() : BedrockAiModelClient.ToNode(JsonDocument.Parse(json.ToString()).RootElement);
                 content.Add(block.DeepClone());
             }
             return JsonSerializer.SerializeToElement(_message);

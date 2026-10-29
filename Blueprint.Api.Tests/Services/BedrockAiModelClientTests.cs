@@ -181,6 +181,26 @@ public class BedrockAiModelClientTests
         Assert.Equal("Two cables to the islands are cut by a dragged anchor.", repaired.GetProperty("scenario").GetProperty("problem").GetString());
     }
 
+    /// <summary>
+    /// A key the model repeats in one object keeps its last value, through the stream and the repair, where a copy
+    /// that rejected the repeat would fail the whole draft.
+    /// </summary>
+    [Fact]
+    public void RepairStringifiedJson_KeepsTheLastValueOfARepeatedKey()
+    {
+        var message = Stream(
+            """{"type":"message_start","message":{"usage":{"input_tokens":5}}}""",
+            """{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"t","input":{}}}""",
+            """{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"name\":\"Draft\",\"item\":1,\"moves\":[{\"moveNumber\":1,\"item\":\"a\",\"item\":\"b\"}],\"item\":2}"}}""",
+            """{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":9}}""");
+
+        var repaired = BedrockAiModelClient.RepairStringifiedJson(BedrockAiModelClient.ReadToolInput(message), Schema());
+
+        Assert.Equal(2, repaired.GetProperty("item").GetInt32());
+        Assert.Equal("b", repaired.GetProperty("moves")[0].GetProperty("item").GetString());
+        Assert.Equal(1, repaired.GetProperty("moves")[0].GetProperty("moveNumber").GetInt32());
+    }
+
     private static System.Text.Json.Nodes.JsonObject CoercionSchema() =>
         System.Text.Json.Nodes.JsonNode.Parse("""
             {"type":"object","properties":{

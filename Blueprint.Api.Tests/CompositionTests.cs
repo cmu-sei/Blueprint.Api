@@ -19,7 +19,7 @@ using Xunit;
 namespace Blueprint.Api.Tests;
 
 /// <summary>What the application composes, rather than what it answers: every service resolves, every
-/// controller activates, the serializer carries the converters <c>Startup</c> gave it, and four background
+/// controller activates, the serializer carries the converters <c>Startup</c> gave it, and five background
 /// workers are asked for.</summary>
 public class CompositionTests(DatabaseFixture fixture, CompositionFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<CompositionFactory>
@@ -181,10 +181,10 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
         Assert.Null(scope.ServiceProvider.GetService<IPrincipal>());
     }
 
-    /// <summary>The application registers four background workers of its own, and the harness removes
+    /// <summary>The application registers five background workers of its own, and the harness removes
     /// them.</summary>
     [Fact]
-    public void TheApplication_StartsFourBackgroundWorkers()
+    public void TheApplication_StartsFiveBackgroundWorkers()
     {
         var registered = _factory.Registrations
             .Where(x => x.ServiceType == typeof(IHostedService))
@@ -203,8 +203,8 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
             .Select(x => x.ImplementationType.Name)
             .ToList();
 
-        Assert.Equal(4, registered.Count);
-        Assert.Equal(["AddApplicationService", "JoinService", "XApiBackgroundService"], named);
+        Assert.Equal(5, registered.Count);
+        Assert.Equal(["AddApplicationService", "JoinService", "SteamfitterStartService", "XApiBackgroundService"], named);
         Assert.Empty(surviving);
     }
 

@@ -25,6 +25,8 @@ namespace Blueprint.Api.Services
         public static readonly string[] ControlTypes = ["Other", "Organization"];
         public const string MissionImpactName = "DoD CTT Mission Impact Assessment";
         public const string LikelihoodName = "DoD CTT Likelihood Assessment Matrix";
+        // the name CITE's own seed data gives it, so an exercise links the copy CITE already has
+        public const string NcissName = "CISA NCISS";
         public const string QuestionsHeading = "Please respond to the following discussion questions:";
         public const string AarHeading = "After-action review: for each objective, what went well and what would your team do differently?";
 
@@ -92,7 +94,12 @@ namespace Blueprint.Api.Services
                 }
             }
             else
-                model = assessment == MselDraftRules.MissionImpact ? MissionImpact() : Likelihood();
+                model = assessment switch
+                {
+                    MselDraftRules.MissionImpact => MissionImpact(),
+                    MselDraftRules.Nciss => Nciss(),
+                    _ => Likelihood()
+                };
 
             try
             {
@@ -230,6 +237,70 @@ namespace Blueprint.Api.Services
                     ("Low - Rarely works", 1),
                     ("Medium - Sometimes works", 2),
                     ("High - Always works", 3)
+                ])
+            ]
+        };
+
+        /// <summary>
+        /// The CISA National Cyber Incident Scoring System, as CITE's seed data defines it: eight weighted factors, the score
+        /// scaled from 0 to 100 between the lowest and highest possible.
+        /// </summary>
+        public static ScoringModel Nciss() => new()
+        {
+            Description = NcissName,
+            CalculationEquation = "100.0 > 100.0 * ({sum} - {minPossible}) / ({maxPossible} - {minPossible}) > 0.0",
+            Status = ItemStatus.Active,
+            DisplayScoringModelByMoveNumber = true,
+            ShowPastSituationDescriptions = true,
+            UseSubmit = true,
+            UseUserScore = true,
+            UseTeamScore = true,
+            UseOfficialScore = true,
+            RightSideDisplay = RightSideDisplay.ScoreSummary,
+            ScoringCategories =
+            [
+                Category(1, "Functional Impact", "{max}", 6, 0, 999, ScoringOptionSelection.Single,
+                [
+                    ("No Impact", 0), ("No Impact to Services", 20), ("Minimal Impact to Non-Critical Services", 35),
+                    ("Minimal Impact to Critical Services", 40), ("Significant Impact to Non-Critical Services", 50),
+                    ("Denial of Non-Critical Services", 60), ("Significant Impact to Critical Services", 70),
+                    ("Denial of Critical Services or Loss of Control", 100)
+                ]),
+                Category(2, "Observed Activity", "{max}", 5, 0, 999, ScoringOptionSelection.Single,
+                [
+                    ("None", 0), ("Prepare", 40), ("Engage", 70), ("Presence", 80), ("Effect", 100)
+                ]),
+                Category(3, "Location of Observed Activity", "{max}", 4, 0, 999, ScoringOptionSelection.Single,
+                [
+                    ("Level 1 - Business DMZ", 30), ("Level 2 - Business Network", 40), ("Unknown", 50),
+                    ("Level 3 - Business Network Management", 60), ("Level 4 - Critical System DMZ", 70),
+                    ("Level 5 - Critical System Management", 80), ("Level 6 - Critical Systems", 90), ("Level 7 - Safety Systems", 100)
+                ]),
+                Category(4, "Actor Characterization", "{max}", 4, 0, 999, ScoringOptionSelection.Single,
+                [
+                    ("Hacktivists", 20), ("Unwitting Insider", 30), ("Criminal", 40), ("Unknown", 50),
+                    ("Witting Insider", 65), ("APT", 80), ("APT (Targeted)", 100)
+                ]),
+                Category(5, "Information Impact", "{max}", 2, 0, 999, ScoringOptionSelection.Single,
+                [
+                    ("No Impact", 0), ("Suspected But Not Identified", 10), ("Privacy Data Loss", 20),
+                    ("Proprietary Information Loss", 50), ("Destruction of Non-Critical System", 60),
+                    ("Critical Systems Data Breach", 70), ("Core Credential Compromise", 80), ("Destruction of Critical System", 100)
+                ]),
+                Category(6, "Recoverability", "{max}", 4, 0, 999, ScoringOptionSelection.Single,
+                [
+                    ("Regular", 20), ("Supplemented", 40), ("Extended", 60), ("Not Recoverable", 100)
+                ]),
+                Category(7, "Cross Sector Dependency", "{max}", 3, 0, 999, ScoringOptionSelection.Single,
+                [
+                    ("Agriculture and Food", 20), ("Banking and Finance", 35), ("Chemical", 20), ("Commercial Facilities", 30),
+                    ("Communications", 75), ("Critical Manufacturing", 50), ("Dams", 25), ("Defense Industrial Base", 35),
+                    ("Emergency Services", 25), ("Energy", 100), ("Government Facilities", 40), ("Healthcare and Public Health", 30),
+                    ("Information Technology", 80), ("Nuclear Reactors, Materials and Waste", 15), ("Transportation Systems", 75), ("Water", 60)
+                ]),
+                Category(8, "Potential Impact", "{max}", 6, 0, 999, ScoringOptionSelection.Single,
+                [
+                    ("Minimal", 0), ("Low", 25), ("Moderate", 50), ("High", 75), ("Severe", 100)
                 ])
             ]
         };

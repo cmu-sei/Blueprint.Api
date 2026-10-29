@@ -40,8 +40,12 @@ public class MselDraftGalleryFieldTests
         Assert.Equal(DataFieldType.SourceType, Field(msel, "SourceType").DataType);
         Assert.Equal(DataFieldType.String, Field(msel, "Source Name").DataType);
         Assert.Equal(DataFieldType.Card, Field(msel, "Card").DataType);
+        // every article parameter is mapped, so the Info page has nothing left to assign
+        Assert.Equal(DataFieldType.String, Field(msel, "Card Status").DataType);
+        Assert.Equal(DataFieldType.Url, Field(msel, "Url").DataType);
+        Assert.Equal(DataFieldType.Boolean, Field(msel, "Open In New Tab").DataType);
         Assert.Equal(
-            ["CardId", "DatePosted", "Description", "FromOrg", "Name", "SourceName", "SourceType", "Summary", "ToOrg"],
+            Enum.GetNames<GalleryArticleParameter>().Order().ToArray(),
             msel.DataFields.Select(f => f.GalleryArticleParameter).Where(p => p != null).Order().ToArray());
     }
 

@@ -32,7 +32,7 @@ namespace Blueprint.Api.ViewModels
         public string Format { get; set; }
         /// <summary>How participants are organized: one combined staff, functional cells, parallel teams...</summary>
         public string Structure { get; set; }
-        /// <summary>The CITE scoring model: None, QuestionsByMove, MissionImpact or Likelihood</summary>
+        /// <summary>The CITE scoring model: Template, QuestionsByMove, MissionImpact, Likelihood, Nciss or None</summary>
         public string CiteAssessment { get; set; }
         public int? Moves { get; set; }
         /// <summary>How long the exercise runs in real time, in minutes</summary>
@@ -41,6 +41,11 @@ namespace Blueprint.Api.ViewModels
         public string ScenarioSpan { get; set; }
         /// <summary>Whether the last move is a brief to leadership</summary>
         public bool? LeadershipBrief { get; set; }
+        /// <summary>
+        /// What each Gallery card holds: Sources (a source or thread), Organizations, Sectors (critical infrastructure),
+        /// Countries or Terrain (networks, subnets and key cyber terrain); empty for the draft to choose
+        /// </summary>
+        public string CardGrouping { get; set; }
         /// <summary>Whether to add Team Profiles and Organization Profiles pages</summary>
         public bool ProfilePages { get; set; } = true;
     }
@@ -54,6 +59,8 @@ namespace Blueprint.Api.ViewModels
         /// <summary>The design the draft was written to, so import builds the same pages and CITE model</summary>
         public MselDraftDesign Design { get; set; } = new MselDraftDesign();
         public MselDraftScenario Scenario { get; set; } = new MselDraftScenario();
+        /// <summary>The catalog metadata on the MSEL's Info page</summary>
+        public MselDraftMetadata Metadata { get; set; } = new MselDraftMetadata();
         /// <summary>What participants are trained to do; each inject and the AAR trace back to one</summary>
         public List<MselDraftObjective> Objectives { get; set; } = new List<MselDraftObjective>();
         public List<MselDraftMove> Moves { get; set; } = new List<MselDraftMove>();
@@ -92,6 +99,21 @@ namespace Blueprint.Api.ViewModels
         public string ControllerNotes { get; set; }
         /// <summary>Discussion questions for the move, when the CITE assessment is questions by move</summary>
         public List<string> CiteQuestions { get; set; } = new List<string>();
+    }
+
+    /// <summary>The IEEE 2881 learning metadata Blueprint keeps on the MSEL</summary>
+    public class MselDraftMetadata
+    {
+        /// <summary>Beginner, Intermediate or Advanced</summary>
+        public string EducationalLevel { get; set; }
+        /// <summary>Assessment, Instruction or Professional Support</summary>
+        public string EducationalUse { get; set; }
+        /// <summary>Online, Onsite or Blended</summary>
+        public string CourseMode { get; set; }
+        /// <summary>The topic areas the exercise covers</summary>
+        public string Subject { get; set; }
+        /// <summary>Comma-separated search tags</summary>
+        public string Keywords { get; set; }
     }
 
     public class MselDraftScenario

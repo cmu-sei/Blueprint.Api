@@ -49,7 +49,8 @@ and under it the exercise name followed by · FICTIONAL SCENARIO in small text.
 
 Lay the document out for its source type:
 - News: the outlet's masthead (its name large in the outlet's colour, a section label at the right) and a coloured rule; the headline;
-  a one-line standfirst in italics; the byline and dateline in small grey text; a lead graphic with a caption; body paragraphs; a pull
+  a one-line standfirst in italics; the byline and dateline in small grey text; a lead map, chart or diagram with a caption when the
+  story has one to show; body paragraphs; a pull
   quote in a shaded cell when one fits. 250 to 450 words.
 - Social: the platform's frame: a header row with a round avatar showing the account's initials, the display name in bold, the
   @handle and the time in grey; the post text; an attached graphic only if the post needs one; a row of reply, repost and like counts.
@@ -83,7 +84,9 @@ HTML rules, because Gallery strips everything else:
 - Draw logos, mastheads, avatars, maps, charts and network diagrams as inline <svg> with width, height and viewBox, and an
   aria-label saying what it shows. Keep each one simple: shapes, paths and short text in Arial or Georgia. Use only &amp; &lt; &gt;
   &quot; and numeric entities inside SVG. No external images, links to fonts, or scripts.
-- Graphics show scenes, equipment, maps and data, never identifiable people, uniforms, national insignia, flags or real company logos.
+- Draw only logos, mastheads, avatars, maps, charts and diagrams. Never draw an illustration of a scene, a person or an animal: an SVG
+  drawing of one looks like clip art or a cartoon, not part of a real document. Leave a story without a picture rather than draw one.
+- Graphics show maps, equipment layouts and data, never identifiable people, uniforms, national insignia, flags or real company logos.
   Logos are fictional marks: the organization's initials in a simple shape.
 
 Content rules:
@@ -96,7 +99,7 @@ Answer only by calling the tool.";
         /// <summary>Added to the system prompt when the server has an image model</summary>
         public const string PhotoRules =
 @"Photos: this server can make one realistic news photo for the article.
-- For a News article, or a Social post that would carry a picture, describe one photo in photo.scene instead of drawing the lead
+- For a News article, or a Social post that would carry a picture, describe one photo in photo.scene for the lead
   graphic, and put " + PhotoMarker + @" alone in the cell where it goes; the photo fills 720 pixels across.
 - Describe a scene a news photographer would take: the place, equipment, weather and light, and what people are doing, seen from
   behind or at a distance. No text, signs, screens, logos, flags, insignia or identifiable people: the photo model cannot spell.

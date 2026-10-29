@@ -70,6 +70,11 @@ Rules:
   the story's date and time: each move's situationTime. The scenario clock can jump ahead between moves (move 2 is the next morning,
   move 3 is a week later) while the exercise clock runs on. Give every move a situationTime, in order, and date anything in the
   story (articles, emails, reports) on the scenario clock within its move.
+- Write each move's situationDescription as a short briefing in HTML, not a block of text: an <h4> title, a paragraph on what has
+  happened, a <ul> of what participants now know, and, where it helps, a two-column table of key facts (time, location, affected
+  systems, who has been told). Use b, i, ul, ol, li, h4, p and table with border=""1"" cellpadding=""6"" cellspacing=""0"" only; no colors,
+  no images, no style attributes, because it is shown in light and dark themes and in CITE.
+- Fill the catalog metadata: educational level, educational use, course mode, subject and keywords.
 - Write a read-in for participants to read before the first move: the scenario background, who they are and what they are
   responsible for, the organizations they will deal with, the rules of play, and how the two clocks work, with the scenario date
   and time the exercise opens. Use headings, short paragraphs, lists and a table where one helps; no images. Open the MSEL with an
@@ -84,9 +89,13 @@ When the MSEL uses Gallery:
   Pick the source type that matches the document, and name the outlet, account or office in the source name.
 - From Org is the short name of the organization or team the article comes from. To Org is the team short names it goes to, or ALL.
 - The summary is one plain-text sentence for the wall. The description or details column is the full document.
-- Group the articles on 4 to 6 Gallery cards, one per source or thread participants follow: for example Exercise Control (read-in and
-  facilitator messages), the organization under attack, Public and Media, Government and Law Enforcement, and the coordinating body.
-  List the cards in the order the wall should show them, starting with Exercise Control, and put every Gallery article on one card.
+- Group the articles on 4 to 8 Gallery cards, starting with Exercise Control for the read-in and facilitator messages. Use the
+  grouping the planner chose, or the one that best fits the scenario:
+  by source or thread participants follow (the organization under attack, Public and Media, Government and Law Enforcement, the
+  coordinating body); by organization, a card for each business, agency, country, military unit, subcommand or service; by critical
+  infrastructure sector (Energy, Water, Communications, Transportation Systems ...); by country; or by network segment and key cyber
+  terrain (the subnets, enclaves and critical assets the attack moves through). Put every Gallery article on one card. A card first
+  appears on the wall with its first article.
 Answer only by calling the tool.";
 
         public MselDraftService(BlueprintContext context, IAiModelClient aiModelClient, AiOptions aiOptions, IPrincipal user)
@@ -290,7 +299,7 @@ Answer only by calling the tool.";
                 {
                     ["moveNumber"] = Int("0, 1, 2 ... in time order"),
                     ["description"] = Str("Move title, e.g. Initial Detection"),
-                    ["situationDescription"] = Str("The situation at the start of the move, as briefed to participants"),
+                    ["situationDescription"] = Str("The situation at the start of the move, as briefed to participants, in HTML"),
                     ["startMinutes"] = Int("Minutes from exercise start; the first move is 0"),
                     ["situationTime"] = Str("The scenario date and time when the move opens, in ISO 8601 UTC, e.g. 2026-03-04T08:00:00Z; later than the move before"),
                     ["purpose"] = Str("What the move is for: the reasoning it makes participants do"),
@@ -312,6 +321,14 @@ Answer only by calling the tool.";
                     ["items"] = Obj(injectProperties, "minutes", "eventType", "values")
                 },
                 ["readIn"] = Str("The participants' read-in, in HTML: background, roles, organizations, rules of play, the two clocks"),
+                ["metadata"] = Obj(new JsonObject
+                {
+                    ["educationalLevel"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Beginner", "Intermediate", "Advanced") },
+                    ["educationalUse"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Assessment", "Instruction", "Professional Support") },
+                    ["courseMode"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Online", "Onsite", "Blended") },
+                    ["subject"] = Str("The topic areas the exercise covers, e.g. Incident response; Crisis communications"),
+                    ["keywords"] = Str("Comma-separated search tags, e.g. ransomware, tabletop exercise, healthcare")
+                }, "educationalLevel", "educationalUse", "courseMode", "subject", "keywords"),
                 ["plannerNotes"] = Arr(Str("Assumption or open question"), "Things the planner should check")
             };
             if (citeQuestions)
@@ -390,7 +407,7 @@ Answer only by calling the tool.";
 
         /// <summary>Columns the server fills, so the model is not asked for them</summary>
         public static bool IsServerFilled(DataFieldEntity field) =>
-            field.DataType switch
+            _plannerGalleryParameters.Contains(field.GalleryArticleParameter) || field.DataType switch
             {
                 // move and group follow from the delivery time in Blueprint
                 DataFieldType.Integer => _derivedIntegerFields.Contains(field.Name.Trim().ToLower()),
@@ -418,8 +435,14 @@ Answer only by calling the tool.";
             (GalleryArticleParameter.SourceType, ["SourceType", "Source Type"], [DataFieldType.SourceType]),
             (GalleryArticleParameter.SourceName, ["Source Name"], [DataFieldType.String]),
             (GalleryArticleParameter.DatePosted, ["Simulated Time", "Date Posted"], [DataFieldType.DateTime]),
-            (GalleryArticleParameter.CardId, ["Card"], [DataFieldType.Card])
+            (GalleryArticleParameter.CardId, ["Card"], [DataFieldType.Card]),
+            // Gallery needs these mapped too; the draft leaves them empty for the planner
+            (GalleryArticleParameter.Status, ["Card Status", "Gallery Status"], [DataFieldType.String]),
+            (GalleryArticleParameter.Url, ["Url", "URL"], [DataFieldType.Url, DataFieldType.String]),
+            (GalleryArticleParameter.OpenInNewTab, ["Open In New Tab"], [DataFieldType.Boolean, DataFieldType.Checkbox])
         ];
+        private static readonly string[] _plannerGalleryParameters =
+            [nameof(GalleryArticleParameter.Status), nameof(GalleryArticleParameter.Url), nameof(GalleryArticleParameter.OpenInNewTab)];
 
         /// <summary>
         /// A MSEL that uses Gallery needs columns mapped to the article parameters, or its injects never become
@@ -464,10 +487,12 @@ Answer only by calling the tool.";
         public const string QuestionsByMove = "QuestionsByMove";
         public const string MissionImpact = "MissionImpact";
         public const string Likelihood = "Likelihood";
+        public const string Nciss = "Nciss";
         public const string NoAssessment = "None";
         // the scoring model the template already links
         public const string TemplateModel = "Template";
-        private static readonly string[] _assessments = [QuestionsByMove, MissionImpact, Likelihood, NoAssessment, TemplateModel];
+        private static readonly string[] _assessments = [QuestionsByMove, MissionImpact, Likelihood, Nciss, NoAssessment, TemplateModel];
+        private static readonly string[] _cardGroupings = ["Sources", "Organizations", "Sectors", "Countries", "Terrain"];
         private static readonly string[] _formats = ["Discussion", "Functional", "Hybrid"];
         private static readonly string[] _expectedActionNames = ["Expected Actions", "Expected Action"];
 
@@ -492,6 +517,7 @@ Answer only by calling the tool.";
                 DurationMinutes = design.DurationMinutes is int minutes ? Math.Clamp(minutes, 15, 2880) : null,
                 ScenarioSpan = Text(design.ScenarioSpan),
                 LeadershipBrief = design.LeadershipBrief,
+                CardGrouping = template.UseGallery ? Pick(design.CardGrouping, _cardGroupings) : null,
                 ProfilePages = design.ProfilePages
             };
         }
@@ -502,11 +528,43 @@ Answer only by calling the tool.";
             const string open = "open";
             yield return $"Format: {design.Format switch { "Discussion" => "a discussion-based tabletop: participants talk through decisions, no hands-on tasks", "Functional" => "functional: participants work hands-on in the range", "Hybrid" => "hybrid: discussion moves with some hands-on work in the range", _ => open }}";
             yield return $"Participant structure: {design.Structure ?? open}";
-            yield return $"CITE assessment: {design.CiteAssessment switch { QuestionsByMove => "questions by move: write citeQuestions for every move", MissionImpact => "the DoD Cyber Table Top mission impact matrix: teams score mission impact each move, so write no discussion questions", Likelihood => "the DoD Cyber Table Top likelihood matrix: teams score each attack's cost and chance of success, so write no discussion questions", TemplateModel => "the template's own scoring model, so write no discussion questions", NoAssessment => "none", _ => open }}";
+            yield return $"CITE assessment: {design.CiteAssessment switch { QuestionsByMove => "questions by move: write citeQuestions for every move", MissionImpact => "the DoD Cyber Table Top mission impact matrix: teams score mission impact each move, so write no discussion questions", Likelihood => "the DoD Cyber Table Top likelihood matrix: teams score each attack's cost and chance of success, so write no discussion questions", Nciss => "the CISA National Cyber Incident Scoring System (NCISS): each move, teams score the incident's functional impact, observed activity, where in the network it is, the actor, information impact, recoverability, cross-sector dependency and potential impact, so write no discussion questions, and give the injects the details teams need to score each of these", TemplateModel => "the template's own scoring model, so write no discussion questions", NoAssessment => "none", _ => open }}";
             yield return $"Moves: {(design.Moves?.ToString() ?? open)}";
             yield return $"Exercise length in real time: {(design.DurationMinutes is int minutes ? $"{minutes} minutes" : open)}";
             yield return $"Scenario time the exercise covers: {design.ScenarioSpan ?? open}";
             yield return $"Final move is a brief to leadership: {design.LeadershipBrief switch { true => "yes", false => "no", _ => open }}";
+            yield return $"Gallery cards: {design.CardGrouping switch { "Sources" => "one per source or thread participants follow", "Organizations" => "one per organization: each business, agency, country, military unit, subcommand or service", "Sectors" => "one per critical infrastructure sector the scenario touches", "Countries" => "one per country", "Terrain" => "one per network segment or piece of key cyber terrain: the subnets, enclaves and critical assets", _ => open }}";
+        }
+
+        /// <summary>
+        /// The move and inject number Gallery gives each row, as <c>ScenarioEventService.GetMovesAndInjects</c> numbers them
+        /// for the push: rows in time order, the inject number starting at 0 in each move and rising with each new time.
+        /// </summary>
+        public static Dictionary<ScenarioEventEntity, (int Move, int Inject)> GalleryMovesAndInjects(IEnumerable<ScenarioEventEntity> events, IEnumerable<MoveEntity> moves)
+        {
+            var rows = events.OrderBy(e => e.DeltaSeconds).ToList();
+            var ordered = moves.OrderBy(m => m.DeltaSeconds).ToList();
+            var result = new Dictionary<ScenarioEventEntity, (int, int)>();
+            var m = 0;
+            var inject = 0;
+            var deltaSeconds = rows.FirstOrDefault()?.DeltaSeconds ?? 0;
+            foreach (var row in rows)
+            {
+                if (ordered.Count == 0 || m == ordered.Count - 1 || row.DeltaSeconds < ordered[m + 1].DeltaSeconds)
+                {
+                    if (row.DeltaSeconds != deltaSeconds)
+                        inject++;
+                }
+                else
+                {
+                    while (m < ordered.Count - 1 && row.DeltaSeconds >= ordered[m + 1].DeltaSeconds)
+                        m++;
+                    inject = 0;
+                }
+                deltaSeconds = row.DeltaSeconds;
+                result[row] = (ordered.Count > m ? ordered[m].MoveNumber : 0, inject);
+            }
+            return result;
         }
 
         /// <summary>The column that names a row: the Gallery title, else a text column called Title, Message or Name</summary>
@@ -597,6 +655,7 @@ Answer only by calling the tool.";
             draft.PlannerNotes ??= new List<string>();
             draft.CiteActions ??= new List<MselDraftCiteAction>();
             draft.Design = CleanDesign(draft.Design, template);
+            draft.Metadata = CleanMetadata(draft.Metadata, draft.Design);
             draft.Scenario ??= new MselDraftScenario();
             draft.Scenario.Assumptions = Lines(draft.Scenario.Assumptions);
             draft.Objectives ??= new List<MselDraftObjective>();
@@ -658,6 +717,7 @@ Answer only by calling the tool.";
             // what each move asks of participants and facilitators; discussion questions only for a questions-by-move assessment
             foreach (var move in draft.Moves)
             {
+                move.SituationDescription = SituationHtml(move.SituationDescription);
                 move.ExpectedDecisions = Lines(move.ExpectedDecisions);
                 move.CiteQuestions = draft.Design.CiteAssessment == QuestionsByMove ? Lines(move.CiteQuestions) : new List<string>();
                 move.Purpose = string.IsNullOrWhiteSpace(move.Purpose) ? null : move.Purpose.Trim();
@@ -907,6 +967,41 @@ Answer only by calling the tool.";
         }
 
         private static readonly System.Text.RegularExpressions.Regex _markup = new(@"<[a-zA-Z]");
+
+        /// <summary>A move's briefing as HTML Blueprint and CITE show as written; plain text becomes a paragraph</summary>
+        public static string SituationHtml(string situation)
+        {
+            if (string.IsNullOrWhiteSpace(situation))
+                return null;
+            situation = situation.Trim();
+            return System.Text.RegularExpressions.Regex.IsMatch(situation, "<[a-zA-Z]")
+                ? GalleryArticleHtml.Prepare(situation)
+                : $"<p>{WebUtility.HtmlEncode(situation)}</p>";
+        }
+
+        private static readonly string[] _levels = ["Beginner", "Intermediate", "Advanced"];
+        private static readonly string[] _uses = ["Assessment", "Instruction", "Professional Support"];
+        private static readonly string[] _modes = ["Online", "Onsite", "Blended"];
+
+        /// <summary>The catalog metadata, with the Info page's choices only, and the format among the keywords</summary>
+        public static MselDraftMetadata CleanMetadata(MselDraftMetadata metadata, MselDraftDesign design)
+        {
+            metadata ??= new MselDraftMetadata();
+            string Pick(string value, string[] allowed) => allowed.FirstOrDefault(a => a.Equals(value?.Trim(), StringComparison.OrdinalIgnoreCase));
+            string Text(string value, int length) => string.IsNullOrWhiteSpace(value) ? null : value.Trim().Length > length ? value.Trim()[..length] : value.Trim();
+            var keywords = (metadata.Keywords ?? "").Split(',').Select(k => k.Trim()).Where(k => k.Length > 0).ToList();
+            var format = design?.Format switch { "Discussion" => "tabletop exercise", "Functional" => "functional exercise", "Hybrid" => "hybrid exercise", _ => null };
+            if (format != null && !keywords.Contains(format, StringComparer.OrdinalIgnoreCase))
+                keywords.Add(format);
+            return new MselDraftMetadata
+            {
+                EducationalLevel = Pick(metadata.EducationalLevel, _levels),
+                EducationalUse = Pick(metadata.EducationalUse, _uses),
+                CourseMode = Pick(metadata.CourseMode, _modes),
+                Subject = Text(metadata.Subject, 500),
+                Keywords = Text(string.Join(", ", keywords.Distinct(StringComparer.OrdinalIgnoreCase)), 500)
+            };
+        }
 
         private static List<string> Lines(List<string> lines) =>
             (lines ?? new List<string>()).Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()).Distinct().ToList();

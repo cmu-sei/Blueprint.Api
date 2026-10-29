@@ -2271,6 +2271,12 @@ namespace Blueprint.Api.Services
             mselEntity.Name = draft.Name;
             mselEntity.Description = draft.Description;
             mselEntity.DurationSeconds = draft.DurationMinutes * 60;
+            // the catalog metadata on the Info page; the template's stays where the draft has none
+            mselEntity.EducationalLevel = draft.Metadata.EducationalLevel ?? mselEntity.EducationalLevel;
+            mselEntity.EducationalUse = draft.Metadata.EducationalUse ?? mselEntity.EducationalUse;
+            mselEntity.CourseMode = draft.Metadata.CourseMode ?? mselEntity.CourseMode;
+            mselEntity.Subject = draft.Metadata.Subject ?? mselEntity.Subject;
+            mselEntity.Keywords = draft.Metadata.Keywords ?? mselEntity.Keywords;
             if (mselEntity.StartTime == default)
             {
                 var now = DateTime.UtcNow;
@@ -2323,6 +2329,7 @@ namespace Blueprint.Api.Services
             foreach (var card in mselEntity.Cards)
                 cardsByName.TryAdd(card.Name.Trim(), card);
             var cardOrder = mselEntity.Cards.Select(c => c.Inject).DefaultIfEmpty(0).Max();
+            var draftedCards = new List<CardEntity>();
             foreach (var draftCard in draft.Cards.Where(c => !cardsByName.ContainsKey(c.Name)))
             {
                 var card = new CardEntity
@@ -2335,6 +2342,7 @@ namespace Blueprint.Api.Services
                     Inject = ++cardOrder
                 };
                 mselEntity.Cards.Add(card);
+                draftedCards.Add(card);
                 cardsByName[card.Name] = card;
             }
             foreach (var card in mselEntity.Cards)
@@ -2388,22 +2396,41 @@ namespace Blueprint.Api.Services
             AddPage("Exercise Overview", MselDraftPages.Overview(draft, mselEntity, mselEntity.StartTime));
             var readInPage = AddPage($"{mselEntity.Name} Read-In", draft.ReadIn);
             AddPage("Facilitator Guide", MselDraftPages.FacilitatorGuide(draft, mselEntity, mselEntity.StartTime), participants: false);
+            MselPageEntity organizationProfilesPage = null, teamProfilesPage = null;
             if (draft.Design.ProfilePages)
             {
-                AddPage("Organization Profiles", MselDraftRules.ProfilesPage("Organization Profiles",
+                organizationProfilesPage = AddPage("Organization Profiles", MselDraftRules.ProfilesPage("Organization Profiles",
                     "These profiles describe the organizations, agencies, media outlets and other scenario actors participants may need to reference during the exercise. They are background material, not injects.",
                     mselEntity.Organizations.Select(o => ($"{o.Name} ({o.ShortName})", o.Description))));
-                AddPage("Team Profiles", MselDraftRules.ProfilesPage("Team Profiles",
+                teamProfilesPage = AddPage("Team Profiles", MselDraftRules.ProfilesPage("Team Profiles",
                     "These profiles describe the participant teams and exercise control. They are background material for facilitators and players, not injects.",
                     mselEntity.Teams.Select(t => ($"{t.Name} ({t.ShortName})", t.Description))));
             }
 
-            // in Player, every team gets the read-in and the live MSEL view, next to the template's applications
+            // in Player, as the blueprint-ttx loader sets it up: every team gets CITE, Gallery, the live MSEL view and the
+            // pages; exercise control also gets Steamfitter. The template's own applications reach the drafted teams too.
             if (mselEntity.UsePlayer)
             {
-                void AddApplication(string name, string url, string icon)
+                var participants = mselEntity.Teams.Where(t => !MselDraftCite.IsControl(t)).ToList();
+                var control = mselEntity.Teams.Where(MselDraftCite.IsControl).ToList();
+                var templateTeamNames = new HashSet<string>(template.Teams.Select(t => t.ShortName), StringComparer.OrdinalIgnoreCase);
+                foreach (var application in mselEntity.PlayerApplications)
                 {
-                    if (mselEntity.PlayerApplications.Any(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    var assigned = application.PlayerApplicationTeams.Select(pt => mselEntity.Teams.FirstOrDefault(t => t.Id == pt.TeamId)).Where(t => t != null).ToList();
+                    var kinds = new List<TeamEntity>();
+                    if (assigned.Any(t => !MselDraftCite.IsControl(t)))
+                        kinds.AddRange(participants);
+                    if (assigned.Any(MselDraftCite.IsControl))
+                        kinds.AddRange(control);
+                    foreach (var team in kinds.Where(t => !templateTeamNames.Contains(t.ShortName) && application.PlayerApplicationTeams.All(pt => pt.TeamId != t.Id)))
+                        application.PlayerApplicationTeams.Add(new PlayerApplicationTeamEntity { Id = Guid.NewGuid(), PlayerApplicationId = application.Id, TeamId = team.Id });
+                }
+
+                static string SameUrl(string url) => (url ?? "").Replace("/?", "?").TrimEnd('/');
+                void AddApplication(string name, string url, string icon, IEnumerable<TeamEntity> teams, int displayOrder)
+                {
+                    var forTeams = teams.ToList();
+                    if (!forTeams.Any() || mselEntity.PlayerApplications.Any(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || SameUrl(a.Url) == SameUrl(url)))
                         return;
                     var application = new PlayerApplicationEntity
                     {
@@ -2415,13 +2442,30 @@ namespace Blueprint.Api.Services
                         Embeddable = true,
                         LoadInBackground = false
                     };
-                    foreach (var team in mselEntity.Teams)
-                        application.PlayerApplicationTeams.Add(new PlayerApplicationTeamEntity { Id = Guid.NewGuid(), PlayerApplicationId = application.Id, TeamId = team.Id });
+                    foreach (var team in forTeams)
+                        application.PlayerApplicationTeams.Add(new PlayerApplicationTeamEntity { Id = Guid.NewGuid(), PlayerApplicationId = application.Id, TeamId = team.Id, DisplayOrder = displayOrder });
                     mselEntity.PlayerApplications.Add(application);
                 }
-                if (readInPage != null)
-                    AddApplication("Read-In", $"{{blueprintUrl}}/mselpage/{readInPage.Id}{{theme}}", "{playerUrl}/assets/img/SP_Icon_Intel.png");
-                AddApplication("Exercise Timeline", "{blueprintUrl}/msel/{blueprintMselId}/view{theme}", "{playerUrl}/assets/img/SP_Icon_Dashboard.png");
+                const string pageIcon = "{blueprintUrl}/assets/img/pencil-ruler-blue.png";
+                var everyone = mselEntity.Teams.ToList();
+                if (mselEntity.UseCite)
+                    AddApplication("CITE Dashboard", "{citeUrl}?section=dashboard&evaluation={citeEvaluationId}{theme}", "{citeUrl}/assets/img/view-dashboard-blue.png", everyone, 1);
+                if (mselEntity.UseGallery)
+                {
+                    AddApplication("Gallery Wall", "{galleryUrl}/?section=wall&exhibit={galleryExhibitId}{theme}", "{galleryUrl}/assets/img/wall-blue.png", everyone, 2);
+                    AddApplication("Gallery Archive", "{galleryUrl}/?section=archive&exhibit={galleryExhibitId}{theme}", "{galleryUrl}/assets/img/archive-blue.png", everyone, 7);
+                }
+                foreach (var (page, order) in new[] { (readInPage, 3), (organizationProfilesPage, 4), (teamProfilesPage, 5) })
+                {
+                    if (page != null)
+                        AddApplication(page == readInPage ? "Read-In" : page.Name, $"{{blueprintUrl}}/mselpage/{page.Id}{{theme}}", pageIcon, everyone, order);
+                }
+                AddApplication("Exercise Timeline", "{blueprintUrl}/msel/{blueprintMselId}/view{theme}", pageIcon, everyone, 6);
+                if (mselEntity.UseSteamfitter)
+                {
+                    AddApplication("Steamfitter Tasks", "{steamfitterUrl}/scenario/{steamfitterScenarioId}{theme}", "{playerUrl}/assets/img/SP_Icon_Alert.png", control, 9);
+                    AddApplication("Steamfitter Scenarios", "{steamfitterUrl}/?scenarioId={steamfitterScenarioId}&viewId={playerViewId}{theme}", "{playerUrl}/assets/img/SP_Icon_Alert.png", control, 10);
+                }
             }
 
             // CITE actions go after the template's, numbered within each team's move
@@ -2555,6 +2599,26 @@ namespace Blueprint.Api.Services
                 }
             }
 
+            // a drafted card first appears on the wall with its first article, so the wall grows as the story does
+            if (cardField != null && draftedCards.Any())
+            {
+                var at = MselDraftRules.GalleryMovesAndInjects(mselEntity.ScenarioEvents, mselEntity.Moves);
+                foreach (var card in draftedCards)
+                {
+                    var first = mselEntity.ScenarioEvents
+                        .Where(e => e.DataValues.Any(v => v.DataFieldId == cardField.Id && v.Value == card.Id.ToString()))
+                        .Select(e => at[e])
+                        .OrderBy(a => a.Move).ThenBy(a => a.Inject)
+                        .Select(a => ((int Move, int Inject)?)a)
+                        .FirstOrDefault();
+                    if (first is (int move, int inject))
+                    {
+                        card.Move = move;
+                        card.Inject = inject;
+                    }
+                }
+            }
+
             // Normalize kept only competencies from the list, and the MSEL's list includes every one used
             var mselCompetencies = new HashSet<Guid>(mselEntity.MselCompetencies.Select(mc => mc.CompetencyId));
             foreach (var id in draft.Competencies.Where(id => mselCompetencies.Add(competencies[id].Id)))
@@ -2567,7 +2631,33 @@ namespace Blueprint.Api.Services
             foreach (var note in draft.PlannerNotes)
                 AddChange(result, "plannerNotes", note);
 
-            return await ImportEntityAsync(mselEntity, result, ct);
+            var imported = await ImportEntityAsync(mselEntity, result, ct);
+            await ShareDraftAsync(imported, ct);
+            return imported;
+        }
+
+        // the planner's units contribute to the drafted MSEL, and the planner sits on exercise control, so their unit
+        // can work on it and they can run it without setting either up by hand
+        private async Task ShareDraftAsync(MselImportResult result, CancellationToken ct)
+        {
+            var userId = _user.GetId();
+            var mselId = result.Msel.Id;
+            var units = await _context.UnitUsers.Where(uu => uu.UserId == userId).Select(uu => uu.Unit).ToListAsync(ct);
+            var linked = new HashSet<Guid>(await _context.MselUnits.Where(mu => mu.MselId == mselId).Select(mu => mu.UnitId).ToListAsync(ct));
+            foreach (var unit in units.Where(u => !linked.Contains(u.Id)))
+                _context.MselUnits.Add(new MselUnitEntity(unit.Id, mselId) { Id = Guid.NewGuid() });
+            if (units.Any())
+                AddChange(result, "units", $"Added your {(units.Count == 1 ? "unit" : "units")} {string.Join(", ", units.Select(u => u.ShortName ?? u.Name))} to the contributors.");
+
+            var teams = await _context.Teams.Where(t => t.MselId == mselId).ToListAsync(ct);
+            var control = teams.FirstOrDefault(MselDraftCite.IsControl);
+            var onATeam = await _context.TeamUsers.AnyAsync(tu => tu.UserId == userId && tu.Team.MselId == mselId, ct);
+            if (control != null && !onATeam)
+            {
+                _context.TeamUsers.Add(new TeamUserEntity(userId, control.Id) { Id = Guid.NewGuid() });
+                AddChange(result, "teams", $"Put you on {control.ShortName}, the exercise control team.");
+            }
+            await _context.SaveChangesAsync(ct);
         }
 
         private static string OneLine(string text) =>

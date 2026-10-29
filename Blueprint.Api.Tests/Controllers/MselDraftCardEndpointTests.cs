@@ -69,7 +69,10 @@ public class MselDraftCardEndpointTests(DatabaseFixture fixture, AiEnabledFactor
         Assert.All(result.Draft.Injects, i => Assert.Null(i.Card));
     }
 
-    /// <summary>Import adds the cards after the template's, shows every card to every team, and puts each article on its card.</summary>
+    /// <summary>
+    /// Import adds the cards after the template's, shows every card to every team, puts each article on its card, and
+    /// has each drafted card first appear on the wall with its first article.
+    /// </summary>
     [Fact]
     public async Task Import_PutsTheCardsOnTheWallAndTheArticlesOnThem()
     {
@@ -82,8 +85,11 @@ public class MselDraftCardEndpointTests(DatabaseFixture fixture, AiEnabledFactor
         var mselId = (await Read<MselImportResult>(response)).Msel.Id;
         await using var db = NewContext();
         var cards = await db.Cards.Include(c => c.CardTeams).ThenInclude(ct => ct.Team).Where(c => c.MselId == mselId).OrderBy(c => c.Inject).ToListAsync(Ct);
-        Assert.Equal(["Situation Updates", "Exercise Control", "Public and Media", "Cable Operator"], cards.Select(c => c.Name));
-        Assert.Equal([1, 2, 3, 4], cards.Select(c => c.Inject));
+        // every row is in move 0, numbered by time: the read-in at minute 0 is inject 0, the cable cut at minute 10 inject 1;
+        // Public and Media has no article yet, so it keeps its place after the template's card
+        Assert.Equal(
+            new Dictionary<string, (int, int)> { ["Situation Updates"] = (0, 1), ["Exercise Control"] = (0, 0), ["Public and Media"] = (0, 3), ["Cable Operator"] = (0, 1) },
+            cards.ToDictionary(c => c.Name, c => (c.Move, c.Inject)));
         Assert.All(cards, c => Assert.Equal(["BLUE", "EXCON"], c.CardTeams.Select(ct => ct.Team.ShortName).Order()));
         Assert.All(cards.SelectMany(c => c.CardTeams), ct => Assert.True(ct.IsShownOnWall));
         Assert.All(cards.SelectMany(c => c.CardTeams), ct => Assert.Equal(ct.Team.ShortName == "EXCON", ct.CanPostArticles));

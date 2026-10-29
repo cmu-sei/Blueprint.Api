@@ -108,6 +108,21 @@ public class MselDraftCiteEndpointTests(DatabaseFixture fixture, AiEnabledFactor
         Assert.Equal(["Attack Cost / Level of Effort", "Attack Success Likelihood"], _created.ScoringCategories.Select(c => c.Description));
     }
 
+    /// <summary>NCISS CITE lacks is made as CITE's own seed data defines it, under the same name, so later exercises link it.</summary>
+    [Fact]
+    public async Task Import_WithNciss_CreatesItAsCiteDefinesIt()
+    {
+        await Import("Nciss");
+
+        Assert.Equal("CISA NCISS", _created.Description);
+        Assert.Equal("100.0 > 100.0 * ({sum} - {minPossible}) / ({maxPossible} - {minPossible}) > 0.0", _created.CalculationEquation);
+        Assert.Equal(
+            [("Functional Impact", 6.0, 8), ("Observed Activity", 5.0, 5), ("Location of Observed Activity", 4.0, 8), ("Actor Characterization", 4.0, 7),
+             ("Information Impact", 2.0, 8), ("Recoverability", 4.0, 4), ("Cross Sector Dependency", 3.0, 16), ("Potential Impact", 6.0, 5)],
+            _created.ScoringCategories.Select(c => (c.Description, c.ScoringWeight, c.ScoringOptions.Count)));
+        Assert.All(_created.ScoringCategories, c => Assert.Equal(ScoringOptionSelection.Single, c.ScoringOptionSelection));
+    }
+
     /// <summary>A planner who may not make scoring models in CITE still gets the MSEL, told to choose one.</summary>
     [Fact]
     public async Task Import_WhenCiteRefusesTheModel_StillCreatesTheMsel()

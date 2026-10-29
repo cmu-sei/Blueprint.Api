@@ -76,6 +76,38 @@ public class MselDraftDesignEndpointTests(DatabaseFixture fixture, AiEnabledFact
         Assert.Equal(12, result.Draft.Design.Moves);
     }
 
+    /// <summary>
+    /// With Gallery, the planner's card grouping reaches the model; the model is told the groupings it may choose from,
+    /// and an NCISS assessment asks for injects with what teams need to score.
+    /// </summary>
+    [Fact]
+    public async Task Draft_TellsTheModelHowToGroupTheGalleryCards()
+    {
+        var template = await SeedTemplate(useCite: true, useGallery: true);
+        Answer(Draft());
+
+        var result = await Read<MselDraftResult>(await PostDraft(template.Id, new MselDraftDesign { CardGrouping = "sectors", CiteAssessment = "Nciss" }));
+
+        Assert.Equal("Sectors", result.Draft.Design.CardGrouping);
+        Assert.Contains("- Gallery cards: one per critical infrastructure sector the scenario touches", _prompt);
+        Assert.Contains("by network segment and key cyber", _system);
+        Assert.Contains("- CITE assessment: the CISA National Cyber Incident Scoring System (NCISS)", _prompt);
+        Assert.DoesNotContain("\"citeQuestions\"", _schema);
+    }
+
+    /// <summary>Without Gallery there are no cards to group.</summary>
+    [Fact]
+    public async Task Draft_WithoutGallery_HasNoCardGrouping()
+    {
+        var template = await SeedTemplate(useCite: false);
+        Answer(Draft());
+
+        var result = await Read<MselDraftResult>(await PostDraft(template.Id, new MselDraftDesign { CardGrouping = "Countries" }));
+
+        Assert.Null(result.Draft.Design.CardGrouping);
+        Assert.Contains("- Gallery cards: open", _prompt);
+    }
+
     /// <summary>With CITE and no assessment chosen, the draft writes discussion questions for every move.</summary>
     [Fact]
     public async Task Draft_WithCiteAndNoAssessmentChosen_AsksForQuestionsByMove()

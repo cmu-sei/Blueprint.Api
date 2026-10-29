@@ -11,7 +11,7 @@ using NSubstitute;
 namespace Blueprint.Api.Tests.Support;
 
 /// <summary>
-/// A host with AI drafting turned on and <see cref="Model"/> answering for Bedrock, so a request can be
+/// A host with AI drafting turned on and <see cref="Model"/> and <see cref="Images"/> answering for Bedrock, so a request can be
 /// followed to the prompt it sends and back to what the planner is shown.
 /// </summary>
 /// <remarks>
@@ -23,6 +23,9 @@ public class AiEnabledFactory(DatabaseFixture database) : BlueprintAppFactory(da
 {
     public IAiModelClient Model { get; } = Substitute.For<IAiModelClient>();
 
+    /// <summary>Answers for the Bedrock image model; not configured unless a test says so</summary>
+    public IAiImageClient Images { get; } = Substitute.For<IAiImageClient>();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
@@ -31,6 +34,9 @@ public class AiEnabledFactory(DatabaseFixture database) : BlueprintAppFactory(da
         builder.UseSetting("Ai:ModelId", "test-model");
 
         builder.ConfigureTestServices(services =>
-            services.Replace(ServiceDescriptor.Singleton(Model)));
+        {
+            services.Replace(ServiceDescriptor.Singleton(Model));
+            services.Replace(ServiceDescriptor.Singleton(Images));
+        });
     }
 }

@@ -18,5 +18,9 @@ namespace Blueprint.Api.Infrastructure.Options
         // the most competencies a draft may choose from; each one is a line of the prompt
         public int MaxCompetencies { get; set; } = 2500;
         public int TimeoutSeconds { get; set; } = 600;
+        // Bedrock image model for news photos, e.g. stability.stable-image-core-v1:1; empty for no photos
+        public string ImageModelId { get; set; }
+        // Stability's image models are offered in fewer regions than the text models
+        public string ImageRegion { get; set; } = "us-west-2";
     }
 }

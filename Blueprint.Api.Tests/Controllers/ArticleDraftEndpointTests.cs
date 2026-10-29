@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -27,13 +28,83 @@ public class ArticleDraftEndpointTests(DatabaseFixture fixture, AiEnabledFactory
     : ApiTestBase(fixture, factory), IClassFixture<AiEnabledFactory>
 {
     private readonly IAiModelClient _model = factory.Model;
+    private readonly IAiImageClient _images = factory.Images;
     private string _system;
     private string _prompt;
+    private string _schema;
 
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
         _model.ClearSubstitute();
+        _images.ClearSubstitute();
+    }
+
+    /// <summary>Without an image model the article is not offered a photo.</summary>
+    [Fact]
+    public async Task Draft_WithoutAnImageModel_OffersNoPhoto()
+    {
+        var template = await SeedTemplate();
+        Answer(new { html = "<p>Cables cut.</p>" });
+
+        await Read<ArticleDraftResult>(await Post(template.Id, 0));
+
+        Assert.DoesNotContain("\"photo\"", _schema);
+        Assert.DoesNotContain(ArticleDraftService.PhotoMarker, _system);
+        Assert.DoesNotContain(_images.ReceivedCalls(), c => c.GetMethodInfo().Name == nameof(IAiImageClient.PhotoAsync));
+    }
+
+    /// <summary>With an image model, the photo the article describes is made and put where it marked, with its caption.</summary>
+    [Fact]
+    public async Task Draft_WithAnImageModel_PutsThePhotoWhereTheArticleMarkedIt()
+    {
+        var template = await SeedTemplate();
+        _images.IsConfigured.Returns(true);
+        _images.PhotoAsync(Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>()).Returns("data:image/jpeg;base64,PHOTO");
+        Answer(new
+        {
+            html = "<table width=\"720\"><tr><td>[[PHOTO]]</td></tr></table><p>Cables cut.</p>",
+            photo = new { scene = "crews at a cable landing station at dusk", caption = "Crews at the landing site on Tuesday & Wednesday." }
+        });
+
+        var result = await Read<ArticleDraftResult>(await Post(template.Id, 0));
+
+        Assert.Contains("\"photo\"", _schema);
+        Assert.Contains("the photo model cannot spell", _system);
+        await _images.Received(1).PhotoAsync("crews at a cable landing station at dusk", Arg.Any<System.Threading.CancellationToken>());
+        Assert.Contains("<td><img src=\"data:image/jpeg;base64,PHOTO\" width=\"720\" height=\"405\" alt=\"Crews at the landing site on Tuesday &amp; Wednesday.\">" +
+            "<br><font color=\"#666666\" size=\"1\">Crews at the landing site on Tuesday &amp; Wednesday.</font></td>", result.Html);
+        Assert.DoesNotContain(ArticleDraftService.PhotoMarker, result.Html);
+    }
+
+    /// <summary>A photo the image model will not make leaves the article without one, and says why.</summary>
+    [Fact]
+    public async Task Draft_WhenThePhotoFails_KeepsTheArticleAndSaysWhy()
+    {
+        var template = await SeedTemplate();
+        _images.IsConfigured.Returns(true);
+        _images.PhotoAsync(Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>()).Returns<string>(_ => throw new InvalidOperationException("The image model made no photo (CONTENT_FILTERED)."));
+        Answer(new { html = "<p>[[PHOTO]]</p><p>Cables cut.</p>", photo = new { scene = "a harbor", caption = "The harbor." } });
+
+        var result = await Read<ArticleDraftResult>(await Post(template.Id, 0));
+
+        Assert.DoesNotContain(ArticleDraftService.PhotoMarker, result.Html);
+        Assert.Contains("<p>Cables cut.</p>", result.Html);
+        Assert.Contains("No photo was made: The image model made no photo (CONTENT_FILTERED).", result.Notes);
+    }
+
+    /// <summary>A photo with no marked place is not made, so it is not paid for.</summary>
+    [Fact]
+    public async Task Draft_WithNoPlaceForThePhoto_MakesNone()
+    {
+        var template = await SeedTemplate();
+        _images.IsConfigured.Returns(true);
+        Answer(new { html = "<p>Cables cut.</p>", photo = new { scene = "a harbor", caption = "The harbor." } });
+
+        var result = await Read<ArticleDraftResult>(await Post(template.Id, 0));
+
+        await _images.DidNotReceive().PhotoAsync(Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>());
+        Assert.Contains("The article had no place for its photo, so none was made.", result.Notes);
     }
 
     /// <summary>The model gets the article's facts and the scenario; its HTML comes back ready for Gallery.</summary>
@@ -99,6 +170,7 @@ public class ArticleDraftEndpointTests(DatabaseFixture fixture, AiEnabledFactory
             {
                 _system = callInfo.ArgAt<string>(0);
                 _prompt = callInfo.ArgAt<string>(1);
+                _schema = callInfo.ArgAt<System.Text.Json.Nodes.JsonObject>(4).ToJsonString();
                 return JsonSerializer.SerializeToElement(answer);
             });
 

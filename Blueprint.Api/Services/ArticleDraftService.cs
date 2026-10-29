@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Security.Claims;
 using System.Security.Principal;
 using System.Text;
@@ -18,6 +19,7 @@ using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
+using Microsoft.Extensions.Logging;
 
 namespace Blueprint.Api.Services
 {
@@ -89,17 +91,34 @@ Content rules:
 - Put anything you had to assume in notes.
 Answer only by calling the tool.";
 
+        /// <summary>Added to the system prompt when the server has an image model</summary>
+        public const string PhotoRules =
+@"Photos: this server can make one realistic news photo for the article.
+- For a News article, or a Social post that would carry a picture, describe one photo in photo.scene instead of drawing the lead
+  graphic, and put " + PhotoMarker + @" alone in the cell where it goes; the photo fills 720 pixels across.
+- Describe a scene a news photographer would take: the place, equipment, weather and light, and what people are doing, seen from
+  behind or at a distance. No text, signs, screens, logos, flags, insignia or identifiable people: the photo model cannot spell.
+- photo.caption is the line under the photo, in the outlet's voice.
+- Logos, mastheads, maps, charts and diagrams stay inline SVG; a photo cannot show them.";
+
+        /// <summary>Where the article model puts its photo; replaced by the photo, or removed when there is none</summary>
+        public const string PhotoMarker = "[[PHOTO]]";
+
         private readonly BlueprintContext _context;
         private readonly IAiModelClient _aiModelClient;
+        private readonly IAiImageClient _aiImageClient;
         private readonly AiOptions _aiOptions;
         private readonly ClaimsPrincipal _user;
+        private readonly ILogger<ArticleDraftService> _logger;
 
-        public ArticleDraftService(BlueprintContext context, IAiModelClient aiModelClient, AiOptions aiOptions, IPrincipal user)
+        public ArticleDraftService(BlueprintContext context, IAiModelClient aiModelClient, IAiImageClient aiImageClient, AiOptions aiOptions, IPrincipal user, ILogger<ArticleDraftService> logger)
         {
             _context = context;
             _aiModelClient = aiModelClient;
+            _aiImageClient = aiImageClient;
             _aiOptions = aiOptions;
             _user = user as ClaimsPrincipal;
+            _logger = logger;
         }
 
         public async Task<ArticleDraftResult> DraftAsync(ArticleDraftRequest request, CancellationToken ct)
@@ -116,15 +135,53 @@ Answer only by calling the tool.";
             var inject = draft.Injects[request.InjectIndex];
             var values = inject.Values ?? new Dictionary<string, string>();
 
-            var input = await _aiModelClient.InvokeToolAsync(SystemPrompt, BuildPrompt(draft, template, values), ToolName,
-                "Submit the article's HTML.", Schema(), ct);
+            var photos = _aiImageClient.IsConfigured;
+            var input = await _aiModelClient.InvokeToolAsync(photos ? SystemPrompt + "\n\n" + PhotoRules : SystemPrompt,
+                BuildPrompt(draft, template, values), ToolName, "Submit the article's HTML.", Schema(photos), ct);
             var result = new ArticleDraftResult { FieldName = body.Name };
             result.Html = GalleryArticleHtml.Prepare(GetString(input, "html"), result.Notes, GalleryArticleHtml.ArticleWidth);
             if (string.IsNullOrWhiteSpace(result.Html))
                 throw new InvalidOperationException("The model wrote no article. Try again.");
             if (input.TryGetProperty("notes", out var notes) && notes.ValueKind == JsonValueKind.Array)
                 result.Notes.AddRange(notes.EnumerateArray().Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()));
+            if (photos)
+            {
+                var photo = input.TryGetProperty("photo", out var p) && p.ValueKind == JsonValueKind.Object ? p : default;
+                result.Html = await PlacePhotoAsync(result.Html,
+                    photo.ValueKind == JsonValueKind.Object ? GetString(photo, "scene") : null,
+                    photo.ValueKind == JsonValueKind.Object ? GetString(photo, "caption") : null, result.Notes, ct);
+            }
             return result;
+        }
+
+        // the photo goes where the model marked its place; an article without a place for it gets none, so none is paid for
+        private async Task<string> PlacePhotoAsync(string html, string scene, string caption, List<string> notes, CancellationToken ct)
+        {
+            if (!html.Contains(PhotoMarker))
+            {
+                if (!string.IsNullOrWhiteSpace(scene))
+                    notes.Add("The article had no place for its photo, so none was made.");
+                return html;
+            }
+            string photo = null;
+            if (!string.IsNullOrWhiteSpace(scene))
+            {
+                try
+                {
+                    photo = await _aiImageClient.PhotoAsync(scene, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "No photo was made for a drafted article");
+                    notes.Add($"No photo was made: {ex.Message}");
+                }
+            }
+            var alt = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(caption) ? scene ?? "" : caption.Trim());
+            var figure = photo == null ? ""
+                : $"<img src=\"{photo}\" width=\"{GalleryArticleHtml.ArticleWidth}\" height=\"{GalleryArticleHtml.ArticleWidth * 9 / 16}\" alt=\"{alt}\">" +
+                  (string.IsNullOrWhiteSpace(caption) ? "" : $"<br><font color=\"#666666\" size=\"1\">{WebUtility.HtmlEncode(caption.Trim())}</font>");
+            var first = html.IndexOf(PhotoMarker, StringComparison.Ordinal);
+            return html[..first] + figure + html[(first + PhotoMarker.Length)..].Replace(PhotoMarker, "");
         }
 
         public static string BuildPrompt(MselDraft draft, MselEntity template, IReadOnlyDictionary<string, string> values)
@@ -159,16 +216,27 @@ Answer only by calling the tool.";
             return sb.ToString();
         }
 
-        private static JsonObject Schema() => new()
+        private static JsonObject Schema(bool photos)
         {
-            ["type"] = "object",
-            ["properties"] = new JsonObject
+            var properties = new JsonObject
             {
                 ["html"] = new JsonObject { ["type"] = "string", ["description"] = "The article as an HTML fragment that follows the HTML rules." },
                 ["notes"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" }, ["description"] = "Assumptions the planner should check." }
-            },
-            ["required"] = new JsonArray("html")
-        };
+            };
+            if (photos)
+                properties["photo"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["description"] = "The article's one news photo, when it should have one; its place is marked " + PhotoMarker + " in the HTML.",
+                    ["properties"] = new JsonObject
+                    {
+                        ["scene"] = new JsonObject { ["type"] = "string", ["description"] = "What the photo shows, for the photo model; no text, signs, logos or identifiable people." },
+                        ["caption"] = new JsonObject { ["type"] = "string", ["description"] = "The caption under the photo." }
+                    },
+                    ["required"] = new JsonArray("scene", "caption")
+                };
+            return new JsonObject { ["type"] = "object", ["properties"] = properties, ["required"] = new JsonArray("html") };
+        }
 
         private static string GetString(JsonElement element, string property) =>
             element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;

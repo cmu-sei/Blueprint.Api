@@ -1137,6 +1137,14 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("uuid_generate_v4()");
 
+                    b.Property<string>("AiDraft")
+                        .HasColumnType("text")
+                        .HasColumnName("ai_draft");
+
+                    b.Property<string>("AiDraftStage")
+                        .HasColumnType("text")
+                        .HasColumnName("ai_draft_stage");
+
                     b.Property<Guid?>("CasterDirectoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("caster_directory_id");

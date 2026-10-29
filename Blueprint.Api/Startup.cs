@@ -245,6 +245,7 @@ public class Startup
         services.AddScoped<IAiUsageContext, AiUsageContext>();
         services.AddScoped<IAiUsageRecorder, AiUsageRecorder>();
         services.AddScoped<IAiUsageService, AiUsageService>();
+        services.AddScoped<IMselBuildService, MselBuildService>();
         services.AddScoped<IMselPageService, MselPageService>();
         services.AddScoped<IMselImageService, MselImageService>();
         services.AddScoped<IMselUnitService, MselUnitService>();

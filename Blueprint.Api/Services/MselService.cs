@@ -53,6 +53,8 @@ namespace Blueprint.Api.Services
         Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<MselImportResult> ImportJsonAsync(FileForm form, CancellationToken ct);
         Task<MselImportResult> ImportDraftAsync(MselDraftImport draftImport, CancellationToken ct);
+        /// <summary>Creates a MSEL from a reviewed AI design, ready for its injects, articles and profiles to be written into it</summary>
+        Task<MselImportResult> CreateFromDesignAsync(MselDesignBuild build, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
         Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
@@ -2253,6 +2255,46 @@ namespace Blueprint.Api.Services
             }
 
             return await ImportEntityAsync(mselEntity, result, ct);
+        }
+
+        public async Task<MselImportResult> CreateFromDesignAsync(MselDesignBuild build, CancellationToken ct)
+        {
+            var result = new MselImportResult();
+            var draft = build.Draft ?? throw new ArgumentException("The design is empty.");
+            var template = await MselDraftService.LoadTemplateAsync(_context, _user.GetId(), build.TemplateMselId, ct);
+
+            // the planner may have edited the design, so check it again; the injects come later
+            var warnings = new List<string>();
+            var competencies = await MselDraftService.LoadCompetencyChoicesAsync(_context, template.Id, build.CompetencyFrameworkIds, ct);
+            draft.Injects = new List<MselDraftInject>();
+            draft.CiteActions = new List<MselDraftCiteAction>();
+            draft.ReadIn = null;
+            MselDraftRules.Normalize(draft, template, _aiOptions.MaxInjects, competencies, warnings, designOnly: true);
+            foreach (var warning in warnings)
+                AddChange(result, "draft", warning);
+
+            var mselEntity = await LoadMselGraphAsync(template.Id, ct);
+            MselDraftRules.AddDraftFields(mselEntity);
+            MselDraftBuilder.PrepareShell(mselEntity, draft, competencies);
+            // what the next stages write from, kept on the MSEL so they can run, or resume, in later requests
+            mselEntity.AiDraft = MselBuildState.Serialize(new MselBuildState
+            {
+                TemplateMselId = template.Id,
+                Prompt = build.Prompt,
+                CompetencyFrameworkIds = build.CompetencyFrameworkIds ?? new List<Guid>(),
+                Answers = build.Answers ?? new List<MselDesignAnswer>(),
+                Draft = draft
+            });
+            mselEntity.AiDraftStage = MselBuildStage.Injects;
+            AddChange(result, "draft", $"Created from the AI design and the \"{template.Name}\" template. Its injects, articles and profiles are written into it next.");
+            foreach (var note in draft.PlannerNotes)
+                AddChange(result, "plannerNotes", note);
+
+            var imported = await ImportEntityAsync(mselEntity, result, ct);
+            await ShareDraftAsync(imported, ct);
+            if (draft.DraftId != Guid.Empty)
+                await _aiUsageService.LinkDraftAsync(draft.DraftId, imported.Msel.Id, ct);
+            return imported;
         }
 
         public async Task<MselImportResult> ImportDraftAsync(MselDraftImport draftImport, CancellationToken ct)

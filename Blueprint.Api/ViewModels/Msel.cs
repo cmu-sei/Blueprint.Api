@@ -78,6 +78,8 @@ namespace Blueprint.Api.ViewModels
         public string CourseMode { get; set; }
         public string Language { get; set; }
         public DateTime? ImageDateModified { get; set; }
+        /// <summary>The stage of building the MSEL from its AI draft still to run: Injects, Articles or Finish; empty once it is built</summary>
+        public string AiDraftStage { get; set; }
         public virtual ICollection<Organization> Organizations { get; set; } = new HashSet<Organization>();
         public ICollection<Card> Cards { get; set; } = new List<Card>();
         public List<string> GalleryArticleParameters { get; set; } = new List<string>(); // the parameters that must be sent to Gallery to define an Article

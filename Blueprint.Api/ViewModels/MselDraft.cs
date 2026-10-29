@@ -192,6 +192,65 @@ namespace Blueprint.Api.ViewModels
         public string Objective { get; set; }
     }
 
+    /// <summary>
+    /// A question the design step asks the planner, whose answer would change the exercise. Each has the answer the
+    /// draft uses if the planner gives none.
+    /// </summary>
+    public class MselDesignQuestion
+    {
+        public string Id { get; set; }
+        public string Question { get; set; }
+        /// <summary>Why the answer matters to the exercise</summary>
+        public string Why { get; set; }
+        public string Suggested { get; set; }
+    }
+
+    public class MselDesignAnswer
+    {
+        public string Question { get; set; }
+        public string Answer { get; set; }
+    }
+
+    /// <summary>A reviewed design to create its MSEL from, which the rest of the draft is then written into</summary>
+    public class MselDesignBuild
+    {
+        public Guid TemplateMselId { get; set; }
+        /// <summary>The planner's description of the exercise, which the injects are written from too</summary>
+        public string Prompt { get; set; }
+        /// <summary>The design as reviewed: no injects yet</summary>
+        public MselDraft Draft { get; set; }
+        public List<Guid> CompetencyFrameworkIds { get; set; } = new List<Guid>();
+        public List<MselDesignAnswer> Answers { get; set; } = new List<MselDesignAnswer>();
+    }
+
+    /// <summary>Where building a MSEL from its AI draft stands, and what is left to write</summary>
+    public class MselBuildStatus
+    {
+        public Guid MselId { get; set; }
+        /// <summary>Injects, Articles or Finish; empty once the MSEL is built</summary>
+        public string Stage { get; set; }
+        /// <summary>The Gallery articles still to write</summary>
+        public List<MselBuildItem> Articles { get; set; } = new List<MselBuildItem>();
+        /// <summary>The team and organization profiles still to write</summary>
+        public List<MselBuildItem> Profiles { get; set; } = new List<MselBuildItem>();
+        public List<string> Warnings { get; set; } = new List<string>();
+    }
+
+    public class MselBuildItem
+    {
+        /// <summary>The scenario event, team or organization</summary>
+        public Guid Id { get; set; }
+        /// <summary>team or organization, for a profile</summary>
+        public string Kind { get; set; }
+        public string Name { get; set; }
+    }
+
+    /// <summary>A written article or profile to save, after its graphics are drawn as PNG</summary>
+    public class MselBuildContent
+    {
+        public string Html { get; set; }
+    }
+
     /// <summary>A competency the draft assigned, named so the planner can review it</summary>
     public class MselDraftCompetency
     {
@@ -218,6 +277,8 @@ namespace Blueprint.Api.ViewModels
         public List<string> Warnings { get; set; } = new List<string>();
         /// <summary>The competencies the draft assigned, with their names</summary>
         public List<MselDraftCompetency> Competencies { get; set; } = new List<MselDraftCompetency>();
+        /// <summary>From the design step: what the planner should decide before the injects are written</summary>
+        public List<MselDesignQuestion> Questions { get; set; } = new List<MselDesignQuestion>();
     }
 
     /// <summary>A reviewed draft to create as a new MSEL</summary>

@@ -28,6 +28,11 @@ namespace Blueprint.Api.Services
     {
         /// <summary>Asks the model for a MSEL draft shaped by a template. Nothing is saved.</summary>
         Task<MselDraftResult> DraftAsync(MselDraftRequest request, CancellationToken ct);
+        /// <summary>The first of two steps: the design alone, and the questions the planner should answer before the injects</summary>
+        Task<MselDraftResult> DesignAsync(MselDraftRequest request, CancellationToken ct);
+        /// <summary>The second step: the injects, CITE tasks and questions, and read-in, written to an approved design</summary>
+        Task<MselDraft> WriteInjectsAsync(MselEntity template, MselDraft design, string prompt, List<MselDesignAnswer> answers,
+            Dictionary<string, CompetencyEntity> competencies, List<string> warnings, CancellationToken ct);
     }
 
     public class MselDraftService : IMselDraftService
@@ -154,6 +159,183 @@ Answer only by calling the tool.";
                 .Select(id => new MselDraftCompetency { IdNumber = id, ShortName = competencies[id].ShortName })
                 .ToList();
             return result;
+        }
+
+        private const string DesignStep =
+@"This is the first of two steps. Write only the design: the name, description and length, the scenario, the objectives, the moves
+(with each one's purpose, situation and scenario time), the teams, organizations, Gallery cards, competencies and catalog metadata.
+The injects come in the second step, once the planner has reviewed the design.
+Then ask the planner up to five questions whose answers would change the exercise materially, such as the escalation ceiling, who
+the participants are, or what a move should test. Never ask what the description or the design choices already answer. Give each
+question the answer you would use if the planner gives none, and say in a few words why it matters. Ask nothing when nothing material is open.";
+
+        private const string InjectsStep =
+@"This is the second of two steps. The planner has reviewed and approved the design below, and answered your questions. Keep to it:
+its moves, teams, organizations and Gallery cards, by the same names and numbers. Write the injects, each move's expected decisions,
+controller notes and discussion questions, the CITE tasks, and the read-in. Where an answer changes the design, follow the answer.";
+
+        public async Task<MselDraftResult> DesignAsync(MselDraftRequest request, CancellationToken ct)
+        {
+            if (!_aiOptions.Enabled)
+                throw new InvalidOperationException("AI drafting is not enabled on this server.");
+            if (string.IsNullOrWhiteSpace(request.Prompt))
+                throw new ArgumentException("Describe the exercise to draft.");
+
+            var template = await LoadTemplateAsync(_context, _user.GetId(), request.TemplateMselId, ct);
+            var competencies = await LoadCompetencyChoicesAsync(_context, template.Id, request.CompetencyFrameworkIds, ct);
+            if (competencies.Count > _aiOptions.MaxCompetencies)
+                throw new ArgumentException($"The chosen frameworks have {competencies.Count} competencies, more than the {_aiOptions.MaxCompetencies} a draft can choose from. Choose fewer frameworks.");
+            var fields = MselDraftRules.DraftedFields(template).ToList();
+            var design = MselDraftRules.CleanDesign(request.Design, template);
+            var schema = DesignSchema(BuildSchema(fields, _aiOptions.MaxInjects, competencies, MselDraftRules.UsesCards(template), template.UseCite,
+                design.CiteAssessment == MselDraftRules.QuestionsByMove));
+            var prompt = BuildPrompt(request.Prompt, template, fields, _aiOptions.MaxInjects, competencies, design);
+
+            var draftId = Guid.NewGuid();
+            _usage.Use("design", draftId: draftId);
+            var input = await _aiModelClient.InvokeToolAsync(SystemPrompt + "\n\n" + DesignStep, prompt, ToolName,
+                "Submit the design and your questions for the planner to review.", schema, ct);
+            var unreadable = new List<string>();
+            var draft = MselDraftRules.ReadDraft(input, unreadable);
+            draft.Design = design;
+            draft.DraftId = draftId;
+
+            var result = new MselDraftResult
+            {
+                TemplateMselId = template.Id,
+                TemplateName = template.Name,
+                Draft = draft,
+                Fields = fields.Select(f => new MselDraftField
+                {
+                    Name = f.Name,
+                    DataType = f.DataType.ToString(),
+                    Options = f.DataOptions.OrderBy(o => o.DisplayOrder).Select(o => o.OptionValue).ToList()
+                }).ToList(),
+                Questions = MselDraftRules.ReadQuestions(input)
+            };
+            result.Warnings.AddRange(unreadable);
+            MselDraftRules.Normalize(draft, template, _aiOptions.MaxInjects, competencies, result.Warnings, designOnly: true);
+            result.Competencies = draft.Competencies
+                .Select(id => new MselDraftCompetency { IdNumber = id, ShortName = competencies[id].ShortName })
+                .ToList();
+            return result;
+        }
+
+        public async Task<MselDraft> WriteInjectsAsync(MselEntity template, MselDraft design, string prompt, List<MselDesignAnswer> answers,
+            Dictionary<string, CompetencyEntity> competencies, List<string> warnings, CancellationToken ct)
+        {
+            if (!_aiOptions.Enabled)
+                throw new InvalidOperationException("AI drafting is not enabled on this server.");
+            var fields = MselDraftRules.DraftedFields(template).ToList();
+            var schema = InjectsSchema(BuildSchema(fields, _aiOptions.MaxInjects, competencies, MselDraftRules.UsesCards(template), template.UseCite,
+                design.Design?.CiteAssessment == MselDraftRules.QuestionsByMove));
+            var sb = new StringBuilder(BuildPrompt(prompt ?? design.Description ?? design.Name, template, fields, _aiOptions.MaxInjects, competencies, design.Design));
+            sb.AppendLine();
+            sb.AppendLine("The approved design:");
+            sb.AppendLine(JsonSerializer.Serialize(new
+            {
+                design.Name,
+                design.Description,
+                design.DurationMinutes,
+                design.Scenario,
+                design.Objectives,
+                Moves = design.Moves.Select(m => new { m.MoveNumber, m.Description, m.Purpose, m.StartMinutes, m.SituationTime, Situation = DataValueDraftService.StripHtml(m.SituationDescription) }),
+                Teams = design.Teams.Select(t => new { t.ShortName, t.Name, Description = DataValueDraftService.StripHtml(t.Description), t.Competencies }),
+                Organizations = design.Organizations.Select(o => new { o.ShortName, o.Name, Description = DataValueDraftService.StripHtml(o.Description) }),
+                design.Cards,
+                design.Competencies
+            }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
+            var answered = (answers ?? new List<MselDesignAnswer>()).Where(a => !string.IsNullOrWhiteSpace(a?.Answer)).ToList();
+            if (answered.Any())
+            {
+                sb.AppendLine();
+                sb.AppendLine("The planner's answers:");
+                foreach (var answer in answered)
+                    sb.AppendLine($"- {answer.Question?.Trim()}: {answer.Answer.Trim()}");
+            }
+
+            _usage.Use("injects", draftId: design.DraftId == Guid.Empty ? null : design.DraftId);
+            var input = await _aiModelClient.InvokeToolAsync(SystemPrompt + "\n\n" + InjectsStep, sb.ToString(), ToolName,
+                "Submit the injects for the approved design.", schema, ct);
+            var written = MselDraftRules.ReadDraft(input, warnings);
+
+            // the design stays as approved; the second step adds to it
+            design.Injects = written.Injects ?? new List<MselDraftInject>();
+            design.ReadIn = written.ReadIn;
+            design.CiteActions = written.CiteActions ?? new List<MselDraftCiteAction>();
+            design.PlannerNotes = (design.PlannerNotes ?? new List<string>()).Concat(written.PlannerNotes ?? new List<string>()).ToList();
+            foreach (var details in written.Moves ?? new List<MselDraftMove>())
+            {
+                var move = design.Moves.FirstOrDefault(m => m.MoveNumber == details.MoveNumber);
+                if (move == null)
+                    continue;
+                move.ExpectedDecisions = details.ExpectedDecisions;
+                move.ControllerNotes = details.ControllerNotes;
+                move.CiteQuestions = details.CiteQuestions;
+            }
+            MselDraftRules.Normalize(design, template, _aiOptions.MaxInjects, competencies, warnings);
+            return design;
+        }
+
+        // the full draft's schema without the injects and the moves' details, and with the planner's questions
+        private static JsonObject DesignSchema(JsonObject full)
+        {
+            var properties = (JsonObject)full["properties"];
+            foreach (var name in new[] { "injects", "readIn", "citeActions" })
+                properties.Remove(name);
+            var move = (JsonObject)properties["moves"]["items"];
+            foreach (var name in new[] { "expectedDecisions", "controllerNotes", "citeQuestions" })
+                ((JsonObject)move["properties"]).Remove(name);
+            move["required"] = new JsonArray("moveNumber", "description", "situationDescription", "startMinutes", "situationTime", "purpose");
+            properties["questions"] = new JsonObject
+            {
+                ["type"] = "array",
+                ["maxItems"] = 5,
+                ["description"] = "Up to five questions whose answers would change the exercise materially; none when nothing material is open",
+                ["items"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["question"] = new JsonObject { ["type"] = "string" },
+                        ["why"] = new JsonObject { ["type"] = "string", ["description"] = "A few words on why the answer matters" },
+                        ["suggested"] = new JsonObject { ["type"] = "string", ["description"] = "The answer the draft uses if the planner gives none" }
+                    },
+                    ["required"] = new JsonArray("question", "suggested")
+                }
+            };
+            full["required"] = new JsonArray("name", "description", "durationMinutes", "scenario", "objectives", "moves", "teams", "organizations", "questions");
+            return full;
+        }
+
+        // the injects, read-in and CITE tasks of the full schema, and each move's details by number
+        private static JsonObject InjectsSchema(JsonObject full)
+        {
+            var all = (JsonObject)full["properties"];
+            var move = (JsonObject)all["moves"]["items"]["properties"];
+            var moveDetails = new JsonObject
+            {
+                ["moveNumber"] = move["moveNumber"].DeepClone(),
+                ["expectedDecisions"] = move["expectedDecisions"].DeepClone(),
+                ["controllerNotes"] = move["controllerNotes"].DeepClone()
+            };
+            if (move["citeQuestions"] is JsonNode questions)
+                moveDetails["citeQuestions"] = questions.DeepClone();
+            var properties = new JsonObject
+            {
+                ["moves"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["description"] = "Each move of the design by its number, with what it asks of participants and controllers",
+                    ["items"] = new JsonObject { ["type"] = "object", ["properties"] = moveDetails, ["required"] = new JsonArray("moveNumber", "expectedDecisions") }
+                },
+                ["injects"] = all["injects"].DeepClone(),
+                ["readIn"] = all["readIn"].DeepClone(),
+                ["plannerNotes"] = all["plannerNotes"].DeepClone()
+            };
+            if (all["citeActions"] is JsonNode actions)
+                properties["citeActions"] = actions.DeepClone();
+            return new JsonObject { ["type"] = "object", ["properties"] = properties, ["required"] = new JsonArray("moves", "injects", "readIn") };
         }
 
         /// <summary>
@@ -650,7 +832,7 @@ Answer only by calling the tool.";
         /// Puts a draft into a shape import can trust: known columns and names only, times in range,
         /// at most maxInjects rows. Every correction is reported.
         /// </summary>
-        public static void Normalize(MselDraft draft, MselEntity template, int maxInjects, IReadOnlyDictionary<string, CompetencyEntity> competencies, List<string> warnings)
+        public static void Normalize(MselDraft draft, MselEntity template, int maxInjects, IReadOnlyDictionary<string, CompetencyEntity> competencies, List<string> warnings, bool designOnly = false)
         {
             draft.Name = string.IsNullOrWhiteSpace(draft.Name) ? "AI draft" : draft.Name.Trim();
             draft.Moves ??= new List<MselDraftMove>();
@@ -730,7 +912,7 @@ Answer only by calling the tool.";
                 move.Purpose = string.IsNullOrWhiteSpace(move.Purpose) ? null : move.Purpose.Trim();
                 move.ControllerNotes = string.IsNullOrWhiteSpace(move.ControllerNotes) ? null : move.ControllerNotes.Trim();
             }
-            if (draft.Design.CiteAssessment == QuestionsByMove && draft.Moves.Any(m => !m.CiteQuestions.Any()))
+            if (!designOnly && draft.Design.CiteAssessment == QuestionsByMove && draft.Moves.Any(m => !m.CiteQuestions.Any()))
                 warnings.Add($"No discussion questions for move {string.Join(", ", draft.Moves.Where(m => !m.CiteQuestions.Any()).Select(m => m.MoveNumber))}; add them before creating the MSEL, or CITE shows those moves empty.");
 
             // the scenario clock: each move's time in UTC, never earlier than the move before
@@ -1068,6 +1250,24 @@ Answer only by calling the tool.";
 
         private static JsonNode FindProperty(JsonObject obj, string name) =>
             FindKey(obj, name) is string key ? obj[key] : null;
+
+        /// <summary>The design step's questions, numbered, without empty ones; a question without a suggestion is kept</summary>
+        public static List<MselDesignQuestion> ReadQuestions(JsonElement input)
+        {
+            var questions = new List<MselDesignQuestion>();
+            if (input.ValueKind != JsonValueKind.Object || !input.TryGetProperty("questions", out var list) || list.ValueKind != JsonValueKind.Array)
+                return questions;
+            string Text(JsonElement item, string name) =>
+                item.ValueKind == JsonValueKind.Object && item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()?.Trim() : null;
+            foreach (var item in list.EnumerateArray().Take(5))
+            {
+                var question = item.ValueKind == JsonValueKind.String ? item.GetString()?.Trim() : Text(item, "question");
+                if (string.IsNullOrEmpty(question))
+                    continue;
+                questions.Add(new MselDesignQuestion { Id = $"Q{questions.Count + 1}", Question = question, Why = Text(item, "why"), Suggested = Text(item, "suggested") });
+            }
+            return questions;
+        }
 
         /// <summary>A date and time in UTC; one without a zone is taken as UTC</summary>
         public static DateTime? ParseUtc(string value) =>

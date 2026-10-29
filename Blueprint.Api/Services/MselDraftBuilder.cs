@@ -133,7 +133,8 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>The rows, the teams' CITE tasks and the read-in; returns the read-in page, which the Player applications link to</summary>
-        public static MselPageEntity AddInjects(MselEntity mselEntity, MselDraft draft, IReadOnlyDictionary<string, CompetencyEntity> competencies)
+        public static MselPageEntity AddInjects(MselEntity mselEntity, MselDraft draft, IReadOnlyDictionary<string, CompetencyEntity> competencies,
+            Dictionary<MselDraftInject, ScenarioEventEntity> created = null)
         {
             var cardsByName = new Dictionary<string, CardEntity>(StringComparer.OrdinalIgnoreCase);
             foreach (var card in mselEntity.Cards)
@@ -270,6 +271,7 @@ namespace Blueprint.Api.Services
                         });
                     }
                     mselEntity.ScenarioEvents.Add(scenarioEvent);
+                    created?.TryAdd(inject, scenarioEvent);
                 }
             }
 

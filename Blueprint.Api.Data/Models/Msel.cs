@@ -73,6 +73,10 @@ namespace Blueprint.Api.Data.Models
         public string CourseMode { get; set; }
         public string Language { get; set; }
         public DateTime? ImageDateModified { get; set; }
+        // a MSEL built from an AI draft as it is written: the draft and the planner's answers, as JSON, and the stage
+        // still to run (Injects, Articles, Finish), which is empty once the MSEL is built
+        public string AiDraft { get; set; }
+        public string AiDraftStage { get; set; }
         public virtual ICollection<CardEntity> Cards { get; set; } = new HashSet<CardEntity>();
         public virtual ICollection<CiteDutyEntity> CiteDuties { get; set; } = new HashSet<CiteDutyEntity>();
         public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();

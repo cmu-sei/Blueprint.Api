@@ -147,6 +147,71 @@ public class MselDraftDesignEndpointTests(DatabaseFixture fixture, AiEnabledFact
         Assert.False(await db.DataFields.AnyAsync(f => f.MselId == template.Id && f.Name == "Expected Actions", Ct));
     }
 
+    /// <summary>
+    /// Import adds an Exercise Overview participants see, a Facilitator Guide only exercise control sees, and in
+    /// Player a Read-In application on the read-in page and an Exercise Timeline, for every team.
+    /// </summary>
+    [Fact]
+    public async Task Import_AddsTheOverviewFacilitatorGuideAndPlayerApplications()
+    {
+        var template = await SeedTemplate(useCite: false, usePlayer: true);
+        var draft = JsonSerializer.Deserialize<MselDraft>(Draft(), JsonOptions);
+        draft.Design = new MselDraftDesign { Format = "Discussion", ProfilePages = false };
+        var planner = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/import", new MselDraftImport { TemplateMselId = template.Id, Draft = draft }, JsonOptions, Ct);
+
+        var mselId = (await Read<MselImportResult>(response)).Msel.Id;
+        await using var db = NewContext();
+        var pages = await db.MselPages.Where(p => p.MselId == mselId).ToDictionaryAsync(p => p.Name, Ct);
+        Assert.Equal(["Deep Bite Read-In", "Exercise Overview", "Facilitator Guide"], pages.Keys.Order());
+
+        var overview = pages["Exercise Overview"];
+        Assert.True(overview.AllCanView);
+        Assert.Contains("<h2>Deep Bite: Exercise Overview</h2>", overview.Content);
+        Assert.Contains("A discussion-based tabletop exercise", overview.Content);
+        Assert.Contains("<td valign=\"top\">Lead the response</td><td valign=\"top\">With partial outages</td>", overview.Content);
+        Assert.Contains("<b>Security operations (SOC)</b>", overview.Content);
+
+        var guide = pages["Facilitator Guide"];
+        Assert.False(guide.AllCanView);
+        Assert.False(guide.IncludeInPlaybook);
+        Assert.Contains("<b>Escalation ceiling:</b> No loss of life", guide.Content);
+        Assert.Contains("<h3>Move 0: Start</h3>", guide.Content);
+        Assert.Contains("<li>Decide who leads the response</li>", guide.Content);
+        Assert.Contains("<b>Controller notes:</b> Hold the vendor call until they ask.", guide.Content);
+        Assert.Contains("<td valign=\"top\">Outage</td><td valign=\"top\">Open an incident and assign a lead</td><td valign=\"top\">O1 Lead the response</td>", guide.Content);
+        Assert.Contains("<h3>After-action review</h3>", guide.Content);
+
+        var apps = await db.PlayerApplications.Include(a => a.PlayerApplicationTeams).Where(a => a.MselId == mselId).ToDictionaryAsync(a => a.Name, Ct);
+        Assert.Equal($"{{blueprintUrl}}/mselpage/{pages["Deep Bite Read-In"].Id}{{theme}}", apps["Read-In"].Url);
+        Assert.Equal("{blueprintUrl}/msel/{blueprintMselId}/view{theme}", apps["Exercise Timeline"].Url);
+        var teams = await db.Teams.Where(t => t.MselId == mselId).Select(t => t.Id).OrderBy(id => id).ToListAsync(Ct);
+        Assert.Equal(2, teams.Count);
+        Assert.Equal(teams, apps["Read-In"].PlayerApplicationTeams.Select(t => t.TeamId).Order());
+        Assert.Equal(teams, apps["Exercise Timeline"].PlayerApplicationTeams.Select(t => t.TeamId).Order());
+    }
+
+    /// <summary>Copying a MSEL keeps a Player application that links to one of its pages pointing at the copy's page.</summary>
+    [Fact]
+    public async Task Copy_PointsAPageApplicationAtTheCopysPage()
+    {
+        var msel = TestData.Msel();
+        var page = TestData.MselPage(msel.Id, name: "Read-In");
+        var app = TestData.PlayerApplication(msel.Id, name: "Read-In", url: $"{{blueprintUrl}}/mselpage/{page.Id}{{theme}}");
+        await Seed(msel, page, app);
+        var planner = await Actor().WithSystemPermissions(SystemPermission.CreateMsels, SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Client(planner).PostAsync($"/api/msels/{msel.Id}/copy", null, Ct);
+
+        var copy = await Read<Msel>(response);
+        await using var db = NewContext();
+        var copiedPage = await db.MselPages.SingleAsync(p => p.MselId == copy.Id, Ct);
+        var copiedApp = await db.PlayerApplications.SingleAsync(a => a.MselId == copy.Id, Ct);
+        Assert.NotEqual(page.Id, copiedPage.Id);
+        Assert.Equal($"{{blueprintUrl}}/mselpage/{copiedPage.Id}{{theme}}", copiedApp.Url);
+    }
+
     private void Answer(string json) =>
         _model.InvokeToolAsync(default, default, default, default, default, default)
             .ReturnsForAnyArgs(callInfo =>
@@ -203,10 +268,11 @@ public class MselDraftDesignEndpointTests(DatabaseFixture fixture, AiEnabledFact
     }
 
     // a template with team BLUE and a Title column
-    private async Task<MselEntity> SeedTemplate(bool useCite)
+    private async Task<MselEntity> SeedTemplate(bool useCite, bool usePlayer = false)
     {
         var template = TestData.Msel(isTemplate: true);
         template.UseCite = useCite;
+        template.UsePlayer = usePlayer;
         var blue = TestData.Team(template.Id);
         blue.ShortName = "BLUE";
         await Seed(template, blue, TestData.DataField(template.Id, name: "Title", displayOrder: 1));

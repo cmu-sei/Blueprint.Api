@@ -391,12 +391,14 @@ namespace Blueprint.Api.Services
                 move.Msel = null;
                 move.CreatedBy = mselEntity.CreatedBy;
             }
-            // copy Msel Pages
+            // copy Msel Pages; a Player application can link to one by its ID
+            var pageIds = new Dictionary<Guid, Guid>();
             foreach (var page in mselEntity.Pages)
             {
                 // save the old page ID cross reference
                 newGuidValues[page.Id] = Guid.NewGuid();
                 // set new page values
+                pageIds[page.Id] = newGuidValues[page.Id];
                 page.Id = newGuidValues[page.Id];
                 page.MselId = mselEntity.Id;
                 page.Msel = null;
@@ -509,6 +511,8 @@ namespace Blueprint.Api.Services
             {
                 playerApplication.Id = Guid.NewGuid();
                 playerApplication.MselId = mselEntity.Id;
+                foreach (var (oldPageId, newPageId) in pageIds)
+                    playerApplication.Url = playerApplication.Url?.Replace(oldPageId.ToString(), newPageId.ToString(), StringComparison.OrdinalIgnoreCase);
                 playerApplication.Msel = null;
                 playerApplication.CreatedBy = mselEntity.CreatedBy;
                 foreach (var playerApplicationTeam in playerApplication.PlayerApplicationTeams)
@@ -2360,31 +2364,65 @@ namespace Blueprint.Api.Services
                 });
             }
 
-            // the read-in and the team and organization profiles are pages every participant can see, and part of the playbook
-            void AddPage(string name, string content)
+            // the overview, read-in and profiles are pages every participant can see, and part of the playbook;
+            // the facilitator guide is for exercise control only
+            MselPageEntity AddPage(string name, string content, bool participants = true)
             {
                 if (content == null)
-                    return;
+                    return null;
                 var pageName = name;
                 for (var n = 2; mselEntity.Pages.Any(p => p.Name.Equals(pageName, StringComparison.OrdinalIgnoreCase)); n++)
                     pageName = $"{name} {n}";
-                mselEntity.Pages.Add(new MselPageEntity
+                var page = new MselPageEntity
                 {
                     Id = Guid.NewGuid(),
                     MselId = mselEntity.Id,
                     Name = pageName,
                     Content = content,
-                    AllCanView = true,
-                    IncludeInPlaybook = true
-                });
+                    AllCanView = participants,
+                    IncludeInPlaybook = participants
+                };
+                mselEntity.Pages.Add(page);
+                return page;
             }
-            AddPage($"{mselEntity.Name} Read-In", draft.ReadIn);
-            AddPage("Organization Profiles", MselDraftRules.ProfilesPage("Organization Profiles",
-                "These profiles describe the organizations, agencies, media outlets and other scenario actors participants may need to reference during the exercise. They are background material, not injects.",
-                mselEntity.Organizations.Select(o => ($"{o.Name} ({o.ShortName})", o.Description))));
-            AddPage("Team Profiles", MselDraftRules.ProfilesPage("Team Profiles",
-                "These profiles describe the participant teams and exercise control. They are background material for facilitators and players, not injects.",
-                mselEntity.Teams.Select(t => ($"{t.Name} ({t.ShortName})", t.Description))));
+            AddPage("Exercise Overview", MselDraftPages.Overview(draft, mselEntity, mselEntity.StartTime));
+            var readInPage = AddPage($"{mselEntity.Name} Read-In", draft.ReadIn);
+            AddPage("Facilitator Guide", MselDraftPages.FacilitatorGuide(draft, mselEntity, mselEntity.StartTime), participants: false);
+            if (draft.Design.ProfilePages)
+            {
+                AddPage("Organization Profiles", MselDraftRules.ProfilesPage("Organization Profiles",
+                    "These profiles describe the organizations, agencies, media outlets and other scenario actors participants may need to reference during the exercise. They are background material, not injects.",
+                    mselEntity.Organizations.Select(o => ($"{o.Name} ({o.ShortName})", o.Description))));
+                AddPage("Team Profiles", MselDraftRules.ProfilesPage("Team Profiles",
+                    "These profiles describe the participant teams and exercise control. They are background material for facilitators and players, not injects.",
+                    mselEntity.Teams.Select(t => ($"{t.Name} ({t.ShortName})", t.Description))));
+            }
+
+            // in Player, every team gets the read-in and the live MSEL view, next to the template's applications
+            if (mselEntity.UsePlayer)
+            {
+                void AddApplication(string name, string url, string icon)
+                {
+                    if (mselEntity.PlayerApplications.Any(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                        return;
+                    var application = new PlayerApplicationEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        MselId = mselEntity.Id,
+                        Name = name,
+                        Url = url,
+                        Icon = icon,
+                        Embeddable = true,
+                        LoadInBackground = false
+                    };
+                    foreach (var team in mselEntity.Teams)
+                        application.PlayerApplicationTeams.Add(new PlayerApplicationTeamEntity { Id = Guid.NewGuid(), PlayerApplicationId = application.Id, TeamId = team.Id });
+                    mselEntity.PlayerApplications.Add(application);
+                }
+                if (readInPage != null)
+                    AddApplication("Read-In", $"{{blueprintUrl}}/mselpage/{readInPage.Id}{{theme}}", "{playerUrl}/assets/img/SP_Icon_Intel.png");
+                AddApplication("Exercise Timeline", "{blueprintUrl}/msel/{blueprintMselId}/view{theme}", "{playerUrl}/assets/img/SP_Icon_Dashboard.png");
+            }
 
             // CITE actions go after the template's, numbered within each team's move
             var teamsByShortName = new Dictionary<string, TeamEntity>(StringComparer.OrdinalIgnoreCase);

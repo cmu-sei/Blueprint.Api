@@ -113,7 +113,8 @@ public class MselDraftScenarioEndpointTests(DatabaseFixture fixture, AiEnabledFa
             moves.Select(m => m.SituationTime?.ToUniversalTime()));
 
         var pages = await db.MselPages.Where(p => p.MselId == mselId).OrderBy(p => p.Name).ToListAsync(Ct);
-        Assert.Equal(["Deep Bite Read-In", "Organization Profiles", "Read-In", "Team Profiles"], pages.Select(p => p.Name));
+        // no facilitator guide: the draft has no objectives, move purposes or expected actions
+        Assert.Equal(["Deep Bite Read-In", "Exercise Overview", "Organization Profiles", "Read-In", "Team Profiles"], pages.Select(p => p.Name));
         Assert.All(pages.Where(p => p.Name != "Read-In"), p =>
         {
             Assert.True(p.AllCanView);
@@ -121,9 +122,9 @@ public class MselDraftScenarioEndpointTests(DatabaseFixture fixture, AiEnabledFa
             Assert.StartsWith("<table", p.Content);
         });
         Assert.Contains("<h2>Background</h2>", pages[0].Content);
-        Assert.Contains("<h2>Organization Profiles</h2>", pages[1].Content);
-        Assert.Contains("<article><h3>Harbor Daily (NEWS)</h3><p><strong>Type:</strong> Local paper</p></article>", pages[1].Content);
-        Assert.Contains("<article><h3>Security operations (SOC)</h3><p>Watches the network &amp; the hosts.</p></article>", pages[3].Content);
+        Assert.Contains("<h2>Organization Profiles</h2>", pages[2].Content);
+        Assert.Contains("<article><h3>Harbor Daily (NEWS)</h3><p><strong>Type:</strong> Local paper</p></article>", pages[2].Content);
+        Assert.Contains("<article><h3>Security operations (SOC)</h3><p>Watches the network &amp; the hosts.</p></article>", pages[4].Content);
 
         var actions = await db.CiteActions.Include(a => a.Team).Where(a => a.MselId == mselId)
             .OrderBy(a => a.MoveNumber).ThenBy(a => a.Team.ShortName).ThenBy(a => a.ActionNumber).ToListAsync(Ct);

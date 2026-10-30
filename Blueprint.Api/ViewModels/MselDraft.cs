@@ -229,6 +229,8 @@ namespace Blueprint.Api.ViewModels
         public Guid MselId { get; set; }
         /// <summary>Injects, Articles or Finish; empty once the MSEL is built</summary>
         public string Stage { get; set; }
+        /// <summary>How many of the rows, articles and profiles to write at once</summary>
+        public int Parallel { get; set; }
         /// <summary>The other injects whose long text is still to write</summary>
         public List<MselBuildItem> Injects { get; set; } = new List<MselBuildItem>();
         /// <summary>The Gallery articles still to write</summary>

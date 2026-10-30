@@ -32,6 +32,11 @@ namespace Blueprint.Api.Infrastructure.Options
         // the model each task uses where it is not the default above, keyed by the task the usage records name:
         // design, injects, rows, article, profile, value, assist, draft. Any field left empty is the default's.
         public Dictionary<string, AiTaskModel> Models { get; set; } = new Dictionary<string, AiTaskModel>();
+        // how hard a model thinks before it answers: low, medium, high, xhigh or max; empty for the model's own default.
+        // Lower is faster and spends fewer tokens; a task's own Effort wins.
+        public string Effort { get; set; }
+        // how many of a drafted MSEL's rows, articles and profiles are written at once
+        public int Parallel { get; set; } = 6;
 
         public const string Bedrock = "Bedrock";
         public const string OpenAi = "OpenAI";
@@ -51,7 +56,8 @@ namespace Blueprint.Api.Infrastructure.Options
                 Region = Pick(own?.Region, Region),
                 BaseUrl = own?.BaseUrl,
                 ApiKey = own?.ApiKey,
-                MaxTokens = own?.MaxTokens > 0 ? own.MaxTokens : MaxTokens
+                MaxTokens = own?.MaxTokens > 0 ? own.MaxTokens : MaxTokens,
+                Effort = Pick(own?.Effort, Effort)
             };
 
             static string Pick(string value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
@@ -71,6 +77,8 @@ namespace Blueprint.Api.Infrastructure.Options
         public string BaseUrl { get; set; }
         public string ApiKey { get; set; }
         public int MaxTokens { get; set; }
+        // low, medium, high, xhigh or max; empty for the default
+        public string Effort { get; set; }
     }
 
     /// <summary>A model's price in US dollars: per million tokens of each kind, and per image</summary>

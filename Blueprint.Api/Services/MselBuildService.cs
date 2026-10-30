@@ -14,6 +14,7 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
+using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
 using Cite.Api.Client;
 using Microsoft.EntityFrameworkCore;
@@ -83,12 +84,14 @@ namespace Blueprint.Api.Services
         private readonly IProfileDraftService _profileDraftService;
         private readonly IAiUsageService _aiUsageService;
         private readonly ICiteApiClient _citeApiClient;
+        private readonly AiOptions _aiOptions;
         private readonly ClaimsPrincipal _user;
         // what the stage loaded; anything else it tracks at save was written by the stage
         private readonly HashSet<object> _loaded = new HashSet<object>(ReferenceEqualityComparer.Instance);
 
         public MselBuildService(BlueprintContext context, IMselDraftService mselDraftService, IArticleDraftService articleDraftService,
-            IProfileDraftService profileDraftService, IAiUsageService aiUsageService, ICiteApiClient citeApiClient, IPrincipal user)
+            IProfileDraftService profileDraftService, IAiUsageService aiUsageService, ICiteApiClient citeApiClient, IPrincipal user,
+            AiOptions aiOptions)
         {
             _context = context;
             _mselDraftService = mselDraftService;
@@ -96,6 +99,7 @@ namespace Blueprint.Api.Services
             _profileDraftService = profileDraftService;
             _aiUsageService = aiUsageService;
             _citeApiClient = citeApiClient;
+            _aiOptions = aiOptions;
             _user = user as ClaimsPrincipal;
         }
 
@@ -318,7 +322,7 @@ namespace Blueprint.Api.Services
 
         private async Task<MselBuildStatus> StatusAsync(MselEntity msel, MselBuildState state, CancellationToken ct)
         {
-            var status = new MselBuildStatus { MselId = msel.Id, Stage = msel.AiDraftStage };
+            var status = new MselBuildStatus { MselId = msel.Id, Stage = msel.AiDraftStage, Parallel = Math.Max(1, _aiOptions.Parallel) };
             if (state == null || msel.AiDraftStage == null)
                 return status;
             var titles = await _context.ScenarioEvents.AsNoTracking()

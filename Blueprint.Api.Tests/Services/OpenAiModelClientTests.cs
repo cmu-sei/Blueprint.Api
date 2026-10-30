@@ -21,7 +21,7 @@ namespace Blueprint.Api.Tests.Services;
 /// <summary>Drafting through an OpenAI-style chat completions endpoint, such as the OpenAI API or a vLLM server.</summary>
 public class OpenAiModelClientTests
 {
-    private static readonly AiTaskModel Model = new() { Provider = AiOptions.OpenAi, ModelId = "test-model", BaseUrl = "http://models.test/v1", ApiKey = "key", MaxTokens = 4000 };
+    private static readonly AiTaskModel Model = new() { Provider = AiOptions.OpenAi, ModelId = "test-model", BaseUrl = "http://models.test/v1", ApiKey = "key", MaxTokens = 4000, Effort = "xhigh" };
 
     /// <summary>The streamed tool call's arguments are put together, its progress reported, and its usage recorded in the records' terms.</summary>
     [Fact]
@@ -45,6 +45,8 @@ public class OpenAiModelClientTests
         Assert.Equal("submit_org", sent["tool_choice"]["function"]["name"].GetValue<string>());
         Assert.Equal(4000, sent["max_completion_tokens"].GetValue<int>());
         Assert.True(sent["stream"].GetValue<bool>());
+        // OpenAI's efforts stop at high
+        Assert.Equal("high", sent["reasoning_effort"].GetValue<string>());
         await progress.Received().AddAsync(Arg.Is<string>(s => s.Contains("Clearflow")), Arg.Any<CancellationToken>());
         await usage.Received().RecordAsync("test-model", Arg.Is<JsonElement>(m =>
             m.GetProperty("stop_reason").GetString() == "tool_use"
@@ -104,9 +106,10 @@ public class OpenAiModelClientTests
             ModelId = "us.anthropic.claude-sonnet-5-5",
             Region = "us-east-1",
             MaxTokens = 64000,
+            Effort = "high",
             Models = new Dictionary<string, AiTaskModel>
             {
-                ["Article"] = new() { ModelId = "us.anthropic.claude-haiku-5-5" },
+                ["Article"] = new() { ModelId = "us.anthropic.claude-haiku-5-5", Effort = "low" },
                 ["rows"] = new() { Provider = "openai", ModelId = "gpt-oss-120b", BaseUrl = "http://models.test/v1", MaxTokens = 16000 }
             }
         };
@@ -116,6 +119,7 @@ public class OpenAiModelClientTests
         var rows = options.ModelFor("rows");
         Assert.Equal(("openai", "gpt-oss-120b", 16000), (rows.Provider, rows.ModelId, rows.MaxTokens));
         Assert.Equal(64000, options.ModelFor(null).MaxTokens);
+        Assert.Equal(("low", "high"), (options.ModelFor("article").Effort, options.ModelFor("design").Effort));
     }
 
     /// <summary>

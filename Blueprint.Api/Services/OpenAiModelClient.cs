@@ -68,7 +68,21 @@ namespace Blueprint.Api.Services
                 ["tool_choice"] = new JsonObject { ["type"] = "function", ["function"] = new JsonObject { ["name"] = toolName } }
             };
 
-            var answer = await StreamAsync(model, body, ct);
+            // OpenAI's reasoning models and gpt-oss take low, medium or high
+            if (!string.IsNullOrWhiteSpace(model.Effort))
+                body["reasoning_effort"] = model.Effort.Trim().ToLowerInvariant() switch { "low" => "low", "medium" => "medium", _ => "high" };
+
+            StreamedCompletion answer;
+            try
+            {
+                answer = await StreamAsync(model, body, ct);
+            }
+            catch (InvalidOperationException ex) when (body.ContainsKey("reasoning_effort") && ex.Message.Contains("reasoning_effort", StringComparison.OrdinalIgnoreCase))
+            {
+                // a model that does not reason refuses the setting
+                body.Remove("reasoning_effort");
+                answer = await StreamAsync(model, body, ct);
+            }
             _logger.LogInformation("AI draft {Tool} on {Model} stopped with {StopReason}: {Usage}", toolName, model.ModelId, answer.FinishReason, answer.Usage?.ToJsonString());
             // every call is billed, whatever came of it
             await _usage.RecordAsync(model.ModelId, answer.ToUsageMessage(), 0, ct);

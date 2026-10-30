@@ -113,6 +113,7 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Contains("The approved design:", injectsCall.Prompt);
         Assert.Contains("- Should the outage reach the hospital?: Stop at the port", injectsCall.Prompt);
         Assert.Equal("Articles", status.Stage);
+        Assert.Equal(6, status.Parallel);
         Assert.Equal(["Cables cut"], status.Articles.Select(a => a.Name));
         Assert.Equal(["SOC"], status.Profiles.Select(p => p.Name));
         // the outline leaves out the long text, which each row then gets on its own

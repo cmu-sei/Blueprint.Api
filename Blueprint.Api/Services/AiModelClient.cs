@@ -116,6 +116,8 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 // newer models reject a forced tool choice, so the system prompt asks for the tool instead
                 ["tool_choice"] = new JsonObject { ["type"] = "auto" }
             };
+            if (!string.IsNullOrWhiteSpace(model.Effort))
+                body["output_config"] = new JsonObject { ["effort"] = model.Effort.Trim().ToLowerInvariant() };
 
             var config = new AmazonBedrockRuntimeConfig
             {
@@ -129,11 +131,13 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             {
                 response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
             }
-            catch (AmazonBedrockRuntimeException ex) when (ex.Message.Contains("eager_input_streaming", StringComparison.OrdinalIgnoreCase))
+            catch (AmazonBedrockRuntimeException ex) when (Refuses(ex, body))
             {
-                // an older Bedrock deployment refuses the field; the answer then streams a field at a time
-                _logger.LogInformation("{Model} does not stream tool input as written; asking without it", model.ModelId);
+                // an older Bedrock deployment refuses a newer field: the answer then streams a field at a time, or the
+                // model thinks at its own default
+                _logger.LogInformation("{Model} refused {Fields}; asking without them: {Message}", model.ModelId, "eager_input_streaming, output_config", ex.Message);
                 body["tools"][0].AsObject().Remove("eager_input_streaming");
+                body.Remove("output_config");
                 response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
             }
             // a safety classifier can decline training content; one retry on another model, as the Claude API's own fallback does
@@ -162,6 +166,11 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 return input;
             }
         }
+
+        private static bool Refuses(AmazonBedrockRuntimeException ex, JsonObject body) =>
+            ex.Message.Contains("eager_input_streaming", StringComparison.OrdinalIgnoreCase)
+            || (body.ContainsKey("output_config") && (ex.Message.Contains("output_config", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("effort", StringComparison.OrdinalIgnoreCase)));
 
         private const string JsonOnly =
             "Write the tool input as plain JSON: every value a JSON string, number, array or object. " +

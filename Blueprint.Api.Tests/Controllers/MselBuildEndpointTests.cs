@@ -173,6 +173,27 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Equal(HttpStatusCode.Conflict, (await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/finish", null, Ct)).StatusCode);
     }
 
+    /// <summary>
+    /// Rows, articles and profiles written at the same time are all counted as written: each saves only its own row, so none
+    /// undoes another's, and the build does not write them again.
+    /// </summary>
+    [Fact]
+    public async Task ItemsWrittenAtOnce_AreAllWritten()
+    {
+        var (mselId, planner) = await CreateFromDesign();
+        var status = await Read<MselBuildStatus>(await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/injects", null, Ct));
+
+        await Task.WhenAll(
+            Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/articles/{status.Articles.Single().Id}", null, Ct),
+            Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/profiles/{status.Profiles.Single().Id}", null, Ct),
+            Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/rows/{status.Injects.Single().Id}", null, Ct));
+
+        var remaining = await Read<MselBuildStatus>(await Client(planner).GetAsync($"/api/msels/{mselId}/ai-draft", Ct));
+        Assert.Empty(remaining.Articles);
+        Assert.Empty(remaining.Profiles);
+        Assert.Empty(remaining.Injects);
+    }
+
     /// <summary>Steps run in order, and only the drafting user, or an EditMsels holder, runs them.</summary>
     [Fact]
     public async Task Steps_RunInOrderForTheirOwner()

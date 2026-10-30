@@ -152,19 +152,14 @@ namespace Blueprint.Api.Services
             var (msel, state) = await LoadAsync(mselId, hasSystemPermission, MselBuildStage.Articles, ct);
             if (!state.Rows.TryGetValue(scenarioEventId, out var index))
                 throw new BadRequestException("That row is not one of the drafted injects.");
-            var inject = state.Draft.Injects[index];
-            inject.Values ??= new Dictionary<string, string>();
             string first = null;
             foreach (var field in MselDraftService.LongFields(msel.DataFields))
             {
                 var html = await _mselDraftService.WriteInjectTextAsync(msel, state.Draft, index, field, ct);
                 SetArticle(msel, scenarioEventId, field.Name, html);
-                inject.Values[field.Name] = html;
                 first ??= html;
             }
-            if (!state.RowsWritten.Contains(scenarioEventId))
-                state.RowsWritten.Add(scenarioEventId);
-            await SaveAsync(msel, state, ct);
+            await SaveItemAsync(msel, state, ct);
             return new MselBuildContent { Html = first };
         }
 
@@ -175,10 +170,7 @@ namespace Blueprint.Api.Services
                 throw new BadRequestException("That row is not one of the drafted Gallery articles.");
             var result = await _articleDraftService.DraftAsync(new ArticleDraftRequest { TemplateMselId = state.TemplateMselId, Draft = state.Draft, InjectIndex = index }, ct);
             SetArticle(msel, scenarioEventId, result.FieldName, result.Html);
-            state.Draft.Injects[index].Values[result.FieldName] = result.Html;
-            if (!state.ArticlesWritten.Contains(scenarioEventId))
-                state.ArticlesWritten.Add(scenarioEventId);
-            await SaveAsync(msel, state, ct);
+            await SaveItemAsync(msel, state, ct);
             return result;
         }
 
@@ -189,7 +181,7 @@ namespace Blueprint.Api.Services
                 throw new BadRequestException("That row is not one of the drafted Gallery articles.");
             var body = ArticleFields.Body(msel) ?? throw new BadRequestException("The MSEL has no column for a Gallery article's body.");
             SetArticle(msel, scenarioEventId, body.Name, GalleryArticleHtml.Prepare(html, null, GalleryArticleHtml.ArticleWidth));
-            await SaveAsync(msel, state, ct);
+            await SaveItemAsync(msel, state, ct);
         }
 
         public async Task<ProfileDraftResult> WriteProfileAsync(Guid mselId, Guid ownerId, bool hasSystemPermission, CancellationToken ct)
@@ -209,9 +201,7 @@ namespace Blueprint.Api.Services
                 Description = team?.Description ?? organization?.Description
             }, new ProfileDraftPermissions(EditMsels: hasSystemPermission, CreateMsels: false), ct);
             SetProfile(team, organization, result.Html);
-            if (!state.ProfilesWritten.Contains(ownerId))
-                state.ProfilesWritten.Add(ownerId);
-            await SaveAsync(msel, state, ct);
+            await SaveItemAsync(msel, state, ct);
             return result;
         }
 
@@ -222,7 +212,7 @@ namespace Blueprint.Api.Services
                 throw new BadRequestException("That is not one of the drafted teams or organizations.");
             SetProfile(msel.Teams.FirstOrDefault(t => t.Id == ownerId), msel.Organizations.FirstOrDefault(o => o.Id == ownerId),
                 GalleryArticleHtml.Prepare(html, null, GalleryArticleHtml.ProfileWidth));
-            await SaveAsync(msel, state, ct);
+            await SaveItemAsync(msel, state, ct);
         }
 
         public async Task<MselBuildStatus> FinishAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -304,9 +294,14 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
         }
 
-        private async Task SaveAsync(MselEntity msel, MselBuildState state, CancellationToken ct)
+        // one row, article or profile, written beside others at once: its own rows are saved, and the build's shared state is left
+        // alone, since each request holds its own copy of it; what is written is read from the rows themselves
+        private Task SaveItemAsync(MselEntity msel, MselBuildState state, CancellationToken ct) => SaveAsync(msel, state, ct, withState: false);
+
+        private async Task SaveAsync(MselEntity msel, MselBuildState state, CancellationToken ct, bool withState = true)
         {
-            msel.AiDraft = MselBuildState.Serialize(state);
+            if (withState)
+                msel.AiDraft = MselBuildState.Serialize(state);
             // rows the stage wrote come with their ids, which EF takes for rows already saved
             _context.ChangeTracker.DetectChanges();
             foreach (var entry in _context.ChangeTracker.Entries().Where(e => e.State == EntityState.Modified && !_loaded.Contains(e.Entity)).ToList())
@@ -325,38 +320,38 @@ namespace Blueprint.Api.Services
             var status = new MselBuildStatus { MselId = msel.Id, Stage = msel.AiDraftStage, Parallel = Math.Max(1, _aiOptions.Parallel) };
             if (state == null || msel.AiDraftStage == null)
                 return status;
-            var titles = await _context.ScenarioEvents.AsNoTracking()
-                .Where(e => state.Articles.Keys.Contains(e.Id))
-                .Select(e => new { e.Id, Values = e.DataValues.Select(v => new { v.DataField.Name, v.DataField.GalleryArticleParameter, v.Value }) })
+            // written means its long text is saved: an article's body, a row's long columns, a profile in HTML
+            var fields = await _context.DataFields.AsNoTracking().Where(f => f.MselId == msel.Id).ToListAsync(ct);
+            var body = msel.UseGallery || fields.Any(f => f.GalleryArticleParameter == nameof(Data.Enumerations.GalleryArticleParameter.Description))
+                ? fields.FirstOrDefault(f => f.GalleryArticleParameter == nameof(Data.Enumerations.GalleryArticleParameter.Description)) : null;
+            var longFields = MselDraftService.LongFields(fields).Select(f => f.Id).ToList();
+            var ids = state.Articles.Keys.Concat(state.Rows.Keys).ToList();
+            var events = await _context.ScenarioEvents.AsNoTracking()
+                .Where(e => ids.Contains(e.Id))
+                .Select(e => new { e.Id, Values = e.DataValues.Select(v => new { v.DataFieldId, v.DataField.Name, v.DataField.GalleryArticleParameter, v.Value }) })
                 .ToListAsync(ct);
-            status.Articles = state.Articles.Keys
-                .Where(id => !state.ArticlesWritten.Contains(id))
-                .Select(id => new MselBuildItem
-                {
-                    Id = id,
-                    Kind = "article",
-                    Name = titles.FirstOrDefault(t => t.Id == id)?.Values.FirstOrDefault(v => v.GalleryArticleParameter == "Name")?.Value
-                })
+            bool Has(Guid eventId, Guid fieldId) => events.FirstOrDefault(e => e.Id == eventId)?.Values
+                .Any(v => v.DataFieldId == fieldId && !string.IsNullOrWhiteSpace(DataValueDraftService.StripHtml(v.Value))) == true;
+            bool IsHtml(Guid eventId, Guid fieldId) => events.FirstOrDefault(e => e.Id == eventId)?.Values
+                .Any(v => v.DataFieldId == fieldId && v.Value != null && v.Value.Contains('<')) == true;
+            string Title(Guid eventId) => events.FirstOrDefault(e => e.Id == eventId)?.Values
+                .FirstOrDefault(v => v.GalleryArticleParameter == "Name" || new[] { "title", "message", "name" }.Contains(v.Name.ToLower()))?.Value;
+
+            status.Articles = state.Articles.OrderBy(a => a.Value).Select(a => a.Key)
+                // a body column of plain text holds the outline's draft until the article, which is HTML, is written
+                .Where(id => body == null || !IsHtml(id, body.Id))
+                .Select(id => new MselBuildItem { Id = id, Kind = "article", Name = Title(id) })
                 .ToList();
-            var rowTitles = await _context.ScenarioEvents.AsNoTracking()
-                .Where(e => state.Rows.Keys.Contains(e.Id))
-                .Select(e => new { e.Id, Values = e.DataValues.Select(v => new { v.DataField.Name, v.DataField.GalleryArticleParameter, v.Value }) })
-                .ToListAsync(ct);
             status.Injects = state.Rows.OrderBy(r => r.Value).Select(r => r.Key)
-                .Where(id => !state.RowsWritten.Contains(id))
-                .Select(id => new MselBuildItem
-                {
-                    Id = id,
-                    Kind = "inject",
-                    Name = rowTitles.FirstOrDefault(t => t.Id == id)?.Values
-                        .FirstOrDefault(v => v.GalleryArticleParameter == "Name" || new[] { "title", "message", "name" }.Contains(v.Name.ToLower()))?.Value
-                })
+                .Where(id => longFields.Any(f => !Has(id, f)))
+                .Select(id => new MselBuildItem { Id = id, Kind = "inject", Name = Title(id) })
                 .ToList();
-            var names = await _context.Teams.AsNoTracking().Where(t => state.Profiles.Contains(t.Id)).Select(t => new { t.Id, t.ShortName, Kind = "team" })
-                .Concat(_context.Organizations.AsNoTracking().Where(o => state.Profiles.Contains(o.Id)).Select(o => new { o.Id, o.ShortName, Kind = "organization" }))
+            var owners = await _context.Teams.AsNoTracking().Where(t => state.Profiles.Contains(t.Id)).Select(t => new { t.Id, t.ShortName, t.Description, Kind = "team" })
+                .Concat(_context.Organizations.AsNoTracking().Where(o => state.Profiles.Contains(o.Id)).Select(o => new { o.Id, o.ShortName, o.Description, Kind = "organization" }))
                 .ToListAsync(ct);
-            status.Profiles = names.Where(n => !state.ProfilesWritten.Contains(n.Id))
-                .Select(n => new MselBuildItem { Id = n.Id, Kind = n.Kind, Name = n.ShortName })
+            // the design's line is plain text; a written profile is an HTML page
+            status.Profiles = owners.Where(o => o.Description == null || !o.Description.Contains('<'))
+                .Select(o => new MselBuildItem { Id = o.Id, Kind = o.Kind, Name = o.ShortName })
                 .ToList();
             return status;
         }

@@ -90,6 +90,16 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 response = await InvokeAsync(client, _options.FallbackModelId, body, toolName, ct);
 
             var input = ReadToolInput(response);
+            // a model sometimes writes the tool input in its own call markup, <parameter name="...">, inside the JSON,
+            // which leaves most of the answer in the wrong fields; asked again it answers in JSON
+            if (HasCallMarkup(input))
+            {
+                _logger.LogWarning("The {Tool} answer from {Model} was written in tool-call markup; asking again", toolName, _options.ModelId);
+                body["system"] = body["system"].GetValue<string>() + "\n\n" + JsonOnly;
+                input = ReadToolInput(await InvokeAsync(client, _options.ModelId, body, toolName, ct));
+                if (HasCallMarkup(input))
+                    throw new InvalidOperationException("The model's answer came back garbled twice. Draft again.");
+            }
             try
             {
                 return RepairStringifiedJson(input, inputSchema);
@@ -101,6 +111,19 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 return input;
             }
         }
+
+        private const string JsonOnly =
+            "Write the tool input as plain JSON: every value a JSON string, number, array or object. " +
+            "Never write <parameter> or other markup tags inside it.";
+
+        /// <summary>Whether a tool input holds the model's own call markup instead of JSON values</summary>
+        public static bool HasCallMarkup(JsonElement input) => input.ValueKind switch
+        {
+            JsonValueKind.String => input.GetString().Contains("<parameter name=", StringComparison.Ordinal),
+            JsonValueKind.Array => input.EnumerateArray().Any(HasCallMarkup),
+            JsonValueKind.Object => input.EnumerateObject().Any(p => p.Name.StartsWith("<parameter", StringComparison.Ordinal) || HasCallMarkup(p.Value)),
+            _ => false
+        };
 
         /// <summary>
         /// Models sometimes send a large array or object of a tool input as a string holding its JSON.

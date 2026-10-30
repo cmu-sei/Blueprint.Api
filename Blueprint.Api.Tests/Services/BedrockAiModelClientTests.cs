@@ -210,6 +210,22 @@ public class BedrockAiModelClientTests
               "moves":{"type":"array","items":{"type":"object","properties":{"moveNumber":{"type":"integer"},"decisions":{"type":"array","items":{"type":"string"}}}}}}}
             """).AsObject();
 
+    /// <summary>An answer written in the model's own call markup, inside the JSON, is caught, wherever it is.</summary>
+    [Fact]
+    public void HasCallMarkup_FindsMarkupInAnyValue()
+    {
+        // the stored message escapes < as \u003C, as the streamed answer is put back together
+        var nested = System.Text.Json.JsonSerializer.SerializeToElement(new
+        {
+            name = "Catnip",
+            plannerNotes = new[] { "<parameter name=\"0\">Template teams were replaced." }
+        });
+
+        Assert.True(BedrockAiModelClient.HasCallMarkup(Parse("""{"scenario":{"problem":"<parameter name=\"problem\">A crew is inside."}}""")));
+        Assert.True(BedrockAiModelClient.HasCallMarkup(nested));
+        Assert.False(BedrockAiModelClient.HasCallMarkup(Parse("""{"name":"Catnip","readIn":"<p>Read <b>this</b>.</p>","moves":[{"moveNumber":0}]}""")));
+    }
+
     private static System.Text.Json.Nodes.JsonObject Schema() =>
         System.Text.Json.Nodes.JsonNode.Parse("""
             {"type":"object","properties":{

@@ -67,7 +67,8 @@ public class MselDraftCiteEndpointTests(DatabaseFixture fixture, AiEnabledFactor
         Assert.True(_created.DisplayCommentTextBoxes);
         Assert.True(_created.DisplayScoringModelByMoveNumber);
         Assert.Equal(
-            [(MselDraftCite.QuestionsHeading, 0, 0, 2), (MselDraftCite.QuestionsHeading, 1, 1, 1), (MselDraftCite.AarHeading, 1, 1, 1)],
+            // play is moves 1 and 2; the after-action review is the hot wash after ENDEX
+            [(MselDraftCite.QuestionsHeading, 1, 1, 2), (MselDraftCite.QuestionsHeading, 2, 2, 1), (MselDraftCite.AarHeading, 3, 3, 1)],
             _created.ScoringCategories.Select(c => (c.Description, c.MoveNumberFirstDisplay, c.MoveNumberLastDisplay, c.ScoringOptions.Count)));
         Assert.All(_created.ScoringCategories, c => Assert.Equal(ScoringOptionSelection.None, c.ScoringOptionSelection));
         Assert.Equal(["How will you confirm the outage?", "Who do you tell first?"], _created.ScoringCategories.First().ScoringOptions.Select(o => o.Description));

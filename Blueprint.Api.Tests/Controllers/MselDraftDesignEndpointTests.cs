@@ -209,7 +209,8 @@ public class MselDraftDesignEndpointTests(DatabaseFixture fixture, AiEnabledFact
         Assert.False(guide.AllCanView);
         Assert.False(guide.IncludeInPlaybook);
         Assert.Contains("<b>Escalation ceiling:</b> No loss of life", guide.Content);
-        Assert.Contains("<h3>Move 0: Start</h3>", guide.Content);
+        Assert.Contains("<h3>Move 0: Pre-exercise</h3>", guide.Content);
+        Assert.Contains("<h3>Move 1: Start</h3>", guide.Content);
         Assert.Contains("<li>Decide who leads the response</li>", guide.Content);
         Assert.Contains("<b>Controller notes:</b> Hold the vendor call until they ask.", guide.Content);
         Assert.Contains("<td valign=\"top\">Outage</td><td valign=\"top\">Open an incident and assign a lead</td><td valign=\"top\">O1 Lead the response</td>", guide.Content);
@@ -246,7 +247,8 @@ public class MselDraftDesignEndpointTests(DatabaseFixture fixture, AiEnabledFact
         string Title(ScenarioEventEntity e) => e.DataValues.Single(v => v.DataFieldId == title.Id).Value;
         Assert.Equal(["STARTEX", "Outage", "Press call", "ENDEX"], events.Select(Title));
         Assert.Equal(["Steamfitter", "Gallery", null, "Steamfitter"], events.Select(e => e.IntegrationTarget));
-        Assert.Equal([0, 5 * 60, 70 * 60, 120 * 60], events.Select(e => e.DeltaSeconds));
+        // STARTEX opens move 1, the first of play, 15 minutes after the doors open; ENDEX opens the hot wash after the 120 minutes of play
+        Assert.Equal([15 * 60, 20 * 60, 85 * 60, 135 * 60], events.Select(e => e.DeltaSeconds));
         var startex = events[0].SteamfitterTask;
         Assert.Equal(SteamfitterIntegrationType.Notification, startex.TaskType);
         Assert.Equal(SteamfitterTaskTrigger.Time, startex.TriggerCondition);

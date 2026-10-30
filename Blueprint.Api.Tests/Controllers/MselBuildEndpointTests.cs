@@ -88,10 +88,13 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         await using var db = NewContext();
         var msel = await db.Msels.Include(m => m.Moves).Include(m => m.Teams).Include(m => m.ScenarioEvents).AsSplitQuery().SingleAsync(m => m.Id == mselId, Ct);
         Assert.Equal("Deep Bite", msel.Name);
-        Assert.Equal(["Start", "Next day"], msel.Moves.OrderBy(m => m.MoveNumber).Select(m => m.Description));
+        Assert.Equal(["Pre-exercise", "Start", "Next day", "Post-exercise: hot wash"], msel.Moves.OrderBy(m => m.MoveNumber).Select(m => m.Description));
         Assert.Contains(msel.Teams, t => t.ShortName == "SOC");
         Assert.Empty(msel.ScenarioEvents);
         Assert.Equal("Injects", msel.AiDraftStage);
+        // the planner sits on exercise control, which watches every team
+        var role = await db.UserMselRoles.SingleAsync(r => r.MselId == mselId, Ct);
+        Assert.Equal(("Facilitator", "Observer"), (role.CiteEvaluationRole, role.GalleryExhibitRole));
         var state = MselBuildState.Deserialize(msel.AiDraft);
         Assert.Equal("Cables", state.Prompt);
         Assert.Equal("Stop at the port", state.Answers.Single().Answer);
@@ -194,6 +197,36 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Empty(remaining.Injects);
     }
 
+    /// <summary>
+    /// A CITE MSEL gets each drafted team's duties, and the finish gives the MSEL a picture from its scenario when the
+    /// server has an image model.
+    /// </summary>
+    [Fact]
+    public async Task CiteDutiesAndPicture_AreAddedToTheMsel()
+    {
+        factory.Images.ClearSubstitute();
+        factory.Images.IsConfigured.Returns(true);
+        factory.Images.PhotoAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("data:image/jpeg;base64,AAEC");
+        try
+        {
+            var (mselId, planner) = await CreateFromDesign(useCite: true);
+            var status = await Read<MselBuildStatus>(await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/injects", null, Ct));
+            await Read<MselBuildStatus>(await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/finish", null, Ct));
+
+            await using var db = NewContext();
+            var duties = await db.CiteDuties.Include(d => d.Team).Where(d => d.MselId == mselId).ToListAsync(Ct);
+            Assert.Equal([("SOC", "Incident Lead"), ("SOC", "Scribe")], duties.Select(d => (d.Team.ShortName, d.Name)).Order());
+            var image = await db.MselImages.SingleAsync(i => i.MselId == mselId, Ct);
+            Assert.Equal("image/jpeg", image.ContentType);
+            Assert.Equal(new byte[] { 0, 1, 2 }, image.Data);
+            await factory.Images.Received(1).PhotoAsync(Arg.Is<string>(s => s.Contains("Two cables are cut.")), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            factory.Images.ClearSubstitute();
+        }
+    }
+
     /// <summary>Steps run in order, and only the drafting user, or an EditMsels holder, runs them.</summary>
     [Fact]
     public async Task Steps_RunInOrderForTheirOwner()
@@ -206,9 +239,9 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Equal(HttpStatusCode.Conflict, (await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/articles/{Guid.NewGuid()}", null, Ct)).StatusCode);
     }
 
-    private async Task<(Guid MselId, TestActor Planner)> CreateFromDesign()
+    private async Task<(Guid MselId, TestActor Planner)> CreateFromDesign(bool useCite = false)
     {
-        var template = await SeedTemplate();
+        var template = await SeedTemplate(useCite);
         var planner = await Planner();
         var design = await Read<MselDraftResult>(await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/design", new MselDraftRequest { TemplateMselId = template.Id, Prompt = "Cables" }, JsonOptions, Ct));
         var build = new MselDesignBuild
@@ -225,10 +258,11 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
     private Task<TestActor> Planner() => Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
 
     // a Gallery template with team EXCON and the Title column
-    private async Task<MselEntity> SeedTemplate()
+    private async Task<MselEntity> SeedTemplate(bool useCite = false)
     {
         var template = TestData.Msel(isTemplate: true);
         template.UseGallery = true;
+        template.UseCite = useCite;
         var excon = TestData.Team(template.Id);
         excon.ShortName = "EXCON";
         await Seed(template, excon, TestData.DataField(template.Id, name: "Title", displayOrder: 1));
@@ -248,7 +282,7 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
                 new { moveNumber = 0, description = "Start", situationDescription = "Outage", startMinutes = 0, situationTime = "2026-03-04T08:00:00Z", purpose = "Choose a lead" },
                 new { moveNumber = 1, description = "Next day", situationDescription = "Press", startMinutes = 60, situationTime = "2026-03-05T09:00:00Z", purpose = "Pressure" }
             },
-            teams = new[] { new { name = "Security operations", shortName = "SOC", description = "Watches the network." } },
+            teams = new[] { new { name = "Security operations", shortName = "SOC", description = "Watches the network.", duties = new[] { "Incident Lead", "Scribe" } } },
             organizations = Array.Empty<object>(),
             cards = new[] { new { name = "Exercise Control", description = "Read-in" } },
             questions = new[] { new { question = "Should the outage reach the hospital?", why = "Sets the stakes", suggested = "Stop at the port" } }

@@ -48,6 +48,8 @@ namespace Blueprint.Api.ViewModels
         public string CardGrouping { get; set; }
         /// <summary>Whether to add Team Profiles and Organization Profiles pages</summary>
         public bool ProfilePages { get; set; } = true;
+        /// <summary>How long before STARTEX the doors open: the pre-exercise move, in minutes; 15 when empty</summary>
+        public int? LeadMinutes { get; set; }
         /// <summary>The banner on every Gallery article: None, Exercise, Tlp or Classification; empty for the template's</summary>
         public string Marking { get; set; }
         /// <summary>The TLP level, or the classification banner's text</summary>
@@ -88,6 +90,8 @@ namespace Blueprint.Api.ViewModels
     public class MselDraftMove
     {
         public int MoveNumber { get; set; }
+        /// <summary>PreExercise or PostExercise for the moves before STARTEX and after ENDEX; empty for a move of play</summary>
+        public string Phase { get; set; }
         public string Description { get; set; }
         public string SituationDescription { get; set; }
         /// <summary>Minutes from the start of the exercise</summary>
@@ -153,6 +157,8 @@ namespace Blueprint.Api.ViewModels
         public string Description { get; set; }
         /// <summary>Competency ID numbers the team is expected to demonstrate</summary>
         public List<string> Competencies { get; set; } = new List<string>();
+        /// <summary>The duties members of the team take on, which CITE lets each member pick: Incident Lead, Scribe ...</summary>
+        public List<string> Duties { get; set; } = new List<string>();
     }
 
     public class MselDraftOrganization

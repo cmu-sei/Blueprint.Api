@@ -107,28 +107,31 @@ public class MselDraftScenarioEndpointTests(DatabaseFixture fixture, AiEnabledFa
         var mselId = imported.Msel.Id;
         await using var db = NewContext();
         var moves = await db.Moves.Where(m => m.MselId == mselId).OrderBy(m => m.MoveNumber).ToListAsync(Ct);
+        // the pre-exercise move opens at the first move's scenario time, and the hot wash closes at the last one's
         Assert.Equal(
-            [new DateTime(2026, 3, 4, 8, 0, 0, DateTimeKind.Utc), new DateTime(2026, 3, 5, 9, 0, 0, DateTimeKind.Utc), null, null],
+            [new DateTime(2026, 3, 4, 8, 0, 0, DateTimeKind.Utc), new DateTime(2026, 3, 4, 8, 0, 0, DateTimeKind.Utc), new DateTime(2026, 3, 5, 9, 0, 0, DateTimeKind.Utc), null, null, null],
             moves.Select(m => m.SituationTime?.ToUniversalTime()));
+        Assert.Equal(["Pre-exercise", "Post-exercise: hot wash"], new[] { moves[0].Description, moves[^1].Description });
 
         var pages = await db.MselPages.Where(p => p.MselId == mselId).OrderBy(p => p.Name).ToListAsync(Ct);
-        // no facilitator guide: the draft has no objectives, move purposes or expected actions
-        Assert.Equal(["Deep Bite Read-In", "Exercise Overview", "Organization Profiles", "Read-In", "Team Profiles"], pages.Select(p => p.Name));
-        Assert.All(pages.Where(p => p.Name != "Read-In"), p =>
+        // the pre- and post-exercise moves give the facilitator guide something to say, though the draft's own moves have no purpose
+        Assert.Equal(["Deep Bite Read-In", "Exercise Overview", "Facilitator Guide", "Organization Profiles", "Read-In", "Team Profiles"], pages.Select(p => p.Name));
+        Assert.All(pages.Where(p => p.Name != "Read-In" && p.Name != "Facilitator Guide"), p =>
         {
             Assert.True(p.AllCanView);
             Assert.True(p.IncludeInPlaybook);
             Assert.StartsWith("<table", p.Content);
         });
         Assert.Contains("<h2>Background</h2>", pages[0].Content);
-        Assert.Contains("<h2>Organization Profiles</h2>", pages[2].Content);
-        Assert.Contains("<article><h3>Harbor Daily (NEWS)</h3><p><strong>Type:</strong> Local paper</p></article>", pages[2].Content);
-        Assert.Contains("<article><h3>Security operations (SOC)</h3><p>Watches the network &amp; the hosts.</p></article>", pages[4].Content);
+        Assert.Contains("<h2>Organization Profiles</h2>", pages[3].Content);
+        Assert.Contains("<article><h3>Harbor Daily (NEWS)</h3><p><strong>Type:</strong> Local paper</p></article>", pages[3].Content);
+        Assert.Contains("<article><h3>Security operations (SOC)</h3><p>Watches the network &amp; the hosts.</p></article>", pages[5].Content);
 
         var actions = await db.CiteActions.Include(a => a.Team).Where(a => a.MselId == mselId)
             .OrderBy(a => a.MoveNumber).ThenBy(a => a.Team.ShortName).ThenBy(a => a.ActionNumber).ToListAsync(Ct);
         Assert.Equal(
-            [(0, "BLUE", 1, "Template action"), (0, "BLUE", 2, "Open an incident ticket"), (0, "BLUE", 3, "Brief leadership"), (1, "SOC", 1, "Isolate the affected hosts")],
+            // the template's own action stays in move 0; the drafted ones move with play to moves 1 and 2
+            [(0, "BLUE", 1, "Template action"), (1, "BLUE", 1, "Open an incident ticket"), (1, "BLUE", 2, "Brief leadership"), (2, "SOC", 1, "Isolate the affected hosts")],
             actions.Select(a => (a.MoveNumber, a.Team.ShortName, a.ActionNumber, a.Description)));
         // the template keeps only its own
         Assert.Equal(1, await db.CiteActions.CountAsync(a => a.MselId == template.Id, Ct));

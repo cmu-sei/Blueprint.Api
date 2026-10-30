@@ -58,9 +58,11 @@ public class MselDraftSetupEndpointTests(DatabaseFixture fixture, AiEnabledFacto
         Assert.Equal("Incident response", msel.Subject);
         Assert.Equal("ransomware, tabletop exercise", msel.Keywords);
         var situations = await db.Moves.Where(m => m.MselId == mselId).OrderBy(m => m.MoveNumber).Select(m => m.SituationDescription).ToListAsync(Ct);
-        Assert.Equal("<p>The islands lose internet &amp; phone.</p>", situations[0]);
-        Assert.Contains("<h4>Press pressure</h4>", situations[1]);
-        Assert.DoesNotContain("style", situations[1]);
+        // move 0 is the pre-exercise; play starts at move 1
+        Assert.Contains("<h4>Pre-exercise</h4>", situations[0]);
+        Assert.Equal("<p>The islands lose internet &amp; phone.</p>", situations[1]);
+        Assert.Contains("<h4>Press pressure</h4>", situations[2]);
+        Assert.DoesNotContain("style", situations[2]);
         var parameters = await db.DataFields.Where(f => f.MselId == mselId && f.GalleryArticleParameter != null).Select(f => f.GalleryArticleParameter).ToListAsync(Ct);
         Assert.Equal(Enum.GetNames<GalleryArticleParameter>().Order(), parameters.Order());
     }

@@ -85,10 +85,10 @@ public class MselDraftCardEndpointTests(DatabaseFixture fixture, AiEnabledFactor
         var mselId = (await Read<MselImportResult>(response)).Msel.Id;
         await using var db = NewContext();
         var cards = await db.Cards.Include(c => c.CardTeams).ThenInclude(ct => ct.Team).Where(c => c.MselId == mselId).OrderBy(c => c.Inject).ToListAsync(Ct);
-        // every row is in move 0, numbered by time: the read-in at minute 0 is inject 0, the cable cut at minute 10 inject 1;
+        // the read-in is the pre-exercise move's inject 0; the cable cut opens move 1, the first of play, as its inject 0;
         // Public and Media has no article yet, so it keeps its place after the template's card
         Assert.Equal(
-            new Dictionary<string, (int, int)> { ["Situation Updates"] = (0, 1), ["Exercise Control"] = (0, 0), ["Public and Media"] = (0, 3), ["Cable Operator"] = (0, 1) },
+            new Dictionary<string, (int, int)> { ["Situation Updates"] = (0, 1), ["Exercise Control"] = (0, 0), ["Public and Media"] = (0, 3), ["Cable Operator"] = (1, 0) },
             cards.ToDictionary(c => c.Name, c => (c.Move, c.Inject)));
         Assert.All(cards, c => Assert.Equal(["BLUE", "EXCON"], c.CardTeams.Select(ct => ct.Team.ShortName).Order()));
         Assert.All(cards.SelectMany(c => c.CardTeams), ct => Assert.True(ct.IsShownOnWall));

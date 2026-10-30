@@ -18,6 +18,7 @@ using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
 using Cite.Api.Client;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blueprint.Api.Services
 {
@@ -85,13 +86,16 @@ namespace Blueprint.Api.Services
         private readonly IAiUsageService _aiUsageService;
         private readonly ICiteApiClient _citeApiClient;
         private readonly AiOptions _aiOptions;
+        private readonly IAiImageClient _imageClient;
+        private readonly IAiUsageContext _usageContext;
+        private readonly ILogger<MselBuildService> _logger;
         private readonly ClaimsPrincipal _user;
         // what the stage loaded; anything else it tracks at save was written by the stage
         private readonly HashSet<object> _loaded = new HashSet<object>(ReferenceEqualityComparer.Instance);
 
         public MselBuildService(BlueprintContext context, IMselDraftService mselDraftService, IArticleDraftService articleDraftService,
             IProfileDraftService profileDraftService, IAiUsageService aiUsageService, ICiteApiClient citeApiClient, IPrincipal user,
-            AiOptions aiOptions)
+            AiOptions aiOptions, IAiImageClient imageClient, IAiUsageContext usageContext, ILogger<MselBuildService> logger)
         {
             _context = context;
             _mselDraftService = mselDraftService;
@@ -100,6 +104,9 @@ namespace Blueprint.Api.Services
             _aiUsageService = aiUsageService;
             _citeApiClient = citeApiClient;
             _aiOptions = aiOptions;
+            _imageClient = imageClient;
+            _usageContext = usageContext;
+            _logger = logger;
             _user = user as ClaimsPrincipal;
         }
 
@@ -225,12 +232,40 @@ namespace Blueprint.Api.Services
             MselDraftBuilder.Finish(msel, state.Draft, readIn);
             // CITE team types and the scoring model the planner chose, made in CITE now so the push finds them
             await MselDraftCite.ApplyAsync(msel, state.Draft, _citeApiClient, (_, message) => changes.Add(message), ct);
+            await AddImageAsync(msel, state.Draft, changes, ct);
             msel.AiDraftStage = null;
             await SaveAsync(msel, state, ct);
 
             var status = await StatusAsync(msel, state, ct);
             status.Warnings.AddRange(changes);
             return status;
+        }
+
+        // the MSEL's own picture, from its scenario, where the server has an image model and the MSEL has no picture yet;
+        // a picture that cannot be made leaves the MSEL as it is
+        private async Task AddImageAsync(MselEntity msel, MselDraft draft, List<string> changes, CancellationToken ct)
+        {
+            if (!_imageClient.IsConfigured || msel.ImageDateModified != null || await _context.MselImages.AnyAsync(i => i.MselId == msel.Id, ct))
+                return;
+            var scene = string.Join(" ", new[] { draft.Scenario?.Problem, draft.Scenario?.Environment }.Where(t => !string.IsNullOrWhiteSpace(t)));
+            if (string.IsNullOrWhiteSpace(scene))
+                scene = draft.Description ?? draft.Name;
+            try
+            {
+                _usageContext.Use("image", msel.Id, draft.DraftId == Guid.Empty ? null : draft.DraftId);
+                var dataUri = await _imageClient.PhotoAsync("An establishing shot for a cyber exercise: " + scene, ct);
+                var comma = dataUri?.IndexOf(',') ?? -1;
+                if (comma < 0 || !dataUri.StartsWith("data:", StringComparison.Ordinal))
+                    return;
+                var contentType = dataUri[5..dataUri.IndexOf(';')];
+                _context.MselImages.Add(new MselImageEntity { MselId = msel.Id, Data = Convert.FromBase64String(dataUri[(comma + 1)..]), ContentType = contentType });
+                msel.ImageDateModified = DateTime.UtcNow;
+                changes.Add("Made the MSEL's picture from its scenario.");
+            }
+            catch (System.Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Could not make the picture of MSEL {MselId}", msel.Id);
+            }
         }
 
         private static void SetArticle(MselEntity msel, Guid scenarioEventId, string fieldName, string html)

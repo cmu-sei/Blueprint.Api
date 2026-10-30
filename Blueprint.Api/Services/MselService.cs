@@ -2270,6 +2270,7 @@ namespace Blueprint.Api.Services
             draft.CiteActions = new List<MselDraftCiteAction>();
             draft.ReadIn = null;
             MselDraftRules.Normalize(draft, template, _aiOptions.MaxInjects, competencies, warnings, designOnly: true);
+            MselDraftRules.AddPreAndPostMoves(draft);
             foreach (var warning in warnings)
                 AddChange(result, "draft", warning);
 
@@ -2307,6 +2308,7 @@ namespace Blueprint.Api.Services
             var warnings = new List<string>();
             var competencies = await MselDraftService.LoadCompetencyChoicesAsync(_context, template.Id, draftImport.CompetencyFrameworkIds, ct);
             MselDraftRules.Normalize(draft, template, _aiOptions.MaxInjects, competencies, warnings);
+            MselDraftRules.AddPreAndPostMoves(draft);
             foreach (var warning in warnings)
                 AddChange(result, "draft", warning);
 
@@ -2352,6 +2354,23 @@ namespace Blueprint.Api.Services
             {
                 _context.TeamUsers.Add(new TeamUserEntity(userId, control.Id) { Id = Guid.NewGuid() });
                 AddChange(result, "teams", $"Put you on {control.ShortName}, the exercise control team.");
+            }
+            // exercise control watches every team: in CITE as a facilitator, who also advances the moves, and in Gallery as an observer
+            if (control != null)
+            {
+                var roles = await _context.UserMselRoles.Where(r => r.MselId == mselId && r.UserId == userId).ToListAsync(ct);
+                if (!roles.Any())
+                {
+                    var owner = new UserMselRoleEntity(userId, mselId, MselRole.Owner) { Id = Guid.NewGuid() };
+                    _context.UserMselRoles.Add(owner);
+                    roles.Add(owner);
+                }
+                foreach (var role in roles)
+                {
+                    role.CiteEvaluationRole ??= "Facilitator";
+                    role.GalleryExhibitRole ??= "Observer";
+                }
+                AddChange(result, "roles", "Made you a CITE facilitator and a Gallery observer, so exercise control can watch every team.");
             }
             await _context.SaveChangesAsync(ct);
         }

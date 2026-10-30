@@ -175,6 +175,9 @@ question the answer you would use if the planner gives none, and say in a few wo
 @"This is the second of two steps. The planner has reviewed and approved the design below, and answered your questions. Keep to it:
 its moves, teams, organizations and Gallery cards, by the same names and numbers. Write the injects, each move's expected decisions,
 controller notes and discussion questions, the CITE tasks, and the read-in. Where an answer changes the design, follow the answer.
+Move 0 is the pre-exercise, before STARTEX, and the last move the post-exercise hot wash, after ENDEX; Blueprint adds the STARTEX
+and ENDEX rows. In move 0 put only the read-in notice and any welcome; in the last move only hot-wash and feedback material. Every
+inject of play belongs to moves 1 and on, at or after move 1's start.
 Write each inject as an outline: its time, type, card and short columns, its expected action and objective. Its long text (the
 document, message or description) is written next, one inject at a time, from what you give here, so make each inject's title,
 summary, sender and recipients specific enough to write it from and keep the storyline in them.";
@@ -549,6 +552,8 @@ no style attributes. Answer only by calling the tool.";
                 ["description"] = Str("Role of the team")
             };
             AddCompetencies(teamProperties, "Competencies the team is expected to demonstrate");
+            if (useCite)
+                teamProperties["duties"] = Arr(Str("A duty, e.g. Incident Lead"), "2 to 4 duties members of the team take on during play, e.g. Incident Lead, Scribe, Communications; none for exercise control");
             var injectProperties = new JsonObject
             {
                 ["minutes"] = Int("Delivery time in minutes from exercise start"),
@@ -787,6 +792,66 @@ no style attributes. Answer only by calling the tool.";
             }
         }
 
+        public const string PreExercise = "PreExercise";
+        public const string PostExercise = "PostExercise";
+        // the hot wash after ENDEX
+        private const int PostExerciseMinutes = 30;
+
+        /// <summary>
+        /// Puts play between a pre-exercise move and a post-exercise move: move 0 opens at the doors-open time, so those who
+        /// come early have the read-in and somewhere to wait; STARTEX opens move 1, so CITE and Gallery move to it; ENDEX opens
+        /// the last move, the hot wash. The moves of play are numbered from 1 and start a lead time later, and the injects and
+        /// CITE tasks follow them. A draft that already has them is left as it is.
+        /// </summary>
+        public static void AddPreAndPostMoves(MselDraft draft)
+        {
+            draft.Moves ??= new List<MselDraftMove>();
+            if (!draft.Moves.Any() || draft.Moves.Any(m => m.Phase != null))
+                return;
+            var lead = draft.Design?.LeadMinutes ?? 15;
+            var play = draft.Moves.OrderBy(m => m.StartMinutes).ThenBy(m => m.MoveNumber).ToList();
+            var shift = 1 - play.Min(m => m.MoveNumber);
+            var playMinutes = Math.Max(draft.DurationMinutes, play.Max(m => m.StartMinutes) + 30);
+            foreach (var move in play)
+            {
+                move.MoveNumber += shift;
+                move.StartMinutes += lead;
+            }
+            // the read-in notice stays when the doors open; the rest of play moves with it
+            foreach (var inject in draft.Injects ?? new List<MselDraftInject>())
+                if (!(inject.Minutes == 0 && inject.EventType == nameof(EventType.Information)))
+                    inject.Minutes += lead;
+            foreach (var action in draft.CiteActions ?? new List<MselDraftCiteAction>())
+                action.MoveNumber += shift;
+
+            draft.Moves = new List<MselDraftMove>
+            {
+                new()
+                {
+                    MoveNumber = 0,
+                    Phase = PreExercise,
+                    Description = "Pre-exercise",
+                    StartMinutes = 0,
+                    SituationTime = play[0].SituationTime,
+                    Purpose = "Doors open: participants read the read-in, check they can reach their tools, and wait for STARTEX",
+                    SituationDescription = "<h4>Pre-exercise</h4><p>Welcome. Read the read-in page and check that you can open Gallery, CITE and Player. " +
+                        "Play starts at STARTEX.</p>"
+                }
+            };
+            draft.Moves.AddRange(play);
+            draft.Moves.Add(new MselDraftMove
+            {
+                MoveNumber = play.Max(m => m.MoveNumber) + 1,
+                Phase = PostExercise,
+                Description = "Post-exercise: hot wash",
+                StartMinutes = lead + playMinutes,
+                SituationTime = play[^1].SituationTime,
+                Purpose = "ENDEX: the team reviews what it did against the objectives, and what it would do differently",
+                SituationDescription = "<h4>ENDEX</h4><p>The exercise has ended. Join the hot wash: what went well, what did not, and what you would change.</p>"
+            });
+            draft.DurationMinutes = lead + playMinutes + PostExerciseMinutes;
+        }
+
         public const string QuestionsByMove = "QuestionsByMove";
         public const string MissionImpact = "MissionImpact";
         public const string Likelihood = "Likelihood";
@@ -826,6 +891,7 @@ no style attributes. Answer only by calling the tool.";
                 LeadershipBrief = design.LeadershipBrief,
                 CardGrouping = template.UseGallery ? Pick(design.CardGrouping, _cardGroupings) : null,
                 ProfilePages = design.ProfilePages,
+                LeadMinutes = design.LeadMinutes is int lead ? Math.Clamp(lead, 0, 240) : null,
                 Marking = marking.Marking,
                 MarkingText = marking.Text
             };

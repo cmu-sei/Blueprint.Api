@@ -66,6 +66,18 @@ namespace Blueprint.Api.Services
                 foreach (var id in draftTeam.Competencies.Where(id => existing.Add(competencies[id].Id)))
                     team.TeamCompetencies.Add(new TeamCompetencyEntity { Id = Guid.NewGuid(), TeamId = team.Id, CompetencyId = competencies[id].Id });
             }
+            // the duties each team's members pick from in CITE, beside any the template has
+            if (mselEntity.UseCite)
+            {
+                mselEntity.CiteDuties ??= new HashSet<CiteDutyEntity>();
+                foreach (var draftTeam in draft.Teams.Where(t => t.Duties?.Any() == true))
+                {
+                    var team = mselEntity.Teams.First(t => t.ShortName.Equals(draftTeam.ShortName, StringComparison.OrdinalIgnoreCase));
+                    var existing = new HashSet<string>(mselEntity.CiteDuties.Where(d => d.TeamId == team.Id).Select(d => d.Name), StringComparer.OrdinalIgnoreCase);
+                    foreach (var duty in draftTeam.Duties.Select(d => d?.Trim()).Where(d => !string.IsNullOrEmpty(d)).Take(6).Where(existing.Add))
+                        mselEntity.CiteDuties.Add(new CiteDutyEntity { Id = Guid.NewGuid(), MselId = mselEntity.Id, TeamId = team.Id, Name = duty });
+                }
+            }
             var templateOrgs = new HashSet<string>(mselEntity.Organizations.Select(o => o.ShortName), StringComparer.OrdinalIgnoreCase);
             foreach (var organization in draft.Organizations.Where(o => !templateOrgs.Contains(o.ShortName)))
             {
@@ -207,8 +219,11 @@ namespace Blueprint.Api.Services
                     notifications[row] = (title, text);
                     return row;
                 }
-                rows.Insert(0, Boundary(0, "STARTEX", "STARTEX: the exercise has started. Review the new material in Gallery and Player."));
-                rows.Add(Boundary(draft.DurationMinutes, "ENDEX", "ENDEX: the exercise has ended. Thank you for taking part."));
+                // STARTEX opens the first move of play and ENDEX the post-exercise move, so each is where CITE and Gallery change move
+                var startex = draft.Moves.Where(m => m.Phase == null).Select(m => (int?)m.StartMinutes).Min() ?? 0;
+                var endex = draft.Moves.FirstOrDefault(m => m.Phase == MselDraftRules.PostExercise)?.StartMinutes ?? draft.DurationMinutes;
+                rows.Insert(0, Boundary(startex, "STARTEX", "STARTEX: the exercise has started. Review the new material in Gallery and Player."));
+                rows.Add(Boundary(endex, "ENDEX", "ENDEX: the exercise has ended. Join the hot wash; thank you for taking part."));
             }
 
             // one data value per column, as when a planner adds a row

@@ -6,6 +6,8 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Tests.Support;
@@ -203,6 +205,311 @@ public class DatabaseInitializationTests(DatabaseFixture fixture) : DatabaseTest
         }
 
         Assert.Equal("The outer sentence.The inner sentence.", Assert.Single(log.At(LogLevel.Error)).Message);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // The seed file the image ships
+    // ---------------------------------------------------------------------------------------------
+
+    private static readonly Guid IntegratedTemplateId = Guid.Parse("73e1cd7e-c37d-4df2-b5e3-db6125d12365");
+
+    /// <summary>The image seeds from its own seed-data.json, so that file must seed cleanly onto an
+    /// empty database.</summary>
+    [Fact]
+    public async Task Initialize_WithTheShippedSeedFile_SeedsEveryTemplateAndSaysNothing()
+    {
+        CopyShippedSeedFile();
+
+        var (host, log) = HostFor(Options());
+
+        using (host)
+        {
+            host.InitializeDatabase();
+        }
+
+        Assert.Empty(log.Entries);
+
+        var templates = await NewMsels();
+        Assert.All(templates, x => Assert.True(x.IsTemplate));
+        Assert.Contains(templates, x => x.Name == "Standard MSEL");
+        Assert.Contains(templates, x => x.Id == IntegratedTemplateId);
+    }
+
+    /// <summary>A Gallery push stays disabled until every Gallery Article Parameter is on a data field,
+    /// so the integration template maps all of them, once each.</summary>
+    [Fact]
+    public async Task Initialize_WithTheShippedSeedFile_MapsEveryGalleryArticleParameterOnTheIntegrationTemplate()
+    {
+        CopyShippedSeedFile();
+        SeedOnce();
+
+        await using var context = NewContext();
+        var mapped = await context.DataFields
+            .Where(x => x.MselId == IntegratedTemplateId && x.GalleryArticleParameter != null)
+            .Select(x => x.GalleryArticleParameter)
+            .ToListAsync(Ct);
+
+        Assert.Equal(
+            Enum.GetNames<GalleryArticleParameter>().OrderBy(x => x),
+            mapped.OrderBy(x => x));
+    }
+
+    /// <summary>The integration template carries what each push needs from the MSEL: CITE reads every
+    /// move's situation time, and Player gives each team its applications.</summary>
+    [Fact]
+    public async Task Initialize_WithTheShippedSeedFile_GivesTheIntegrationTemplateItsTeamsMovesAndApplications()
+    {
+        CopyShippedSeedFile();
+        SeedOnce();
+
+        await using var context = NewContext();
+        var msel = await context.Msels.SingleAsync(x => x.Id == IntegratedTemplateId, Ct);
+        Assert.True(msel.UsePlayer);
+        Assert.True(msel.UseGallery);
+        Assert.True(msel.UseCite);
+        Assert.True(msel.UseSteamfitter);
+        Assert.Null(msel.PlayerViewId);
+        Assert.Null(msel.CiteScoringModelId);
+
+        var teams = await context.Teams.Where(x => x.MselId == IntegratedTemplateId).ToListAsync(Ct);
+        Assert.Equal(["BLUE", "EXCON"], teams.Select(x => x.ShortName).OrderBy(x => x));
+
+        var moves = await context.Moves.Where(x => x.MselId == IntegratedTemplateId).ToListAsync(Ct);
+        Assert.Equal([0, 1, 2], moves.Select(x => x.MoveNumber).OrderBy(x => x));
+        Assert.All(moves, x => Assert.NotNull(x.SituationTime));
+
+        var applications = await context.PlayerApplications
+            .Include(x => x.PlayerApplicationTeams)
+            .Where(x => x.MselId == IntegratedTemplateId)
+            .ToListAsync(Ct);
+        Assert.Equal(3, applications.Count);
+        Assert.All(applications, x => Assert.Equal(
+            teams.Select(t => t.Id).OrderBy(t => t),
+            x.PlayerApplicationTeams.Select(t => t.TeamId).OrderBy(t => t)));
+
+        var card = await context.Cards.Include(x => x.CardTeams).SingleAsync(x => x.MselId == IntegratedTemplateId, Ct);
+        Assert.Equal(2, card.CardTeams.Count);
+
+        // the copy dereferences each CITE row's team, so none may be missing
+        Assert.All(
+            await context.CiteDuties.Where(x => x.MselId == IntegratedTemplateId).ToListAsync(Ct),
+            x => Assert.Contains(teams, t => t.Id == x.TeamId));
+        Assert.All(
+            await context.CiteActions.Where(x => x.MselId == IntegratedTemplateId).ToListAsync(Ct),
+            x => Assert.Contains(teams, t => t.Id == x.TeamId));
+    }
+
+    /// <summary>The shipped inject type's fields carry the template's names and types, which is how an
+    /// inject from a catalog fills the template's fields.</summary>
+    [Fact]
+    public async Task Initialize_WithTheShippedSeedFile_SeedsAGalleryArticleInjectTypeThatMatchesTheTemplate()
+    {
+        CopyShippedSeedFile();
+        SeedOnce();
+
+        await using var context = NewContext();
+        var injectType = await context.InjectTypes.SingleAsync(x => x.Name == "Gallery Article", Ct);
+        var injectTypeFields = await context.DataFields.Where(x => x.InjectTypeId == injectType.Id).ToListAsync(Ct);
+        var templateFields = await context.DataFields.Where(x => x.MselId == IntegratedTemplateId).ToListAsync(Ct);
+
+        Assert.NotEmpty(injectTypeFields);
+        Assert.All(injectTypeFields, x => Assert.Contains(
+            templateFields, t => t.Name == x.Name && t.DataType == x.DataType));
+    }
+
+    /// <summary>Restarting over the shipped seed adds nothing and leaves an edited seeded row alone.</summary>
+    [Fact]
+    public async Task Initialize_WithTheShippedSeedFileTwice_SeedsOnceAndKeepsEdits()
+    {
+        CopyShippedSeedFile();
+        SeedOnce();
+
+        await using (var edit = NewContext())
+        {
+            var application = await edit.PlayerApplications.FirstAsync(x => x.MselId == IntegratedTemplateId, Ct);
+            application.Url = "https://edited.example/";
+            await edit.SaveChangesAsync(Ct);
+        }
+
+        var before = await Counts();
+
+        var (host, log) = HostFor(Options());
+        using (host)
+        {
+            host.InitializeDatabase();
+        }
+
+        Assert.Empty(log.Entries);
+        Assert.Equal(before, await Counts());
+
+        await using var context = NewContext();
+        Assert.Contains(
+            await context.PlayerApplications.Where(x => x.MselId == IntegratedTemplateId).ToListAsync(Ct),
+            x => x.Url == "https://edited.example/");
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Seed types and their keys
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>A team belongs to a MSEL, so a seed file that holds both seeds both on an empty
+    /// database.</summary>
+    [Fact]
+    public async Task Initialize_WithATeamOfASeededMsel_SeedsBoth()
+    {
+        var mselId = Guid.NewGuid();
+        WriteSeedFile($$"""
+            {
+              "Msels": [ { "Id": "{{mselId}}", "Name": "Seeded", "Description": "d" } ],
+              "Teams": [ { "Id": "{{Guid.NewGuid()}}", "MselId": "{{mselId}}", "Name": "Blue Team", "ShortName": "BLUE" } ]
+            }
+            """);
+
+        var (host, log) = HostFor(Options());
+        using (host)
+        {
+            host.InitializeDatabase();
+        }
+
+        Assert.Empty(log.Entries);
+
+        await using var context = NewContext();
+        Assert.Equal(mselId, (await context.Teams.SingleAsync(Ct)).MselId);
+    }
+
+    /// <summary>Inject type names are unique, so a seeded inject type whose name is already taken is
+    /// skipped instead of failing the seed.</summary>
+    [Fact]
+    public async Task Initialize_WithAnInjectTypeWhoseNameIsTaken_SkipsIt()
+    {
+        var existing = Guid.NewGuid();
+        await using (var context = NewContext())
+        {
+            context.InjectTypes.Add(new InjectTypeEntity { Id = existing, Name = "Gallery Article", Description = "mine" });
+            await context.SaveChangesAsync(Ct);
+        }
+
+        WriteSeedFile($$"""
+            { "InjectTypes": [ { "Id": "{{Guid.NewGuid()}}", "Name": "Gallery Article", "Description": "seeded" } ] }
+            """);
+
+        var (host, log) = HostFor(Options());
+        using (host)
+        {
+            host.InitializeDatabase();
+        }
+
+        Assert.Empty(log.Entries);
+
+        await using var read = NewContext();
+        var injectType = await read.InjectTypes.SingleAsync(Ct);
+        Assert.Equal(existing, injectType.Id);
+        Assert.Equal("mine", injectType.Description);
+    }
+
+    /// <summary>A site that already has its own "Gallery Article" inject type still gets the whole
+    /// integration template: the seeded inject type's fields are skipped with it, instead of failing
+    /// the save the template's fields share.</summary>
+    [Fact]
+    public async Task Initialize_WithTheShippedSeedFile_WhenTheInjectTypeNameIsTaken_StillSeedsTheTemplate()
+    {
+        var existing = Guid.NewGuid();
+        await using (var context = NewContext())
+        {
+            context.InjectTypes.Add(new InjectTypeEntity { Id = existing, Name = "Gallery Article", Description = "mine" });
+            await context.SaveChangesAsync(Ct);
+        }
+
+        CopyShippedSeedFile();
+        SeedOnce();
+
+        await using var read = NewContext();
+        Assert.Equal(existing, (await read.InjectTypes.SingleAsync(x => x.Name == "Gallery Article", Ct)).Id);
+        Assert.Empty(await read.DataFields.Where(x => x.InjectTypeId == existing).ToListAsync(Ct));
+        Assert.Equal(12, await read.DataFields.CountAsync(x => x.MselId == IntegratedTemplateId, Ct));
+        Assert.Equal(3, await read.PlayerApplications.CountAsync(x => x.MselId == IntegratedTemplateId, Ct));
+    }
+
+    /// <summary>A team gets an application once and a card once, so a seeded pair that already exists
+    /// under another id is skipped.</summary>
+    [Fact]
+    public async Task Initialize_WithAnApplicationTeamOrCardTeamPairThatExists_SkipsIt()
+    {
+        var mselId = Guid.NewGuid();
+        var teamId = Guid.NewGuid();
+        var applicationId = Guid.NewGuid();
+        var cardId = Guid.NewGuid();
+        var rows = $$"""
+              "Msels": [ { "Id": "{{mselId}}", "Name": "Seeded", "Description": "d" } ],
+              "Teams": [ { "Id": "{{teamId}}", "MselId": "{{mselId}}", "Name": "Blue Team", "ShortName": "BLUE" } ],
+              "Cards": [ { "Id": "{{cardId}}", "MselId": "{{mselId}}", "Name": "Card" } ],
+              "PlayerApplications": [ { "Id": "{{applicationId}}", "MselId": "{{mselId}}", "Name": "App", "Url": "https://app.example/" } ],
+            """;
+
+        WriteSeedFile($$"""
+            {
+            {{rows}}
+              "CardTeams": [ { "Id": "{{Guid.NewGuid()}}", "CardId": "{{cardId}}", "TeamId": "{{teamId}}" } ],
+              "PlayerApplicationTeams": [ { "Id": "{{Guid.NewGuid()}}", "PlayerApplicationId": "{{applicationId}}", "TeamId": "{{teamId}}" } ]
+            }
+            """);
+        SeedOnce();
+
+        WriteSeedFile($$"""
+            {
+            {{rows}}
+              "CardTeams": [ { "Id": "{{Guid.NewGuid()}}", "CardId": "{{cardId}}", "TeamId": "{{teamId}}" } ],
+              "PlayerApplicationTeams": [ { "Id": "{{Guid.NewGuid()}}", "PlayerApplicationId": "{{applicationId}}", "TeamId": "{{teamId}}" } ]
+            }
+            """);
+
+        var (host, log) = HostFor(Options());
+        using (host)
+        {
+            host.InitializeDatabase();
+        }
+
+        Assert.Empty(log.Entries);
+
+        await using var context = NewContext();
+        Assert.Single(await context.CardTeams.ToListAsync(Ct));
+        Assert.Single(await context.PlayerApplicationTeams.ToListAsync(Ct));
+    }
+
+    private void CopyShippedSeedFile() =>
+        File.Copy(
+            Path.Combine(AppContext.BaseDirectory, "seed-data.json"),
+            Path.Combine(_contentRoot.FullName, SeedFileName));
+
+    private void SeedOnce()
+    {
+        var (host, log) = HostFor(Options());
+        using (host)
+        {
+            host.InitializeDatabase();
+        }
+
+        Assert.Empty(log.Entries);
+    }
+
+    private async Task<string> Counts()
+    {
+        await using var context = NewContext();
+
+        return string.Join(",",
+            await context.Msels.CountAsync(Ct),
+            await context.Teams.CountAsync(Ct),
+            await context.Moves.CountAsync(Ct),
+            await context.InjectTypes.CountAsync(Ct),
+            await context.DataFields.CountAsync(Ct),
+            await context.DataOptions.CountAsync(Ct),
+            await context.Organizations.CountAsync(Ct),
+            await context.Cards.CountAsync(Ct),
+            await context.CardTeams.CountAsync(Ct),
+            await context.CiteDuties.CountAsync(Ct),
+            await context.CiteActions.CountAsync(Ct),
+            await context.PlayerApplications.CountAsync(Ct),
+            await context.PlayerApplicationTeams.CountAsync(Ct));
     }
 
     private DatabaseOptions Options() => new()

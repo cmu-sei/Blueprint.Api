@@ -127,7 +127,7 @@ namespace Blueprint.Api.Services
 
                         // add user to team
                         currentProcessStep = "Cite - add user to team";
-                        await IntegrationCiteExtensions.AddUserToTeamAsync(joinInformation.UserId, joinInformation.TeamId, citeApiClient, blueprintContext, ct);
+                        await IntegrationCiteExtensions.AddUserToTeamAsync(joinInformation.UserId, joinInformation.TeamId, joinInformation.CiteTeamRole, citeApiClient, blueprintContext, ct);
                     }
                 }
             }

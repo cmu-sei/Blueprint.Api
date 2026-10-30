@@ -262,7 +262,14 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
 
         // MselController - the JSON import report wants CreateMsels, like the upload it reports on; the
         // controller's other routes are covered in MselEndpointTests and MselServiceJsonTests.
-        { "POST", "api/msels/json/import", "CreateMsels", "@file" }
+        { "POST", "api/msels/json/import", "CreateMsels", "@file" },
+
+        // MselImageService / MselImageController - the read wants ViewMsels, the writes EditMsels; each
+        // falls back to a role on the MSEL. The seeded MSEL has no image, so the read lifts to a 404 and
+        // the upload, which is not an image, to a 400.
+        { "GET", "api/msels/{msel}/image", "ViewMsels", null },
+        { "PUT", "api/msels/{msel}/image", "EditMsels", "@file" },
+        { "DELETE", "api/msels/{msel}/image", "EditMsels", null }
     };
 
     [Theory]

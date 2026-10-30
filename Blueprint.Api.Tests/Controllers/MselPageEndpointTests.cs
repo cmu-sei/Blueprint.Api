@@ -103,6 +103,43 @@ public class MselPageEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.False(answered.AllCanView);
     }
 
+    /// <summary>
+    /// A page not open to all MSEL users is for its contributors: a participant on one of the MSEL's teams is refused
+    /// it, though they can read the pages open to all.
+    /// </summary>
+    [Fact]
+    public async Task Get_ForAContributorsOnlyPage_Is403ForATeamMember()
+    {
+        var msel = await SeedMsel();
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+        var actor = await Actor().OnTeam(team).SeedAsync();
+        var notes = TestData.MselPage(msel.Id, "planning notes");
+        var open = TestData.MselPage(msel.Id, "briefing", allCanView: true);
+        await Seed(notes, open);
+
+        var refused = await Client(actor).GetAsync($"api/mselpages/{notes.Id}", Ct);
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+
+        var allowed = await Client(actor).GetAsync($"api/mselpages/{open.Id}", Ct);
+        Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
+    }
+
+    /// <summary>A contributors-only page is answered for every contributor, such as an Evaluator, and for the MSEL's creator.</summary>
+    [Fact]
+    public async Task Get_ForAContributorsOnlyPage_Is200ForAnEvaluatorAndTheCreator()
+    {
+        var creator = await Actor().SeedAsync();
+        var msel = TestData.Msel(createdBy: creator.Id);
+        await Seed(msel);
+        var evaluator = await Actor().OnMsel(msel, MselRole.Evaluator).SeedAsync();
+        var notes = TestData.MselPage(msel.Id, "planning notes");
+        await Seed(notes);
+
+        Assert.Equal(HttpStatusCode.OK, (await Client(evaluator).GetAsync($"api/mselpages/{notes.Id}", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Client(creator).GetAsync($"api/mselpages/{notes.Id}", Ct)).StatusCode);
+    }
+
     /// <summary>Get for an all can view page is answered with a 403 for a view MSELs holder who is not on the MSEL.</summary>
     [Fact]
     public async Task Get_ForAnAllCanViewPage_Is403ForAViewMselsHolderWhoIsNotOnTheMsel()

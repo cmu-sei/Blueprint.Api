@@ -132,16 +132,11 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         // Map Blueprint team role to CITE role ID
                         var userTeamRole = team.UserTeamRoles
                             .FirstOrDefault(utr => utr.UserId == user.Id);
-                        Guid? citeRoleId = null;
-                        if (userTeamRole != null && roleNameToId.TryGetValue(userTeamRole.Role, out var mappedId))
-                        {
-                            citeRoleId = mappedId;
-                        }
                         // create Cite TeamMemberships
                         var teamMembership = new TeamMembership() {
                             TeamId = citeTeam.Id,
                             UserId = user.Id,
-                            RoleId = citeRoleId
+                            RoleId = GetTeamRoleId(roleNameToId, userTeamRole?.Role)
                         };
                         try
                         {
@@ -230,8 +225,21 @@ namespace Blueprint.Api.Infrastructure.Extensions
             }
         }
 
-        // Add User to Cite Team
-        public static async Task AddUserToTeamAsync(Guid userId, Guid teamId, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        // The CITE team role a member gets when Blueprint names none, or one CITE does not have.
+        // It matches CITE's own default for a membership created without a role.
+        public const string DefaultTeamRoleName = "Member";
+
+        // The CITE role ID for a team role name: the named role if CITE has it, else Member. Null
+        // only when CITE has neither, which leaves the role to CITE.
+        public static Guid? GetTeamRoleId(IReadOnlyDictionary<string, Guid> roleNameToId, string roleName)
+        {
+            if (!string.IsNullOrWhiteSpace(roleName) && roleNameToId.TryGetValue(roleName, out var roleId))
+                return roleId;
+            return roleNameToId.TryGetValue(DefaultTeamRoleName, out var defaultRoleId) ? defaultRoleId : null;
+        }
+
+        // Add User to Cite Team, with the named team role or else Member
+        public static async Task AddUserToTeamAsync(Guid userId, Guid teamId, string teamRole, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             // create user in Cite if they don't exist
             var user = await blueprintContext.Users.FindAsync(userId);
@@ -248,10 +256,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 }
             }
 
+            var citeRoles = await citeApiClient.GetAllTeamRolesAsync(ct);
+            var roleNameToId = citeRoles.ToDictionary(r => r.Name, r => r.Id);
+
             // create Cite TeamMembership
             var citeTeamMembership = new TeamMembership() {
                 TeamId = teamId,
-                UserId = userId
+                UserId = userId,
+                RoleId = GetTeamRoleId(roleNameToId, teamRole)
             };
             await citeApiClient.CreateTeamMembershipAsync(teamId, citeTeamMembership, ct);
         }

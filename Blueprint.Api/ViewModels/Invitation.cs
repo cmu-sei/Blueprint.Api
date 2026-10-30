@@ -18,6 +18,7 @@ namespace Blueprint.Api.ViewModels
         public int MaxUsersAllowed { get; set; }
         public int UserCount { get; set; }
         public bool IsTeamLeader { get; set; }
+        public string CiteTeamRole { get; set; }
         public bool WasDeactivated { get; set; }
     }
 

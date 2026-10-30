@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -33,7 +34,8 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
     /// <remarks>
     /// The whole progress sequence in one assertion, which is the clearest statement of what a push does.
     /// Player is split around Gallery, CITE and Steamfitter because an application's url can name their
-    /// ids.
+    /// ids. Gallery is split around Steamfitter too, because Gallery refuses an exhibit's Scenario until
+    /// Steamfitter has it.
     /// </remarks>
     [Fact]
     public async Task Push_PushesTheFourApplicationsInOrder()
@@ -63,6 +65,7 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
                 "Finishing Evaluation to CITE",
                 "Pushing Scenario to Steamfitter",
                 "Pushing Scenario Memberships to Steamfitter",
+                "Pushing Exhibit Scenario to Gallery",
                 "Pushing Player Applications"
             ],
             Statuses(harness, msel.Id));
@@ -251,6 +254,47 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
         Assert.True(
             paths.IndexOf(application.Path) > paths.IndexOf("steamfitter/api/scenarios"),
             "the applications should be created last of all");
+    }
+
+    /// <remarks>
+    /// Gallery checks that its caller can read an exhibit's Scenario in Steamfitter, which it cannot while
+    /// the Scenario does not exist. So the exhibit is created without one and updated to name it once the
+    /// Steamfitter push is done.
+    /// </remarks>
+    [Fact]
+    public async Task Push_NamesTheScenarioOnTheExhibitOnlyAfterSteamfitterHasIt()
+    {
+        var msel = await SeedPushableMsel();
+        var harness = Harness();
+
+        await harness.PushAsync(msel.Id);
+
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+        var sent = harness.Handler.Sent.ToList();
+        var created = sent.Single(x => x.Method == HttpMethod.Post && x.Path == "gallery/api/exhibits");
+        var updated = sent.Single(x => x.Method == HttpMethod.Put && x.Path == $"gallery/api/exhibits/{deployed.GalleryExhibitId}");
+        var scenario = sent.Single(x => x.Method == HttpMethod.Post && x.Path == "steamfitter/api/scenarios");
+
+        Assert.Equal(JsonValueKind.Null, Body(created.Body)["scenarioId"].ValueKind);
+        Assert.Equal(deployed.SteamfitterScenarioId.ToString(), Body(updated.Body)["scenarioId"].GetString());
+        Assert.True(
+            sent.IndexOf(updated) > sent.IndexOf(scenario),
+            "the exhibit should name the scenario only after Steamfitter has created it");
+    }
+
+    /// <summary>A MSEL that does not use Steamfitter has no Scenario to name, so its exhibit is not updated.</summary>
+    [Fact]
+    public async Task Push_WithoutSteamfitter_LeavesTheExhibitAsCreated()
+    {
+        var msel = await SeedPushableMsel(x => x.UseSteamfitter = false);
+        var harness = Harness();
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.Contains(harness.Handler.Sent, x => x.Method == HttpMethod.Post && x.Path == "gallery/api/exhibits");
+        Assert.DoesNotContain(harness.Handler.Sent, x => x.Method == HttpMethod.Put && x.Path.StartsWith("gallery/api/exhibits/"));
+        Assert.DoesNotContain("Pushing Exhibit Scenario to Gallery", Statuses(harness, msel.Id));
     }
 
     /// <summary>The push sends the MSEL's own applications. A template names no MSEL, so it is never one of
@@ -616,6 +660,7 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
 
             .AnswersJson("gallery/api/exhibit-roles", $$"""[{"id":"{{StubId}}","name":"Observer"}]""")
             .AnswersJson("gallery/api/exhibits/*/memberships", $$"""{"id":"{{StubId}}"}""", HttpStatusCode.Created)
+            .AnswersJson("gallery/api/exhibits/*", $$"""{"id":"{{StubId}}","collectionId":"{{StubId}}","name":"x"}""")
             .AnswersJson("gallery/api/collections", $$"""{"id":"{{StubId}}","name":"c"}""", HttpStatusCode.Created)
             .AnswersJson("gallery/api/exhibits", $$"""{"id":"{{StubId}}","collectionId":"{{StubId}}"}""", HttpStatusCode.Created)
             .AnswersJson("gallery/api/teamusers", $$"""{"id":"{{StubId}}"}""", HttpStatusCode.Created)

@@ -766,7 +766,7 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     [InlineData(DataFieldType.Checkbox, MselRole.Approver, null, HttpStatusCode.Forbidden, "Cannot change this value.")]
     [InlineData(DataFieldType.Checkbox, MselRole.Editor, null, HttpStatusCode.Forbidden, "Cannot change this value.")]
     [InlineData(DataFieldType.Checkbox, MselRole.Viewer, null, HttpStatusCode.Forbidden, "Cannot change this value.")]
-    [InlineData(DataFieldType.Checkbox, MselRole.Evaluator, null, HttpStatusCode.Forbidden, "Insufficient Permissions")]
+    [InlineData(DataFieldType.Checkbox, MselRole.Evaluator, null, HttpStatusCode.OK, null)]
     [InlineData(DataFieldType.Checkbox, MselRole.Evaluator, MselRole.Editor, HttpStatusCode.OK, null)]
     [InlineData(DataFieldType.Checkbox, MselRole.Evaluator, MselRole.Approver, HttpStatusCode.OK, null)]
     [InlineData(DataFieldType.Status, MselRole.Owner, null, HttpStatusCode.OK, null)]

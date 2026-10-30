@@ -77,6 +77,7 @@ namespace Blueprint.Api.ViewModels
         public string EducationalUse { get; set; }
         public string CourseMode { get; set; }
         public string Language { get; set; }
+        public DateTime? ImageDateModified { get; set; }
         public virtual ICollection<Organization> Organizations { get; set; } = new HashSet<Organization>();
         public ICollection<Card> Cards { get; set; } = new List<Card>();
         public List<string> GalleryArticleParameters { get; set; } = new List<string>(); // the parameters that must be sent to Gallery to define an Article

@@ -1145,6 +1145,14 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("ai_draft_stage");
 
+                    b.Property<string>("ArticleMarking")
+                        .HasColumnType("text")
+                        .HasColumnName("article_marking");
+
+                    b.Property<string>("ArticleMarkingText")
+                        .HasColumnType("text")
+                        .HasColumnName("article_marking_text");
+
                     b.Property<Guid?>("CasterDirectoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("caster_directory_id");

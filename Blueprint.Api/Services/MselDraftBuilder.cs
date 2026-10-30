@@ -31,6 +31,9 @@ namespace Blueprint.Api.Services
             mselEntity.CourseMode = draft.Metadata.CourseMode ?? mselEntity.CourseMode;
             mselEntity.Subject = draft.Metadata.Subject ?? mselEntity.Subject;
             mselEntity.Keywords = draft.Metadata.Keywords ?? mselEntity.Keywords;
+            // the marking the planner chose for the articles; Write with AI keeps to it
+            if (draft.Design?.Marking != null)
+                (mselEntity.ArticleMarking, mselEntity.ArticleMarkingText) = ArticleMarkings.Clean(draft.Design.Marking, draft.Design.MarkingText);
             if (mselEntity.StartTime == default)
             {
                 var now = DateTime.UtcNow;

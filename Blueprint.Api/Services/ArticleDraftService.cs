@@ -44,8 +44,8 @@ real document of its source type, made by the fictional source that sent it, not
 Keep the facts you are given: the headline, summary, source, sender, recipients and time. Expand the draft text into the full
 document, consistent with the scenario and the organizations listed.
 
-Every document starts with a full-width exercise banner: a cell with bgcolor #FDB516 holding EXERCISE · EXERCISE · EXERCISE in bold,
-and under it the exercise name followed by · FICTIONAL SCENARIO in small text.
+Do not write an exercise banner, a TLP marking, a classification or handling banner, or any other marking on the document:
+Blueprint adds the exercise's marking to every article itself.
 
 Lay the document out for its source type:
 - News: the outlet's masthead (its name large in the outlet's colour, a section label at the right) and a coloured rule; the headline;
@@ -59,11 +59,11 @@ Lay the document out for its source type:
   warning line when the sender is outside the recipient's organization; the message; a signature block with the sender's logo.
 - Phone: a call record: caller, number, called party, time and duration in a header block, then the transcript as alternating
   Caller: and Recipient: lines, ending with any callback request.
-- Intel: an intelligence product (INTSUM, INTREP or SPOT REPORT): an EXERCISE USE ONLY handling banner at top and bottom, the product
+- Intel: an intelligence product (INTSUM, INTREP or SPOT REPORT): the product
   title, originator, date-time group and reference number, then headed sections: SUMMARY, DETAILS, ASSESSMENT, INDICATORS, ACTIONS
   REQUESTED, with confidence levels where an analyst would give them.
 - Reporting: a bulletin, advisory or situation report: the issuing body's letterhead with its logo, a reference number and date, the
-  title, a TLP marking, then headed sections: Summary, Affected Systems, Recommended Actions, Indicators (as a table), and Contact.
+  title, then headed sections: Summary, Affected Systems, Recommended Actions, Indicators (as a table), and Contact.
   A press release or official statement from the same kind of body has its letterhead and logo, FOR IMMEDIATE RELEASE, a dateline,
   the title, the statement, a quote from a named spokesperson, and a media contact block.
 - Orders: a tasking order: the issuing headquarters' letterhead, ORDER or TASKING number, date-time group and references, then
@@ -155,6 +155,7 @@ Answer only by calling the tool.";
                 result.Notes.AddRange(notes.EnumerateArray().Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()));
             if (photos)
                 result.Html = await PlacePhotoAsync(_aiImageClient, _logger, result.Html, input, result.Notes, ct);
+            result.Html = ArticleMarkings.Apply(result.Html, draft.Design?.Marking, draft.Design?.MarkingText, draft.Name);
             return result;
         }
 

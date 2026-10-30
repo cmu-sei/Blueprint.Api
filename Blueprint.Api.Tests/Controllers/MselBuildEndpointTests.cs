@@ -144,6 +144,8 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
 
         var written = await Read<ArticleDraftResult>(await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/articles/{article.Id}", null, Ct));
         Assert.Contains("Cables cut, says the Herald.", written.Html);
+        // the template marks nothing, so the articles get the exercise banner
+        Assert.Contains("EXERCISE · EXERCISE · EXERCISE", written.Html);
         var saved = await Client(planner).PutAsJsonAsync($"/api/msels/{mselId}/ai-draft/articles/{article.Id}", new MselBuildContent { Html = "<p>As PNG</p>" }, JsonOptions, Ct);
         Assert.Equal(HttpStatusCode.NoContent, saved.StatusCode);
         await Read<ProfileDraftResult>(await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/profiles/{profile.Id}", null, Ct));

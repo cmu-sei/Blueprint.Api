@@ -48,6 +48,10 @@ namespace Blueprint.Api.ViewModels
         public string CardGrouping { get; set; }
         /// <summary>Whether to add Team Profiles and Organization Profiles pages</summary>
         public bool ProfilePages { get; set; } = true;
+        /// <summary>The banner on every Gallery article: None, Exercise, Tlp or Classification; empty for the template's</summary>
+        public string Marking { get; set; }
+        /// <summary>The TLP level, or the classification banner's text</summary>
+        public string MarkingText { get; set; }
     }
 
     /// <summary>A drafted MSEL in a flat form the model can fill and the planner can edit before creating it</summary>

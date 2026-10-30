@@ -802,6 +802,10 @@ no style attributes. Answer only by calling the tool.";
         public static MselDraftDesign CleanDesign(MselDraftDesign design, MselEntity template)
         {
             design ??= new MselDraftDesign();
+            // the planner's choice, else the template's
+            var marking = string.IsNullOrWhiteSpace(design.Marking)
+                ? ArticleMarkings.Clean(template.ArticleMarking, template.ArticleMarkingText)
+                : ArticleMarkings.Clean(design.Marking, design.MarkingText);
             string Pick(string value, string[] allowed) => allowed.FirstOrDefault(a => a.Equals(value?.Trim(), StringComparison.OrdinalIgnoreCase));
             string Text(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim().Length > 300 ? value.Trim()[..300] : value.Trim();
             return new MselDraftDesign
@@ -816,7 +820,9 @@ no style attributes. Answer only by calling the tool.";
                 ScenarioSpan = Text(design.ScenarioSpan),
                 LeadershipBrief = design.LeadershipBrief,
                 CardGrouping = template.UseGallery ? Pick(design.CardGrouping, _cardGroupings) : null,
-                ProfilePages = design.ProfilePages
+                ProfilePages = design.ProfilePages,
+                Marking = marking.Marking,
+                MarkingText = marking.Text
             };
         }
 

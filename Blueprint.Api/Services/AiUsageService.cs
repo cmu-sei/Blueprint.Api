@@ -193,23 +193,26 @@ namespace Blueprint.Api.Services
             return prices.FirstOrDefault(p => Letters(p.Key).Equals(key, StringComparison.OrdinalIgnoreCase)).Value;
         }
 
-        /// <summary>Totals for a MSEL, by operation, with a cost estimate where every model used has a price</summary>
+        /// <summary>Totals for a MSEL, by operation, with a cost estimate of the calls whose models have a price</summary>
         public static AiUsageSummary Summarize(Guid mselId, string mselName, List<AiUsageEntity> rows, IReadOnlyDictionary<string, AiPrice> prices)
         {
             long? Cost(IEnumerable<AiUsageEntity> calls)
             {
                 decimal total = 0;
+                var priced = false;
                 foreach (var call in calls)
                 {
+                    // what has no price is left out of the estimate, and named in Unpriced
                     if (PriceFor(prices, call.Model) is not AiPrice price)
-                        return null;
+                        continue;
+                    priced = true;
                     total += call.InputTokens * price.InputPerMillion / 1_000_000m
                         + call.OutputTokens * price.OutputPerMillion / 1_000_000m
                         + call.CacheReadTokens * price.CacheReadPerMillion / 1_000_000m
                         + call.CacheWriteTokens * price.CacheWritePerMillion / 1_000_000m
                         + call.Images * price.PerImage;
                 }
-                return (long)Math.Round(total * 1_000_000m);
+                return priced ? (long)Math.Round(total * 1_000_000m) : null;
             }
             AiUsageTotals Totals(string name, List<AiUsageEntity> calls) => new()
             {

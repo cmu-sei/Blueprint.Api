@@ -140,8 +140,10 @@ public class DataValueDraftEndpointTests(DatabaseFixture fixture, AiEnabledFacto
         var result = await Read<DataValueDraftResult>(await Post(actor, msel.Id, Request(body, title, "Port closure")));
 
         Assert.Contains("This field is the body of a Gallery article.", _system);
-        Assert.Contains("EXERCISE · EXERCISE · EXERCISE", _system);
-        Assert.StartsWith("<table width=\"720\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" bgcolor=\"#FFFFFF\"><tbody><tr><td><font color=\"#1A1A1A\"><table width=\"720\"><tbody><tr><td bgcolor=\"#FDB516\"><font size=\"2\"><b>EXERCISE</b></font></td></tr></tbody></table><img src=\"data:image/svg+xml;base64,", result.Value);
+        // the marking is Blueprint's to add, not the model's
+        Assert.Contains("Blueprint adds the exercise's marking to every article itself", _system);
+        Assert.StartsWith("<table title=\"Marking\"", result.Value);
+        Assert.Contains("</table><table width=\"720\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" bgcolor=\"#FFFFFF\"><tbody><tr><td><font color=\"#1A1A1A\"><table width=\"720\"><tbody><tr><td bgcolor=\"#FDB516\"><font size=\"2\"><b>EXERCISE</b></font></td></tr></tbody></table><img src=\"data:image/svg+xml;base64,", result.Value);
         Assert.Contains("Removed 1 style attribute, which Gallery does not show.", result.Notes);
     }
 

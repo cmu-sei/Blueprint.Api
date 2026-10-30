@@ -123,7 +123,9 @@ public class ArticleDraftEndpointTests(DatabaseFixture fixture, AiEnabledFactory
 
         Assert.Equal("Details", result.FieldName);
         // on white paper with dark ink, so it reads the same in light and dark themes
-        Assert.StartsWith("<table width=\"720\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" bgcolor=\"#FFFFFF\"><tbody><tr><td><font color=\"#1A1A1A\"><table width=\"720\"><tbody><tr><td bgcolor=\"#FDB516\"><b>EXERCISE</b></td></tr></tbody></table>", result.Html);
+        // the MSEL's marking first, then the article
+        Assert.StartsWith("<table title=\"Marking\"", result.Html);
+        Assert.Contains("</table><table width=\"720\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" bgcolor=\"#FFFFFF\"><tbody><tr><td><font color=\"#1A1A1A\">", result.Html);
         Assert.EndsWith("</font></td></tr></tbody></table>", result.Html);
         Assert.Contains("<img src=\"data:image/svg+xml;base64,", result.Html);
         Assert.Contains("alt=\"Harbour Herald masthead\"", result.Html);
@@ -139,7 +141,8 @@ public class ArticleDraftEndpointTests(DatabaseFixture fixture, AiEnabledFactory
         Assert.Contains("Sent to: BLUE", _prompt);
         Assert.Contains("Headline or subject: Cables cut off the islands", _prompt);
         Assert.Contains("Draft text:\nTwo cables were cut overnight.", _prompt.ReplaceLineEndings("\n"));
-        Assert.Contains("EXERCISE · EXERCISE · EXERCISE", _system);
+        // the marking is Blueprint's to add, not the model's
+        Assert.Contains("Blueprint adds the exercise's marking to every article itself", _system);
     }
 
     [Fact]

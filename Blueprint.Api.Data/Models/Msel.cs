@@ -28,6 +28,10 @@ namespace Blueprint.Api.Data.Models
         public bool UseCite { get; set; }
         public Guid? CiteEvaluationId { get; set; }
         public Guid? CiteScoringModelId { get; set; }
+        /// <summary>The banner on the MSEL's Gallery articles: None, Exercise, Tlp or Classification</summary>
+        public string ArticleMarking { get; set; }
+        /// <summary>The TLP level, or the classification banner's text</summary>
+        public string ArticleMarkingText { get; set; }
         public string CiteScoringModelName { get; set; }
         public IntegrationType CiteIntegrationType { get; set; }
         public bool UseSteamfitter { get; set; }

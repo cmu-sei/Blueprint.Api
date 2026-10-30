@@ -30,6 +30,10 @@ namespace Blueprint.Api.ViewModels
         public IntegrationType GalleryIntegrationType { get; set; }
         public bool UseCite { get; set; }
         public Guid? CiteScoringModelId { get; set; }
+        /// <summary>The banner Blueprint puts on the MSEL's Gallery articles: None, Exercise (the default), Tlp or Classification</summary>
+        public string ArticleMarking { get; set; }
+        /// <summary>The TLP level (CLEAR, GREEN, AMBER, AMBER+STRICT, RED), or the classification banner's text</summary>
+        public string ArticleMarkingText { get; set; }
         public IntegrationType CiteIntegrationType { get; set; }
         public bool UseSteamfitter { get; set; }
         public IntegrationType SteamfitterIntegrationType { get; set; }

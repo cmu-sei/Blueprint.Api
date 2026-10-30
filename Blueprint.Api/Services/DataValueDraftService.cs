@@ -136,6 +136,8 @@ Answer only by calling the tool.";
                 throw new InvalidOperationException("The model returned an empty value. Try again or add an instruction.");
             if (photos)
                 result.Value = await ArticleDraftService.PlacePhotoAsync(_aiImageClient, _logger, result.Value, input, result.Notes, ct);
+            if (isArticle)
+                result.Value = ArticleMarkings.Apply(result.Value, msel.ArticleMarking, msel.ArticleMarkingText, msel.Name);
             return result;
         }
 

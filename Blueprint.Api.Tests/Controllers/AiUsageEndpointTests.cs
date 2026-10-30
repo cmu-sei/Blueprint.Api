@@ -97,9 +97,9 @@ public class AiUsageEndpointTests(DatabaseFixture fixture, AiEnabledFactory fact
         Assert.Equal(46_000, summary.ByOperation[0].EstimatedCostMicros);
     }
 
-    /// <summary>A model without a price leaves the estimate out, and is named so it can be priced.</summary>
+    /// <summary>A model without a price is left out of the estimate, which totals the rest, and is named so it can be priced.</summary>
     [Fact]
-    public async Task GetByMsel_WithAnUnpricedModel_HasNoEstimate()
+    public async Task GetByMsel_WithAnUnpricedModel_EstimatesThePricedCalls()
     {
         var msel = TestData.Msel();
         await Seed(msel, Usage(msel.Id, "draft", "test-model", 1000, 1000), Usage(msel.Id, "assist", "other-model", 1000, 1000));
@@ -107,8 +107,10 @@ public class AiUsageEndpointTests(DatabaseFixture fixture, AiEnabledFactory fact
 
         var summary = await Read<AiUsageSummary>(await Client(actor).GetAsync($"/api/msels/{msel.Id}/ai-usage", Ct));
 
-        Assert.Null(summary.EstimatedCostMicros);
+        // 1,000 tokens in at $2 and 1,000 out at $10 a million
+        Assert.Equal(12_000, summary.EstimatedCostMicros);
         Assert.Equal(["other-model"], summary.Unpriced);
+        Assert.Null(summary.ByOperation.Single(o => o.Name == "assist").EstimatedCostMicros);
         Assert.NotNull(summary.ByOperation.Single(o => o.Name == "draft").EstimatedCostMicros);
     }
 

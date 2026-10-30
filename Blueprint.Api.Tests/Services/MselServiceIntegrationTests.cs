@@ -197,9 +197,12 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>Push for an already deployed MSEL is answered with a 500.</summary>
+    /// <summary>
+    /// Push for an already deployed MSEL is a 409 carrying the reason. As a 500 it reached a production
+    /// planner as "A server error occurred.", with the reason only in the detail.
+    /// </summary>
     [Fact]
-    public async Task Push_ForAnAlreadyDeployedMsel_Is500()
+    public async Task Push_ForAnAlreadyDeployedMsel_Is409()
     {
         var msel = TestData.Msel(status: MselItemStatus.Deployed);
         msel.PlayerViewId = Guid.NewGuid();
@@ -208,17 +211,18 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
 
         var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal($"MSEL {msel.Id} is already deployed.", (await Error(response)).Title);
+        Assert.Equal(
+            $"MSEL {msel.Id} is already deployed.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
         Assert.Equal(
             MselItemStatus.Deployed,
             (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).Status);
         AssertNothingEnqueued();
     }
 
-    /// <summary>Push when a user is on two CITE teams is answered with a 500 and names them.</summary>
+    /// <summary>Push when a user is on two CITE teams is a 409 that names them, for the planner to fix.</summary>
     [Fact]
-    public async Task Push_WhenAUserIsOnTwoCiteTeams_Is500AndNamesThem()
+    public async Task Push_WhenAUserIsOnTwoCiteTeams_Is409AndNamesThem()
     {
         var msel = TestData.Msel(status: MselItemStatus.Approved);
         await Seed(msel);
@@ -237,9 +241,7 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
 
         var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-
-        var title = (await Error(response)).Title;
+        var title = (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title;
         Assert.StartsWith("Users can only be on one team.", title);
         Assert.Contains(doubleBooked.Name, title);
         Assert.Contains("alpha", title);

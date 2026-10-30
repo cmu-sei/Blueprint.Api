@@ -41,12 +41,14 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
         private readonly AiOptions _options;
         private readonly ILogger<BedrockAiModelClient> _logger;
         private readonly IAiUsageRecorder _usage;
+        private readonly IAiProgress _progress;
 
-        public BedrockAiModelClient(AiOptions options, ILogger<BedrockAiModelClient> logger, IAiUsageRecorder usage)
+        public BedrockAiModelClient(AiOptions options, ILogger<BedrockAiModelClient> logger, IAiUsageRecorder usage, IAiProgress progress)
         {
             _options = options;
             _logger = logger;
             _usage = usage;
+            _progress = progress;
         }
 
         public async Task<JsonElement> InvokeToolAsync(string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct)
@@ -210,9 +212,12 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 if (item is PayloadPart part)
                 {
                     using var reader = new StreamReader(part.Bytes);
-                    message.Add(await reader.ReadToEndAsync(ct));
+                    var partialJson = message.Add(await reader.ReadToEndAsync(ct));
+                    if (partialJson != null)
+                        await _progress.AddAsync(partialJson, ct);
                 }
             }
+            await _progress.CompleteAsync(ct);
 
             var result = message.ToMessage();
             _logger.LogInformation("AI draft {Tool} on {Model} stopped with {StopReason} {StopDetails}: {Usage}",
@@ -269,7 +274,8 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
         private readonly SortedDictionary<int, JsonObject> _blocks = new();
         private readonly Dictionary<int, StringBuilder> _partialJson = new();
 
-        public void Add(string eventJson)
+        /// <summary>Adds one event; returns the piece of a tool input it carried, if any</summary>
+        public string Add(string eventJson)
         {
             var e = JsonNode.Parse(eventJson)?.AsObject();
             switch (e?["type"]?.GetValue<string>())
@@ -283,8 +289,7 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                     _blocks[index] = e["content_block"].DeepClone().AsObject();
                     break;
                 case "content_block_delta":
-                    AddDelta(e["index"].GetValue<int>(), e["delta"].AsObject());
-                    break;
+                    return AddDelta(e["index"].GetValue<int>(), e["delta"].AsObject());
                 case "message_delta":
                     if (e["delta"] is JsonObject delta)
                     {
@@ -299,6 +304,7 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 case "error":
                     throw new InvalidOperationException($"The model stopped with an error: {e["error"]?["message"]?.GetValue<string>() ?? eventJson}");
             }
+            return null;
         }
 
         public JsonElement ToMessage()
@@ -314,21 +320,23 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             return JsonSerializer.SerializeToElement(_message);
         }
 
-        private void AddDelta(int index, JsonObject delta)
+        private string AddDelta(int index, JsonObject delta)
         {
             if (!_blocks.TryGetValue(index, out var block))
-                return;
+                return null;
             switch (delta["type"]?.GetValue<string>())
             {
                 case "input_json_delta":
                     if (!_partialJson.TryGetValue(index, out var json))
                         _partialJson[index] = json = new StringBuilder();
-                    json.Append(delta["partial_json"]?.GetValue<string>());
-                    break;
+                    var piece = delta["partial_json"]?.GetValue<string>();
+                    json.Append(piece);
+                    return piece;
                 case "text_delta":
                     block["text"] = (block["text"]?.GetValue<string>() ?? "") + delta["text"]?.GetValue<string>();
                     break;
             }
+            return null;
         }
 
         // message_start carries the input counts, message_delta the running output counts; later values win

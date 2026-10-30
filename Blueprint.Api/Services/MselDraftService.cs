@@ -254,7 +254,8 @@ controller notes and discussion questions, the CITE tasks, and the read-in. Wher
                     sb.AppendLine($"- {answer.Question?.Trim()}: {answer.Answer.Trim()}");
             }
 
-            _usage.Use("injects", draftId: design.DraftId == Guid.Empty ? null : design.DraftId);
+            // the MSEL being built, so its live progress and its usage are both found by it
+            _usage.Use("injects", template.Id, design.DraftId == Guid.Empty ? null : design.DraftId);
             var input = await _aiModelClient.InvokeToolAsync(SystemPrompt + "\n\n" + InjectsStep, sb.ToString(), ToolName,
                 "Submit the injects for the approved design.", schema, ct);
             var written = MselDraftRules.ReadDraft(input, warnings);

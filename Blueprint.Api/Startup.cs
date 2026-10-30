@@ -243,6 +243,7 @@ public class Startup
         services.AddScoped<IAiModelClient, BedrockAiModelClient>();
         services.AddScoped<IAiImageClient, BedrockAiImageClient>();
         services.AddScoped<IAiUsageContext, AiUsageContext>();
+        services.AddScoped<IAiProgress, AiProgress>();
         services.AddScoped<IAiUsageRecorder, AiUsageRecorder>();
         services.AddScoped<IAiUsageService, AiUsageService>();
         services.AddScoped<IMselBuildService, MselBuildService>();

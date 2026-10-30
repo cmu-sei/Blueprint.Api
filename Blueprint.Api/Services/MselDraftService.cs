@@ -33,6 +33,8 @@ namespace Blueprint.Api.Services
         /// <summary>The second step: the injects, CITE tasks and questions, and read-in, written to an approved design</summary>
         Task<MselDraft> WriteInjectsAsync(MselEntity template, MselDraft design, string prompt, List<MselDesignAnswer> answers,
             Dictionary<string, CompetencyEntity> competencies, List<string> warnings, CancellationToken ct);
+        /// <summary>The full text of one long column of one outlined inject, written on its own so no answer runs out of room</summary>
+        Task<string> WriteInjectTextAsync(MselEntity msel, MselDraft draft, int injectIndex, DataFieldEntity field, CancellationToken ct);
     }
 
     public class MselDraftService : IMselDraftService
@@ -172,7 +174,10 @@ question the answer you would use if the planner gives none, and say in a few wo
         private const string InjectsStep =
 @"This is the second of two steps. The planner has reviewed and approved the design below, and answered your questions. Keep to it:
 its moves, teams, organizations and Gallery cards, by the same names and numbers. Write the injects, each move's expected decisions,
-controller notes and discussion questions, the CITE tasks, and the read-in. Where an answer changes the design, follow the answer.";
+controller notes and discussion questions, the CITE tasks, and the read-in. Where an answer changes the design, follow the answer.
+Write each inject as an outline: its time, type, card and short columns, its expected action and objective. Its long text (the
+document, message or description) is written next, one inject at a time, from what you give here, so make each inject's title,
+summary, sender and recipients specific enough to write it from and keep the storyline in them.";
 
         public async Task<MselDraftResult> DesignAsync(MselDraftRequest request, CancellationToken ct)
         {
@@ -228,7 +233,7 @@ controller notes and discussion questions, the CITE tasks, and the read-in. Wher
                 throw new InvalidOperationException("AI drafting is not enabled on this server.");
             var fields = MselDraftRules.DraftedFields(template).ToList();
             var schema = InjectsSchema(BuildSchema(fields, _aiOptions.MaxInjects, competencies, MselDraftRules.UsesCards(template), template.UseCite,
-                design.Design?.CiteAssessment == MselDraftRules.QuestionsByMove));
+                design.Design?.CiteAssessment == MselDraftRules.QuestionsByMove), LongFields(fields));
             var sb = new StringBuilder(BuildPrompt(prompt ?? design.Description ?? design.Name, template, fields, _aiOptions.MaxInjects, competencies, design.Design));
             sb.AppendLine();
             sb.AppendLine("The approved design:");
@@ -278,6 +283,102 @@ controller notes and discussion questions, the CITE tasks, and the read-in. Wher
             return design;
         }
 
+        private const string InjectTextPrompt =
+@"You write the full text of one inject in a Master Scenario Event List (MSEL) for a Crucible cyber exercise in Blueprint.
+The exercise design and the outline of every inject are below; write the one you are asked for, as its sender would write it, to its
+recipients, at its time on the scenario clock. Keep to the outline and the storyline: the same organizations, people, places, times and
+numbers as the injects around it, and nothing participants should only learn from a later inject. Make it something participants can act
+on: it leads to the inject's expected action without stating it.
+Use fictional organizations, people, domains and IP addresses (RFC 5737 / RFC 1918 ranges, example.com style domains); never real personal
+data. Describe adversary activity as a defender would observe it; never working exploit code, malware or real credentials.
+Write HTML with p, b, i, ul, ol, li, h4 and table with border=""1"" cellpadding=""6"" cellspacing=""0"" only: no colors, no images,
+no style attributes. Answer only by calling the tool.";
+
+        public async Task<string> WriteInjectTextAsync(MselEntity msel, MselDraft draft, int injectIndex, DataFieldEntity field, CancellationToken ct)
+        {
+            if (!_aiOptions.Enabled)
+                throw new InvalidOperationException("AI drafting is not enabled on this server.");
+            if (injectIndex < 0 || injectIndex >= (draft.Injects?.Count ?? 0))
+                throw new BadRequestException("There is no such inject in the draft.");
+
+            _usage.Use("rows", msel.Id, draft.DraftId == Guid.Empty ? null : draft.DraftId);
+            var schema = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["html"] = new JsonObject { ["type"] = "string", ["description"] = $"The inject's {field.Name}, as an HTML fragment" },
+                    ["notes"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" }, ["description"] = "Assumptions the planner should check" }
+                },
+                ["required"] = new JsonArray("html")
+            };
+            var input = await _aiModelClient.InvokeToolAsync(InjectTextPrompt, InjectTextRequest(msel, draft, injectIndex, field), "submit_inject_text",
+                $"Submit the inject's {field.Name}.", schema, ct);
+            var html = DataValueDraftService.CleanHtml(input.TryGetProperty("html", out var h) && h.ValueKind == JsonValueKind.String ? h.GetString() : null);
+            if (string.IsNullOrWhiteSpace(DataValueDraftService.StripHtml(html)))
+                throw new InvalidOperationException("The model wrote nothing for the inject. Try again.");
+            return html;
+        }
+
+        /// <summary>
+        /// What one inject's text is written from: the design, the inject's move, every inject in one line each, and the inject's
+        /// outline. All but the last part is the same for every inject of the MSEL.
+        /// </summary>
+        public static string InjectTextRequest(MselEntity msel, MselDraft draft, int injectIndex, DataFieldEntity field)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Exercise: {draft.Name}");
+            if (!string.IsNullOrWhiteSpace(draft.Description))
+                sb.AppendLine($"Description: {draft.Description}");
+            if (draft.Scenario != null)
+            {
+                sb.AppendLine($"Problem: {draft.Scenario.Problem}");
+                sb.AppendLine($"Premise: {draft.Scenario.Premise}");
+                if (!string.IsNullOrWhiteSpace(draft.Scenario.EscalationCeiling))
+                    sb.AppendLine($"Escalation ceiling: {draft.Scenario.EscalationCeiling}");
+            }
+            sb.AppendLine();
+            sb.AppendLine("Teams and organizations (short name: name, who they are):");
+            foreach (var team in draft.Teams ?? new List<MselDraftTeam>())
+                sb.AppendLine($"- {team.ShortName}: {team.Name}, participant team. {OneLine(DataValueDraftService.StripHtml(team.Description))}");
+            foreach (var organization in draft.Organizations ?? new List<MselDraftOrganization>())
+                sb.AppendLine($"- {organization.ShortName}: {organization.Name}. {OneLine(DataValueDraftService.StripHtml(organization.Description))}");
+            sb.AppendLine();
+            sb.AppendLine("Moves (number, starts at minute, scenario time: title, situation):");
+            foreach (var move in draft.Moves ?? new List<MselDraftMove>())
+                sb.AppendLine($"- {move.MoveNumber}, {move.StartMinutes}, {move.SituationTime}: {move.Description}. {OneLine(DataValueDraftService.StripHtml(move.SituationDescription))}");
+            sb.AppendLine();
+            sb.AppendLine("Every inject in order (#, minute, type, from, to: title):");
+            var named = msel.DataFields.Where(f => f.GalleryArticleParameter == nameof(GalleryArticleParameter.Name)
+                    || new[] { "title", "message", "name" }.Contains(f.Name.Trim().ToLowerInvariant()))
+                .Select(f => f.Name).ToList();
+            string Pick(MselDraftInject inject, string parameter) =>
+                msel.DataFields.FirstOrDefault(f => f.GalleryArticleParameter == parameter) is DataFieldEntity f
+                    && inject.Values != null && inject.Values.TryGetValue(f.Name, out var v) ? v : "";
+            for (var i = 0; i < draft.Injects.Count; i++)
+            {
+                var inject = draft.Injects[i];
+                var title = named.Select(n => inject.Values != null && inject.Values.TryGetValue(n, out var v) ? v : null).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+                sb.AppendLine($"#{i + 1}, {inject.Minutes}, {inject.EventType}, {Pick(inject, nameof(GalleryArticleParameter.FromOrg))}, {Pick(inject, nameof(GalleryArticleParameter.ToOrg))}: {OneLine(title)}");
+            }
+            sb.AppendLine();
+            var target = draft.Injects[injectIndex];
+            sb.AppendLine($"Write the {field.Name} of inject #{injectIndex + 1}. Its outline:");
+            sb.AppendLine($"Minute: {target.Minutes}");
+            sb.AppendLine($"Type: {target.EventType}");
+            foreach (var (name, value) in target.Values ?? new Dictionary<string, string>())
+                if (!string.IsNullOrWhiteSpace(value) && !string.Equals(name, field.Name, StringComparison.OrdinalIgnoreCase))
+                    sb.AppendLine($"{name}: {value}");
+            if (!string.IsNullOrWhiteSpace(target.ExpectedAction))
+                sb.AppendLine($"Expected action: {target.ExpectedAction}");
+            if (!string.IsNullOrWhiteSpace(field.Description))
+                sb.AppendLine($"The {field.Name} column holds: {field.Description}");
+            return sb.ToString();
+        }
+
+        private static string OneLine(string text) =>
+            string.IsNullOrEmpty(text) || text.Length <= 200 ? text : text[..200] + "...";
+
         // the full draft's schema without the injects and the moves' details, and with the planner's questions
         private static JsonObject DesignSchema(JsonObject full)
         {
@@ -309,10 +410,17 @@ controller notes and discussion questions, the CITE tasks, and the read-in. Wher
             return full;
         }
 
-        // the injects, read-in and CITE tasks of the full schema, and each move's details by number
-        private static JsonObject InjectsSchema(JsonObject full)
+        /// <summary>The columns an outline leaves out, written for each inject on its own: those holding HTML documents</summary>
+        public static List<DataFieldEntity> LongFields(IEnumerable<DataFieldEntity> fields) =>
+            fields.Where(f => f.DataType == DataFieldType.Html).ToList();
+
+        // the injects, read-in and CITE tasks of the full schema, and each move's details by number; the injects without their long columns
+        private static JsonObject InjectsSchema(JsonObject full, List<DataFieldEntity> longFields)
         {
             var all = (JsonObject)full["properties"];
+            if (all["injects"]?["items"]?["properties"]?["values"]?["properties"] is JsonObject values)
+                foreach (var field in longFields)
+                    values.Remove(field.Name);
             var move = (JsonObject)all["moves"]["items"]["properties"];
             var moveDetails = new JsonObject
             {

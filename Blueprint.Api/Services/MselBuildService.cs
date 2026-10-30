@@ -43,6 +43,9 @@ namespace Blueprint.Api.Services
         /// <summary>Each Gallery article's scenario event, and its inject's position in the draft</summary>
         public Dictionary<Guid, int> Articles { get; set; } = new Dictionary<Guid, int>();
         public List<Guid> ArticlesWritten { get; set; } = new List<Guid>();
+        /// <summary>The other rows whose long text is written one at a time, and each one's position in the draft</summary>
+        public Dictionary<Guid, int> Rows { get; set; } = new Dictionary<Guid, int>();
+        public List<Guid> RowsWritten { get; set; } = new List<Guid>();
         /// <summary>The drafted teams and organizations, whose profiles are written</summary>
         public List<Guid> Profiles { get; set; } = new List<Guid>();
         public List<Guid> ProfilesWritten { get; set; } = new List<Guid>();
@@ -59,6 +62,7 @@ namespace Blueprint.Api.Services
     {
         Task<MselBuildStatus> GetStatusAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<MselBuildStatus> WriteInjectsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
+        Task<MselBuildContent> WriteRowAsync(Guid mselId, Guid scenarioEventId, bool hasSystemPermission, CancellationToken ct);
         Task<ArticleDraftResult> WriteArticleAsync(Guid mselId, Guid scenarioEventId, bool hasSystemPermission, CancellationToken ct);
         Task SaveArticleAsync(Guid mselId, Guid scenarioEventId, string html, bool hasSystemPermission, CancellationToken ct);
         Task<ProfileDraftResult> WriteProfileAsync(Guid mselId, Guid ownerId, bool hasSystemPermission, CancellationToken ct);
@@ -119,6 +123,14 @@ namespace Blueprint.Api.Services
                 .Select((inject, index) => (inject, index))
                 .Where(x => created.ContainsKey(x.inject) && ArticleFields.IsArticle(msel, x.inject.Values))
                 .ToDictionary(x => created[x.inject].Id, x => x.index);
+            // a row that is not an article still has its long columns to write, one row at a time
+            var longFields = MselDraftService.LongFields(msel.DataFields);
+            state.Rows = longFields.Any()
+                ? draft.Injects
+                    .Select((inject, index) => (inject, index))
+                    .Where(x => created.ContainsKey(x.inject) && !state.Articles.ContainsKey(created[x.inject].Id))
+                    .ToDictionary(x => created[x.inject].Id, x => x.index)
+                : new Dictionary<Guid, int>();
             var drafted = new HashSet<string>(draft.Teams.Select(t => t.ShortName).Concat(draft.Organizations.Select(o => o.ShortName)), StringComparer.OrdinalIgnoreCase);
             state.Profiles = msel.Teams.Where(t => drafted.Contains(t.ShortName)).Select(t => t.Id)
                 .Concat(msel.Organizations.Where(o => drafted.Contains(o.ShortName)).Select(o => o.Id))
@@ -129,6 +141,27 @@ namespace Blueprint.Api.Services
             var status = await StatusAsync(msel, state, ct);
             status.Warnings.AddRange(warnings);
             return status;
+        }
+
+        public async Task<MselBuildContent> WriteRowAsync(Guid mselId, Guid scenarioEventId, bool hasSystemPermission, CancellationToken ct)
+        {
+            var (msel, state) = await LoadAsync(mselId, hasSystemPermission, MselBuildStage.Articles, ct);
+            if (!state.Rows.TryGetValue(scenarioEventId, out var index))
+                throw new BadRequestException("That row is not one of the drafted injects.");
+            var inject = state.Draft.Injects[index];
+            inject.Values ??= new Dictionary<string, string>();
+            string first = null;
+            foreach (var field in MselDraftService.LongFields(msel.DataFields))
+            {
+                var html = await _mselDraftService.WriteInjectTextAsync(msel, state.Draft, index, field, ct);
+                SetArticle(msel, scenarioEventId, field.Name, html);
+                inject.Values[field.Name] = html;
+                first ??= html;
+            }
+            if (!state.RowsWritten.Contains(scenarioEventId))
+                state.RowsWritten.Add(scenarioEventId);
+            await SaveAsync(msel, state, ct);
+            return new MselBuildContent { Html = first };
         }
 
         public async Task<ArticleDraftResult> WriteArticleAsync(Guid mselId, Guid scenarioEventId, bool hasSystemPermission, CancellationToken ct)
@@ -299,6 +332,20 @@ namespace Blueprint.Api.Services
                     Id = id,
                     Kind = "article",
                     Name = titles.FirstOrDefault(t => t.Id == id)?.Values.FirstOrDefault(v => v.GalleryArticleParameter == "Name")?.Value
+                })
+                .ToList();
+            var rowTitles = await _context.ScenarioEvents.AsNoTracking()
+                .Where(e => state.Rows.Keys.Contains(e.Id))
+                .Select(e => new { e.Id, Values = e.DataValues.Select(v => new { v.DataField.Name, v.DataField.GalleryArticleParameter, v.Value }) })
+                .ToListAsync(ct);
+            status.Injects = state.Rows.OrderBy(r => r.Value).Select(r => r.Key)
+                .Where(id => !state.RowsWritten.Contains(id))
+                .Select(id => new MselBuildItem
+                {
+                    Id = id,
+                    Kind = "inject",
+                    Name = rowTitles.FirstOrDefault(t => t.Id == id)?.Values
+                        .FirstOrDefault(v => v.GalleryArticleParameter == "Name" || new[] { "title", "message", "name" }.Contains(v.Name.ToLower()))?.Value
                 })
                 .ToList();
             var names = await _context.Teams.AsNoTracking().Where(t => state.Profiles.Contains(t.Id)).Select(t => new { t.Id, t.ShortName, Kind = "team" })

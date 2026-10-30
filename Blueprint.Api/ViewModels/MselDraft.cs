@@ -229,6 +229,8 @@ namespace Blueprint.Api.ViewModels
         public Guid MselId { get; set; }
         /// <summary>Injects, Articles or Finish; empty once the MSEL is built</summary>
         public string Stage { get; set; }
+        /// <summary>The other injects whose long text is still to write</summary>
+        public List<MselBuildItem> Injects { get; set; } = new List<MselBuildItem>();
         /// <summary>The Gallery articles still to write</summary>
         public List<MselBuildItem> Articles { get; set; } = new List<MselBuildItem>();
         /// <summary>The team and organization profiles still to write</summary>
@@ -240,7 +242,7 @@ namespace Blueprint.Api.ViewModels
     {
         /// <summary>The scenario event, team or organization</summary>
         public Guid Id { get; set; }
-        /// <summary>team or organization, for a profile</summary>
+        /// <summary>article, inject, team or organization</summary>
         public string Kind { get; set; }
         public string Name { get; set; }
     }

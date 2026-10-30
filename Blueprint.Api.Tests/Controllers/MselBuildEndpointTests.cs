@@ -49,6 +49,7 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
                 {
                     "submit_article" => """{"html":"<p>Cables cut, says the Herald.</p>"}""",
                     "submit_profile" => """{"html":"<h2>Security operations</h2><p>Watches the network.</p>"}""",
+                    "submit_inject_text" => """{"html":"<p>Check in with each team lead.</p>"}""",
                     _ when system.Contains("first of two steps") => Design(),
                     _ => Injects()
                 };
@@ -114,6 +115,9 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Equal("Articles", status.Stage);
         Assert.Equal(["Cables cut"], status.Articles.Select(a => a.Name));
         Assert.Equal(["SOC"], status.Profiles.Select(p => p.Name));
+        // the outline leaves out the long text, which each row then gets on its own
+        Assert.DoesNotContain("\"Details\"", injectsCall.Schema);
+        Assert.Contains("Check in", status.Injects.Select(i => i.Name));
 
         await using var db = NewContext();
         var msel = await db.Msels.Include(m => m.ScenarioEvents).Include(m => m.Pages).Include(m => m.Moves).AsSplitQuery().SingleAsync(m => m.Id == mselId, Ct);
@@ -142,9 +146,15 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         var saved = await Client(planner).PutAsJsonAsync($"/api/msels/{mselId}/ai-draft/articles/{article.Id}", new MselBuildContent { Html = "<p>As PNG</p>" }, JsonOptions, Ct);
         Assert.Equal(HttpStatusCode.NoContent, saved.StatusCode);
         await Read<ProfileDraftResult>(await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/profiles/{profile.Id}", null, Ct));
+        foreach (var row in status.Injects)
+            await Read<MselBuildContent>(await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/rows/{row.Id}", null, Ct));
+        var rowCall = _calls.Last(c => c.Prompt.Contains("Its outline:"));
+        Assert.Contains("#1, 5, Inject, , : Cables cut", rowCall.Prompt);
+        Assert.Contains("Write the Details of inject #2. Its outline:", rowCall.Prompt);
         var remaining = await Read<MselBuildStatus>(await Client(planner).GetAsync($"/api/msels/{mselId}/ai-draft", Ct));
         Assert.Empty(remaining.Articles);
         Assert.Empty(remaining.Profiles);
+        Assert.Empty(remaining.Injects);
 
         var finished = await Read<MselBuildStatus>(await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/finish", null, Ct));
 
@@ -156,6 +166,7 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Contains(msel.Pages, p => p.Name == "Facilitator Guide");
         Assert.Contains("Watches the network.", msel.Teams.Single(t => t.ShortName == "SOC").Description);
         Assert.Contains(msel.ScenarioEvents.SelectMany(e => e.DataValues), v => v.Value != null && v.Value.Contains("As PNG"));
+        Assert.Contains(msel.ScenarioEvents.SelectMany(e => e.DataValues), v => v.Value != null && v.Value.Contains("Check in with each team lead."));
         Assert.Equal(HttpStatusCode.Conflict, (await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/finish", null, Ct)).StatusCode);
     }
 

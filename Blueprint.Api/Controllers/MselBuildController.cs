@@ -77,6 +77,14 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> WriteInjectsAsync(Guid id, CancellationToken ct) =>
             Ok(await _mselBuildService.WriteInjectsAsync(id, await CanEditAllAsync(ct), ct));
 
+        /// <summary> Write the long text of one of a MSEL's drafted injects with AI </summary>
+        /// <remarks> The injects are outlined first; each one's document, message or description is then written and saved on its own. </remarks>
+        [HttpPost("msels/{id}/ai-draft/rows/{scenarioEventId}")]
+        [ProducesResponseType(typeof(MselBuildContent), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "writeMselRow")]
+        public async Task<IActionResult> WriteRowAsync(Guid id, Guid scenarioEventId, CancellationToken ct) =>
+            Ok(await _mselBuildService.WriteRowAsync(id, scenarioEventId, await CanEditAllAsync(ct), ct));
+
         /// <summary> Write one of a MSEL's Gallery articles with AI </summary>
         /// <remarks> Saved on its row as written; its graphics are SVG until saved again as PNG. </remarks>
         [HttpPost("msels/{id}/ai-draft/articles/{scenarioEventId}")]

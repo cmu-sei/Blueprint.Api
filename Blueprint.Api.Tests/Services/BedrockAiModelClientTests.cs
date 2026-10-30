@@ -223,6 +223,8 @@ public class BedrockAiModelClientTests
 
         Assert.True(BedrockAiModelClient.HasCallMarkup(Parse("""{"scenario":{"problem":"<parameter name=\"problem\">A crew is inside."}}""")));
         Assert.True(BedrockAiModelClient.HasCallMarkup(nested));
+        // the whole call written out as XML inside one field, as a design once came back
+        Assert.True(BedrockAiModelClient.HasCallMarkup(Parse("""{"scenario":{"problem":"<problem>An APT.</problem><premise>It began.</premise></invoke>"}}""")));
         Assert.False(BedrockAiModelClient.HasCallMarkup(Parse("""{"name":"Catnip","readIn":"<p>Read <b>this</b>.</p>","moves":[{"moveNumber":0}]}""")));
     }
 

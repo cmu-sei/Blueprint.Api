@@ -232,10 +232,13 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             "Write the tool input as plain JSON: every value a JSON string, number, array or object. " +
             "Never write <parameter> or other markup tags inside it.";
 
+        // the forms a model's own call markup takes inside a value: parameter tags, or the call written out as XML
+        private static readonly string[] _callMarkup = ["<parameter name=", "</parameter>", "<invoke", "</invoke>", "</"];
+
         /// <summary>Whether a tool input holds the model's own call markup instead of JSON values</summary>
         public static bool HasCallMarkup(JsonElement input) => input.ValueKind switch
         {
-            JsonValueKind.String => input.GetString().Contains("<parameter name=", StringComparison.Ordinal),
+            JsonValueKind.String => _callMarkup.Any(m => input.GetString().Contains(m, StringComparison.Ordinal)),
             JsonValueKind.Array => input.EnumerateArray().Any(HasCallMarkup),
             JsonValueKind.Object => input.EnumerateObject().Any(p => p.Name.StartsWith("<parameter", StringComparison.Ordinal) || HasCallMarkup(p.Value)),
             _ => false

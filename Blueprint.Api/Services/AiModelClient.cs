@@ -233,7 +233,7 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             "Never write <parameter> or other markup tags inside it.";
 
         // the forms a model's own call markup takes inside a value: parameter tags, or the call written out as XML
-        private static readonly string[] _callMarkup = ["<parameter name=", "</parameter>", "<invoke", "</invoke>", "</"];
+        private static readonly string[] _callMarkup = ["<parameter name=", "</parameter>", "<invoke", "</invoke>"];
 
         /// <summary>Whether a tool input holds the model's own call markup instead of JSON values</summary>
         public static bool HasCallMarkup(JsonElement input) => input.ValueKind switch

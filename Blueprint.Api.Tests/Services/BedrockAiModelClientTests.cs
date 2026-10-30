@@ -226,6 +226,22 @@ public class BedrockAiModelClientTests
         Assert.False(BedrockAiModelClient.HasCallMarkup(Parse("""{"name":"Catnip","readIn":"<p>Read <b>this</b>.</p>","moves":[{"moveNumber":0}]}""")));
     }
 
+    /// <summary>An answer cut off part-way still says why the model stopped, and what it used, for the record.</summary>
+    [Fact]
+    public void StreamedMessage_ReadsTheStopReasonOfAnAnswerCutOffPartWay()
+    {
+        var message = new StreamedMessage();
+        message.Add("""{"type":"message_start","message":{"usage":{"input_tokens":40000}}}""");
+        message.Add("""{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"t","input":{}}}""");
+        message.Add("""{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"injects\":[{\"minutes\":5"}}""");
+        message.Add("""{"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":64000}}""");
+
+        Assert.Equal("max_tokens", message.StopReason);
+        Assert.Contains("64000", message.Usage);
+        Assert.ThrowsAny<JsonException>(() => message.ToMessage());
+        Assert.Equal(64000, message.ToMessage(withInput: false).GetProperty("usage").GetProperty("output_tokens").GetInt32());
+    }
+
     private static System.Text.Json.Nodes.JsonObject Schema() =>
         System.Text.Json.Nodes.JsonNode.Parse("""
             {"type":"object","properties":{

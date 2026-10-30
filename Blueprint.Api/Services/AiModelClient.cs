@@ -242,11 +242,22 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             }
             await _progress.CompleteAsync(ct);
 
-            var result = message.ToMessage();
-            _logger.LogInformation("AI draft {Tool} on {Model} stopped with {StopReason} {StopDetails}: {Usage}",
-                toolName, modelId, StopReason(result),
-                result.TryGetProperty("stop_details", out var details) ? details.GetRawText() : null,
-                result.TryGetProperty("usage", out var usage) ? usage.GetRawText() : null);
+            _logger.LogInformation("AI draft {Tool} on {Model} stopped with {StopReason}: {Usage}",
+                toolName, modelId, message.StopReason, message.Usage);
+            JsonElement result;
+            try
+            {
+                result = message.ToMessage();
+            }
+            catch (JsonException ex)
+            {
+                // the call is billed even though its answer cannot be read
+                await _usage.RecordAsync(modelId, message.ToMessage(withInput: false), 0, ct);
+                _logger.LogWarning(ex, "The {Tool} answer from {Model} ended part-way, with {StopReason}", toolName, modelId, message.StopReason);
+                throw new InvalidOperationException(message.StopReason == "max_tokens"
+                    ? "The model ran out of output tokens before it finished. Try again, or ask for fewer moves or injects."
+                    : "The model's answer was cut off before it finished. Try again.");
+            }
             // every call is billed, a refused one or one retried on the fallback model too
             await _usage.RecordAsync(modelId, result, 0, ct);
             return result;
@@ -330,13 +341,19 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             return null;
         }
 
-        public JsonElement ToMessage()
+        /// <summary>Why the model stopped, once the stream has said</summary>
+        public string StopReason => _message["stop_reason"]?.GetValue<string>();
+
+        public string Usage => _message["usage"]?.ToJsonString();
+
+        /// <summary>The message; without the tool inputs, which an answer cut off part-way cannot give, its usage can still be recorded</summary>
+        public JsonElement ToMessage(bool withInput = true)
         {
             var content = _message["content"].AsArray();
             content.Clear();
             foreach (var (index, block) in _blocks)
             {
-                if (_partialJson.TryGetValue(index, out var json))
+                if (withInput && _partialJson.TryGetValue(index, out var json))
                     block["input"] = json.Length == 0 ? new JsonObject() : BedrockAiModelClient.ToNode(JsonDocument.Parse(json.ToString()).RootElement);
                 content.Add(block.DeepClone());
             }

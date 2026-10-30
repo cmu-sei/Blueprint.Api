@@ -274,6 +274,80 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
         Assert.Equal(answered, evaluation.Id);
     }
 
+    /// <summary>A scoring model created for the evaluation is the one it is made from, in place of the link.</summary>
+    [Fact]
+    public async Task CreateEvaluation_GivenAScoringModel_UsesItRatherThanTheLinkedOne()
+    {
+        var created = Guid.Parse("88888888-8888-8888-8888-888888888888");
+        var handler = Evaluations();
+
+        await IntegrationCiteExtensions.CreateEvaluationAsync(Msel(), Client(handler), null, Ct, created);
+
+        Assert.Equal(created.ToString(), Body(handler.Sent[0].Body)["scoringModelId"].GetString());
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // CreateScoringModelAsync and DeleteScoringModelAsync
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The MSEL's own model goes to CITE in one request, its categories and options nested in display order, the
+    /// enums by name and the model active.
+    /// </summary>
+    [Fact]
+    public async Task CreateScoringModel_PostsTheModelWithItsCategoriesAndOptions()
+    {
+        var msel = Msel();
+        msel.ScoringModel = TestData.MselScoringModel(msel.Id, "Harbor Questions");
+        var category = msel.ScoringModel.Categories.Single();
+        category.Options.First().DisplayOrder = 3;
+        var handler = new SiblingApiHandler()
+            .AnswersJson("api/scoringmodels", $$"""{"id":"{{ScoringModelId}}","description":"Harbor Questions"}""", HttpStatusCode.Created);
+
+        var id = await IntegrationCiteExtensions.CreateScoringModelAsync(msel, Client(handler), Ct);
+
+        Assert.Equal(ScoringModelId, id);
+        var sent = Assert.Single(handler.Sent);
+        Assert.Equal(HttpMethod.Post, sent.Method);
+        var body = Body(sent.Body);
+        Assert.Equal("Harbor Questions", body["description"].GetString());
+        Assert.Equal("Active", body["status"].GetString());
+        Assert.Equal("Scoresheet", body["rightSideDisplay"].GetString());
+        Assert.True(body["displayCommentTextBoxes"].GetBoolean());
+        var sentCategory = Assert.Single(body["scoringCategories"].EnumerateArray());
+        Assert.Equal("None", sentCategory.GetProperty("scoringOptionSelection").GetString());
+        Assert.Equal(1, sentCategory.GetProperty("moveNumberFirstDisplay").GetInt32());
+        Assert.Equal(
+            ["What do you tell the press?", "Who do you call first?"],
+            sentCategory.GetProperty("scoringOptions").EnumerateArray().Select(o => o.GetProperty("description").GetString()));
+    }
+
+    /// <summary>A model with no description is named after the MSEL, since CITE lists models by description.</summary>
+    [Fact]
+    public async Task CreateScoringModel_WithNoDescription_NamesItAfterTheMsel()
+    {
+        var msel = Msel();
+        msel.ScoringModel = TestData.MselScoringModel(msel.Id);
+        msel.ScoringModel.Description = " ";
+        var handler = new SiblingApiHandler()
+            .AnswersJson("api/scoringmodels", $$"""{"id":"{{ScoringModelId}}"}""", HttpStatusCode.Created);
+
+        await IntegrationCiteExtensions.CreateScoringModelAsync(msel, Client(handler), Ct);
+
+        Assert.Equal($"{msel.Name} Scoring Model", Body(handler.Sent[0].Body)["description"].GetString());
+    }
+
+    [Fact]
+    public async Task DeleteScoringModel_DeletesTheModel()
+    {
+        var handler = new SiblingApiHandler().Answers($"api/scoringmodels/{ScoringModelId}", HttpStatusCode.NoContent);
+
+        await IntegrationCiteExtensions.DeleteScoringModelAsync(ScoringModelId, Client(handler), Ct);
+
+        var sent = Assert.Single(handler.Sent);
+        Assert.Equal(HttpMethod.Delete, sent.Method);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // ActivateAsync
     // ---------------------------------------------------------------------------------------------

@@ -37,8 +37,23 @@ namespace Blueprint.Api.Infrastructure.Extensions
             }
         }
 
-        // Create a Cite Evaluation for this MSEL
-        public static async Task<Evaluation> CreateEvaluationAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        // Create the MSEL's own scoring model in CITE, categories and options in the same request, and return its id
+        public static async Task<Guid> CreateScoringModelAsync(MselEntity msel, CiteApiClient citeApiClient, CancellationToken ct)
+        {
+            var scoringModel = Services.CiteScoringModelConverter.ToCite(msel.ScoringModel);
+            if (string.IsNullOrWhiteSpace(scoringModel.Description))
+                scoringModel.Description = msel.Name + " Scoring Model";
+            var created = await citeApiClient.CreateScoringModelAsync(scoringModel, ct);
+            return created.Id;
+        }
+
+        public static async Task DeleteScoringModelAsync(Guid scoringModelId, CiteApiClient citeApiClient, CancellationToken ct)
+        {
+            await citeApiClient.DeleteScoringModelAsync(scoringModelId, ct);
+        }
+
+        // Create a Cite Evaluation for this MSEL, from the scoring model given, or else the one the MSEL links
+        public static async Task<Evaluation> CreateEvaluationAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct, Guid? scoringModelId = null)
         {
             var move0 = msel.Moves.SingleOrDefault(m => m.MoveNumber == 0);
             Evaluation newEvaluation = new Evaluation() {
@@ -46,7 +61,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 Description = msel.Name,
                 Status = Cite.Api.Client.ItemStatus.Pending,
                 CurrentMoveNumber = 0,
-                ScoringModelId = (Guid)msel.CiteScoringModelId,
+                ScoringModelId = scoringModelId ?? (Guid)msel.CiteScoringModelId,
                 GalleryExhibitId = msel.GalleryExhibitId,
                 SituationDescription = "Preparing for the start of the exercise."
             };

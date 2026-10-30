@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -33,7 +34,8 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
     /// <remarks>
     /// The whole progress sequence in one assertion, which is the clearest statement of what a push does.
     /// Player is split around Gallery, CITE and Steamfitter because an application's url can name their
-    /// ids.
+    /// ids. Gallery is split around Steamfitter too, because Gallery refuses an exhibit's Scenario until
+    /// Steamfitter has it.
     /// </remarks>
     [Fact]
     public async Task Push_PushesTheFourApplicationsInOrder()
@@ -63,6 +65,7 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
                 "Finishing Evaluation to CITE",
                 "Pushing Scenario to Steamfitter",
                 "Pushing Scenario Memberships to Steamfitter",
+                "Pushing Exhibit Scenario to Gallery",
                 "Pushing Player Applications"
             ],
             Statuses(harness, msel.Id));
@@ -251,6 +254,47 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
         Assert.True(
             paths.IndexOf(application.Path) > paths.IndexOf("steamfitter/api/scenarios"),
             "the applications should be created last of all");
+    }
+
+    /// <remarks>
+    /// Gallery checks that its caller can read an exhibit's Scenario in Steamfitter, which it cannot while
+    /// the Scenario does not exist. So the exhibit is created without one and updated to name it once the
+    /// Steamfitter push is done.
+    /// </remarks>
+    [Fact]
+    public async Task Push_NamesTheScenarioOnTheExhibitOnlyAfterSteamfitterHasIt()
+    {
+        var msel = await SeedPushableMsel();
+        var harness = Harness();
+
+        await harness.PushAsync(msel.Id);
+
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+        var sent = harness.Handler.Sent.ToList();
+        var created = sent.Single(x => x.Method == HttpMethod.Post && x.Path == "gallery/api/exhibits");
+        var updated = sent.Single(x => x.Method == HttpMethod.Put && x.Path == $"gallery/api/exhibits/{deployed.GalleryExhibitId}");
+        var scenario = sent.Single(x => x.Method == HttpMethod.Post && x.Path == "steamfitter/api/scenarios");
+
+        Assert.Equal(JsonValueKind.Null, Body(created.Body)["scenarioId"].ValueKind);
+        Assert.Equal(deployed.SteamfitterScenarioId.ToString(), Body(updated.Body)["scenarioId"].GetString());
+        Assert.True(
+            sent.IndexOf(updated) > sent.IndexOf(scenario),
+            "the exhibit should name the scenario only after Steamfitter has created it");
+    }
+
+    /// <summary>A MSEL that does not use Steamfitter has no Scenario to name, so its exhibit is not updated.</summary>
+    [Fact]
+    public async Task Push_WithoutSteamfitter_LeavesTheExhibitAsCreated()
+    {
+        var msel = await SeedPushableMsel(x => x.UseSteamfitter = false);
+        var harness = Harness();
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.Contains(harness.Handler.Sent, x => x.Method == HttpMethod.Post && x.Path == "gallery/api/exhibits");
+        Assert.DoesNotContain(harness.Handler.Sent, x => x.Method == HttpMethod.Put && x.Path.StartsWith("gallery/api/exhibits/"));
+        Assert.DoesNotContain("Pushing Exhibit Scenario to Gallery", Statuses(harness, msel.Id));
     }
 
     /// <summary>A MSEL team named Admin takes the place of Player's own: the view is created without one, and
@@ -484,6 +528,104 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
     }
 
     // ---------------------------------------------------------------------------------------------
+    // A MSEL's own scoring model
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A MSEL with its own scoring model creates it in CITE, makes the evaluation from it, then deletes it: CITE
+    /// copied it into the evaluation, and the pull deletes that copy with the evaluation.
+    /// </summary>
+    [Fact]
+    public async Task Push_OfAMselWithItsOwnScoringModel_CreatesItForTheEvaluationThenDeletesIt()
+    {
+        var msel = await SeedPushableMsel(m => m.CiteScoringModelId = null);
+        await Seed(TestData.MselScoringModel(msel.Id, "Harbor Questions"));
+        var harness = Harness(ScoringModels);
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var cite = harness.Handler.Sent.Where(x => x.Path.StartsWith("cite/api/scoringmodels") || x.Path == "cite/api/evaluations").ToList();
+        Assert.Equal(
+            [
+                (System.Net.Http.HttpMethod.Post, "cite/api/scoringmodels"),
+                (System.Net.Http.HttpMethod.Post, "cite/api/evaluations"),
+                (System.Net.Http.HttpMethod.Delete, $"cite/api/scoringmodels/{UploadedScoringModelId}")
+            ],
+            cite.Select(x => (x.Method, x.Path)));
+        Assert.Equal("Harbor Questions", Body(cite[0].Body)["description"].GetString());
+        Assert.Equal(UploadedScoringModelId.ToString(), Body(cite[1].Body)["scoringModelId"].GetString());
+        Assert.Contains("Pushing Scoring Model to CITE", Statuses(harness, msel.Id));
+    }
+
+    /// <summary>A linked model is pushed as before: nothing is created in CITE or deleted from it.</summary>
+    [Fact]
+    public async Task Push_OfAMselLinkingACiteScoringModel_CreatesNoScoringModel()
+    {
+        var msel = await SeedPushableMsel();
+        var harness = Harness(ScoringModels);
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.DoesNotContain(harness.Handler.Paths, x => x.StartsWith("cite/api/scoringmodels"));
+        var evaluation = harness.Handler.Sent.Single(x => x.Path == "cite/api/evaluations");
+        Assert.Equal(msel.CiteScoringModelId.ToString(), Body(evaluation.Body)["scoringModelId"].GetString());
+        Assert.DoesNotContain("Pushing Scoring Model to CITE", Statuses(harness, msel.Id));
+    }
+
+    /// <summary>A model CITE will not delete is left there unused, which does not fail the push.</summary>
+    [Fact]
+    public async Task Push_WhenCiteRefusesToDeleteTheModel_StillDeploys()
+    {
+        var msel = await SeedPushableMsel(m => m.CiteScoringModelId = null);
+        await Seed(TestData.MselScoringModel(msel.Id));
+        var harness = Harness(x => ScoringModels(x.Answers($"DELETE cite/api/scoringmodels/{UploadedScoringModelId}", HttpStatusCode.Forbidden)));
+
+        await harness.PushAsync(msel.Id);
+
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+        Assert.Equal(MselItemStatus.Deployed, deployed.Status);
+    }
+
+    /// <summary>An evaluation CITE refuses fails the push, and the model made for it is deleted all the same.</summary>
+    [Fact]
+    public async Task Push_WhenTheEvaluationFails_DeletesTheModelMadeForIt()
+    {
+        var msel = await SeedPushableMsel(m => m.CiteScoringModelId = null);
+        await Seed(TestData.MselScoringModel(msel.Id));
+        var harness = Harness(x => ScoringModels(x.AnswersJson("POST cite/api/evaluations", "no", HttpStatusCode.InternalServerError)));
+
+        await harness.PushAsync(msel.Id);
+
+        var failed = await harness.WaitForError(msel.Id, Ct);
+        Assert.StartsWith("ERROR: CITE - begin processing failed", failed.IntegrationStatus);
+        Assert.Contains(harness.Handler.Sent, x => x.Method == System.Net.Http.HttpMethod.Delete && x.Path == $"cite/api/scoringmodels/{UploadedScoringModelId}");
+    }
+
+    /// <summary>A model CITE refuses to create fails the push before an evaluation is asked for.</summary>
+    [Fact]
+    public async Task Push_WhenCiteRefusesTheModel_CreatesNoEvaluation()
+    {
+        var msel = await SeedPushableMsel(m => m.CiteScoringModelId = null);
+        await Seed(TestData.MselScoringModel(msel.Id));
+        var harness = Harness(x => x.AnswersJson("POST cite/api/scoringmodels", "no", HttpStatusCode.Forbidden));
+
+        await harness.PushAsync(msel.Id);
+
+        await harness.WaitForError(msel.Id, Ct);
+        Assert.DoesNotContain(harness.Handler.Sent, x => x.Method != System.Net.Http.HttpMethod.Get && x.Path == "cite/api/evaluations");
+    }
+
+    private static readonly Guid UploadedScoringModelId = Guid.Parse("12121212-1212-1212-1212-121212121212");
+
+    /// <summary>CITE creating a scoring model, and deleting it.</summary>
+    private static SiblingApiHandler ScoringModels(SiblingApiHandler handler) =>
+        handler
+            .AnswersJson("POST cite/api/scoringmodels", $$"""{"id":"{{UploadedScoringModelId}}","description":"m"}""", HttpStatusCode.Created)
+            .Answers($"DELETE cite/api/scoringmodels/{UploadedScoringModelId}", HttpStatusCode.NoContent);
+
+    // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------
 
@@ -600,6 +742,7 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
 
             .AnswersJson("gallery/api/exhibit-roles", $$"""[{"id":"{{StubId}}","name":"Observer"}]""")
             .AnswersJson("gallery/api/exhibits/*/memberships", $$"""{"id":"{{StubId}}"}""", HttpStatusCode.Created)
+            .AnswersJson("gallery/api/exhibits/*", $$"""{"id":"{{StubId}}","collectionId":"{{StubId}}","name":"x"}""")
             .AnswersJson("gallery/api/collections", $$"""{"id":"{{StubId}}","name":"c"}""", HttpStatusCode.Created)
             .AnswersJson("gallery/api/exhibits", $$"""{"id":"{{StubId}}","collectionId":"{{StubId}}"}""", HttpStatusCode.Created)
             .AnswersJson("gallery/api/teamusers", $$"""{"id":"{{StubId}}"}""", HttpStatusCode.Created)

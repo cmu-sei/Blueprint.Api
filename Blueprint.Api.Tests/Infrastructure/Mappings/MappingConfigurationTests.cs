@@ -15,7 +15,7 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Infrastructure.Mappings;
 
-/// <summary>The AutoMapper configuration as a whole: all 38 profiles, the global null-source rule
+/// <summary>The AutoMapper configuration as a whole: all 39 profiles, the global null-source rule
 /// <c>Startup</c> installs over them, and the handful of maps whose behaviour the services depend
 /// on.</summary>
 public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixture<BlueprintAppFactory>
@@ -47,7 +47,7 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
         "UserTeamRole -> UserTeamRoleEntity: Team, User"
     ];
 
-    /// <summary><c>AssertConfigurationIsValid</c> throws: 31 of the 78 maps have a destination member with no
+    /// <summary><c>AssertConfigurationIsValid</c> throws: 31 of the 81 maps have a destination member with no
     /// source.</summary>
     [Theory]
     [InlineData(true)]

@@ -52,6 +52,9 @@ namespace Blueprint.Api.Data
         public DbSet<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; }
         public DbSet<MselPageEntity> MselPages { get; set; }
         public DbSet<MselImageEntity> MselImages { get; set; }
+        public DbSet<MselScoringModelEntity> MselScoringModels { get; set; }
+        public DbSet<MselScoringCategoryEntity> MselScoringCategories { get; set; }
+        public DbSet<MselScoringOptionEntity> MselScoringOptions { get; set; }
         public DbSet<InjectEntity> Injects { get; set; }
         public DbSet<InvitationEntity> Invitations { get; set; }
         public DbSet<UnitEntity> Units { get; set; }

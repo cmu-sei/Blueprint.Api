@@ -266,7 +266,16 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         // the upload, which is not an image, to a 400.
         { "GET", "api/msels/{msel}/image", "ViewMsels", null },
         { "PUT", "api/msels/{msel}/image", "EditMsels", "@file" },
-        { "DELETE", "api/msels/{msel}/image", "EditMsels", null }
+        { "DELETE", "api/msels/{msel}/image", "EditMsels", null },
+
+        // MselScoringModelService / MselScoringModelController - the read wants ViewMsels, the writes EditMsels;
+        // each falls back to a role on the MSEL. The seeded MSEL has no moves, no scoring model of its own and no
+        // model CITE answers, so the read lifts to a 204, the delete to a 404 and the others to a 200. Copying a
+        // CITE model is absent: CITE answering no model is itself a 403, so its gate is in MselScoringModelEndpointTests.
+        { "GET", "api/msels/{msel}/scoringmodel", "ViewMsels", null },
+        { "PUT", "api/msels/{msel}/scoringmodel", "EditMsels", """{"description":"{unique}"}""" },
+        { "POST", "api/msels/{msel}/scoringmodel/presets/Nciss", "EditMsels", null },
+        { "DELETE", "api/msels/{msel}/scoringmodel", "EditMsels", null }
     };
 
     [Theory]

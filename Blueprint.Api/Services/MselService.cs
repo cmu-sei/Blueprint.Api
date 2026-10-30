@@ -56,7 +56,6 @@ namespace Blueprint.Api.Services
         /// <summary>Creates a MSEL from a reviewed AI design, ready for its injects, articles and profiles to be written into it</summary>
         Task<MselImportResult> CreateFromDesignAsync(MselDesignBuild build, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
-        Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> RetryCasterAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
@@ -330,6 +329,9 @@ namespace Blueprint.Api.Services
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
                 .Include(m => m.Pages)
+                .Include(m => m.ScoringModel)
+                .ThenInclude(sm => sm.Categories)
+                .ThenInclude(c => c.Options)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (mselEntity == null)
@@ -534,6 +536,24 @@ namespace Blueprint.Api.Services
             {
                 ScenarioEventReplaceIds(scenarioEventEntity, mselEntity.Id, mselEntity.DateCreated, mselEntity.CreatedBy, newGuidValues);
             }
+            // copy the MSEL's own scoring model
+            if (mselEntity.ScoringModel != null)
+            {
+                mselEntity.ScoringModel.MselId = mselEntity.Id;
+                mselEntity.ScoringModel.CreatedBy = mselEntity.CreatedBy;
+                foreach (var category in mselEntity.ScoringModel.Categories)
+                {
+                    category.Id = Guid.NewGuid();
+                    category.MselScoringModelId = mselEntity.Id;
+                    category.CreatedBy = mselEntity.CreatedBy;
+                    foreach (var option in category.Options)
+                    {
+                        option.Id = Guid.NewGuid();
+                        option.MselScoringCategoryId = category.Id;
+                        option.CreatedBy = mselEntity.CreatedBy;
+                    }
+                }
+            }
 
             _context.Msels.Add(mselEntity);
             if (sourceImage != null)
@@ -640,6 +660,11 @@ namespace Blueprint.Api.Services
             if (HasIntegrations(mselToUpdate) && IntegrationSettingsChanged(msel, mselToUpdate))
                 throw new ConflictException("The integration settings cannot be changed while the MSEL is pushed, or is being pushed or pulled. Remove Integrations first.");
 
+            // a MSEL that authors its own scoring model pushes that one, so it cannot link a CITE model as well
+            if (msel.CiteScoringModelId != null && msel.CiteScoringModelId != mselToUpdate.CiteScoringModelId &&
+                await _context.MselScoringModels.AnyAsync(sm => sm.MselId == id, ct))
+                throw new ConflictException("The MSEL has its own scoring model. Remove it before linking a CITE scoring model.");
+
             // the push deploys this directory as the service account, so only accept one the user can view in Caster
             if (msel.CasterDirectoryId != null && msel.CasterDirectoryId != mselToUpdate.CasterDirectoryId)
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
@@ -658,7 +683,7 @@ namespace Blueprint.Api.Services
             status == MselItemStatus.Pushing || status == MselItemStatus.Pulling || status == MselItemStatus.Deployed;
 
         // a failed push leaves its partial integrations, and a failed pull leaves what it could not remove
-        private static bool HasIntegrations(MselEntity msel) =>
+        internal static bool HasIntegrations(MselEntity msel) =>
             IsPipelineStatus(msel.Status) ||
             msel.PlayerViewId != null ||
             msel.GalleryCollectionId != null ||
@@ -971,26 +996,6 @@ namespace Blueprint.Api.Services
             memoryStream.Seek(0, SeekOrigin.Begin);
 
             return System.Tuple.Create(memoryStream, filename);
-        }
-
-        public async Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
-        {
-            var msel = await _context.Msels
-                .Where(f => f.Id == mselId)
-                .SingleOrDefaultAsync(ct);
-            if (msel == null)
-                throw new EntityNotFoundException<MselEntity>();
-            // the data table holds every event and data value, so the caller must be able to view the MSEL's contents
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
-                throw new ForbiddenException();
-            var scenarioEventList = await _context.ScenarioEvents
-                .Where(n => n.MselId == mselId)
-                .OrderBy(se => se.DeltaSeconds)
-                .ToListAsync(ct);
-            // get the MSEL data into a DataTable
-            var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
-
-            return dataTable;
         }
 
         private async Task<MselEntity> createMselFromXlsxFile(IFormFile uploadItem, MselEntity msel, CancellationToken ct)
@@ -2170,6 +2175,9 @@ namespace Blueprint.Api.Services
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
                 .Include(m => m.Pages)
+                .Include(m => m.ScoringModel)
+                .ThenInclude(sm => sm.Categories)
+                .ThenInclude(c => c.Options)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)
@@ -2382,6 +2390,13 @@ namespace Blueprint.Api.Services
         // Shared by JSON import and AI draft import so both report the same way.
         private async Task<MselImportResult> ImportEntityAsync(MselEntity mselEntity, MselImportResult result, CancellationToken ct)
         {
+            // A file carrying the MSEL's own scoring model pushes that one, so a CITE model it also links is dropped
+            if (mselEntity.ScoringModel != null)
+            {
+                mselEntity.CiteScoringModelId = null;
+                mselEntity.CiteScoringModelName = null;
+            }
+
             // Validate and fix scoring model linkage if MSEL uses CITE integration.
             // Mirror team type handling by allowing plain-name remap when the ID is
             // missing or stale after moving content between environments.

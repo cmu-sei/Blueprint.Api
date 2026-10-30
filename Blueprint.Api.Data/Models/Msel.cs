@@ -81,6 +81,8 @@ namespace Blueprint.Api.Data.Models
         // still to run (Injects, Articles, Finish), which is empty once the MSEL is built
         public string AiDraft { get; set; }
         public string AiDraftStage { get; set; }
+        // the CITE scoring model the MSEL authors itself, pushed to CITE instead of CiteScoringModelId
+        public virtual MselScoringModelEntity ScoringModel { get; set; }
         public virtual ICollection<CardEntity> Cards { get; set; } = new HashSet<CardEntity>();
         public virtual ICollection<CiteDutyEntity> CiteDuties { get; set; } = new HashSet<CiteDutyEntity>();
         public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();

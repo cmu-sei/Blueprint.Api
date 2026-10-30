@@ -174,9 +174,9 @@ public class SanitizerInterceptorTests(DatabaseFixture fixture) : DatabaseTestBa
     // What is not attributed
     // -------------------------------------------------------------------------------------------------
 
-    /// <summary>The attribute is on six properties and not on the strings that reach gallery.</summary>
+    /// <summary>The attribute is on seven properties and not on the strings that reach gallery.</summary>
     [Fact]
-    public void TheAttributeIsOnSixProperties_AndNotOnTheStringsThatReachGallery()
+    public void TheAttributeIsOnSevenProperties_AndNotOnTheStringsThatReachGallery()
     {
         var attributed = AttributedProperties();
 
@@ -186,6 +186,7 @@ public class SanitizerInterceptorTests(DatabaseFixture fixture) : DatabaseTestBa
                 "DataFieldEntity.Description",
                 "MoveEntity.SituationDescription",
                 "MselPageEntity.Content",
+                "MselScoringModelEntity.RightSideHtmlBlock",
                 "OrganizationEntity.Description",
                 "TeamEntity.Description",
                 "UnitEntity.Description"

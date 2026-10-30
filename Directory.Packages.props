@@ -41,7 +41,7 @@
   <ItemGroup>
     <PackageVersion Include="caster.api.client" Version="1.5.0" />
     <PackageVersion Include="Player.Api.Client" Version="3.2.0" />
-    <PackageVersion Include="steamfitter.api.client" Version="3.9.12" />
+    <PackageVersion Include="steamfitter.api.client" Version="3.11.0" />
     <PackageVersion Include="TinCan" Version="1.3.0" />
   </ItemGroup>
 
@@ -120,8 +120,7 @@
     <!-- Through Microsoft.Data.SqlClient, which carries 9.0.11 even under EF Core 10.0.13. -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <!-- Through Swashbuckle.AspNetCore 10.0.1, which carries 2.3.0. Swashbuckle 10.2.1+ carries
-         2.7.5 itself, but 10.3.1 fails to generate the schema for the DataTable that
-         MselController.GetData returns, so Swashbuckle stays put and only the OpenAPI model moves. -->
+         2.7.5 itself, so this pin can go when Swashbuckle moves. -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
   </ItemGroup>
 

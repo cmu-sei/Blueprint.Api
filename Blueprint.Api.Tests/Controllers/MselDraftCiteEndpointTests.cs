@@ -9,6 +9,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
@@ -26,7 +27,8 @@ namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary>
 /// The CITE side of creating a drafted MSEL, as the blueprint-ttx loader sets it up: CITE's built-in team types on the
-/// teams, and the scoring model the planner chose, made or found in CITE.
+/// teams, and the scoring model the planner chose, authored into the MSEL as its own, so it is reviewed in Blueprint and
+/// created in CITE only by the push.
 /// </summary>
 public class MselDraftCiteEndpointTests(DatabaseFixture fixture, AiEnabledFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<AiEnabledFactory>
@@ -54,88 +56,69 @@ public class MselDraftCiteEndpointTests(DatabaseFixture fixture, AiEnabledFactor
     }
 
     /// <summary>
-    /// Questions by move: a model with one category a move, shown only in that move, its questions as options with
-    /// comments and hidden scores, and the objectives in the last move; the MSEL links it, and each team gets its type.
+    /// Questions by move: the MSEL's own model with one category a move, shown only in that move, its questions as options
+    /// with comments and hidden scores, and the objectives in the hot wash; nothing is made in CITE, and each team gets its type.
     /// </summary>
     [Fact]
-    public async Task Import_WithQuestionsByMove_CreatesTheModelAndSetsTeamTypes()
+    public async Task Import_WithQuestionsByMove_AuthorsTheModelAndSetsTeamTypes()
     {
         var mselId = await Import("QuestionsByMove");
 
-        Assert.Equal("Deep Bite Questions by Move", _created.Description);
-        Assert.True(_created.HideScoresOnScoreSheet);
-        Assert.True(_created.DisplayCommentTextBoxes);
-        Assert.True(_created.DisplayScoringModelByMoveNumber);
+        await _cite.DidNotReceive().CreateScoringModelAsync(Arg.Any<ScoringModel>(), Arg.Any<CancellationToken>());
+        await using var db = NewContext();
+        var model = await Authored(db, mselId);
+        Assert.Equal("Deep Bite Questions by Move", model.Description);
+        Assert.True(model.HideScoresOnScoreSheet);
+        Assert.True(model.DisplayCommentTextBoxes);
+        Assert.True(model.DisplayScoringModelByMoveNumber);
+        var categories = model.Categories.OrderBy(c => c.DisplayOrder).ToList();
         Assert.Equal(
             // play is moves 1 and 2; the after-action review is the hot wash after ENDEX
             [(MselDraftCite.QuestionsHeading, 1, 1, 2), (MselDraftCite.QuestionsHeading, 2, 2, 1), (MselDraftCite.AarHeading, 3, 3, 1)],
-            _created.ScoringCategories.Select(c => (c.Description, c.MoveNumberFirstDisplay, c.MoveNumberLastDisplay, c.ScoringOptions.Count)));
-        Assert.All(_created.ScoringCategories, c => Assert.Equal(ScoringOptionSelection.None, c.ScoringOptionSelection));
-        Assert.Equal(["How will you confirm the outage?", "Who do you tell first?"], _created.ScoringCategories.First().ScoringOptions.Select(o => o.Description));
-        Assert.Equal("O1: Lead the response. Standard: A lead within 30 minutes", _created.ScoringCategories.Last().ScoringOptions.Single().Description);
+            categories.Select(c => (c.Description, c.MoveNumberFirstDisplay, c.MoveNumberLastDisplay, c.Options.Count)));
+        Assert.All(categories, c => Assert.Equal(CiteScoringOptionSelection.None, c.ScoringOptionSelection));
+        Assert.Equal(["How will you confirm the outage?", "Who do you tell first?"], categories.First().Options.OrderBy(o => o.DisplayOrder).Select(o => o.Description));
+        Assert.Equal("O1: Lead the response. Standard: A lead within 30 minutes", categories.Last().Options.Single().Description);
 
-        await using var db = NewContext();
         var msel = await db.Msels.Include(m => m.Teams).SingleAsync(m => m.Id == mselId, Ct);
-        Assert.Equal(_created.Id, msel.CiteScoringModelId);
-        Assert.Equal("Deep Bite Questions by Move", msel.CiteScoringModelName);
+        Assert.Null(msel.CiteScoringModelId);
         Assert.Equal(Contributor.Id, msel.Teams.Single(t => t.ShortName == "BLUE").CiteTeamTypeId);
         Assert.Equal(Other.Id, msel.Teams.Single(t => t.ShortName == "EXCON").CiteTeamTypeId);
         Assert.Equal("Other", msel.Teams.Single(t => t.ShortName == "EXCON").CiteTeamTypeName);
     }
 
-    /// <summary>A DoD CTT matrix already in CITE is linked by name, not made again.</summary>
+    /// <summary>A DoD CTT matrix is the MSEL's own copy of the preset, with the matrix beside the score sheet; CITE is not asked.</summary>
     [Fact]
-    public async Task Import_WithAMatrixInCite_LinksIt()
+    public async Task Import_WithAMatrix_AuthorsThePreset()
     {
-        var existing = new ScoringModel { Id = Guid.NewGuid(), Description = "DoD CTT Mission Impact Assessment" };
-        _models.Add(existing);
+        var mselId = await Import("Likelihood");
 
-        var mselId = await Import("MissionImpact");
-
+        await _cite.DidNotReceive().GetScoringModelsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool?>(), Arg.Any<CancellationToken>());
         await _cite.DidNotReceive().CreateScoringModelAsync(Arg.Any<ScoringModel>(), Arg.Any<CancellationToken>());
         await using var db = NewContext();
-        Assert.Equal(existing.Id, (await db.Msels.SingleAsync(m => m.Id == mselId, Ct)).CiteScoringModelId);
+        var model = await Authored(db, mselId);
+        Assert.Equal("DoD CTT Likelihood Assessment Matrix", model.Description);
+        Assert.Equal(CiteRightSideDisplay.HtmlBlock, model.RightSideDisplay);
+        Assert.Contains("Attack Success Likelihood", model.RightSideHtmlBlock);
+        Assert.Equal(["Attack Cost / Level of Effort", "Attack Success Likelihood"], model.Categories.OrderBy(c => c.DisplayOrder).Select(c => c.Description));
     }
 
-    /// <summary>A DoD CTT matrix CITE lacks is made from its built-in definition.</summary>
+    /// <summary>NCISS is authored as CITE's own seed data defines it, so the push creates the same model.</summary>
     [Fact]
-    public async Task Import_WithAMatrixCiteLacks_CreatesIt()
+    public async Task Import_WithNciss_AuthorsItAsCiteDefinesIt()
     {
-        await Import("Likelihood");
+        var (mselId, result) = await ImportWithResult("Nciss");
 
-        Assert.Equal("DoD CTT Likelihood Assessment Matrix", _created.Description);
-        Assert.Equal(RightSideDisplay.HtmlBlock, _created.RightSideDisplay);
-        Assert.Contains("Attack Success Likelihood", _created.RightSideHtmlBlock);
-        Assert.Equal(["Attack Cost / Level of Effort", "Attack Success Likelihood"], _created.ScoringCategories.Select(c => c.Description));
-    }
-
-    /// <summary>NCISS CITE lacks is made as CITE's own seed data defines it, under the same name, so later exercises link it.</summary>
-    [Fact]
-    public async Task Import_WithNciss_CreatesItAsCiteDefinesIt()
-    {
-        await Import("Nciss");
-
-        Assert.Equal("CISA NCISS", _created.Description);
-        Assert.Equal("100.0 > 100.0 * ({sum} - {minPossible}) / ({maxPossible} - {minPossible}) > 0.0", _created.CalculationEquation);
+        await using var db = NewContext();
+        var model = await Authored(db, mselId);
+        Assert.Equal("CISA NCISS", model.Description);
+        Assert.Equal("100.0 > 100.0 * ({sum} - {minPossible}) / ({maxPossible} - {minPossible}) > 0.0", model.CalculationEquation);
         Assert.Equal(
             [("Functional Impact", 6.0, 8), ("Observed Activity", 5.0, 5), ("Location of Observed Activity", 4.0, 8), ("Actor Characterization", 4.0, 7),
              ("Information Impact", 2.0, 8), ("Recoverability", 4.0, 4), ("Cross Sector Dependency", 3.0, 16), ("Potential Impact", 6.0, 5)],
-            _created.ScoringCategories.Select(c => (c.Description, c.ScoringWeight, c.ScoringOptions.Count)));
-        Assert.All(_created.ScoringCategories, c => Assert.Equal(ScoringOptionSelection.Single, c.ScoringOptionSelection));
-    }
-
-    /// <summary>A planner who may not make scoring models in CITE still gets the MSEL, told to choose one.</summary>
-    [Fact]
-    public async Task Import_WhenCiteRefusesTheModel_StillCreatesTheMsel()
-    {
-        _cite.CreateScoringModelAsync(Arg.Any<ScoringModel>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new ApiException("Forbidden", 403, "", new Dictionary<string, IEnumerable<string>>(), null));
-
-        var (mselId, result) = await ImportWithResult("QuestionsByMove");
-
-        await using var db = NewContext();
-        Assert.Null((await db.Msels.SingleAsync(m => m.Id == mselId, Ct)).CiteScoringModelId);
-        Assert.Contains(result.Changes, c => c.Message == "The CITE scoring model \"Deep Bite Questions by Move\" could not be made (you may not do that in CITE). Create or choose one in CITE before pushing.");
+            model.Categories.OrderBy(c => c.DisplayOrder).Select(c => (c.Description, c.ScoringWeight, c.Options.Count)));
+        Assert.All(model.Categories, c => Assert.Equal(CiteScoringOptionSelection.Single, c.ScoringOptionSelection));
+        Assert.Contains(result.Changes, c => c.Message == "Authored the CITE scoring model \"CISA NCISS\" in Blueprint. Review it under the CITE settings on the Info tab; the push creates it in CITE.");
     }
 
     /// <summary>A template that links a scoring model keeps it when the planner chooses nothing else.</summary>
@@ -151,6 +134,9 @@ public class MselDraftCiteEndpointTests(DatabaseFixture fixture, AiEnabledFactor
         await using var db = NewContext();
         Assert.Equal(model.Id, (await db.Msels.SingleAsync(m => m.Id == mselId, Ct)).CiteScoringModelId);
     }
+
+    private Task<MselScoringModelEntity> Authored(BlueprintContext db, Guid mselId) =>
+        db.MselScoringModels.Include(m => m.Categories).ThenInclude(c => c.Options).AsSplitQuery().SingleAsync(m => m.MselId == mselId, Ct);
 
     private async Task<Guid> Import(string assessment, ScoringModel templateModel = null) =>
         (await ImportWithResult(assessment, templateModel)).MselId;

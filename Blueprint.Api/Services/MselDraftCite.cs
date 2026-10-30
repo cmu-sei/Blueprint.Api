@@ -23,19 +23,15 @@ namespace Blueprint.Api.Services
     {
         public const string ScoreContributorType = "Official Score Contributor";
         public static readonly string[] ControlTypes = ["Other", "Organization"];
-        public const string MissionImpactName = "DoD CTT Mission Impact Assessment";
-        public const string LikelihoodName = "DoD CTT Likelihood Assessment Matrix";
-        // the name CITE's own seed data gives it, so an exercise links the copy CITE already has
-        public const string NcissName = "CISA NCISS";
-        public const string QuestionsHeading = "Please respond to the following discussion questions:";
-        public const string AarHeading = "After-action review: for each objective, what went well and what would your team do differently?";
+        public const string QuestionsHeading = ScoringModelPresets.QuestionsHeading;
+        public const string AarHeading = ScoringModelPresets.AarHeading;
 
         public static async Task ApplyAsync(MselEntity msel, MselDraft draft, ICiteApiClient cite, Action<string, string> addChange, CancellationToken ct)
         {
             if (!msel.UseCite)
                 return;
             await SetTeamTypesAsync(msel, cite, addChange, ct);
-            await SetScoringModelAsync(msel, draft, cite, addChange, ct);
+            SetScoringModel(msel, draft, addChange);
         }
 
         // every participant team contributes to the official score; exercise control only watches
@@ -78,254 +74,73 @@ namespace Blueprint.Api.Services
                 addChange("citeTeamTypes", $"CITE has no matching team type for {string.Join(", ", missing)}. Give them one before pushing.");
         }
 
-        private static async Task SetScoringModelAsync(MselEntity msel, MselDraft draft, ICiteApiClient cite, Action<string, string> addChange, CancellationToken ct)
+        /// <summary>
+        /// The scoring model the planner chose, authored into the MSEL as its own, as the Config tab authors one: the planner
+        /// reviews and edits it in Blueprint, the push creates it in CITE for the evaluation, and nothing reaches CITE for a
+        /// draft that is discarded. Questions by move is written from the draft's questions, the matrices from the presets.
+        /// </summary>
+        private static void SetScoringModel(MselEntity msel, MselDraft draft, Action<string, string> addChange)
         {
             var assessment = draft.Design?.CiteAssessment;
             if (assessment is null or MselDraftRules.NoAssessment or MselDraftRules.TemplateModel)
                 return;
-            ScoringModel model;
+            // a template that authors its own model hands the MSEL a copy; the draft does not write over it
+            if (msel.ScoringModel != null)
+            {
+                addChange("citeScoringModel", $"Kept the template's own CITE scoring model \"{msel.ScoringModel.Description}\". Review it under the CITE settings on the Info tab.");
+                return;
+            }
+            MselScoringModelEntity model;
             if (assessment == MselDraftRules.QuestionsByMove)
             {
-                model = QuestionsByMove(draft, $"{msel.Name} Questions by Move");
-                if (model == null)
+                var moves = draft.Moves.Where(m => m.CiteQuestions.Any()).Select(m => (m.MoveNumber, (IEnumerable<string>)m.CiteQuestions)).ToList();
+                if (!moves.Any())
                 {
-                    addChange("citeScoringModel", "The draft has no discussion questions, so no CITE scoring model was made. Choose one before pushing.");
+                    addChange("citeScoringModel", "The draft has no discussion questions, so no CITE scoring model was made. Author or link one under the CITE settings on the Info tab before pushing.");
                     return;
                 }
+                model = ScoringModelPresets.QuestionsByMove($"{msel.Name} Questions by Move", moves,
+                    draft.Objectives.Any() ? draft.Objectives.Select(o => $"{o.Id}: {o.Task}. Standard: {o.Standard}") : null);
+                // the after-action review belongs in the hot wash, after ENDEX, not the last move of play
+                var hotWash = draft.Moves.Max(m => m.MoveNumber);
+                foreach (var aar in model.Categories.Where(c => c.Description == ScoringModelPresets.AarHeading))
+                    (aar.MoveNumberFirstDisplay, aar.MoveNumberLastDisplay) = (hotWash, hotWash);
             }
             else
                 model = assessment switch
                 {
-                    MselDraftRules.MissionImpact => MissionImpact(),
-                    MselDraftRules.Nciss => Nciss(),
-                    _ => Likelihood()
+                    MselDraftRules.MissionImpact => ScoringModelPresets.MissionImpact(),
+                    MselDraftRules.Nciss => ScoringModelPresets.Nciss(),
+                    _ => ScoringModelPresets.Likelihood()
                 };
 
-            try
+            model.MselId = msel.Id;
+            model.CreatedBy = msel.CreatedBy;
+            foreach (var category in model.Categories)
             {
-                // the matrices are shared: one copy in CITE serves every exercise that uses it
-                var existing = assessment == MselDraftRules.QuestionsByMove ? null
-                    : (await cite.GetScoringModelsAsync(null, null, null, ct))
-                        .FirstOrDefault(m => string.Equals(m.Description?.Trim(), model.Description, StringComparison.OrdinalIgnoreCase));
-                if (existing != null)
+                category.Id = Guid.NewGuid();
+                category.MselScoringModelId = msel.Id;
+                category.CreatedBy = msel.CreatedBy;
+                foreach (var option in category.Options)
                 {
-                    model = existing;
-                    addChange("citeScoringModel", $"Linked to the CITE scoring model \"{model.Description}\".");
+                    option.Id = Guid.NewGuid();
+                    option.MselScoringCategoryId = category.Id;
+                    option.CreatedBy = msel.CreatedBy;
                 }
-                else
-                {
-                    model = await cite.CreateScoringModelAsync(model, ct);
-                    addChange("citeScoringModel", $"Created the CITE scoring model \"{model.Description}\".");
-                }
-                msel.CiteScoringModelId = model.Id;
-                msel.CiteScoringModelName = model.Description;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                addChange("citeScoringModel", $"The CITE scoring model \"{model.Description}\" could not be made ({Reason(ex)}). Create or choose one in CITE before pushing.");
-            }
+            msel.ScoringModel = model;
+            // the MSEL's own model is pushed, so no CITE model is linked beside it
+            msel.CiteScoringModelId = null;
+            msel.CiteScoringModelName = null;
+            addChange("citeScoringModel", $"Authored the CITE scoring model \"{model.Description}\" in Blueprint. Review it under the CITE settings on the Info tab; the push creates it in CITE.");
         }
-
-        /// <summary>
-        /// The proven questions-by-move shape: one category a move, shown only in that move, its questions as options with
-        /// comment boxes, scores hidden and nothing to select; then the objectives for the after-action review in the last move.
-        /// Null when the draft has no questions.
-        /// </summary>
-        public static ScoringModel QuestionsByMove(MselDraft draft, string description)
-        {
-            var moves = draft.Moves.Where(m => m.CiteQuestions.Any()).ToList();
-            if (!moves.Any())
-                return null;
-            var categories = moves.Select((m, i) => Category(i + 1, QuestionsHeading, "{max}", 1, m.MoveNumber, m.MoveNumber,
-                ScoringOptionSelection.None, m.CiteQuestions.Select(q => (q, 1.0)))).ToList();
-            if (draft.Objectives.Any())
-            {
-                var last = draft.Moves.Max(m => m.MoveNumber);
-                categories.Add(Category(categories.Count + 1, AarHeading, "{max}", 1, last, last, ScoringOptionSelection.None,
-                    draft.Objectives.Select(o => ($"{o.Id}: {o.Task}. Standard: {o.Standard}", 1.0))));
-            }
-            return new ScoringModel
-            {
-                Description = description,
-                CalculationEquation = "{average}",
-                Status = ItemStatus.Active,
-                HideScoresOnScoreSheet = true,
-                DisplayCommentTextBoxes = true,
-                DisplayScoringModelByMoveNumber = true,
-                ShowPastSituationDescriptions = false,
-                UseSubmit = true,
-                UseUserScore = true,
-                UseTeamScore = true,
-                UseOfficialScore = false,
-                RightSideDisplay = RightSideDisplay.Scoresheet,
-                ScoringCategories = categories
-            };
-        }
-
-        /// <summary>The DoD Cyber Table Top mission impact assessment, weighted toward mission capability, scored each move</summary>
-        public static ScoringModel MissionImpact() => new()
-        {
-            Description = MissionImpactName,
-            CalculationEquation = "100 > {sum} > 0",
-            Status = ItemStatus.Active,
-            DisplayScoringModelByMoveNumber = true,
-            ShowPastSituationDescriptions = true,
-            UseSubmit = true,
-            UseUserScore = true,
-            UseTeamScore = true,
-            UseOfficialScore = true,
-            RightSideDisplay = RightSideDisplay.ScoreSummary,
-            ScoringCategories =
-            [
-                Category(1, "Mission Capability Impact", "{max}", 8, 1, 999, ScoringOptionSelection.Single,
-                [
-                    ("Non-Mission Capable - Mission cannot be completed", 5),
-                    ("Severely Degraded - Mission completion questionable", 4),
-                    ("Partial Mission Capable - Primary objective achievable with delays", 3),
-                    ("Minor Impact - 1-2 secondary objectives degraded", 2),
-                    ("Fully Mission Capable - All objectives achievable on time", 1)
-                ]),
-                Category(2, "Time to Recover/Restore", "{max}", 6, 1, 999, ScoringOptionSelection.Single,
-                [
-                    ("Permanent/Mission failure", 5),
-                    ("Days (< 1 week)", 4),
-                    ("Hours (< 24 hrs)", 3),
-                    ("Minutes (< 30 min)", 2),
-                    ("Immediate/No recovery needed", 1)
-                ]),
-                Category(3, "System Availability Impact", "{max}", 3, 1, 999, ScoringOptionSelection.Single,
-                [
-                    ("0% - Complete system failure", 5),
-                    ("25% - Critical systems compromised", 4),
-                    ("50% - Some critical functions degraded", 3),
-                    ("75% - Non-critical systems affected", 2),
-                    ("100% - All systems operational", 1)
-                ]),
-                Category(4, "Data Integrity Impact", "{max}", 3, 1, 999, ScoringOptionSelection.Single,
-                [
-                    ("Complete data destruction/exfiltration", 5),
-                    ("Critical data loss or manipulation", 4),
-                    ("Significant data corruption", 3),
-                    ("Minor data inconsistencies", 2),
-                    ("No data corruption or loss", 1)
-                ])
-            ]
-        };
-
-        /// <summary>The DoD Cyber Table Top likelihood matrix: attack cost plus attack success, with the matrix beside the score sheet</summary>
-        public static ScoringModel Likelihood() => new()
-        {
-            Description = LikelihoodName,
-            CalculationEquation = "5 > {sum} > 1",
-            Status = ItemStatus.Active,
-            ShowPastSituationDescriptions = true,
-            UseSubmit = true,
-            UseUserScore = true,
-            UseTeamScore = true,
-            RightSideDisplay = RightSideDisplay.HtmlBlock,
-            RightSideHtmlBlock = LikelihoodMatrixHtml,
-            ScoringCategories =
-            [
-                Category(1, "Attack Cost / Level of Effort", "{sum}", 1, 1, 999, ScoringOptionSelection.Single,
-                [
-                    ("Nascent - Limited threat: nearly anyone can build; low cost or easy to develop", 2),
-                    ("Moderate - Moderate threat: criminal-level organization can build; moderate cost or many can develop", 1),
-                    ("Advanced - Advanced threat: nation-state organization can build; high cost or hard to develop", 0)
-                ]),
-                Category(2, "Attack Success Likelihood", "{sum}", 1, 1, 999, ScoringOptionSelection.Single,
-                [
-                    ("Low - Rarely works", 1),
-                    ("Medium - Sometimes works", 2),
-                    ("High - Always works", 3)
-                ])
-            ]
-        };
-
-        /// <summary>
-        /// The CISA National Cyber Incident Scoring System, as CITE's seed data defines it: eight weighted factors, the score
-        /// scaled from 0 to 100 between the lowest and highest possible.
-        /// </summary>
-        public static ScoringModel Nciss() => new()
-        {
-            Description = NcissName,
-            CalculationEquation = "100.0 > 100.0 * ({sum} - {minPossible}) / ({maxPossible} - {minPossible}) > 0.0",
-            Status = ItemStatus.Active,
-            DisplayScoringModelByMoveNumber = true,
-            ShowPastSituationDescriptions = true,
-            UseSubmit = true,
-            UseUserScore = true,
-            UseTeamScore = true,
-            UseOfficialScore = true,
-            RightSideDisplay = RightSideDisplay.ScoreSummary,
-            ScoringCategories =
-            [
-                Category(1, "Functional Impact", "{max}", 6, 0, 999, ScoringOptionSelection.Single,
-                [
-                    ("No Impact", 0), ("No Impact to Services", 20), ("Minimal Impact to Non-Critical Services", 35),
-                    ("Minimal Impact to Critical Services", 40), ("Significant Impact to Non-Critical Services", 50),
-                    ("Denial of Non-Critical Services", 60), ("Significant Impact to Critical Services", 70),
-                    ("Denial of Critical Services or Loss of Control", 100)
-                ]),
-                Category(2, "Observed Activity", "{max}", 5, 0, 999, ScoringOptionSelection.Single,
-                [
-                    ("None", 0), ("Prepare", 40), ("Engage", 70), ("Presence", 80), ("Effect", 100)
-                ]),
-                Category(3, "Location of Observed Activity", "{max}", 4, 0, 999, ScoringOptionSelection.Single,
-                [
-                    ("Level 1 - Business DMZ", 30), ("Level 2 - Business Network", 40), ("Unknown", 50),
-                    ("Level 3 - Business Network Management", 60), ("Level 4 - Critical System DMZ", 70),
-                    ("Level 5 - Critical System Management", 80), ("Level 6 - Critical Systems", 90), ("Level 7 - Safety Systems", 100)
-                ]),
-                Category(4, "Actor Characterization", "{max}", 4, 0, 999, ScoringOptionSelection.Single,
-                [
-                    ("Hacktivists", 20), ("Unwitting Insider", 30), ("Criminal", 40), ("Unknown", 50),
-                    ("Witting Insider", 65), ("APT", 80), ("APT (Targeted)", 100)
-                ]),
-                Category(5, "Information Impact", "{max}", 2, 0, 999, ScoringOptionSelection.Single,
-                [
-                    ("No Impact", 0), ("Suspected But Not Identified", 10), ("Privacy Data Loss", 20),
-                    ("Proprietary Information Loss", 50), ("Destruction of Non-Critical System", 60),
-                    ("Critical Systems Data Breach", 70), ("Core Credential Compromise", 80), ("Destruction of Critical System", 100)
-                ]),
-                Category(6, "Recoverability", "{max}", 4, 0, 999, ScoringOptionSelection.Single,
-                [
-                    ("Regular", 20), ("Supplemented", 40), ("Extended", 60), ("Not Recoverable", 100)
-                ]),
-                Category(7, "Cross Sector Dependency", "{max}", 3, 0, 999, ScoringOptionSelection.Single,
-                [
-                    ("Agriculture and Food", 20), ("Banking and Finance", 35), ("Chemical", 20), ("Commercial Facilities", 30),
-                    ("Communications", 75), ("Critical Manufacturing", 50), ("Dams", 25), ("Defense Industrial Base", 35),
-                    ("Emergency Services", 25), ("Energy", 100), ("Government Facilities", 40), ("Healthcare and Public Health", 30),
-                    ("Information Technology", 80), ("Nuclear Reactors, Materials and Waste", 15), ("Transportation Systems", 75), ("Water", 60)
-                ]),
-                Category(8, "Potential Impact", "{max}", 6, 0, 999, ScoringOptionSelection.Single,
-                [
-                    ("Minimal", 0), ("Low", 25), ("Moderate", 50), ("High", 75), ("Severe", 100)
-                ])
-            ]
-        };
 
         public static bool IsControl(TeamEntity team) =>
             string.Equals(team.ShortName?.Trim(), "EXCON", StringComparison.OrdinalIgnoreCase);
-
-        private static ScoringCategory Category(int order, string description, string equation, double weight, int firstMove, int lastMove,
-            ScoringOptionSelection selection, IEnumerable<(string Description, double Value)> options) => new()
-            {
-                DisplayOrder = order,
-                Description = description,
-                CalculationEquation = equation,
-                ScoringWeight = weight,
-                MoveNumberFirstDisplay = firstMove,
-                MoveNumberLastDisplay = lastMove,
-                ScoringOptionSelection = selection,
-                ScoringOptions = options.Select((o, i) => new ScoringOption { DisplayOrder = i + 1, Description = o.Description, Value = o.Value }).ToList()
-            };
 
         private static string Reason(Exception ex) => ex is ApiException api
             ? api.StatusCode == 403 ? "you may not do that in CITE" : $"CITE answered {api.StatusCode}"
             : "CITE could not be reached";
 
-        // the DoD Cyber Table Top likelihood matrix, as reproduced in the SEACAT Project CYBERCLAW white paper, Fig. 1
-        public const string LikelihoodMatrixHtml = @"<h3>DoD CTT Likelihood Assessment</h3><table border=""1"" cellpadding=""6"" cellspacing=""0"" width=""100%""><tr><td colspan=""2""></td><td colspan=""3"" align=""center"" bgcolor=""#DDEBF7""><font color=""#000000""><b>Attack Success Likelihood</b></font></td></tr><tr><td colspan=""2"" bgcolor=""#BFBFBF""><font color=""#000000""><b>Attack Cost / Level of Effort</b></font></td><td align=""center"" bgcolor=""#E2EFDA""><font color=""#000000""><b>Low</b><br>Rarely works</font></td><td align=""center"" bgcolor=""#E2EFDA""><font color=""#000000""><b>Medium</b><br>Sometimes works</font></td><td align=""center"" bgcolor=""#E2EFDA""><font color=""#000000""><b>High</b><br>Always works</font></td></tr><tr><td bgcolor=""#F4B6B6""><font color=""#000000"">Nearly anyone can build: Nascent - Limited threat</font></td><td bgcolor=""#F4B6B6""><font color=""#000000"">Low cost or easy to develop</font></td><td align=""center"" bgcolor=""#FFC000""><font color=""#000000""><b><font size=""5"">3</font></b><br><small>Example: Network DoS</small></font></td><td align=""center"" bgcolor=""#FF8C00""><font color=""#000000""><b><font size=""5"">4</font></b></font></td><td align=""center"" bgcolor=""#FF0000""><font color=""#000000""><b><font size=""5"">5</font></b><br><small>Example: Flash implant delivered via website/email</small></font></td></tr><tr><td bgcolor=""#FCE9C8""><font color=""#000000"">Criminal level organization can build: Moderate threat</font></td><td bgcolor=""#FCE9C8""><font color=""#000000"">Moderate cost or many can develop</font></td><td align=""center"" bgcolor=""#FFFF00""><font color=""#000000""><b><font size=""5"">2</font></b></font></td><td align=""center"" bgcolor=""#FFC000""><font color=""#000000""><b><font size=""5"">3</font></b></font></td><td align=""center"" bgcolor=""#FF8C00""><font color=""#000000""><b><font size=""5"">4</font></b></font></td></tr><tr><td bgcolor=""#D8E7C8""><font color=""#000000"">Nation state organization can build: Advanced threat</font></td><td bgcolor=""#D8E7C8""><font color=""#000000"">High cost or hard to develop</font></td><td align=""center"" bgcolor=""#00B050""><font color=""#000000""><b><font size=""5"">1</font></b><br><small>Example: RF inject of malware into sensor or radio</small></font></td><td align=""center"" bgcolor=""#FFFF00""><font color=""#000000""><b><font size=""5"">2</font></b></font></td><td align=""center"" bgcolor=""#FFC000""><font color=""#000000""><b><font size=""5"">3</font></b><br><small>Example: Supply chain implant in HW or firmware</small></font></td></tr></table><p><small>Source: DoD Cyber Table Top Guide likelihood assessment, as reproduced in SEACAT Project CYBERCLAW White Paper, Fig. 1. Score = Attack Cost value + Attack Success value (1-5).</small></p>";
     }
 }

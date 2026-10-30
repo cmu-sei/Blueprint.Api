@@ -307,6 +307,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.Pages)
                 .Include(m => m.PlayerApplications).ThenInclude(a => a.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
+                .Include(m => m.ScoringModel).ThenInclude(sm => sm.Categories).ThenInclude(c => c.Options)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId, ct)
                 ?? throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId);

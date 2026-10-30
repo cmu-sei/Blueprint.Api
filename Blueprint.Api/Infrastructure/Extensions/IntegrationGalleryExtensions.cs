@@ -50,16 +50,27 @@ namespace Blueprint.Api.Infrastructure.Extensions
         }
 
         // Create a Gallery Exhibit for this MSEL
+        // The Steamfitter Scenario does not exist yet, so its ID is set by SetExhibitScenarioAsync after the Steamfitter push
         public static async Task CreateExhibitAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             Exhibit newExhibit = new Exhibit() {
                 Id = (Guid)msel.GalleryExhibitId,
                 CollectionId = (Guid)msel.GalleryCollectionId,
-                ScenarioId = msel.SteamfitterScenarioId,
                 CurrentMove = 0,
                 CurrentInject = 0
             };
             await galleryApiClient.CreateExhibitAsync(newExhibit, ct);
+        }
+
+        // Point the Gallery Exhibit at this MSEL's Steamfitter Scenario
+        // Gallery refuses a Scenario the caller cannot read in Steamfitter, so this runs once the Scenario has been pushed
+        public static async Task SetExhibitScenarioAsync(MselEntity msel, GalleryApiClient galleryApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            // the update replaces every field, so start from the stored exhibit
+            var exhibitId = (Guid)msel.GalleryExhibitId;
+            var exhibit = await galleryApiClient.GetExhibitAsync(exhibitId, ct);
+            exhibit.ScenarioId = msel.SteamfitterScenarioId;
+            await galleryApiClient.UpdateExhibitAsync(exhibitId, exhibit, ct);
         }
 
         // Create Gallery Teams for this MSEL

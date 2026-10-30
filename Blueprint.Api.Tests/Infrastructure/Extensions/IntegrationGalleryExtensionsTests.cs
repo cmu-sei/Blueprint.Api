@@ -26,7 +26,7 @@ using Exception = System.Exception;
 
 namespace Blueprint.Api.Tests.Infrastructure.Extensions;
 
-/// <summary><c>IntegrationGalleryExtensions</c> - the twelve calls blueprint makes to gallery.api when a
+/// <summary><c>IntegrationGalleryExtensions</c> - the thirteen calls blueprint makes to gallery.api when a
 /// MSEL is pushed, pulled or joined, and the articles it builds out of the timeline's data
 /// values.</summary>
 public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
@@ -129,7 +129,7 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
     }
 
     [Fact]
-    public async Task CreateExhibit_PostsTheExhibitUnderTheCollectionAndTheScenario()
+    public async Task CreateExhibit_PostsTheExhibitUnderTheCollection()
     {
         var msel = Msel();
         var handler = new SiblingApiHandler().AnswersJson("api/exhibits", ExhibitJson, HttpStatusCode.Created);
@@ -144,7 +144,22 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
 
         Assert.Equal(ExhibitId.ToString(), body["id"].GetString());
         Assert.Equal(CollectionId.ToString(), body["collectionId"].GetString());
-        Assert.Equal(ScenarioId.ToString(), body["scenarioId"].GetString());
+    }
+
+    /// <remarks>
+    /// The Steamfitter Scenario is pushed after the exhibit, and Gallery refuses a Scenario its caller cannot
+    /// read, so the create leaves it out even though the MSEL already holds the ID.
+    /// </remarks>
+    [Fact]
+    public async Task CreateExhibit_SendsNoScenarioEvenWhenTheMselHasOne()
+    {
+        var handler = new SiblingApiHandler().AnswersJson("api/exhibits", ExhibitJson, HttpStatusCode.Created);
+
+        await IntegrationGalleryExtensions.CreateExhibitAsync(Msel(), Client(handler), null, Ct);
+
+        var body = Body(Assert.Single(handler.Sent).Body);
+
+        Assert.Equal(JsonValueKind.Null, body["scenarioId"].ValueKind);
     }
 
     /// <summary>Create exhibit starts at move zero and sends no name or description.</summary>
@@ -173,6 +188,52 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             IntegrationGalleryExtensions.CreateExhibitAsync(msel, Client(handler), null, Ct));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // SetExhibitScenarioAsync
+    // ---------------------------------------------------------------------------------------------
+
+    /// <remarks>
+    /// Gallery's update replaces every field it is sent, so the exhibit is read first and written back
+    /// whole: a body carrying only the Scenario would reset the name and the current move.
+    /// </remarks>
+    [Fact]
+    public async Task SetExhibitScenario_ReadsTheExhibitThenWritesItBackNamingTheScenario()
+    {
+        var stored = $$"""
+            {"id":"{{ExhibitId}}","collectionId":"{{CollectionId}}","name":"exhibit","description":"about",
+             "currentMove":2,"currentInject":3,"showAdvanceButton":true}
+            """;
+        var handler = new SiblingApiHandler()
+            .AnswersJson($"GET api/exhibits/{ExhibitId}", stored)
+            .AnswersJson($"PUT api/exhibits/{ExhibitId}", ExhibitJson);
+
+        await IntegrationGalleryExtensions.SetExhibitScenarioAsync(Msel(), Client(handler), null, Ct);
+
+        Assert.Equal([HttpMethod.Get, HttpMethod.Put], handler.Sent.Select(x => x.Method));
+
+        var body = Body(handler.Sent[1].Body);
+
+        Assert.Equal(ScenarioId.ToString(), body["scenarioId"].GetString());
+        Assert.Equal(CollectionId.ToString(), body["collectionId"].GetString());
+        Assert.Equal("exhibit", body["name"].GetString());
+        Assert.Equal("about", body["description"].GetString());
+        Assert.Equal(2, body["currentMove"].GetInt32());
+        Assert.Equal(3, body["currentInject"].GetInt32());
+        Assert.True(body["showAdvanceButton"].GetBoolean());
+    }
+
+    /// <summary>Gallery refusing the Scenario fails the push rather than leaving the exhibit unlinked.</summary>
+    [Fact]
+    public async Task SetExhibitScenario_DoesNotSwallowARefusedUpdate()
+    {
+        var handler = new SiblingApiHandler()
+            .AnswersJson($"GET api/exhibits/{ExhibitId}", ExhibitJson)
+            .Answers($"PUT api/exhibits/{ExhibitId}", HttpStatusCode.NotFound);
+
+        await Assert.ThrowsAnyAsync<ApiException>(() =>
+            IntegrationGalleryExtensions.SetExhibitScenarioAsync(Msel(), Client(handler), null, Ct));
     }
 
     // ---------------------------------------------------------------------------------------------

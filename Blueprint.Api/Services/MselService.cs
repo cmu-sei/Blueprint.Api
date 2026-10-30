@@ -9,6 +9,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
@@ -2198,6 +2199,27 @@ namespace Blueprint.Api.Services
             return (await ImportJsonAsync(form, ct)).Msel;
         }
 
+        /// <summary>
+        /// An explicit null for a collection in an imported file leaves the entity's empty collection in
+        /// place, as leaving the collection out does, instead of a null the import then fails on.
+        /// </summary>
+        private static void KeepEmptyCollectionForNull(JsonTypeInfo typeInfo)
+        {
+            if (typeInfo.Kind != JsonTypeInfoKind.Object)
+                return;
+            foreach (var property in typeInfo.Properties)
+            {
+                if (property.Set is not { } set || property.PropertyType == typeof(string) ||
+                    !typeof(System.Collections.IEnumerable).IsAssignableFrom(property.PropertyType))
+                    continue;
+                property.Set = (entity, value) =>
+                {
+                    if (value != null)
+                        set(entity, value);
+                };
+            }
+        }
+
         public async Task<MselImportResult> ImportJsonAsync(FileForm form, CancellationToken ct)
         {
             var result = new MselImportResult();
@@ -2210,9 +2232,26 @@ namespace Blueprint.Api.Services
             }
             var options = new JsonSerializerOptions()
             {
-                ReferenceHandler = ReferenceHandler.Preserve
+                ReferenceHandler = ReferenceHandler.Preserve,
+                TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { KeepEmptyCollectionForNull } }
             };
-            var mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
+            MselEntity mselEntity;
+            try
+            {
+                mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
+            }
+            catch (System.Exception ex) when (ex is JsonException or NotSupportedException)
+            {
+                // the serializer's message names Blueprint's types; say where the file went wrong instead
+                var where = ex is JsonException { LineNumber: long line } json
+                    ? $" (line {line + 1}{(json.Path is null or "$" ? "" : $", at {json.Path}")})"
+                    : "";
+                throw new BadRequestException($"The file is not a Blueprint MSEL JSON file{where}.");
+            }
+            // Any JSON object deserializes, so a file that is not a MSEL would become an empty MSEL.
+            // Every export carries the MSEL's id; a hand-written file at least gives it a name.
+            if (mselEntity == null || (mselEntity.Id == Guid.Empty && string.IsNullOrWhiteSpace(mselEntity.Name)))
+                throw new BadRequestException("The file is not a Blueprint MSEL. Upload a file downloaded from Blueprint.");
             // The file carries no image, only its source MSEL's ID and image date. Both are the
             // importer's to write, so keeping the date would copy whatever image that ID has here,
             // even one of a MSEL the importer cannot view.

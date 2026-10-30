@@ -108,7 +108,9 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 {
                     ["name"] = toolName,
                     ["description"] = toolDescription,
-                    ["input_schema"] = inputSchema,
+                    // constrained to the schema, so the answer is JSON of its shape, never the model's own call markup
+                    ["input_schema"] = StrictSchema(inputSchema),
+                    ["strict"] = true,
                     // without it each top-level field arrives whole, so a long list of injects shows no progress
                     // until it is done; the answer is read and checked here either way
                     ["eager_input_streaming"] = true
@@ -137,6 +139,8 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 // model thinks at its own default
                 _logger.LogInformation("{Model} refused {Fields}; asking without them: {Message}", model.ModelId, "eager_input_streaming, output_config", ex.Message);
                 body["tools"][0].AsObject().Remove("eager_input_streaming");
+                body["tools"][0].AsObject().Remove("strict");
+                body["tools"][0]["input_schema"] = inputSchema.DeepClone();
                 body.Remove("output_config");
                 response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
             }
@@ -177,8 +181,52 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
 
         private static bool Refuses(AmazonBedrockRuntimeException ex, JsonObject body) =>
             ex.Message.Contains("eager_input_streaming", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("strict", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("schema", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("grammar", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("too complex", StringComparison.OrdinalIgnoreCase)
             || (body.ContainsKey("output_config") && (ex.Message.Contains("output_config", StringComparison.OrdinalIgnoreCase)
                 || ex.Message.Contains("effort", StringComparison.OrdinalIgnoreCase)));
+
+        // what strict tool use cannot constrain, which Blueprint checks itself once the answer is read
+        private static readonly string[] _unconstrained = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+            "minLength", "maxLength", "minItems", "maxItems", "uniqueItems", "pattern"];
+
+        /// <summary>
+        /// The schema as strict tool use takes it: every object closed to properties it does not name, and without the
+        /// numeric, length and array limits it does not support.
+        /// </summary>
+        public static JsonObject StrictSchema(JsonObject schema)
+        {
+            var copy = schema.DeepClone().AsObject();
+            Close(copy);
+            return copy;
+
+            static void Close(JsonNode node)
+            {
+                if (node is JsonArray array)
+                {
+                    foreach (var item in array)
+                        Close(item);
+                    return;
+                }
+                if (node is not JsonObject obj)
+                    return;
+                foreach (var name in _unconstrained)
+                    obj.Remove(name);
+                if (obj["type"]?.GetValueKind() == JsonValueKind.String && obj["type"].GetValue<string>() == "object")
+                    obj["additionalProperties"] = false;
+                foreach (var (key, child) in obj.ToList())
+                {
+                    // a properties map is named by the answer's fields, which are not keywords whatever they are called
+                    if (key == "properties" && child is JsonObject fields)
+                        foreach (var (_, field) in fields.ToList())
+                            Close(field);
+                    else
+                        Close(child);
+                }
+            }
+        }
 
         private const string JsonOnly =
             "Write the tool input as plain JSON: every value a JSON string, number, array or object. " +

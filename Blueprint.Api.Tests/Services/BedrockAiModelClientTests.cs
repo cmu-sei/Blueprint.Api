@@ -257,6 +257,31 @@ public class BedrockAiModelClientTests
         Assert.Contains("Cat \"Burglar", message.Excerpt(error.BytePositionInLine));
     }
 
+    /// <summary>Strict tool use takes every object closed and no numeric or array limits; a field named like a limit stays.</summary>
+    [Fact]
+    public void StrictSchema_ClosesObjectsAndDropsWhatStrictModeCannotConstrain()
+    {
+        var schema = System.Text.Json.Nodes.JsonNode.Parse("""
+            {"type":"object","properties":{
+              "minutes":{"type":"integer","minimum":0},
+              "pattern":{"type":"string","maxLength":20},
+              "moves":{"type":"array","maxItems":12,"items":{"type":"object","properties":{"moveNumber":{"type":"integer"}}}}},
+             "required":["minutes"]}
+            """).AsObject();
+
+        var strict = BedrockAiModelClient.StrictSchema(schema);
+
+        Assert.False(strict["additionalProperties"].GetValue<bool>());
+        Assert.False(strict["properties"]["moves"]["items"]["additionalProperties"].GetValue<bool>());
+        Assert.Null(strict["properties"]["minutes"]["minimum"]);
+        Assert.Null(strict["properties"]["moves"]["maxItems"]);
+        Assert.Null(strict["properties"]["pattern"]["maxLength"]);
+        // a field called pattern is the answer's, not a keyword
+        Assert.NotNull(strict["properties"]["pattern"]);
+        // the schema given is left as it was, for the planner's own checks and a retry without strict
+        Assert.Equal(0, schema["properties"]["minutes"]["minimum"].GetValue<int>());
+    }
+
     private static System.Text.Json.Nodes.JsonObject Schema() =>
         System.Text.Json.Nodes.JsonNode.Parse("""
             {"type":"object","properties":{

@@ -46,12 +46,6 @@ updates:
         versions: [">= 15.0.0"]
       - dependency-name: MediatR
         versions: [">= 13.0.0"]
-      # Swashbuckle 10.3.1 cannot generate the DataTable schema MselController.GetData returns;
-      # the API and the swagger CLI move together, by hand, once that is fixed.
-      - dependency-name: "Swashbuckle.AspNetCore*"
-        versions: [">= 10.1.0"]
-      - dependency-name: swashbuckle.aspnetcore.cli
-        versions: [">= 10.1.0"]
 
   # NSwag, used by the client package build (Blueprint.Api.Client/package.json).
   - package-ecosystem: npm

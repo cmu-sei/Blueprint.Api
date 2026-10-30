@@ -240,7 +240,9 @@ public class Startup
         services.AddScoped<IMselAssistantService, MselAssistantService>();
         services.AddScoped<IArticleDraftService, ArticleDraftService>();
         services.AddScoped<IProfileDraftService, ProfileDraftService>();
-        services.AddScoped<IAiModelClient, BedrockAiModelClient>();
+        services.AddScoped<BedrockAiModelClient>();
+        services.AddScoped<OpenAiModelClient>();
+        services.AddScoped<IAiModelClient, AiModelRouter>();
         services.AddScoped<IAiImageClient, BedrockAiImageClient>();
         services.AddScoped<IAiUsageContext, AiUsageContext>();
         services.AddScoped<IAiProgress, AiProgress>();

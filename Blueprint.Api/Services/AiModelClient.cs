@@ -27,7 +27,47 @@ namespace Blueprint.Api.Services
         Task<JsonElement> InvokeToolAsync(string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct);
     }
 
-    public class BedrockAiModelClient : IAiModelClient
+    /// <summary>One provider's way of asking a model to answer by calling a tool</summary>
+    public interface IAiProviderClient
+    {
+        Task<JsonElement> InvokeToolAsync(AiTaskModel model, string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct);
+    }
+
+    /// <summary>
+    /// Sends each call to the provider and model its task is configured with: the design to one model, the articles to a cheaper
+    /// one, or a task to a local model. The task is the one the call's usage is recorded under.
+    /// </summary>
+    public class AiModelRouter : IAiModelClient
+    {
+        private readonly AiOptions _options;
+        private readonly IAiUsageContext _usage;
+        private readonly BedrockAiModelClient _bedrock;
+        private readonly OpenAiModelClient _openAi;
+
+        public AiModelRouter(AiOptions options, IAiUsageContext usage, BedrockAiModelClient bedrock, OpenAiModelClient openAi)
+        {
+            _options = options;
+            _usage = usage;
+            _bedrock = bedrock;
+            _openAi = openAi;
+        }
+
+        public Task<JsonElement> InvokeToolAsync(string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct)
+        {
+            var model = _options.ModelFor(_usage.Operation);
+            if (!_options.Enabled || string.IsNullOrWhiteSpace(model.ModelId))
+                throw new InvalidOperationException("AI drafting is not configured on this server.");
+            IAiProviderClient provider = model.Provider switch
+            {
+                AiOptions.Bedrock => _bedrock,
+                _ when string.Equals(model.Provider, AiOptions.OpenAi, StringComparison.OrdinalIgnoreCase) => _openAi,
+                _ => throw new InvalidOperationException($"The AI provider {model.Provider} for {_usage.Operation} is not one this server knows: use Bedrock or OpenAI.")
+            };
+            return provider.InvokeToolAsync(model, system, prompt, toolName, toolDescription, inputSchema, ct);
+        }
+    }
+
+    public class BedrockAiModelClient : IAiProviderClient
     {
         // Every prompt starts with this, so the model knows the security content it is asked for is training material.
         public const string Purpose =
@@ -51,16 +91,13 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             _progress = progress;
         }
 
-        public async Task<JsonElement> InvokeToolAsync(string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct)
+        public async Task<JsonElement> InvokeToolAsync(AiTaskModel model, string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct)
         {
-            if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.ModelId))
-                throw new InvalidOperationException("AI drafting is not configured on this server.");
-
             // the Anthropic Messages body; only max_tokens is sent so newer models that reject sampling settings work
             var body = new JsonObject
             {
                 ["anthropic_version"] = "bedrock-2023-05-31",
-                ["max_tokens"] = _options.MaxTokens,
+                ["max_tokens"] = model.MaxTokens,
                 ["system"] = Purpose + "\n\n" + system,
                 ["messages"] = new JsonArray(new JsonObject
                 {
@@ -82,7 +119,7 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
 
             var config = new AmazonBedrockRuntimeConfig
             {
-                RegionEndpoint = RegionEndpoint.GetBySystemName(_options.Region),
+                RegionEndpoint = RegionEndpoint.GetBySystemName(model.Region),
                 Timeout = TimeSpan.FromSeconds(_options.TimeoutSeconds)
             };
             using var client = new AmazonBedrockRuntimeClient(config);
@@ -90,27 +127,27 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             JsonElement response;
             try
             {
-                response = await InvokeAsync(client, _options.ModelId, body, toolName, ct);
+                response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
             }
             catch (AmazonBedrockRuntimeException ex) when (ex.Message.Contains("eager_input_streaming", StringComparison.OrdinalIgnoreCase))
             {
                 // an older Bedrock deployment refuses the field; the answer then streams a field at a time
-                _logger.LogInformation("{Model} does not stream tool input as written; asking without it", _options.ModelId);
+                _logger.LogInformation("{Model} does not stream tool input as written; asking without it", model.ModelId);
                 body["tools"][0].AsObject().Remove("eager_input_streaming");
-                response = await InvokeAsync(client, _options.ModelId, body, toolName, ct);
+                response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
             }
             // a safety classifier can decline training content; one retry on another model, as the Claude API's own fallback does
-            if (StopReason(response) == "refusal" && !string.IsNullOrWhiteSpace(_options.FallbackModelId))
-                response = await InvokeAsync(client, _options.FallbackModelId, body, toolName, ct);
+            if (StopReason(response) == "refusal" && !string.IsNullOrWhiteSpace(model.FallbackModelId))
+                response = await InvokeAsync(client, model.FallbackModelId, body, toolName, ct);
 
             var input = ReadToolInput(response);
             // a model sometimes writes the tool input in its own call markup, <parameter name="...">, inside the JSON,
             // which leaves most of the answer in the wrong fields; asked again it answers in JSON
             if (HasCallMarkup(input))
             {
-                _logger.LogWarning("The {Tool} answer from {Model} was written in tool-call markup; asking again", toolName, _options.ModelId);
+                _logger.LogWarning("The {Tool} answer from {Model} was written in tool-call markup; asking again", toolName, model.ModelId);
                 body["system"] = body["system"].GetValue<string>() + "\n\n" + JsonOnly;
-                input = ReadToolInput(await InvokeAsync(client, _options.ModelId, body, toolName, ct));
+                input = ReadToolInput(await InvokeAsync(client, model.ModelId, body, toolName, ct));
                 if (HasCallMarkup(input))
                     throw new InvalidOperationException("The model's answer came back garbled twice. Draft again.");
             }
@@ -121,7 +158,7 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // the answer was paid for; what reads it next copes with what the repair could not fix
-                _logger.LogWarning(ex, "Could not repair the {Tool} answer from {Model}; using it as written", toolName, _options.ModelId);
+                _logger.LogWarning(ex, "Could not repair the {Tool} answer from {Model}; using it as written", toolName, model.ModelId);
                 return input;
             }
         }

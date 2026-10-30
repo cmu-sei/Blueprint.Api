@@ -1,7 +1,9 @@
 // Copyright 2026 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Blueprint.Api.Infrastructure.Options
 {
@@ -27,6 +29,48 @@ namespace Blueprint.Api.Infrastructure.Options
         // what each model costs, keyed by model or inference profile id, so the AI usage of a MSEL can be priced;
         // a model without a price is counted in tokens only
         public Dictionary<string, AiPrice> Prices { get; set; } = new Dictionary<string, AiPrice>();
+        // the model each task uses where it is not the default above, keyed by the task the usage records name:
+        // design, injects, rows, article, profile, value, assist, draft. Any field left empty is the default's.
+        public Dictionary<string, AiTaskModel> Models { get; set; } = new Dictionary<string, AiTaskModel>();
+
+        public const string Bedrock = "Bedrock";
+        public const string OpenAi = "OpenAI";
+
+        /// <summary>The provider and model a task's calls go to: its own settings where it has them, the defaults where not</summary>
+        public AiTaskModel ModelFor(string task)
+        {
+            var own = task == null ? null : Models.FirstOrDefault(m => string.Equals(m.Key, task, StringComparison.OrdinalIgnoreCase)).Value;
+            var provider = string.IsNullOrWhiteSpace(own?.Provider) ? Bedrock : own.Provider.Trim();
+            var bedrock = string.Equals(provider, Bedrock, StringComparison.OrdinalIgnoreCase);
+            return new AiTaskModel
+            {
+                Provider = bedrock ? Bedrock : provider,
+                // another provider's models are not Bedrock's, so it takes nothing of the default but the limits
+                ModelId = Pick(own?.ModelId, bedrock ? ModelId : null),
+                FallbackModelId = Pick(own?.FallbackModelId, bedrock ? FallbackModelId : null),
+                Region = Pick(own?.Region, Region),
+                BaseUrl = own?.BaseUrl,
+                ApiKey = own?.ApiKey,
+                MaxTokens = own?.MaxTokens > 0 ? own.MaxTokens : MaxTokens
+            };
+
+            static string Pick(string value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        }
+    }
+
+    /// <summary>Where one task's model calls go</summary>
+    public class AiTaskModel
+    {
+        // Bedrock, the default, or OpenAI for the OpenAI API and servers that offer it, such as vLLM and Ollama
+        public string Provider { get; set; }
+        public string ModelId { get; set; }
+        public string FallbackModelId { get; set; }
+        // Bedrock's region
+        public string Region { get; set; }
+        // an OpenAI-style endpoint, e.g. https://api.openai.com/v1; chat/completions is added to it
+        public string BaseUrl { get; set; }
+        public string ApiKey { get; set; }
+        public int MaxTokens { get; set; }
     }
 
     /// <summary>A model's price in US dollars: per million tokens of each kind, and per image</summary>

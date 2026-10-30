@@ -3,9 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
@@ -22,12 +26,15 @@ namespace Blueprint.Api.Services
 {
     public interface IPlayerApplicationService
     {
+        Task<IEnumerable<ViewModels.PlayerApplication>> GetTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.PlayerApplication>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.PlayerApplication> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, bool hasPlayerApplicationPermission, CancellationToken ct);
         Task<ViewModels.PlayerApplication> CreateAndPushAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, CancellationToken ct);
-        Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplicationEdit playerApplication, bool hasSystemPermission, CancellationToken ct);
-        Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
+        Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplicationEdit playerApplication, bool hasSystemPermission, bool hasPlayerApplicationPermission, CancellationToken ct);
+        Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, bool hasPlayerApplicationPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.PlayerApplication>> UploadJsonAsync(FileForm form, CancellationToken ct);
+        Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct);
     }
 
     public class PlayerApplicationService : IPlayerApplicationService
@@ -47,6 +54,15 @@ namespace Blueprint.Api.Services
             _playerService = playerService;
             _user = user as ClaimsPrincipal;
             _mapper = mapper;
+        }
+
+        public async Task<IEnumerable<ViewModels.PlayerApplication>> GetTemplatesAsync(CancellationToken ct)
+        {
+            var playerApplicationEntities = await _context.PlayerApplications
+                .Where(playerApplication => playerApplication.IsTemplate && playerApplication.MselId == null)
+                .ToListAsync(ct);
+
+            return _mapper.Map<IEnumerable<PlayerApplication>>(playerApplicationEntities).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.PlayerApplication>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -72,16 +88,35 @@ namespace Blueprint.Api.Services
             if (item == null)
                 throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
 
-            if (!hasSystemPermission && !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
-                throw new ForbiddenException();
+            // Templates (null MselId) can be viewed by anyone
+            if (item.MselId.HasValue)
+            {
+                if (!hasSystemPermission && !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
+                    throw new ForbiddenException();
+            }
 
             return _mapper.Map<PlayerApplication>(item);
         }
 
-        public async Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, bool hasPlayerApplicationPermission, CancellationToken ct)
         {
-            if (!hasSystemPermission && !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context))
-                throw new ForbiddenException();
+            // a template belongs to no MSEL, so a MSEL's application cannot be listed as one
+            if (playerApplication.MselId.HasValue && playerApplication.IsTemplate)
+                throw new ConflictException("A Player application cannot belong to a MSEL and be a template.");
+
+            if (playerApplication.MselId.HasValue)
+            {
+                if (!hasSystemPermission && !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context))
+                    throw new ForbiddenException();
+            }
+            else
+            {
+                if (!hasPlayerApplicationPermission)
+                    throw new ForbiddenException();
+                // an application with no MSEL can only be a template
+                playerApplication.IsTemplate = true;
+            }
+
             var playerApplicationEntity = _mapper.Map<PlayerApplicationEntity>(playerApplication);
             playerApplicationEntity.Id = playerApplication.Id != Guid.Empty ? playerApplication.Id : Guid.NewGuid();
             playerApplicationEntity.CreatedBy = _user.GetId();
@@ -94,24 +129,36 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.PlayerApplication> CreateAndPushAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, CancellationToken ct)
         {
+            // a template has no MSEL, so there is no Player view to push it to
+            if (!playerApplication.MselId.HasValue || playerApplication.IsTemplate)
+                throw new ConflictException("A Player application template cannot be pushed to Player.");
             // authorization will be checked in CreateAsync
-            var item = await CreateAsync(playerApplication, hasSystemPermission, ct);
+            var item = await CreateAsync(playerApplication, hasSystemPermission, false, ct);
             // push the application to Player
             await _playerService.PushApplication(item, ct);
 
             return item;
         }
 
-        public async Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplicationEdit playerApplication, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.PlayerApplication> UpdateAsync(Guid id, ViewModels.PlayerApplicationEdit playerApplication, bool hasSystemPermission, bool hasPlayerApplicationPermission, CancellationToken ct)
         {
             var playerApplicationToUpdate = await _context.PlayerApplications.SingleOrDefaultAsync(v => v.Id == id, ct);
 
             if (playerApplicationToUpdate == null)
                 throw new EntityNotFoundException<PlayerApplication>();
 
-            // user must be a Content Developer or an owner of the application's MSEL
-            if (!hasSystemPermission && !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplicationToUpdate.MselId, _context))
-                throw new ForbiddenException();
+            // decided on the stored row: a MSEL's application needs the MSEL permission or an owner of that
+            // MSEL, and a template needs the template permission
+            if (playerApplicationToUpdate.MselId.HasValue)
+            {
+                if (!hasSystemPermission && !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplicationToUpdate.MselId, _context))
+                    throw new ForbiddenException();
+            }
+            else
+            {
+                if (!hasPlayerApplicationPermission)
+                    throw new ForbiddenException();
+            }
 
             _mapper.Map(playerApplication, playerApplicationToUpdate);
             playerApplicationToUpdate.ModifiedBy = _user.GetId();
@@ -122,20 +169,82 @@ namespace Blueprint.Api.Services
             return await GetAsync(playerApplicationToUpdate.Id, true, ct);
         }
 
-        public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
+        public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, bool hasPlayerApplicationPermission, CancellationToken ct)
         {
             var playerApplicationToDelete = await _context.PlayerApplications.SingleOrDefaultAsync(v => v.Id == id, ct);
 
-            if (!hasSystemPermission && !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplicationToDelete.MselId, _context))
-                throw new ForbiddenException();
-
             if (playerApplicationToDelete == null)
                 throw new EntityNotFoundException<PlayerApplication>();
+
+            if (playerApplicationToDelete.MselId.HasValue)
+            {
+                if (!hasSystemPermission && !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplicationToDelete.MselId, _context))
+                    throw new ForbiddenException();
+            }
+            else
+            {
+                if (!hasPlayerApplicationPermission)
+                    throw new ForbiddenException();
+            }
 
             _context.PlayerApplications.Remove(playerApplicationToDelete);
             await _context.SaveChangesAsync(ct);
 
             return true;
+        }
+
+        public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(IEnumerable<Guid> ids, CancellationToken ct)
+        {
+            var idList = ids?.ToList() ?? new List<Guid>();
+            // only templates are exported: a MSEL's own rows are read through the MSEL
+            var playerApplicationEntities = await _context.PlayerApplications
+                .Where(pa => idList.Contains(pa.Id) && pa.MselId == null)
+                .ToListAsync(ct);
+            var playerApplications = _mapper.Map<IEnumerable<ViewModels.PlayerApplication>>(playerApplicationEntities).ToList();
+
+            var json = JsonSerializer.Serialize(playerApplications, new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                WriteIndented = true,
+            });
+            var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+            return Tuple.Create(memoryStream, "player-application-templates.json");
+        }
+
+        public async Task<IEnumerable<ViewModels.PlayerApplication>> UploadJsonAsync(FileForm form, CancellationToken ct)
+        {
+            var uploadItem = form.ToUpload;
+            string json;
+            using (var reader = new StreamReader(uploadItem.OpenReadStream()))
+            {
+                json = await reader.ReadToEndAsync();
+            }
+            var options = new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                PropertyNameCaseInsensitive = true,
+            };
+            var incoming = JsonSerializer.Deserialize<List<ViewModels.PlayerApplication>>(json, options) ?? new List<ViewModels.PlayerApplication>();
+
+            var created = new List<ViewModels.PlayerApplication>();
+            var userId = _user.GetId();
+            foreach (var item in incoming)
+            {
+                item.Id = Guid.NewGuid();
+                item.IsTemplate = true;
+                item.MselId = null;
+                item.CreatedBy = userId;
+                item.DateCreated = DateTime.UtcNow;
+                item.ModifiedBy = null;
+                item.DateModified = null;
+                var entity = _mapper.Map<PlayerApplicationEntity>(item);
+                _context.PlayerApplications.Add(entity);
+                created.Add(_mapper.Map<ViewModels.PlayerApplication>(entity));
+            }
+            await _context.SaveChangesAsync(ct);
+
+            return created;
         }
 
     }

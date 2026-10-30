@@ -294,6 +294,31 @@ public static class TestData
     }
 
     /// <summary>
+    /// A system-wide Player application template: no MSEL, <c>IsTemplate</c> set, and no team rows - a
+    /// template is copied into a MSEL before any team can see it.
+    /// </summary>
+    public static PlayerApplicationEntity PlayerApplicationTemplate(
+        string name = null,
+        string url = "http://template.example/{viewId}",
+        string icon = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new PlayerApplicationEntity
+        {
+            Id = id,
+            MselId = null,
+            IsTemplate = true,
+            Name = name ?? $"template-{id}",
+            Url = url,
+            Icon = icon,
+            Embeddable = true,
+            LoadInBackground = false,
+            CreatedBy = Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
     /// The join row that puts an application on one team's dashboard, and carries the order it appears in.
     /// </summary>
     public static PlayerApplicationTeamEntity PlayerApplicationTeam(

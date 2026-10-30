@@ -140,6 +140,14 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 body.Remove("output_config");
                 response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
             }
+            catch (UnreadableAnswerException) when (body["tools"][0].AsObject().ContainsKey("eager_input_streaming"))
+            {
+                // streamed as written, the tool input is not checked before it arrives, and the model wrote JSON that does not
+                // parse; asked again without it, Bedrock checks the input before it is sent
+                _logger.LogWarning("The {Tool} answer from {Model} was not valid JSON; asking again without eager streaming", toolName, model.ModelId);
+                body["tools"][0].AsObject().Remove("eager_input_streaming");
+                response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
+            }
             // a safety classifier can decline training content; one retry on another model, as the Claude API's own fallback does
             if (StopReason(response) == "refusal" && !string.IsNullOrWhiteSpace(model.FallbackModelId))
                 response = await InvokeAsync(client, model.FallbackModelId, body, toolName, ct);
@@ -313,10 +321,15 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             {
                 // the call is billed even though its answer cannot be read
                 await _usage.RecordAsync(modelId, message.ToMessage(withInput: false), 0, ct);
-                _logger.LogWarning(ex, "The {Tool} answer from {Model} ended part-way, with {StopReason}", toolName, modelId, message.StopReason);
-                throw new InvalidOperationException(message.StopReason == "max_tokens"
-                    ? "The model ran out of output tokens before it finished. Try again, or ask for fewer moves or injects."
-                    : "The model's answer was cut off before it finished. Try again.");
+                if (message.StopReason == "max_tokens")
+                {
+                    _logger.LogWarning(ex, "The {Tool} answer from {Model} ran out of output tokens", toolName, modelId);
+                    throw new InvalidOperationException("The model ran out of output tokens before it finished. Try again, or ask for fewer moves or injects.");
+                }
+                // the model finished but wrote JSON that does not parse; where it broke shows how
+                _logger.LogWarning(ex, "The {Tool} answer from {Model} stopped with {StopReason} but is not valid JSON near: {Excerpt}",
+                    toolName, modelId, message.StopReason, message.Excerpt(ex.BytePositionInLine));
+                throw new UnreadableAnswerException("The model's answer could not be read. Try again.");
             }
             // every call is billed, a refused one or one retried on the fallback model too
             await _usage.RecordAsync(modelId, result, 0, ct);
@@ -356,6 +369,12 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
 
             return toolUse.GetProperty("input").Clone();
         }
+    }
+
+    /// <summary>A model's answer that arrived whole but is not JSON that can be read</summary>
+    public class UnreadableAnswerException : InvalidOperationException
+    {
+        public UnreadableAnswerException(string message) : base(message) { }
     }
 
     /// <summary>
@@ -399,6 +418,15 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                     throw new InvalidOperationException($"The model stopped with an error: {e["error"]?["message"]?.GetValue<string>() ?? eventJson}");
             }
             return null;
+        }
+
+        /// <summary>The tool input around a position, to show where it stopped parsing</summary>
+        public string Excerpt(long? position)
+        {
+            var json = string.Concat(_partialJson.Values.Select(b => b.ToString()));
+            var at = (int)Math.Clamp(position ?? json.Length, 0, json.Length);
+            var start = Math.Max(0, at - 200);
+            return json.Substring(start, Math.Min(json.Length, at + 100) - start);
         }
 
         /// <summary>Why the model stopped, once the stream has said</summary>

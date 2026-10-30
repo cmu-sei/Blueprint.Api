@@ -242,6 +242,21 @@ public class BedrockAiModelClientTests
         Assert.Equal(64000, message.ToMessage(withInput: false).GetProperty("usage").GetProperty("output_tokens").GetInt32());
     }
 
+    /// <summary>A model that finished but wrote JSON that does not parse can be shown where it broke.</summary>
+    [Fact]
+    public void StreamedMessage_ShowsWhereAFinishedAnswerStopsParsing()
+    {
+        var message = new StreamedMessage();
+        message.Add("""{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"t","input":{}}}""");
+        message.Add("""{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"name\":\"Cat \"Burglar\"\"}"}}""");
+        message.Add("""{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}""");
+
+        var error = Assert.ThrowsAny<JsonException>(() => message.ToMessage());
+
+        Assert.Equal("tool_use", message.StopReason);
+        Assert.Contains("Cat \"Burglar", message.Excerpt(error.BytePositionInLine));
+    }
+
     private static System.Text.Json.Nodes.JsonObject Schema() =>
         System.Text.Json.Nodes.JsonNode.Parse("""
             {"type":"object","properties":{

@@ -96,6 +96,25 @@ namespace Blueprint.Api.Infrastructure.Extensions
             return newScenario;
         }
 
+        // Whether the push starts the Scenario itself: always when it is to start on the push, and when it is
+        // to start at the MSEL start time once that time has come. Otherwise SteamfitterStartService starts it.
+        public static bool StartsWithThePush(MselEntity msel, DateTime now) =>
+            msel.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.OnPush ||
+            (msel.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.AtStartTime && msel.StartTime <= now);
+
+        // Start a Scenario that has not been started yet. Steamfitter creates every Scenario ready, whatever
+        // status it is sent, and runs no task until it is active. A Scenario already active or ended is left
+        // alone, because starting it again resets its start date. Returns whether this call started it.
+        public static async STT.Task<bool> StartScenarioAsync(Guid scenarioId, SteamfitterApiClient steamfitterApiClient, CancellationToken ct)
+        {
+            var scenario = await steamfitterApiClient.GetScenarioAsync(scenarioId, ct);
+            if (scenario.Status != ScenarioStatus.Ready)
+                return false;
+            await steamfitterApiClient.StartScenarioAsync(scenarioId, ct);
+
+            return true;
+        }
+
         // Create the Scenario Tasks for this MSEL
         public static async STT.Task<Task> CreateScenarioTasksAsync(
             MselEntity msel,

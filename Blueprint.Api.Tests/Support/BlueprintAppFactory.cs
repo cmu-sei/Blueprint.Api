@@ -81,7 +81,8 @@ namespace Blueprint.Api.Tests.Support;
 /// <para>
 /// Removed: every <see cref="IHostedService"/>. <c>XApiBackgroundService</c>, <c>IntegrationService</c>,
 /// <c>JoinService</c> and <c>AddApplicationService</c> each start a loop over a blocking queue and dial the
-/// identity provider and the sibling APIs. The singleton queues behind them stay real, so a request-path test
+/// identity provider and the sibling APIs, and <c>SteamfitterStartService</c> polls the database and dials
+/// Steamfitter; <c>SteamfitterStartServiceTests</c> drives it directly. The singleton queues behind them stay real, so a request-path test
 /// asserts that work was enqueued; the workers are driven directly by <c>IntegrationServiceHarness</c> and
 /// <c>QueueWorkerHarness</c>.
 /// </para>

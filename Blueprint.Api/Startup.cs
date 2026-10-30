@@ -273,6 +273,7 @@ public class Startup
         services.AddHostedService<JoinService>();
         services.AddSingleton<IAddApplicationQueue, AddApplicationQueue>();
         services.AddHostedService<AddApplicationService>();
+        services.AddHostedService<SteamfitterStartService>();
 
         ApplyPolicies(services);
 

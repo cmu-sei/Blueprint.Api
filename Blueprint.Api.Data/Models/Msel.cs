@@ -33,6 +33,7 @@ namespace Blueprint.Api.Data.Models
         public bool UseSteamfitter { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
         public IntegrationType SteamfitterIntegrationType { get; set; }
+        public SteamfitterScenarioStartMode SteamfitterScenarioStartMode { get; set; }
         public bool UseCaster { get; set; }
         public Guid? CasterDirectoryId { get; set; }
         public Guid? CasterWorkspaceId { get; set; }

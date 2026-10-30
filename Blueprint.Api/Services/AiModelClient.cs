@@ -71,7 +71,10 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 {
                     ["name"] = toolName,
                     ["description"] = toolDescription,
-                    ["input_schema"] = inputSchema
+                    ["input_schema"] = inputSchema,
+                    // without it each top-level field arrives whole, so a long list of injects shows no progress
+                    // until it is done; the answer is read and checked here either way
+                    ["eager_input_streaming"] = true
                 }),
                 // newer models reject a forced tool choice, so the system prompt asks for the tool instead
                 ["tool_choice"] = new JsonObject { ["type"] = "auto" }
@@ -84,7 +87,18 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             };
             using var client = new AmazonBedrockRuntimeClient(config);
 
-            var response = await InvokeAsync(client, _options.ModelId, body, toolName, ct);
+            JsonElement response;
+            try
+            {
+                response = await InvokeAsync(client, _options.ModelId, body, toolName, ct);
+            }
+            catch (AmazonBedrockRuntimeException ex) when (ex.Message.Contains("eager_input_streaming", StringComparison.OrdinalIgnoreCase))
+            {
+                // an older Bedrock deployment refuses the field; the answer then streams a field at a time
+                _logger.LogInformation("{Model} does not stream tool input as written; asking without it", _options.ModelId);
+                body["tools"][0].AsObject().Remove("eager_input_streaming");
+                response = await InvokeAsync(client, _options.ModelId, body, toolName, ct);
+            }
             // a safety classifier can decline training content; one retry on another model, as the Claude API's own fallback does
             if (StopReason(response) == "refusal" && !string.IsNullOrWhiteSpace(_options.FallbackModelId))
                 response = await InvokeAsync(client, _options.FallbackModelId, body, toolName, ct);

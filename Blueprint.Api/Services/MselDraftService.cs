@@ -382,6 +382,32 @@ no style attributes. Answer only by calling the tool.";
         private static string OneLine(string text) =>
             string.IsNullOrEmpty(text) || text.Length <= 200 ? text : text[..200] + "...";
 
+        /// <summary>
+        /// Every property of every object required, but an inject's column values, of which a row fills only some. An answer
+        /// constrained to its schema leaves out whatever is optional, so a design came back without its cards, metadata
+        /// and CITE tasks; required, the model writes each part, empty where it has nothing.
+        /// </summary>
+        public static JsonObject RequireAll(JsonObject schema)
+        {
+            Require(schema);
+            return schema;
+
+            static void Require(JsonNode node)
+            {
+                if (node is not JsonObject obj)
+                    return;
+                if (obj["properties"] is JsonObject properties)
+                {
+                    obj["required"] = new JsonArray(properties.Select(p => (JsonNode)p.Key).ToArray());
+                    foreach (var (name, property) in properties)
+                        if (name != "values")
+                            Require(property);
+                }
+                if (obj["items"] is JsonNode items)
+                    Require(items);
+            }
+        }
+
         // the full draft's schema without the injects and the moves' details, and with the planner's questions
         private static JsonObject DesignSchema(JsonObject full)
         {
@@ -409,8 +435,9 @@ no style attributes. Answer only by calling the tool.";
                     ["required"] = new JsonArray("question", "suggested")
                 }
             };
-            full["required"] = new JsonArray("name", "description", "durationMinutes", "scenario", "objectives", "moves", "teams", "organizations", "questions");
-            return full;
+            // the catalog metadata too, which a constrained answer otherwise leaves out as optional
+            full["required"] = new JsonArray("name", "description", "durationMinutes", "scenario", "objectives", "moves", "teams", "organizations", "metadata", "questions");
+            return RequireAll(full);
         }
 
         /// <summary>The columns an outline leaves out, written for each inject on its own: those holding HTML documents</summary>
@@ -447,7 +474,7 @@ no style attributes. Answer only by calling the tool.";
             };
             if (all["citeActions"] is JsonNode actions)
                 properties["citeActions"] = actions.DeepClone();
-            return new JsonObject { ["type"] = "object", ["properties"] = properties, ["required"] = new JsonArray("moves", "injects", "readIn") };
+            return RequireAll(new JsonObject { ["type"] = "object", ["properties"] = properties, ["required"] = new JsonArray("moves", "injects", "readIn") });
         }
 
         /// <summary>
@@ -630,8 +657,9 @@ no style attributes. Answer only by calling the tool.";
                     ["educationalUse"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Assessment", "Instruction", "Professional Support") },
                     ["courseMode"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Online", "Onsite", "Blended") },
                     ["subject"] = Str("The topic areas the exercise covers, e.g. Incident response; Crisis communications"),
-                    ["keywords"] = Str("Comma-separated search tags, e.g. ransomware, tabletop exercise, healthcare")
-                }, "educationalLevel", "educationalUse", "courseMode", "subject", "keywords"),
+                    ["keywords"] = Str("Comma-separated search tags, e.g. ransomware, tabletop exercise, healthcare"),
+                    ["language"] = Str("The language the exercise material is written in, as a BCP 47 tag, e.g. en-US")
+                }, "educationalLevel", "educationalUse", "courseMode", "subject", "keywords", "language"),
                 ["plannerNotes"] = Arr(Str("Assumption or open question"), "Things the planner should check")
             };
             if (citeQuestions)
@@ -1376,7 +1404,10 @@ no style attributes. Answer only by calling the tool.";
                 EducationalUse = Pick(metadata.EducationalUse, _uses),
                 CourseMode = Pick(metadata.CourseMode, _modes),
                 Subject = Text(metadata.Subject, 500),
-                Keywords = Text(string.Join(", ", keywords.Distinct(StringComparer.OrdinalIgnoreCase)), 500)
+                Keywords = Text(string.Join(", ", keywords.Distinct(StringComparer.OrdinalIgnoreCase)), 500),
+                // a BCP 47 tag: letters, digits and hyphens
+                Language = metadata.Language is string language && System.Text.RegularExpressions.Regex.IsMatch(language.Trim(), "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
+                    ? language.Trim() : null
             };
         }
 

@@ -124,6 +124,8 @@ namespace Blueprint.Api.ViewModels
         public string Subject { get; set; }
         /// <summary>Comma-separated search tags</summary>
         public string Keywords { get; set; }
+        /// <summary>The language of the exercise material, as a BCP 47 tag such as en-US</summary>
+        public string Language { get; set; }
     }
 
     public class MselDraftScenario

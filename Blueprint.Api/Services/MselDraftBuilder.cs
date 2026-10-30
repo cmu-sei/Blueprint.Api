@@ -31,6 +31,7 @@ namespace Blueprint.Api.Services
             mselEntity.CourseMode = draft.Metadata.CourseMode ?? mselEntity.CourseMode;
             mselEntity.Subject = draft.Metadata.Subject ?? mselEntity.Subject;
             mselEntity.Keywords = draft.Metadata.Keywords ?? mselEntity.Keywords;
+            mselEntity.Language = draft.Metadata.Language ?? mselEntity.Language;
             // the marking the planner chose for the articles; Write with AI keeps to it
             if (draft.Design?.Marking != null)
                 (mselEntity.ArticleMarking, mselEntity.ArticleMarkingText) = ArticleMarkings.Clean(draft.Design.Marking, draft.Design.MarkingText);
@@ -339,6 +340,12 @@ namespace Blueprint.Api.Services
             // pages; exercise control also gets Steamfitter. The template's own applications reach the drafted teams too.
             if (mselEntity.UsePlayer)
             {
+                // the VM app and a map on it show the range's machines, which only a MSEL that builds them with Caster, and plays
+                // hands-on, gives its teams; a tabletop's teams have none, so the template's VM applications are left out
+                var hasMachines = mselEntity.UseCaster && draft.Design?.Format != "Discussion";
+                foreach (var vmApplication in mselEntity.PlayerApplications.Where(a => (a.Url ?? "").Contains("{vmUrl}", StringComparison.OrdinalIgnoreCase)).ToList())
+                    if (!hasMachines)
+                        mselEntity.PlayerApplications.Remove(vmApplication);
                 var participants = mselEntity.Teams.Where(t => !MselDraftCite.IsControl(t)).ToList();
                 var control = mselEntity.Teams.Where(MselDraftCite.IsControl).ToList();
                 // a team the template already gives applications keeps its own set; the others get theirs by kind

@@ -148,6 +148,17 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 body.Remove("output_config");
                 response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
             }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not UnreadableAnswerException
+                && ex is not InvalidOperationException && body["tools"][0].AsObject().ContainsKey("strict"))
+            {
+                // the stream failed while the answer was constrained to its schema; a schema too large for strict mode fails
+                // this way, so ask once more without it
+                _logger.LogWarning(ex, "The {Tool} answer from {Model} failed with strict mode ({Type}: {Message}); asking again without it",
+                    toolName, model.ModelId, ex.GetType().Name, ex.Message);
+                body["tools"][0].AsObject().Remove("strict");
+                body["tools"][0]["input_schema"] = inputSchema.DeepClone();
+                response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
+            }
             catch (UnreadableAnswerException) when (body["tools"][0].AsObject().ContainsKey("eager_input_streaming"))
             {
                 // streamed as written, the tool input is not checked before it arrives, and the model wrote JSON that does not
@@ -353,15 +364,26 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             };
             using var response = await client.InvokeModelWithResponseStreamAsync(request, ct);
             var message = new StreamedMessage();
-            await foreach (var item in response.Body.WithCancellation(ct))
+            try
             {
-                if (item is PayloadPart part)
+                await foreach (var item in response.Body.WithCancellation(ct))
                 {
-                    using var reader = new StreamReader(part.Bytes);
-                    var partialJson = message.Add(await reader.ReadToEndAsync(ct));
-                    if (partialJson != null)
-                        await _progress.AddAsync(partialJson, ct);
+                    if (item is PayloadPart part)
+                    {
+                        using var reader = new StreamReader(part.Bytes);
+                        var partialJson = message.Add(await reader.ReadToEndAsync(ct));
+                        if (partialJson != null)
+                            await _progress.AddAsync(partialJson, ct);
+                    }
                 }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not InvalidOperationException)
+            {
+                // Bedrock ended the stream with an error event; its type and inner message say more than the outer one
+                var inner = ex.InnerException == null ? "" : $" ({ex.InnerException.GetType().Name}: {ex.InnerException.Message})";
+                _logger.LogWarning(ex, "The {Tool} stream from {Model} failed after {Usage}: {Type}: {Message}{Inner}",
+                    toolName, modelId, message.Usage, ex.GetType().Name, ex.Message, inner);
+                throw new AmazonBedrockRuntimeException($"Bedrock stopped the answer with an error: {ex.GetType().Name}: {ex.Message}{inner}", ex);
             }
             await _progress.CompleteAsync(ct);
 

@@ -118,9 +118,18 @@ public class MselBuildLiveTests(DatabaseFixture fixture, LiveBedrockFactory fact
             report.AppendLine($"  {g.Key}: {g.Count()} calls, {g.Sum(u => u.InputTokens):N0} / {g.Sum(u => u.OutputTokens):N0}, " +
                 $"{string.Join(",", g.Select(u => u.StopReason).Distinct())}, ${(g.Sum(u => u.InputTokens) * 2m + g.Sum(u => u.OutputTokens) * 10m) / 1_000_000m:F2}");
 
+        // what a constrained answer once left out
+        var msel = await db.Msels.Include(m => m.Cards).Include(m => m.CiteActions).Include(m => m.CiteDuties).AsSplitQuery().SingleAsync(m => m.Id == mselId, Ct);
+        report.AppendLine($"MSEL: {msel.Cards.Count} cards, {msel.CiteActions.Count} CITE tasks, {msel.CiteDuties.Count} duties; " +
+            $"metadata: level {msel.EducationalLevel}, use {msel.EducationalUse}, mode {msel.CourseMode}, language {msel.Language}, subject {msel.Subject}, keywords {msel.Keywords}");
         if (Environment.GetEnvironmentVariable("BLUEPRINT_LIVE_OUT") is string path && path.Length > 0)
             await System.IO.File.WriteAllTextAsync(path, report.ToString(), Ct);
         Assert.All(results, r => Assert.True(r.Item2, report.ToString()));
+        Assert.True(msel.Cards.Count > 1, report.ToString());
+        Assert.NotEmpty(msel.CiteActions);
+        Assert.NotEmpty(msel.CiteDuties);
+        Assert.False(string.IsNullOrWhiteSpace(msel.Language), report.ToString());
+        Assert.False(string.IsNullOrWhiteSpace(msel.Subject), report.ToString());
     }
 
     private static async Task<T> Step<T>(StringBuilder report, string name, Func<Task<HttpResponseMessage>> send, Func<HttpResponseMessage, Task<T>> read)

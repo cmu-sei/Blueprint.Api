@@ -376,7 +376,7 @@ namespace Blueprint.Api.Services
                                     await PlayerProcessPart1(msel, integrationInformation.PlayerViewId, playerApiClient, playerHttpClient, blueprintContext, playerUserIds, ct);
                                 }
 
-                                // Gallery processing
+                                // Gallery processing part 1
                                 if (msel.UseGallery)
                                 {
                                     ct.ThrowIfCancellationRequested();
@@ -400,6 +400,15 @@ namespace Blueprint.Api.Services
                                     ct.ThrowIfCancellationRequested();
                                     currentProcessStep = "Steamfitter - begin processing";
                                     await SteamfitterProcess(msel, steamfitterApiClient, blueprintContext, ct);
+                                }
+
+                                // Gallery processing part 2: the exhibit can only name the scenario once Steamfitter has it
+                                if (msel.UseGallery && msel.UseSteamfitter)
+                                {
+                                    ct.ThrowIfCancellationRequested();
+                                    await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Exhibit Scenario to Gallery", ct);
+                                    currentProcessStep = "Gallery - push exhibit scenario";
+                                    await IntegrationGalleryExtensions.SetExhibitScenarioAsync(msel, galleryApiClient, blueprintContext, ct);
                                 }
 
                                 // Player processing part 2

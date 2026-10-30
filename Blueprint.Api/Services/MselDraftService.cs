@@ -777,9 +777,14 @@ no style attributes. Answer only by calling the tool.";
                     GalleryArticleParameter = parameter.ToString()
                 });
             }
-            // an article's body is a styled document, which a plain text column would show as markup
-            foreach (var body in msel.DataFields.Where(f => f.GalleryArticleParameter == nameof(GalleryArticleParameter.Description) && f.DataType == DataFieldType.String))
-                body.DataType = DataFieldType.Html;
+            // an article's body is a styled document, which a plain text column would show as markup, and which the Exercise
+            // View would show whole on every row; participants read it in Gallery, the view keeps to its title and summary
+            foreach (var body in msel.DataFields.Where(f => f.GalleryArticleParameter == nameof(GalleryArticleParameter.Description)))
+            {
+                if (body.DataType == DataFieldType.String)
+                    body.DataType = DataFieldType.Html;
+                body.OnExerciseView = false;
+            }
         }
 
         public const string QuestionsByMove = "QuestionsByMove";

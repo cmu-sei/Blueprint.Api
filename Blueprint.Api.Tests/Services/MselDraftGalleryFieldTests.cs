@@ -137,6 +137,21 @@ public class MselDraftGalleryFieldTests
     }
 
     // the columns of the seeded Standard MSEL template that matter here
+    /// <summary>The article body is read in Gallery; on the Exercise View it would show a whole document on every row.</summary>
+    [Fact]
+    public void AddGalleryFields_KeepsTheArticleBodyOffTheExerciseView()
+    {
+        var msel = StandardMsel(useGallery: true);
+        foreach (var field in msel.DataFields)
+            field.OnExerciseView = true;
+
+        MselDraftRules.AddGalleryFields(msel);
+
+        Assert.False(Field(msel, "Details").OnExerciseView);
+        Assert.True(Field(msel, "Title").OnExerciseView);
+        Assert.True(Field(msel, "Description").OnExerciseView);
+    }
+
     private static MselEntity StandardMsel(bool useGallery)
     {
         var msel = new MselEntity { Id = Guid.NewGuid(), UseGallery = useGallery };

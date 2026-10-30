@@ -2521,7 +2521,7 @@ namespace Blueprint.Api.Services
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to push integrations.");
             if (msel.PlayerViewId != null)
-                throw new InvalidOperationException($"MSEL {mselId} is already deployed.");
+                throw new ConflictException($"MSEL {mselId} is already deployed.");
             if (msel.UseCaster)
             {
                 await ValidateCasterSetupAsync(msel, ct);
@@ -2531,7 +2531,7 @@ namespace Blueprint.Api.Services
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
-                throw new InvalidOperationException(userVerificationErrorMessage);
+                throw new ConflictException(userVerificationErrorMessage);
             msel.Status = MselItemStatus.Pushing;
             msel.IntegrationStatus = "Pushing Integrations";
             await _context.SaveChangesAsync(ct);

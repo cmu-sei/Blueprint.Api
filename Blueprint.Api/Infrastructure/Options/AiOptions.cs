@@ -35,6 +35,8 @@ namespace Blueprint.Api.Infrastructure.Options
         // how hard a model thinks before it answers: low, medium, high, xhigh or max; empty for the model's own default.
         // Lower is faster and spends fewer tokens; a task's own Effort wins.
         public string Effort { get; set; }
+        // whether the model's answer is constrained to the tool's schema (Bedrock), so it cannot come back as markup or broken JSON
+        public bool Strict { get; set; } = true;
         // how many of a drafted MSEL's rows, articles and profiles are written at once
         public int Parallel { get; set; } = 6;
 
@@ -57,7 +59,8 @@ namespace Blueprint.Api.Infrastructure.Options
                 BaseUrl = own?.BaseUrl,
                 ApiKey = own?.ApiKey,
                 MaxTokens = own?.MaxTokens > 0 ? own.MaxTokens : MaxTokens,
-                Effort = Pick(own?.Effort, Effort)
+                Effort = Pick(own?.Effort, Effort),
+                Strict = own?.Strict ?? Strict
             };
 
             static string Pick(string value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
@@ -79,6 +82,8 @@ namespace Blueprint.Api.Infrastructure.Options
         public int MaxTokens { get; set; }
         // low, medium, high, xhigh or max; empty for the default
         public string Effort { get; set; }
+        // constrain the answer to the schema; empty for the default
+        public bool? Strict { get; set; }
     }
 
     /// <summary>A model's price in US dollars: per million tokens of each kind, and per image</summary>

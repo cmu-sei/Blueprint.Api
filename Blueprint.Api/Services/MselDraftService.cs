@@ -1098,8 +1098,10 @@ no style attributes. Answer only by calling the tool.";
                 move.Purpose = string.IsNullOrWhiteSpace(move.Purpose) ? null : move.Purpose.Trim();
                 move.ControllerNotes = string.IsNullOrWhiteSpace(move.ControllerNotes) ? null : move.ControllerNotes.Trim();
             }
-            if (!designOnly && draft.Design.CiteAssessment == QuestionsByMove && draft.Moves.Any(m => !m.CiteQuestions.Any()))
-                warnings.Add($"No discussion questions for move {string.Join(", ", draft.Moves.Where(m => !m.CiteQuestions.Any()).Select(m => m.MoveNumber))}; add them before creating the MSEL, or CITE shows those moves empty.");
+            // the pre-exercise has nothing to discuss, and the hot wash has the after-action review
+            var unasked = draft.Moves.Where(m => m.Phase == null && !m.CiteQuestions.Any()).ToList();
+            if (!designOnly && draft.Design.CiteAssessment == QuestionsByMove && unasked.Any())
+                warnings.Add($"No discussion questions for move {string.Join(", ", unasked.Select(m => m.MoveNumber))}; add them before creating the MSEL, or CITE shows those moves empty.");
 
             // the scenario clock: each move's time in UTC, never earlier than the move before
             DateTime? previousTime = null;

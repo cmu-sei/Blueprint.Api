@@ -108,9 +108,7 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 {
                     ["name"] = toolName,
                     ["description"] = toolDescription,
-                    // constrained to the schema, so the answer is JSON of its shape, never the model's own call markup
-                    ["input_schema"] = StrictSchema(inputSchema),
-                    ["strict"] = true,
+                    ["input_schema"] = inputSchema.DeepClone(),
                     // without it each top-level field arrives whole, so a long list of injects shows no progress
                     // until it is done; the answer is read and checked here either way
                     ["eager_input_streaming"] = true
@@ -120,6 +118,12 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             };
             if (!string.IsNullOrWhiteSpace(model.Effort))
                 body["output_config"] = new JsonObject { ["effort"] = model.Effort.Trim().ToLowerInvariant() };
+            // constrained to the schema, so the answer is JSON of its shape, never the model's own call markup
+            if (model.Strict != false)
+            {
+                body["tools"][0]["input_schema"] = StrictSchema(inputSchema);
+                body["tools"][0]["strict"] = true;
+            }
 
             var config = new AmazonBedrockRuntimeConfig
             {

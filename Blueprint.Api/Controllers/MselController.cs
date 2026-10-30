@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -150,26 +149,6 @@ namespace Blueprint.Api.Controllers
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
             var msel = await _mselService.GetAsync(id, hasSystemPermission, ct);
             return Ok(msel);
-        }
-
-        /// <summary>
-        /// Gets specific Msel data by id
-        /// </summary>
-        /// <remarks>
-        /// Returns a DataTable for the Msel with the id specified
-        /// </remarks>
-        /// <param name="id">The id of the Msel</param>
-        /// <param name="ct"></param>
-        /// <returns></returns>
-        [HttpGet("msels/{id}/data")]
-        [ProducesResponseType(typeof(DataTable), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getMselData")]
-        public async Task<IActionResult> GetData(Guid id, CancellationToken ct)
-        {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
-            var mselData = await _mselService.GetDataTableAsync(id, hasSystemPermission, hasCreateMselsPermission, ct);
-            return Ok(mselData);
         }
 
         /// <summary>

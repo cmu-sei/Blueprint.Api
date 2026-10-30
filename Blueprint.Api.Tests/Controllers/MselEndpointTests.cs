@@ -503,7 +503,7 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(template.Id, (await GetMsel(Client(actor), template.Id)).Id);
     }
 
-    /// <summary>An unknown id is a 404 for a caller with no permission, as <see cref="GetData_ForAnUnknownMsel_WithNoRoleOrPermission_Is404"/> answers.</summary>
+    /// <summary>An unknown id is a 404 for a caller with no permission.</summary>
     [Fact]
     public async Task GetById_ForAnUnknownMsel_WithNoPermission_Is404()
     {
@@ -609,131 +609,6 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Empty(returned.GalleryArticleParameters);
         Assert.Empty(returned.GallerySourceTypes);
         Assert.Empty(returned.GalleryItemStatuses);
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // GET msels/{id}/data
-    // ---------------------------------------------------------------------------------------------
-
-    /// <summary>Get data for any MSEL is answered with a 500 because a data table cannot be serialized.</summary>
-    [Fact]
-    public async Task GetData_ForAnyMsel_Is500_BecauseADataTableCannotBeSerialized()
-    {
-        var msel = TestData.Msel();
-        await Seed(msel);
-
-        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
-
-        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/data", Ct);
-
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        var body = await response.Content.ReadAsStringAsync(Ct);
-
-        Assert.StartsWith("System.NotSupportedException", body);
-        Assert.Contains(
-            "Serialization and deserialization of 'System.Type' instances is not supported. " +
-            "Path: $.Columns.DataType.",
-            body);
-    }
-
-    /// <summary>
-    /// The data table is every event and Data Value of the MSEL, so a caller with no role on it and no
-    /// permission is refused before the serializer is reached.
-    /// </summary>
-    [Fact]
-    public async Task GetData_WithNoRoleOrPermission_Is403()
-    {
-        var msel = TestData.Msel();
-        await Seed(msel);
-
-        var actor = await Actor().SeedAsync();
-
-        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/data", Ct);
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    /// <summary>
-    /// The allowed cases of the gate are asserted through the serializer defect above: reaching the 500
-    /// is proof the request was let through.
-    /// </summary>
-    [Fact]
-    public async Task GetData_WithViewMsels_ReachesTheSerializer()
-    {
-        var msel = TestData.Msel();
-        await Seed(msel);
-
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-
-        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/data", Ct);
-
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task GetData_WithEditMselsOnly_Is403()
-    {
-        var msel = TestData.Msel();
-        await Seed(msel);
-
-        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
-
-        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/data", Ct);
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task GetData_ForAViewerOfTheMsel_ReachesTheSerializer()
-    {
-        var msel = TestData.Msel();
-        await Seed(msel);
-
-        var actor = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
-
-        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/data", Ct);
-
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task GetData_ForAViewerOfAnotherMsel_Is403()
-    {
-        var msel = TestData.Msel();
-        await Seed(msel);
-
-        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
-
-        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/data", Ct);
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task GetData_OfATemplate_WithCreateMsels_ReachesTheSerializer()
-    {
-        var template = TestData.Msel(isTemplate: true);
-        await Seed(template);
-
-        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
-
-        var response = await Client(actor).GetAsync($"/api/msels/{template.Id}/data", Ct);
-
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-    }
-
-    /// <remarks>
-    /// The MSEL is looked up before the caller is authorized, so an unknown one is a 404 whatever the
-    /// caller holds.
-    /// </remarks>
-    [Fact]
-    public async Task GetData_ForAnUnknownMsel_WithNoRoleOrPermission_Is404()
-    {
-        var actor = await Actor().SeedAsync();
-
-        Assert.Equal(
-            HttpStatusCode.NotFound,
-            (await Client(actor).GetAsync($"/api/msels/{Guid.NewGuid()}/data", Ct)).StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1721,7 +1596,6 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     [InlineData("GET", "my-launch-msels")]
     [InlineData("GET", "users/00000000-0000-0000-0000-000000000001/msels")]
     [InlineData("GET", "msels/00000000-0000-0000-0000-000000000001")]
-    [InlineData("GET", "msels/00000000-0000-0000-0000-000000000001/data")]
     [InlineData("GET", "msels/00000000-0000-0000-0000-000000000001/xlsx")]
     [InlineData("GET", "msels/00000000-0000-0000-0000-000000000001/json")]
     [InlineData("POST", "msels")]

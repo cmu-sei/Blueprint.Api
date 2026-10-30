@@ -53,7 +53,6 @@ namespace Blueprint.Api.Services
         Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<MselImportResult> ImportJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
-        Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> RetryCasterAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
@@ -953,26 +952,6 @@ namespace Blueprint.Api.Services
             memoryStream.Seek(0, SeekOrigin.Begin);
 
             return System.Tuple.Create(memoryStream, filename);
-        }
-
-        public async Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
-        {
-            var msel = await _context.Msels
-                .Where(f => f.Id == mselId)
-                .SingleOrDefaultAsync(ct);
-            if (msel == null)
-                throw new EntityNotFoundException<MselEntity>();
-            // the data table holds every event and data value, so the caller must be able to view the MSEL's contents
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
-                throw new ForbiddenException();
-            var scenarioEventList = await _context.ScenarioEvents
-                .Where(n => n.MselId == mselId)
-                .OrderBy(se => se.DeltaSeconds)
-                .ToListAsync(ct);
-            // get the MSEL data into a DataTable
-            var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
-
-            return dataTable;
         }
 
         private async Task<MselEntity> createMselFromXlsxFile(IFormFile uploadItem, MselEntity msel, CancellationToken ct)

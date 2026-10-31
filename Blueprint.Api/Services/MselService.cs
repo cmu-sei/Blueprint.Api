@@ -165,7 +165,7 @@ namespace Blueprint.Api.Services
                 msels = _context.Msels;
             }
 
-            return _mapper.Map<IEnumerable<Msel>>(await msels.ToListAsync());
+            return _mapper.Map<IEnumerable<Msel>>(await msels.Include(m => m.ScoringModel).ToListAsync());
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -188,12 +188,14 @@ namespace Blueprint.Api.Services
             var unitMselList = await _context.MselUnits
                 .Where(mu => unitIdList.Contains(mu.UnitId) && mu.Msel.Status != MselItemStatus.Archived)
                 .Include(mu => mu.Msel.UserMselRoles.Where(r => r.UserId == userId))
+                .Include(mu => mu.Msel.ScoringModel)
                 .Select(mu => mu.Msel)
                 .ToListAsync(ct);
             // always include msels created by user
             var myMselList = await _context.Msels
                 .Where(m => m.CreatedBy == userId && m.Status != MselItemStatus.Archived)
                 .Include(m => m.UserMselRoles.Where(r => r.UserId == userId))
+                .Include(m => m.ScoringModel)
                 .ToListAsync(ct);
             // also include all templates, if user can view all msels or can create msels (so they can copy from templates)
             if (hasViewMselsPermission || hasCreateMselsPermission)
@@ -237,6 +239,7 @@ namespace Blueprint.Api.Services
                 .ThenInclude(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
                 .Include(m => m.UserMselRoles.Where(r => r.UserId == _user.GetId()))
+                .Include(m => m.ScoringModel)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
             if (mselEntity == null)

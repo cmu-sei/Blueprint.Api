@@ -138,20 +138,58 @@ public class MselDraftCiteEndpointTests(DatabaseFixture fixture, AiEnabledFactor
     private Task<MselScoringModelEntity> Authored(BlueprintContext db, Guid mselId) =>
         db.MselScoringModels.Include(m => m.Categories).ThenInclude(c => c.Options).AsSplitQuery().SingleAsync(m => m.MselId == mselId, Ct);
 
+    /// <summary>
+    /// A template that authors its own model, as the seeded Crucible MSEL does with NCISS, hands the drafted MSEL a copy of
+    /// it under new ids, whatever questions the draft wrote; nothing is made in CITE.
+    /// </summary>
+    [Fact]
+    public async Task Import_FromATemplateWithAnAuthoredModel_CopiesIt()
+    {
+        var (mselId, result) = await ImportWithResult("QuestionsByMove", authoredTemplateModel: true);
+
+        await _cite.DidNotReceive().CreateScoringModelAsync(Arg.Any<ScoringModel>(), Arg.Any<CancellationToken>());
+        await using var db = NewContext();
+        var model = await Authored(db, mselId);
+        Assert.Equal("CISA NCISS", model.Description);
+        Assert.Equal(8, model.Categories.Count);
+        var templateModel = await db.MselScoringModels.Include(m => m.Categories).SingleAsync(m => m.MselId == _templateId, Ct);
+        Assert.Empty(model.Categories.Select(c => c.Id).Intersect(templateModel.Categories.Select(c => c.Id)));
+        Assert.Contains(result.Changes, c => c.Message.StartsWith("Kept the template's own CITE scoring model \"CISA NCISS\""));
+    }
+
+    private Guid _templateId;
+
     private async Task<Guid> Import(string assessment, ScoringModel templateModel = null) =>
         (await ImportWithResult(assessment, templateModel)).MselId;
 
-    private async Task<(Guid MselId, MselImportResult Result)> ImportWithResult(string assessment, ScoringModel templateModel = null)
+    private async Task<(Guid MselId, MselImportResult Result)> ImportWithResult(string assessment, ScoringModel templateModel = null, bool authoredTemplateModel = false)
     {
         var template = TestData.Msel(isTemplate: true);
         template.UseCite = true;
         template.CiteScoringModelId = templateModel?.Id;
         template.CiteScoringModelName = templateModel?.Description;
+        _templateId = template.Id;
         var blue = TestData.Team(template.Id);
         blue.ShortName = "BLUE";
         var excon = TestData.Team(template.Id);
         excon.ShortName = "EXCON";
         await Seed(template, blue, excon, TestData.DataField(template.Id, name: "Title", displayOrder: 1));
+        if (authoredTemplateModel)
+        {
+            var authored = ScoringModelPresets.Nciss();
+            authored.MselId = template.Id;
+            foreach (var category in authored.Categories)
+            {
+                category.Id = Guid.NewGuid();
+                category.MselScoringModelId = template.Id;
+                foreach (var option in category.Options)
+                {
+                    option.Id = Guid.NewGuid();
+                    option.MselScoringCategoryId = category.Id;
+                }
+            }
+            await Seed(authored);
+        }
         var draft = JsonSerializer.Deserialize<MselDraft>(Draft(), JsonOptions);
         draft.Design = new MselDraftDesign { CiteAssessment = assessment };
         var planner = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();

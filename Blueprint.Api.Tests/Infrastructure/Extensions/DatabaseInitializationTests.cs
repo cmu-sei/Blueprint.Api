@@ -74,6 +74,37 @@ public class DatabaseInitializationTests(DatabaseFixture fixture) : DatabaseTest
         Assert.Equal("Seeded", (await NewMsels()).Single().Name);
     }
 
+    /// <summary>A seeded MSEL's scoring model is built from the named preset, once, so every MSEL made from it starts with a copy.</summary>
+    [Fact]
+    public async Task Initialize_SeedsAScoringModelFromItsPreset_Once()
+    {
+        var mselId = Guid.NewGuid();
+        WriteSeedFile($$"""
+            { "Msels": [ { "Id": "{{mselId}}", "Name": "Seeded", "Description": "d", "UseCite": true } ],
+              "MselScoringModels": [ { "MselId": "{{mselId}}", "Preset": "Nciss" }, { "MselId": "{{Guid.NewGuid()}}", "Preset": "Nciss" }, { "MselId": "{{mselId}}", "Preset": "Bogus" } ] }
+            """);
+
+        var (first, log) = HostFor(Options());
+        using (first)
+        {
+            first.InitializeDatabase();
+        }
+        var (second, _) = HostFor(Options());
+        using (second)
+        {
+            second.InitializeDatabase();
+        }
+
+        Assert.Empty(log.Entries);
+        await using var context = NewContext();
+        var model = await context.MselScoringModels.Include(m => m.Categories).ThenInclude(c => c.Options).AsSplitQuery().SingleAsync(m => m.MselId == mselId, TestContext.Current.CancellationToken);
+        Assert.Equal("CISA NCISS", model.Description);
+        Assert.Equal(8, model.Categories.Count);
+        Assert.Equal(61, model.Categories.Sum(c => c.Options.Count));
+        // a preset for a MSEL that is not seeded, or a preset Blueprint does not have, seeds nothing
+        Assert.Equal(1, await context.MselScoringModels.CountAsync(TestContext.Current.CancellationToken));
+    }
+
     /// <summary>Seeding twice adds each seeded row once and leaves an edited seeded row alone.</summary>
     [Fact]
     public async Task Initialize_Twice_SeedsOnce()

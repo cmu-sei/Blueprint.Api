@@ -518,6 +518,7 @@ no style attributes. Answer only by calling the tool.";
                 .ThenInclude(df => df.DataOptions)
                 .Include(m => m.Teams)
                 .Include(m => m.Organizations)
+                .Include(m => m.ScoringModel)
                 .Include(m => m.Cards)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == templateMselId, ct);
@@ -897,6 +898,9 @@ no style attributes. Answer only by calling the tool.";
         /// with CITE and none chosen, it is the template's scoring model when it links one, else questions by move, the
         /// default discussion model of the author-ttx workflow.
         /// </summary>
+        // a template with a scoring model links one in CITE or authors its own, which the drafted MSEL gets a copy of
+        private static bool HasModel(MselEntity template) => template.CiteScoringModelId != null || template.ScoringModel != null;
+
         public static MselDraftDesign CleanDesign(MselDraftDesign design, MselEntity template)
         {
             design ??= new MselDraftDesign();
@@ -911,8 +915,8 @@ no style attributes. Answer only by calling the tool.";
                 Format = Pick(design.Format, _formats),
                 Structure = Text(design.Structure),
                 CiteAssessment = !template.UseCite ? NoAssessment
-                    : Pick(design.CiteAssessment, _assessments) is string chosen && (chosen != TemplateModel || template.CiteScoringModelId != null) ? chosen
-                    : template.CiteScoringModelId != null ? TemplateModel : QuestionsByMove,
+                    : Pick(design.CiteAssessment, _assessments) is string chosen && (chosen != TemplateModel || HasModel(template)) ? chosen
+                    : HasModel(template) ? TemplateModel : QuestionsByMove,
                 Moves = design.Moves is int moves ? Math.Clamp(moves, 1, 12) : null,
                 DurationMinutes = design.DurationMinutes is int minutes ? Math.Clamp(minutes, 15, 2880) : null,
                 ScenarioSpan = Text(design.ScenarioSpan),

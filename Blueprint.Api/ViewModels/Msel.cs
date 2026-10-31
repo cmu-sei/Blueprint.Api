@@ -30,6 +30,8 @@ namespace Blueprint.Api.ViewModels
         public bool UseCite { get; set; }
         public Guid? CiteEvaluationId { get; set; }
         public Guid? CiteScoringModelId { get; set; }
+        /// <summary>Whether the MSEL authors its own CITE scoring model, which a MSEL drafted or copied from it gets a copy of</summary>
+        public bool HasScoringModel { get; set; }
         public string ArticleMarking { get; set; }
         public string ArticleMarkingText { get; set; }
         public IntegrationType CiteIntegrationType { get; set; }

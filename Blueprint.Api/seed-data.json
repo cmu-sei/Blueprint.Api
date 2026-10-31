@@ -1393,5 +1393,11 @@
       "TeamId": "7f45b7ed-2cfa-4752-9612-8c9850477335",
       "DisplayOrder": 3
     }
+  ],
+  "MselScoringModels": [
+    {
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Preset": "Nciss"
+    }
   ]
 }

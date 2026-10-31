@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using Blueprint.Api.Data.Models;
+using System;
 using System.Collections.Generic;
 
 namespace Blueprint.Api.Infrastructure.Options
@@ -27,6 +28,15 @@ namespace Blueprint.Api.Infrastructure.Options
         public List<CiteActionEntity> CiteActions { get; set; }
         public List<PlayerApplicationEntity> PlayerApplications { get; set; }
         public List<PlayerApplicationTeamEntity> PlayerApplicationTeams { get; set; }
+        /// <summary>The scoring model a seeded MSEL authors, built from one of Blueprint's presets</summary>
+        public List<SeededScoringModel> MselScoringModels { get; set; }
+    }
+
+    public class SeededScoringModel
+    {
+        public Guid MselId { get; set; }
+        /// <summary>QuestionsByMove, MissionImpact, Likelihood or Nciss</summary>
+        public string Preset { get; set; }
     }
 }
 

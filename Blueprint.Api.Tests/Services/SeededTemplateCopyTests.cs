@@ -124,6 +124,18 @@ public class SeededTemplateCopyTests(DatabaseFixture fixture, BlueprintAppFactor
         }
     }
 
+    /// <summary>The Crucible MSEL authors NCISS, so a MSEL drafted or copied from it scores with it unless the planner chooses otherwise.</summary>
+    [Fact]
+    public async Task CrucibleMsel_FromTheShippedSeedFile_AuthorsNciss()
+    {
+        SeedFromTheShippedSeedFile();
+
+        await using var db = NewContext();
+        var model = await db.MselScoringModels.Include(m => m.Categories).SingleAsync(m => m.MselId == CrucibleMselId, Ct);
+        Assert.Equal("CISA NCISS", model.Description);
+        Assert.Equal(8, model.Categories.Count);
+    }
+
     /// <summary>The Crucible MSEL maps every Gallery article parameter to one column, typed as Gallery shows it:
     /// the article body is HTML and the summary is plain text.</summary>
     [Fact]

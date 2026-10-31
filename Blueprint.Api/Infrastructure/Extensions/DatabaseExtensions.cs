@@ -328,6 +328,38 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 }
                 context.SaveChanges();
             }
+            // SCORING MODELS a seeded MSEL authors, from the presets, so every MSEL made from it starts with a copy
+            if (options.MselScoringModels != null && options.MselScoringModels.Any())
+            {
+                var authored = context.MselScoringModels.Select(m => m.MselId).ToList();
+                foreach (var seeded in options.MselScoringModels)
+                {
+                    if (authored.Contains(seeded.MselId) || !context.Msels.Any(m => m.Id == seeded.MselId))
+                        continue;
+                    var model = seeded.Preset switch
+                    {
+                        "MissionImpact" => Services.ScoringModelPresets.MissionImpact(),
+                        "Likelihood" => Services.ScoringModelPresets.Likelihood(),
+                        "Nciss" => Services.ScoringModelPresets.Nciss(),
+                        _ => null
+                    };
+                    if (model == null)
+                        continue;
+                    model.MselId = seeded.MselId;
+                    foreach (var category in model.Categories)
+                    {
+                        category.Id = Guid.NewGuid();
+                        category.MselScoringModelId = seeded.MselId;
+                        foreach (var option in category.Options)
+                        {
+                            option.Id = Guid.NewGuid();
+                            option.MselScoringCategoryId = category.Id;
+                        }
+                    }
+                    context.MselScoringModels.Add(model);
+                }
+                context.SaveChanges();
+            }
             // CITEACTIONS
             if (options.CiteActions != null && options.CiteActions.Any())
             {

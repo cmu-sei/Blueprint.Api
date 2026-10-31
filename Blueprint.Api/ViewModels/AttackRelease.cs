@@ -34,6 +34,8 @@ namespace Blueprint.Api.ViewModels
     {
         public Guid Id { get; set; }
         public Guid AttackReleaseId { get; set; }
+        /// <summary>The release's domain (enterprise-attack, ATLAS, d3fend), which says whether the technique is an attack or a defence.</summary>
+        public string Domain { get; set; }
         public string ExternalId { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }

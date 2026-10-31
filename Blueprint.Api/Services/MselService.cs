@@ -455,7 +455,7 @@ namespace Blueprint.Api.Services
                 mselCompetency.Msel = null;
                 mselCompetency.Competency = null;
             }
-            // copy the MSEL's ATT&CK technique pool
+            // copy the MSEL's technique pool, attack and defensive
             foreach (var mselAttackTechnique in mselEntity.MselAttackTechniques)
             {
                 mselAttackTechnique.Id = Guid.NewGuid();
@@ -2224,8 +2224,8 @@ namespace Blueprint.Api.Services
                 mselCompetency.Msel = null;
                 mselCompetency.Competency = null;
             }
-            // A technique's id is the same on every installation that imported its ATT&CK release, so the pool
-            // carries over wherever that release is loaded. Drop the rest rather than fail the import.
+            // A technique's id is the same on every installation that imported its release, so the pool carries
+            // over wherever that release is loaded. Drop the rest rather than fail the import.
             foreach (var mselAttackTechnique in mselEntity.MselAttackTechniques)
             {
                 mselAttackTechnique.Msel = null;

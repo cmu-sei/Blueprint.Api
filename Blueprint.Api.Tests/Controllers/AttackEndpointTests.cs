@@ -22,9 +22,9 @@ using Xunit;
 namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary>
-/// <c>AttackReleaseController</c> and <c>MselAttackTechniqueController</c> - the ATT&amp;CK releases an
-/// administrator imports, and the per-MSEL technique pool that AttackTechnique columns pick from. Also the two
-/// ways a pool leaves its MSEL: copy, and JSON export to another installation.
+/// <c>AttackReleaseController</c> and <c>MselAttackTechniqueController</c> - the ATT&amp;CK, ATLAS and D3FEND
+/// releases an administrator imports, and the per-MSEL technique pool that AttackTechnique and DefensiveTechnique
+/// columns pick from. Also the two ways a pool leaves its MSEL: copy, and JSON export to another installation.
 /// </summary>
 /// <remarks>401 and 403 for these routes live in <see cref="RouteAuthorizationTests"/>.</remarks>
 public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
@@ -253,6 +253,94 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     }
 
     // ---------------------------------------------------------------------------------------------
+    // The pool's two families: attack (ATT&CK, ATLAS) and defensive (D3FEND)
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>A D3FEND release is the other family, so it does not pin the attack techniques, nor they it.</summary>
+    [Fact]
+    public async Task Create_OfADefensiveTechnique_Is201_BesideTheAttackTechniques()
+    {
+        var attack = await SeedRelease("1.0");
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/mselattacktechniques", Body(msel.Id, Technique(d3fend, "D3-CH").Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal("d3fend", (await Read<MselAttackTechnique>(response)).AttackTechnique.Domain);
+        var pool = await Get<List<MselAttackTechnique>>(RootClient, $"api/msels/{msel.Id}/mselattacktechniques");
+        Assert.Equal(["D3-CH", "T1059"], pool.Select(m => m.AttackTechnique.ExternalId).Order());
+        Assert.Equal(["d3fend", "enterprise-attack"], pool.Select(m => m.AttackTechnique.Domain).Order());
+    }
+
+    /// <summary>The defensive family is pinned to its own release, as the attack one is to its.</summary>
+    [Fact]
+    public async Task Create_OfADefensiveTechniqueFromAnotherD3fendRelease_Is409()
+    {
+        var first = await SeedD3fendRelease("1.6.0");
+        var second = await SeedD3fendRelease("1.7.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(first, "D3-CH").Id) { Id = Guid.NewGuid() });
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/mselattacktechniques", Body(msel.Id, Technique(second, "D3-FA").Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("defensive techniques are from d3fend 1.6.0", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    /// <summary>Upgrading to an attack release moves the attack techniques only; the D3FEND ones stay where they are.</summary>
+    [Fact]
+    public async Task Upgrade_ToAnAttackRelease_LeavesTheDefensiveTechniquesAlone()
+    {
+        var first = await SeedRelease("1.0");
+        var second = await SeedRelease("2.0");
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(
+            new MselAttackTechniqueEntity(msel.Id, Technique(first, "T1059").Id) { Id = Guid.NewGuid() },
+            new MselAttackTechniqueEntity(msel.Id, Technique(first, "T1003").Id) { Id = Guid.NewGuid() },
+            new MselAttackTechniqueEntity(msel.Id, Technique(d3fend, "D3-CH").Id) { Id = Guid.NewGuid() });
+
+        var response = await RootClient.PostAsync($"api/msels/{msel.Id}/attacktechniques/upgrade/{second.Id}", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await Read<MselAttackTechniqueUpgrade>(response);
+        Assert.Equal(1, result.Kept);
+        Assert.Equal(["T1003"], result.Dropped);
+        var pool = await ReadBack(rb => rb.MselAttackTechniques.Where(m => m.MselId == msel.Id).Select(m => m.AttackTechniqueId).ToListAsync(Ct));
+        Assert.Equal(new[] { Technique(second, "T1059").Id, Technique(d3fend, "D3-CH").Id }.Order(), pool.Order());
+    }
+
+    [Fact]
+    public async Task Upgrade_ToAD3fendRelease_MovesTheDefensiveTechniquesOnly()
+    {
+        var attack = await SeedRelease("1.0");
+        var first = await SeedD3fendRelease("1.6.0");
+        var second = await SeedD3fendRelease("1.7.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(
+            new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() },
+            new MselAttackTechniqueEntity(msel.Id, Technique(first, "D3-CH").Id) { Id = Guid.NewGuid() },
+            new MselAttackTechniqueEntity(msel.Id, Technique(first, "D3-CBAN").Id) { Id = Guid.NewGuid() });
+
+        var response = await RootClient.PostAsync($"api/msels/{msel.Id}/attacktechniques/upgrade/{second.Id}", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await Read<MselAttackTechniqueUpgrade>(response);
+        Assert.Equal(2, result.Kept);
+        Assert.Empty(result.Dropped);
+        var pool = await ReadBack(rb => rb.MselAttackTechniques.Where(m => m.MselId == msel.Id).Select(m => m.AttackTechniqueId).ToListAsync(Ct));
+        Assert.Equal(new[] { Technique(attack, "T1059").Id, Technique(second, "D3-CBAN").Id, Technique(second, "D3-CH").Id }.Order(), pool.Order());
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Copy and JSON
     // ---------------------------------------------------------------------------------------------
 
@@ -308,6 +396,14 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     {
         var release = await AttackStixParser.ParseAsync(
             new MemoryStream(Encoding.UTF8.GetBytes(AttackBundles.Enterprise(version))), null, Ct);
+        await Seed(release);
+        return release;
+    }
+
+    private async Task<AttackReleaseEntity> SeedD3fendRelease(string version)
+    {
+        var release = await D3fendOntologyParser.ParseAsync(
+            new MemoryStream(Encoding.UTF8.GetBytes(D3fendOntologies.Ontology(version))), null, Ct);
         await Seed(release);
         return release;
     }

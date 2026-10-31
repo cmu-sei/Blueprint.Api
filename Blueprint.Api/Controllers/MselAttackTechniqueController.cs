@@ -62,7 +62,8 @@ namespace Blueprint.Api.Controllers
         /// Adds a technique to a MSEL's pool
         /// </summary>
         /// <remarks>
-        /// Refused with a 409 when the MSEL's pool already holds techniques from another release.
+        /// Refused with a 409 when the MSEL's pool already holds techniques of the same family (attack: ATT&amp;CK and
+        /// ATLAS; defensive: D3FEND) from another release.
         /// </remarks>
         /// <param name="mselAttackTechnique">The MSEL and the technique</param>
         /// <param name="ct"></param>
@@ -108,11 +109,12 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Moves a MSEL's technique pool to another release
+        /// Moves one family of a MSEL's technique pool to another release
         /// </summary>
         /// <remarks>
-        /// Techniques are matched by their external id (T1059, AML.T0051). Ones the new release no longer has are dropped and listed
-        /// in the response; inject cells that name them keep their text.
+        /// The release's family (attack: ATT&amp;CK and ATLAS; defensive: D3FEND) says which techniques move; the other
+        /// family stays. Techniques are matched by their external id (T1059, AML.T0051, D3-CH). Ones the new release no
+        /// longer has are dropped and listed in the response; inject cells that name them keep their text.
         /// </remarks>
         /// <param name="mselId">ID of a msel.</param>
         /// <param name="attackReleaseId">ID of the release to move to.</param>

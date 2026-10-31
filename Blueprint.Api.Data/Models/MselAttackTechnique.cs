@@ -10,8 +10,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Blueprint.Api.Data.Models
 {
     /// <summary>
-    /// An ATT&amp;CK technique in a MSEL's pool - the techniques its AttackTechnique columns offer. Every row on
-    /// a MSEL is from the same release.
+    /// A technique in a MSEL's pool - the techniques its AttackTechnique and DefensiveTechnique columns offer. The
+    /// rows of a family (attack: ATT&amp;CK and ATLAS; defensive: D3FEND, told apart by the release's domain) are
+    /// all from the same release.
     /// </summary>
     public class MselAttackTechniqueEntity
     {

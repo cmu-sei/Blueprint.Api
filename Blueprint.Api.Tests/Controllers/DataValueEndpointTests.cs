@@ -436,6 +436,22 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(value, (await Stored(created.Id)).Value);
     }
 
+    /// <summary>A technique field's cell holds the comma-separated ids as entered; the pool is not checked.</summary>
+    [Theory]
+    [InlineData(DataFieldType.AttackTechnique, "T1059, T1059.001")]
+    [InlineData(DataFieldType.DefensiveTechnique, "D3-CH, D3-CBAN")]
+    public async Task Create_OnATechniqueField_StoresTheIdsAsEntered(DataFieldType dataType, string value)
+    {
+        var cell = await SeedCell();
+        var field = TestData.DataField(mselId: cell.Msel.Id, dataType: dataType, displayOrder: 2);
+        await Seed(field);
+        var actor = await Actor().OnMsel(cell.Msel, MselRole.Owner).SeedAsync();
+
+        var created = await Read<DataValue>(await Post(Client(actor), Body(field.Id, cell.Event.Id, value)));
+
+        Assert.Equal(value, (await Stored(created.Id)).Value);
+    }
+
     /// <summary>A value that is not of its address field's type is stored as entered.</summary>
     [Theory]
     [InlineData(DataFieldType.IpAddress, "not an address")]

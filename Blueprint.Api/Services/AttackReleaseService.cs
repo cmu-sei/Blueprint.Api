@@ -87,6 +87,7 @@ namespace Blueprint.Api.Services
 
             var techniques = await _context.AttackTechniques
                 .Where(t => t.AttackReleaseId == id)
+                .Include(t => t.AttackRelease)
                 .OrderBy(t => t.ExternalId)
                 .ToListAsync(ct);
             return _mapper.Map<IEnumerable<AttackTechnique>>(techniques);

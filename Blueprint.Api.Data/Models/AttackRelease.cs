@@ -11,9 +11,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Blueprint.Api.Data.Models
 {
     /// <summary>
-    /// One imported MITRE ATT&amp;CK release (e.g. enterprise-attack 17.1). Releases are reference data: they are
-    /// uploaded by an administrator and never fetched or updated in place, so a MSEL keeps the technique
-    /// names and descriptions it was planned against until it is explicitly upgraded.
+    /// One imported technique framework release: MITRE ATT&amp;CK (e.g. enterprise-attack 17.1), ATLAS, or D3FEND.
+    /// Releases are reference data: they are uploaded by an administrator and never fetched or updated in place, so
+    /// a MSEL keeps the technique names and descriptions it was planned against until it is explicitly upgraded.
     /// </summary>
     /// <remarks>
     /// Ids are derived from the domain, the version and the STIX id rather than generated, so the same release
@@ -22,6 +22,12 @@ namespace Blueprint.Api.Data.Models
     /// </remarks>
     public class AttackReleaseEntity : BaseEntity
     {
+        /// <summary>
+        /// The domain of a MITRE D3FEND release. Its techniques are defensive, and a MSEL pools them apart from the
+        /// attack techniques of every other domain (enterprise-attack, mobile-attack, ics-attack, ATLAS).
+        /// </summary>
+        public const string D3fendDomain = "d3fend";
+
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.None)]
         public Guid Id { get; set; }

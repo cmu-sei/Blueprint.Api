@@ -284,6 +284,40 @@ public class BedrockAiModelClientTests
         Assert.Equal(0, schema["properties"]["minutes"]["minimum"].GetValue<int>());
     }
 
+    /// <summary>A stray tag the model writes after the JSON is cut off; the object itself is kept.</summary>
+    [Fact]
+    public void StreamedMessage_SalvagesAnAnswerWithTextAfterTheJson()
+    {
+        var message = new StreamedMessage();
+        message.Add("""{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"t","input":{}}}""");
+        message.Add("""{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"name\":\"Silent Tide\"}\n</parameter>"}}""");
+        message.Add("""{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}""");
+
+        var input = BedrockAiModelClient.ReadToolInput(message.ToMessage());
+
+        Assert.Equal("Silent Tide", input.GetProperty("name").GetString());
+        Assert.Equal("the text after the JSON was cut off", message.Salvaged);
+    }
+
+    /// <summary>A second tool_use block the model wrote in its own markup is dropped; the one that parsed is the answer.</summary>
+    [Fact]
+    public void StreamedMessage_DropsAStrayToolUseBlockWhenAnotherParsed()
+    {
+        var message = new StreamedMessage();
+        message.Add("""{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"t","input":{}}}""");
+        message.Add("""{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"name\":\"Silent Tide\"}"}}""");
+        message.Add("""{"type":"content_block_stop","index":0}""");
+        message.Add("""{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","name":"t","input":{}}}""");
+        message.Add("""{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"<invoke name=\"t\">"}}""");
+        message.Add("""{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}""");
+
+        var response = message.ToMessage();
+
+        Assert.Equal("Silent Tide", BedrockAiModelClient.ReadToolInput(response).GetProperty("name").GetString());
+        Assert.Single(response.GetProperty("content").EnumerateArray());
+        Assert.Contains("dropped", message.Salvaged);
+    }
+
     private static System.Text.Json.Nodes.JsonObject Schema() =>
         System.Text.Json.Nodes.JsonNode.Parse("""
             {"type":"object","properties":{

@@ -132,55 +132,84 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             };
             using var client = new AmazonBedrockRuntimeClient(config);
 
-            JsonElement response;
-            try
+            // the asks: one, and one more for each thing Bedrock refuses or the model gets wrong, each fallback applying to the
+            // retries too, since a retry can hit the next problem
+            JsonElement input = default;
+            var markupRetried = false;
+            var eagerRetried = false;
+            for (var attempt = 1; ; attempt++)
             {
-                response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
-            }
-            catch (AmazonBedrockRuntimeException ex) when (Refuses(ex, body))
-            {
-                // an older Bedrock deployment refuses a newer field: the answer then streams a field at a time, or the
-                // model thinks at its own default
-                _logger.LogInformation("{Model} refused {Fields}; asking without them: {Message}", model.ModelId, "eager_input_streaming, output_config", ex.Message);
-                body["tools"][0].AsObject().Remove("eager_input_streaming");
-                body["tools"][0].AsObject().Remove("strict");
-                body["tools"][0]["input_schema"] = inputSchema.DeepClone();
-                body.Remove("output_config");
-                response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not UnreadableAnswerException
-                && ex is not InvalidOperationException && body["tools"][0].AsObject().ContainsKey("strict"))
-            {
-                // the stream failed while the answer was constrained to its schema; a schema too large for strict mode fails
-                // this way, so ask once more without it
-                _logger.LogWarning(ex, "The {Tool} answer from {Model} failed with strict mode ({Type}: {Message}); asking again without it",
-                    toolName, model.ModelId, ex.GetType().Name, ex.Message);
-                body["tools"][0].AsObject().Remove("strict");
-                body["tools"][0]["input_schema"] = inputSchema.DeepClone();
-                response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
-            }
-            catch (UnreadableAnswerException) when (body["tools"][0].AsObject().ContainsKey("eager_input_streaming"))
-            {
-                // streamed as written, the tool input is not checked before it arrives, and the model wrote JSON that does not
-                // parse; asked again without it, Bedrock checks the input before it is sent
-                _logger.LogWarning("The {Tool} answer from {Model} was not valid JSON; asking again without eager streaming", toolName, model.ModelId);
-                body["tools"][0].AsObject().Remove("eager_input_streaming");
-                response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
-            }
-            // a safety classifier can decline training content; one retry on another model, as the Claude API's own fallback does
-            if (StopReason(response) == "refusal" && !string.IsNullOrWhiteSpace(model.FallbackModelId))
-                response = await InvokeAsync(client, model.FallbackModelId, body, toolName, ct);
+                if (attempt > 5)
+                    throw new InvalidOperationException("The model's answer could not be read after several tries. Draft again.");
+                JsonElement response;
+                try
+                {
+                    response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
+                }
+                catch (AmazonBedrockRuntimeException ex) when (Refuses(ex, body))
+                {
+                    // Bedrock refuses one of the request's newer parts: strict mode when the schema's grammar is too large for it,
+                    // eager streaming or effort on an older deployment. Only what it refused is left out of the next ask.
+                    var dropped = new List<string>();
+                    var tool = body["tools"][0].AsObject();
+                    if (RefusesStrict(ex) && tool.ContainsKey("strict"))
+                    {
+                        tool.Remove("strict");
+                        tool["input_schema"] = inputSchema.DeepClone();
+                        dropped.Add("strict");
+                    }
+                    if (ex.Message.Contains("eager_input_streaming", StringComparison.OrdinalIgnoreCase) && tool.ContainsKey("eager_input_streaming"))
+                    {
+                        tool.Remove("eager_input_streaming");
+                        dropped.Add("eager_input_streaming");
+                    }
+                    if (RefusesEffort(ex) && body.ContainsKey("output_config"))
+                    {
+                        body.Remove("output_config");
+                        dropped.Add("output_config");
+                    }
+                    if (!dropped.Any())
+                        throw;
+                    _logger.LogInformation("{Model} refused {Fields}; asking without them: {Message}", model.ModelId, string.Join(", ", dropped), ex.Message);
+                    continue;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not UnreadableAnswerException
+                    && ex is not InvalidOperationException && body["tools"][0].AsObject().ContainsKey("strict"))
+                {
+                    // the stream failed while the answer was constrained to its schema; a schema too large for strict mode fails
+                    // this way, so ask once more without it
+                    _logger.LogWarning(ex, "The {Tool} answer from {Model} failed with strict mode ({Type}: {Message}); asking again without it",
+                        toolName, model.ModelId, ex.GetType().Name, ex.Message);
+                    body["tools"][0].AsObject().Remove("strict");
+                    body["tools"][0]["input_schema"] = inputSchema.DeepClone();
+                    continue;
+                }
+                catch (UnreadableAnswerException) when (!eagerRetried && body["tools"][0].AsObject().ContainsKey("eager_input_streaming"))
+                {
+                    // streamed as written, the tool input is not checked before it arrives, and the model wrote JSON that does not
+                    // parse; asked again without it, Bedrock checks the input before it is sent
+                    _logger.LogWarning("The {Tool} answer from {Model} was not valid JSON; asking again without eager streaming", toolName, model.ModelId);
+                    body["tools"][0].AsObject().Remove("eager_input_streaming");
+                    eagerRetried = true;
+                    continue;
+                }
+                // a safety classifier can decline training content; one retry on another model, as the Claude API's own fallback does
+                if (StopReason(response) == "refusal" && !string.IsNullOrWhiteSpace(model.FallbackModelId))
+                    response = await InvokeAsync(client, model.FallbackModelId, body, toolName, ct);
 
-            var input = ReadToolInput(response);
-            // a model sometimes writes the tool input in its own call markup, <parameter name="...">, inside the JSON,
-            // which leaves most of the answer in the wrong fields; asked again it answers in JSON
-            if (HasCallMarkup(input))
-            {
-                _logger.LogWarning("The {Tool} answer from {Model} was written in tool-call markup; asking again", toolName, model.ModelId);
-                body["system"] = body["system"].GetValue<string>() + "\n\n" + JsonOnly;
-                input = ReadToolInput(await InvokeAsync(client, model.ModelId, body, toolName, ct));
+                input = ReadToolInput(response);
+                // a model sometimes writes the tool input in its own call markup, <parameter name="...">, inside the JSON,
+                // which leaves most of the answer in the wrong fields; asked again it answers in JSON
                 if (HasCallMarkup(input))
-                    throw new InvalidOperationException("The model's answer came back garbled twice. Draft again.");
+                {
+                    if (markupRetried)
+                        throw new InvalidOperationException("The model's answer came back garbled twice. Draft again.");
+                    _logger.LogWarning("The {Tool} answer from {Model} was written in tool-call markup near: {Excerpt}; asking again", toolName, model.ModelId, MarkupExcerpt(input));
+                    body["system"] = body["system"].GetValue<string>() + "\n\n" + JsonOnly;
+                    markupRetried = true;
+                    continue;
+                }
+                break;
             }
             try
             {
@@ -194,14 +223,20 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             }
         }
 
-        private static bool Refuses(AmazonBedrockRuntimeException ex, JsonObject body) =>
-            ex.Message.Contains("eager_input_streaming", StringComparison.OrdinalIgnoreCase)
-            || ex.Message.Contains("strict", StringComparison.OrdinalIgnoreCase)
+        private static bool RefusesStrict(Exception ex) =>
+            ex.Message.Contains("strict", StringComparison.OrdinalIgnoreCase)
             || ex.Message.Contains("schema", StringComparison.OrdinalIgnoreCase)
             || ex.Message.Contains("grammar", StringComparison.OrdinalIgnoreCase)
-            || ex.Message.Contains("too complex", StringComparison.OrdinalIgnoreCase)
-            || (body.ContainsKey("output_config") && (ex.Message.Contains("output_config", StringComparison.OrdinalIgnoreCase)
-                || ex.Message.Contains("effort", StringComparison.OrdinalIgnoreCase)));
+            || ex.Message.Contains("too complex", StringComparison.OrdinalIgnoreCase);
+
+        private static bool RefusesEffort(Exception ex) =>
+            ex.Message.Contains("output_config", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("effort", StringComparison.OrdinalIgnoreCase);
+
+        private static bool Refuses(AmazonBedrockRuntimeException ex, JsonObject body) =>
+            ex.Message.Contains("eager_input_streaming", StringComparison.OrdinalIgnoreCase)
+            || RefusesStrict(ex)
+            || (body.ContainsKey("output_config") && RefusesEffort(ex));
 
         // what strict tool use cannot constrain, which Blueprint checks itself once the answer is read
         private static readonly string[] _unconstrained = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
@@ -249,6 +284,41 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
 
         // the forms a model's own call markup takes inside a value: parameter tags, or the call written out as XML
         private static readonly string[] _callMarkup = ["<parameter name=", "</parameter>", "<invoke", "</invoke>"];
+
+        /// <summary>Where the first piece of call markup is in a tool input, and the text around it, for the log</summary>
+        public static string MarkupExcerpt(JsonElement input) => Find(input, "$") ?? "";
+
+        private static string Find(JsonElement element, string path)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.String:
+                    var text = element.GetString();
+                    foreach (var marker in _callMarkup)
+                    {
+                        var at = text.IndexOf(marker, StringComparison.Ordinal);
+                        if (at >= 0)
+                        {
+                            var start = Math.Max(0, at - 150);
+                            return $"{path} has {marker}: ...{text.Substring(start, Math.Min(text.Length, at + 150) - start)}...";
+                        }
+                    }
+                    return null;
+                case JsonValueKind.Array:
+                    return element.EnumerateArray().Select((item, i) => Find(item, $"{path}[{i}]")).FirstOrDefault(f => f != null);
+                case JsonValueKind.Object:
+                    foreach (var property in element.EnumerateObject())
+                    {
+                        if (property.Name.StartsWith("<parameter", StringComparison.Ordinal))
+                            return $"{path} has a property named {property.Name}";
+                        if (Find(property.Value, $"{path}.{property.Name}") is string found)
+                            return found;
+                    }
+                    return null;
+                default:
+                    return null;
+            }
+        }
 
         /// <summary>Whether a tool input holds the model's own call markup instead of JSON values</summary>
         public static bool HasCallMarkup(JsonElement input) => input.ValueKind switch
@@ -393,6 +463,8 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             try
             {
                 result = message.ToMessage();
+                if (message.Salvaged != null)
+                    _logger.LogWarning("The {Tool} answer from {Model} was not quite JSON: {Repair}", toolName, modelId, message.Salvaged);
             }
             catch (JsonException ex)
             {
@@ -516,13 +588,54 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
         {
             var content = _message["content"].AsArray();
             content.Clear();
+            // the inputs that parse; a stray second tool_use block the model wrote in its own markup is dropped when another parsed
+            var inputs = withInput ? _partialJson.ToDictionary(p => p.Key, p => p.Value.Length == 0 ? (new JsonObject(), (JsonException)null) : ParseInput(p.Value.ToString())) : null;
+            if (inputs != null && inputs.Values.Any(i => i.Item1 != null) && inputs.Values.Any(i => i.Item2 != null))
+                Salvaged = (Salvaged == null ? "" : Salvaged + "; ") + $"{inputs.Values.Count(i => i.Item2 != null)} tool_use block(s) that were not JSON were dropped";
             foreach (var (index, block) in _blocks)
             {
-                if (withInput && _partialJson.TryGetValue(index, out var json))
-                    block["input"] = json.Length == 0 ? new JsonObject() : BedrockAiModelClient.ToNode(JsonDocument.Parse(json.ToString()).RootElement);
+                if (inputs != null && inputs.TryGetValue(index, out var input))
+                {
+                    if (input.Item1 == null)
+                    {
+                        if (inputs.Values.Any(i => i.Item1 != null))
+                            continue;
+                        throw input.Item2;
+                    }
+                    block["input"] = input.Item1;
+                }
                 content.Add(block.DeepClone());
             }
             return JsonSerializer.SerializeToElement(_message);
+        }
+
+        /// <summary>What was done to read the answer when it was not quite JSON, or null when it was</summary>
+        public string Salvaged { get; private set; }
+
+        // a model sometimes writes a stray tag or a word after the JSON; the object it wrote is still whole, so it is kept
+        private (JsonNode, JsonException) ParseInput(string json)
+        {
+            try
+            {
+                return (BedrockAiModelClient.ToNode(JsonDocument.Parse(json).RootElement), null);
+            }
+            catch (JsonException ex)
+            {
+                var start = json.IndexOf('{');
+                var end = json.LastIndexOf('}');
+                if (start < 0 || end <= start)
+                    return (null, ex);
+                try
+                {
+                    var node = BedrockAiModelClient.ToNode(JsonDocument.Parse(json.Substring(start, end - start + 1)).RootElement);
+                    Salvaged = "the text after the JSON was cut off";
+                    return (node, null);
+                }
+                catch (JsonException)
+                {
+                    return (null, ex);
+                }
+            }
         }
 
         private string AddDelta(int index, JsonObject delta)

@@ -27,7 +27,7 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets the ATT&amp;CK techniques in a MSEL's pool
+        /// Gets the techniques in a MSEL's pool
         /// </summary>
         /// <param name="mselId">The id of the Msel</param>
         /// <param name="ct"></param>
@@ -59,10 +59,10 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Adds an ATT&amp;CK technique to a MSEL's pool
+        /// Adds a technique to a MSEL's pool
         /// </summary>
         /// <remarks>
-        /// Refused with a 409 when the MSEL's pool already holds techniques from another ATT&amp;CK release.
+        /// Refused with a 409 when the MSEL's pool already holds techniques from another release.
         /// </remarks>
         /// <param name="mselAttackTechnique">The MSEL and the technique</param>
         /// <param name="ct"></param>
@@ -95,7 +95,7 @@ namespace Blueprint.Api.Controllers
         /// Removes a technique from a MSEL's pool by msel ID and technique ID
         /// </summary>
         /// <param name="mselId">ID of a msel.</param>
-        /// <param name="attackTechniqueId">ID of an ATT&amp;CK technique.</param>
+        /// <param name="attackTechniqueId">ID of a technique.</param>
         /// <param name="ct"></param>
         [HttpDelete("msels/{mselId}/attacktechniques/{attackTechniqueId}")]
         [ProducesResponseType((int)HttpStatusCode.NoContent)]
@@ -108,10 +108,10 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Moves a MSEL's technique pool to another ATT&amp;CK release
+        /// Moves a MSEL's technique pool to another release
         /// </summary>
         /// <remarks>
-        /// Techniques are matched by their ATT&amp;CK id. Ones the new release no longer has are dropped and listed
+        /// Techniques are matched by their external id (T1059, AML.T0051). Ones the new release no longer has are dropped and listed
         /// in the response; inject cells that name them keep their text.
         /// </remarks>
         /// <param name="mselId">ID of a msel.</param>

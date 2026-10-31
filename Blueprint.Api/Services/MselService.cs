@@ -2244,7 +2244,7 @@ namespace Blueprint.Api.Services
                     mselEntity.MselAttackTechniques = mselEntity.MselAttackTechniques
                         .Where(t => knownTechniqueIds.Contains(t.AttackTechniqueId))
                         .ToList();
-                    AddChange(result, "attackTechniques", $"{missingTechniques} ATT&CK techniques were not imported because their ATT&CK release is not loaded here. Import the release, then add them to the MSEL.");
+                    AddChange(result, "attackTechniques", $"{missingTechniques} techniques were not imported because their release is not loaded here. Import the release, then add them to the MSEL.");
                 }
             }
 

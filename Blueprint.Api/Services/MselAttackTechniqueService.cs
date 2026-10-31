@@ -98,7 +98,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             if (await _context.MselAttackTechniques.AnyAsync(m => m.MselId == msel.Id && m.AttackTechniqueId == technique.Id, ct))
-                throw new ConflictException($"{technique.ExternalId} is already in this MSEL's ATT&CK techniques.");
+                throw new ConflictException($"{technique.ExternalId} is already in this MSEL's techniques.");
 
             var pinned = await _context.MselAttackTechniques
                 .Where(m => m.MselId == msel.Id && m.AttackTechnique.AttackReleaseId != technique.AttackReleaseId)
@@ -106,7 +106,7 @@ namespace Blueprint.Api.Services
                 .FirstOrDefaultAsync(ct);
             if (pinned != null)
                 throw new ConflictException(
-                    $"This MSEL's ATT&CK techniques are from {pinned.Domain} {pinned.Version}. " +
+                    $"This MSEL's techniques are from {pinned.Domain} {pinned.Version}. " +
                     $"Upgrade them to {technique.AttackRelease.Version} before adding techniques from it.");
 
             var entity = new MselAttackTechniqueEntity(msel.Id, technique.Id)

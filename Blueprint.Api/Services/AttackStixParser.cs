@@ -54,7 +54,7 @@ namespace Blueprint.Api.Services
                     || !root.TryGetProperty("objects", out var objects)
                     || objects.ValueKind != JsonValueKind.Array)
                 {
-                    throw new InvalidAttackBundleException("The file is not a STIX bundle. Upload an ATT&CK release such as enterprise-attack.json.");
+                    throw new InvalidAttackBundleException("The file is not a STIX bundle. Upload a release bundle such as enterprise-attack.json or stix-atlas.json.");
                 }
 
                 return Parse(objects, version);
@@ -91,13 +91,13 @@ namespace Blueprint.Api.Services
             }
 
             if (techniques.Count == 0)
-                throw new InvalidAttackBundleException("The bundle has no ATT&CK techniques.");
+                throw new InvalidAttackBundleException("The bundle has no techniques.");
 
             version = string.IsNullOrWhiteSpace(version)
                 ? (collection.HasValue ? GetString(collection.Value, "x_mitre_version") : null)
                 : version.Trim();
             if (string.IsNullOrWhiteSpace(version))
-                throw new InvalidAttackBundleException("The bundle does not name its ATT&CK version. Enter the version and upload it again.");
+                throw new InvalidAttackBundleException("The bundle does not name its version. Enter the version and upload it again.");
 
             // The bundle's own catalogue is the reference source its tactics share. ATLAS tactics also cite the
             // ATT&CK tactic they correspond to, but not every one of them does, so the most common source wins.

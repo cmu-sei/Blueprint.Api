@@ -274,7 +274,7 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await Read<MselImportResult>(response);
-        Assert.Contains(result.Changes, c => c.Field == "attackTechniques" && c.Message.StartsWith("1 ATT&CK technique"));
+        Assert.Contains(result.Changes, c => c.Field == "attackTechniques" && c.Message.StartsWith("1 technique"));
         Assert.Equal(
             kept.Id,
             await ReadBack(rb => rb.MselAttackTechniques.Where(m => m.MselId == result.Msel.Id).Select(m => m.AttackTechniqueId).SingleAsync(Ct)));

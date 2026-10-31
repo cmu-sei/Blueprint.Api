@@ -35,7 +35,7 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets all imported ATT&amp;CK releases
+        /// Gets all imported technique framework releases
         /// </summary>
         /// <param name="ct"></param>
         [HttpGet("attackreleases")]
@@ -48,7 +48,7 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets a specific ATT&amp;CK release by id
+        /// Gets a specific release by id
         /// </summary>
         /// <param name="id">The id of the release</param>
         /// <param name="ct"></param>
@@ -62,7 +62,7 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets the tactics of an ATT&amp;CK release, in matrix order
+        /// Gets the tactics of a release, in matrix order
         /// </summary>
         /// <param name="id">The id of the release</param>
         /// <param name="ct"></param>
@@ -76,7 +76,7 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets the techniques and sub-techniques of an ATT&amp;CK release
+        /// Gets the techniques and sub-techniques of a release
         /// </summary>
         /// <param name="id">The id of the release</param>
         /// <param name="ct"></param>
@@ -90,7 +90,7 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Imports an ATT&amp;CK release from its STIX 2.x bundle
+        /// Imports a release from its STIX 2.x bundle
         /// </summary>
         /// <remarks>
         /// Accepts enterprise-attack.json, mobile-attack.json or ics-attack.json from the mitre-attack/attack-stix-data
@@ -99,7 +99,7 @@ namespace Blueprint.Api.Controllers
         /// only for an older bundle that does not name its version.
         /// </remarks>
         /// <param name="form">The bundle</param>
-        /// <param name="version">The ATT&amp;CK version (e.g. "17.1"), if the bundle does not say</param>
+        /// <param name="version">The release version (e.g. "17.1"), if the bundle does not say</param>
         /// <param name="ct"></param>
         [HttpPost("attackreleases/import")]
         [RequestSizeLimit(MaxBundleBytes)]
@@ -116,7 +116,7 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Deletes an ATT&amp;CK release
+        /// Deletes a release
         /// </summary>
         /// <remarks>
         /// Refused with a 409 while any MSEL's technique pool uses the release.

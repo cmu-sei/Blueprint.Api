@@ -101,7 +101,7 @@ namespace Blueprint.Api.Services
             }
 
             if (await _context.AttackReleases.AnyAsync(r => r.Domain == release.Domain && r.Version == release.Version, ct))
-                throw new ConflictException($"ATT&CK {release.Domain} {release.Version} has already been imported.");
+                throw new ConflictException($"{release.Domain} {release.Version} has already been imported.");
 
             release.CreatedBy = _user.GetId();
             _context.AttackReleases.Add(release);
@@ -124,7 +124,7 @@ namespace Blueprint.Api.Services
                 .Distinct()
                 .CountAsync(ct);
             if (mselsUsingIt > 0)
-                throw new ConflictException($"ATT&CK {release.Domain} {release.Version} is used by {mselsUsingIt} MSEL(s). Upgrade or clear their techniques before deleting it.");
+                throw new ConflictException($"{release.Domain} {release.Version} is used by {mselsUsingIt} MSEL(s). Upgrade or clear their techniques before deleting it.");
 
             _context.AttackReleases.Remove(release);
             await _context.SaveChangesAsync(ct);

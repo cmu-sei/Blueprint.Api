@@ -152,7 +152,7 @@ Answer only by calling the tool.";
                 draft.Name,
                 draft.Description,
                 (draft.Teams ?? new List<MselDraftTeam>()).Select(t => (t.ShortName, t.Name, t.Description)).ToList(),
-                (draft.Organizations ?? new List<MselDraftOrganization>()).Select(o => (o.ShortName, o.Name, o.Description)).ToList());
+                (draft.Organizations ?? new List<MselDraftOrganization>()).Select(o => (o.ShortName, o.Name, $"{o.Description}{MselDraftRules.OrganizationFactsSuffix(o)}")).ToList());
         }
 
         public static string BuildPrompt(ProfileDraftRequest request, ProfileContext context)

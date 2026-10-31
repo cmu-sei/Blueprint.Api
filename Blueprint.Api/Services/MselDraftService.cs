@@ -63,6 +63,9 @@ Design:
   and the objective it serves. Keep participants inside the role being trained: the adversary acts; participants decide, coordinate
   and do their own staff work.
 - Keep everything traceable: scenario, move, inject, expected action, objective, competency.
+- Name the critical infrastructure sectors the scenario touches, from the CISA list, the primary one first. Give every
+  organization its sector (none for one outside them, such as a news outlet), size, industry and country, and keep its people,
+  systems, hours and reach in scale: a small water utility has no 24-hour security operations center.
 - Follow the planner's design choices. Where they leave something open, choose a conservative default and say what you chose in
   plannerNotes.
 
@@ -249,7 +252,7 @@ summary, sender and recipients specific enough to write it from and keep the sto
                 design.Objectives,
                 Moves = design.Moves.Select(m => new { m.MoveNumber, m.Description, m.Purpose, m.StartMinutes, m.SituationTime, Situation = DataValueDraftService.StripHtml(m.SituationDescription) }),
                 Teams = design.Teams.Select(t => new { t.ShortName, t.Name, Description = DataValueDraftService.StripHtml(t.Description), t.Competencies }),
-                Organizations = design.Organizations.Select(o => new { o.ShortName, o.Name, Description = DataValueDraftService.StripHtml(o.Description) }),
+                Organizations = design.Organizations.Select(o => new { o.ShortName, o.Name, Description = DataValueDraftService.StripHtml(o.Description), o.Sector, o.Size, o.Industry, o.Country }),
                 design.Cards,
                 design.Competencies
             }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
@@ -345,7 +348,7 @@ no style attributes. Answer only by calling the tool.";
             foreach (var team in draft.Teams ?? new List<MselDraftTeam>())
                 sb.AppendLine($"- {team.ShortName}: {team.Name}, participant team. {OneLine(DataValueDraftService.StripHtml(team.Description))}");
             foreach (var organization in draft.Organizations ?? new List<MselDraftOrganization>())
-                sb.AppendLine($"- {organization.ShortName}: {organization.Name}. {OneLine(DataValueDraftService.StripHtml(organization.Description))}");
+                sb.AppendLine($"- {organization.ShortName}: {organization.Name}{MselDraftRules.OrganizationFactsSuffix(organization)}. {OneLine(DataValueDraftService.StripHtml(organization.Description))}");
             sb.AppendLine();
             sb.AppendLine("Moves (number, starts at minute, scenario time: title, situation):");
             foreach (var move in draft.Moves ?? new List<MselDraftMove>())
@@ -552,6 +555,7 @@ no style attributes. Answer only by calling the tool.";
             }
 
             JsonObject Str(string description) => new JsonObject { ["type"] = "string", ["description"] = description };
+            JsonObject Sector() => new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselDraftRules.Sectors.Select(x => (JsonNode)x).ToArray()) };
             JsonObject Int(string description) => new JsonObject { ["type"] = "integer", ["minimum"] = 0, ["description"] = description };
             JsonObject Obj(JsonObject properties, params string[] required) => new JsonObject
             {
@@ -623,8 +627,10 @@ no style attributes. Answer only by calling the tool.";
                     ["premise"] = Str("The scenario premise: what has happened and why it matters"),
                     ["environment"] = Str("The operational environment: political, military, economic, social, information, infrastructure, physical environment and time"),
                     ["escalationCeiling"] = Str("How far the scenario may escalate, and what it never does"),
-                    ["assumptions"] = Arr(Str("A scenario assumption"), "What the scenario takes as given")
-                }, "problem", "premise", "environment", "escalationCeiling"),
+                    ["assumptions"] = Arr(Str("A scenario assumption"), "What the scenario takes as given"),
+                    ["sectors"] = Arr(Sector(), "The critical infrastructure sectors the scenario touches, the primary one first"),
+                    ["primarySector"] = Sector()
+                }, "problem", "premise", "environment", "escalationCeiling", "sectors", "primarySector"),
                 ["objectives"] = Arr(Obj(objectiveProperties, "id", "task", "condition", "standard"), "3 to 6 training objectives"),
                 ["moves"] = Arr(Obj(new JsonObject
                 {
@@ -642,8 +648,12 @@ no style attributes. Answer only by calling the tool.";
                 {
                     ["name"] = Str("Fictional organization name"),
                     ["shortName"] = Str("Short name used in organization columns, no commas"),
-                    ["description"] = Str("Who they are in the scenario")
-                }, "name", "shortName"), "Simulated organizations that send or receive injects (exercise control, adversary, press, agencies)"),
+                    ["description"] = Str("Who they are in the scenario"),
+                    ["sector"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselDraftRules.Sectors.Append("None").Select(x => (JsonNode)x).ToArray()), ["description"] = "The organization's critical infrastructure sector; None for one outside them" },
+                    ["size"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselDraftRules.Sizes.Select(x => (JsonNode)x).ToArray()), ["description"] = "Small (under 100 people), Medium (100 to 999), Large (1,000 to 9,999) or Enterprise (10,000 or more)" },
+                    ["industry"] = Str("What it does within its sector, e.g. regional acute-care hospital, container port, municipal water utility"),
+                    ["country"] = Str("The country it is in; fictional where the scenario's geography is")
+                }, "name", "shortName", "description", "sector", "size", "industry", "country"), "Simulated organizations that send or receive injects (exercise control, adversary, press, agencies)"),
                 ["injects"] = new JsonObject
                 {
                     ["type"] = "array",
@@ -890,6 +900,32 @@ no style attributes. Answer only by calling the tool.";
         public const string TemplateModel = "Template";
         private static readonly string[] _assessments = [QuestionsByMove, MissionImpact, Likelihood, Nciss, NoAssessment, TemplateModel];
         private static readonly string[] _cardGroupings = ["Sources", "Organizations", "Sectors", "Countries", "Terrain"];
+        /// <summary>The 16 critical infrastructure sectors, as CISA names them</summary>
+        public static readonly string[] Sectors =
+        [
+            "Chemical", "Commercial Facilities", "Communications", "Critical Manufacturing", "Dams", "Defense Industrial Base",
+            "Emergency Services", "Energy", "Financial Services", "Food and Agriculture", "Government Services and Facilities",
+            "Healthcare and Public Health", "Information Technology", "Nuclear Reactors, Materials, and Waste", "Transportation Systems",
+            "Water and Wastewater Systems"
+        ];
+        public static readonly string[] Sizes = ["Small", "Medium", "Large", "Enterprise"];
+
+        /// <summary>The sectors named that are CISA's, as CISA spells them, each once</summary>
+        public static List<string> PickSectors(IEnumerable<string> names) =>
+            (names ?? Enumerable.Empty<string>())
+                .Select(n => Sectors.FirstOrDefault(s => s.Equals(n?.Trim(), StringComparison.OrdinalIgnoreCase)))
+                .Where(s => s != null).Distinct().ToList();
+
+        /// <summary>An organization's facts as one line, for the prompts and pages that describe it</summary>
+        public static string OrganizationFacts(MselDraftOrganization o)
+        {
+            var parts = new[] { o.Sector, o.Size, o.Industry, o.Country }.Where(x => !string.IsNullOrWhiteSpace(x) && x != "None");
+            return string.Join(", ", parts);
+        }
+
+        /// <summary>The facts in parentheses after an organization's name, or nothing when it has none</summary>
+        public static string OrganizationFactsSuffix(MselDraftOrganization o) =>
+            OrganizationFacts(o) is { Length: > 0 } facts ? $" ({facts})" : "";
         private static readonly string[] _formats = ["Discussion", "Functional", "Hybrid"];
         private static readonly string[] _expectedActionNames = ["Expected Actions", "Expected Action"];
 
@@ -924,6 +960,7 @@ no style attributes. Answer only by calling the tool.";
                 CardGrouping = template.UseGallery ? Pick(design.CardGrouping, _cardGroupings) : null,
                 ProfilePages = design.ProfilePages,
                 LeadMinutes = design.LeadMinutes is int lead ? Math.Clamp(lead, 0, 240) : null,
+                Sectors = PickSectors(design.Sectors),
                 Marking = marking.Marking,
                 MarkingText = marking.Text
             };
@@ -935,6 +972,7 @@ no style attributes. Answer only by calling the tool.";
             const string open = "open";
             yield return $"Format: {design.Format switch { "Discussion" => "a discussion-based tabletop: participants talk through decisions, no hands-on tasks", "Functional" => "functional: participants work hands-on in the range", "Hybrid" => "hybrid: discussion moves with some hands-on work in the range", _ => open }}";
             yield return $"Participant structure: {design.Structure ?? open}";
+            yield return $"Critical infrastructure sectors: {(design.Sectors.Any() ? string.Join(", ", design.Sectors) : open)}";
             yield return $"CITE assessment: {design.CiteAssessment switch { QuestionsByMove => "questions by move: write citeQuestions for every move", MissionImpact => "the DoD Cyber Table Top mission impact matrix: teams score mission impact each move, so write no discussion questions", Likelihood => "the DoD Cyber Table Top likelihood matrix: teams score each attack's cost and chance of success, so write no discussion questions", Nciss => "the CISA National Cyber Incident Scoring System (NCISS): each move, teams score the incident's functional impact, observed activity, where in the network it is, the actor, information impact, recoverability, cross-sector dependency and potential impact, so write no discussion questions, and give the injects the details teams need to score each of these", TemplateModel => "the template's own scoring model, so write no discussion questions", NoAssessment => "none", _ => open }}";
             yield return $"Moves: {(design.Moves?.ToString() ?? open)}";
             yield return $"Exercise length in real time: {(design.DurationMinutes is int minutes ? $"{minutes} minutes" : open)}";
@@ -1083,6 +1121,21 @@ no style attributes. Answer only by calling the tool.";
             // teams and organizations: unique short names, without the commas that separate team lists
             draft.Teams = UniqueByShortName(draft.Teams, t => t.ShortName, (t, s) => t.ShortName = s, t => t.Name, warnings, "team");
             draft.Organizations = UniqueByShortName(draft.Organizations, o => o.ShortName, (o, s) => o.ShortName = s, o => o.Name, warnings, "organization");
+            // sectors by CISA's names, the planner's choice first where it was made
+            draft.Scenario ??= new MselDraftScenario();
+            var named = draft.Scenario.Sectors ?? new List<string>();
+            var unknownSectors = named.Where(n => !Sectors.Any(s => s.Equals(n?.Trim(), StringComparison.OrdinalIgnoreCase))).ToList();
+            if (unknownSectors.Any())
+                warnings.Add($"Dropped sectors that are not CISA critical infrastructure sectors: {string.Join(", ", unknownSectors)}.");
+            draft.Scenario.Sectors = PickSectors((draft.Design?.Sectors ?? new List<string>()).Concat(named).Append(draft.Scenario.PrimarySector));
+            draft.Scenario.PrimarySector = PickSectors([draft.Scenario.PrimarySector]).FirstOrDefault() ?? draft.Scenario.Sectors.FirstOrDefault();
+            foreach (var organization in draft.Organizations)
+            {
+                organization.Sector = PickSectors([organization.Sector]).FirstOrDefault();
+                organization.Size = Sizes.FirstOrDefault(z => z.Equals(organization.Size?.Trim(), StringComparison.OrdinalIgnoreCase));
+                organization.Industry = string.IsNullOrWhiteSpace(organization.Industry) ? null : organization.Industry.Trim();
+                organization.Country = string.IsNullOrWhiteSpace(organization.Country) ? null : organization.Country.Trim();
+            }
             var teamNames = new HashSet<string>(template.Teams.Select(t => t.ShortName).Concat(draft.Teams.Select(t => t.ShortName)), StringComparer.OrdinalIgnoreCase);
             var orgNames = new HashSet<string>(template.Organizations.Select(o => o.ShortName).Concat(draft.Organizations.Select(o => o.ShortName)).Concat(teamNames), StringComparer.OrdinalIgnoreCase);
 

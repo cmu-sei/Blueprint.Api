@@ -88,10 +88,12 @@ namespace Blueprint.Api.Services
                     Name = string.IsNullOrWhiteSpace(organization.Name) ? organization.ShortName : organization.Name,
                     ShortName = organization.ShortName,
                     Description = organization.Description,
-                    // a written profile is a page; the summary stays one plain line
-                    Summary = string.IsNullOrWhiteSpace(organization.Summary)
-                        ? OneLine(DataValueDraftService.StripHtml(organization.Description))
-                        : organization.Summary.Trim()
+                    // a written profile is a page; the summary stays one plain line, with the organization's sector, size, industry and country
+                    Summary = OneLine(string.Join(" ", new[]
+                    {
+                        string.IsNullOrWhiteSpace(organization.Summary) ? DataValueDraftService.StripHtml(organization.Description) : organization.Summary.Trim(),
+                        MselDraftRules.OrganizationFacts(organization) is { Length: > 0 } facts ? $"({facts})" : null
+                    }.Where(x => !string.IsNullOrWhiteSpace(x))))
                 });
             }
             // the draft's cards go on the wall after the template's; every team sees every card, and EXCON may post to them

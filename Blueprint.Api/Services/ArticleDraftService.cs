@@ -214,7 +214,7 @@ Answer only by calling the tool.";
             sb.AppendLine();
             sb.AppendLine("Organizations and teams (short name: name, who they are):");
             foreach (var organization in draft.Organizations ?? new List<MselDraftOrganization>())
-                sb.AppendLine($"- {organization.ShortName}: {organization.Name}, {organization.Description}");
+                sb.AppendLine($"- {organization.ShortName}: {organization.Name}{MselDraftRules.OrganizationFactsSuffix(organization)}, {organization.Description}");
             foreach (var team in draft.Teams ?? new List<MselDraftTeam>())
                 sb.AppendLine($"- {team.ShortName}: {team.Name}, participant team. {team.Description}");
             sb.AppendLine();

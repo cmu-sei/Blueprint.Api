@@ -48,6 +48,8 @@ namespace Blueprint.Api.ViewModels
         public string CardGrouping { get; set; }
         /// <summary>Whether to add Team Profiles and Organization Profiles pages</summary>
         public bool ProfilePages { get; set; } = true;
+        /// <summary>The CISA critical infrastructure sectors the exercise covers; empty for the draft to choose</summary>
+        public List<string> Sectors { get; set; } = new List<string>();
         /// <summary>How long before STARTEX the doors open: the pre-exercise move, in minutes; 15 when empty</summary>
         public int? LeadMinutes { get; set; }
         /// <summary>The banner on every Gallery article: None, Exercise, Tlp or Classification; empty for the template's</summary>
@@ -138,6 +140,9 @@ namespace Blueprint.Api.ViewModels
         /// <summary>How far the scenario may escalate</summary>
         public string EscalationCeiling { get; set; }
         public List<string> Assumptions { get; set; } = new List<string>();
+        /// <summary>The CISA critical infrastructure sectors the scenario touches, the primary one first</summary>
+        public List<string> Sectors { get; set; } = new List<string>();
+        public string PrimarySector { get; set; }
     }
 
     /// <summary>A training objective as task, condition and standard</summary>
@@ -170,6 +175,13 @@ namespace Blueprint.Api.ViewModels
         public string Description { get; set; }
         /// <summary>One line on who they are; when empty, the description's text is used</summary>
         public string Summary { get; set; }
+        /// <summary>The CISA critical infrastructure sector the organization belongs to; empty for one outside them, such as a news outlet</summary>
+        public string Sector { get; set; }
+        /// <summary>Small, Medium, Large or Enterprise</summary>
+        public string Size { get; set; }
+        /// <summary>What it does within its sector, e.g. regional acute-care hospital</summary>
+        public string Industry { get; set; }
+        public string Country { get; set; }
     }
 
     public class MselDraftCiteAction

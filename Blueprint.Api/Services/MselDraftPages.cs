@@ -40,6 +40,8 @@ namespace Blueprint.Api.Services
 
             if (!string.IsNullOrWhiteSpace(draft.Scenario?.Problem))
                 sb.Append($"<h3>The problem</h3><p>{E(draft.Scenario.Problem)}</p>");
+            if (draft.Scenario?.Sectors?.Any() == true)
+                sb.Append($"<p><b>Critical infrastructure sectors:</b> {E(string.Join(", ", draft.Scenario.Sectors))}</p>");
 
             if (draft.Objectives.Any())
             {
@@ -109,6 +111,8 @@ namespace Blueprint.Api.Services
                     sb.Append($"<p><b>Operational environment:</b> {E(scenario.Environment)}</p>");
                 if (!string.IsNullOrWhiteSpace(scenario.EscalationCeiling))
                     sb.Append($"<p><b>Escalation ceiling:</b> {E(scenario.EscalationCeiling)}</p>");
+                if (scenario.Sectors.Any())
+                    sb.Append($"<p><b>Critical infrastructure sectors:</b> {E(string.Join(", ", scenario.Sectors))}</p>");
                 if (scenario.Assumptions.Any())
                     sb.Append("<p><b>Assumptions</b></p>" + List("ul", scenario.Assumptions));
             }

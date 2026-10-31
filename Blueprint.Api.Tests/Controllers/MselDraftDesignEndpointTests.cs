@@ -56,7 +56,7 @@ public class MselDraftDesignEndpointTests(DatabaseFixture fixture, AiEnabledFact
             CiteAssessment = "MissionImpact",
             Moves = 40,
             DurationMinutes = 180,
-            LeadershipBrief = true
+            LeadershipBrief = true, Sectors = ["energy", "Water and Wastewater Systems", "Bogus"]
         }));
 
         Assert.Contains("design and draft", _system);
@@ -68,6 +68,11 @@ public class MselDraftDesignEndpointTests(DatabaseFixture fixture, AiEnabledFact
         Assert.Contains("- Exercise length in real time: 180 minutes", _prompt);
         Assert.Contains("- Scenario time the exercise covers: open", _prompt);
         Assert.Contains("- Final move is a brief to leadership: yes", _prompt);
+        Assert.Contains("- Critical infrastructure sectors: Energy, Water and Wastewater Systems", _prompt);
+        // the sixteen sectors, as CISA names them, are what the model may choose from
+        Assert.Contains("\"Nuclear Reactors, Materials, and Waste\"", _schema);
+        Assert.Contains("\"primarySector\"", _schema);
+        Assert.Contains("\"Enterprise\"", _schema);
         Assert.Contains("\"objectives\"", _schema);
         Assert.Contains("\"expectedDecisions\"", _schema);
         Assert.DoesNotContain("\"citeQuestions\"", _schema);

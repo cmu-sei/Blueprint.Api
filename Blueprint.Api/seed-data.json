@@ -20,6 +20,22 @@
       "Description": "Homeland Security Exercise and Evaluation Program",
       "Status": 20,
       "IsTemplate": true
+    },
+    {
+      "Id": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Crucible MSEL",
+      "Description": "Player, Gallery, CITE and Steamfitter ready: every Gallery Article Parameter is mapped, and the teams have Player applications, a Gallery card, and CITE duties and actions. Before pushing, choose the CITE scoring model and each team's CITE team type, or turn CITE off.",
+      "Status": 20,
+      "IsTemplate": true,
+      "UsePlayer": true,
+      "PlayerIntegrationType": 10,
+      "UseGallery": true,
+      "GalleryIntegrationType": 10,
+      "UseCite": true,
+      "CiteIntegrationType": 10,
+      "UseSteamfitter": true,
+      "SteamfitterIntegrationType": 10,
+      "DurationSeconds": 10800
     }
   ],
   "ScenarioEvents": [
@@ -51,6 +67,33 @@
       "MoveStopTime": "2023-02-02T10:00:00Z",
       "SituationTime": "2022-07-04T12:00:00Z",
       "SituationDescription": "The first period of the exercise."
+    },
+    {
+      "Id": "9135aa38-c508-4767-ac2d-73c1463bff7f",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "MoveNumber": 0,
+      "Description": "Pre-Exercise",
+      "DeltaSeconds": 0,
+      "SituationTime": "2026-01-05T08:00:00Z",
+      "SituationDescription": "Participants confirm they can reach Player, Gallery and CITE."
+    },
+    {
+      "Id": "5b0e1b62-ba00-4b60-84a0-069203f6aa84",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "MoveNumber": 1,
+      "Description": "Initial Indicators",
+      "DeltaSeconds": 1800,
+      "SituationTime": "2026-01-05T09:00:00Z",
+      "SituationDescription": "The first reports of the incident arrive."
+    },
+    {
+      "Id": "33d6b4ed-2f5d-42bc-8c1b-37e33102b9cc",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "MoveNumber": 2,
+      "Description": "Escalation",
+      "DeltaSeconds": 5400,
+      "SituationTime": "2026-01-05T13:00:00Z",
+      "SituationDescription": "The incident spreads and its impact grows."
     }
   ],
   "Organizations": [
@@ -75,6 +118,15 @@
       "ShortName": "CISA",
       "Description": "The Cybersecurity and Infrastructure Security Agency (CISA) is an agency of the United States Department of Homeland Security (DHS) that is responsible for strengthening cybersecurity and infrastructure protection across all levels of government, coordinating cybersecurity programs with U.S. states, and improving the government's cybersecurity protections against private and nation-state hackers.",
       "IsTemplate": true
+    },
+    {
+      "Id": "347c5e94-d7c8-4f76-9c51-e27699209758",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Global News Network",
+      "ShortName": "GNN",
+      "Summary": "A news outlet reporting on the incident",
+      "Description": "A news outlet reporting on the incident.",
+      "IsTemplate": false
     }
   ],
   "DataFields": [
@@ -447,6 +499,552 @@
       "IsChosenFromList": false,
       "OnScenarioEventList": true,
       "OnExerciseView": true
+    },
+    {
+      "Id": "9d5c7e01-22c0-4188-8d9d-703e530281df",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Name",
+      "DataType": 0,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true,
+      "IsShownOnDefaultTab": true,
+      "GalleryArticleParameter": "Name"
+    },
+    {
+      "Id": "329ae21c-72b8-4c70-970f-6e15fe21da8b",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Summary",
+      "DataType": 0,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": true,
+      "IsShownOnDefaultTab": true,
+      "GalleryArticleParameter": "Summary"
+    },
+    {
+      "Id": "d76bfa44-bb44-406e-9a07-a42cbf2d682d",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Description",
+      "DataType": 60,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": true,
+      "IsShownOnDefaultTab": true,
+      "GalleryArticleParameter": "Description"
+    },
+    {
+      "Id": "1283fff5-c25c-4045-95d5-a28696a3a6c2",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "From Org",
+      "DataType": 50,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true,
+      "IsShownOnDefaultTab": true,
+      "GalleryArticleParameter": "FromOrg"
+    },
+    {
+      "Id": "0d1b19f3-35c4-490e-b549-617d479bc3e9",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "To Org",
+      "DataType": 100,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true,
+      "IsShownOnDefaultTab": true,
+      "GalleryArticleParameter": "ToOrg"
+    },
+    {
+      "Id": "61553cd0-5000-41bc-b633-25520d1276d8",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Status",
+      "DataType": 0,
+      "DisplayOrder": 6,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": false,
+      "IsShownOnDefaultTab": false,
+      "GalleryArticleParameter": "Status"
+    },
+    {
+      "Id": "9effb193-1dfd-416d-b55a-5ad9ff19b770",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Source Type",
+      "DataType": 80,
+      "DisplayOrder": 7,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false,
+      "IsShownOnDefaultTab": false,
+      "GalleryArticleParameter": "SourceType"
+    },
+    {
+      "Id": "cd8f5943-4d58-4b9c-af6a-48deefb9dd41",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Source Name",
+      "DataType": 0,
+      "DisplayOrder": 8,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false,
+      "IsShownOnDefaultTab": false,
+      "GalleryArticleParameter": "SourceName"
+    },
+    {
+      "Id": "486dea21-4a5a-4f06-9351-7d342a7e8bd7",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Date Posted",
+      "DataType": 40,
+      "DisplayOrder": 9,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false,
+      "IsShownOnDefaultTab": false,
+      "GalleryArticleParameter": "DatePosted"
+    },
+    {
+      "Id": "c4958d42-0dfe-44d5-a0c0-a7e7434355fa",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Card",
+      "DataType": 70,
+      "DisplayOrder": 10,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false,
+      "IsShownOnDefaultTab": false,
+      "GalleryArticleParameter": "CardId"
+    },
+    {
+      "Id": "cb6f5246-b52e-4246-b8ac-52b37e07f8b2",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Url",
+      "DataType": 140,
+      "DisplayOrder": 11,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false,
+      "IsShownOnDefaultTab": false,
+      "GalleryArticleParameter": "Url"
+    },
+    {
+      "Id": "f3f74e83-a5ed-4d5d-9b51-d3e54448aa53",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Open In New Tab",
+      "DataType": 30,
+      "DisplayOrder": 12,
+      "IsChosenFromList": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false,
+      "IsShownOnDefaultTab": false,
+      "GalleryArticleParameter": "OpenInNewTab"
+    },
+    {
+      "Id": "f2bc4d5c-a56d-4770-9993-811377c471fe",
+      "InjectTypeId": "bd838cb1-6ccf-4a4b-ad01-994a9da5e4c4",
+      "Name": "Summary",
+      "DataType": 0,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "a9c9115b-b030-497b-857c-f1278378b5f5",
+      "InjectTypeId": "bd838cb1-6ccf-4a4b-ad01-994a9da5e4c4",
+      "Name": "Source Type",
+      "DataType": 80,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "726db5f1-c445-4870-a94c-b80b91edc8f9",
+      "InjectTypeId": "bd838cb1-6ccf-4a4b-ad01-994a9da5e4c4",
+      "Name": "Source Name",
+      "DataType": 0,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "a60e4c1b-528c-4a7e-b495-9433692697dd",
+      "InjectTypeId": "bd838cb1-6ccf-4a4b-ad01-994a9da5e4c4",
+      "Name": "Url",
+      "DataType": 140,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "f4e9243f-7454-4e4c-a695-db09fc0cbd25",
+      "InjectTypeId": "bd838cb1-6ccf-4a4b-ad01-994a9da5e4c4",
+      "Name": "Status",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "ba1b89c7-c064-46fd-8b6d-5fc92144a7ad",
+      "Name": "Summary",
+      "Description": "A short summary of the inject. Gallery shows it on the article card.",
+      "DataType": 0,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false,
+      "IsMultiSelect": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": true,
+      "IsShownOnDefaultTab": true,
+      "GalleryArticleParameter": "Summary",
+      "IsTemplate": true
+    },
+    {
+      "Id": "469b1a6b-6bd8-4c84-b16b-ff3edd67ef38",
+      "Name": "Source Type",
+      "Description": "The Gallery source type of the article (News, Social, Email, Phone, Intel, Reporting or Orders).",
+      "DataType": 80,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false,
+      "IsMultiSelect": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false,
+      "IsShownOnDefaultTab": false,
+      "GalleryArticleParameter": "SourceType",
+      "IsTemplate": true
+    },
+    {
+      "Id": "23b7b68a-f245-484d-80bf-7e4a9c0f0346",
+      "Name": "Source Name",
+      "Description": "Who the article appears to come from, as Gallery shows it.",
+      "DataType": 0,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false,
+      "IsMultiSelect": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false,
+      "IsShownOnDefaultTab": false,
+      "GalleryArticleParameter": "SourceName",
+      "IsTemplate": true
+    },
+    {
+      "Id": "ef4bffe3-c3e7-4d53-88e7-a1837e949665",
+      "Name": "Url",
+      "Description": "A link to more information about the inject.",
+      "DataType": 140,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false,
+      "IsMultiSelect": false,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false,
+      "IsShownOnDefaultTab": false,
+      "GalleryArticleParameter": "Url",
+      "IsTemplate": true
+    },
+    {
+      "Id": "a0722217-476e-440f-8520-bd430735dac1",
+      "Name": "Delivery Method",
+      "Description": "How the inject reaches the participants (for example Gallery, email, phone or in person).",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false,
+      "IsMultiSelect": false,
+      "OnScenarioEventList": true,
+      "OnExerciseView": true,
+      "IsShownOnDefaultTab": false,
+      "IsTemplate": true
+    },
+    {
+      "Id": "6126a7bf-678d-4986-9918-d91227cac377",
+      "Name": "Competency",
+      "Description": "The competencies (for example NICE Framework tasks) the inject exercises.",
+      "DataType": 170,
+      "DisplayOrder": 6,
+      "IsChosenFromList": true,
+      "IsMultiSelect": true,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false,
+      "IsShownOnDefaultTab": false,
+      "IsTemplate": true
+    },
+    {
+      "Id": "eaefab92-c0d6-4136-adbd-a14405b02264",
+      "InjectTypeId": "3d6a396c-29a7-426c-9b10-57be716fcd71",
+      "Name": "Summary",
+      "DataType": 0,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "ce2238fc-d8bb-4897-8f06-de7f8356cc4c",
+      "InjectTypeId": "3d6a396c-29a7-426c-9b10-57be716fcd71",
+      "Name": "Source Type",
+      "DataType": 80,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "636cc258-75df-4a9b-aa20-f2f881bc9cc7",
+      "InjectTypeId": "3d6a396c-29a7-426c-9b10-57be716fcd71",
+      "Name": "Source Name",
+      "DataType": 0,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "f31572c6-f0fd-4570-b7ed-8146ff6fc3f5",
+      "InjectTypeId": "3d6a396c-29a7-426c-9b10-57be716fcd71",
+      "Name": "Url",
+      "DataType": 140,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "411811bc-57a7-40f8-8930-20fb10e28e86",
+      "InjectTypeId": "3d6a396c-29a7-426c-9b10-57be716fcd71",
+      "Name": "Status",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "f0b49b31-59b8-4561-b4c3-2be6b3c7b354",
+      "InjectTypeId": "950df58c-58c0-47d4-a28d-7827dc7613c3",
+      "Name": "Summary",
+      "DataType": 0,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "78f7d390-50e9-40bb-aaeb-49cf6b995050",
+      "InjectTypeId": "950df58c-58c0-47d4-a28d-7827dc7613c3",
+      "Name": "Source Type",
+      "DataType": 80,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "8ece8859-6a5b-4965-86e5-fd04aea65dd5",
+      "InjectTypeId": "950df58c-58c0-47d4-a28d-7827dc7613c3",
+      "Name": "Source Name",
+      "DataType": 0,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "d26ffd88-3af0-4d7c-b881-d98a73e548dd",
+      "InjectTypeId": "950df58c-58c0-47d4-a28d-7827dc7613c3",
+      "Name": "Url",
+      "DataType": 140,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "99b620a7-b88d-4ca6-be59-e51efe032c90",
+      "InjectTypeId": "950df58c-58c0-47d4-a28d-7827dc7613c3",
+      "Name": "Status",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "27ae6f0d-9a8f-44d2-914c-4028451dd653",
+      "InjectTypeId": "37c1c817-4381-4a37-8d88-dc31955647d3",
+      "Name": "Summary",
+      "DataType": 0,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "a6528768-d9e1-4237-b88e-d182f44aecda",
+      "InjectTypeId": "37c1c817-4381-4a37-8d88-dc31955647d3",
+      "Name": "Source Type",
+      "DataType": 80,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "42fde7ba-21c0-483f-a03e-95a6cc6f9ea3",
+      "InjectTypeId": "37c1c817-4381-4a37-8d88-dc31955647d3",
+      "Name": "Source Name",
+      "DataType": 0,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "407ea8d5-a34f-448a-9fa3-ba2307ea75cb",
+      "InjectTypeId": "37c1c817-4381-4a37-8d88-dc31955647d3",
+      "Name": "Url",
+      "DataType": 140,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "38d11e36-cb27-4030-92b5-b3e7b0382b57",
+      "InjectTypeId": "37c1c817-4381-4a37-8d88-dc31955647d3",
+      "Name": "Status",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "9ab61ad1-a084-49ce-bdb9-e46bea8512e1",
+      "InjectTypeId": "63ba1cfb-00a4-4b98-b454-6d0797aa6ae7",
+      "Name": "Summary",
+      "DataType": 0,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "2a877c22-bf0d-41e2-874a-411f22e11a9c",
+      "InjectTypeId": "63ba1cfb-00a4-4b98-b454-6d0797aa6ae7",
+      "Name": "Source Type",
+      "DataType": 80,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "c090aaa1-fe34-4ea5-ae3f-68873e461377",
+      "InjectTypeId": "63ba1cfb-00a4-4b98-b454-6d0797aa6ae7",
+      "Name": "Source Name",
+      "DataType": 0,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "9e12df79-d216-4d6e-90b1-3a0db927d136",
+      "InjectTypeId": "63ba1cfb-00a4-4b98-b454-6d0797aa6ae7",
+      "Name": "Url",
+      "DataType": 140,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "8e93a631-100e-47f7-a73b-6cba6d769fbe",
+      "InjectTypeId": "63ba1cfb-00a4-4b98-b454-6d0797aa6ae7",
+      "Name": "Status",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "e89100c8-b12b-4f36-b754-d9d6b4f886a4",
+      "InjectTypeId": "140cf807-7e92-492d-b954-087076a1dac1",
+      "Name": "Summary",
+      "DataType": 0,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "27092bf0-8aa9-4430-bd68-be5a9d2d698f",
+      "InjectTypeId": "140cf807-7e92-492d-b954-087076a1dac1",
+      "Name": "Source Type",
+      "DataType": 80,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "af8b59cb-677c-42e4-812e-dcdfd31a4491",
+      "InjectTypeId": "140cf807-7e92-492d-b954-087076a1dac1",
+      "Name": "Source Name",
+      "DataType": 0,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "df735796-88a4-4d3a-9b8e-54b2201d162d",
+      "InjectTypeId": "140cf807-7e92-492d-b954-087076a1dac1",
+      "Name": "Url",
+      "DataType": 140,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "8f754ff5-06bb-4fbb-9d7c-dcb79573f35e",
+      "InjectTypeId": "140cf807-7e92-492d-b954-087076a1dac1",
+      "Name": "Status",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "7b338fc7-23f8-49c1-b616-0865127cb17d",
+      "InjectTypeId": "816d959e-798b-4184-8795-6f06d3bfbb70",
+      "Name": "Summary",
+      "DataType": 0,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "66f80bb0-37f4-499d-993e-3df1c4053d6a",
+      "InjectTypeId": "816d959e-798b-4184-8795-6f06d3bfbb70",
+      "Name": "Source Type",
+      "DataType": 80,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "378a69bb-656e-49c8-826c-b56058ffba3c",
+      "InjectTypeId": "816d959e-798b-4184-8795-6f06d3bfbb70",
+      "Name": "Source Name",
+      "DataType": 0,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "b7b2f9a1-9f44-4d63-8959-9ea33db69444",
+      "InjectTypeId": "816d959e-798b-4184-8795-6f06d3bfbb70",
+      "Name": "Url",
+      "DataType": 140,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "1020ad57-7cda-490a-8977-10387cb55302",
+      "InjectTypeId": "816d959e-798b-4184-8795-6f06d3bfbb70",
+      "Name": "Status",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "99d2c2e0-c148-4a36-95c5-120696f9113a",
+      "InjectTypeId": "7e54aea4-b8a9-41ac-8282-5153460d5b08",
+      "Name": "Summary",
+      "DataType": 0,
+      "DisplayOrder": 1,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "df8ccf32-d4b1-4796-9556-181c0bfdd7f9",
+      "InjectTypeId": "7e54aea4-b8a9-41ac-8282-5153460d5b08",
+      "Name": "Source Type",
+      "DataType": 80,
+      "DisplayOrder": 2,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "6c50e92a-bb0b-487b-87ca-d12df345273a",
+      "InjectTypeId": "7e54aea4-b8a9-41ac-8282-5153460d5b08",
+      "Name": "Source Name",
+      "DataType": 0,
+      "DisplayOrder": 3,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "7cc4786d-80a5-4cfd-ab7a-10c3c9ae5e74",
+      "InjectTypeId": "7e54aea4-b8a9-41ac-8282-5153460d5b08",
+      "Name": "Url",
+      "DataType": 140,
+      "DisplayOrder": 4,
+      "IsChosenFromList": false
+    },
+    {
+      "Id": "45e6a174-dff0-4220-a275-04e45ba3f97b",
+      "InjectTypeId": "7e54aea4-b8a9-41ac-8282-5153460d5b08",
+      "Name": "Status",
+      "DataType": 0,
+      "DisplayOrder": 5,
+      "IsChosenFromList": false
     }
   ],
   "DataOptions": [
@@ -470,6 +1068,330 @@
       "OptionValue": "Expected Action",
       "DisplayOrder": 2,
       "DataFieldId": "3ee555ef-181c-45f8-9b07-988a4489a9f3"
+    }
+  ],
+  "Teams": [
+    {
+      "Id": "00ccf73c-d77c-47b9-a629-c2cad3ee66ef",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Blue Team",
+      "ShortName": "BLUE",
+      "Description": "The participants."
+    },
+    {
+      "Id": "7f45b7ed-2cfa-4752-9612-8c9850477335",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Exercise Control",
+      "ShortName": "EXCON",
+      "Description": "The facilitators who run the exercise."
+    }
+  ],
+  "InjectTypes": [
+    {
+      "Id": "bd838cb1-6ccf-4a4b-ad01-994a9da5e4c4",
+      "Name": "Gallery Article",
+      "Description": "An article delivered to the Gallery wall and archive."
+    },
+    {
+      "Id": "3d6a396c-29a7-426c-9b10-57be716fcd71",
+      "Name": "News",
+      "Description": "A news article, delivered to Gallery as source type News."
+    },
+    {
+      "Id": "950df58c-58c0-47d4-a28d-7827dc7613c3",
+      "Name": "Social",
+      "Description": "A social media post, delivered to Gallery as source type Social."
+    },
+    {
+      "Id": "37c1c817-4381-4a37-8d88-dc31955647d3",
+      "Name": "Email",
+      "Description": "An email, delivered to Gallery as source type Email."
+    },
+    {
+      "Id": "63ba1cfb-00a4-4b98-b454-6d0797aa6ae7",
+      "Name": "Phone",
+      "Description": "A phone call or text message, delivered to Gallery as source type Phone."
+    },
+    {
+      "Id": "140cf807-7e92-492d-b954-087076a1dac1",
+      "Name": "Intel",
+      "Description": "An intelligence report, delivered to Gallery as source type Intel."
+    },
+    {
+      "Id": "816d959e-798b-4184-8795-6f06d3bfbb70",
+      "Name": "Reporting",
+      "Description": "A situation or status report, delivered to Gallery as source type Reporting."
+    },
+    {
+      "Id": "7e54aea4-b8a9-41ac-8282-5153460d5b08",
+      "Name": "Orders",
+      "Description": "Orders or directives from leadership, delivered to Gallery as source type Orders."
+    }
+  ],
+  "Cards": [
+    {
+      "Id": "3c74a46c-1adc-4ba4-ba24-ec1d8c876704",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Situation Updates",
+      "Description": "Articles about the incident as it develops.",
+      "Move": 0,
+      "Inject": 0,
+      "IsTemplate": false
+    },
+    {
+      "Id": "02971aa9-b45f-4762-8777-7fd1020e9401",
+      "Name": "Situational Awareness",
+      "Description": "Updates on the scenario as it develops: what has happened, what is affected and what is known so far.",
+      "Move": 0,
+      "Inject": 0,
+      "IsTemplate": true
+    },
+    {
+      "Id": "06a7de5f-fb81-4f3d-b666-05afb8532b55",
+      "Name": "Intelligence Briefing",
+      "Description": "Threat intelligence, indicators and assessments shared with the participants.",
+      "Move": 0,
+      "Inject": 0,
+      "IsTemplate": true
+    },
+    {
+      "Id": "982ec81b-d6a5-4fed-b991-200705ed0ee5",
+      "Name": "Public Information",
+      "Description": "News coverage, social media and public statements about the incident.",
+      "Move": 0,
+      "Inject": 0,
+      "IsTemplate": true
+    },
+    {
+      "Id": "b7a97905-b0f4-4dd7-802c-1701247c304f",
+      "Name": "Leadership Directives",
+      "Description": "Orders, guidance and taskings from leadership.",
+      "Move": 0,
+      "Inject": 0,
+      "IsTemplate": true
+    }
+  ],
+  "CardTeams": [
+    {
+      "Id": "12c8834a-5733-4daf-b186-4bcbc9290324",
+      "CardId": "3c74a46c-1adc-4ba4-ba24-ec1d8c876704",
+      "TeamId": "00ccf73c-d77c-47b9-a629-c2cad3ee66ef",
+      "IsShownOnWall": true,
+      "CanPostArticles": false
+    },
+    {
+      "Id": "b846e1f5-1673-4d98-a609-5fb89fae8c56",
+      "CardId": "3c74a46c-1adc-4ba4-ba24-ec1d8c876704",
+      "TeamId": "7f45b7ed-2cfa-4752-9612-8c9850477335",
+      "IsShownOnWall": true,
+      "CanPostArticles": true
+    }
+  ],
+  "CiteDuties": [
+    {
+      "Id": "3501960e-4ef9-4754-a0c7-e36fbc793860",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "TeamId": "00ccf73c-d77c-47b9-a629-c2cad3ee66ef",
+      "Name": "Incident Lead",
+      "IsTemplate": false
+    },
+    {
+      "Id": "0ee1f2e4-5395-4927-89fb-a328f4de5daa",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "TeamId": "00ccf73c-d77c-47b9-a629-c2cad3ee66ef",
+      "Name": "Risk Analyst",
+      "IsTemplate": false
+    },
+    {
+      "Id": "934c8534-380c-453d-a5ee-7c472471462b",
+      "Name": "Incident Commander",
+      "IsTemplate": true
+    },
+    {
+      "Id": "3edf6829-0886-4308-b718-c865e595de4d",
+      "Name": "Incident Response Lead",
+      "IsTemplate": true
+    },
+    {
+      "Id": "48091a30-a572-4873-b13f-e251ab111a0b",
+      "Name": "Technical Analyst",
+      "IsTemplate": true
+    },
+    {
+      "Id": "52f25bc0-0a9a-411a-8d3a-2696c59d874a",
+      "Name": "Communications Lead",
+      "IsTemplate": true
+    },
+    {
+      "Id": "c540b93f-e377-4f6c-954b-818e29140194",
+      "Name": "Legal and Compliance Liaison",
+      "IsTemplate": true
+    },
+    {
+      "Id": "9b71b1a2-fa79-4a48-a5b0-ea32db4a27f0",
+      "Name": "Scribe",
+      "IsTemplate": true
+    }
+  ],
+  "CiteActions": [
+    {
+      "Id": "e9ed84c6-1e2e-48d6-99d9-7428c54cef1b",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "TeamId": "00ccf73c-d77c-47b9-a629-c2cad3ee66ef",
+      "MoveNumber": 1,
+      "InjectNumber": 1,
+      "ActionNumber": 1,
+      "Description": "Review the Gallery articles and record the initial risk assessment.",
+      "IsTemplate": false
+    },
+    {
+      "Id": "22ede1b8-db2a-48f5-a8d1-d7934420f4e6",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "TeamId": "00ccf73c-d77c-47b9-a629-c2cad3ee66ef",
+      "MoveNumber": 2,
+      "InjectNumber": 1,
+      "ActionNumber": 1,
+      "Description": "Reassess the incident after the escalation and update the score.",
+      "IsTemplate": false
+    },
+    {
+      "Id": "5156ff01-7681-4fc9-96f7-cceea39bea91",
+      "MoveNumber": 0,
+      "InjectNumber": 1,
+      "ActionNumber": 1,
+      "Description": "Activate the incident response plan and assemble the incident response team.",
+      "IsTemplate": true
+    },
+    {
+      "Id": "03e2b8d2-a396-4c92-8ead-546b51a4ac2b",
+      "MoveNumber": 0,
+      "InjectNumber": 1,
+      "ActionNumber": 2,
+      "Description": "Identify the affected systems, data and business functions, and record the initial scope.",
+      "IsTemplate": true
+    },
+    {
+      "Id": "5a4811d6-968a-402c-afc2-d4c90ce5c436",
+      "MoveNumber": 0,
+      "InjectNumber": 1,
+      "ActionNumber": 3,
+      "Description": "Preserve evidence: collect the relevant logs and capture images of affected systems before changing them.",
+      "IsTemplate": true
+    },
+    {
+      "Id": "a6b44f31-ea85-4017-a7b0-ed89de4dbd30",
+      "MoveNumber": 1,
+      "InjectNumber": 1,
+      "ActionNumber": 1,
+      "Description": "Contain the incident: isolate the affected systems and block the known indicators of compromise.",
+      "IsTemplate": true
+    },
+    {
+      "Id": "9f34c14d-0cd9-4ea2-9114-d5930ce1e01e",
+      "MoveNumber": 1,
+      "InjectNumber": 1,
+      "ActionNumber": 2,
+      "Description": "Notify leadership and the external parties that policy, law or contract requires.",
+      "IsTemplate": true
+    },
+    {
+      "Id": "50cd9e76-bb4d-4647-8107-07adc5c2bd96",
+      "MoveNumber": 1,
+      "InjectNumber": 1,
+      "ActionNumber": 3,
+      "Description": "Coordinate public and internal messaging with the communications lead.",
+      "IsTemplate": true
+    },
+    {
+      "Id": "8db6e75d-c195-4257-bc8b-710be6e4c617",
+      "MoveNumber": 2,
+      "InjectNumber": 1,
+      "ActionNumber": 1,
+      "Description": "Eradicate the threat and restore the affected systems from known-good sources.",
+      "IsTemplate": true
+    },
+    {
+      "Id": "d9c06f9c-c8ab-428d-9c2d-4b73ec92c5f9",
+      "MoveNumber": 2,
+      "InjectNumber": 1,
+      "ActionNumber": 2,
+      "Description": "Verify that the restored systems are operating normally and monitor them for recurrence.",
+      "IsTemplate": true
+    },
+    {
+      "Id": "c7e360ec-5e38-49a2-9639-42c9c5b76b3f",
+      "MoveNumber": 2,
+      "InjectNumber": 1,
+      "ActionNumber": 3,
+      "Description": "Hold an after-action review and record the lessons learned.",
+      "IsTemplate": true
+    }
+  ],
+  "PlayerApplications": [
+    {
+      "Id": "4215dd9a-b43f-4859-8b42-c981753c715a",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Virtual Machines",
+      "Url": "{vmUrl}/views/{playerViewId}{theme}",
+      "Icon": "{playerUrl}/assets/img/SP_Icon_Virtual.png",
+      "Embeddable": true,
+      "LoadInBackground": false
+    },
+    {
+      "Id": "523918a6-fa31-489f-8ce8-2f8e76ca2fc3",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Gallery",
+      "Url": "{galleryUrl}?section=archive&exhibit={galleryExhibitId}{theme}",
+      "Icon": "{galleryUrl}/assets/img/archive-blue.png",
+      "Embeddable": true,
+      "LoadInBackground": false
+    },
+    {
+      "Id": "64e5390f-821a-4a08-9ef2-1fa68badd18a",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "CITE",
+      "Url": "{citeUrl}?evaluation={citeEvaluationId}{theme}",
+      "Icon": "{playerUrl}/assets/img/SP_Icon_Assessment.png",
+      "Embeddable": true,
+      "LoadInBackground": false
+    }
+  ],
+  "PlayerApplicationTeams": [
+    {
+      "Id": "737ca778-ae2f-4377-b516-3b6270b73e30",
+      "PlayerApplicationId": "4215dd9a-b43f-4859-8b42-c981753c715a",
+      "TeamId": "00ccf73c-d77c-47b9-a629-c2cad3ee66ef",
+      "DisplayOrder": 1
+    },
+    {
+      "Id": "0d820b50-44dd-45f3-b766-fc22ed77d0f9",
+      "PlayerApplicationId": "523918a6-fa31-489f-8ce8-2f8e76ca2fc3",
+      "TeamId": "00ccf73c-d77c-47b9-a629-c2cad3ee66ef",
+      "DisplayOrder": 2
+    },
+    {
+      "Id": "e82d7d2c-7605-4265-b98a-eb4bcebcf703",
+      "PlayerApplicationId": "64e5390f-821a-4a08-9ef2-1fa68badd18a",
+      "TeamId": "00ccf73c-d77c-47b9-a629-c2cad3ee66ef",
+      "DisplayOrder": 3
+    },
+    {
+      "Id": "975dc1ea-541e-4ad7-89a5-05c985896633",
+      "PlayerApplicationId": "4215dd9a-b43f-4859-8b42-c981753c715a",
+      "TeamId": "7f45b7ed-2cfa-4752-9612-8c9850477335",
+      "DisplayOrder": 1
+    },
+    {
+      "Id": "8a6269b2-db1d-4d3b-a449-b3b6568f8c6e",
+      "PlayerApplicationId": "523918a6-fa31-489f-8ce8-2f8e76ca2fc3",
+      "TeamId": "7f45b7ed-2cfa-4752-9612-8c9850477335",
+      "DisplayOrder": 2
+    },
+    {
+      "Id": "b27b9f34-642c-4d64-80ad-a00cc8e8b884",
+      "PlayerApplicationId": "64e5390f-821a-4a08-9ef2-1fa68badd18a",
+      "TeamId": "7f45b7ed-2cfa-4752-9612-8c9850477335",
+      "DisplayOrder": 3
     }
   ]
 }

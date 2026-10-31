@@ -109,4 +109,74 @@ public class AttackStixParserTests
     [InlineData("""{"type":"bundle","objects":[]}""")]
     public async Task Parse_OfSomethingThatIsNotAnAttackBundle_IsRefused(string json) =>
         await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse(json));
+
+    [Fact]
+    public async Task Parse_OfABundleWhoseTacticsNameNoSource_IsRefused()
+    {
+        var ex = await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse(AttackBundles.WithoutASource(), "1.0"));
+
+        Assert.Contains("source", ex.Message);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // ATLAS: the same data model under its own catalogue
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Parse_OfAtlas_ReadsTheReleaseFromTheCollection()
+    {
+        var release = await Parse(AttackBundles.Atlas());
+
+        Assert.Equal("ATLAS", release.Domain);
+        Assert.Equal("2026.10", release.Version);
+        Assert.Equal("ATLAS", release.Name);
+        Assert.Equal(AttackStixParser.ReleaseId("ATLAS", "2026.10"), release.Id);
+        Assert.Equal(new DateTime(2026, 10, 28, 0, 0, 0, DateTimeKind.Utc), release.ReleaseDate);
+    }
+
+    /// <summary>The ATT&amp;CK references ATLAS carries alongside its own are cross-references, not identity.</summary>
+    [Fact]
+    public async Task Parse_OfAtlas_IdentifiesTacticsAndTechniquesByTheirAtlasReference()
+    {
+        var release = await Parse(AttackBundles.Atlas());
+
+        Assert.Equal(["AML.TA0002", "AML.TA0000"], release.Tactics.OrderBy(t => t.DisplayOrder).Select(t => t.ExternalId));
+        Assert.Equal("https://atlas.mitre.org/tactics/AML.TA0002", release.Tactics.Single(t => t.ExternalId == "AML.TA0002").Url);
+        Assert.Equal(["AML.T0000", "AML.T0000.000", "AML.T0040"], release.Techniques.Select(t => t.ExternalId).Order());
+        Assert.All(release.Techniques, t => Assert.StartsWith("https://atlas.mitre.org/techniques/", t.Url));
+        Assert.DoesNotContain(release.Techniques, t => t.ExternalId.StartsWith('T'));
+    }
+
+    [Fact]
+    public async Task Parse_OfAtlas_LinksASubTechniqueToItsParent_AndMatchesTheAtlasKillChain()
+    {
+        var release = await Parse(AttackBundles.Atlas());
+        var parent = release.Techniques.Single(t => t.ExternalId == "AML.T0000");
+        var child = release.Techniques.Single(t => t.ExternalId == "AML.T0000.000");
+        var access = release.Techniques.Single(t => t.ExternalId == "AML.T0040");
+
+        Assert.Equal(parent.Id, child.ParentId);
+        Assert.Null(parent.ParentId);
+        Assert.Null(access.ParentId);
+        Assert.Equal("reconnaissance", parent.Tactics);
+        Assert.Equal("ai-model-access", access.Tactics);
+        Assert.Equal("Agentic AI,Generative AI", parent.Platforms);
+    }
+
+    /// <summary>The two catalogues are separate releases, and each stays the same release on re-import.</summary>
+    [Fact]
+    public async Task Parse_OfAtlas_GivesIdsOfItsOwn_ApartFromAttack()
+    {
+        var atlas = await Parse(AttackBundles.Atlas());
+        var again = await Parse(AttackBundles.Atlas());
+        var attack = await Parse(AttackBundles.Enterprise("1.0"));
+
+        Assert.Equal(atlas.Id, again.Id);
+        Assert.Equal(
+            atlas.Techniques.OrderBy(t => t.ExternalId).Select(t => t.Id),
+            again.Techniques.OrderBy(t => t.ExternalId).Select(t => t.Id));
+        Assert.NotEqual(atlas.Id, attack.Id);
+        Assert.Equal("enterprise-attack", attack.Domain);
+        Assert.Equal(["T1003", "T1053", "T1059", "T1059.001"], attack.Techniques.Select(t => t.ExternalId).Order());
+    }
 }

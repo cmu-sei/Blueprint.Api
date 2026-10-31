@@ -49,6 +49,22 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         Assert.Equal(4, await ReadBack(rb => rb.AttackTechniques.CountAsync(t => t.AttackReleaseId == release.Id, Ct)));
     }
 
+    /// <summary>ATLAS shares ATT&amp;CK's data model, so the same endpoint imports it as a release of its own domain.</summary>
+    [Fact]
+    public async Task Import_OfAnAtlasBundle_Is201_AsAnAtlasRelease()
+    {
+        var response = await Upload(RootClient, AttackBundles.Atlas(), "stix-atlas.json");
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var release = await Read<AttackRelease>(response);
+        Assert.Equal(AttackStixParser.ReleaseId("ATLAS", "2026.10"), release.Id);
+        Assert.Equal("ATLAS", release.Domain);
+        Assert.Equal(2, release.TacticCount);
+        Assert.Equal(3, release.TechniqueCount);
+        var ids = await ReadBack(rb => rb.AttackTechniques.Where(t => t.AttackReleaseId == release.Id).Select(t => t.ExternalId).ToListAsync(Ct));
+        Assert.Equal(["AML.T0000", "AML.T0000.000", "AML.T0040"], ids.Order());
+    }
+
     [Fact]
     public async Task Import_OfAReleaseAlreadyThere_Is409()
     {
@@ -280,12 +296,12 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     private static object Body(Guid mselId, Guid attackTechniqueId) => new { mselId, attackTechniqueId };
 
     /// <remarks>Awaited inside the <c>using</c>: <c>TestServer</c> reads the body during <c>SendAsync</c>.</remarks>
-    private async Task<HttpResponseMessage> Upload(HttpClient client, string json)
+    private async Task<HttpResponseMessage> Upload(HttpClient client, string json, string fileName = "enterprise-attack.json")
     {
         using var content = new MultipartFormDataContent();
         var file = new ByteArrayContent(Encoding.UTF8.GetBytes(json));
         file.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-        content.Add(file, "ToUpload", "enterprise-attack.json");
+        content.Add(file, "ToUpload", fileName);
 
         return await client.PostAsync("api/attackreleases/import", content, Ct);
     }

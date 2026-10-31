@@ -94,8 +94,9 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Accepts enterprise-attack.json, mobile-attack.json or ics-attack.json from the mitre-attack/attack-stix-data
-        /// repository. Revoked and deprecated objects are skipped. The version is read from the bundle; give one only
-        /// for an older bundle that does not name its version.
+        /// repository, or stix-atlas.json from the mitre-atlas/atlas-data releases, which becomes a release of the
+        /// ATLAS domain. Revoked and deprecated objects are skipped. The version is read from the bundle; give one
+        /// only for an older bundle that does not name its version.
         /// </remarks>
         /// <param name="form">The bundle</param>
         /// <param name="version">The ATT&amp;CK version (e.g. "17.1"), if the bundle does not say</param>

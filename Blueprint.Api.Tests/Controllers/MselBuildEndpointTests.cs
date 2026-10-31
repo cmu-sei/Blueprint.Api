@@ -50,6 +50,7 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
                     "submit_article" => """{"html":"<p>Cables cut, says the Herald.</p>"}""",
                     "submit_profile" => """{"html":"<h2>Security operations</h2><p>Watches the network.</p>"}""",
                     "submit_inject_text" => """{"html":"<p>Check in with each team lead.</p>"}""",
+                    "submit_msel_metadata" => """{"educationalLevel":"Intermediate","educationalUse":"Instruction","courseMode":"Blended","subject":"Incident response","keywords":"cables, islands","language":"en-US"}""",
                     _ when system.Contains("first of two steps") => Design(),
                     _ => Injects()
                 };
@@ -69,6 +70,8 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         var schema = _calls.Single().Schema;
         Assert.Contains("\"questions\"", schema);
         Assert.DoesNotContain("\"injects\"", schema);
+        // the metadata is written at the finish, from the whole MSEL; in the design it put the schema over the size strict mode takes
+        Assert.DoesNotContain("\"metadata\"", schema);
         Assert.Equal([("Q1", "Should the outage reach the hospital?", "Stop at the port")], result.Questions.Select(q => (q.Id, q.Question, q.Suggested)));
         Assert.Equal(["Start", "Next day"], result.Draft.Moves.Select(m => m.Description));
         Assert.Empty(result.Draft.Injects);
@@ -165,9 +168,19 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         var finished = await Read<MselBuildStatus>(await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/finish", null, Ct));
 
         Assert.Null(finished.Stage);
+        // the finish writes the catalog metadata from the MSEL as built: the design, its teams and a passage of its material
+        var metadataCall = _calls.Single(c => c.Prompt.StartsWith("Exercise: ") && c.Schema.Contains("\"educationalLevel\""));
+        Assert.Contains("Teams: Security operations", metadataCall.Prompt);
+        Assert.Contains("minutes; 4 moves; 2 injects", metadataCall.Prompt);
         await using var db = NewContext();
-        var msel = await db.Msels.Include(m => m.Pages).Include(m => m.Teams).Include(m => m.ScenarioEvents).ThenInclude(e => e.DataValues).AsSplitQuery().SingleAsync(m => m.Id == mselId, Ct);
+        var msel = await db.Msels.Include(m => m.Pages).Include(m => m.Teams).Include(m => m.Moves).Include(m => m.ScenarioEvents).ThenInclude(e => e.DataValues).AsSplitQuery().SingleAsync(m => m.Id == mselId, Ct);
         Assert.Null(msel.AiDraftStage);
+        // the move's situation briefing is written with the injects, which know what happens in it
+        Assert.Contains("The islands lose internet.", msel.Moves.Single(m => m.MoveNumber == 1).SituationDescription);
+        Assert.Equal("Intermediate", msel.EducationalLevel);
+        Assert.Equal("Blended", msel.CourseMode);
+        Assert.Equal("en-US", msel.Language);
+        Assert.Equal("cables, islands", msel.Keywords);
         Assert.Contains(msel.Pages, p => p.Name == "Exercise Overview");
         Assert.Contains(msel.Pages, p => p.Name == "Facilitator Guide");
         Assert.Contains("Watches the network.", msel.Teams.Single(t => t.ShortName == "SOC").Description);
@@ -291,7 +304,11 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
     private static string Injects() =>
         JsonSerializer.Serialize(new
         {
-            moves = new[] { new { moveNumber = 0, expectedDecisions = new[] { "Decide who leads" } } },
+            moves = new object[]
+            {
+                new { moveNumber = 0, expectedDecisions = new[] { "Decide who leads" } },
+                new { moveNumber = 1, situationDescription = "<h4>Outage</h4><p>The islands lose internet.</p>", expectedDecisions = new[] { "Decide who leads" } }
+            },
             injects = new object[]
             {
                 new { minutes = 5, eventType = "Inject", card = "Exercise Control", values = new Dictionary<string, string> { ["Title"] = "Cables cut", ["SourceType"] = "News" } },

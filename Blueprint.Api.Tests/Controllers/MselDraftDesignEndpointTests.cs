@@ -70,8 +70,10 @@ public class MselDraftDesignEndpointTests(DatabaseFixture fixture, AiEnabledFact
         Assert.Contains("- Final move is a brief to leadership: yes", _prompt);
         Assert.Contains("- Critical infrastructure sectors: Energy, Water and Wastewater Systems", _prompt);
         // the sixteen sectors, as CISA names them, are what the model may choose from
-        Assert.Contains("\"Nuclear Reactors, Materials, and Waste\"", _schema);
-        Assert.Contains("\"primarySector\"", _schema);
+        Assert.Contains("Nuclear Reactors, Materials, and Waste", _schema);
+        // the primary sector is the first named; its own field put the schema over the size Bedrock's strict mode takes
+        Assert.DoesNotContain("\"primarySector\"", _schema);
+        Assert.Contains("the primary one first", _schema);
         Assert.Contains("\"Enterprise\"", _schema);
         Assert.Contains("\"objectives\"", _schema);
         Assert.Contains("\"expectedDecisions\"", _schema);

@@ -35,6 +35,8 @@ namespace Blueprint.Api.Services
             Dictionary<string, CompetencyEntity> competencies, List<string> warnings, CancellationToken ct);
         /// <summary>The full text of one long column of one outlined inject, written on its own so no answer runs out of room</summary>
         Task<string> WriteInjectTextAsync(MselEntity msel, MselDraft draft, int injectIndex, DataFieldEntity field, CancellationToken ct);
+        /// <summary>The catalog metadata of a built MSEL, from everything written into it</summary>
+        Task<MselDraftMetadata> WriteMetadataAsync(MselEntity msel, MselDraft draft, CancellationToken ct);
     }
 
     public class MselDraftService : IMselDraftService
@@ -85,7 +87,6 @@ Rules:
   happened, a <ul> of what participants now know, and, where it helps, a two-column table of key facts (time, location, affected
   systems, who has been told). Use b, i, ul, ol, li, h4, p and table with border=""1"" cellpadding=""6"" cellspacing=""0"" only; no colors,
   no images, no style attributes, because it is shown in light and dark themes and in CITE.
-- Fill the catalog metadata: educational level, educational use, course mode, subject and keywords.
 - Write a read-in for participants to read before the first move: the scenario background, who they are and what they are
   responsible for, the organizations they will deal with, the rules of play, and how the two clocks work, with the scenario date
   and time the exercise opens. Use headings, short paragraphs, lists and a table where one helps; no images. Open the MSEL with an
@@ -168,7 +169,7 @@ Answer only by calling the tool.";
 
         private const string DesignStep =
 @"This is the first of two steps. Write only the design: the name, description and length, the scenario, the objectives, the moves
-(with each one's purpose, situation and scenario time), the teams, organizations, Gallery cards, competencies and catalog metadata.
+(with each one's purpose and scenario time), the teams, organizations, Gallery cards and competencies.
 The injects come in the second step, once the planner has reviewed the design.
 Then ask the planner up to five questions whose answers would change the exercise materially, such as the escalation ceiling, who
 the participants are, or what a move should test. Never ask what the description or the design choices already answer. Give each
@@ -176,8 +177,8 @@ question the answer you would use if the planner gives none, and say in a few wo
 
         private const string InjectsStep =
 @"This is the second of two steps. The planner has reviewed and approved the design below, and answered your questions. Keep to it:
-its moves, teams, organizations and Gallery cards, by the same names and numbers. Write the injects, each move's expected decisions,
-controller notes and discussion questions, the CITE tasks, and the read-in. Where an answer changes the design, follow the answer.
+its moves, teams, organizations and Gallery cards, by the same names and numbers. Write the injects, each move's situation briefing,
+expected decisions, controller notes and discussion questions, the CITE tasks, and the read-in. Where an answer changes the design, follow the answer.
 Move 0 is the pre-exercise, before STARTEX, and the last move the post-exercise hot wash, after ENDEX; Blueprint adds the STARTEX
 and ENDEX rows. In move 0 put only the read-in notice and any welcome; in the last move only hot-wash and feedback material. Every
 inject of play belongs to moves 1 and on, at or after move 1's start.
@@ -250,7 +251,7 @@ summary, sender and recipients specific enough to write it from and keep the sto
                 design.DurationMinutes,
                 design.Scenario,
                 design.Objectives,
-                Moves = design.Moves.Select(m => new { m.MoveNumber, m.Description, m.Purpose, m.StartMinutes, m.SituationTime, Situation = DataValueDraftService.StripHtml(m.SituationDescription) }),
+                Moves = design.Moves.Select(m => new { m.MoveNumber, m.Description, m.Purpose, m.StartMinutes, m.SituationTime }),
                 Teams = design.Teams.Select(t => new { t.ShortName, t.Name, Description = DataValueDraftService.StripHtml(t.Description), t.Competencies }),
                 Organizations = design.Organizations.Select(o => new { o.ShortName, o.Name, Description = DataValueDraftService.StripHtml(o.Description), o.Sector, o.Size, o.Industry, o.Country }),
                 design.Cards,
@@ -281,6 +282,8 @@ summary, sender and recipients specific enough to write it from and keep the sto
                 var move = design.Moves.FirstOrDefault(m => m.MoveNumber == details.MoveNumber);
                 if (move == null)
                     continue;
+                if (!string.IsNullOrWhiteSpace(details.SituationDescription))
+                    move.SituationDescription = details.SituationDescription;
                 move.ExpectedDecisions = details.ExpectedDecisions;
                 move.ControllerNotes = details.ControllerNotes;
                 move.CiteQuestions = details.CiteQuestions;
@@ -324,6 +327,77 @@ no style attributes. Answer only by calling the tool.";
             if (string.IsNullOrWhiteSpace(DataValueDraftService.StripHtml(html)))
                 throw new InvalidOperationException("The model wrote nothing for the inject. Try again.");
             return html;
+        }
+
+        private const string MetadataPrompt =
+@"You catalog Master Scenario Event Lists (MSELs) for Crucible cyber exercises in Blueprint. From the exercise below, fill its IEEE 2881
+learning metadata: the educational level of the participants it suits, its educational use, its course mode (Online for a remote
+exercise, Onsite for one in a room, Blended for both), its subject areas, search keywords, and the language its material is written in.
+Answer only by calling the tool.";
+
+        public async Task<MselDraftMetadata> WriteMetadataAsync(MselEntity msel, MselDraft draft, CancellationToken ct)
+        {
+            if (!_aiOptions.Enabled)
+                throw new InvalidOperationException("AI drafting is not enabled on this server.");
+            _usage.Use("metadata", msel.Id, draft.DraftId == Guid.Empty ? null : draft.DraftId);
+            var input = await _aiModelClient.InvokeToolAsync(MetadataPrompt, MetadataRequest(msel, draft), "submit_msel_metadata",
+                "Submit the MSEL's catalog metadata.", MetadataSchema(), ct);
+            var metadata = JsonSerializer.Deserialize<MselDraftMetadata>(input.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return MselDraftRules.CleanMetadata(metadata, draft.Design);
+        }
+
+        /// <summary>
+        /// The catalog metadata's schema: its own call at the finish, because in the design's schema it put the design over the size
+        /// Bedrock's strict mode takes, and it describes the finished MSEL
+        /// </summary>
+        public static JsonObject MetadataSchema() => new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["educationalLevel"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Beginner", "Intermediate", "Advanced") },
+                ["educationalUse"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Assessment", "Instruction", "Professional Support") },
+                ["courseMode"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Online", "Onsite", "Blended") },
+                ["subject"] = new JsonObject { ["type"] = "string", ["description"] = "The topic areas the exercise covers, e.g. Incident response; Crisis communications" },
+                ["keywords"] = new JsonObject { ["type"] = "string", ["description"] = "Comma-separated search tags, e.g. ransomware, tabletop exercise, healthcare" },
+                ["language"] = new JsonObject { ["type"] = "string", ["description"] = "The language the exercise material is written in, as a BCP 47 tag, e.g. en-US" }
+            },
+            ["required"] = new JsonArray("educationalLevel", "educationalUse", "courseMode", "subject", "keywords", "language")
+        };
+
+        /// <summary>What the metadata is written from: the design in brief, the teams, the moves and the first inject's text</summary>
+        public static string MetadataRequest(MselEntity msel, MselDraft draft)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Exercise: {draft.Name}");
+            if (!string.IsNullOrWhiteSpace(draft.Description))
+                sb.AppendLine($"Description: {draft.Description}");
+            if (draft.Design != null)
+                sb.AppendLine($"Format: {draft.Design.Format}; {draft.DurationMinutes} minutes; {draft.Moves?.Count ?? 0} moves; {draft.Injects?.Count ?? 0} injects");
+            if (draft.Scenario != null)
+            {
+                sb.AppendLine($"Problem: {draft.Scenario.Problem}");
+                if (!string.IsNullOrWhiteSpace(draft.Scenario.Environment))
+                    sb.AppendLine($"Environment: {draft.Scenario.Environment}");
+                if (draft.Scenario.Sectors?.Count > 0)
+                    sb.AppendLine($"Sectors: {string.Join(", ", draft.Scenario.Sectors)}");
+            }
+            if (draft.Objectives?.Count > 0)
+            {
+                sb.AppendLine("Objectives:");
+                foreach (var objective in draft.Objectives)
+                    sb.AppendLine($"- {objective.Task}");
+            }
+            if (draft.Teams?.Count > 0)
+                sb.AppendLine($"Teams: {string.Join("; ", draft.Teams.Select(t => $"{t.Name} ({OneLine(DataValueDraftService.StripHtml(t.Description))})"))}");
+            if (draft.Competencies?.Count > 0)
+                sb.AppendLine($"Competencies: {draft.Competencies.Count} chosen from the planner's frameworks");
+            // the language is read from the material itself
+            var sample = msel.ScenarioEvents?.SelectMany(e => e.DataValues).Select(v => DataValueDraftService.StripHtml(v.Value))
+                .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t) && t.Length > 80);
+            if (sample != null)
+                sb.AppendLine($"A passage of the material: {OneLine(sample.Length > 400 ? sample[..400] : sample)}");
+            return sb.ToString();
         }
 
         /// <summary>
@@ -417,10 +491,12 @@ no style attributes. Answer only by calling the tool.";
             var properties = (JsonObject)full["properties"];
             foreach (var name in new[] { "injects", "readIn", "citeActions" })
                 properties.Remove(name);
+            // the briefing, decisions, notes and questions of a move are written with the injects, which know what happens in it;
+            // each free-text field left out here keeps the design's schema within the size Bedrock's strict mode takes
             var move = (JsonObject)properties["moves"]["items"];
-            foreach (var name in new[] { "expectedDecisions", "controllerNotes", "citeQuestions" })
+            foreach (var name in new[] { "situationDescription", "expectedDecisions", "controllerNotes", "citeQuestions" })
                 ((JsonObject)move["properties"]).Remove(name);
-            move["required"] = new JsonArray("moveNumber", "description", "situationDescription", "startMinutes", "situationTime", "purpose");
+            move["required"] = new JsonArray("moveNumber", "description", "startMinutes", "situationTime", "purpose");
             properties["questions"] = new JsonObject
             {
                 ["type"] = "array",
@@ -438,8 +514,7 @@ no style attributes. Answer only by calling the tool.";
                     ["required"] = new JsonArray("question", "suggested")
                 }
             };
-            // the catalog metadata too, which a constrained answer otherwise leaves out as optional
-            full["required"] = new JsonArray("name", "description", "durationMinutes", "scenario", "objectives", "moves", "teams", "organizations", "metadata", "questions");
+            full["required"] = new JsonArray("name", "description", "durationMinutes", "scenario", "objectives", "moves", "teams", "organizations", "questions");
             return RequireAll(full);
         }
 
@@ -458,6 +533,7 @@ no style attributes. Answer only by calling the tool.";
             var moveDetails = new JsonObject
             {
                 ["moveNumber"] = move["moveNumber"].DeepClone(),
+                ["situationDescription"] = move["situationDescription"].DeepClone(),
                 ["expectedDecisions"] = move["expectedDecisions"].DeepClone(),
                 ["controllerNotes"] = move["controllerNotes"].DeepClone()
             };
@@ -469,7 +545,7 @@ no style attributes. Answer only by calling the tool.";
                 {
                     ["type"] = "array",
                     ["description"] = "Each move of the design by its number, with what it asks of participants and controllers",
-                    ["items"] = new JsonObject { ["type"] = "object", ["properties"] = moveDetails, ["required"] = new JsonArray("moveNumber", "expectedDecisions") }
+                    ["items"] = new JsonObject { ["type"] = "object", ["properties"] = moveDetails, ["required"] = new JsonArray("moveNumber", "situationDescription", "expectedDecisions") }
                 },
                 ["injects"] = all["injects"].DeepClone(),
                 ["readIn"] = all["readIn"].DeepClone(),
@@ -555,7 +631,10 @@ no style attributes. Answer only by calling the tool.";
             }
 
             JsonObject Str(string description) => new JsonObject { ["type"] = "string", ["description"] = description };
-            JsonObject Sector() => new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselDraftRules.Sectors.Select(x => (JsonNode)x).ToArray()) };
+            // the sixteen sectors are named in the description, not an enum: enums of them made the schema's grammar too large
+            // for Bedrock's strict mode, and Normalize keeps only CISA's names anyway
+            var sectorNames = string.Join("; ", MselDraftRules.Sectors);
+            JsonObject Sector() => Str("One of CISA's critical infrastructure sectors, by its exact name: " + sectorNames);
             JsonObject Int(string description) => new JsonObject { ["type"] = "integer", ["minimum"] = 0, ["description"] = description };
             JsonObject Obj(JsonObject properties, params string[] required) => new JsonObject
             {
@@ -628,9 +707,8 @@ no style attributes. Answer only by calling the tool.";
                     ["environment"] = Str("The operational environment: political, military, economic, social, information, infrastructure, physical environment and time"),
                     ["escalationCeiling"] = Str("How far the scenario may escalate, and what it never does"),
                     ["assumptions"] = Arr(Str("A scenario assumption"), "What the scenario takes as given"),
-                    ["sectors"] = Arr(Sector(), "The critical infrastructure sectors the scenario touches, the primary one first"),
-                    ["primarySector"] = Sector()
-                }, "problem", "premise", "environment", "escalationCeiling", "sectors", "primarySector"),
+                    ["sectors"] = Arr(Sector(), "The critical infrastructure sectors the scenario touches, the primary one first")
+                }, "problem", "premise", "environment", "escalationCeiling", "sectors"),
                 ["objectives"] = Arr(Obj(objectiveProperties, "id", "task", "condition", "standard"), "3 to 6 training objectives"),
                 ["moves"] = Arr(Obj(new JsonObject
                 {
@@ -649,7 +727,7 @@ no style attributes. Answer only by calling the tool.";
                     ["name"] = Str("Fictional organization name"),
                     ["shortName"] = Str("Short name used in organization columns, no commas"),
                     ["description"] = Str("Who they are in the scenario"),
-                    ["sector"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselDraftRules.Sectors.Append("None").Select(x => (JsonNode)x).ToArray()), ["description"] = "The organization's critical infrastructure sector; None for one outside them" },
+                    ["sector"] = Str("The organization's critical infrastructure sector, by CISA's exact name (" + sectorNames + "), or None for one outside them"),
                     ["size"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselDraftRules.Sizes.Select(x => (JsonNode)x).ToArray()), ["description"] = "Small (under 100 people), Medium (100 to 999), Large (1,000 to 9,999) or Enterprise (10,000 or more)" },
                     ["industry"] = Str("What it does within its sector, e.g. regional acute-care hospital, container port, municipal water utility"),
                     ["country"] = Str("The country it is in; fictional where the scenario's geography is")
@@ -662,15 +740,6 @@ no style attributes. Answer only by calling the tool.";
                     ["items"] = Obj(injectProperties, "minutes", "eventType", "values")
                 },
                 ["readIn"] = Str("The participants' read-in, in HTML: background, roles, organizations, rules of play, the two clocks"),
-                ["metadata"] = Obj(new JsonObject
-                {
-                    ["educationalLevel"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Beginner", "Intermediate", "Advanced") },
-                    ["educationalUse"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Assessment", "Instruction", "Professional Support") },
-                    ["courseMode"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Online", "Onsite", "Blended") },
-                    ["subject"] = Str("The topic areas the exercise covers, e.g. Incident response; Crisis communications"),
-                    ["keywords"] = Str("Comma-separated search tags, e.g. ransomware, tabletop exercise, healthcare"),
-                    ["language"] = Str("The language the exercise material is written in, as a BCP 47 tag, e.g. en-US")
-                }, "educationalLevel", "educationalUse", "courseMode", "subject", "keywords", "language"),
                 ["plannerNotes"] = Arr(Str("Assumption or open question"), "Things the planner should check")
             };
             if (citeQuestions)
@@ -1128,7 +1197,8 @@ no style attributes. Answer only by calling the tool.";
             if (unknownSectors.Any())
                 warnings.Add($"Dropped sectors that are not CISA critical infrastructure sectors: {string.Join(", ", unknownSectors)}.");
             draft.Scenario.Sectors = PickSectors((draft.Design?.Sectors ?? new List<string>()).Concat(named).Append(draft.Scenario.PrimarySector));
-            draft.Scenario.PrimarySector = PickSectors([draft.Scenario.PrimarySector]).FirstOrDefault() ?? draft.Scenario.Sectors.FirstOrDefault();
+            // the primary sector is the first the model named, unless the draft says otherwise
+            draft.Scenario.PrimarySector = PickSectors([draft.Scenario.PrimarySector]).FirstOrDefault() ?? PickSectors(named).FirstOrDefault() ?? draft.Scenario.Sectors.FirstOrDefault();
             foreach (var organization in draft.Organizations)
             {
                 organization.Sector = PickSectors([organization.Sector]).FirstOrDefault();

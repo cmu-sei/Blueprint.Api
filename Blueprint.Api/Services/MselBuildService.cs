@@ -229,6 +229,17 @@ namespace Blueprint.Api.Services
                 throw new ConflictException("The MSEL's injects are not written yet.");
             var changes = new List<string>();
             var readIn = state.ReadInPageId is Guid pageId ? msel.Pages.FirstOrDefault(p => p.Id == pageId) : null;
+            // the catalog metadata, from the MSEL as written; a MSEL whose metadata could not be written is still finished
+            try
+            {
+                state.Draft.Metadata = await _mselDraftService.WriteMetadataAsync(msel, state.Draft, ct);
+                MselDraftBuilder.SetMetadata(msel, state.Draft.Metadata);
+            }
+            catch (System.Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Could not write the catalog metadata of MSEL {MselId}", msel.Id);
+                changes.Add("The catalog metadata on the Info tab could not be written: " + ex.Message);
+            }
             MselDraftBuilder.Finish(msel, state.Draft, readIn);
             // CITE team types and the scoring model the planner chose, made in CITE now so the push finds them
             await MselDraftCite.ApplyAsync(msel, state.Draft, _citeApiClient, (_, message) => changes.Add(message), ct);

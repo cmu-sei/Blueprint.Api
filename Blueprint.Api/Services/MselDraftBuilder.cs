@@ -25,13 +25,7 @@ namespace Blueprint.Api.Services
             mselEntity.Name = draft.Name;
             mselEntity.Description = draft.Description;
             mselEntity.DurationSeconds = draft.DurationMinutes * 60;
-            // the catalog metadata on the Info page; the template's stays where the draft has none
-            mselEntity.EducationalLevel = draft.Metadata.EducationalLevel ?? mselEntity.EducationalLevel;
-            mselEntity.EducationalUse = draft.Metadata.EducationalUse ?? mselEntity.EducationalUse;
-            mselEntity.CourseMode = draft.Metadata.CourseMode ?? mselEntity.CourseMode;
-            mselEntity.Subject = draft.Metadata.Subject ?? mselEntity.Subject;
-            mselEntity.Keywords = draft.Metadata.Keywords ?? mselEntity.Keywords;
-            mselEntity.Language = draft.Metadata.Language ?? mselEntity.Language;
+            SetMetadata(mselEntity, draft.Metadata);
             // the marking the planner chose for the articles; Write with AI keeps to it
             if (draft.Design?.Marking != null)
                 (mselEntity.ArticleMarking, mselEntity.ArticleMarkingText) = ArticleMarkings.Clean(draft.Design.Marking, draft.Design.MarkingText);
@@ -154,6 +148,10 @@ namespace Blueprint.Api.Services
         public static MselPageEntity AddInjects(MselEntity mselEntity, MselDraft draft, IReadOnlyDictionary<string, CompetencyEntity> competencies,
             Dictionary<MselDraftInject, ScenarioEventEntity> created = null)
         {
+            // each move's situation briefing is written with the injects
+            foreach (var move in draft.Moves.Where(m => !string.IsNullOrWhiteSpace(m.SituationDescription)))
+                if (mselEntity.Moves.FirstOrDefault(m => m.MoveNumber == move.MoveNumber) is MoveEntity entity)
+                    entity.SituationDescription = move.SituationDescription;
             var cardsByName = new Dictionary<string, CardEntity>(StringComparer.OrdinalIgnoreCase);
             foreach (var card in mselEntity.Cards)
                 cardsByName.TryAdd(card.Name.Trim(), card);
@@ -321,6 +319,19 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>What needs the whole MSEL: the overview, the facilitator guide, the profile pages and the Player applications</summary>
+        /// <summary>The catalog metadata on the Info page; the template's stays where the draft has none</summary>
+        public static void SetMetadata(MselEntity mselEntity, MselDraftMetadata metadata)
+        {
+            if (metadata == null)
+                return;
+            mselEntity.EducationalLevel = metadata.EducationalLevel ?? mselEntity.EducationalLevel;
+            mselEntity.EducationalUse = metadata.EducationalUse ?? mselEntity.EducationalUse;
+            mselEntity.CourseMode = metadata.CourseMode ?? mselEntity.CourseMode;
+            mselEntity.Subject = metadata.Subject ?? mselEntity.Subject;
+            mselEntity.Keywords = metadata.Keywords ?? mselEntity.Keywords;
+            mselEntity.Language = metadata.Language ?? mselEntity.Language;
+        }
+
         public static void Finish(MselEntity mselEntity, MselDraft draft, MselPageEntity readInPage)
         {
             // the overview and profiles are pages every participant can see, and part of the playbook;

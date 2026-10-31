@@ -15,6 +15,7 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Tests.Support;
 using Blueprint.Api.ViewModels;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
 using Xunit;
@@ -38,12 +39,45 @@ public class LiveBedrockFactory(DatabaseFixture database) : BlueprintAppFactory(
         builder.UseSetting("Ai:Prices:us.anthropic.claude-sonnet-5-5:CacheReadPerMillion", "0.2");
         if (Environment.GetEnvironmentVariable("BLUEPRINT_LIVE_STRICT") is string strict && strict.Length > 0)
             builder.UseSetting("Ai:Strict", strict);
+        // the API's warnings say what the model did; BLUEPRINT_LIVE_LOG names the file they go to
+        if (Environment.GetEnvironmentVariable("BLUEPRINT_LIVE_LOG") is string log && log.Length > 0)
+            builder.ConfigureLogging(logging => logging.AddProvider(new FileLoggerProvider(log)));
+    }
+}
+
+/// <summary>Appends each warning and error, and the AI client's information, to one file</summary>
+public sealed class FileLoggerProvider(string path) : Microsoft.Extensions.Logging.ILoggerProvider
+{
+    private readonly object _lock = new();
+
+    public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName) => new FileLogger(this, categoryName);
+
+    public void Dispose() { }
+
+    private void Write(string line)
+    {
+        lock (_lock)
+            System.IO.File.AppendAllText(path, line + Environment.NewLine);
+    }
+
+    private sealed class FileLogger(FileLoggerProvider provider, string category) : Microsoft.Extensions.Logging.ILogger
+    {
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) =>
+            logLevel >= Microsoft.Extensions.Logging.LogLevel.Warning || category.StartsWith("Blueprint.Api.Services.", StringComparison.Ordinal);
+
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+        {
+            if (IsEnabled(logLevel))
+                provider.Write($"{DateTime.UtcNow:HH:mm:ss} {logLevel} {category}: {formatter(state, exception)}{(exception == null ? "" : " | " + exception.GetType().Name + ": " + exception.Message)}");
+        }
     }
 }
 
 /// <summary>
 /// A whole drafted MSEL built against the real model, step by step through the endpoints the browser calls: the design,
-/// the MSEL created from it, the inject outline, then some rows, articles and a profile. Each step's time and the calls'
+/// the MSEL created from it, the inject outline, then some rows, articles and a profile, and the finish. Each step's time and the calls'
 /// tokens and cost are written to BLUEPRINT_LIVE_OUT. It costs real money, so it runs only where BLUEPRINT_LIVE_BEDROCK is set.
 /// </summary>
 public class MselBuildLiveTests(DatabaseFixture fixture, LiveBedrockFactory factory)
@@ -111,6 +145,9 @@ public class MselBuildLiveTests(DatabaseFixture fixture, LiveBedrockFactory fact
         foreach (var r in results)
             report.AppendLine($"  {r.Item1}: {(r.Item2 ? "ok" : "FAILED " + r.Item4[..Math.Min(300, r.Item4.Length)])} in {r.Item3.TotalSeconds:F0} s");
 
+        var finished = await Step(report, "finish", () => client.PostAsync($"/api/msels/{mselId}/ai-draft/finish", null, Ct), r => Read<MselBuildStatus>(r));
+        report.AppendLine($"  warnings: {string.Join(" | ", finished.Warnings)}");
+
         await using var db = NewContext();
         var usage = await db.AiUsages.Where(u => u.MselId == mselId || u.DraftId == designed.Draft.DraftId).ToListAsync(Ct);
         report.AppendLine("calls by step (input / output tokens, stop reasons, cost at $2/$10 per million):");
@@ -119,7 +156,8 @@ public class MselBuildLiveTests(DatabaseFixture fixture, LiveBedrockFactory fact
                 $"{string.Join(",", g.Select(u => u.StopReason).Distinct())}, ${(g.Sum(u => u.InputTokens) * 2m + g.Sum(u => u.OutputTokens) * 10m) / 1_000_000m:F2}");
 
         // what a constrained answer once left out
-        var msel = await db.Msels.Include(m => m.Cards).Include(m => m.CiteActions).Include(m => m.CiteDuties).AsSplitQuery().SingleAsync(m => m.Id == mselId, Ct);
+        var msel = await db.Msels.Include(m => m.Cards).Include(m => m.CiteActions).Include(m => m.CiteDuties).Include(m => m.Pages).AsSplitQuery().SingleAsync(m => m.Id == mselId, Ct);
+        report.AppendLine($"pages: {string.Join(", ", msel.Pages.Select(p => p.Name))}");
         report.AppendLine($"MSEL: {msel.Cards.Count} cards, {msel.CiteActions.Count} CITE tasks, {msel.CiteDuties.Count} duties; " +
             $"metadata: level {msel.EducationalLevel}, use {msel.EducationalUse}, mode {msel.CourseMode}, language {msel.Language}, subject {msel.Subject}, keywords {msel.Keywords}");
         if (Environment.GetEnvironmentVariable("BLUEPRINT_LIVE_OUT") is string path && path.Length > 0)

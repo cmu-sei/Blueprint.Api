@@ -17,8 +17,9 @@ using Swashbuckle.AspNetCore.Annotations;
 namespace Blueprint.Api.Controllers
 {
     /// <summary>
-    /// MITRE ATT&amp;CK releases. Reads are open to any authenticated user, as competency frameworks are: every MSEL
-    /// with an ATT&amp;CK column loads them. Import and delete are managed with the competency frameworks.
+    /// Technique framework releases (MITRE ATT&amp;CK, ATLAS, D3FEND). Reads are open to any authenticated user, as
+    /// competency frameworks are: every MSEL with a technique column loads them. Import and delete are managed with
+    /// the competency frameworks.
     /// </summary>
     public class AttackReleaseController : BaseController
     {
@@ -90,16 +91,17 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Imports a release from its STIX 2.x bundle
+        /// Imports a release from its STIX 2.x bundle or the D3FEND ontology
         /// </summary>
         /// <remarks>
         /// Accepts enterprise-attack.json, mobile-attack.json or ics-attack.json from the mitre-attack/attack-stix-data
         /// repository, or stix-atlas.json from the mitre-atlas/atlas-data releases, which becomes a release of the
-        /// ATLAS domain. Revoked and deprecated objects are skipped. The version is read from the bundle; give one
-        /// only for an older bundle that does not name its version.
+        /// ATLAS domain. Revoked and deprecated objects are skipped. Also accepts d3fend.json (JSON-LD) from the
+        /// D3FEND Ontology Resources page, which becomes a release of the d3fend domain whose techniques are
+        /// defensive. The version is read from the file; give one only for an older file that does not name it.
         /// </remarks>
-        /// <param name="form">The bundle</param>
-        /// <param name="version">The release version (e.g. "17.1"), if the bundle does not say</param>
+        /// <param name="form">The bundle or ontology</param>
+        /// <param name="version">The release version (e.g. "17.1"), if the file does not say</param>
         /// <param name="ct"></param>
         [HttpPost("attackreleases/import")]
         [RequestSizeLimit(MaxBundleBytes)]

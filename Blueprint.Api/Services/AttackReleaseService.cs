@@ -31,8 +31,8 @@ namespace Blueprint.Api.Services
     }
 
     /// <summary>
-    /// The ATT&amp;CK releases an administrator has uploaded. A release is never edited: a newer ATT&amp;CK version
-    /// is imported alongside it, and MSELs move to it one at a time.
+    /// The technique framework releases (ATT&amp;CK, ATLAS, D3FEND) an administrator has uploaded. A release is never
+    /// edited: a newer version is imported alongside it, and MSELs move to it one at a time.
     /// </summary>
     public class AttackReleaseService : IAttackReleaseService
     {
@@ -97,7 +97,7 @@ namespace Blueprint.Api.Services
             AttackReleaseEntity release;
             using (var stream = form.ToUpload.OpenReadStream())
             {
-                release = await AttackStixParser.ParseAsync(stream, version, ct);
+                release = await ReleaseFileParser.ParseAsync(stream, version, ct);
             }
 
             if (await _context.AttackReleases.AnyAsync(r => r.Domain == release.Domain && r.Version == release.Version, ct))
@@ -106,7 +106,7 @@ namespace Blueprint.Api.Services
             release.CreatedBy = _user.GetId();
             _context.AttackReleases.Add(release);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning("ATT&CK {Domain} {Version} imported by {UserId}: {Tactics} tactics, {Techniques} techniques",
+            _logger.LogWarning("Release {Domain} {Version} imported by {UserId}: {Tactics} tactics, {Techniques} techniques",
                 release.Domain, release.Version, _user.GetId(), release.Tactics.Count, release.Techniques.Count);
 
             return await GetAsync(release.Id, ct);
@@ -128,7 +128,7 @@ namespace Blueprint.Api.Services
 
             _context.AttackReleases.Remove(release);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning("ATT&CK {Domain} {Version} deleted by {UserId}", release.Domain, release.Version, _user.GetId());
+            _logger.LogWarning("Release {Domain} {Version} deleted by {UserId}", release.Domain, release.Version, _user.GetId());
             return true;
         }
 

@@ -65,6 +65,28 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         Assert.Equal(["AML.T0000", "AML.T0000.000", "AML.T0040"], ids.Order());
     }
 
+    /// <summary>The D3FEND ontology is JSON-LD, not STIX; the same endpoint reads it as a release of the d3fend domain.</summary>
+    [Fact]
+    public async Task Import_OfTheD3fendOntology_Is201_AsAD3fendRelease()
+    {
+        var response = await Upload(RootClient, D3fendOntologies.Ontology(), "d3fend.json");
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var release = await Read<AttackRelease>(response);
+        Assert.Equal(AttackStixParser.ReleaseId("d3fend", "1.6.0"), release.Id);
+        Assert.Equal("d3fend", release.Domain);
+        Assert.Equal("MITRE D3FEND", release.Name);
+        Assert.Equal(2, release.TacticCount);
+        Assert.Equal(3, release.TechniqueCount);
+        var techniques = await Get<List<AttackTechnique>>(RootClient, $"api/attackreleases/{release.Id}/techniques");
+        var cban = techniques.Single(t => t.ExternalId == "D3-CBAN");
+        Assert.True(cban.IsSubTechnique);
+        Assert.Equal(techniques.Single(t => t.ExternalId == "D3-CH").Id, cban.ParentId);
+        Assert.Equal(["harden"], cban.Tactics);
+        Assert.Empty(cban.Platforms);
+        Assert.Equal("https://d3fend.mitre.org/technique/d3f:CertificateBasedAuthentication/", cban.Url);
+    }
+
     [Fact]
     public async Task Import_OfAReleaseAlreadyThere_Is409()
     {

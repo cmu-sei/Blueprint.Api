@@ -36,32 +36,26 @@ namespace Blueprint.Api.Services
 
         public static async Task<AttackReleaseEntity> ParseAsync(Stream stream, string version, CancellationToken ct)
         {
-            JsonDocument document;
-            try
-            {
-                document = await JsonDocument.ParseAsync(stream, default, ct);
-            }
-            catch (JsonException ex)
-            {
-                throw new InvalidAttackBundleException($"The file is not valid JSON: {ex.Message}");
-            }
-
-            using (document)
-            {
-                var root = document.RootElement;
-                if (root.ValueKind != JsonValueKind.Object
-                    || GetString(root, "type") != "bundle"
-                    || !root.TryGetProperty("objects", out var objects)
-                    || objects.ValueKind != JsonValueKind.Array)
-                {
-                    throw new InvalidAttackBundleException("The file is not a STIX bundle. Upload a release bundle such as enterprise-attack.json or stix-atlas.json.");
-                }
-
-                return Parse(objects, version);
-            }
+            using var document = await ReleaseFileParser.ReadAsync(stream, ct);
+            return Parse(document.RootElement, version);
         }
 
-        private static AttackReleaseEntity Parse(JsonElement objects, string version)
+        /// <summary>True when the JSON is a STIX bundle with its objects, the shape of enterprise-attack.json.</summary>
+        public static bool CanParse(JsonElement root) =>
+            root.ValueKind == JsonValueKind.Object
+            && GetString(root, "type") == "bundle"
+            && root.TryGetProperty("objects", out var objects)
+            && objects.ValueKind == JsonValueKind.Array;
+
+        public static AttackReleaseEntity Parse(JsonElement root, string version)
+        {
+            if (!CanParse(root))
+                throw new InvalidAttackBundleException("The file is not a STIX bundle. Upload a release bundle such as enterprise-attack.json or stix-atlas.json.");
+
+            return ParseObjects(root.GetProperty("objects"), version);
+        }
+
+        private static AttackReleaseEntity ParseObjects(JsonElement objects, string version)
         {
             JsonElement? collection = null;
             JsonElement? matrix = null;

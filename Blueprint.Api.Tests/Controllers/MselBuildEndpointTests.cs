@@ -342,6 +342,27 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Equal(HttpStatusCode.Forbidden, (await Client(stranger).PostAsJsonAsync($"/api/msels/{mselId}/image/generate", new MselImageRequest(), JsonOptions, Ct)).StatusCode);
     }
 
+    /// <summary>
+    /// The browser may choose the new MSEL's ID, so it can open the MSEL's page before the MSEL exists; an ID already taken
+    /// is not reused, and the MSEL gets a new one.
+    /// </summary>
+    [Fact]
+    public async Task Create_TakesTheIdTheBrowserChose()
+    {
+        var template = await SeedTemplate();
+        var planner = await Planner();
+        var design = await Read<MselDraftResult>(await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/design", new MselDraftRequest { TemplateMselId = template.Id, Prompt = "Cables" }, JsonOptions, Ct));
+        var chosen = Guid.NewGuid();
+
+        var created = await Read<MselImportResult>(await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/create",
+            new MselDesignBuild { MselId = chosen, TemplateMselId = template.Id, Prompt = "Cables", Draft = design.Draft }, JsonOptions, Ct));
+        Assert.Equal(chosen, created.Msel.Id);
+
+        var again = await Read<MselImportResult>(await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/create",
+            new MselDesignBuild { MselId = chosen, TemplateMselId = template.Id, Prompt = "Cables", Draft = design.Draft }, JsonOptions, Ct));
+        Assert.NotEqual(chosen, again.Msel.Id);
+    }
+
     /// <summary>Steps run in order, and only the drafting user, or an EditMsels holder, runs them.</summary>
     [Fact]
     public async Task Steps_RunInOrderForTheirOwner()

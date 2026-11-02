@@ -343,7 +343,7 @@ namespace Blueprint.Api.Services
             return mselEntity;
         }
 
-        private async Task<MselEntity> privateMselCopyAsync(MselEntity mselEntity, Guid? currentUserTeamId, CancellationToken ct, bool keepName = false)
+        private async Task<MselEntity> privateMselCopyAsync(MselEntity mselEntity, Guid? currentUserTeamId, CancellationToken ct, bool keepName = false, Guid? newId = null)
         {
             var newGuidValues = new Dictionary<Guid, Guid>();
             var currentUserId = _user.GetId();
@@ -353,7 +353,7 @@ namespace Blueprint.Api.Services
             var sourceImage = mselEntity.ImageDateModified == null ? null :
                 await _context.MselImages.AsNoTracking().SingleOrDefaultAsync(i => i.MselId == mselEntity.Id, ct);
             mselEntity.ImageDateModified = sourceImage == null ? null : mselEntity.ImageDateModified;
-            mselEntity.Id = Guid.NewGuid();
+            mselEntity.Id = newId ?? Guid.NewGuid();
             mselEntity.CreatedBy = currentUserId;
             if (!keepName)
                 mselEntity.Name = mselEntity.Name + " - " + username;
@@ -2304,7 +2304,9 @@ namespace Blueprint.Api.Services
             foreach (var note in draft.PlannerNotes)
                 AddChange(result, "plannerNotes", note);
 
-            var imported = await ImportEntityAsync(mselEntity, result, ct);
+            // the browser opens the MSEL's page under its ID while it is created; one already taken is not reused
+            var mselId = build.MselId is Guid wanted && wanted != Guid.Empty && !await _context.Msels.AnyAsync(m => m.Id == wanted, ct) ? wanted : (Guid?)null;
+            var imported = await ImportEntityAsync(mselEntity, result, ct, mselId);
             await ShareDraftAsync(imported, ct);
             if (draft.DraftId != Guid.Empty)
                 await _aiUsageService.LinkDraftAsync(draft.DraftId, imported.Msel.Id, ct);
@@ -2393,7 +2395,7 @@ namespace Blueprint.Api.Services
 
         // Checks an incoming MSEL against this environment (CITE, Caster, names) and saves it as a new copy.
         // Shared by JSON import and AI draft import so both report the same way.
-        private async Task<MselImportResult> ImportEntityAsync(MselEntity mselEntity, MselImportResult result, CancellationToken ct)
+        private async Task<MselImportResult> ImportEntityAsync(MselEntity mselEntity, MselImportResult result, CancellationToken ct, Guid? mselId = null)
         {
             // A file carrying the MSEL's own scoring model pushes that one, so a CITE model it also links is dropped
             if (mselEntity.ScoringModel != null)
@@ -2596,7 +2598,7 @@ namespace Blueprint.Api.Services
             var fileName = mselEntity.Name;
             var nameInUse = await _context.Msels
                 .AnyAsync(m => m.Name.ToLower() == (mselEntity.Name ?? "").ToLower(), ct);
-            mselEntity = await privateMselCopyAsync(mselEntity, null, ct, keepName: !nameInUse);
+            mselEntity = await privateMselCopyAsync(mselEntity, null, ct, keepName: !nameInUse, newId: mselId);
             if (nameInUse)
                 AddChange(result, "name", $"A MSEL named \"{fileName}\" already exists, so this one was named \"{mselEntity.Name}\".");
 

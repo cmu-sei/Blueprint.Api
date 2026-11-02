@@ -240,6 +240,8 @@ namespace Blueprint.Api.ViewModels
     /// <summary>A reviewed design to create its MSEL from, which the rest of the draft is then written into</summary>
     public class MselDesignBuild
     {
+        /// <summary>The ID the new MSEL takes, chosen by the browser so it can open the MSEL's page before it is created; a new one when empty</summary>
+        public Guid? MselId { get; set; }
         public Guid TemplateMselId { get; set; }
         /// <summary>The planner's description of the exercise, which the injects are written from too</summary>
         public string Prompt { get; set; }

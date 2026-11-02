@@ -645,6 +645,19 @@
       "GalleryArticleParameter": "OpenInNewTab"
     },
     {
+      "Id": "e26d287b-086e-4a64-8f39-334247cee165",
+      "MselId": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
+      "Name": "Competency",
+      "Description": "The competencies (for example NICE Framework tasks) the inject exercises.",
+      "DataType": 170,
+      "DisplayOrder": 13,
+      "IsChosenFromList": true,
+      "IsMultiSelect": true,
+      "OnScenarioEventList": false,
+      "OnExerciseView": false,
+      "IsShownOnDefaultTab": false
+    },
+    {
       "Id": "f2bc4d5c-a56d-4770-9993-811377c471fe",
       "InjectTypeId": "bd838cb1-6ccf-4a4b-ad01-994a9da5e4c4",
       "Name": "Summary",

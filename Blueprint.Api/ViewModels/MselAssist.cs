@@ -46,7 +46,8 @@ namespace Blueprint.Api.ViewModels
     public class MselChange
     {
         /// <summary>team.add, team.update, organization.add, organization.update, card.add, card.update, competency.add,
-        /// competency.remove, move.add, move.update, inject.add, inject.update, column.add, column.update or integration.add</summary>
+        /// competency.remove, move.add, move.update, inject.add, inject.update, column.add, column.update, integration.add, page.add or
+        /// page.update</summary>
         public string Op { get; set; }
         public string Target { get; set; }
         public string ShortName { get; set; }
@@ -93,6 +94,12 @@ namespace Blueprint.Api.ViewModels
 
         /// <summary>For CITE, the scoring model to author: MissionImpact, Likelihood or Nciss; none leaves it to the planner</summary>
         public string Preset { get; set; }
+
+        /// <summary>A page's whole content, in HTML</summary>
+        public string Content { get; set; }
+
+        /// <summary>Whether every MSEL user, participants too, may see a page</summary>
+        public bool? AllCanView { get; set; }
 
         /// <summary>The inject an edit changes, set by the server from Target so a later apply finds the same one</summary>
         public System.Guid? ScenarioEventId { get; set; }

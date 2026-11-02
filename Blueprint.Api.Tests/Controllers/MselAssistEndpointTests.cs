@@ -302,6 +302,48 @@ public class MselAssistEndpointTests(DatabaseFixture fixture, AiEnabledFactory f
         Assert.Contains("(pushed: integrations cannot change until it is pulled)", _prompt);
     }
 
+    /// <summary>
+    /// Ask AI adds a page and edits one through the page rules; script is removed. A page too long to have been shown whole is not
+    /// edited, as its content would lose the rest; nor is one the edit would empty.
+    /// </summary>
+    [Fact]
+    public async Task Apply_AddsAndEditsPages()
+    {
+        var (msel, _) = await SeedMsel();
+        var readIn = new MselPageEntity { Id = Guid.NewGuid(), MselId = msel.Id, Name = "Read-In", Content = "<p>Old</p>", AllCanView = true, IncludeInPlaybook = true };
+        var guide = new MselPageEntity { Id = Guid.NewGuid(), MselId = msel.Id, Name = "Facilitator Guide", Content = "<p>" + new string('x', MselAssistRules.MaxPageShown + 10) + "</p>" };
+        await Seed(readIn, guide);
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        Answer(new
+        {
+            reply = "Pages",
+            changes = new object[]
+            {
+                new { op = "page.add", name = "Rules of Play", content = "<h2>Rules</h2><p>Stay in role.</p><script>x()</script>", allCanView = true },
+                new { op = "page.update", target = "read-in", content = "<p>New read-in</p>" },
+                new { op = "page.update", target = "Facilitator Guide", content = "<p>Short</p>" },
+                new { op = "page.update", target = "Read-In", content = "<p></p>" }
+            }
+        });
+
+        var proposal = await Read<MselAssistResult>(await Ask(owner, msel.Id, "Add rules of play and update the read-in"));
+
+        Assert.Equal(["Add page Rules of Play (participants can see it)", "Edit page Read-In: content"], proposal.Changes.Select(c => c.Label));
+        Assert.Contains("Edit page Facilitator Guide: content: left out, the page is too long to edit here; use Write with AI on the page.", proposal.Warnings);
+        Assert.Contains("Edit page Read-In: content: left out, it would empty the page.", proposal.Warnings);
+        Assert.Contains("- Read-In (participants and controllers):", _prompt);
+        Assert.Contains("[cut short]", _prompt);
+
+        var result = await Read<MselAssistApplyResult>(await Apply(owner, msel.Id, proposal.Changes.ToArray()));
+        Assert.All(result.Results, r => Assert.True(r.Applied, $"{r.Label}: {r.Error}"));
+        await using var db = NewContext();
+        var pages = await db.MselPages.Where(p => p.MselId == msel.Id).ToDictionaryAsync(p => p.Name, Ct);
+        Assert.DoesNotContain("<script", pages["Rules of Play"].Content);
+        Assert.True(pages["Rules of Play"].AllCanView);
+        Assert.Equal("<p>New read-in</p>", pages["Read-In"].Content);
+        Assert.True(pages["Read-In"].AllCanView);
+    }
+
     [Fact]
     public async Task Apply_ByAViewer_IsForbiddenAndChangesNothing()
     {

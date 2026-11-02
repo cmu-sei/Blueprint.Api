@@ -36,11 +36,11 @@ namespace Blueprint.Api.Services
     /// Which kinds of change the planner may make on this MSEL, by the rules of the services that make them. A change
     /// the planner may not make is left out of a proposal with the reason, rather than failing when applied.
     /// </summary>
-    public record MselAssistAccess(bool Teams, bool OrganizationsAndCards, bool Competencies, bool Moves, bool AddInjects, bool EditInjects, bool Columns, bool Integrations)
+    public record MselAssistAccess(bool Teams, bool OrganizationsAndCards, bool Competencies, bool Moves, bool AddInjects, bool EditInjects, bool Columns, bool Integrations, bool Pages)
     {
-        public bool Any => Teams || OrganizationsAndCards || Competencies || Moves || AddInjects || EditInjects || Columns || Integrations;
+        public bool Any => Teams || OrganizationsAndCards || Competencies || Moves || AddInjects || EditInjects || Columns || Integrations || Pages;
 
-        public static readonly MselAssistAccess All = new(true, true, true, true, true, true, true, true);
+        public static readonly MselAssistAccess All = new(true, true, true, true, true, true, true, true, true);
 
         /// <summary>Why the planner may not make a change of this kind, or null when they may</summary>
         public string Refusal(string op) => op switch
@@ -54,6 +54,7 @@ namespace Blueprint.Api.Services
             MselAssistRules.InjectUpdate when !EditInjects => "only the MSEL's owner, an editor or an approver can edit injects",
             MselAssistRules.ColumnAdd or MselAssistRules.ColumnUpdate when !Columns => "only the MSEL's owner or an editor can change its columns",
             MselAssistRules.IntegrationAdd when !Integrations => "only the MSEL's owner can change its integrations",
+            MselAssistRules.PageAdd or MselAssistRules.PageUpdate when !Pages => "only the MSEL's owner can change its pages",
             _ => null
         };
 
@@ -69,6 +70,7 @@ namespace Blueprint.Api.Services
             if (EditInjects) parts.Add("existing injects");
             if (Columns) parts.Add("inject columns");
             if (Integrations) parts.Add("integrations (turning one on)");
+            if (Pages) parts.Add("pages");
             return string.Join(", ", parts);
         }
     }
@@ -92,12 +94,17 @@ scenario's actors: the agencies, companies, media outlets and threat actors that
 on the participants' Gallery wall; a card's move and inject numbers say when it first appears. Competencies are framework work roles
 and tasks (DCWF or NICE) linked to the MSEL as a whole or to a team.
 You can propose these changes: add or edit a team, an organization or a Gallery card; add or remove a competency on the MSEL or a team;
-add or edit a move; add an inject or edit an existing one; add an inject column or edit one; turn on an integration.
+add or edit a move; add an inject or edit an existing one; add an inject column or edit one; turn on an integration; add a page or edit one.
 Rules:
 - Answer only by calling the tool. Put a short reply to the planner in reply: what you propose and why, in plain words.
 - Change only what the planner asked for, plus what that needs (a new team named in the request must exist before a competency is put on it).
 - If the request is ambiguous in a way that changes the result, ask one short question and propose no changes.
-- If the planner asks for something you cannot change (deleting injects, moves or columns, turning an integration off, users, pages), say so in reply.
+- If the planner asks for something you cannot change (deleting injects, moves, columns or pages, turning an integration off, users), say so in reply.
+- Pages are the MSEL's documents, such as the read-in, the exercise overview and the facilitator guide. For an edit, write the
+  page's whole new content in HTML, changing what the planner asked and keeping the rest as it is: its headings, order, tables and
+  wording. Use section, h2, h3, h4, p, ul, ol, li, strong, em and table with border=""1"" cellpadding=""6"" cellspacing=""0"" only;
+  no colors, images or style attributes. A page participants see reveals nothing they should only learn from an inject. A page
+  shown cut short cannot be edited here; say so, and that Write with AI on the page can.
 - Turning on an integration also needs what it works with, which you propose in the same changes, after it. Gallery: Blueprint adds the
   article columns (listed with the change), and you add the Gallery cards and give the injects that are articles a source type,
   sender, recipients, title, summary and card. CITE: choose a scoring model preset that fits (MissionImpact, Likelihood or Nciss),
@@ -143,8 +150,10 @@ Rules:
             IPrincipal user,
             IAiUsageContext usage,
             IDataFieldService dataFieldService,
-            Cite.Api.Client.ICiteApiClient citeApiClient)
+            Cite.Api.Client.ICiteApiClient citeApiClient,
+            IMselPageService mselPageService)
         {
+            _mselPageService = mselPageService;
             _usage = usage;
             _dataFieldService = dataFieldService;
             _citeApiClient = citeApiClient;
@@ -164,6 +173,7 @@ Rules:
         private readonly IAiUsageContext _usage;
         private readonly IDataFieldService _dataFieldService;
         private readonly Cite.Api.Client.ICiteApiClient _citeApiClient;
+        private readonly IMselPageService _mselPageService;
 
         public async Task<MselAssistResult> AskAsync(Guid mselId, MselAssistRequest request, MselAssistPermissions permissions, CancellationToken ct)
         {
@@ -408,6 +418,29 @@ Rules:
                     await ReloadColumnsAsync(state, mselId, ct);
                     break;
                 }
+                case MselAssistRules.PageAdd:
+                    await _mselPageService.CreateAsync(new MselPageCreate
+                    {
+                        Id = Guid.NewGuid(),
+                        MselId = mselId,
+                        Name = change.Name,
+                        Content = change.Content,
+                        AllCanView = change.AllCanView ?? false,
+                        IncludeInPlaybook = true
+                    }, permissions.EditMsels, ct);
+                    break;
+                case MselAssistRules.PageUpdate:
+                {
+                    var page = await _context.MselPages.AsNoTracking().SingleAsync(p => p.MselId == mselId && p.Name == change.Target, ct);
+                    await _mselPageService.UpdateAsync(page.Id, new MselPageEdit
+                    {
+                        Name = change.Name ?? page.Name,
+                        Content = change.Content ?? page.Content,
+                        AllCanView = change.AllCanView ?? page.AllCanView,
+                        IncludeInPlaybook = page.IncludeInPlaybook
+                    }, permissions.EditMsels, ct);
+                    break;
+                }
                 case MselAssistRules.IntegrationAdd:
                     await TurnOnAsync(mselId, change, ct);
                     await ReloadColumnsAsync(state, mselId, ct);
@@ -557,7 +590,8 @@ Rules:
                 AddInjects: permissions.EditMsels || owner,
                 EditInjects: permissions.EditMsels || owner || editor || approver,
                 Columns: permissions.EditMsels || owner || editor,
-                Integrations: permissions.EditMsels || owner);
+                Integrations: permissions.EditMsels || owner,
+                Pages: permissions.EditMsels || owner);
             if (!access.Any)
                 throw new ForbiddenException();
             return access;
@@ -574,6 +608,7 @@ Rules:
                 .Include(m => m.MselCompetencies).ThenInclude(mc => mc.Competency)
                 .Include(m => m.DataFields).ThenInclude(f => f.DataOptions)
                 .Include(m => m.ScenarioEvents).ThenInclude(e => e.DataValues)
+                .Include(m => m.Pages)
                 .AsSplitQuery()
                 .SingleAsync(m => m.Id == mselId, ct);
             var state = new MselAssistState(msel);
@@ -676,6 +711,17 @@ Rules:
             if (state.Injects.Count > MaxInjectsShown)
                 sb.AppendLine($"({state.Injects.Count - MaxInjectsShown} later injects are not shown.)");
 
+            if (msel.Pages.Any())
+            {
+                sb.AppendLine().AppendLine("Pages (name, who sees it, content):");
+                foreach (var page in msel.Pages.OrderBy(p => p.Name))
+                {
+                    var content = page.Content ?? "";
+                    var shown = content.Length <= MselAssistRules.MaxPageShown ? content : content[..MselAssistRules.MaxPageShown] + " [cut short]";
+                    sb.AppendLine($"- {page.Name} ({(page.AllCanView ? "participants and controllers" : "controllers only")}):").AppendLine(shown);
+                }
+            }
+
             if (workRoles.Count > 0)
             {
                 sb.AppendLine().AppendLine("Work roles that can be added (ID number, name, framework):");
@@ -713,7 +759,7 @@ Rules:
                         ["properties"] = new JsonObject
                         {
                             ["op"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselAssistRules.Ops.Select(o => (JsonNode)o).ToArray()) },
-                            ["target"] = new JsonObject { ["type"] = "string", ["description"] = "For a team or organization edit, its short name; for a card or column edit, its name; for an inject edit, its reference (E1, E2, ...). For a competency, the team's short name, or empty for the MSEL." },
+                            ["target"] = new JsonObject { ["type"] = "string", ["description"] = "For a team or organization edit, its short name; for a card, column or page edit, its name; for an inject edit, its reference (E1, E2, ...). For a competency, the team's short name, or empty for the MSEL." },
                             ["shortName"] = new JsonObject { ["type"] = "string", ["description"] = "A team's or organization's short name, new or changed." },
                             ["name"] = new JsonObject { ["type"] = "string" },
                             ["description"] = new JsonObject { ["type"] = "string", ["description"] = "A team's, organization's, card's or move's description." },
@@ -732,6 +778,8 @@ Rules:
                             ["onEventList"] = new JsonObject { ["type"] = "boolean", ["description"] = "Whether the column shows on the scenario event list." },
                             ["integration"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselAssistRules.Integrations.Select(t => (JsonNode)t).ToArray()), ["description"] = "The integration to turn on." },
                             ["preset"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselDraftRules.MissionImpact, MselDraftRules.Likelihood, MselDraftRules.Nciss), ["description"] = "For CITE, the scoring model to author; leave out to let the planner choose." },
+                            ["content"] = new JsonObject { ["type"] = "string", ["description"] = "A page's whole content, in HTML." },
+                            ["allCanView"] = new JsonObject { ["type"] = "boolean", ["description"] = "Whether participants may see a page, as they do the read-in; controllers only when false." },
                             ["values"] = new JsonObject
                             {
                                 ["type"] = "object",
@@ -794,7 +842,11 @@ Rules:
         public const string ColumnAdd = "column.add";
         public const string ColumnUpdate = "column.update";
         public const string IntegrationAdd = "integration.add";
-        public static readonly string[] Ops = [TeamAdd, TeamUpdate, OrganizationAdd, OrganizationUpdate, CardAdd, CardUpdate, CompetencyAdd, CompetencyRemove, MoveAdd, MoveUpdate, InjectAdd, InjectUpdate, ColumnAdd, ColumnUpdate, IntegrationAdd];
+        public const string PageAdd = "page.add";
+        public const string PageUpdate = "page.update";
+        public static readonly string[] Ops = [TeamAdd, TeamUpdate, OrganizationAdd, OrganizationUpdate, CardAdd, CardUpdate, CompetencyAdd, CompetencyRemove, MoveAdd, MoveUpdate, InjectAdd, InjectUpdate, ColumnAdd, ColumnUpdate, IntegrationAdd, PageAdd, PageUpdate];
+        /// <summary>How much of a page the model is shown; a longer page is shown cut short and cannot be edited here</summary>
+        public const int MaxPageShown = 12000;
         public static readonly string[] Integrations = ["Player", "Gallery", "Cite", "Steamfitter", "Caster"];
 
         /// <summary>Whether the MSEL has an integration on</summary>
@@ -866,6 +918,7 @@ Rules:
             var parameters = msel.DataFields.Where(f => !string.IsNullOrEmpty(f.GalleryArticleParameter))
                 .ToDictionary(f => f.GalleryArticleParameter, f => f.Name, StringComparer.OrdinalIgnoreCase);
             var integrationsOn = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var pages = msel.Pages.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             // competency links as "<team short name or empty>|<id number>"
             var links = msel.MselCompetencies.Select(mc => "|" + mc.Competency.IdNumber)
                 .Concat(msel.Teams.SelectMany(t => t.TeamCompetencies.Select(tc => t.ShortName + "|" + tc.Competency.IdNumber)))
@@ -1050,6 +1103,52 @@ Rules:
                             fields[change.Name ?? field.Name] = ColumnEntity(change, field);
                         break;
                     }
+                    case PageAdd:
+                    {
+                        change.Content = PageHtml(change.Content, warnings);
+                        change.AllCanView ??= false;
+                        change.Label = $"Add page {change.Name} ({(change.AllCanView.Value ? "participants can see it" : "controllers only")})";
+                        problem = change.Name == null ? "a new page needs a name"
+                            : string.IsNullOrWhiteSpace(DataValueDraftService.StripHtml(change.Content)) ? "a new page needs content"
+                            : !pages.Add(change.Name) ? $"there is already a page {change.Name}" : null;
+                        break;
+                    }
+                    case PageUpdate:
+                    {
+                        var page = change.Target == null ? null : msel.Pages.FirstOrDefault(p => p.Name.Equals(change.Target, StringComparison.OrdinalIgnoreCase));
+                        if (page == null)
+                        {
+                            change.Label = $"Edit page {change.Target}";
+                            problem = $"there is no page {change.Target}";
+                            break;
+                        }
+                        change.Target = page.Name;
+                        change.Content = change.Content == null ? null : PageHtml(change.Content, warnings);
+                        if (change.Content == page.Content)
+                            change.Content = null;
+                        if (change.Name != null && change.Name.Equals(page.Name, StringComparison.Ordinal))
+                            change.Name = null;
+                        if (change.AllCanView == page.AllCanView)
+                            change.AllCanView = null;
+                        var parts = new List<string>();
+                        if (change.Name != null) parts.Add($"name \"{change.Name}\"");
+                        if (change.Content != null) parts.Add("content");
+                        if (change.AllCanView != null) parts.Add(change.AllCanView.Value ? "participants can see it" : "controllers only");
+                        change.Label = $"Edit page {page.Name}" + (parts.Count > 0 ? ": " + string.Join(", ", parts) : "");
+                        // the model saw only the start of a long page, so its content would lose the rest
+                        problem = parts.Count == 0 ? "it changes nothing"
+                            : change.Content != null && (page.Content?.Length ?? 0) > MaxPageShown ? "the page is too long to edit here; use Write with AI on the page"
+                            : change.Content != null && string.IsNullOrWhiteSpace(DataValueDraftService.StripHtml(change.Content)) ? "it would empty the page"
+                            : null;
+                        if (problem == null && change.Name != null)
+                        {
+                            if (!pages.Add(change.Name))
+                                problem = $"there is already a page {change.Name}";
+                            else
+                                pages.Remove(page.Name);
+                        }
+                        break;
+                    }
                     case IntegrationAdd:
                     {
                         change.Integration = Integrations.FirstOrDefault(i => i.Equals(change.Integration, StringComparison.OrdinalIgnoreCase));
@@ -1107,6 +1206,10 @@ Rules:
             }
             return reviewed;
         }
+
+        // a page's HTML, kept to what pages show: no script, style or event handlers
+        private static string PageHtml(string html, List<string> warnings) =>
+            string.IsNullOrWhiteSpace(html) ? null : GalleryArticleHtml.Prepare(html, warnings);
 
         // the column type by its name; a type the assistant may not give a column is none
         private static string ColumnType(string value) =>
@@ -1267,7 +1370,9 @@ Rules:
             OnExerciseView = change?.OnExerciseView,
             OnEventList = change?.OnEventList,
             Integration = Text(change?.Integration),
-            Preset = Text(change?.Preset)
+            Preset = Text(change?.Preset),
+            Content = Text(change?.Content),
+            AllCanView = change?.AllCanView
         };
 
         private static string Text(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

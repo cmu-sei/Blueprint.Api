@@ -1176,20 +1176,29 @@ Answer only by calling the tool.";
         public static void AddDraftFields(MselEntity msel)
         {
             AddGalleryFields(msel);
-            if (msel.DataFields.Any(IsExpectedActionField))
-                return;
-            msel.DataFields.Add(new DataFieldEntity
-            {
-                Id = Guid.NewGuid(),
-                MselId = msel.Id,
-                Name = "Expected Actions",
-                Description = "What participants are expected to do; for controllers",
-                DataType = DataFieldType.String,
-                DisplayOrder = msel.DataFields.Select(f => f.DisplayOrder).DefaultIfEmpty(0).Max() + 1,
-                OnScenarioEventList = true,
-                OnExerciseView = false,
-                IsShownOnDefaultTab = true
-            });
+            if (!msel.DataFields.Any(IsExpectedActionField))
+                msel.DataFields.Add(new DataFieldEntity
+                {
+                    Id = Guid.NewGuid(),
+                    MselId = msel.Id,
+                    Name = "Expected Actions",
+                    Description = "What participants are expected to do; for controllers",
+                    DataType = DataFieldType.String,
+                    DisplayOrder = msel.DataFields.Select(f => f.DisplayOrder).DefaultIfEmpty(0).Max() + 1,
+                    OnScenarioEventList = true,
+                    OnExerciseView = false,
+                    IsShownOnDefaultTab = true
+                });
+            // the read-in notice and the facilitator's notes are Information and Facilitation rows, which show only the columns
+            // marked for them: with none marked they listed as a bare type
+            var shown = msel.DataFields.Where(f => IsExpectedActionField(f) || f.GalleryArticleParameter == nameof(GalleryArticleParameter.Name)
+                || new[] { "title", "name", "message" }.Contains(f.Name.Trim().ToLowerInvariant())).ToList();
+            if (!msel.DataFields.Any(f => f.IsInformationField))
+                foreach (var field in shown)
+                    field.IsInformationField = true;
+            if (!msel.DataFields.Any(f => f.IsFacilitationField))
+                foreach (var field in shown)
+                    field.IsFacilitationField = true;
         }
 
         /// <summary>Whether the draft puts Gallery articles on cards: the MSEL uses Gallery and has a column for the card</summary>

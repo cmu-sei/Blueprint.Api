@@ -343,6 +343,21 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
     }
 
     /// <summary>
+    /// The read-in notice is an Information row and the facilitator's notes are Facilitation rows, which show only the columns
+    /// marked for them; a drafted MSEL marks its title and Expected Actions for both, where the template marks none.
+    /// </summary>
+    [Fact]
+    public async Task Create_MarksTheColumnsInformationAndFacilitationRowsShow()
+    {
+        var (mselId, _) = await CreateFromDesign();
+
+        await using var db = NewContext();
+        var fields = await db.DataFields.Where(f => f.MselId == mselId).ToListAsync(Ct);
+        Assert.Equal(["Expected Actions", "Title"], fields.Where(f => f.IsInformationField).Select(f => f.Name).OrderBy(n => n));
+        Assert.Equal(["Expected Actions", "Title"], fields.Where(f => f.IsFacilitationField).Select(f => f.Name).OrderBy(n => n));
+    }
+
+    /// <summary>
     /// The browser may choose the new MSEL's ID, so it can open the MSEL's page before the MSEL exists; an ID already taken
     /// is not reused, and the MSEL gets a new one.
     /// </summary>

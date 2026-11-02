@@ -132,6 +132,9 @@ Answer only by calling the tool.";
                 throw new ArgumentException($"The chosen frameworks have {competencies.Count} competencies, more than the {_aiOptions.MaxCompetencies} a draft can choose from. Choose fewer frameworks.");
             var fields = MselDraftRules.DraftedFields(template).ToList();
             var design = MselDraftRules.CleanDesign(request.Design, template);
+            // one call writes the whole draft, so the assessment is settled here rather than by the model
+            if (design.CiteAssessment == MselDraftRules.ModelChoice)
+                design.CiteAssessment = MselDraftRules.DefaultAssessment(template);
             var schema = BuildSchema(fields, _aiOptions.MaxInjects, competencies, MselDraftRules.UsesCards(template), template.UseCite,
                 design.CiteAssessment == MselDraftRules.QuestionsByMove);
             var prompt = BuildPrompt(request.Prompt, template, fields, _aiOptions.MaxInjects, competencies, design);
@@ -200,7 +203,8 @@ summary, sender and recipients specific enough to write it from and keep the sto
             var fields = MselDraftRules.DraftedFields(template).ToList();
             var design = MselDraftRules.CleanDesign(request.Design, template);
             var schema = DesignSchema(BuildSchema(fields, _aiOptions.MaxInjects, competencies, MselDraftRules.UsesCards(template), template.UseCite,
-                design.CiteAssessment == MselDraftRules.QuestionsByMove));
+                design.CiteAssessment == MselDraftRules.QuestionsByMove),
+                design.CiteAssessment == MselDraftRules.ModelChoice ? MselDraftRules.AssessmentChoices(template) : null);
             var prompt = BuildPrompt(request.Prompt, template, fields, _aiOptions.MaxInjects, competencies, design);
 
             var draftId = Guid.NewGuid();
@@ -209,6 +213,7 @@ summary, sender and recipients specific enough to write it from and keep the sto
                 "Submit the design and your questions for the planner to review.", schema, ct);
             var unreadable = new List<string>();
             var draft = MselDraftRules.ReadDraft(input, unreadable);
+            MselDraftRules.ResolveAssessment(design, input, template, unreadable);
             draft.Design = design;
             draft.DraftId = draftId;
 
@@ -251,12 +256,15 @@ summary, sender and recipients specific enough to write it from and keep the sto
                 design.DurationMinutes,
                 design.Scenario,
                 design.Objectives,
-                Moves = design.Moves.Select(m => new { m.MoveNumber, m.Description, m.Purpose, m.StartMinutes, m.SituationTime }),
+                Moves = design.Moves.Select(m => new { m.MoveNumber, m.Description, m.Purpose, m.StartMinutes, m.SituationTime, m.PlannedInjects }),
                 Teams = design.Teams.Select(t => new { t.ShortName, t.Name, Description = DataValueDraftService.StripHtml(t.Description), t.Competencies }),
                 Organizations = design.Organizations.Select(o => new { o.ShortName, o.Name, Description = DataValueDraftService.StripHtml(o.Description), o.Sector, o.Size, o.Industry, o.Country }),
                 design.Cards,
                 design.Competencies
             }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
+            // the design planned how many injects each move needs, within the cap, so none are written to be thrown away
+            if (design.Moves.Sum(m => m.PlannedInjects ?? 0) is int planned && planned > 0)
+                sb.AppendLine($"Write the injects each move plans (plannedInjects): about {planned} in all, and never more than {_aiOptions.MaxInjects}.");
             var answered = (answers ?? new List<MselDesignAnswer>()).Where(a => !string.IsNullOrWhiteSpace(a?.Answer)).ToList();
             if (answered.Any())
             {
@@ -486,17 +494,25 @@ Answer only by calling the tool.";
         }
 
         // the full draft's schema without the injects and the moves' details, and with the planner's questions
-        private static JsonObject DesignSchema(JsonObject full)
+        private static JsonObject DesignSchema(JsonObject full, string[] assessmentChoices = null)
         {
             var properties = (JsonObject)full["properties"];
             foreach (var name in new[] { "injects", "readIn", "citeActions" })
                 properties.Remove(name);
+            // an enum costs little under strict mode, unlike a free-text field
+            if (assessmentChoices != null)
+                properties["citeAssessment"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["enum"] = new JsonArray(assessmentChoices.Select(c => (JsonNode)c).ToArray()),
+                    ["description"] = "The CITE assessment that fits the exercise, as the design choices describe them"
+                };
             // the briefing, decisions, notes and questions of a move are written with the injects, which know what happens in it;
             // each free-text field left out here keeps the design's schema within the size Bedrock's strict mode takes
             var move = (JsonObject)properties["moves"]["items"];
             foreach (var name in new[] { "situationDescription", "expectedDecisions", "controllerNotes", "citeQuestions" })
                 ((JsonObject)move["properties"]).Remove(name);
-            move["required"] = new JsonArray("moveNumber", "description", "startMinutes", "situationTime", "purpose");
+            move["required"] = new JsonArray("moveNumber", "description", "startMinutes", "situationTime", "purpose", "plannedInjects");
             properties["questions"] = new JsonObject
             {
                 ["type"] = "array",
@@ -526,9 +542,13 @@ Answer only by calling the tool.";
         private static JsonObject InjectsSchema(JsonObject full, List<DataFieldEntity> longFields)
         {
             var all = (JsonObject)full["properties"];
-            if (all["injects"]?["items"]?["properties"]?["values"]?["properties"] is JsonObject values)
+            if (all["injects"]?["items"]?["properties"]?["values"] is JsonObject valuesSchema && valuesSchema["properties"] is JsonObject values)
                 foreach (var field in longFields)
+                {
                     values.Remove(field.Name);
+                    if (valuesSchema["required"] is JsonArray required && required.FirstOrDefault(r => r.GetValue<string>() == field.Name) is JsonNode node)
+                        required.Remove(node);
+                }
             var move = (JsonObject)all["moves"]["items"]["properties"];
             var moveDetails = new JsonObject
             {
@@ -617,6 +637,7 @@ Answer only by calling the tool.";
         private static JsonObject BuildSchema(List<DataFieldEntity> fields, int maxInjects, Dictionary<string, CompetencyEntity> competencies, bool useCards, bool useCite, bool citeQuestions)
         {
             var valueProperties = new JsonObject();
+            var articleColumns = new List<string>();
             foreach (var field in fields)
             {
                 var property = new JsonObject
@@ -624,6 +645,14 @@ Answer only by calling the tool.";
                     ["type"] = "string",
                     ["description"] = MselDraftRules.Describe(field)
                 };
+                // the columns Gallery shows on every article are asked for on every row: left optional, a constrained
+                // answer leaves them out, and a row without a source type is no article at all
+                if (MselDraftRules.IsArticleColumn(field))
+                {
+                    articleColumns.Add(field.Name);
+                    if (field.GalleryArticleParameter != nameof(GalleryArticleParameter.Name))
+                        property["description"] = property["description"].GetValue<string>() + "; empty for a row that is not a Gallery article";
+                }
                 var options = MselDraftRules.AllowedOptions(field);
                 if (options != null)
                     property["enum"] = new JsonArray(options.Select(o => (JsonNode)o).ToArray());
@@ -678,7 +707,8 @@ Answer only by calling the tool.";
                 {
                     ["type"] = "object",
                     ["description"] = "Column values keyed by column name",
-                    ["properties"] = valueProperties
+                    ["properties"] = valueProperties,
+                    ["required"] = new JsonArray(articleColumns.Select(c => (JsonNode)c).ToArray())
                 }
             };
             AddCompetencies(injectProperties, "Competencies participants demonstrate by acting on this inject; empty for injects that only set the scene");
@@ -718,6 +748,7 @@ Answer only by calling the tool.";
                     ["startMinutes"] = Int("Minutes from exercise start; the first move is 0"),
                     ["situationTime"] = Str("The scenario date and time when the move opens, in ISO 8601 UTC, e.g. 2026-03-04T08:00:00Z; later than the move before"),
                     ["purpose"] = Str("What the move is for: the reasoning it makes participants do"),
+                    ["plannedInjects"] = Int("How many injects the move needs, counting every article, message and facilitation row; the whole exercise stays within the limit"),
                     ["expectedDecisions"] = Arr(Str("A decision participants are expected to reach"), "The decisions the move should produce"),
                     ["controllerNotes"] = Str("Notes for controllers and facilitators: what to watch for, when to push, what to hold back")
                 }, "moveNumber", "description", "situationDescription", "startMinutes", "situationTime", "purpose", "expectedDecisions"), "Phases of the exercise in time order"),
@@ -967,7 +998,55 @@ Answer only by calling the tool.";
         public const string NoAssessment = "None";
         // the scoring model the template already links
         public const string TemplateModel = "Template";
-        private static readonly string[] _assessments = [QuestionsByMove, MissionImpact, Likelihood, Nciss, NoAssessment, TemplateModel];
+        /// <summary>The planner leaves the assessment to the model, which chooses in the design step</summary>
+        public const string ModelChoice = "Auto";
+        private static readonly string[] _assessments = [QuestionsByMove, MissionImpact, Likelihood, Nciss, NoAssessment, TemplateModel, ModelChoice];
+
+        /// <summary>The assessments the model may choose for a template: the template's own model only where it has one</summary>
+        public static string[] AssessmentChoices(MselEntity template) =>
+            HasModel(template)
+                ? [QuestionsByMove, MissionImpact, Likelihood, Nciss, NoAssessment, TemplateModel]
+                : [QuestionsByMove, MissionImpact, Likelihood, Nciss, NoAssessment];
+
+        /// <summary>What stands in when nothing chose: the template's own model where it has one, else questions by move</summary>
+        public static string DefaultAssessment(MselEntity template) => HasModel(template) ? TemplateModel : QuestionsByMove;
+
+        /// <summary>The model's choice of assessment, where the planner left it to the model; the default where it chose nothing usable</summary>
+        public static void ResolveAssessment(MselDraftDesign design, JsonElement input, MselEntity template, List<string> warnings)
+        {
+            if (design.CiteAssessment != ModelChoice)
+                return;
+            var chosen = input.ValueKind == JsonValueKind.Object && input.TryGetProperty("citeAssessment", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString()?.Trim() : null;
+            var choice = AssessmentChoices(template).FirstOrDefault(a => a.Equals(chosen, StringComparison.OrdinalIgnoreCase));
+            if (choice == null)
+            {
+                choice = DefaultAssessment(template);
+                warnings.Add($"The model did not choose a CITE assessment; using {AssessmentName(choice)}. Choose another in the design choices and draft again if it does not fit.");
+            }
+            design.CiteAssessment = choice;
+        }
+
+        public static string AssessmentName(string assessment) => assessment switch
+        {
+            QuestionsByMove => "questions by move",
+            MissionImpact => "the DoD CTT mission impact matrix",
+            Likelihood => "the DoD CTT likelihood matrix",
+            Nciss => "CISA NCISS",
+            TemplateModel => "the template's scoring model",
+            NoAssessment => "no assessment",
+            _ => assessment
+        };
+
+        /// <summary>The columns Gallery shows on every article, which every row is asked for</summary>
+        public static bool IsArticleColumn(DataFieldEntity field) =>
+            field.DataType != DataFieldType.Html && field.GalleryArticleParameter is string parameter && _articleParameters.Contains(parameter);
+
+        private static readonly string[] _articleParameters =
+        [
+            nameof(GalleryArticleParameter.Name), nameof(GalleryArticleParameter.Summary), nameof(GalleryArticleParameter.FromOrg),
+            nameof(GalleryArticleParameter.ToOrg), nameof(GalleryArticleParameter.SourceType), nameof(GalleryArticleParameter.SourceName),
+            nameof(GalleryArticleParameter.DatePosted)
+        ];
         private static readonly string[] _cardGroupings = ["Sources", "Organizations", "Sectors", "Countries", "Terrain"];
         /// <summary>The 16 critical infrastructure sectors, as CISA names them</summary>
         public static readonly string[] Sectors =
@@ -1004,7 +1083,7 @@ Answer only by calling the tool.";
         /// default discussion model of the author-ttx workflow.
         /// </summary>
         // a template with a scoring model links one in CITE or authors its own, which the drafted MSEL gets a copy of
-        private static bool HasModel(MselEntity template) => template.CiteScoringModelId != null || template.ScoringModel != null;
+        public static bool HasModel(MselEntity template) => template.CiteScoringModelId != null || template.ScoringModel != null;
 
         public static MselDraftDesign CleanDesign(MselDraftDesign design, MselEntity template)
         {
@@ -1019,9 +1098,10 @@ Answer only by calling the tool.";
             {
                 Format = Pick(design.Format, _formats),
                 Structure = Text(design.Structure),
+                // the model chooses unless the planner did
                 CiteAssessment = !template.UseCite ? NoAssessment
                     : Pick(design.CiteAssessment, _assessments) is string chosen && (chosen != TemplateModel || HasModel(template)) ? chosen
-                    : HasModel(template) ? TemplateModel : QuestionsByMove,
+                    : ModelChoice,
                 Moves = design.Moves is int moves ? Math.Clamp(moves, 1, 12) : null,
                 DurationMinutes = design.DurationMinutes is int minutes ? Math.Clamp(minutes, 15, 2880) : null,
                 ScenarioSpan = Text(design.ScenarioSpan),
@@ -1042,7 +1122,7 @@ Answer only by calling the tool.";
             yield return $"Format: {design.Format switch { "Discussion" => "a discussion-based tabletop: participants talk through decisions, no hands-on tasks", "Functional" => "functional: participants work hands-on in the range", "Hybrid" => "hybrid: discussion moves with some hands-on work in the range", _ => open }}";
             yield return $"Participant structure: {design.Structure ?? open}";
             yield return $"Critical infrastructure sectors: {(design.Sectors.Any() ? string.Join(", ", design.Sectors) : open)}";
-            yield return $"CITE assessment: {design.CiteAssessment switch { QuestionsByMove => "questions by move: write citeQuestions for every move", MissionImpact => "the DoD Cyber Table Top mission impact matrix: teams score mission impact each move, so write no discussion questions", Likelihood => "the DoD Cyber Table Top likelihood matrix: teams score each attack's cost and chance of success, so write no discussion questions", Nciss => "the CISA National Cyber Incident Scoring System (NCISS): each move, teams score the incident's functional impact, observed activity, where in the network it is, the actor, information impact, recoverability, cross-sector dependency and potential impact, so write no discussion questions, and give the injects the details teams need to score each of these", TemplateModel => "the template's own scoring model, so write no discussion questions", NoAssessment => "none", _ => open }}";
+            yield return $"CITE assessment: {design.CiteAssessment switch { QuestionsByMove => "questions by move: write citeQuestions for every move", MissionImpact => "the DoD Cyber Table Top mission impact matrix: teams score mission impact each move, so write no discussion questions", Likelihood => "the DoD Cyber Table Top likelihood matrix: teams score each attack's cost and chance of success, so write no discussion questions", Nciss => "the CISA National Cyber Incident Scoring System (NCISS): each move, teams score the incident's functional impact, observed activity, where in the network it is, the actor, information impact, recoverability, cross-sector dependency and potential impact, so write no discussion questions, and give the injects the details teams need to score each of these", TemplateModel => "the template's own scoring model, so write no discussion questions", NoAssessment => "none", ModelChoice => "open: choose the one that fits and return it as citeAssessment. QuestionsByMove: discussion questions each move, the usual choice for a tabletop. MissionImpact: teams score the mission impact of cyber effects each move (DoD Cyber Table Top). Likelihood: teams score each attack's cost and chance of success (DoD CTT). Nciss: teams score the incident as CISA's NCISS does; suits incident response play with enough detail to score. None: CITE adds nothing. Template: the template's own scoring model, when its matrix fits the scenario", _ => open }}";
             yield return $"Moves: {(design.Moves?.ToString() ?? open)}";
             yield return $"Exercise length in real time: {(design.DurationMinutes is int minutes ? $"{minutes} minutes" : open)}";
             yield return $"Scenario time the exercise covers: {design.ScenarioSpan ?? open}";
@@ -1169,6 +1249,9 @@ Answer only by calling the tool.";
             draft.PlannerNotes ??= new List<string>();
             draft.CiteActions ??= new List<MselDraftCiteAction>();
             draft.Design = CleanDesign(draft.Design, template);
+            // past the design step the model has had its say; a choice still open takes the default
+            if (!designOnly && draft.Design.CiteAssessment == ModelChoice)
+                draft.Design.CiteAssessment = DefaultAssessment(template);
             draft.Metadata = CleanMetadata(draft.Metadata, draft.Design);
             draft.Scenario ??= new MselDraftScenario();
             draft.Scenario.Assumptions = Lines(draft.Scenario.Assumptions);
@@ -1244,6 +1327,7 @@ Answer only by calling the tool.";
                 draft.Moves.Insert(0, new MselDraftMove { MoveNumber = 0, Description = "Start of exercise", StartMinutes = 0 });
                 warnings.Add("Added a move at minute 0 so every inject belongs to a move.");
             }
+            PlanInjects(draft.Moves, maxInjects);
             // what each move asks of participants and facilitators; discussion questions only for a questions-by-move assessment
             foreach (var move in draft.Moves)
             {
@@ -1536,6 +1620,33 @@ Answer only by calling the tool.";
                 Language = metadata.Language is string language && System.Text.RegularExpressions.Regex.IsMatch(language.Trim(), "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
                     ? language.Trim() : null
             };
+        }
+
+        /// <summary>
+        /// The injects each move plans, within the cap: a plan over it is scaled down move by move, so the model writes what
+        /// is kept rather than injects that are thrown away
+        /// </summary>
+        public static void PlanInjects(List<MselDraftMove> moves, int maxInjects)
+        {
+            foreach (var move in moves.Where(m => m.PlannedInjects is < 0))
+                move.PlannedInjects = 0;
+            var planned = moves.Sum(m => m.PlannedInjects ?? 0);
+            if (planned <= maxInjects)
+                return;
+            var kept = 0;
+            foreach (var move in moves.Where(m => m.PlannedInjects > 0))
+            {
+                move.PlannedInjects = Math.Max(1, (int)Math.Floor(move.PlannedInjects.Value * (double)maxInjects / planned));
+                kept += move.PlannedInjects.Value;
+            }
+            // rounding down leaves a few; the busiest moves take them
+            foreach (var move in moves.Where(m => m.PlannedInjects > 0).OrderByDescending(m => m.PlannedInjects))
+            {
+                if (kept >= maxInjects)
+                    break;
+                move.PlannedInjects++;
+                kept++;
+            }
         }
 
         private static List<string> Lines(List<string> lines) =>

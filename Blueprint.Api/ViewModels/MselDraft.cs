@@ -109,6 +109,8 @@ namespace Blueprint.Api.ViewModels
         public List<string> ExpectedDecisions { get; set; } = new List<string>();
         /// <summary>Notes for controllers and facilitators, never shown to participants</summary>
         public string ControllerNotes { get; set; }
+        /// <summary>How many injects the design plans for the move, which the injects step writes to</summary>
+        public int? PlannedInjects { get; set; }
         /// <summary>Discussion questions for the move, when the CITE assessment is questions by move</summary>
         public List<string> CiteQuestions { get; set; } = new List<string>();
     }
@@ -255,6 +257,8 @@ namespace Blueprint.Api.ViewModels
         public string Stage { get; set; }
         /// <summary>How many of the rows, articles and profiles to write at once</summary>
         public int Parallel { get; set; }
+        /// <summary>How many injects the design planned, while they are outlined; null once they are</summary>
+        public int? PlannedInjects { get; set; }
         /// <summary>The other injects whose long text is still to write</summary>
         public List<MselBuildItem> Injects { get; set; } = new List<MselBuildItem>();
         /// <summary>The Gallery articles still to write</summary>

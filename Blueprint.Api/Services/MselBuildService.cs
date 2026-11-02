@@ -367,6 +367,9 @@ namespace Blueprint.Api.Services
             var status = new MselBuildStatus { MselId = msel.Id, Stage = msel.AiDraftStage, Parallel = Math.Max(1, _aiOptions.Parallel) };
             if (state == null || msel.AiDraftStage == null)
                 return status;
+            // the design's plan, so the outline's progress has a total
+            if (msel.AiDraftStage == MselBuildStage.Injects && state.Draft?.Moves?.Sum(m => m.PlannedInjects ?? 0) is int planned && planned > 0)
+                status.PlannedInjects = planned;
             // written means its long text is saved: an article's body, a row's long columns, a profile in HTML
             var fields = await _context.DataFields.AsNoTracking().Where(f => f.MselId == msel.Id).ToListAsync(ct);
             var body = msel.UseGallery || fields.Any(f => f.GalleryArticleParameter == nameof(Data.Enumerations.GalleryArticleParameter.Description))

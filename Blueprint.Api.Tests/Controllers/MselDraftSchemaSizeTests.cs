@@ -19,13 +19,14 @@ namespace Blueprint.Api.Tests.Controllers;
 /// <summary>
 /// Bedrock's strict tool use refuses a schema whose "compiled grammar is too large", and without strict mode Sonnet writes the
 /// nested parts of the design in its own call markup. Probed against Bedrock (October 2026), free-text string fields are what
-/// count: a flat object takes 28, integers and enums far more, and the design's schema at its fullest (Gallery and CITE, so cards
-/// and duties too) was accepted with 40 leaf fields and refused with 41. This keeps it two under. Anything added to the design
-/// must take a field out, or be written in a later step, as the move briefings and the catalog metadata are.
+/// count: a flat object takes 28, integers and enums more than twice as many, and the design's schema at its fullest (Gallery and
+/// CITE, so cards, duties and the assessment choice too) was accepted with 36 free-text fields and refused with 37. This keeps it
+/// two under. A free-text field added to the design must take one out, or be written in a later step, as the move briefings and
+/// the catalog metadata are; an integer or an enum is cheap.
 /// </summary>
 public class MselDraftSchemaSizeTests(DatabaseFixture fixture, AiEnabledFactory factory) : ApiTestBase(fixture, factory), IClassFixture<AiEnabledFactory>
 {
-    private const int LeafFieldsBedrockAccepts = 38;
+    private const int FreeTextFieldsBedrockAccepts = 34;
 
     [Fact]
     public async Task DesignSchema_StaysWithinWhatBedrockStrictModeTakes()
@@ -48,7 +49,8 @@ public class MselDraftSchemaSizeTests(DatabaseFixture fixture, AiEnabledFactory 
         {
             TemplateMselId = template.Id,
             Prompt = "x",
-            Design = new MselDraftDesign { Format = "Discussion", CiteAssessment = "QuestionsByMove", Moves = 4, DurationMinutes = 120, ProfilePages = true },
+            // the assessment left to the model adds its enum
+            Design = new MselDraftDesign { Format = "Discussion", CiteAssessment = "Auto", Moves = 4, DurationMinutes = 120, ProfilePages = true },
             CompetencyFrameworkIds = [framework.Id]
         }, JsonOptions, Ct);
 
@@ -57,13 +59,16 @@ public class MselDraftSchemaSizeTests(DatabaseFixture fixture, AiEnabledFactory 
         // the schema as Bedrock sees it, for probing its limit by hand
         if (System.Environment.GetEnvironmentVariable("BLUEPRINT_SCHEMA_OUT") is string path && path.Length > 0)
             await System.IO.File.WriteAllTextAsync(path, strict.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), Ct);
-        Assert.True(LeafFields(strict) <= LeafFieldsBedrockAccepts, $"The design schema has {LeafFields(strict)} leaf fields:\n{strict.ToJsonString(new JsonSerializerOptions { WriteIndented = true })}");
+        Assert.Contains("citeAssessment", strict["properties"].AsObject().Select(p => p.Key));
+        Assert.True(FreeTextFields(strict) <= FreeTextFieldsBedrockAccepts, $"The design schema has {FreeTextFields(strict)} free-text fields:\n{strict.ToJsonString(new JsonSerializerOptions { WriteIndented = true })}");
     }
 
-    private static int LeafFields(JsonNode node) => node["type"]?.GetValue<string>() switch
+    // strings without an enum; integers, booleans and enums cost the grammar little
+    private static int FreeTextFields(JsonNode node) => node["type"]?.GetValue<string>() switch
     {
-        "object" => node["properties"]?.AsObject().Sum(p => LeafFields(p.Value)) ?? 0,
-        "array" => LeafFields(node["items"]),
-        _ => 1
+        "object" => node["properties"]?.AsObject().Sum(p => FreeTextFields(p.Value)) ?? 0,
+        "array" => FreeTextFields(node["items"]),
+        "string" => node["enum"] == null ? 1 : 0,
+        _ => 0
     };
 }

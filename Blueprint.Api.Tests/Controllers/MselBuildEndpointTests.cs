@@ -240,6 +240,75 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         }
     }
 
+    /// <summary>
+    /// With the assessment left to the model, the design step offers the choices as an enum (the template's own model only
+    /// where it has one) and the model's choice becomes the design's; a choice it did not make falls back to questions by move.
+    /// </summary>
+    [Fact]
+    public async Task Design_LetsTheModelChooseTheCiteAssessment()
+    {
+        var template = await SeedTemplate(useCite: true);
+        var planner = await Planner();
+        Answer(Design(citeAssessment: "Nciss"));
+
+        var result = await Read<MselDraftResult>(await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/design", new MselDraftRequest { TemplateMselId = template.Id, Prompt = "Cables" }, JsonOptions, Ct));
+
+        var schema = JsonDocument.Parse(_calls.Single().Schema).RootElement;
+        var choices = schema.GetProperty("properties").GetProperty("citeAssessment").GetProperty("enum").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Equal(["QuestionsByMove", "MissionImpact", "Likelihood", "Nciss", "None"], choices);
+        Assert.Contains("open: choose the one that fits", _calls.Single().Prompt);
+        Assert.Equal("Nciss", result.Draft.Design.CiteAssessment);
+
+        // the template's model is not a choice this template offers, so the default stands in
+        _calls.Clear();
+        Answer(Design(citeAssessment: "Template"));
+        result = await Read<MselDraftResult>(await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/design", new MselDraftRequest { TemplateMselId = template.Id, Prompt = "Cables" }, JsonOptions, Ct));
+        Assert.Equal("QuestionsByMove", result.Draft.Design.CiteAssessment);
+        Assert.Contains(result.Warnings, w => w.StartsWith("The model did not choose a CITE assessment; using questions by move"));
+
+        // the planner's choice is kept, and the model is not offered one
+        _calls.Clear();
+        Answer(Design(citeAssessment: "Nciss"));
+        result = await Read<MselDraftResult>(await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/design", new MselDraftRequest { TemplateMselId = template.Id, Prompt = "Cables", Design = new MselDraftDesign { CiteAssessment = "Likelihood" } }, JsonOptions, Ct));
+        Assert.DoesNotContain("\"citeAssessment\"", _calls.Single().Schema);
+        Assert.Equal("Likelihood", result.Draft.Design.CiteAssessment);
+    }
+
+    /// <summary>
+    /// The design plans how many injects each move needs; a plan over the cap is scaled to it, the build status carries the
+    /// total while the injects are outlined, and the outline is asked to write to the plan. Every row is asked for the Gallery
+    /// article columns, so a constrained answer cannot leave them out and make the row no article.
+    /// </summary>
+    [Fact]
+    public async Task Injects_FollowThePlannedCountsAndAskForTheArticleColumns()
+    {
+        var template = await SeedTemplate();
+        var planner = await Planner();
+        Answer(Design(plannedInjects: [45, 45]));
+        var design = await Read<MselDraftResult>(await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/design", new MselDraftRequest { TemplateMselId = template.Id, Prompt = "Cables" }, JsonOptions, Ct));
+        // 90 planned, 60 allowed: scaled move by move
+        Assert.Equal([30, 30], design.Draft.Moves.Select(m => m.PlannedInjects));
+        var created = await Read<MselImportResult>(await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/create", new MselDesignBuild { TemplateMselId = template.Id, Prompt = "Cables", Draft = design.Draft }, JsonOptions, Ct));
+
+        var status = await Read<MselBuildStatus>(await Client(planner).GetAsync($"/api/msels/{created.Msel.Id}/ai-draft", Ct));
+        Assert.Equal("Injects", status.Stage);
+        Assert.Equal(60, status.PlannedInjects);
+
+        _calls.Clear();
+        var outlined = await Read<MselBuildStatus>(await Client(planner).PostAsync($"/api/msels/{created.Msel.Id}/ai-draft/injects", null, Ct));
+        var call = _calls.Single(c => c.System.Contains("second of two steps"));
+        Assert.Contains("Write the injects each move plans (plannedInjects): about 60 in all, and never more than 60.", call.Prompt);
+        var values = JsonDocument.Parse(call.Schema).RootElement.GetProperty("properties").GetProperty("injects").GetProperty("items").GetProperty("properties").GetProperty("values");
+        var required = values.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ToList();
+        // the Title is the article's name; the Description is its body, written later, so it is not asked for here
+        Assert.Contains("SourceType", required);
+        Assert.Contains("From Org", required);
+        Assert.Contains("Title", required);
+        Assert.DoesNotContain("Details", required);
+        Assert.Contains("empty for a row that is not a Gallery article", values.GetProperty("properties").GetProperty("From Org").GetProperty("description").GetString());
+        Assert.Null(outlined.PlannedInjects);
+    }
+
     /// <summary>Steps run in order, and only the drafting user, or an EditMsels holder, runs them.</summary>
     [Fact]
     public async Task Steps_RunInOrderForTheirOwner()
@@ -282,9 +351,20 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         return template;
     }
 
-    private static string Design() =>
+    // answers every call with the given design, for the tests that give it something to say
+    private void Answer(string design) =>
+        _model.InvokeToolAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Text.Json.Nodes.JsonObject>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var system = call.ArgAt<string>(0);
+                _calls.Add((system, call.ArgAt<string>(1), call.ArgAt<System.Text.Json.Nodes.JsonObject>(4).ToJsonString()));
+                return JsonDocument.Parse(system.Contains("first of two steps") ? design : Injects()).RootElement.Clone();
+            });
+
+    private static string Design(string citeAssessment = null, int[] plannedInjects = null) =>
         JsonSerializer.Serialize(new
         {
+            citeAssessment,
             name = "Deep Bite",
             description = "Cables are cut.",
             durationMinutes = 120,
@@ -292,8 +372,8 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
             objectives = new[] { new { id = "O1", task = "Lead the response", condition = "Outages", standard = "A lead in 30 minutes" } },
             moves = new[]
             {
-                new { moveNumber = 0, description = "Start", situationDescription = "Outage", startMinutes = 0, situationTime = "2026-03-04T08:00:00Z", purpose = "Choose a lead" },
-                new { moveNumber = 1, description = "Next day", situationDescription = "Press", startMinutes = 60, situationTime = "2026-03-05T09:00:00Z", purpose = "Pressure" }
+                new { moveNumber = 0, description = "Start", situationDescription = "Outage", startMinutes = 0, situationTime = "2026-03-04T08:00:00Z", purpose = "Choose a lead", plannedInjects = plannedInjects?[0] },
+                new { moveNumber = 1, description = "Next day", situationDescription = "Press", startMinutes = 60, situationTime = "2026-03-05T09:00:00Z", purpose = "Pressure", plannedInjects = plannedInjects?[1] }
             },
             teams = new[] { new { name = "Security operations", shortName = "SOC", description = "Watches the network.", duties = new[] { "Incident Lead", "Scribe" } } },
             organizations = Array.Empty<object>(),

@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    [Migration("20261102043509_AddAttackTechniqueCountermeasures")]
+    [Migration("20261102122906_AddAttackTechniqueCountermeasures")]
     partial class AddAttackTechniqueCountermeasures
     {
         /// <inheritdoc />
@@ -53,6 +53,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<string>("Domain")
                         .HasColumnType("text")
                         .HasColumnName("domain");
+
+                    b.Property<bool>("IsDefensive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_defensive");
 
                     b.Property<Guid?>("ModifiedBy")
                         .HasColumnType("uuid")

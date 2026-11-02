@@ -41,6 +41,7 @@ public class ReleaseFileParserTests
         var release = await Parse(D3fendOntologies.Ontology());
 
         Assert.Equal("d3fend", release.Domain);
+        Assert.True(release.IsDefensive);
         Assert.Equal(3, release.Techniques.Count);
     }
 

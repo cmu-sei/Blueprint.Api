@@ -21,6 +21,7 @@ namespace Blueprint.Api.Infrastructure.Mappings
 
             CreateMap<AttackTechniqueEntity, AttackTechnique>()
                 .ForMember(t => t.Domain, opt => opt.MapFrom(x => x.AttackRelease.Domain))
+                .ForMember(t => t.IsDefensive, opt => opt.MapFrom(x => x.AttackRelease.IsDefensive))
                 .ForMember(t => t.IsSubTechnique, opt => opt.MapFrom(x => x.ParentId != null))
                 .ForMember(t => t.Tactics, opt => opt.MapFrom(x => SplitList(x.Tactics)))
                 .ForMember(t => t.Platforms, opt => opt.MapFrom(x => SplitList(x.Platforms)));

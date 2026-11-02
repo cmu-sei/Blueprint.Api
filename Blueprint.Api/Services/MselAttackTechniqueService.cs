@@ -32,7 +32,7 @@ namespace Blueprint.Api.Services
 
     /// <summary>
     /// A MSEL's technique pool - the techniques its AttackTechnique and DefensiveTechnique columns offer. The pool
-    /// has two families, told apart by the release's domain: the attack techniques (ATT&amp;CK, ATLAS) and the
+    /// has two families, told apart by the release's IsDefensive: the attack techniques (ATT&amp;CK, ATLAS) and the
     /// defensive ones (D3FEND). Each family is pinned to one release: techniques from another release of the same
     /// family are refused until that family is upgraded to it, while the other family is left alone.
     /// </summary>
@@ -212,12 +212,12 @@ namespace Blueprint.Api.Services
             return true;
         }
 
-        private static bool IsDefensive(AttackReleaseEntity release) => release.Domain == AttackReleaseEntity.D3fendDomain;
+        private static bool IsDefensive(AttackReleaseEntity release) => release.IsDefensive;
 
         private static string FamilyName(bool isDefensive) => isDefensive ? "defensive" : "attack";
 
-        /// <summary>The pool rows of one family: D3FEND's releases are the defensive one, every other domain the attack one.</summary>
+        /// <summary>The pool rows of one family, by the release's flag: defensive (D3FEND) or attack (everything else).</summary>
         private static IQueryable<MselAttackTechniqueEntity> InFamily(IQueryable<MselAttackTechniqueEntity> pool, bool isDefensive) =>
-            pool.Where(m => (m.AttackTechnique.AttackRelease.Domain == AttackReleaseEntity.D3fendDomain) == isDefensive);
+            pool.Where(m => m.AttackTechnique.AttackRelease.IsDefensive == isDefensive);
     }
 }

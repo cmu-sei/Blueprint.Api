@@ -11,6 +11,16 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<bool>(
+                name: "is_defensive",
+                table: "attack_releases",
+                type: "boolean",
+                nullable: false,
+                defaultValue: false);
+
+            // Releases imported before the flag existed: only D3FEND's ontology parser produced defensive ones.
+            migrationBuilder.Sql("UPDATE attack_releases SET is_defensive = true WHERE domain = 'd3fend'");
+
             migrationBuilder.CreateTable(
                 name: "attack_technique_countermeasures",
                 columns: table => new
@@ -57,6 +67,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
         {
             migrationBuilder.DropTable(
                 name: "attack_technique_countermeasures");
+
+            migrationBuilder.DropColumn(
+                name: "is_defensive",
+                table: "attack_releases");
         }
     }
 }

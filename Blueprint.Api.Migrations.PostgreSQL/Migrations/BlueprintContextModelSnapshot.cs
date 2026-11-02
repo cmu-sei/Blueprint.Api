@@ -51,6 +51,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("domain");
 
+                    b.Property<bool>("IsDefensive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_defensive");
+
                     b.Property<Guid?>("ModifiedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("modified_by");

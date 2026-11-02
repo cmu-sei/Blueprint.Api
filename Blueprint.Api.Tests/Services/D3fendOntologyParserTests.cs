@@ -26,6 +26,7 @@ public class D3fendOntologyParserTests
         var release = await Parse(D3fendOntologies.Ontology());
 
         Assert.Equal("d3fend", release.Domain);
+        Assert.True(release.IsDefensive);
         Assert.Equal("1.6.0", release.Version);
         Assert.Equal("MITRE D3FEND", release.Name);
         Assert.Equal("Test D3FEND ontology", release.Description);

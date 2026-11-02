@@ -26,6 +26,7 @@ public class AttackStixParserTests
         var release = await Parse(AttackBundles.Enterprise("1.0"));
 
         Assert.Equal("enterprise-attack", release.Domain);
+        Assert.False(release.IsDefensive);
         Assert.Equal("1.0", release.Version);
         Assert.Equal("Enterprise ATT&CK", release.Name);
         Assert.Equal(new DateTime(2025, 4, 15, 0, 0, 0, DateTimeKind.Utc), release.ReleaseDate);
@@ -128,6 +129,7 @@ public class AttackStixParserTests
         var release = await Parse(AttackBundles.Atlas());
 
         Assert.Equal("ATLAS", release.Domain);
+        Assert.False(release.IsDefensive);
         Assert.Equal("2026.10", release.Version);
         Assert.Equal("ATLAS", release.Name);
         Assert.Equal(AttackStixParser.ReleaseId("ATLAS", "2026.10"), release.Id);

@@ -56,8 +56,8 @@ namespace Blueprint.Api.Services
             var release = await _context.AttackReleases.SingleOrDefaultAsync(r => r.Id == releaseId, ct);
             if (release == null)
                 throw new EntityNotFoundException<AttackRelease>();
-            if (release.Domain != AttackReleaseEntity.D3fendDomain)
-                throw new InvalidAttackBundleException($"{release.Name} {release.Version} is not a D3FEND release. The mappings are imported onto the D3FEND release they belong to.");
+            if (!release.IsDefensive)
+                throw new InvalidAttackBundleException($"{release.Name} {release.Version} is not a defensive release. The mappings are imported onto the D3FEND release they belong to.");
 
             D3fendMappingsParser.Result parsed;
             using (var stream = form.ToUpload.OpenReadStream())
@@ -161,15 +161,15 @@ namespace Blueprint.Api.Services
 
             var pool = await _context.MselAttackTechniques
                 .Where(m => m.MselId == mselId)
-                .Select(m => new { m.AttackTechniqueId, m.AttackTechnique.ExternalId, m.AttackTechnique.AttackReleaseId, m.AttackTechnique.AttackRelease.Domain })
+                .Select(m => new { m.AttackTechniqueId, m.AttackTechnique.ExternalId, m.AttackTechnique.AttackReleaseId, m.AttackTechnique.AttackRelease.IsDefensive })
                 .ToListAsync(ct);
             var attackTechniques = pool
-                .Where(t => t.Domain != AttackReleaseEntity.D3fendDomain)
+                .Where(t => !t.IsDefensive)
                 .OrderBy(t => t.ExternalId)
                 .ToList();
 
             var result = new MselCountermeasures { MselId = mselId };
-            var pinned = pool.FirstOrDefault(t => t.Domain == AttackReleaseEntity.D3fendDomain)?.AttackReleaseId;
+            var pinned = pool.FirstOrDefault(t => t.IsDefensive)?.AttackReleaseId;
             if (pinned != null)
             {
                 result.AttackReleaseId = pinned;
@@ -178,7 +178,7 @@ namespace Blueprint.Api.Services
             else
             {
                 var newest = await _context.AttackReleases
-                    .Where(r => r.Domain == AttackReleaseEntity.D3fendDomain && r.Countermeasures.Any())
+                    .Where(r => r.IsDefensive && r.Countermeasures.Any())
                     .OrderByDescending(r => r.ReleaseDate)
                     .ThenByDescending(r => r.Version)
                     .Select(r => (Guid?)r.Id)

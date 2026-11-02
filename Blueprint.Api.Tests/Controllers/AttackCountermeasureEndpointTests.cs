@@ -100,6 +100,27 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         Assert.False(await ReadBack(rb => rb.AttackTechniqueCountermeasures.AnyAsync(c => c.ReleaseId == d3fend.Id, Ct)));
     }
 
+    /// <summary>The import rule is "the release is defensive", not "its domain is d3fend".</summary>
+    [Fact]
+    public async Task Import_OntoADefensiveReleaseOfAnotherDomain_Is201_AndServesTheMsel()
+    {
+        var attack = await SeedRelease("1.0");
+        var defensive = await D3fendOntologyParser.ParseAsync(
+            new MemoryStream(Encoding.UTF8.GetBytes(D3fendOntologies.Ontology("2.0"))), null, Ct);
+        defensive.Domain = "other-defend";
+        await Seed(defensive);
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+
+        var response = await Upload(RootClient, defensive.Id, D3fendMappings.Standard());
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/attacktechniques/countermeasures");
+        Assert.Equal(defensive.Id, result.AttackReleaseId);
+        Assert.Equal(["D3-FA"], Assert.Single(result.Techniques).Countermeasures.Select(c => c.DefensiveTechnique.ExternalId));
+    }
+
     [Fact]
     public async Task Import_OntoAnAttackRelease_Is400()
     {
@@ -108,7 +129,7 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         var response = await Upload(RootClient, attack.Id, D3fendMappings.Standard());
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("not a D3FEND release", await response.Content.ReadAsStringAsync(Ct));
+        Assert.Contains("not a defensive release", await response.Content.ReadAsStringAsync(Ct));
     }
 
     [Fact]
@@ -168,6 +189,7 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         var hardening = list[0];
         Assert.Equal(Technique(d3fend, "D3-CH").Id, hardening.DefensiveTechniqueId);
         Assert.Equal("d3fend", hardening.DefensiveTechnique.Domain);
+        Assert.True(hardening.DefensiveTechnique.IsDefensive);
         Assert.Equal("Credential Hardening", hardening.DefensiveTechnique.Name);
         Assert.Equal("Harden", hardening.DefensiveTactic);
         Assert.Equal("hardens Credential; T1003.005 accesses Encrypted Credential", hardening.Rationale);

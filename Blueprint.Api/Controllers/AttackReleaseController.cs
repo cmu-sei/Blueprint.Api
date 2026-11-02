@@ -122,8 +122,8 @@ namespace Blueprint.Api.Controllers
         /// Accepts enterprise-attack.json, mobile-attack.json or ics-attack.json from the mitre-attack/attack-stix-data
         /// repository, or stix-atlas.json from the mitre-atlas/atlas-data releases, which becomes a release of the
         /// ATLAS domain. Revoked and deprecated objects are skipped. Also accepts d3fend.json (JSON-LD) from the
-        /// D3FEND Ontology Resources page, which becomes a release of the d3fend domain whose techniques are
-        /// defensive. The version is read from the file; give one only for an older file that does not name it.
+        /// D3FEND Ontology Resources page, which becomes a defensive release of the d3fend domain. The version is read
+        /// from the file; give one only for an older file that does not name it.
         /// </remarks>
         /// <param name="form">The bundle or ontology</param>
         /// <param name="version">The release version (e.g. "17.1"), if the file does not say</param>
@@ -150,8 +150,8 @@ namespace Blueprint.Api.Controllers
         /// https://d3fend.mitre.org/ontologies/d3fend/&lt;version&gt;/d3fend-full-mappings.json. The file's rows are
         /// aggregated to one row per (offensive technique id, D3FEND technique), weighted by the number of distinct
         /// artifact paths between them; a pair whose D3FEND class is not a technique of this release is skipped and
-        /// counted. Importing again replaces the release's mappings. Refused with a 400 on a release of any other
-        /// domain or a file that is not SPARQL results JSON.
+        /// counted. Importing again replaces the release's mappings. Refused with a 400 on a release that is not
+        /// defensive or a file that is not SPARQL results JSON.
         /// </remarks>
         /// <param name="id">The id of the D3FEND release</param>
         /// <param name="form">The mappings file</param>

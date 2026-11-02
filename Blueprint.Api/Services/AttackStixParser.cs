@@ -125,6 +125,7 @@ namespace Blueprint.Api.Services
             {
                 Id = ReleaseId(domain, version),
                 Domain = domain,
+                IsDefensive = false,
                 Version = version,
                 Name = (collection.HasValue ? GetString(collection.Value, "name") : null) ?? domain,
                 Description = collection.HasValue ? GetString(collection.Value, "description") : null,

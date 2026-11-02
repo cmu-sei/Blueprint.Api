@@ -22,23 +22,22 @@ namespace Blueprint.Api.Data.Models
     /// </remarks>
     public class AttackReleaseEntity : BaseEntity
     {
-        /// <summary>
-        /// The domain of a MITRE D3FEND release. Its techniques are defensive, and a MSEL pools them apart from the
-        /// attack techniques of every other domain (enterprise-attack, mobile-attack, ics-attack, ATLAS).
-        /// </summary>
-        public const string D3fendDomain = "d3fend";
-
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.None)]
         public Guid Id { get; set; }
         public string Domain { get; set; }
+        /// <summary>
+        /// Whether the release's techniques are defences (MITRE D3FEND) rather than attacks (ATT&amp;CK, ATLAS). A MSEL
+        /// pools the two families apart; the parser of each file format says which it reads.
+        /// </summary>
+        public bool IsDefensive { get; set; }
         public string Version { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
         public DateTime? ReleaseDate { get; set; }
         public virtual ICollection<AttackTacticEntity> Tactics { get; set; } = new HashSet<AttackTacticEntity>();
         public virtual ICollection<AttackTechniqueEntity> Techniques { get; set; } = new HashSet<AttackTechniqueEntity>();
-        /// <summary>The D3FEND "countered by" mappings imported onto a d3fend release; empty for every other domain.</summary>
+        /// <summary>The D3FEND "countered by" mappings imported onto a defensive release; empty for an attack release.</summary>
         public virtual ICollection<AttackTechniqueCountermeasureEntity> Countermeasures { get; set; } = new HashSet<AttackTechniqueCountermeasureEntity>();
     }
 

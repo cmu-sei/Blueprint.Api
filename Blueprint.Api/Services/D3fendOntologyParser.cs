@@ -15,7 +15,7 @@ namespace Blueprint.Api.Services
 {
     /// <summary>
     /// Reads the MITRE D3FEND ontology (d3fend.json, JSON-LD) into an <see cref="AttackReleaseEntity"/> of the
-    /// "d3fend" domain, with the seven defensive tactics and the defensive techniques.
+    /// "d3fend" domain, flagged defensive, with the seven defensive tactics and the defensive techniques.
     /// </summary>
     /// <remarks>
     /// The ontology is a flat <c>@graph</c> of classes. A defensive technique is a class with a
@@ -82,6 +82,7 @@ namespace Blueprint.Api.Services
             {
                 Id = AttackStixParser.ReleaseId(Domain, version),
                 Domain = Domain,
+                IsDefensive = true,
                 Version = version,
                 Name = ReleaseName,
                 Description = ontology.HasValue ? GetText(ontology.Value, "dcterms:description") : null,

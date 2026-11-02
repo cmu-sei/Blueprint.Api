@@ -44,6 +44,7 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var release = await Read<AttackRelease>(response);
         Assert.Equal(AttackStixParser.ReleaseId("enterprise-attack", "1.0"), release.Id);
+        Assert.False(release.IsDefensive);
         Assert.Equal(2, release.TacticCount);
         Assert.Equal(4, release.TechniqueCount);
         Assert.Equal(4, await ReadBack(rb => rb.AttackTechniques.CountAsync(t => t.AttackReleaseId == release.Id, Ct)));
@@ -75,6 +76,7 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var release = await Read<AttackRelease>(response);
         Assert.Equal(AttackStixParser.ReleaseId("d3fend", "1.6.0"), release.Id);
         Assert.Equal("d3fend", release.Domain);
+        Assert.True(release.IsDefensive);
         Assert.Equal("MITRE D3FEND", release.Name);
         Assert.Equal(2, release.TacticCount);
         Assert.Equal(3, release.TechniqueCount);
@@ -256,6 +258,31 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     // The pool's two families: attack (ATT&CK, ATLAS) and defensive (D3FEND)
     // ---------------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// The family is the release's flag, not its domain: a defensive release of any domain joins the defensive pool
+    /// beside the attack techniques, and pins only that family.
+    /// </summary>
+    [Fact]
+    public async Task Create_OfATechniqueFromADefensiveReleaseOfAnotherDomain_Is201_InTheDefensiveFamily()
+    {
+        var attack = await SeedRelease("1.0");
+        var defensive = await SeedDefensiveRelease("other-defend", "2.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/mselattacktechniques", Body(msel.Id, Technique(defensive, "D3-CH").Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var added = (await Read<MselAttackTechnique>(response)).AttackTechnique;
+        Assert.Equal("other-defend", added.Domain);
+        Assert.True(added.IsDefensive);
+        // the attack family is still pinned to its own release and takes another of its techniques
+        var second = await RootClient.PostAsJsonAsync("api/mselattacktechniques", Body(msel.Id, Technique(attack, "T1053").Id), Ct);
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
+    }
+
     /// <summary>A D3FEND release is the other family, so it does not pin the attack techniques, nor they it.</summary>
     [Fact]
     public async Task Create_OfADefensiveTechnique_Is201_BesideTheAttackTechniques()
@@ -270,7 +297,9 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
             "api/mselattacktechniques", Body(msel.Id, Technique(d3fend, "D3-CH").Id), Ct);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.Equal("d3fend", (await Read<MselAttackTechnique>(response)).AttackTechnique.Domain);
+        var added = (await Read<MselAttackTechnique>(response)).AttackTechnique;
+        Assert.Equal("d3fend", added.Domain);
+        Assert.True(added.IsDefensive);
         var pool = await Get<List<MselAttackTechnique>>(RootClient, $"api/msels/{msel.Id}/mselattacktechniques");
         Assert.Equal(["D3-CH", "T1059"], pool.Select(m => m.AttackTechnique.ExternalId).Order());
         Assert.Equal(["d3fend", "enterprise-attack"], pool.Select(m => m.AttackTechnique.Domain).Order());
@@ -404,6 +433,17 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     {
         var release = await D3fendOntologyParser.ParseAsync(
             new MemoryStream(Encoding.UTF8.GetBytes(D3fendOntologies.Ontology(version))), null, Ct);
+        await Seed(release);
+        return release;
+    }
+
+    /// <summary>A defensive release of a domain that is not d3fend, as a future framework's parser would make.</summary>
+    private async Task<AttackReleaseEntity> SeedDefensiveRelease(string domain, string version)
+    {
+        var release = await D3fendOntologyParser.ParseAsync(
+            new MemoryStream(Encoding.UTF8.GetBytes(D3fendOntologies.Ontology(version))), null, Ct);
+        release.Domain = domain;
+        Assert.True(release.IsDefensive);
         await Seed(release);
         return release;
     }

@@ -24,6 +24,8 @@ namespace Blueprint.Api.Services
         Task<MselImageEntity> GetAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> SetAsync(Guid mselId, IFormFile file, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> DeleteAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
+        /// <summary>Makes the MSEL's image with the image model, from its scenario, replacing the one it has</summary>
+        Task<ViewModels.Msel> GenerateAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
     }
 
     public class MselImageService : IMselImageService
@@ -33,12 +35,46 @@ namespace Blueprint.Api.Services
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
         private readonly IMselService _mselService;
+        private readonly IAiImageClient _imageClient;
+        private readonly IAiUsageContext _usageContext;
 
-        public MselImageService(BlueprintContext context, IPrincipal user, IMselService mselService)
+        public MselImageService(BlueprintContext context, IPrincipal user, IMselService mselService, IAiImageClient imageClient, IAiUsageContext usageContext)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
             _mselService = mselService;
+            _imageClient = imageClient;
+            _usageContext = usageContext;
+        }
+
+        public async Task<ViewModels.Msel> GenerateAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        {
+            var msel = await GetEditableMselAsync(mselId, hasSystemPermission, ct);
+            if (!_imageClient.IsConfigured)
+                throw new BadRequestException("This server has no image model, so it cannot make a picture. Upload one instead.");
+
+            // the scene the draft described, where the MSEL was drafted; otherwise what the MSEL says of itself
+            var draft = MselBuildState.Deserialize(msel.AiDraft)?.Draft;
+            var scene = string.Join(" ", new[] { draft?.Scenario?.Problem, draft?.Scenario?.Environment }.Where(t => !string.IsNullOrWhiteSpace(t)));
+            if (string.IsNullOrWhiteSpace(scene))
+                scene = string.IsNullOrWhiteSpace(msel.Description) ? msel.Name : msel.Description;
+            if (string.IsNullOrWhiteSpace(scene))
+                throw new BadRequestException("Give the MSEL a description first; the picture is made from it.");
+
+            _usageContext.Use("image", mselId);
+            var dataUri = await _imageClient.PhotoAsync("An establishing shot for a cyber exercise: " + scene, ct);
+            var comma = dataUri?.IndexOf(',') ?? -1;
+            if (comma < 0 || !dataUri.StartsWith("data:", StringComparison.Ordinal))
+                throw new InvalidOperationException("The image model returned nothing usable. Try again.");
+            var data = Convert.FromBase64String(dataUri[(comma + 1)..]);
+            var contentType = DetectContentType(data) ?? dataUri[5..dataUri.IndexOf(';')];
+
+            if (!await ReplaceImageAsync(mselId, data, contentType, ct))
+                _context.MselImages.Add(new MselImageEntity { MselId = mselId, Data = data, ContentType = contentType });
+            msel.ImageDateModified = DateTime.UtcNow;
+            msel.ModifiedBy = _user.GetId();
+            await _context.SaveChangesAsync(ct);
+            return await _mselService.GetAsync(mselId, true, ct);
         }
 
         public async Task<MselImageEntity> GetAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)

@@ -66,6 +66,25 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Makes the image of a Msel with AI
+        /// </summary>
+        /// <remarks>
+        /// Asks the server's image model for a picture of the MSEL's scenario, replaces the MSEL's image with it, and returns the
+        /// updated Msel. A server without an image model answers 400.
+        /// </remarks>
+        /// <param name="id">The id of the Msel</param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{id}/image/generate")]
+        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "generateMselImage")]
+        public async Task<IActionResult> Generate(Guid id, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var msel = await _mselImageService.GenerateAsync(id, hasSystemPermission, ct);
+            return Ok(msel);
+        }
+
+        /// <summary>
         /// Removes the image of a Msel
         /// </summary>
         /// <remarks>

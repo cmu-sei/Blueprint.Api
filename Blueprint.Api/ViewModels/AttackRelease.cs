@@ -16,6 +16,8 @@ namespace Blueprint.Api.ViewModels
         public DateTime? ReleaseDate { get; set; }
         public int TacticCount { get; set; }
         public int TechniqueCount { get; set; }
+        /// <summary>The D3FEND "countered by" mappings imported onto the release; 0 for every other domain.</summary>
+        public int CountermeasureCount { get; set; }
     }
 
     public class AttackTactic

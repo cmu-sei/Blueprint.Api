@@ -14,7 +14,8 @@ namespace Blueprint.Api.Infrastructure.Mappings
         {
             CreateMap<AttackReleaseEntity, AttackRelease>()
                 .ForMember(r => r.TacticCount, opt => opt.MapFrom(x => x.Tactics.Count))
-                .ForMember(r => r.TechniqueCount, opt => opt.MapFrom(x => x.Techniques.Count));
+                .ForMember(r => r.TechniqueCount, opt => opt.MapFrom(x => x.Techniques.Count))
+                .ForMember(r => r.CountermeasureCount, opt => opt.MapFrom(x => x.Countermeasures.Count));
 
             CreateMap<AttackTacticEntity, AttackTactic>();
 
@@ -25,6 +26,10 @@ namespace Blueprint.Api.Infrastructure.Mappings
                 .ForMember(t => t.Platforms, opt => opt.MapFrom(x => SplitList(x.Platforms)));
 
             CreateMap<MselAttackTechniqueEntity, MselAttackTechnique>();
+
+            CreateMap<AttackTechniqueCountermeasureEntity, AttackTechniqueCountermeasure>()
+                .ForMember(c => c.AttackReleaseId, opt => opt.MapFrom(x => x.ReleaseId))
+                .ForMember(c => c.InheritedFromParent, opt => opt.Ignore());
         }
 
         private static System.Collections.Generic.List<string> SplitList(string value) =>

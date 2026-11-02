@@ -38,6 +38,8 @@ namespace Blueprint.Api.Data.Models
         public DateTime? ReleaseDate { get; set; }
         public virtual ICollection<AttackTacticEntity> Tactics { get; set; } = new HashSet<AttackTacticEntity>();
         public virtual ICollection<AttackTechniqueEntity> Techniques { get; set; } = new HashSet<AttackTechniqueEntity>();
+        /// <summary>The D3FEND "countered by" mappings imported onto a d3fend release; empty for every other domain.</summary>
+        public virtual ICollection<AttackTechniqueCountermeasureEntity> Countermeasures { get; set; } = new HashSet<AttackTechniqueCountermeasureEntity>();
     }
 
     public class AttackReleaseConfiguration : IEntityTypeConfiguration<AttackReleaseEntity>

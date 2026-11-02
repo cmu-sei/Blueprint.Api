@@ -25,6 +25,9 @@ namespace Blueprint.Api.Services
                 return D3fendOntologyParser.Parse(root, version);
             if (AttackStixParser.CanParse(root))
                 return AttackStixParser.Parse(root, version);
+            if (D3fendMappingsParser.LooksLikeSparqlResults(root))
+                throw new InvalidAttackBundleException(
+                    "The file is the D3FEND mappings, not a release. Import the D3FEND ontology (d3fend.json) first, then import the mappings onto that release.");
 
             throw new InvalidAttackBundleException(
                 "The file is neither a STIX bundle nor the D3FEND ontology. Upload a release bundle such as enterprise-attack.json or stix-atlas.json, or d3fend.json.");

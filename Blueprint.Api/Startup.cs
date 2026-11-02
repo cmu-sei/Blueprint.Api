@@ -214,6 +214,7 @@ public class Startup
         services.AddScoped<IProficiencyScaleService, ProficiencyScaleService>();
         services.AddScoped<IProficiencyLevelService, ProficiencyLevelService>();
         services.AddScoped<IAttackReleaseService, AttackReleaseService>();
+        services.AddScoped<IAttackTechniqueCountermeasureService, AttackTechniqueCountermeasureService>();
         services.AddScoped<ICardService, CardService>();
         services.AddScoped<ICardTeamService, CardTeamService>();
         services.AddScoped<ICatalogService, CatalogService>();

@@ -74,6 +74,7 @@ namespace Blueprint.Api.Data
         public DbSet<AttackTacticEntity> AttackTactics { get; set; }
         public DbSet<AttackTechniqueEntity> AttackTechniques { get; set; }
         public DbSet<MselAttackTechniqueEntity> MselAttackTechniques { get; set; }
+        public DbSet<AttackTechniqueCountermeasureEntity> AttackTechniqueCountermeasures { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

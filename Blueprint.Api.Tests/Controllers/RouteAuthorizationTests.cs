@@ -233,6 +233,7 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         // AttackReleaseService / AttackReleaseController - writes want ManageCompetencyFrameworks; the reads
         // are open to any signed-in user and so have no row (see AttackEndpointTests).
         { "POST", "api/attackreleases/import", "ManageCompetencyFrameworks", "@file" },
+        { "POST", "api/attackreleases/{attackrelease}/countermeasures", "ManageCompetencyFrameworks", "@file" },
         { "DELETE", "api/attackreleases/{attackrelease}", "ManageCompetencyFrameworks", null },
 
         // TeamCompetencyService / TeamCompetencyController - the twin of the above, one level down.

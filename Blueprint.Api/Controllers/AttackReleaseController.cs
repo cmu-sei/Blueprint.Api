@@ -27,11 +27,16 @@ namespace Blueprint.Api.Controllers
         private const long MaxBundleBytes = 256L * 1024 * 1024;
 
         private readonly IAttackReleaseService _attackReleaseService;
+        private readonly IAttackTechniqueCountermeasureService _countermeasureService;
         private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public AttackReleaseController(IAttackReleaseService attackReleaseService, IBlueprintAuthorizationService authorizationService)
+        public AttackReleaseController(
+            IAttackReleaseService attackReleaseService,
+            IAttackTechniqueCountermeasureService countermeasureService,
+            IBlueprintAuthorizationService authorizationService)
         {
             _attackReleaseService = attackReleaseService;
+            _countermeasureService = countermeasureService;
             _authorizationService = authorizationService;
         }
 
@@ -115,6 +120,34 @@ namespace Blueprint.Api.Controllers
 
             var created = await _attackReleaseService.ImportAsync(form, version, ct);
             return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
+        }
+
+        /// <summary>
+        /// Imports the D3FEND "countered by" mappings onto a D3FEND release
+        /// </summary>
+        /// <remarks>
+        /// Accepts d3fend-full-mappings.json for the release's version, from
+        /// https://d3fend.mitre.org/ontologies/d3fend/&lt;version&gt;/d3fend-full-mappings.json. The file's rows are
+        /// aggregated to one row per (offensive technique id, D3FEND technique), weighted by the number of distinct
+        /// artifact paths between them; a pair whose D3FEND class is not a technique of this release is skipped and
+        /// counted. Importing again replaces the release's mappings. Refused with a 400 on a release of any other
+        /// domain or a file that is not SPARQL results JSON.
+        /// </remarks>
+        /// <param name="id">The id of the D3FEND release</param>
+        /// <param name="form">The mappings file</param>
+        /// <param name="ct"></param>
+        [HttpPost("attackreleases/{id}/countermeasures")]
+        [RequestSizeLimit(MaxBundleBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = MaxBundleBytes)]
+        [ProducesResponseType(typeof(AttackTechniqueCountermeasureImport), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "importAttackTechniqueCountermeasures")]
+        public async Task<IActionResult> ImportCountermeasures(Guid id, [FromForm] FileForm form, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
+            var result = await _countermeasureService.ImportAsync(id, form, ct);
+            return CreatedAtAction(nameof(Get), new { id }, result);
         }
 
         /// <summary>

@@ -151,6 +151,21 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
                 context.SaveChanges();
             }
+            // MSELS
+            // before TEAMS, because every team belongs to a MSEL
+            if (options.Msels != null && options.Msels.Any())
+            {
+                var dbMsels = context.Msels.ToList();
+
+                foreach (MselEntity msel in options.Msels)
+                {
+                    if (!dbMsels.Where(x => x.Id == msel.Id).Any())
+                    {
+                        context.Msels.Add(msel);
+                    }
+                }
+                context.SaveChanges();
+            }
             // TEAMS
             if (options.Teams != null && options.Teams.Any())
             {
@@ -179,20 +194,6 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 }
                 context.SaveChanges();
             }
-            // MSELS
-            if (options.Msels != null && options.Msels.Any())
-            {
-                var dbMsels = context.Msels.ToList();
-
-                foreach (MselEntity msel in options.Msels)
-                {
-                    if (!dbMsels.Where(x => x.Id == msel.Id).Any())
-                    {
-                        context.Msels.Add(msel);
-                    }
-                }
-                context.SaveChanges();
-            }
             // MOVES
             if (options.Moves != null && options.Moves.Any())
             {
@@ -207,13 +208,35 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 }
                 context.SaveChanges();
             }
+            // INJECTTYPES
+            // before DATAFIELDS, because a data field can belong to an inject type
+            if (options.InjectTypes != null && options.InjectTypes.Any())
+            {
+                var dbInjectTypes = context.InjectTypes.ToList();
+
+                foreach (InjectTypeEntity injectType in options.InjectTypes)
+                {
+                    if (!dbInjectTypes.Where(x => x.Id == injectType.Id || x.Name == injectType.Name).Any())
+                    {
+                        context.InjectTypes.Add(injectType);
+                    }
+                }
+                context.SaveChanges();
+            }
             // DATAFIELDS
             if (options.DataFields != null && options.DataFields.Any())
             {
                 var dbDataFields = context.DataFields.ToList();
+                var dbInjectTypeIds = context.InjectTypes.Select(x => x.Id).ToHashSet();
 
                 foreach (DataFieldEntity dataField in options.DataFields)
                 {
+                    // a seeded inject type skipped because its name was taken leaves its fields without a parent
+                    if (dataField.InjectTypeId != null && !dbInjectTypeIds.Contains((Guid)dataField.InjectTypeId))
+                    {
+                        continue;
+                    }
+
                     if (!dbDataFields.Where(x => x.Id == dataField.Id).Any())
                     {
                         context.DataFields.Add(dataField);
@@ -259,6 +282,90 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     if (!dbUserMselRoles.Where(x => x.Id == userMselRole.Id || (x.MselId == userMselRole.MselId && x.UserId == userMselRole.UserId && x.Role == userMselRole.Role)).Any())
                     {
                         context.UserMselRoles.Add(userMselRole);
+                    }
+                }
+                context.SaveChanges();
+            }
+            // CARDS
+            if (options.Cards != null && options.Cards.Any())
+            {
+                var dbCards = context.Cards.ToList();
+
+                foreach (CardEntity card in options.Cards)
+                {
+                    if (!dbCards.Where(x => x.Id == card.Id).Any())
+                    {
+                        context.Cards.Add(card);
+                    }
+                }
+                context.SaveChanges();
+            }
+            // CARDTEAMS
+            if (options.CardTeams != null && options.CardTeams.Any())
+            {
+                var dbCardTeams = context.CardTeams.ToList();
+
+                foreach (CardTeamEntity cardTeam in options.CardTeams)
+                {
+                    if (!dbCardTeams.Where(x => x.Id == cardTeam.Id || (x.CardId == cardTeam.CardId && x.TeamId == cardTeam.TeamId)).Any())
+                    {
+                        context.CardTeams.Add(cardTeam);
+                    }
+                }
+                context.SaveChanges();
+            }
+            // CITEDUTIES
+            if (options.CiteDuties != null && options.CiteDuties.Any())
+            {
+                var dbCiteDuties = context.CiteDuties.ToList();
+
+                foreach (CiteDutyEntity citeDuty in options.CiteDuties)
+                {
+                    if (!dbCiteDuties.Where(x => x.Id == citeDuty.Id).Any())
+                    {
+                        context.CiteDuties.Add(citeDuty);
+                    }
+                }
+                context.SaveChanges();
+            }
+            // CITEACTIONS
+            if (options.CiteActions != null && options.CiteActions.Any())
+            {
+                var dbCiteActions = context.CiteActions.ToList();
+
+                foreach (CiteActionEntity citeAction in options.CiteActions)
+                {
+                    if (!dbCiteActions.Where(x => x.Id == citeAction.Id).Any())
+                    {
+                        context.CiteActions.Add(citeAction);
+                    }
+                }
+                context.SaveChanges();
+            }
+            // PLAYERAPPLICATIONS
+            if (options.PlayerApplications != null && options.PlayerApplications.Any())
+            {
+                var dbPlayerApplications = context.PlayerApplications.ToList();
+
+                foreach (PlayerApplicationEntity playerApplication in options.PlayerApplications)
+                {
+                    if (!dbPlayerApplications.Where(x => x.Id == playerApplication.Id).Any())
+                    {
+                        context.PlayerApplications.Add(playerApplication);
+                    }
+                }
+                context.SaveChanges();
+            }
+            // PLAYERAPPLICATIONTEAMS
+            if (options.PlayerApplicationTeams != null && options.PlayerApplicationTeams.Any())
+            {
+                var dbPlayerApplicationTeams = context.PlayerApplicationTeams.ToList();
+
+                foreach (PlayerApplicationTeamEntity playerApplicationTeam in options.PlayerApplicationTeams)
+                {
+                    if (!dbPlayerApplicationTeams.Where(x => x.Id == playerApplicationTeam.Id || (x.PlayerApplicationId == playerApplicationTeam.PlayerApplicationId && x.TeamId == playerApplicationTeam.TeamId)).Any())
+                    {
+                        context.PlayerApplicationTeams.Add(playerApplicationTeam);
                     }
                 }
                 context.SaveChanges();

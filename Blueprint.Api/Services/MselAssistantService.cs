@@ -36,11 +36,11 @@ namespace Blueprint.Api.Services
     /// Which kinds of change the planner may make on this MSEL, by the rules of the services that make them. A change
     /// the planner may not make is left out of a proposal with the reason, rather than failing when applied.
     /// </summary>
-    public record MselAssistAccess(bool Teams, bool OrganizationsAndCards, bool Competencies, bool Moves, bool AddInjects, bool EditInjects)
+    public record MselAssistAccess(bool Teams, bool OrganizationsAndCards, bool Competencies, bool Moves, bool AddInjects, bool EditInjects, bool Columns)
     {
-        public bool Any => Teams || OrganizationsAndCards || Competencies || Moves || AddInjects || EditInjects;
+        public bool Any => Teams || OrganizationsAndCards || Competencies || Moves || AddInjects || EditInjects || Columns;
 
-        public static readonly MselAssistAccess All = new(true, true, true, true, true, true);
+        public static readonly MselAssistAccess All = new(true, true, true, true, true, true, true);
 
         /// <summary>Why the planner may not make a change of this kind, or null when they may</summary>
         public string Refusal(string op) => op switch
@@ -52,6 +52,7 @@ namespace Blueprint.Api.Services
             MselAssistRules.MoveAdd or MselAssistRules.MoveUpdate when !Moves => "only the MSEL's owner or a move editor can change its moves",
             MselAssistRules.InjectAdd when !AddInjects => "only the MSEL's owner can add injects",
             MselAssistRules.InjectUpdate when !EditInjects => "only the MSEL's owner, an editor or an approver can edit injects",
+            MselAssistRules.ColumnAdd or MselAssistRules.ColumnUpdate when !Columns => "only the MSEL's owner or an editor can change its columns",
             _ => null
         };
 
@@ -65,6 +66,7 @@ namespace Blueprint.Api.Services
             if (Moves) parts.Add("moves");
             if (AddInjects) parts.Add("new injects");
             if (EditInjects) parts.Add("existing injects");
+            if (Columns) parts.Add("inject columns");
             return string.Join(", ", parts);
         }
     }
@@ -88,12 +90,16 @@ scenario's actors: the agencies, companies, media outlets and threat actors that
 on the participants' Gallery wall; a card's move and inject numbers say when it first appears. Competencies are framework work roles
 and tasks (DCWF or NICE) linked to the MSEL as a whole or to a team.
 You can propose these changes: add or edit a team, an organization or a Gallery card; add or remove a competency on the MSEL or a team;
-add or edit a move; add an inject or edit an existing one.
+add or edit a move; add an inject or edit an existing one; add an inject column or edit one.
 Rules:
 - Answer only by calling the tool. Put a short reply to the planner in reply: what you propose and why, in plain words.
 - Change only what the planner asked for, plus what that needs (a new team named in the request must exist before a competency is put on it).
 - If the request is ambiguous in a way that changes the result, ask one short question and propose no changes.
-- If the planner asks for something you cannot change (deleting injects or moves, data fields, integrations, users, pages), say so in reply.
+- If the planner asks for something you cannot change (deleting injects, moves or columns, integrations, users, pages), say so in reply.
+- Add a column when the planner wants injects to carry something no column holds. Give it a short name, what it is for in
+  description, and a type; a column whose values come from a fixed set is a String with options, in order. Then fill it on the
+  injects that need it in the same proposal, keyed by the new name: column changes are applied before the injects.
+- A column that fills part of a Gallery article names the article parameter it fills; each parameter belongs to one column.
 - Only propose kinds of change the planner is allowed to make, listed with the MSEL.
 - Refer to existing teams and organizations by their short names, cards by their names, moves by their numbers and injects by their
   references (E1, E2, ...), exactly as listed.
@@ -128,9 +134,11 @@ Rules:
             IMoveService moveService,
             IScenarioEventService scenarioEventService,
             IPrincipal user,
-            IAiUsageContext usage)
+            IAiUsageContext usage,
+            IDataFieldService dataFieldService)
         {
             _usage = usage;
+            _dataFieldService = dataFieldService;
             _context = context;
             _aiModelClient = aiModelClient;
             _aiOptions = aiOptions;
@@ -145,6 +153,7 @@ Rules:
         }
 
         private readonly IAiUsageContext _usage;
+        private readonly IDataFieldService _dataFieldService;
 
         public async Task<MselAssistResult> AskAsync(Guid mselId, MselAssistRequest request, MselAssistPermissions permissions, CancellationToken ct)
         {
@@ -337,6 +346,58 @@ Rules:
                     }, permissions.EditMsels, ct);
                     break;
                 }
+                case MselAssistRules.ColumnAdd:
+                {
+                    var order = state.Msel.DataFields.Select(f => f.DisplayOrder).DefaultIfEmpty(0).Max() + 1;
+                    await _dataFieldService.CreateAsync(new DataFieldCreate
+                    {
+                        Id = Guid.NewGuid(),
+                        MselId = mselId,
+                        Name = change.Name,
+                        Description = change.Description,
+                        DataType = Enum.Parse<DataFieldType>(change.DataType),
+                        DisplayOrder = order,
+                        OnScenarioEventList = change.OnEventList ?? true,
+                        OnExerciseView = change.OnExerciseView ?? false,
+                        IsShownOnDefaultTab = true,
+                        IsChosenFromList = change.Options?.Count > 0,
+                        DataOptions = Options(change.Options),
+                        GalleryArticleParameter = change.GalleryParameter
+                    }, permissions.EditMsels, false, ct);
+                    await ReloadColumnsAsync(state, mselId, ct);
+                    break;
+                }
+                case MselAssistRules.ColumnUpdate:
+                {
+                    var field = await _context.DataFields.AsNoTracking().Include(f => f.DataOptions)
+                        .SingleAsync(f => f.MselId == mselId && f.Name == change.Target, ct);
+                    // the options that stay keep their ids, so the values chosen from them stay chosen
+                    var options = change.Options == null
+                        ? field.DataOptions.Select(o => new DataFieldOption { Id = o.Id, OptionName = o.OptionName, OptionValue = o.OptionValue, OptionDescription = o.OptionDescription, DisplayOrder = o.DisplayOrder }).ToList()
+                        : Options(change.Options, field.DataOptions);
+                    await _dataFieldService.UpdateAsync(field.Id, new DataFieldEdit
+                    {
+                        Name = change.Name ?? field.Name,
+                        Description = change.Description ?? field.Description,
+                        DataType = change.DataType != null ? Enum.Parse<DataFieldType>(change.DataType) : field.DataType,
+                        DisplayOrder = field.DisplayOrder,
+                        OnScenarioEventList = change.OnEventList ?? field.OnScenarioEventList,
+                        OnExerciseView = change.OnExerciseView ?? field.OnExerciseView,
+                        IsChosenFromList = options.Count > 0,
+                        IsMultiSelect = field.IsMultiSelect,
+                        DataOptions = options,
+                        CellMetadata = field.CellMetadata,
+                        ColumnMetadata = field.ColumnMetadata,
+                        IsShownOnDefaultTab = field.IsShownOnDefaultTab,
+                        IsOnlyShownToOwners = field.IsOnlyShownToOwners,
+                        GalleryArticleParameter = change.GalleryParameter ?? field.GalleryArticleParameter,
+                        IsInformationField = field.IsInformationField,
+                        IsFacilitationField = field.IsFacilitationField,
+                        IsAssessorVisible = field.IsAssessorVisible
+                    }, permissions.EditMsels, false, ct);
+                    await ReloadColumnsAsync(state, mselId, ct);
+                    break;
+                }
                 case MselAssistRules.InjectAdd:
                 {
                     var deltaSeconds = change.Minutes.Value * 60;
@@ -392,6 +453,26 @@ Rules:
             }
         }
 
+        // a column added or changed in this apply is one the injects after it write to
+        private async Task ReloadColumnsAsync(MselAssistState state, Guid mselId, CancellationToken ct) =>
+            state.Msel.DataFields = await _context.DataFields.AsNoTracking().Include(f => f.DataOptions)
+                .Where(f => f.MselId == mselId).ToListAsync(ct);
+
+        // a list column's options, in order; an option that stays keeps its id
+        private static List<DataFieldOption> Options(List<string> values, IEnumerable<DataOptionEntity> existing = null) =>
+            (values ?? new List<string>()).Select((value, i) =>
+            {
+                var kept = existing?.FirstOrDefault(o => string.Equals(o.OptionValue, value, StringComparison.OrdinalIgnoreCase));
+                return new DataFieldOption
+                {
+                    Id = kept?.Id ?? Guid.Empty,
+                    OptionName = value,
+                    OptionValue = value,
+                    OptionDescription = kept?.OptionDescription,
+                    DisplayOrder = i + 1
+                };
+            }).ToList();
+
         // anyone who may make some kind of change may ask; the review leaves out what they may not make
         private async Task<MselAssistAccess> AuthorizeAsync(Guid mselId, MselAssistPermissions permissions, CancellationToken ct)
         {
@@ -408,7 +489,8 @@ Rules:
                 Competencies: permissions.ManageMsels || owner,
                 Moves: permissions.EditMsels || owner || moveEditor,
                 AddInjects: permissions.EditMsels || owner,
-                EditInjects: permissions.EditMsels || owner || editor || approver);
+                EditInjects: permissions.EditMsels || owner || editor || approver,
+                Columns: permissions.EditMsels || owner || editor);
             if (!access.Any)
                 throw new ForbiddenException();
             return access;
@@ -502,12 +584,16 @@ Rules:
             sb.AppendLine().AppendLine("MSEL competencies: " + string.Join(", ", msel.MselCompetencies.Select(mc => $"{mc.Competency.IdNumber} {mc.Competency.ShortName}")));
 
             var fields = MselDraftRules.DraftedFields(msel).ToList();
-            sb.AppendLine().AppendLine("Inject columns (name: what to write):");
+            sb.AppendLine().AppendLine("Inject columns (name, type: what to write):");
             foreach (var field in fields)
             {
                 var options = MselDraftRules.AllowedOptions(field);
-                sb.AppendLine($"- {field.Name}: {MselDraftRules.Describe(field)}" + (options == null ? "" : $". One of: {string.Join(", ", options)}"));
+                sb.AppendLine($"- {field.Name}, {field.DataType}: {MselDraftRules.Describe(field)}" + (options == null ? "" : $". One of: {string.Join(", ", options)}"));
             }
+            var filled = msel.DataFields.Except(fields).OrderBy(f => f.DisplayOrder).Select(f => f.Name).ToList();
+            if (filled.Count > 0)
+                sb.AppendLine($"Columns Blueprint fills itself, which injects do not write: {string.Join(", ", filled)}.");
+            sb.AppendLine($"Column types: {string.Join(", ", MselAssistRules.ColumnTypes)}. Gallery article parameters: {string.Join(", ", Enum.GetNames<GalleryArticleParameter>())}.");
             sb.AppendLine("Event types: Inject, Information, Facilitation.");
 
             sb.AppendLine().AppendLine("Injects (reference, minute, event type, values):");
@@ -559,7 +645,7 @@ Rules:
                         ["properties"] = new JsonObject
                         {
                             ["op"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselAssistRules.Ops.Select(o => (JsonNode)o).ToArray()) },
-                            ["target"] = new JsonObject { ["type"] = "string", ["description"] = "For a team or organization edit, its short name; for a card edit, its name; for an inject edit, its reference (E1, E2, ...). For a competency, the team's short name, or empty for the MSEL." },
+                            ["target"] = new JsonObject { ["type"] = "string", ["description"] = "For a team or organization edit, its short name; for a card or column edit, its name; for an inject edit, its reference (E1, E2, ...). For a competency, the team's short name, or empty for the MSEL." },
                             ["shortName"] = new JsonObject { ["type"] = "string", ["description"] = "A team's or organization's short name, new or changed." },
                             ["name"] = new JsonObject { ["type"] = "string" },
                             ["description"] = new JsonObject { ["type"] = "string", ["description"] = "A team's, organization's, card's or move's description." },
@@ -571,6 +657,11 @@ Rules:
                             ["situation"] = new JsonObject { ["type"] = "string", ["description"] = "A move's situation description." },
                             ["situationTime"] = new JsonObject { ["type"] = "string", ["description"] = "The scenario date and time when a move opens, in ISO 8601 UTC; the scenario clock can jump ahead between moves." },
                             ["eventType"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Inject", "Information", "Facilitation") },
+                            ["dataType"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselAssistRules.ColumnTypes.Select(t => (JsonNode)t).ToArray()), ["description"] = "A column's type." },
+                            ["options"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" }, ["description"] = "A list column's choices, in order; for an edit, the whole new list." },
+                            ["galleryParameter"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(Enum.GetNames<GalleryArticleParameter>().Select(t => (JsonNode)t).ToArray()), ["description"] = "The Gallery article parameter a column fills, if any." },
+                            ["onExerciseView"] = new JsonObject { ["type"] = "boolean", ["description"] = "Whether participants see the column on the Exercise View." },
+                            ["onEventList"] = new JsonObject { ["type"] = "boolean", ["description"] = "Whether the column shows on the scenario event list." },
                             ["values"] = new JsonObject
                             {
                                 ["type"] = "object",
@@ -630,7 +721,15 @@ Rules:
         public const string MoveUpdate = "move.update";
         public const string InjectAdd = "inject.add";
         public const string InjectUpdate = "inject.update";
-        public static readonly string[] Ops = [TeamAdd, TeamUpdate, OrganizationAdd, OrganizationUpdate, CardAdd, CardUpdate, CompetencyAdd, CompetencyRemove, MoveAdd, MoveUpdate, InjectAdd, InjectUpdate];
+        public const string ColumnAdd = "column.add";
+        public const string ColumnUpdate = "column.update";
+        public static readonly string[] Ops = [TeamAdd, TeamUpdate, OrganizationAdd, OrganizationUpdate, CardAdd, CardUpdate, CompetencyAdd, CompetencyRemove, MoveAdd, MoveUpdate, InjectAdd, InjectUpdate, ColumnAdd, ColumnUpdate];
+
+        /// <summary>The column types the assistant may give a column; the rest are filled by Blueprint or chosen from its own lists</summary>
+        public static readonly string[] ColumnTypes = [nameof(DataFieldType.String), nameof(DataFieldType.Html), nameof(DataFieldType.Integer),
+            nameof(DataFieldType.Double), nameof(DataFieldType.Boolean), nameof(DataFieldType.DateTime), nameof(DataFieldType.Url),
+            nameof(DataFieldType.Organization), nameof(DataFieldType.Team), nameof(DataFieldType.TeamsMultiple), nameof(DataFieldType.SourceType),
+            nameof(DataFieldType.IpAddress), nameof(DataFieldType.Network)];
 
         public static List<MselChange> Review(MselAssistState state, IEnumerable<MselChange> proposed, List<string> warnings) =>
             Review(state, proposed, MselAssistAccess.All, warnings);
@@ -661,6 +760,10 @@ Rules:
             var cards = msel.Cards.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var moves = msel.Moves.Select(m => m.MoveNumber).ToHashSet();
             var fields = MselDraftRules.DraftedFields(msel).ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+            // every column by name, and the Gallery parameters in use, for the columns a proposal adds or renames
+            var columns = msel.DataFields.Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var parameters = msel.DataFields.Where(f => !string.IsNullOrEmpty(f.GalleryArticleParameter))
+                .ToDictionary(f => f.GalleryArticleParameter, f => f.Name, StringComparer.OrdinalIgnoreCase);
             // competency links as "<team short name or empty>|<id number>"
             var links = msel.MselCompetencies.Select(mc => "|" + mc.Competency.IdNumber)
                 .Concat(msel.Teams.SelectMany(t => t.TeamCompetencies.Select(tc => t.ShortName + "|" + tc.Competency.IdNumber)))
@@ -785,6 +888,66 @@ Rules:
                         problem = parts.Count == 0 ? "it changes nothing" : null;
                         break;
                     }
+                    case ColumnAdd:
+                    {
+                        change.DataType = ColumnType(change.DataType) ?? nameof(DataFieldType.String);
+                        change.Options = CleanOptions(change.Options);
+                        change.Label = $"Add column {change.Name} ({ColumnKind(change)})";
+                        problem = change.Name == null ? "a new column needs a name"
+                            : change.Options?.Count > 0 && change.DataType != nameof(DataFieldType.String) ? "only a text column can be chosen from a list"
+                            : !columns.Add(change.Name) ? $"there is already a column {change.Name}"
+                            : ParameterProblem(change, parameters, null);
+                        // the injects after it in this proposal may write to it
+                        if (problem == null)
+                            fields[change.Name] = ColumnEntity(change, null);
+                        break;
+                    }
+                    case ColumnUpdate:
+                    {
+                        var field = change.Target == null ? null : msel.DataFields.FirstOrDefault(f => f.Name.Equals(change.Target, StringComparison.OrdinalIgnoreCase));
+                        if (field == null)
+                        {
+                            change.Label = $"Edit column {change.Target}";
+                            problem = $"there is no column {change.Target}";
+                            break;
+                        }
+                        change.Target = field.Name;
+                        if (change.DataType != null)
+                            change.DataType = ColumnType(change.DataType) == field.DataType.ToString() ? null : ColumnType(change.DataType);
+                        change.Options = change.Options == null ? null : CleanOptions(change.Options);
+                        if (change.Name != null && change.Name.Equals(field.Name, StringComparison.Ordinal))
+                            change.Name = null;
+                        if (change.OnExerciseView == field.OnExerciseView)
+                            change.OnExerciseView = null;
+                        if (change.OnEventList == field.OnScenarioEventList)
+                            change.OnEventList = null;
+                        if (string.Equals(change.GalleryParameter, field.GalleryArticleParameter, StringComparison.OrdinalIgnoreCase))
+                            change.GalleryParameter = null;
+                        var parts = new List<string>();
+                        if (change.Name != null) parts.Add($"name \"{change.Name}\"");
+                        if (change.DataType != null) parts.Add($"type {change.DataType}");
+                        if (change.Options != null) parts.Add(change.Options.Count == 0 ? "no list" : $"choices {string.Join(", ", change.Options)}");
+                        if (change.Description != null) parts.Add("description");
+                        if (change.GalleryParameter != null) parts.Add($"Gallery {change.GalleryParameter}");
+                        if (change.OnExerciseView != null) parts.Add(change.OnExerciseView.Value ? "on the Exercise View" : "off the Exercise View");
+                        if (change.OnEventList != null) parts.Add(change.OnEventList.Value ? "on the event list" : "off the event list");
+                        change.Label = $"Edit column {field.Name}" + (parts.Count > 0 ? ": " + string.Join(", ", parts) : "");
+                        var type = change.DataType ?? field.DataType.ToString();
+                        problem = parts.Count == 0 ? "it changes nothing"
+                            : change.Options?.Count > 0 && type != nameof(DataFieldType.String) ? "only a text column can be chosen from a list"
+                            : null;
+                        if (problem == null && change.Name != null)
+                        {
+                            if (!columns.Add(change.Name))
+                                problem = $"there is already a column {change.Name}";
+                            else
+                                columns.Remove(field.Name);
+                        }
+                        problem ??= ParameterProblem(change, parameters, field.Name);
+                        if (problem == null && fields.Remove(field.Name))
+                            fields[change.Name ?? field.Name] = ColumnEntity(change, field);
+                        break;
+                    }
                     default:
                         problem = $"{change.Op ?? "an empty change"} is not a change the assistant can make";
                         change.Label = change.Op ?? "Unknown change";
@@ -795,6 +958,50 @@ Rules:
                 reviewed.Add((change, problem));
             }
             return reviewed;
+        }
+
+        // the column type by its name; a type the assistant may not give a column is none
+        private static string ColumnType(string value) =>
+            ColumnTypes.FirstOrDefault(t => t.Equals(value?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        private static string ColumnKind(MselChange change) =>
+            change.Options?.Count > 0 ? $"list: {string.Join(", ", change.Options)}" : change.DataType;
+
+        private static List<string> CleanOptions(List<string> options) =>
+            options?.Select(o => o?.Trim()).Where(o => !string.IsNullOrEmpty(o)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        // a Gallery parameter that exists and is not another column's
+        private static string ParameterProblem(MselChange change, Dictionary<string, string> parameters, string column)
+        {
+            if (change.GalleryParameter == null)
+                return null;
+            var parameter = Enum.GetNames<GalleryArticleParameter>().FirstOrDefault(p => p.Equals(change.GalleryParameter, StringComparison.OrdinalIgnoreCase));
+            if (parameter == null)
+                return $"{change.GalleryParameter} is not a Gallery article parameter";
+            change.GalleryParameter = parameter;
+            if (parameters.TryGetValue(parameter, out var owner) && !owner.Equals(column, StringComparison.OrdinalIgnoreCase))
+                return $"the column {owner} already fills the Gallery {parameter}";
+            if (column != null)
+                foreach (var held in parameters.Where(p => p.Value.Equals(column, StringComparison.OrdinalIgnoreCase)).Select(p => p.Key).ToList())
+                    parameters.Remove(held);
+            parameters[parameter] = change.Name ?? column;
+            return null;
+        }
+
+        // the column as the injects after it in a proposal see it, for checking their values
+        private static DataFieldEntity ColumnEntity(MselChange change, DataFieldEntity field)
+        {
+            var options = change.Options ?? field?.DataOptions.OrderBy(o => o.DisplayOrder).Select(o => o.OptionValue).ToList() ?? new List<string>();
+            return new DataFieldEntity
+            {
+                Id = field?.Id ?? Guid.NewGuid(),
+                Name = change.Name ?? field?.Name,
+                Description = change.Description ?? field?.Description,
+                DataType = change.DataType != null ? Enum.Parse<DataFieldType>(change.DataType) : field?.DataType ?? DataFieldType.String,
+                IsChosenFromList = options.Count > 0,
+                DataOptions = options.Select((o, i) => new DataOptionEntity { OptionName = o, OptionValue = o, DisplayOrder = i + 1 }).ToList(),
+                GalleryArticleParameter = change.GalleryParameter ?? field?.GalleryArticleParameter
+            };
         }
 
         /// <summary>The value the server gives a column the model is not asked for: Pending status, and the delivery time from the MSEL's start</summary>
@@ -905,7 +1112,12 @@ Rules:
             SituationTime = Text(change?.SituationTime),
             EventType = Text(change?.EventType),
             Values = change?.Values == null ? null : new Dictionary<string, string>(change.Values, StringComparer.OrdinalIgnoreCase),
-            ScenarioEventId = change?.ScenarioEventId
+            ScenarioEventId = change?.ScenarioEventId,
+            DataType = Text(change?.DataType),
+            Options = change?.Options?.ToList(),
+            GalleryParameter = Text(change?.GalleryParameter),
+            OnExerciseView = change?.OnExerciseView,
+            OnEventList = change?.OnEventList
         };
 
         private static string Text(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

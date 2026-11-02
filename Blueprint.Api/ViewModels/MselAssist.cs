@@ -46,7 +46,7 @@ namespace Blueprint.Api.ViewModels
     public class MselChange
     {
         /// <summary>team.add, team.update, organization.add, organization.update, card.add, card.update, competency.add,
-        /// competency.remove, move.add, move.update, inject.add or inject.update</summary>
+        /// competency.remove, move.add, move.update, inject.add, inject.update, column.add or column.update</summary>
         public string Op { get; set; }
         public string Target { get; set; }
         public string ShortName { get; set; }
@@ -71,6 +71,22 @@ namespace Blueprint.Api.ViewModels
 
         /// <summary>An inject's values by column name; for an edit, only the columns that change</summary>
         public Dictionary<string, string> Values { get; set; }
+
+        /// <summary>A column's type: String, Html, Integer, Double, Boolean, DateTime, Url, Organization, Team, TeamsMultiple,
+        /// SourceType, IpAddress or Network; a list is a String with options</summary>
+        public string DataType { get; set; }
+
+        /// <summary>A column's choices, in order; a column with options is chosen from a list. For an edit, the whole new list.</summary>
+        public List<string> Options { get; set; }
+
+        /// <summary>The Gallery article parameter a column fills, such as Summary or FromOrg</summary>
+        public string GalleryParameter { get; set; }
+
+        /// <summary>Whether a column shows on the participants' Exercise View</summary>
+        public bool? OnExerciseView { get; set; }
+
+        /// <summary>Whether a column shows on the scenario event list</summary>
+        public bool? OnEventList { get; set; }
 
         /// <summary>The inject an edit changes, set by the server from Target so a later apply finds the same one</summary>
         public System.Guid? ScenarioEventId { get; set; }

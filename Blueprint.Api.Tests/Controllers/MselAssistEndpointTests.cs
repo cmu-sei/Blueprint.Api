@@ -165,6 +165,76 @@ public class MselAssistEndpointTests(DatabaseFixture fixture, AiEnabledFactory f
         Assert.Equal(1, await ReadBack(db => db.Teams.CountAsync(t => t.MselId == msel.Id && t.ShortName == "CERT", Ct)));
     }
 
+    /// <summary>
+    /// A column added in a proposal is one the injects after it may write, so "add a Severity column and set it" is one apply;
+    /// its value is checked against its choices. An edit renames it and replaces its choices, keeping the values chosen.
+    /// </summary>
+    [Fact]
+    public async Task Apply_AddsAColumnAndFillsItOnTheInjects()
+    {
+        var (msel, _) = await SeedMsel();
+        var title = TestData.DataField(msel.Id, name: "Title", displayOrder: 1);
+        var existing = TestData.ScenarioEvent(msel.Id);
+        await Seed(title, existing, TestData.DataValue(title.Id, existing.Id, "Cables cut"));
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var result = await Read<MselAssistApplyResult>(await Apply(owner, msel.Id,
+            new MselChange { Op = "column.add", Name = "Severity", Description = "How bad it is", Options = ["Low", "Medium", "High"] },
+            new MselChange { Op = "inject.update", Target = "E1", Values = new Dictionary<string, string> { ["Severity"] = "High" } },
+            new MselChange { Op = "inject.add", Minutes = 30, EventType = "Inject", Values = new Dictionary<string, string> { ["Title"] = "Press call", ["Severity"] = "Low" } }));
+
+        Assert.All(result.Results, r => Assert.True(r.Applied, $"{r.Label}: {r.Error}"));
+        Assert.Equal("Add column Severity (list: Low, Medium, High)", result.Results[0].Label);
+        await using var db = NewContext();
+        var severity = await db.DataFields.Include(f => f.DataOptions).SingleAsync(f => f.MselId == msel.Id && f.Name == "Severity", Ct);
+        Assert.True(severity.IsChosenFromList);
+        Assert.Equal(["Low", "Medium", "High"], severity.DataOptions.OrderBy(o => o.DisplayOrder).Select(o => o.OptionValue));
+        Assert.True(severity.DisplayOrder > title.DisplayOrder);
+        var values = await db.DataValues.Where(v => v.DataFieldId == severity.Id && v.Value != null).Select(v => v.Value).ToListAsync(Ct);
+        Assert.Equal(["High", "Low"], values.OrderBy(v => v));
+
+        var renamed = await Read<MselAssistApplyResult>(await Apply(owner, msel.Id,
+            new MselChange { Op = "column.update", Target = "Severity", Name = "Impact", Options = ["Low", "High", "Critical"] }));
+        Assert.True(Assert.Single(renamed.Results).Applied, renamed.Results[0].Error);
+        Assert.Equal("Edit column Severity: name \"Impact\", choices Low, High, Critical", renamed.Results[0].Label);
+        await using var after = NewContext();
+        var impact = await after.DataFields.Include(f => f.DataOptions).SingleAsync(f => f.Id == severity.Id, Ct);
+        Assert.Equal("Impact", impact.Name);
+        // the options that stay keep their ids
+        Assert.Equal(severity.DataOptions.Single(o => o.OptionValue == "High").Id, impact.DataOptions.Single(o => o.OptionValue == "High").Id);
+    }
+
+    /// <summary>A column change that cannot be made is left out with the reason: a name taken, a list on a number, a Gallery parameter another column fills.</summary>
+    [Fact]
+    public async Task Ask_LeavesOutColumnChangesThatCannotBeMade()
+    {
+        var (msel, _) = await SeedMsel();
+        var summary = TestData.DataField(msel.Id, name: "Summary", displayOrder: 1);
+        summary.GalleryArticleParameter = "Summary";
+        await Seed(summary);
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        Answer(new
+        {
+            reply = "Columns",
+            changes = new object[]
+            {
+                new { op = "column.add", name = "Summary" },
+                new { op = "column.add", name = "Count", dataType = "Integer", options = new[] { "1", "2" } },
+                new { op = "column.add", name = "Gist", galleryParameter = "Summary" },
+                new { op = "column.add", name = "Analyst Notes", dataType = "Html" }
+            }
+        });
+
+        var result = await Read<MselAssistResult>(await Ask(owner, msel.Id, "Add columns"));
+
+        Assert.Equal("Add column Analyst Notes (Html)", Assert.Single(result.Changes).Label);
+        Assert.Contains("Add column Summary (String): left out, there is already a column Summary.", result.Warnings);
+        Assert.Contains("Add column Count (list: 1, 2): left out, only a text column can be chosen from a list.", result.Warnings);
+        Assert.Contains("Add column Gist (String): left out, the column Summary already fills the Gallery Summary.", result.Warnings);
+        Assert.Contains("Summary, String:", _prompt);
+        Assert.Contains("Column types: String, Html,", _prompt);
+    }
+
     [Fact]
     public async Task Apply_ByAViewer_IsForbiddenAndChangesNothing()
     {

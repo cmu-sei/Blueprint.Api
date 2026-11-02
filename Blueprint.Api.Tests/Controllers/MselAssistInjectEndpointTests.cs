@@ -132,8 +132,8 @@ public class MselAssistInjectEndpointTests(DatabaseFixture fixture, AiEnabledFac
         await Ask(approver, msel.Id);
 
         Assert.Contains("The planner may change: existing injects.", _prompt);
-        Assert.Contains("- Priority: Plain text. One of: High, Low", _prompt);
-        Assert.Contains("- Details: HTML using p, ul, ol, li, strong and em only", _prompt);
+        Assert.Contains("- Priority, String: Plain text. One of: High, Low", _prompt);
+        Assert.Contains("- Details, Html: HTML using p, ul, ol, li, strong and em only", _prompt);
         Assert.DoesNotContain("- Delivery Time:", _prompt);
         Assert.Contains("- E1 minute 10 Inject: Title: Phishing wave | Details: Users report a fake payroll email. | Priority: High", _prompt);
         Assert.Contains("- E2 minute 75 Information:", _prompt);

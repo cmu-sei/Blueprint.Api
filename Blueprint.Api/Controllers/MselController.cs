@@ -482,7 +482,7 @@ namespace Blueprint.Api.Controllers
         /// <summary> Apply the AI changes the planner kept </summary>
         /// <remarks>
         /// Each change is checked again against the MSEL as it is now and made through the same rules as the matching
-        /// team, organization, card, competency, move or scenario event endpoint. Returns whether each one was applied.
+        /// team, organization, card, competency, move, scenario event or data field endpoint. Returns whether each one was applied.
         /// </remarks>
         /// <param name="mselId"> The id of the MSEL to change </param>
         /// <param name="apply"> The changes to make </param>

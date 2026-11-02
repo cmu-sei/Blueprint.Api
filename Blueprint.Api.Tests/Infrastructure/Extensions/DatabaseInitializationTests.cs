@@ -457,7 +457,8 @@ public class DatabaseInitializationTests(DatabaseFixture fixture) : DatabaseTest
         await using var read = NewContext();
         Assert.Equal(existing, (await read.InjectTypes.SingleAsync(x => x.Name == "Gallery Article", Ct)).Id);
         Assert.Empty(await read.DataFields.Where(x => x.InjectTypeId == existing).ToListAsync(Ct));
-        Assert.Equal(12, await read.DataFields.CountAsync(x => x.MselId == IntegratedTemplateId, Ct));
+        Assert.Equal(13, await read.DataFields.CountAsync(x => x.MselId == IntegratedTemplateId, Ct));
+        Assert.Single(await read.DataFields.Where(x => x.MselId == IntegratedTemplateId && x.DataType == DataFieldType.Competency).ToListAsync(Ct));
         Assert.Equal(3, await read.PlayerApplications.CountAsync(x => x.MselId == IntegratedTemplateId, Ct));
     }
 

@@ -738,6 +738,37 @@ public class TeamUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         TeamId = teamId
     };
 
+    /// <summary>
+    /// Exercise control watches every team: a contributor added to EXCON becomes a CITE facilitator and a Gallery observer; one
+    /// added to another team, or a user with no role on the MSEL, gets nothing.
+    /// </summary>
+    [Fact]
+    public async Task Create_OnExcon_FillsTheControlRoles()
+    {
+        var msel = await SeedMsel();
+        var excon = TestData.Team(msel.Id);
+        excon.ShortName = "EXCON";
+        var blue = TestData.Team(msel.Id);
+        blue.ShortName = "BLUE";
+        var controller = TestData.User();
+        var player = TestData.User();
+        var outsider = TestData.User();
+        await Seed(excon, blue, controller, player, outsider,
+            TestData.UserMselRole(controller.Id, msel.Id, MselRole.Editor), TestData.UserMselRole(player.Id, msel.Id, MselRole.Editor));
+        var admin = await Actor().WithAllSystemPermissions().SeedAsync();
+
+        var first = await Post(Client(admin), Body(controller.Id, excon.Id));
+        Assert.True(first.IsSuccessStatusCode, $"{(int)first.StatusCode} {await first.Content.ReadAsStringAsync(Ct)}");
+        Assert.True((await Post(Client(admin), Body(player.Id, blue.Id))).IsSuccessStatusCode);
+        Assert.True((await Post(Client(admin), Body(outsider.Id, excon.Id))).IsSuccessStatusCode);
+
+        await using var db = NewContext();
+        var roles = await db.UserMselRoles.Where(r => r.MselId == msel.Id).ToDictionaryAsync(r => r.UserId, r => (r.CiteEvaluationRole, r.GalleryExhibitRole), Ct);
+        Assert.Equal(("Facilitator", "Observer"), roles[controller.Id]);
+        Assert.Equal(((string)null, (string)null), roles[player.Id]);
+        Assert.False(roles.ContainsKey(outsider.Id));
+    }
+
     private async Task<MselEntity> SeedMsel()
     {
         var msel = TestData.Msel();

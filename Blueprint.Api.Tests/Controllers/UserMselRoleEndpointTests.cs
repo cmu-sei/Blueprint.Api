@@ -818,6 +818,34 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    /// <summary>
+    /// An evaluator watches every team: made one, the user's empty CITE and Gallery roles become Observer; a role set by hand stays.
+    /// </summary>
+    [Fact]
+    public async Task Create_AnEvaluator_FillsTheObserverRoles()
+    {
+        var msel = await SeedMsel();
+        var assessor = await SeedUser();
+        var other = await SeedUser();
+        var picked = await SeedRole(other.Id, msel.Id, MselRole.Viewer);
+        await ReadBack(async db =>
+        {
+            (await db.UserMselRoles.SingleAsync(r => r.Id == picked.Id, Ct)).CiteEvaluationRole = "Member";
+            return await db.SaveChangesAsync(Ct);
+        });
+        var admin = await Actor().WithAllSystemPermissions().SeedAsync();
+
+        Assert.True((await Client(admin).PostAsJsonAsync(UserMselRoles, Body(assessor.Id, msel.Id, MselRole.Evaluator), Ct)).IsSuccessStatusCode);
+        Assert.True((await Client(admin).PostAsJsonAsync(UserMselRoles, Body(other.Id, msel.Id, MselRole.Evaluator), Ct)).IsSuccessStatusCode);
+
+        await using var db = NewContext();
+        var row = await db.UserMselRoles.SingleAsync(r => r.MselId == msel.Id && r.UserId == assessor.Id, Ct);
+        Assert.Equal(("Observer", "Observer"), (row.CiteEvaluationRole, row.GalleryExhibitRole));
+        // the hand-set CITE role is the user's on every row; the empty Gallery one is filled
+        var rows = await db.UserMselRoles.Where(r => r.MselId == msel.Id && r.UserId == other.Id).ToListAsync(Ct);
+        Assert.All(rows, r => Assert.Equal(("Member", "Observer"), (r.CiteEvaluationRole, r.GalleryExhibitRole)));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Harness
     // ---------------------------------------------------------------------------------------------

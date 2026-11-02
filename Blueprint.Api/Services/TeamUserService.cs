@@ -104,6 +104,9 @@ namespace Blueprint.Api.Services
             var teamUserEntity = _mapper.Map<TeamUserEntity>(teamUser);
 
             _context.TeamUsers.Add(teamUserEntity);
+            // exercise control watches every team
+            await IntegrationRoleDefaults.FillAsync(_context, requestedTeam.MselId, teamUser.UserId,
+                string.Equals(requestedTeam.ShortName?.Trim(), "EXCON", StringComparison.OrdinalIgnoreCase), ct);
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"User {teamUser.UserId} added to team {teamUser.TeamId} by {_user.GetId()}");
             return await GetAsync(teamUserEntity.Id, true, ct);

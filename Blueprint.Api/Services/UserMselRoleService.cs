@@ -82,6 +82,8 @@ namespace Blueprint.Api.Services
             var userMselRoleEntity = _mapper.Map<UserMselRoleEntity>(userMselRole);
 
             _context.UserMselRoles.Add(userMselRoleEntity);
+            // an evaluator, or a member of exercise control, watches every team
+            await IntegrationRoleDefaults.FillAsync(_context, userMselRole.MselId, userMselRole.UserId, false, ct);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(userMselRole.MselId, userMselRole.CreatedBy, userMselRole.DateCreated, _context, ct);

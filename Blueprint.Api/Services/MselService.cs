@@ -725,6 +725,8 @@ namespace Blueprint.Api.Services
             _context.UserMselRoles.Add(userMeslRole);
             // change the MSEL modified info
             msel.ModifiedBy = _user.GetId();
+            // an evaluator, or a member of exercise control, watches every team
+            await IntegrationRoleDefaults.FillAsync(_context, mselId, userId, false, ct);
             await _context.SaveChangesAsync(ct);
 
             return await GetAsync(mselId, true, ct);

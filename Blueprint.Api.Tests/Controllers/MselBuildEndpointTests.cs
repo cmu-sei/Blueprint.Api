@@ -297,7 +297,7 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         _calls.Clear();
         var outlined = await Read<MselBuildStatus>(await Client(planner).PostAsync($"/api/msels/{created.Msel.Id}/ai-draft/injects", null, Ct));
         var call = _calls.Single(c => c.System.Contains("second of two steps"));
-        Assert.Contains("Write the injects each move plans (plannedInjects): about 60 in all, and never more than 60.", call.Prompt);
+        Assert.Contains("Each move's plannedInjects is the most it gets: write no more for a move than it plans, 60 in all at most.", call.Prompt);
         var values = JsonDocument.Parse(call.Schema).RootElement.GetProperty("properties").GetProperty("injects").GetProperty("items").GetProperty("properties").GetProperty("values");
         var required = values.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ToList();
         // the Title is the article's name; the Description is its body, written later, so it is not asked for here

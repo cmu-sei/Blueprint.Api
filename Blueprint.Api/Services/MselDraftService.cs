@@ -264,7 +264,7 @@ summary, sender and recipients specific enough to write it from and keep the sto
             }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
             // the design planned how many injects each move needs, within the cap, so none are written to be thrown away
             if (design.Moves.Sum(m => m.PlannedInjects ?? 0) is int planned && planned > 0)
-                sb.AppendLine($"Write the injects each move plans (plannedInjects): about {planned} in all, and never more than {_aiOptions.MaxInjects}.");
+                sb.AppendLine($"Each move's plannedInjects is the most it gets: write no more for a move than it plans, {planned} in all at most.");
             var answered = (answers ?? new List<MselDesignAnswer>()).Where(a => !string.IsNullOrWhiteSpace(a?.Answer)).ToList();
             if (answered.Any())
             {

@@ -35,7 +35,7 @@ namespace Blueprint.Api.Services
         }
 
         // every participant team contributes to the official score; exercise control only watches
-        private static async Task SetTeamTypesAsync(MselEntity msel, ICiteApiClient cite, Action<string, string> addChange, CancellationToken ct)
+        public static async Task SetTeamTypesAsync(MselEntity msel, ICiteApiClient cite, Action<string, string> addChange, CancellationToken ct)
         {
             var teams = msel.Teams.Where(t => t.CiteTeamTypeId == null).ToList();
             if (!teams.Any())
@@ -133,6 +133,38 @@ namespace Blueprint.Api.Services
             msel.CiteScoringModelId = null;
             msel.CiteScoringModelName = null;
             addChange("citeScoringModel", $"Authored the CITE scoring model \"{model.Description}\" in Blueprint. Review it under the CITE settings on the Info tab; the push creates it in CITE.");
+        }
+
+        /// <summary>One of the matrix presets, authored into a MSEL that has no scoring model of its own or linked, as the draft authors one</summary>
+        public static bool AuthorPreset(MselEntity msel, string preset, Guid userId)
+        {
+            if (msel.ScoringModel != null || msel.CiteScoringModelId != null)
+                return false;
+            var model = preset switch
+            {
+                MselDraftRules.MissionImpact => ScoringModelPresets.MissionImpact(),
+                MselDraftRules.Likelihood => ScoringModelPresets.Likelihood(),
+                MselDraftRules.Nciss => ScoringModelPresets.Nciss(),
+                _ => null
+            };
+            if (model == null)
+                return false;
+            model.MselId = msel.Id;
+            model.CreatedBy = userId;
+            foreach (var category in model.Categories)
+            {
+                category.Id = Guid.NewGuid();
+                category.MselScoringModelId = msel.Id;
+                category.CreatedBy = userId;
+                foreach (var option in category.Options)
+                {
+                    option.Id = Guid.NewGuid();
+                    option.MselScoringCategoryId = category.Id;
+                    option.CreatedBy = userId;
+                }
+            }
+            msel.ScoringModel = model;
+            return true;
         }
 
         public static bool IsControl(TeamEntity team) =>

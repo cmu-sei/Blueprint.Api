@@ -36,11 +36,11 @@ namespace Blueprint.Api.Services
     /// Which kinds of change the planner may make on this MSEL, by the rules of the services that make them. A change
     /// the planner may not make is left out of a proposal with the reason, rather than failing when applied.
     /// </summary>
-    public record MselAssistAccess(bool Teams, bool OrganizationsAndCards, bool Competencies, bool Moves, bool AddInjects, bool EditInjects, bool Columns)
+    public record MselAssistAccess(bool Teams, bool OrganizationsAndCards, bool Competencies, bool Moves, bool AddInjects, bool EditInjects, bool Columns, bool Integrations)
     {
-        public bool Any => Teams || OrganizationsAndCards || Competencies || Moves || AddInjects || EditInjects || Columns;
+        public bool Any => Teams || OrganizationsAndCards || Competencies || Moves || AddInjects || EditInjects || Columns || Integrations;
 
-        public static readonly MselAssistAccess All = new(true, true, true, true, true, true, true);
+        public static readonly MselAssistAccess All = new(true, true, true, true, true, true, true, true);
 
         /// <summary>Why the planner may not make a change of this kind, or null when they may</summary>
         public string Refusal(string op) => op switch
@@ -53,6 +53,7 @@ namespace Blueprint.Api.Services
             MselAssistRules.InjectAdd when !AddInjects => "only the MSEL's owner can add injects",
             MselAssistRules.InjectUpdate when !EditInjects => "only the MSEL's owner, an editor or an approver can edit injects",
             MselAssistRules.ColumnAdd or MselAssistRules.ColumnUpdate when !Columns => "only the MSEL's owner or an editor can change its columns",
+            MselAssistRules.IntegrationAdd when !Integrations => "only the MSEL's owner can change its integrations",
             _ => null
         };
 
@@ -67,6 +68,7 @@ namespace Blueprint.Api.Services
             if (AddInjects) parts.Add("new injects");
             if (EditInjects) parts.Add("existing injects");
             if (Columns) parts.Add("inject columns");
+            if (Integrations) parts.Add("integrations (turning one on)");
             return string.Join(", ", parts);
         }
     }
@@ -90,12 +92,17 @@ scenario's actors: the agencies, companies, media outlets and threat actors that
 on the participants' Gallery wall; a card's move and inject numbers say when it first appears. Competencies are framework work roles
 and tasks (DCWF or NICE) linked to the MSEL as a whole or to a team.
 You can propose these changes: add or edit a team, an organization or a Gallery card; add or remove a competency on the MSEL or a team;
-add or edit a move; add an inject or edit an existing one; add an inject column or edit one.
+add or edit a move; add an inject or edit an existing one; add an inject column or edit one; turn on an integration.
 Rules:
 - Answer only by calling the tool. Put a short reply to the planner in reply: what you propose and why, in plain words.
 - Change only what the planner asked for, plus what that needs (a new team named in the request must exist before a competency is put on it).
 - If the request is ambiguous in a way that changes the result, ask one short question and propose no changes.
-- If the planner asks for something you cannot change (deleting injects, moves or columns, integrations, users, pages), say so in reply.
+- If the planner asks for something you cannot change (deleting injects, moves or columns, turning an integration off, users, pages), say so in reply.
+- Turning on an integration also needs what it works with, which you propose in the same changes, after it. Gallery: Blueprint adds the
+  article columns (listed with the change), and you add the Gallery cards and give the injects that are articles a source type,
+  sender, recipients, title, summary and card. CITE: choose a scoring model preset that fits (MissionImpact, Likelihood or Nciss),
+  or none to leave it to the planner; Blueprint gives the teams CITE team types. Player, Steamfitter and Caster need setting up on
+  their tabs afterwards, which say so.
 - Add a column when the planner wants injects to carry something no column holds. Give it a short name, what it is for in
   description, and a type; a column whose values come from a fixed set is a String with options, in order. Then fill it on the
   injects that need it in the same proposal, keyed by the new name: column changes are applied before the injects.
@@ -135,10 +142,12 @@ Rules:
             IScenarioEventService scenarioEventService,
             IPrincipal user,
             IAiUsageContext usage,
-            IDataFieldService dataFieldService)
+            IDataFieldService dataFieldService,
+            Cite.Api.Client.ICiteApiClient citeApiClient)
         {
             _usage = usage;
             _dataFieldService = dataFieldService;
+            _citeApiClient = citeApiClient;
             _context = context;
             _aiModelClient = aiModelClient;
             _aiOptions = aiOptions;
@@ -154,6 +163,7 @@ Rules:
 
         private readonly IAiUsageContext _usage;
         private readonly IDataFieldService _dataFieldService;
+        private readonly Cite.Api.Client.ICiteApiClient _citeApiClient;
 
         public async Task<MselAssistResult> AskAsync(Guid mselId, MselAssistRequest request, MselAssistPermissions permissions, CancellationToken ct)
         {
@@ -398,6 +408,10 @@ Rules:
                     await ReloadColumnsAsync(state, mselId, ct);
                     break;
                 }
+                case MselAssistRules.IntegrationAdd:
+                    await TurnOnAsync(mselId, change, ct);
+                    await ReloadColumnsAsync(state, mselId, ct);
+                    break;
                 case MselAssistRules.InjectAdd:
                 {
                     var deltaSeconds = change.Minutes.Value * 60;
@@ -453,6 +467,58 @@ Rules:
             }
         }
 
+        // an integration turned on, with what it works with: Gallery's article columns, CITE's team types and scoring model
+        private async Task TurnOnAsync(Guid mselId, MselChange change, CancellationToken ct)
+        {
+            var msel = await _context.Msels
+                .Include(m => m.DataFields).ThenInclude(f => f.DataOptions)
+                .Include(m => m.Teams)
+                .Include(m => m.ScoringModel)
+                .AsSplitQuery()
+                .SingleAsync(m => m.Id == mselId, ct);
+            if (MselService.HasIntegrations(msel))
+                throw new InvalidOperationException("The MSEL has been pushed; its integrations change only after a pull.");
+            var userId = _user.GetId();
+            switch (change.Integration)
+            {
+                case "Player": msel.UsePlayer = true; break;
+                case "Steamfitter": msel.UseSteamfitter = true; break;
+                case "Caster": msel.UseCaster = true; break;
+                case "Gallery":
+                {
+                    msel.UseGallery = true;
+                    var known = msel.DataFields.Select(f => f.Id).ToHashSet();
+                    MselDraftRules.AddGalleryFields(msel);
+                    // a column the rules add has its id already, which change tracking would take for a stored one
+                    foreach (var field in msel.DataFields.Where(f => !known.Contains(f.Id)))
+                    {
+                        field.CreatedBy = userId;
+                        _context.Entry(field).State = EntityState.Added;
+                    }
+                    break;
+                }
+                case "Cite":
+                    msel.UseCite = true;
+                    // a team type CITE cannot give now is left for the planner, as the push needs one; the change still lands
+                    await MselDraftCite.SetTeamTypesAsync(msel, _citeApiClient, (_, _) => { }, ct);
+                    if (change.Preset != null && MselDraftCite.AuthorPreset(msel, change.Preset, userId))
+                    {
+                        // the preset's rows carry their ids, which change tracking would take for stored ones
+                        _context.Entry(msel.ScoringModel).State = EntityState.Added;
+                        foreach (var category in msel.ScoringModel.Categories)
+                        {
+                            _context.Entry(category).State = EntityState.Added;
+                            foreach (var option in category.Options)
+                                _context.Entry(option).State = EntityState.Added;
+                        }
+                    }
+                    break;
+            }
+            msel.ModifiedBy = userId;
+            msel.DateModified = DateTime.UtcNow;
+            await _context.SaveChangesAsync(ct);
+        }
+
         // a column added or changed in this apply is one the injects after it write to
         private async Task ReloadColumnsAsync(MselAssistState state, Guid mselId, CancellationToken ct) =>
             state.Msel.DataFields = await _context.DataFields.AsNoTracking().Include(f => f.DataOptions)
@@ -490,7 +556,8 @@ Rules:
                 Moves: permissions.EditMsels || owner || moveEditor,
                 AddInjects: permissions.EditMsels || owner,
                 EditInjects: permissions.EditMsels || owner || editor || approver,
-                Columns: permissions.EditMsels || owner || editor);
+                Columns: permissions.EditMsels || owner || editor,
+                Integrations: permissions.EditMsels || owner);
             if (!access.Any)
                 throw new ForbiddenException();
             return access;
@@ -557,7 +624,8 @@ Rules:
             sb.AppendLine($"MSEL: {msel.Name}");
             if (!string.IsNullOrWhiteSpace(msel.Description))
                 sb.AppendLine($"Description: {DataValueDraftService.StripHtml(msel.Description)}");
-            sb.AppendLine($"Integrations: {string.Join(", ", new[] { msel.UseGallery ? "Gallery" : null, msel.UseCite ? "CITE" : null, msel.UsePlayer ? "Player" : null, msel.UseSteamfitter ? "Steamfitter" : null }.Where(x => x != null))}");
+            sb.AppendLine($"Integrations on: {string.Join(", ", new[] { msel.UsePlayer ? "Player" : null, msel.UseGallery ? "Gallery" : null, msel.UseCite ? "Cite" : null, msel.UseSteamfitter ? "Steamfitter" : null, msel.UseCaster ? "Caster" : null }.Where(x => x != null).DefaultIfEmpty("none"))}" +
+                (MselService.HasIntegrations(msel) ? " (pushed: integrations cannot change until it is pulled)" : ""));
             sb.AppendLine($"The planner may change: {access.Describe()}.");
 
             sb.AppendLine().AppendLine("Moves:");
@@ -662,6 +730,8 @@ Rules:
                             ["galleryParameter"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(Enum.GetNames<GalleryArticleParameter>().Select(t => (JsonNode)t).ToArray()), ["description"] = "The Gallery article parameter a column fills, if any." },
                             ["onExerciseView"] = new JsonObject { ["type"] = "boolean", ["description"] = "Whether participants see the column on the Exercise View." },
                             ["onEventList"] = new JsonObject { ["type"] = "boolean", ["description"] = "Whether the column shows on the scenario event list." },
+                            ["integration"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselAssistRules.Integrations.Select(t => (JsonNode)t).ToArray()), ["description"] = "The integration to turn on." },
+                            ["preset"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselDraftRules.MissionImpact, MselDraftRules.Likelihood, MselDraftRules.Nciss), ["description"] = "For CITE, the scoring model to author; leave out to let the planner choose." },
                             ["values"] = new JsonObject
                             {
                                 ["type"] = "object",
@@ -723,7 +793,38 @@ Rules:
         public const string InjectUpdate = "inject.update";
         public const string ColumnAdd = "column.add";
         public const string ColumnUpdate = "column.update";
-        public static readonly string[] Ops = [TeamAdd, TeamUpdate, OrganizationAdd, OrganizationUpdate, CardAdd, CardUpdate, CompetencyAdd, CompetencyRemove, MoveAdd, MoveUpdate, InjectAdd, InjectUpdate, ColumnAdd, ColumnUpdate];
+        public const string IntegrationAdd = "integration.add";
+        public static readonly string[] Ops = [TeamAdd, TeamUpdate, OrganizationAdd, OrganizationUpdate, CardAdd, CardUpdate, CompetencyAdd, CompetencyRemove, MoveAdd, MoveUpdate, InjectAdd, InjectUpdate, ColumnAdd, ColumnUpdate, IntegrationAdd];
+        public static readonly string[] Integrations = ["Player", "Gallery", "Cite", "Steamfitter", "Caster"];
+
+        /// <summary>Whether the MSEL has an integration on</summary>
+        public static bool Uses(MselEntity msel, string integration) => integration switch
+        {
+            "Player" => msel.UsePlayer,
+            "Gallery" => msel.UseGallery,
+            "Cite" => msel.UseCite,
+            "Steamfitter" => msel.UseSteamfitter,
+            "Caster" => msel.UseCaster,
+            _ => false
+        };
+
+        /// <summary>The article columns turning Gallery on adds, by the rules a draft's MSEL gets them by</summary>
+        public static List<DataFieldEntity> GalleryColumns(MselEntity msel)
+        {
+            var copy = new MselEntity
+            {
+                Id = msel.Id,
+                UseGallery = true,
+                DataFields = msel.DataFields.Select(f => new DataFieldEntity
+                {
+                    Id = f.Id, Name = f.Name, DataType = f.DataType, DisplayOrder = f.DisplayOrder, GalleryArticleParameter = f.GalleryArticleParameter,
+                    IsChosenFromList = f.IsChosenFromList, DataOptions = f.DataOptions
+                }).ToList()
+            };
+            var known = msel.DataFields.Select(f => f.Id).ToHashSet();
+            MselDraftRules.AddGalleryFields(copy);
+            return copy.DataFields.Where(f => !known.Contains(f.Id)).ToList();
+        }
 
         /// <summary>The column types the assistant may give a column; the rest are filled by Blueprint or chosen from its own lists</summary>
         public static readonly string[] ColumnTypes = [nameof(DataFieldType.String), nameof(DataFieldType.Html), nameof(DataFieldType.Integer),
@@ -764,6 +865,7 @@ Rules:
             var columns = msel.DataFields.Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var parameters = msel.DataFields.Where(f => !string.IsNullOrEmpty(f.GalleryArticleParameter))
                 .ToDictionary(f => f.GalleryArticleParameter, f => f.Name, StringComparer.OrdinalIgnoreCase);
+            var integrationsOn = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             // competency links as "<team short name or empty>|<id number>"
             var links = msel.MselCompetencies.Select(mc => "|" + mc.Competency.IdNumber)
                 .Concat(msel.Teams.SelectMany(t => t.TeamCompetencies.Select(tc => t.ShortName + "|" + tc.Competency.IdNumber)))
@@ -948,6 +1050,52 @@ Rules:
                             fields[change.Name ?? field.Name] = ColumnEntity(change, field);
                         break;
                     }
+                    case IntegrationAdd:
+                    {
+                        change.Integration = Integrations.FirstOrDefault(i => i.Equals(change.Integration, StringComparison.OrdinalIgnoreCase));
+                        change.Preset = new[] { MselDraftRules.MissionImpact, MselDraftRules.Likelihood, MselDraftRules.Nciss }
+                            .FirstOrDefault(p => p.Equals(change.Preset, StringComparison.OrdinalIgnoreCase));
+                        var label = change.Integration == "Cite" ? "CITE" : change.Integration;
+                        change.Label = $"Turn on {label ?? "an integration"}";
+                        if (change.Integration == null)
+                        {
+                            problem = "it names no integration Blueprint has";
+                            break;
+                        }
+                        if (Uses(msel, change.Integration) || !integrationsOn.Add(change.Integration))
+                        {
+                            problem = $"the MSEL already uses {label}";
+                            break;
+                        }
+                        if (MselService.HasIntegrations(msel))
+                        {
+                            problem = "the MSEL has been pushed, and its integrations change only after a pull";
+                            break;
+                        }
+                        switch (change.Integration)
+                        {
+                            case "Gallery":
+                                var added = GalleryColumns(msel);
+                                foreach (var column in added.Where(c => !MselDraftRules.IsServerFilled(c)))
+                                    fields[column.Name] = column;
+                                if (added.Any())
+                                    change.Label += $", adding the columns {string.Join(", ", added.Select(c => c.Name))}";
+                                break;
+                            case "Cite":
+                                var authors = change.Preset != null && msel.ScoringModel == null && msel.CiteScoringModelId == null;
+                                change.Label += ", giving the teams CITE team types" + (authors ? $" and authoring the {MselDraftRules.AssessmentName(change.Preset)} scoring model" : "");
+                                if (!authors)
+                                    change.Preset = null;
+                                break;
+                            case "Caster":
+                                change.Label += " (choose its directory on the Info tab)";
+                                break;
+                            default:
+                                change.Label += $" (set it up on its tab)";
+                                break;
+                        }
+                        break;
+                    }
                     default:
                         problem = $"{change.Op ?? "an empty change"} is not a change the assistant can make";
                         change.Label = change.Op ?? "Unknown change";
@@ -1117,7 +1265,9 @@ Rules:
             Options = change?.Options?.ToList(),
             GalleryParameter = Text(change?.GalleryParameter),
             OnExerciseView = change?.OnExerciseView,
-            OnEventList = change?.OnEventList
+            OnEventList = change?.OnEventList,
+            Integration = Text(change?.Integration),
+            Preset = Text(change?.Preset)
         };
 
         private static string Text(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

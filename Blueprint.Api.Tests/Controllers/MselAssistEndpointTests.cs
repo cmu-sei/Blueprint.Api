@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
@@ -233,6 +234,72 @@ public class MselAssistEndpointTests(DatabaseFixture fixture, AiEnabledFactory f
         Assert.Contains("Add column Gist (String): left out, the column Summary already fills the Gallery Summary.", result.Warnings);
         Assert.Contains("Summary, String:", _prompt);
         Assert.Contains("Column types: String, Html,", _prompt);
+    }
+
+    /// <summary>
+    /// Turning Gallery on adds the article columns, which the injects after it in the same apply write to; turning CITE on gives
+    /// the teams CITE team types and authors the preset the model chose.
+    /// </summary>
+    [Fact]
+    public async Task Apply_TurnsOnGalleryAndCiteWithWhatTheyNeed()
+    {
+        var msel = TestData.Msel();
+        var blue = TestData.Team(msel.Id);
+        blue.ShortName = "BLUE";
+        var excon = TestData.Team(msel.Id);
+        excon.ShortName = "EXCON";
+        var title = TestData.DataField(msel.Id, name: "Title", displayOrder: 1);
+        var existing = TestData.ScenarioEvent(msel.Id);
+        await Seed(msel, blue, excon, title, existing, TestData.DataValue(title.Id, existing.Id, "Cables cut"));
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var contributor = new Cite.Api.Client.TeamType { Id = Guid.NewGuid(), Name = "Official Score Contributor" };
+        var other = new Cite.Api.Client.TeamType { Id = Guid.NewGuid(), Name = "Other" };
+        Factory.Cite.GetTeamTypesAsync(Arg.Any<CancellationToken>()).Returns(new List<Cite.Api.Client.TeamType> { contributor, other });
+        Answer(new { reply = "Gallery and CITE", changes = new object[] { new { op = "integration.add", integration = "Gallery" }, new { op = "integration.add", integration = "cite", preset = "Nciss" } } });
+
+        var proposal = await Read<MselAssistResult>(await Ask(owner, msel.Id, "Use Gallery and CITE"));
+        Assert.StartsWith("Turn on Gallery, adding the columns ", proposal.Changes[0].Label);
+        Assert.Equal("Turn on CITE, giving the teams CITE team types and authoring the CISA NCISS scoring model", proposal.Changes[1].Label);
+
+        var result = await Read<MselAssistApplyResult>(await Apply(owner, msel.Id,
+            proposal.Changes[0],
+            new MselChange { Op = "inject.update", Target = "E1", Values = new Dictionary<string, string> { ["SourceType"] = "News" } },
+            proposal.Changes[1]));
+
+        Assert.All(result.Results, r => Assert.True(r.Applied, $"{r.Label}: {r.Error}"));
+        await using var db = NewContext();
+        var stored = await db.Msels.Include(m => m.DataFields).Include(m => m.Teams).Include(m => m.ScoringModel).AsSplitQuery().SingleAsync(m => m.Id == msel.Id, Ct);
+        Assert.True(stored.UseGallery);
+        Assert.True(stored.UseCite);
+        Assert.Contains(stored.DataFields, f => f.GalleryArticleParameter == "SourceType");
+        var source = stored.DataFields.Single(f => f.GalleryArticleParameter == "SourceType");
+        Assert.Equal("News", await db.DataValues.Where(v => v.DataFieldId == source.Id && v.ScenarioEventId == existing.Id).Select(v => v.Value).SingleAsync(Ct));
+        Assert.Equal(contributor.Id, stored.Teams.Single(t => t.ShortName == "BLUE").CiteTeamTypeId);
+        Assert.Equal(other.Id, stored.Teams.Single(t => t.ShortName == "EXCON").CiteTeamTypeId);
+        Assert.Equal("CISA NCISS", stored.ScoringModel.Description);
+    }
+
+    /// <summary>An integration already on, or any change to the integrations of a pushed MSEL, is left out with the reason.</summary>
+    [Fact]
+    public async Task Ask_LeavesOutIntegrationsThatCannotChange()
+    {
+        var (msel, _) = await SeedMsel();
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        Answer(new { reply = "On", changes = new object[] { new { op = "integration.add", integration = "Gallery" }, new { op = "integration.add", integration = "Steamfitter" } } });
+
+        var result = await Read<MselAssistResult>(await Ask(owner, msel.Id, "Use Gallery and Steamfitter"));
+        Assert.Contains("Turn on Gallery: left out, the MSEL already uses Gallery.", result.Warnings);
+        Assert.Equal("Turn on Steamfitter (set it up on its tab)", Assert.Single(result.Changes).Label);
+
+        await ReadBack(async db =>
+        {
+            var stored = await db.Msels.SingleAsync(m => m.Id == msel.Id, Ct);
+            stored.GalleryExhibitId = Guid.NewGuid();
+            return await db.SaveChangesAsync(Ct);
+        });
+        result = await Read<MselAssistResult>(await Ask(owner, msel.Id, "Use Steamfitter"));
+        Assert.Contains("Turn on Steamfitter: left out, the MSEL has been pushed, and its integrations change only after a pull.", result.Warnings);
+        Assert.Contains("(pushed: integrations cannot change until it is pulled)", _prompt);
     }
 
     [Fact]

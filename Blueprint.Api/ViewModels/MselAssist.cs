@@ -46,7 +46,7 @@ namespace Blueprint.Api.ViewModels
     public class MselChange
     {
         /// <summary>team.add, team.update, organization.add, organization.update, card.add, card.update, competency.add,
-        /// competency.remove, move.add, move.update, inject.add, inject.update, column.add or column.update</summary>
+        /// competency.remove, move.add, move.update, inject.add, inject.update, column.add, column.update or integration.add</summary>
         public string Op { get; set; }
         public string Target { get; set; }
         public string ShortName { get; set; }
@@ -87,6 +87,12 @@ namespace Blueprint.Api.ViewModels
 
         /// <summary>Whether a column shows on the scenario event list</summary>
         public bool? OnEventList { get; set; }
+
+        /// <summary>The integration to turn on: Player, Gallery, Cite, Steamfitter or Caster</summary>
+        public string Integration { get; set; }
+
+        /// <summary>For CITE, the scoring model to author: MissionImpact, Likelihood or Nciss; none leaves it to the planner</summary>
+        public string Preset { get; set; }
 
         /// <summary>The inject an edit changes, set by the server from Target so a later apply finds the same one</summary>
         public System.Guid? ScenarioEventId { get; set; }

@@ -25,6 +25,7 @@ namespace Blueprint.Api.Controllers
         private readonly IMselDraftService _mselDraftService;
         private readonly IDataValueDraftService _dataValueDraftService;
         private readonly IMselAssistantService _mselAssistantService;
+        private readonly IPageDraftService _pageDraftService;
         private readonly IArticleDraftService _articleDraftService;
         private readonly IProfileDraftService _profileDraftService;
         private readonly IIntegrationNameService _integrationNameService;
@@ -35,6 +36,7 @@ namespace Blueprint.Api.Controllers
             IMselDraftService mselDraftService,
             IDataValueDraftService dataValueDraftService,
             IMselAssistantService mselAssistantService,
+            IPageDraftService pageDraftService,
             IArticleDraftService articleDraftService,
             IProfileDraftService profileDraftService,
             ICiteService citeService,
@@ -46,6 +48,7 @@ namespace Blueprint.Api.Controllers
             _mselDraftService = mselDraftService;
             _dataValueDraftService = dataValueDraftService;
             _mselAssistantService = mselAssistantService;
+            _pageDraftService = pageDraftService;
             _articleDraftService = articleDraftService;
             _profileDraftService = profileDraftService;
             _integrationNameService = integrationNameService;
@@ -460,6 +463,23 @@ namespace Blueprint.Api.Controllers
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var result = await _dataValueDraftService.DraftAsync(mselId, request, hasSystemPermission, ct);
             return Ok(result);
+        }
+
+        /// <summary> Write a MSEL page with AI </summary>
+        /// <remarks>
+        /// Nothing is saved. The model sees the MSEL's scenario, moves, teams, organizations and other pages, and the page as the
+        /// editor holds it, and the planner decides whether to use what it writes.
+        /// </remarks>
+        /// <param name="mselId"> The id of the MSEL the page belongs to </param>
+        /// <param name="request"> The page's name and current content, and what to do </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{mselId}/ai-draft/page")]
+        [ProducesResponseType(typeof(PageDraftResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "draftMselPage")]
+        public async Task<IActionResult> DraftPageAsync([FromRoute] Guid mselId, [FromBody] PageDraftRequest request, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            return Ok(await _pageDraftService.DraftAsync(mselId, request, hasSystemPermission, ct));
         }
 
         /// <summary> Ask AI for changes to a MSEL </summary>

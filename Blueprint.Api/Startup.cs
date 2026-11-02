@@ -237,6 +237,7 @@ public class Startup
         services.AddScoped<IMselService, MselService>();
         services.AddScoped<IMselDraftService, MselDraftService>();
         services.AddScoped<IDataValueDraftService, DataValueDraftService>();
+        services.AddScoped<IPageDraftService, PageDraftService>();
         services.AddScoped<IMselAssistantService, MselAssistantService>();
         services.AddScoped<IArticleDraftService, ArticleDraftService>();
         services.AddScoped<IProfileDraftService, ProfileDraftService>();

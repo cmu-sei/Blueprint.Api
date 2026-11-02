@@ -398,6 +398,28 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     /// <summary>
+    /// An imported MSEL's applications are the MSEL's, so one the file flags as a template is stored as an
+    /// ordinary application of the new MSEL rather than as a MSEL row nobody's template list shows.
+    /// </summary>
+    [Fact]
+    public async Task Upload_StoresAnApplicationFlaggedAsATemplateAsAnApplicationOfTheMsel()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            var application = TestData.PlayerApplication(m.Id, "flagged");
+            application.IsTemplate = true;
+            m.PlayerApplications.Add(application);
+        });
+
+        var imported = await Upload(Client(actor), file);
+
+        var stored = await ReadBack(db => db.PlayerApplications.SingleAsync(x => x.MselId == imported.Id, Ct));
+        Assert.Equal("flagged", stored.Name);
+        Assert.False(stored.IsTemplate);
+    }
+
+    /// <summary>
     /// An imported MSEL arrives disconnected from whatever it was deployed to at the other installation:
     /// the ids of the Player view, Gallery collection and exhibit, CITE evaluation and Steamfitter
     /// scenario are all cleared, and the status is reset. The integration <em>settings</em> survive, so
@@ -544,26 +566,94 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     [Fact]
-    public async Task Upload_WithMalformedJson_Is500()
+    public async Task Upload_WithMalformedJson_Is400()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
 
         var response = await Post(Client(actor), "not json at all", UploadRoute);
 
-        Assert.Equal("'not json at all' is an invalid JSON literal. Expected the literal 'null'. Path: $ | LineNumber: 0 | BytePositionInLine: 1.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
+        Assert.Equal("The file is not a Blueprint MSEL JSON file (line 1).", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.BadRequest, response)).Title);
     }
 
-    /// <summary>Upload with an explicitly null teams collection is answered with a 500.</summary>
+    /// <summary>
+    /// The 400 says where the file went wrong, not which of Blueprint's types the serializer was building.
+    /// </summary>
     [Fact]
-    public async Task Upload_WithAnExplicitlyNullTeamsCollection_Is500()
+    public async Task Upload_WithAWrongTypedValue_Is400AndSaysWhere()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
 
-        var response = await Post(Client(actor), """{"Name":"no teams at all","Teams":null}""", UploadRoute);
+        var response = await Post(Client(actor), "{\n  \"Name\": \"x\",\n  \"DurationSeconds\": \"an hour\"\n}", UploadRoute);
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Value cannot be null. (Parameter 'source')", failure.Title);
-        Assert.Contains("MselService.ImportJsonAsync", failure.Detail);
+        var title = (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.BadRequest, response)).Title;
+        Assert.Equal("The file is not a Blueprint MSEL JSON file (line 3, at $.DurationSeconds).", title);
+        Assert.DoesNotContain("Blueprint.Api", title);
+    }
+
+    /// <summary>
+    /// Any JSON object deserializes into a MSEL, so without a check a file that is not a MSEL became an
+    /// empty MSEL. A file with neither the id every export carries nor a name is refused, and nothing is made.
+    /// </summary>
+    [Theory]
+    [InlineData("""{"not":"a msel"}""")]
+    [InlineData("""{"name":"camelCase is not the export's dialect"}""")]
+    [InlineData("""{"Name":"   "}""")]
+    [InlineData("null")]
+    public async Task Import_OfJsonThatIsNotAMsel_Is400AndCreatesNothing(string file)
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var before = await ReadBack(rb => rb.Msels.CountAsync(Ct));
+
+        var response = await Post(Client(actor), file, ImportRoute);
+
+        Assert.Equal(
+            "The file is not a Blueprint MSEL. Upload a file downloaded from Blueprint.",
+            (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.BadRequest, response)).Title);
+        Assert.Equal(before, await ReadBack(rb => rb.Msels.CountAsync(Ct)));
+    }
+
+    /// <summary>JSON that is not an object at all, such as an array, is refused.</summary>
+    [Fact]
+    public async Task Import_OfAJsonArray_Is400()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Post(Client(actor), "[]", ImportRoute);
+
+        Assert.Equal(
+            "The file is not a Blueprint MSEL JSON file (line 1).",
+            (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.BadRequest, response)).Title);
+    }
+
+    /// <summary>
+    /// Blueprint never requires a name, so it can export a MSEL without one; the export's id is enough
+    /// for its import to be taken as a MSEL.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfAnExportWithABlankName_Is200()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Post(Client(actor), Exported(m => m.Name = ""), ImportRoute);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>
+    /// An explicit null for a collection, at the top of the file or inside a team, is read as the empty
+    /// collection that leaving it out gives.
+    /// </summary>
+    [Theory]
+    [InlineData("""{"Name":"no teams at all","Teams":null}""", 0)]
+    [InlineData("""{"Name":"a team with nulls","Teams":[{"Name":"alpha","TeamUsers":null,"TeamCompetencies":null}],"MselCompetencies":null}""", 1)]
+    public async Task Upload_WithAnExplicitlyNullCollection_ReadsItAsEmpty(string file, int teams)
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(teams, result.Imported.Teams);
+        Assert.NotNull(await ReadBack(rb => rb.Msels.SingleOrDefaultAsync(m => m.Id == result.Msel.Id, Ct)));
     }
 
     [Fact]

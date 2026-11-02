@@ -9,6 +9,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
@@ -53,7 +54,6 @@ namespace Blueprint.Api.Services
         Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct);
         Task<MselImportResult> ImportJsonAsync(FileForm form, CancellationToken ct);
         Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct);
-        Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> PullIntegrationsAsync(Guid mselId, MselItemStatus finalStatus, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> RetryCasterAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
@@ -501,6 +501,8 @@ namespace Blueprint.Api.Services
                 playerApplication.Id = Guid.NewGuid();
                 playerApplication.MselId = mselEntity.Id;
                 playerApplication.Msel = null;
+                // a MSEL's application is never a template, whatever an imported file says
+                playerApplication.IsTemplate = false;
                 playerApplication.CreatedBy = mselEntity.CreatedBy;
                 foreach (var playerApplicationTeam in playerApplication.PlayerApplicationTeams)
                 {
@@ -953,26 +955,6 @@ namespace Blueprint.Api.Services
             memoryStream.Seek(0, SeekOrigin.Begin);
 
             return System.Tuple.Create(memoryStream, filename);
-        }
-
-        public async Task<DataTable> GetDataTableAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
-        {
-            var msel = await _context.Msels
-                .Where(f => f.Id == mselId)
-                .SingleOrDefaultAsync(ct);
-            if (msel == null)
-                throw new EntityNotFoundException<MselEntity>();
-            // the data table holds every event and data value, so the caller must be able to view the MSEL's contents
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
-                throw new ForbiddenException();
-            var scenarioEventList = await _context.ScenarioEvents
-                .Where(n => n.MselId == mselId)
-                .OrderBy(se => se.DeltaSeconds)
-                .ToListAsync(ct);
-            // get the MSEL data into a DataTable
-            var dataTable = await GetMselDataAsync(mselId, scenarioEventList, ct);
-
-            return dataTable;
         }
 
         private async Task<MselEntity> createMselFromXlsxFile(IFormFile uploadItem, MselEntity msel, CancellationToken ct)
@@ -2198,6 +2180,27 @@ namespace Blueprint.Api.Services
             return (await ImportJsonAsync(form, ct)).Msel;
         }
 
+        /// <summary>
+        /// An explicit null for a collection in an imported file leaves the entity's empty collection in
+        /// place, as leaving the collection out does, instead of a null the import then fails on.
+        /// </summary>
+        private static void KeepEmptyCollectionForNull(JsonTypeInfo typeInfo)
+        {
+            if (typeInfo.Kind != JsonTypeInfoKind.Object)
+                return;
+            foreach (var property in typeInfo.Properties)
+            {
+                if (property.Set is not { } set || property.PropertyType == typeof(string) ||
+                    !typeof(System.Collections.IEnumerable).IsAssignableFrom(property.PropertyType))
+                    continue;
+                property.Set = (entity, value) =>
+                {
+                    if (value != null)
+                        set(entity, value);
+                };
+            }
+        }
+
         public async Task<MselImportResult> ImportJsonAsync(FileForm form, CancellationToken ct)
         {
             var result = new MselImportResult();
@@ -2210,9 +2213,26 @@ namespace Blueprint.Api.Services
             }
             var options = new JsonSerializerOptions()
             {
-                ReferenceHandler = ReferenceHandler.Preserve
+                ReferenceHandler = ReferenceHandler.Preserve,
+                TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { KeepEmptyCollectionForNull } }
             };
-            var mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
+            MselEntity mselEntity;
+            try
+            {
+                mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
+            }
+            catch (System.Exception ex) when (ex is JsonException or NotSupportedException)
+            {
+                // the serializer's message names Blueprint's types; say where the file went wrong instead
+                var where = ex is JsonException { LineNumber: long line } json
+                    ? $" (line {line + 1}{(json.Path is null or "$" ? "" : $", at {json.Path}")})"
+                    : "";
+                throw new BadRequestException($"The file is not a Blueprint MSEL JSON file{where}.");
+            }
+            // Any JSON object deserializes, so a file that is not a MSEL would become an empty MSEL.
+            // Every export carries the MSEL's id; a hand-written file at least gives it a name.
+            if (mselEntity == null || (mselEntity.Id == Guid.Empty && string.IsNullOrWhiteSpace(mselEntity.Name)))
+                throw new BadRequestException("The file is not a Blueprint MSEL. Upload a file downloaded from Blueprint.");
             // The file carries no image, only its source MSEL's ID and image date. Both are the
             // importer's to write, so keeping the date would copy whatever image that ID has here,
             // even one of a MSEL the importer cannot view.
@@ -2486,7 +2506,7 @@ namespace Blueprint.Api.Services
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to push integrations.");
             if (msel.PlayerViewId != null)
-                throw new InvalidOperationException($"MSEL {mselId} is already deployed.");
+                throw new ConflictException($"MSEL {mselId} is already deployed.");
             if (msel.UseCaster)
             {
                 await ValidateCasterSetupAsync(msel, ct);
@@ -2496,7 +2516,7 @@ namespace Blueprint.Api.Services
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
-                throw new InvalidOperationException(userVerificationErrorMessage);
+                throw new ConflictException(userVerificationErrorMessage);
             msel.Status = MselItemStatus.Pushing;
             msel.IntegrationStatus = "Pushing Integrations";
             await _context.SaveChangesAsync(ct);

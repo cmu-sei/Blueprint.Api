@@ -111,14 +111,15 @@ public class IntegrationSteamfitterExtensionsTests
         Assert.Equal(msel.Description, form["description"].GetString());
     }
 
+    /// <summary>Steamfitter sets a new scenario's status itself, so none is sent.</summary>
     [Fact]
-    public async Task CreateScenario_AlwaysAsksForAnActiveScenario()
+    public async Task CreateScenario_SendsNoStatus()
     {
         var handler = Scenarios();
 
         await IntegrationSteamfitterExtensions.CreateScenarioAsync(Msel(), Client(handler), null, Ct);
 
-        Assert.Equal("Active", Body(Assert.Single(handler.Sent).Body)["status"].GetString());
+        Assert.False(Body(Assert.Single(handler.Sent).Body).ContainsKey("status"));
     }
 
     /// <summary>The scenario carries the Player view id and, as its view name, the MSEL's name.</summary>
@@ -441,10 +442,10 @@ public class IntegrationSteamfitterExtensionsTests
         Assert.Equal($"\"id\":\"{EvaluationId}\"", form["expectedOutput"].GetString());
     }
 
-    /// <summary>An email task is sent with <c>apiUrl</c> <c>stackstorm</c> and its parameters as
+    /// <summary>An email task is sent with <c>apiUrl</c> <c>email</c> and its parameters as
     /// stored.</summary>
     [Fact]
-    public async Task CreateScenarioTasks_ForAnEmail_AsksSteamfitterForStackstorm()
+    public async Task CreateScenarioTasks_ForAnEmail_AsksSteamfitterForItsEmailApi()
     {
         var entity = Task_("email", SteamfitterIntegrationType.Email,
             new Dictionary<string, string> { ["To"] = "someone@example.test" });
@@ -456,7 +457,7 @@ public class IntegrationSteamfitterExtensionsTests
         var form = Body(Assert.Single(handler.Sent).Body);
 
         Assert.Equal("Send_email", form["action"].GetString());
-        Assert.Equal("stackstorm", form["apiUrl"].GetString());
+        Assert.Equal("email", form["apiUrl"].GetString());
         Assert.Equal(
             "someone@example.test",
             form["actionParameters"].GetProperty("To").GetString());

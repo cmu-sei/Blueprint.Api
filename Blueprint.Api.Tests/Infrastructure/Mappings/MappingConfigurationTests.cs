@@ -47,7 +47,7 @@ public class MappingConfigurationTests(BlueprintAppFactory factory) : IClassFixt
         "UserTeamRole -> UserTeamRoleEntity: Team, User"
     ];
 
-    /// <summary><c>AssertConfigurationIsValid</c> throws: 31 of the 81 maps have a destination member with no
+    /// <summary><c>AssertConfigurationIsValid</c> throws: 31 of the maps have a destination member with no
     /// source.</summary>
     [Theory]
     [InlineData(true)]

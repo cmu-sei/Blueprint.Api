@@ -367,6 +367,28 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     /// <summary>
+    /// An imported MSEL's applications are the MSEL's, so one the file flags as a template is stored as an
+    /// ordinary application of the new MSEL rather than as a MSEL row nobody's template list shows.
+    /// </summary>
+    [Fact]
+    public async Task Upload_StoresAnApplicationFlaggedAsATemplateAsAnApplicationOfTheMsel()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            var application = TestData.PlayerApplication(m.Id, "flagged");
+            application.IsTemplate = true;
+            m.PlayerApplications.Add(application);
+        });
+
+        var imported = await Upload(Client(actor), file);
+
+        var stored = await ReadBack(db => db.PlayerApplications.SingleAsync(x => x.MselId == imported.Id, Ct));
+        Assert.Equal("flagged", stored.Name);
+        Assert.False(stored.IsTemplate);
+    }
+
+    /// <summary>
     /// An imported MSEL arrives disconnected from whatever it was deployed to at the other installation:
     /// the ids of the Player view, Gallery collection and exhibit, CITE evaluation and Steamfitter
     /// scenario are all cleared, and the status is reset. The integration <em>settings</em> survive, so

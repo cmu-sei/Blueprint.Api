@@ -524,6 +524,8 @@ namespace Blueprint.Api.Services
                 foreach (var (oldPageId, newPageId) in pageIds)
                     playerApplication.Url = playerApplication.Url?.Replace(oldPageId.ToString(), newPageId.ToString(), StringComparison.OrdinalIgnoreCase);
                 playerApplication.Msel = null;
+                // a MSEL's application is never a template, whatever an imported file says
+                playerApplication.IsTemplate = false;
                 playerApplication.CreatedBy = mselEntity.CreatedBy;
                 foreach (var playerApplicationTeam in playerApplication.PlayerApplicationTeams)
                 {

@@ -26,6 +26,7 @@ namespace Blueprint.Api.Controllers
         private readonly IDataValueDraftService _dataValueDraftService;
         private readonly IMselAssistantService _mselAssistantService;
         private readonly IPageDraftService _pageDraftService;
+        private readonly IMoveDraftService _moveDraftService;
         private readonly IArticleDraftService _articleDraftService;
         private readonly IProfileDraftService _profileDraftService;
         private readonly IIntegrationNameService _integrationNameService;
@@ -37,6 +38,7 @@ namespace Blueprint.Api.Controllers
             IDataValueDraftService dataValueDraftService,
             IMselAssistantService mselAssistantService,
             IPageDraftService pageDraftService,
+            IMoveDraftService moveDraftService,
             IArticleDraftService articleDraftService,
             IProfileDraftService profileDraftService,
             ICiteService citeService,
@@ -49,6 +51,7 @@ namespace Blueprint.Api.Controllers
             _dataValueDraftService = dataValueDraftService;
             _mselAssistantService = mselAssistantService;
             _pageDraftService = pageDraftService;
+            _moveDraftService = moveDraftService;
             _articleDraftService = articleDraftService;
             _profileDraftService = profileDraftService;
             _integrationNameService = integrationNameService;
@@ -480,6 +483,23 @@ namespace Blueprint.Api.Controllers
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             return Ok(await _pageDraftService.DraftAsync(mselId, request, hasSystemPermission, ct));
+        }
+
+        /// <summary> Write a move's situation briefing with AI </summary>
+        /// <remarks>
+        /// Nothing is saved. The model sees the MSEL's scenario, its moves, the injects before the move and those of the move, and
+        /// the move as the edit dialog holds it, and the planner decides whether to use what it writes.
+        /// </remarks>
+        /// <param name="mselId"> The id of the MSEL the move belongs to </param>
+        /// <param name="request"> The move's number, title, scenario time and current briefing, and what to do </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{mselId}/ai-draft/move")]
+        [ProducesResponseType(typeof(MoveDraftResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "draftMoveSituation")]
+        public async Task<IActionResult> DraftMoveAsync([FromRoute] Guid mselId, [FromBody] MoveDraftRequest request, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            return Ok(await _moveDraftService.DraftAsync(mselId, request, hasSystemPermission, ct));
         }
 
         /// <summary> Ask AI for changes to a MSEL </summary>

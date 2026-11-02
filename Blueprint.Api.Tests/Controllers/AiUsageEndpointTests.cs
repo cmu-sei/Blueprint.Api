@@ -65,12 +65,15 @@ public class AiUsageEndpointTests(DatabaseFixture fixture, AiEnabledFactory fact
             var recorder = scope.ServiceProvider.GetRequiredService<IAiUsageRecorder>();
             await recorder.RecordAsync("test-model", JsonDocument.Parse("""{"stop_reason":"tool_use","usage":{"input_tokens":100,"output_tokens":50}}""").RootElement, 0, Ct);
             await recorder.RecordAsync("test-image", default, 1, Ct);
+            // the MSEL's own picture is not a news photo
+            scope.ServiceProvider.GetRequiredService<IAiUsageContext>().Use("image", draftId: draftId);
+            await recorder.RecordAsync("test-image", default, 1, Ct);
         }
         accessor.HttpContext = null;
 
         await using var db = NewContext();
         var rows = await db.AiUsages.Where(u => u.DraftId == draftId).OrderBy(u => u.Operation).ToListAsync(Ct);
-        Assert.Equal([("article", 100, 0), ("photo", 0, 1)], rows.Select(r => (r.Operation, r.InputTokens, r.Images)));
+        Assert.Equal([("article", 100, 0), ("image", 0, 1), ("photo", 0, 1)], rows.Select(r => (r.Operation, r.InputTokens, r.Images)));
         Assert.All(rows, r => Assert.Null(r.MselId));
     }
 

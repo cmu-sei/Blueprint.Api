@@ -317,21 +317,29 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
     {
         var (mselId, planner) = await CreateFromDesign();
         factory.Images.IsConfigured.Returns(false);
-        var refused = await Client(planner).PostAsync($"/api/msels/{mselId}/image/generate", null, Ct);
+        var refused = await Client(planner).PostAsJsonAsync($"/api/msels/{mselId}/image/generate", new MselImageRequest(), JsonOptions, Ct);
         Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
 
         factory.Images.IsConfigured.Returns(true);
         factory.Images.PhotoAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("data:image/jpeg;base64," + Convert.ToBase64String(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3 }));
-        var msel = await Read<Msel>(await Client(planner).PostAsync($"/api/msels/{mselId}/image/generate", null, Ct));
+        var msel = await Read<Msel>(await Client(planner).PostAsJsonAsync($"/api/msels/{mselId}/image/generate", new MselImageRequest(), JsonOptions, Ct));
         Assert.NotNull(msel.ImageDateModified);
         await factory.Images.Received().PhotoAsync(Arg.Is<string>(s => s.Contains("Two cables are cut.")), Arg.Any<CancellationToken>());
 
-        // made again, it replaces the picture rather than adding one
-        await Read<Msel>(await Client(planner).PostAsync($"/api/msels/{mselId}/image/generate", null, Ct));
+        // made again with the planner's direction, it replaces the picture rather than adding one
+        await Read<Msel>(await Client(planner).PostAsJsonAsync($"/api/msels/{mselId}/image/generate", new MselImageRequest { Prompt = "Show the cable ship at night." }, JsonOptions, Ct));
+        await factory.Images.Received().PhotoAsync(Arg.Is<string>(s => s.EndsWith("Show the cable ship at night.")), Arg.Any<CancellationToken>());
         await using var db = NewContext();
         Assert.Equal(1, await db.MselImages.CountAsync(i => i.MselId == mselId, Ct));
+
+        // the browser keeps the picture but asks whether it changed: the same bytes answer 304, new ones 200
+        var first = await Client(planner).GetAsync($"/api/msels/{mselId}/image", Ct);
+        Assert.True(first.Headers.CacheControl.NoCache && first.Headers.CacheControl.Private, first.Headers.CacheControl.ToString());
+        var again = new HttpRequestMessage(HttpMethod.Get, $"/api/msels/{mselId}/image");
+        again.Headers.IfNoneMatch.Add(first.Headers.ETag);
+        Assert.Equal(HttpStatusCode.NotModified, (await Client(planner).SendAsync(again, Ct)).StatusCode);
         var stranger = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
-        Assert.Equal(HttpStatusCode.Forbidden, (await Client(stranger).PostAsync($"/api/msels/{mselId}/image/generate", null, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await Client(stranger).PostAsJsonAsync($"/api/msels/{mselId}/image/generate", new MselImageRequest(), JsonOptions, Ct)).StatusCode);
     }
 
     /// <summary>Steps run in order, and only the drafting user, or an EditMsels holder, runs them.</summary>

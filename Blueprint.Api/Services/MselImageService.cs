@@ -24,8 +24,8 @@ namespace Blueprint.Api.Services
         Task<MselImageEntity> GetAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> SetAsync(Guid mselId, IFormFile file, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> DeleteAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        /// <summary>Makes the MSEL's image with the image model, from its scenario, replacing the one it has</summary>
-        Task<ViewModels.Msel> GenerateAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
+        /// <summary>Makes the MSEL's image with the image model, from its scenario and what the planner asks for, replacing the one it has</summary>
+        Task<ViewModels.Msel> GenerateAsync(Guid mselId, string prompt, bool hasSystemPermission, CancellationToken ct);
     }
 
     public class MselImageService : IMselImageService
@@ -47,7 +47,7 @@ namespace Blueprint.Api.Services
             _usageContext = usageContext;
         }
 
-        public async Task<ViewModels.Msel> GenerateAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ViewModels.Msel> GenerateAsync(Guid mselId, string prompt, bool hasSystemPermission, CancellationToken ct)
         {
             var msel = await GetEditableMselAsync(mselId, hasSystemPermission, ct);
             if (!_imageClient.IsConfigured)
@@ -61,6 +61,9 @@ namespace Blueprint.Api.Services
             if (string.IsNullOrWhiteSpace(scene))
                 throw new BadRequestException("Give the MSEL a description first; the picture is made from it.");
 
+            // the planner's direction comes last, so it overrides the scene where the two disagree
+            if (!string.IsNullOrWhiteSpace(prompt))
+                scene += " " + prompt.Trim();
             _usageContext.Use("image", mselId);
             var dataUri = await _imageClient.PhotoAsync("An establishing shot for a cyber exercise: " + scene, ct);
             var comma = dataUri?.IndexOf(',') ?? -1;

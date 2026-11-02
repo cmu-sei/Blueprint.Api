@@ -72,7 +72,8 @@ namespace Blueprint.Api.Services
         public async Task RecordAsync(string model, JsonElement message, int images, CancellationToken ct)
         {
             var usage = Read(model, message, images);
-            usage.Operation = images > 0 ? "photo" : _context.Operation ?? "other";
+            // an image call made for an article is a news photo; the MSEL's own picture keeps its operation
+            usage.Operation = images > 0 ? (_context.Operation == "image" ? "image" : "photo") : _context.Operation ?? "other";
             usage.MselId = _context.MselId;
             usage.DraftId = _context.DraftId;
             usage.CreatedBy = UserId();

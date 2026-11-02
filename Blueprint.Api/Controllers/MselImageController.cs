@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -40,8 +41,12 @@ namespace Blueprint.Api.Controllers
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
             var image = await _mselImageService.GetAsync(id, hasSystemPermission, ct);
-            Response.Headers.CacheControl = "private, max-age=3600";
-            return File(image.Data, image.ContentType);
+            // the browser keeps the image but asks each time whether it changed, so a replaced or regenerated one shows at once
+            var etag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(image.Data))}\"");
+            Response.Headers.CacheControl = "private, no-cache";
+            if (Request.Headers.IfNoneMatch.Any(tag => tag == etag.ToString()))
+                return StatusCode((int)HttpStatusCode.NotModified);
+            return File(image.Data, image.ContentType, lastModified: null, entityTag: etag);
         }
 
         /// <summary>
@@ -69,18 +74,19 @@ namespace Blueprint.Api.Controllers
         /// Makes the image of a Msel with AI
         /// </summary>
         /// <remarks>
-        /// Asks the server's image model for a picture of the MSEL's scenario, replaces the MSEL's image with it, and returns the
-        /// updated Msel. A server without an image model answers 400.
+        /// Asks the server's image model for a picture of the MSEL's scenario, and of what the planner asks for, replaces the
+        /// MSEL's image with it, and returns the updated Msel. A server without an image model answers 400.
         /// </remarks>
         /// <param name="id">The id of the Msel</param>
+        /// <param name="request">What the picture should show or change; optional</param>
         /// <param name="ct"></param>
         [HttpPost("msels/{id}/image/generate")]
         [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "generateMselImage")]
-        public async Task<IActionResult> Generate(Guid id, CancellationToken ct)
+        public async Task<IActionResult> Generate(Guid id, [FromBody] MselImageRequest request, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            var msel = await _mselImageService.GenerateAsync(id, hasSystemPermission, ct);
+            var msel = await _mselImageService.GenerateAsync(id, request?.Prompt, hasSystemPermission, ct);
             return Ok(msel);
         }
 

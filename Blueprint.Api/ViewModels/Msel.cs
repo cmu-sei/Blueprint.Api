@@ -96,4 +96,10 @@ namespace Blueprint.Api.ViewModels
         public virtual ICollection<Invitation> Invitations { get; set; } = new HashSet<Invitation>();
         public ICollection<MselCompetency> MselCompetencies { get; set; } = new List<MselCompetency>();
    }
+
+    /// <summary>What the MSEL's generated picture should show or change, in the planner's words</summary>
+    public class MselImageRequest
+    {
+        public string Prompt { get; set; }
+    }
 }

@@ -75,16 +75,27 @@ namespace Blueprint.Api.Services
             _sinceSent.Reset();
         }
 
+        // a browser connection that is not reading makes a hub send wait; the model's stream, which is read between sends,
+        // must not wait with it
+        private static readonly TimeSpan SendWait = TimeSpan.FromSeconds(2);
+        private Task _sending = Task.CompletedTask;
+        private bool _muted;
+
         private async Task SendAsync(bool done, CancellationToken ct)
         {
+            if (_muted)
+                return;
             try
             {
                 // a call with no signed-in user, such as a background step, has no one to tell
                 if (_user?.Identity?.IsAuthenticated != true)
                     return;
+                // the last send is still on its way: this one is dropped rather than queued behind it
+                if (!_sending.IsCompleted && !done)
+                    return;
                 var id = _user.GetId();
                 // the hub puts each connection in a group named for its user
-                await _hub.Clients.Group(id.ToString()).SendAsync(MainHubMethods.AiDraftProgress, new AiDraftProgress
+                _sending = _hub.Clients.Group(id.ToString()).SendAsync(MainHubMethods.AiDraftProgress, new AiDraftProgress
                 {
                     Operation = _context.Operation,
                     MselId = _context.MselId,
@@ -93,6 +104,17 @@ namespace Blueprint.Api.Services
                     Counts = new Dictionary<string, int>(_counter.Counts),
                     Done = done
                 }, ct);
+                if (await Task.WhenAny(_sending, Task.Delay(SendWait, ct)) != _sending)
+                {
+                    // the browser is not taking the progress; the rest of this request goes without it, and the send is left to
+                    // finish or fail on its own
+                    _muted = true;
+                    _ = _sending.ContinueWith(t => _logger.LogDebug(t.Exception, "A late AI draft progress send failed"), TaskContinuationOptions.OnlyOnFaulted);
+                    _logger.LogWarning("AI draft progress for {Operation} was not taken by the browser within {Seconds} s; the rest of this request is sent without it",
+                        _context.Operation, SendWait.TotalSeconds);
+                    return;
+                }
+                await _sending;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

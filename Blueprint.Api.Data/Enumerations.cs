@@ -177,7 +177,9 @@ namespace Blueprint.Api.Data.Enumerations
         ViewGroups = 25,
         ManageGroups = 26,
         ViewCompetencyFrameworks = 27,
-        ManageCompetencyFrameworks = 28
+        ManageCompetencyFrameworks = 28,
+        ViewPlayerApplications = 29,
+        ManagePlayerApplications = 30
     }
 
 }

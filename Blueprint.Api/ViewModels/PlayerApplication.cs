@@ -8,12 +8,13 @@ namespace Blueprint.Api.ViewModels
     public class PlayerApplication : Base
     {
         public Guid Id { get; set; }
-        public Guid MselId { get; set; }
+        public Guid? MselId { get; set; }
         public string Name { get; set; }
         public string Url { get; set; }
         public string Icon { get; set; }
         public bool? Embeddable { get; set; }
         public bool? LoadInBackground { get; set; }
+        public bool IsTemplate { get; set; }
     }
 
 }

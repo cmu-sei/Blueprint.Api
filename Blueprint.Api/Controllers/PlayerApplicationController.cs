@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,6 +12,7 @@ using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
+using Blueprint.Api.Infrastructure.OperationFilters;
 using Blueprint.Api.Services;
 using Blueprint.Api.ViewModels;
 using Swashbuckle.AspNetCore.Annotations;
@@ -26,6 +28,23 @@ namespace Blueprint.Api.Controllers
         {
             _playerApplicationService = playerApplicationService;
             _authorizationService = authorizationService;
+        }
+
+        /// <summary>
+        /// Gets PlayerApplication Templates
+        /// </summary>
+        /// <remarks>
+        /// Returns a list of PlayerApplication Templates
+        /// </remarks>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        [HttpGet("playerApplications/templates")]
+        [ProducesResponseType(typeof(IEnumerable<PlayerApplication>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getPlayerApplicationTemplates")]
+        public async Task<IActionResult> GetPlayerApplicationTemplates(CancellationToken ct)
+        {
+            var list = await _playerApplicationService.GetTemplatesAsync(ct);
+            return Ok(list);
         }
 
         /// <summary>
@@ -74,7 +93,8 @@ namespace Blueprint.Api.Controllers
         /// Creates a new PlayerApplication
         /// </summary>
         /// <remarks>
-        /// Creates a new PlayerApplication with the attributes specified
+        /// Creates a new PlayerApplication with the attributes specified.
+        /// A PlayerApplication with no MSEL is a template.
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -86,7 +106,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> Create([FromBody] PlayerApplicationCreate playerApplication, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            var createdPlayerApplication = await _playerApplicationService.CreateAsync(playerApplication, hasSystemPermission, ct);
+            var hasPlayerApplicationPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManagePlayerApplications], ct);
+            var createdPlayerApplication = await _playerApplicationService.CreateAsync(playerApplication, hasSystemPermission, hasPlayerApplicationPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdPlayerApplication.Id }, createdPlayerApplication);
         }
 
@@ -115,7 +136,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Updates a PlayerApplication with the attributes specified.
-        /// The application stays in its MSEL: the MSEL cannot be changed.
+        /// The application stays where it is: its MSEL and template flag cannot be changed.
         /// <para />
         /// Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
@@ -128,7 +149,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] PlayerApplicationEdit playerApplication, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            var updatedPlayerApplication = await _playerApplicationService.UpdateAsync(id, playerApplication, hasSystemPermission, ct);
+            var hasPlayerApplicationPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManagePlayerApplications], ct);
+            var updatedPlayerApplication = await _playerApplicationService.UpdateAsync(id, playerApplication, hasSystemPermission, hasPlayerApplicationPermission, ct);
             return Ok(updatedPlayerApplication);
         }
 
@@ -148,8 +170,39 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            await _playerApplicationService.DeleteAsync(id, hasSystemPermission, ct);
+            var hasPlayerApplicationPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManagePlayerApplications], ct);
+            await _playerApplicationService.DeleteAsync(id, hasSystemPermission, hasPlayerApplicationPermission, ct);
             return NoContent();
+        }
+
+        /// <summary> Upload a json file containing a list of PlayerApplication templates </summary>
+        /// <param name="form"> The file to upload and its settings </param>
+        /// <param name="ct"></param>
+        [HttpPost("playerApplications/json")]
+        [ProducesResponseType(typeof(IEnumerable<PlayerApplication>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "uploadJsonPlayerApplications")]
+        public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManagePlayerApplications], ct))
+                throw new ForbiddenException();
+            var result = await _playerApplicationService.UploadJsonAsync(form, ct);
+            return Ok(result);
+        }
+
+        /// <summary> Download the selected PlayerApplication templates as a json file </summary>
+        /// <param name="ids"> The ids of the PlayerApplications to download </param>
+        /// <param name="ct"></param>
+        [HttpPost("playerApplications/json/download")]
+        [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "downloadJsonPlayerApplications")]
+        [RequestBodyName("ids")]
+        public async Task<IActionResult> DownloadJsonAsync([FromBody, Required] List<Guid> ids, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManagePlayerApplications], ct))
+                throw new ForbiddenException();
+            (var stream, var fileName) = await _playerApplicationService.DownloadJsonAsync(ids, ct);
+
+            return File(stream, "application/octet-stream", fileName);
         }
 
     }

@@ -594,6 +594,25 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal(application.Id, applicationTeam.PlayerApplicationId);
     }
 
+    /// <summary>The copy takes the MSEL's applications only; the system-wide templates stay where they are,
+    /// one each.</summary>
+    [Fact]
+    public async Task Copy_LeavesThePlayerApplicationTemplatesOutAndAlone()
+    {
+        var graph = await SeedGraph();
+        var template = TestData.PlayerApplicationTemplate();
+        await Seed(template);
+        var actor = await Copier().SeedAsync();
+
+        var copy = await Copy(Client(actor), graph.Msel.Id);
+
+        await using var db = NewContext();
+        var copied = await db.PlayerApplications.Where(x => x.MselId == copy.Id).ToListAsync(Ct);
+        Assert.False(Assert.Single(copied).IsTemplate);
+        var templates = await db.PlayerApplications.Where(x => x.MselId == null).ToListAsync(Ct);
+        Assert.Equal(template.Id, Assert.Single(templates).Id);
+    }
+
     [Fact]
     public async Task Copy_CopiesTheCiteActionsAndDutiesAndPointsThemAtTheNewTeams()
     {

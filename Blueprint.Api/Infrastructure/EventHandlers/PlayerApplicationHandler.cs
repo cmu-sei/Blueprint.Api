@@ -39,7 +39,9 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         protected string[] GetGroups(PlayerApplicationEntity PlayerApplicationEntity)
         {
             var groupIds = new List<string>();
-            groupIds.Add(PlayerApplicationEntity.MselId.ToString());
+            // a template belongs to no MSEL, so only the admin data group hears of it
+            if (PlayerApplicationEntity.MselId.HasValue)
+                groupIds.Add(PlayerApplicationEntity.MselId.ToString());
             // the admin data group gets everything
             groupIds.Add(MainHub.ADMIN_DATA_GROUP);
 

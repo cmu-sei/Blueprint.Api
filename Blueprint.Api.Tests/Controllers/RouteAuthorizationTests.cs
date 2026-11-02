@@ -222,6 +222,7 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         // MselAttackTechniqueService / MselAttackTechniqueController - the ATT&CK twin of the above.
         { "GET", "api/msels/{msel}/mselattacktechniques", "ViewMsels", null },
         { "GET", "api/mselattacktechniques/{mselattacktechnique}", "ViewMsels", null },
+        { "GET", "api/msels/{msel}/attacktechniques/countermeasures", "ViewMsels", null },
         {
             "POST", "api/mselattacktechniques", "ManageMsels",
             """{"mselId":"{msel}","attackTechniqueId":"{spareAttackTechnique}"}"""

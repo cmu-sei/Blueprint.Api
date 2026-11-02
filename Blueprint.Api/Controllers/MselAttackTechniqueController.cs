@@ -18,11 +18,16 @@ namespace Blueprint.Api.Controllers
     public class MselAttackTechniqueController : BaseController
     {
         private readonly IMselAttackTechniqueService _mselAttackTechniqueService;
+        private readonly IAttackTechniqueCountermeasureService _countermeasureService;
         private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public MselAttackTechniqueController(IMselAttackTechniqueService mselAttackTechniqueService, IBlueprintAuthorizationService authorizationService)
+        public MselAttackTechniqueController(
+            IMselAttackTechniqueService mselAttackTechniqueService,
+            IAttackTechniqueCountermeasureService countermeasureService,
+            IBlueprintAuthorizationService authorizationService)
         {
             _mselAttackTechniqueService = mselAttackTechniqueService;
+            _countermeasureService = countermeasureService;
             _authorizationService = authorizationService;
         }
 
@@ -40,6 +45,28 @@ namespace Blueprint.Api.Controllers
             var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
             var list = await _mselAttackTechniqueService.GetByMselAsync(mselId, hasSystemPermission, hasCreateMselsPermission, ct);
             return Ok(list);
+        }
+
+        /// <summary>
+        /// Gets the D3FEND countermeasures of every attack technique in a MSEL's pool
+        /// </summary>
+        /// <remarks>
+        /// From the D3FEND release the MSEL's defensive techniques are pinned to, else the newest D3FEND release with
+        /// mappings imported; <c>attackReleaseId</c> names it and <c>hasMappings</c> says whether it has any. Each
+        /// pooled attack technique gets a group ranked by weight, empty when nothing counters it; a sub-technique with
+        /// no mappings of its own gets its parent's, with <c>inheritedFrom</c> naming the parent.
+        /// </remarks>
+        /// <param name="mselId">The id of the Msel</param>
+        /// <param name="ct"></param>
+        [HttpGet("msels/{mselId}/attacktechniques/countermeasures")]
+        [ProducesResponseType(typeof(MselCountermeasures), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getMselCountermeasures")]
+        public async Task<IActionResult> GetCountermeasures(Guid mselId, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
+            var result = await _countermeasureService.GetByMselAsync(mselId, hasSystemPermission, hasCreateMselsPermission, ct);
+            return Ok(result);
         }
 
         /// <summary>

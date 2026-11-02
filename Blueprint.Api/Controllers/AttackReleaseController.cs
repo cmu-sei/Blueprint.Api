@@ -96,6 +96,26 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Gets the D3FEND "countered by" mappings of a D3FEND release
+        /// </summary>
+        /// <remarks>
+        /// With <c>offensiveId</c>, the countermeasures of that technique (T1003.005) ranked by weight; a sub-technique
+        /// with none of its own is answered with its parent technique's, each flagged <c>inheritedFromParent</c>.
+        /// Without it, every mapping of the release.
+        /// </remarks>
+        /// <param name="id">The id of the D3FEND release</param>
+        /// <param name="offensiveId">The offensive technique's id, e.g. T1003.005</param>
+        /// <param name="ct"></param>
+        [HttpGet("attackreleases/{id}/countermeasures")]
+        [ProducesResponseType(typeof(IEnumerable<AttackTechniqueCountermeasure>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getAttackTechniqueCountermeasures")]
+        public async Task<IActionResult> GetCountermeasures(Guid id, [FromQuery] string offensiveId, CancellationToken ct)
+        {
+            var list = await _countermeasureService.GetByReleaseAsync(id, offensiveId, ct);
+            return Ok(list);
+        }
+
+        /// <summary>
         /// Imports a release from its STIX 2.x bundle or the D3FEND ontology
         /// </summary>
         /// <remarks>

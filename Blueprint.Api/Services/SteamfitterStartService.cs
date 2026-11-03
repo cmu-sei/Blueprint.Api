@@ -9,7 +9,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
+using Crucible.Common.EntityEvents.Events;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -104,22 +107,47 @@ namespace Blueprint.Api.Services
             var started = 0;
             foreach (var msel in due)
             {
+                bool startedNow;
                 try
                 {
-                    if (await IntegrationSteamfitterExtensions.StartScenarioAsync(msel.ScenarioId, steamfitterApiClient, ct))
-                    {
-                        started++;
-                        _logger.LogInformation($"Started Steamfitter scenario {msel.ScenarioId} at the start time of MSEL {msel.Id}");
-                    }
+                    startedNow = await IntegrationSteamfitterExtensions.StartScenarioAsync(msel.ScenarioId, steamfitterApiClient, ct);
                     _handledScenarioIds.Add(msel.ScenarioId);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogWarning(ex, $"Could not start Steamfitter scenario {msel.ScenarioId} of MSEL {msel.Id}; trying again on the next check");
+                    continue;
+                }
+                if (!startedNow)
+                    continue;
+
+                started++;
+                _logger.LogInformation($"Started Steamfitter scenario {msel.ScenarioId} at the start time of MSEL {msel.Id}");
+                // the scenario is started either way, so a failed notification is logged rather than retried
+                try
+                {
+                    await NotifyMselUpdatedAsync(scope, blueprintContext, msel.Id, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, $"Started Steamfitter scenario {msel.ScenarioId}, but could not tell the clients of MSEL {msel.Id}");
                 }
             }
 
             return started;
+        }
+
+        /// <summary>
+        /// Sends the MSEL's clients the MselUpdated message that a save of the MSEL would. Nothing in Blueprint
+        /// changed, so no save sends it, but the MSEL Info page reads the scenario's status again on it.
+        /// </summary>
+        private static async Task NotifyMselUpdatedAsync(IServiceScope scope, BlueprintContext blueprintContext, Guid mselId, CancellationToken ct)
+        {
+            var mselEntity = await blueprintContext.Msels.AsNoTracking().SingleOrDefaultAsync(m => m.Id == mselId, ct);
+            if (mselEntity == null)
+                return;
+            var publisher = scope.ServiceProvider.GetRequiredService<IPublisher>();
+            await publisher.Publish(new EntityUpdated<MselEntity>(mselEntity, []), ct);
         }
     }
 }

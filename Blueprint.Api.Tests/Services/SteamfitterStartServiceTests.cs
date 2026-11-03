@@ -5,12 +5,15 @@ using System;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
+using Crucible.Common.EntityEvents.Events;
+using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -28,6 +31,8 @@ namespace Blueprint.Api.Tests.Services;
 public class SteamfitterStartServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 {
     private const string SteamfitterApiUrl = "http://siblings.test/steamfitter/";
+    // stands in for MediatR, behind which MselUpdatedSignalRHandler sends MselUpdated to the MSEL's clients
+    private readonly IPublisher _publisher = Substitute.For<IPublisher>();
 
     [Fact]
     public async Task Check_OfAPushedMselWhoseStartTimeHasCome_StartsItsScenario()
@@ -99,6 +104,56 @@ public class SteamfitterStartServiceTests(DatabaseFixture fixture) : DatabaseTes
 
         Assert.Empty(Starts(handler));
         Assert.Single(handler.Sent, x => x.Method == HttpMethod.Get && x.Path.StartsWith("steamfitter/"));
+        Assert.Empty(MselUpdates());
+    }
+
+    /// <summary>
+    /// Nothing in Blueprint changes when the scenario starts, so no save tells the MSEL's clients. The service
+    /// does, so the MSEL Info page reads the scenario's status again and shows it started.
+    /// </summary>
+    [Fact]
+    public async Task Check_AfterStartingAScenario_TellsTheMselsClientsOnce()
+    {
+        var msel = await SeedDue();
+        var service = Service(Steamfitter("ready"));
+
+        await service.StartDueScenariosAsync(Ct);
+        await service.StartDueScenariosAsync(Ct);
+
+        var update = Assert.Single(MselUpdates());
+        Assert.Equal(msel.Id, update.Entity.Id);
+        Assert.Empty(update.ModifiedProperties);
+    }
+
+    /// <summary>A start that failed changed nothing a client shows.</summary>
+    [Fact]
+    public async Task Check_WhenTheStartFails_TellsNoOne()
+    {
+        await SeedDue();
+        var handler = Steamfitter("ready", first: x => x.Answers("PUT steamfitter/api/scenarios/*/start", HttpStatusCode.Forbidden));
+
+        await Service(handler).StartDueScenariosAsync(Ct);
+
+        Assert.Empty(MselUpdates());
+    }
+
+    /// <summary>
+    /// The scenario is started whether or not its clients could be told, so it is not started again: that
+    /// would reset its start date.
+    /// </summary>
+    [Fact]
+    public async Task Check_WhenTheClientsCannotBeTold_StillCountsTheStartAndDoesNotStartItAgain()
+    {
+        await SeedDue();
+        _publisher.Publish(Arg.Any<EntityUpdated<MselEntity>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("SignalR is down")));
+        var handler = Steamfitter("ready");
+        var service = Service(handler);
+
+        Assert.Equal(1, await service.StartDueScenariosAsync(Ct));
+        Assert.Equal(0, await service.StartDueScenariosAsync(Ct));
+
+        Assert.Single(Starts(handler));
     }
 
     [Fact]
@@ -165,6 +220,7 @@ public class SteamfitterStartServiceTests(DatabaseFixture fixture) : DatabaseTes
         var services = new ServiceCollection();
         services.AddScoped(_ => Session.CreateContext());
         services.AddSingleton(handler.AsFactory());
+        services.AddSingleton(_publisher);
         services.AddSingleton(new ResourceOwnerAuthorizationOptions
         {
             Authority = "http://localhost:8080/realms/crucible",
@@ -203,6 +259,12 @@ public class SteamfitterStartServiceTests(DatabaseFixture fixture) : DatabaseTes
                 """{"access_token":"abc123","token_type":"Bearer","expires_in":300}""")
             .AnswersJson("GET steamfitter/api/scenarios/*", $$"""{"id":"{{Guid.NewGuid()}}","name":"s","status":"{{status}}"}""")
             .AnswersJson("PUT steamfitter/api/scenarios/*/start", $$"""{"id":"{{Guid.NewGuid()}}","name":"s","status":"active"}""");
+
+    private System.Collections.Generic.List<EntityUpdated<MselEntity>> MselUpdates() =>
+        _publisher.ReceivedCalls()
+            .Select(call => call.GetArguments()[0])
+            .OfType<EntityUpdated<MselEntity>>()
+            .ToList();
 
     private static System.Collections.Generic.IEnumerable<string> Starts(SiblingApiHandler handler) =>
         handler.Sent.Where(x => x.Method == HttpMethod.Put && x.Path.EndsWith("/start")).Select(x => x.Path);

@@ -2277,17 +2277,8 @@ namespace Blueprint.Api.Services
             {
                 team.TeamUsers = [];
                 team.UserTeamRoles = [];
-                foreach (var teamCompetency in team.TeamCompetencies)
-                {
-                    teamCompetency.Team = null;
-                    teamCompetency.Competency = null;
-                }
             }
-            foreach (var mselCompetency in mselEntity.MselCompetencies)
-            {
-                mselCompetency.Msel = null;
-                mselCompetency.Competency = null;
-            }
+            await MatchImportedCompetenciesAsync(mselEntity, result, ct);
 
             // Validate and fix scoring model linkage if MSEL uses CITE integration.
             // Mirror team type handling by allowing plain-name remap when the ID is
@@ -2519,6 +2510,114 @@ namespace Blueprint.Api.Services
         private static string TeamLabel(TeamEntity team)
         {
             return string.IsNullOrWhiteSpace(team.ShortName) ? team.Name : team.ShortName;
+        }
+
+        /// <summary>
+        /// Points the file's competency links, the MSEL's and its teams', at this Blueprint's competencies.
+        /// A competency id is local to the Blueprint that exported it, so a link keeps its id only when that
+        /// competency is here; otherwise it is matched by the framework code and competency code the export
+        /// carries. A link with no match, or from an older file that carries no codes, is dropped rather
+        /// than failing the whole import on its foreign key, and the report says how many and which
+        /// frameworks are missing.
+        /// </summary>
+        private async Task MatchImportedCompetenciesAsync(MselEntity mselEntity, MselImportResult result, CancellationToken ct)
+        {
+            var teamLinks = mselEntity.Teams.SelectMany(t => t.TeamCompetencies).ToList();
+            var carried = mselEntity.MselCompetencies.Select(l => (l.CompetencyId, l.Competency))
+                .Concat(teamLinks.Select(l => (l.CompetencyId, l.Competency)))
+                .ToList();
+            if (carried.Count == 0)
+                return;
+
+            var fileIds = carried.Select(c => c.CompetencyId).Distinct().ToList();
+            var localIds = (await _context.Competencies
+                .AsNoTracking()
+                .Where(c => fileIds.Contains(c.Id))
+                .Select(c => c.Id)
+                .ToListAsync(ct)).ToHashSet();
+            var frameworkCodes = carried.Select(c => c.Competency?.CompetencyFramework?.IdNumber)
+                .Where(code => !string.IsNullOrEmpty(code)).Distinct().ToList();
+            var competencyCodes = carried.Select(c => c.Competency?.IdNumber)
+                .Where(code => !string.IsNullOrEmpty(code)).Distinct().ToList();
+            var localByCode = new Dictionary<(string, string), Guid>();
+            var localFrameworkCodes = new HashSet<string>();
+            if (frameworkCodes.Count > 0 && competencyCodes.Count > 0)
+            {
+                var matches = await _context.Competencies
+                    .AsNoTracking()
+                    .Where(c => frameworkCodes.Contains(c.CompetencyFramework.IdNumber) && competencyCodes.Contains(c.IdNumber))
+                    .Select(c => new { Framework = c.CompetencyFramework.IdNumber, c.IdNumber, c.Id })
+                    .ToListAsync(ct);
+                foreach (var match in matches)
+                    localByCode[(match.Framework, match.IdNumber)] = match.Id;
+                localFrameworkCodes = (await _context.CompetencyFrameworks
+                    .AsNoTracking()
+                    .Where(f => frameworkCodes.Contains(f.IdNumber))
+                    .Select(f => f.IdNumber)
+                    .ToListAsync(ct)).ToHashSet();
+            }
+
+            var dropped = 0;
+            var missingFrameworks = new List<string>();
+            Guid? Match(Guid competencyId, CompetencyEntity competency)
+            {
+                if (localIds.Contains(competencyId))
+                    return competencyId;
+                var frameworkCode = competency?.CompetencyFramework?.IdNumber;
+                if (!string.IsNullOrEmpty(frameworkCode) && !string.IsNullOrEmpty(competency.IdNumber) &&
+                    localByCode.TryGetValue((frameworkCode, competency.IdNumber), out var localId))
+                    return localId;
+                dropped++;
+                if (!string.IsNullOrEmpty(frameworkCode) && !localFrameworkCodes.Contains(frameworkCode))
+                {
+                    var framework = competency.CompetencyFramework;
+                    var label = string.IsNullOrWhiteSpace(framework.Name) ? framework.IdNumber : framework.Name;
+                    if (!string.IsNullOrWhiteSpace(framework.Version))
+                        label += $" {framework.Version}";
+                    if (!missingFrameworks.Contains(label))
+                        missingFrameworks.Add(label);
+                }
+                return null;
+            }
+
+            var mselLinks = new List<MselCompetencyEntity>();
+            foreach (var link in mselEntity.MselCompetencies)
+            {
+                var competencyId = Match(link.CompetencyId, link.Competency);
+                link.Msel = null;
+                link.Competency = null;
+                // two of the file's competencies can be one competency here; the link is unique per MSEL
+                if (competencyId == null || mselLinks.Any(l => l.CompetencyId == competencyId))
+                    continue;
+                link.CompetencyId = competencyId.Value;
+                mselLinks.Add(link);
+            }
+            mselEntity.MselCompetencies = mselLinks;
+            foreach (var team in mselEntity.Teams)
+            {
+                var teamCompetencies = new List<TeamCompetencyEntity>();
+                foreach (var link in team.TeamCompetencies)
+                {
+                    var competencyId = Match(link.CompetencyId, link.Competency);
+                    link.Team = null;
+                    link.Competency = null;
+                    if (competencyId == null || teamCompetencies.Any(l => l.CompetencyId == competencyId))
+                        continue;
+                    link.CompetencyId = competencyId.Value;
+                    teamCompetencies.Add(link);
+                }
+                team.TeamCompetencies = teamCompetencies;
+            }
+
+            if (dropped > 0)
+            {
+                var message = dropped == 1
+                    ? "1 competency link to the MSEL or a team was not imported because its competency is not in this Blueprint."
+                    : $"{dropped} competency links to the MSEL or its teams were not imported because their competencies are not in this Blueprint.";
+                if (missingFrameworks.Count > 0)
+                    message += $" Missing competency framework{(missingFrameworks.Count == 1 ? "" : "s")}: {string.Join(", ", missingFrameworks)}.";
+                AddChange(result, "competencies", message);
+            }
         }
 
         public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)

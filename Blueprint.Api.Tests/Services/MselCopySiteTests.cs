@@ -18,8 +18,9 @@ namespace Blueprint.Api.Tests.Services;
 public class MselCopySiteTests(DatabaseFixture fixture, BlueprintAppFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
 {
+    /// <summary>The import keeps one link per competency, as the unique index on the link requires.</summary>
     [Fact]
-    public async Task Import_answers_duplicate_team_competencies_with_a_server_error_and_saves_no_copy()
+    public async Task Import_keeps_duplicate_team_competencies_once()
     {
         var framework = TestData.CompetencyFramework();
         var competency = TestData.Competency(framework.Id);
@@ -32,9 +33,9 @@ public class MselCopySiteTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Import(msel);
 
-        await CopyError(response);
-        Assert.Equal(0, await ReadBack(db => db.Msels.CountAsync(Ct)));
-        Assert.Equal(0, await ReadBack(db => db.TeamCompetencies.CountAsync(Ct)));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, await ReadBack(db => db.Msels.CountAsync(Ct)));
+        Assert.Equal(competency.Id, (await ReadBack(db => db.TeamCompetencies.SingleAsync(Ct))).CompetencyId);
     }
 
     [Fact]
@@ -55,8 +56,9 @@ public class MselCopySiteTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(0, await ReadBack(db => db.CardTeams.CountAsync(Ct)));
     }
 
+    /// <summary>The import keeps one link per competency, as the unique index on the link requires.</summary>
     [Fact]
-    public async Task Import_answers_duplicate_Msel_competencies_with_a_server_error_and_saves_no_copy()
+    public async Task Import_keeps_duplicate_Msel_competencies_once()
     {
         var framework = TestData.CompetencyFramework();
         var competency = TestData.Competency(framework.Id);
@@ -67,9 +69,9 @@ public class MselCopySiteTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Import(msel);
 
-        await CopyError(response);
-        Assert.Equal(0, await ReadBack(db => db.Msels.CountAsync(Ct)));
-        Assert.Equal(0, await ReadBack(db => db.MselCompetencies.CountAsync(Ct)));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, await ReadBack(db => db.Msels.CountAsync(Ct)));
+        Assert.Equal(competency.Id, (await ReadBack(db => db.MselCompetencies.SingleAsync(Ct))).CompetencyId);
     }
 
     [Fact]

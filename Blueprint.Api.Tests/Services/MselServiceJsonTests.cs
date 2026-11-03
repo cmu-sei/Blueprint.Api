@@ -1517,7 +1517,189 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         }
     }
 
+    /// <summary>
+    /// A link to a competency of a framework this Blueprint also has is pointed at the local competency
+    /// with the same framework and competency codes, whatever its id is here.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfCompetencyLinksToAFrameworkThisBlueprintHas_LinksTheLocalCompetenciesByCode()
+    {
+        var framework = TestData.CompetencyFramework();
+        var local = TestData.Competency(framework.Id, idNumber: "T1118");
+        await Seed(framework, local);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            var elsewhere = Guid.NewGuid();
+            var team = TestData.Team(m.Id);
+            team.TeamCompetencies.Add(CarriedLink(TestData.TeamCompetency(team.Id, elsewhere), framework.IdNumber, "T1118"));
+            m.Teams.Add(team);
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, elsewhere), framework.IdNumber, "T1118"));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(local.Id, Assert.Single(await ReadBack(rb => rb.MselCompetencies.Where(x => x.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.Equal(local.Id, Assert.Single(await ReadBack(rb => rb.TeamCompetencies.Where(x => x.Team.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.DoesNotContain(result.Changes, c => c.Field == "competencies");
+    }
+
+    /// <summary>
+    /// A link to a framework this Blueprint does not have used to fail the whole import on its foreign key.
+    /// It is dropped instead, and the report says how many links went and which frameworks are missing.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfCompetencyLinksToAFrameworkThisBlueprintLacks_DropsThemAndNamesTheFramework()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var frameworkCode = $"nice-{Guid.NewGuid()}";
+        var file = Exported(m =>
+        {
+            var team = TestData.Team(m.Id);
+            team.TeamCompetencies.Add(CarriedLink(TestData.TeamCompetency(team.Id, Guid.NewGuid()), frameworkCode, "T1118", "NICE Framework", "2.0.0"));
+            m.Teams.Add(team);
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), frameworkCode, "T1118", "NICE Framework", "2.0.0"));
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), frameworkCode, "T1119", "NICE Framework", "2.0.0"));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(
+            "3 competency links to the MSEL or its teams were not imported because their competencies are not in this Blueprint. Missing competency framework: NICE Framework 2.0.0.",
+            Assert.Single(result.Changes, c => c.Field == "competencies").Message);
+        Assert.Equal(1, result.Imported.Teams);
+        Assert.Empty(await ReadBack(rb => rb.MselCompetencies.Where(x => x.MselId == result.Msel.Id).ToListAsync(Ct)));
+        Assert.Empty(await ReadBack(rb => rb.TeamCompetencies.Where(x => x.Team.MselId == result.Msel.Id).ToListAsync(Ct)));
+    }
+
+    /// <summary>
+    /// A framework this Blueprint has, but in a version without one of the file's competencies: that link
+    /// is dropped, and no framework is reported missing.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfALinkToACompetencyTheLocalFrameworkLacks_DropsOnlyThatLink()
+    {
+        var framework = TestData.CompetencyFramework();
+        var local = TestData.Competency(framework.Id, idNumber: "T1118");
+        await Seed(framework, local);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), framework.IdNumber, "T1118"));
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), framework.IdNumber, "T9999"));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(
+            "1 competency link to the MSEL or a team was not imported because its competency is not in this Blueprint.",
+            Assert.Single(result.Changes, c => c.Field == "competencies").Message);
+        Assert.Equal(local.Id, Assert.Single(await ReadBack(rb => rb.MselCompetencies.Where(x => x.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+    }
+
+    /// <summary>
+    /// A file from before the export carried codes has only the ids: a link keeps its competency if that
+    /// id is here, and is otherwise dropped and reported.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfAnOlderFileWithoutCodes_KeepsOnlyTheLinksToCompetenciesHere()
+    {
+        var framework = TestData.CompetencyFramework();
+        var local = TestData.Competency(framework.Id);
+        await Seed(framework, local);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            var team = TestData.Team(m.Id);
+            team.TeamCompetencies.Add(TestData.TeamCompetency(team.Id, local.Id));
+            team.TeamCompetencies.Add(TestData.TeamCompetency(team.Id, Guid.NewGuid()));
+            m.Teams.Add(team);
+            m.MselCompetencies.Add(TestData.MselCompetency(m.Id, local.Id));
+            m.MselCompetencies.Add(TestData.MselCompetency(m.Id, Guid.NewGuid()));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(local.Id, Assert.Single(await ReadBack(rb => rb.MselCompetencies.Where(x => x.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.Equal(local.Id, Assert.Single(await ReadBack(rb => rb.TeamCompetencies.Where(x => x.Team.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.Equal(
+            "2 competency links to the MSEL or its teams were not imported because their competencies are not in this Blueprint.",
+            Assert.Single(result.Changes, c => c.Field == "competencies").Message);
+    }
+
+    /// <summary>
+    /// Two of the file's competencies that are one competency here give one link, as the unique index on
+    /// the link requires, rather than a failed save.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfTwoLinksThatMatchOneCompetencyHere_KeepsOneLink()
+    {
+        var framework = TestData.CompetencyFramework();
+        var local = TestData.Competency(framework.Id, idNumber: "T1118");
+        await Seed(framework, local);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            m.MselCompetencies.Add(TestData.MselCompetency(m.Id, local.Id));
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), framework.IdNumber, "T1118"));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(local.Id, Assert.Single(await ReadBack(rb => rb.MselCompetencies.Where(x => x.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.DoesNotContain(result.Changes, c => c.Field == "competencies");
+    }
+
+    /// <summary>A real export, codes and all, imports back into the Blueprint it came from with its links.</summary>
+    [Fact]
+    public async Task Download_ThenImport_KeepsTheCompetencyLinks()
+    {
+        var msel = TestData.Msel();
+        var team = TestData.Team(msel.Id);
+        var framework = TestData.CompetencyFramework();
+        var competency = TestData.Competency(framework.Id);
+        await Seed(msel, team, framework, competency);
+        await Seed(TestData.MselCompetency(msel.Id, competency.Id), TestData.TeamCompetency(team.Id, competency.Id));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, SystemPermission.CreateMsels).SeedAsync();
+        var exported = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
+        Assert.Equal(HttpStatusCode.OK, exported.StatusCode);
+
+        var result = await Import(Client(actor), await exported.Content.ReadAsStringAsync(Ct));
+
+        Assert.Equal(competency.Id, Assert.Single(await ReadBack(rb => rb.MselCompetencies.Where(x => x.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.Equal(competency.Id, Assert.Single(await ReadBack(rb => rb.TeamCompetencies.Where(x => x.Team.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.Equal(1, await ReadBack(rb => rb.CompetencyFrameworks.CountAsync(f => f.IdNumber == framework.IdNumber, Ct)));
+        Assert.DoesNotContain(result.Changes, c => c.Field == "competencies");
+    }
+
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Gives a file's competency link the codes an export carries: its competency's and its framework's.
+    /// </summary>
+    private static T CarriedLink<T>(T link, string frameworkCode, string competencyCode, string frameworkName = null, string version = null)
+        where T : class
+    {
+        var competency = new CompetencyEntity
+        {
+            IdNumber = competencyCode,
+            ShortName = $"competency {competencyCode}",
+            CompetencyFramework = new CompetencyFrameworkEntity { IdNumber = frameworkCode, Name = frameworkName, Version = version }
+        };
+        switch (link)
+        {
+            case MselCompetencyEntity mselCompetency:
+                competency.Id = mselCompetency.CompetencyId;
+                mselCompetency.Competency = competency;
+                break;
+            case TeamCompetencyEntity teamCompetency:
+                competency.Id = teamCompetency.CompetencyId;
+                teamCompetency.Competency = competency;
+                break;
+        }
+
+        return link;
+    }
 
     /// <summary>
     /// Tells the substituted CITE client what this installation's CITE contains. Both lists default to

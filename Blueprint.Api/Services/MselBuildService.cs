@@ -163,14 +163,21 @@ namespace Blueprint.Api.Services
             if (!state.Rows.TryGetValue(scenarioEventId, out var index))
                 throw new BadRequestException("That row is not one of the drafted injects.");
             string first = null;
+            var replaced = new List<IndicatorCheck.Replacement>();
             foreach (var field in MselDraftService.LongFields(msel.DataFields))
             {
                 var html = await _mselDraftService.WriteInjectTextAsync(msel, state.Draft, index, field, ct);
+                // every address, domain, hash and sender the scenario's indicator set does not have becomes one it has
+                if (state.Draft.Indicators != null)
+                    html = IndicatorCheck.Enforce(html, state.Draft.Indicators, ArticleDraftService.KnownEmails(msel), replaced);
                 SetArticle(msel, scenarioEventId, field.Name, html);
                 first ??= html;
             }
             await SaveItemAsync(msel, state, ct);
-            return new MselBuildContent { Html = first };
+            var content = new MselBuildContent { Html = first };
+            if (IndicatorCheck.Warning(RowName(msel, state.Draft, index), replaced) is string warning)
+                content.Warnings.Add(warning);
+            return content;
         }
 
         public async Task<ArticleDraftResult> WriteArticleAsync(Guid mselId, Guid scenarioEventId, bool hasSystemPermission, CancellationToken ct)
@@ -280,6 +287,13 @@ namespace Blueprint.Api.Services
             {
                 _logger.LogWarning(ex, "Could not make the picture of MSEL {MselId}", msel.Id);
             }
+        }
+
+        private static string RowName(MselEntity msel, MselDraft draft, int index)
+        {
+            var title = MselDraftRules.TitleField(msel) is DataFieldEntity field && draft.Injects[index].Values != null
+                && draft.Injects[index].Values.TryGetValue(field.Name, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
+            return title == null ? $"row {index + 1}" : $"\"{(title.Length > 60 ? title[..60] + "..." : title)}\"";
         }
 
         /// <summary>

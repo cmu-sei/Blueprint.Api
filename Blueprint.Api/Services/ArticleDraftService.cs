@@ -148,7 +148,17 @@ Answer only by calling the tool.";
             var input = await _aiModelClient.InvokeToolAsync(photos ? SystemPrompt + "\n\n" + PhotoRules : SystemPrompt,
                 BuildPrompt(draft, template, values), ToolName, "Submit the article's HTML.", Schema(photos), ct);
             var result = new ArticleDraftResult { FieldName = body.Name };
-            result.Html = GalleryArticleHtml.Prepare(GetString(input, "html"), result.Notes, GalleryArticleHtml.ArticleWidth);
+            var html = GetString(input, "html");
+            // every address, domain, hash and sender the scenario's indicator set does not have becomes one it has; checked before
+            // the drawings become images, so a network diagram's labels are checked too, and before the marking is added
+            if (draft.Indicators != null)
+            {
+                var replaced = new List<IndicatorCheck.Replacement>();
+                html = IndicatorCheck.Enforce(html, draft.Indicators, KnownEmails(template), replaced);
+                if (IndicatorCheck.Warning($"\"{Shorten(values, template)}\"", replaced) is string warning)
+                    result.Warnings.Add(warning);
+            }
+            result.Html = GalleryArticleHtml.Prepare(html, result.Notes, GalleryArticleHtml.ArticleWidth);
             if (string.IsNullOrWhiteSpace(result.Html))
                 throw new InvalidOperationException("The model wrote no article. Try again.");
             if (input.TryGetProperty("notes", out var notes) && notes.ValueKind == JsonValueKind.Array)
@@ -197,6 +207,19 @@ Answer only by calling the tool.";
                   (string.IsNullOrWhiteSpace(caption) ? "" : $"<br><font color=\"#666666\" size=\"1\">{WebUtility.HtmlEncode(caption.Trim())}</font>");
             var first = html.IndexOf(PhotoMarker, StringComparison.Ordinal);
             return html[..first] + figure + html[(first + PhotoMarker.Length)..].Replace(PhotoMarker, "");
+        }
+
+        /// <summary>The MSEL's own organizations' and teams' email addresses, which the indicator check leaves alone</summary>
+        public static IEnumerable<string> KnownEmails(MselEntity msel) =>
+            (msel.Organizations ?? new List<OrganizationEntity>()).Select(o => o.Email)
+                .Concat((msel.Teams ?? new List<TeamEntity>()).Select(t => t.Email))
+                .Where(e => !string.IsNullOrWhiteSpace(e));
+
+        private static string Shorten(IReadOnlyDictionary<string, string> values, MselEntity template)
+        {
+            var field = template.DataFields.FirstOrDefault(f => f.GalleryArticleParameter == nameof(GalleryArticleParameter.Name));
+            var title = field != null && values.TryGetValue(field.Name, out var t) && !string.IsNullOrWhiteSpace(t) ? t.Trim() : "the article";
+            return title.Length > 60 ? title[..60] + "..." : title;
         }
 
         public static string BuildPrompt(MselDraft draft, MselEntity template, IReadOnlyDictionary<string, string> values)

@@ -118,6 +118,39 @@ public class MselDraftSetupEndpointTests(DatabaseFixture fixture, AiEnabledFacto
         Assert.Equal(["EXCON"], apps["Range Admin"]);
     }
 
+    /// <summary>
+    /// CITE opens on its dashboard when the URL names no section, so a template's CITE application is the dashboard
+    /// already: the draft adds no CITE Dashboard beside it, and the template's reaches every team.
+    /// </summary>
+    [Fact]
+    public async Task Import_AddsNoSecondApplicationForAViewTheTemplateHasUnderAnotherName()
+    {
+        var (template, excon) = await SeedTemplate(usePlayer: true);
+        var cite = TestData.PlayerApplication(template.Id, name: "CITE", url: "{citeUrl}?evaluation={citeEvaluationId}{theme}");
+        await Seed(cite, TestData.PlayerApplicationTeam(cite.Id, excon.Id));
+        var planner = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var (mselId, _) = await Import(planner, template);
+
+        await using var db = NewContext();
+        var names = await db.PlayerApplications.Where(a => a.MselId == mselId).Select(a => a.Name).ToListAsync(Ct);
+        Assert.Contains("CITE", names);
+        Assert.DoesNotContain("CITE Dashboard", names);
+        // the Gallery wall is another view, so it is still added
+        Assert.Contains("Gallery Wall", names);
+    }
+
+    /// <summary>Applications for the same view compare equal: a section's default, a trailing slash, other parameters.</summary>
+    [Theory]
+    [InlineData("{citeUrl}?evaluation={citeEvaluationId}{theme}", "{citeUrl}?section=dashboard&evaluation={citeEvaluationId}{theme}", true)]
+    [InlineData("{citeUrl}?section=scoresheet&evaluation={citeEvaluationId}", "{citeUrl}?section=dashboard&evaluation={citeEvaluationId}", false)]
+    [InlineData("{galleryUrl}/?exhibit={galleryExhibitId}", "{galleryUrl}?section=archive&exhibit={galleryExhibitId}{theme}", true)]
+    [InlineData("{galleryUrl}/?section=wall&exhibit={galleryExhibitId}", "{galleryUrl}?section=archive&exhibit={galleryExhibitId}", false)]
+    [InlineData("{blueprintUrl}/mselpage/a{theme}", "{blueprintUrl}/mselpage/b{theme}", false)]
+    [InlineData("https://range.example/admin/", "https://range.example/admin", true)]
+    public void ApplicationView_TreatsTheSameViewAsOne(string a, string b, bool same) =>
+        Assert.Equal(same, MselDraftBuilder.ApplicationView(a) == MselDraftBuilder.ApplicationView(b));
+
     private async Task<(Guid MselId, MselImportResult Result)> Import(TestActor planner, MselEntity template)
     {
         var draft = JsonSerializer.Deserialize<MselDraft>(Draft(), JsonOptions);

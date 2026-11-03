@@ -375,11 +375,12 @@ namespace Blueprint.Api.Services
                         application.PlayerApplicationTeams.Add(new PlayerApplicationTeamEntity { Id = Guid.NewGuid(), PlayerApplicationId = application.Id, TeamId = team.Id });
                 }
 
-                static string SameUrl(string url) => (url ?? "").Replace("/?", "?").TrimEnd('/');
                 void AddApplication(string name, string url, string icon, IEnumerable<TeamEntity> teams, int displayOrder)
                 {
                     var forTeams = teams.ToList();
-                    if (!forTeams.Any() || mselEntity.PlayerApplications.Any(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || SameUrl(a.Url) == SameUrl(url)))
+                    // the template's own application for the same view stays, whatever it is called: CITE without a section
+                    // opens on the dashboard, as CITE Dashboard does
+                    if (!forTeams.Any() || mselEntity.PlayerApplications.Any(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || ApplicationView(a.Url) == ApplicationView(url)))
                         return;
                     var application = new PlayerApplicationEntity
                     {
@@ -441,5 +442,30 @@ namespace Blueprint.Api.Services
 
         private static string OneLine(string text) =>
             string.IsNullOrEmpty(text) || text.Length <= 200 ? text : text[..200] + "...";
+
+        // the sections CITE and Gallery open on when the URL names none
+        private static readonly Dictionary<string, string> _defaultSections = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["{citeUrl}"] = "dashboard",
+            ["{galleryUrl}"] = "archive"
+        };
+
+        /// <summary>
+        /// What a Player application shows, so two applications for the same view count as one: the URL without its
+        /// trailing slash before the query, and with the section it opens on, the app's default when it names none
+        /// </summary>
+        public static string ApplicationView(string url)
+        {
+            url = (url ?? "").Trim();
+            var query = url.IndexOf('?');
+            var path = (query < 0 ? url : url[..query]).TrimEnd('/');
+            var parameters = query < 0 ? "" : url[(query + 1)..];
+            var section = parameters.Split('&').Select(p => p.Split('=', 2))
+                .Where(p => p.Length == 2 && p[0].Equals("section", StringComparison.OrdinalIgnoreCase)).Select(p => p[1]).FirstOrDefault();
+            var app = _defaultSections.Keys.FirstOrDefault(k => path.Equals(k, StringComparison.OrdinalIgnoreCase));
+            if (app == null)
+                return path + (query < 0 ? "" : "?" + parameters);
+            return path + "?section=" + (section ?? _defaultSections[app]).ToLowerInvariant();
+        }
     }
 }

@@ -62,6 +62,12 @@ Lay the document out for its source type:
 - Intel: an intelligence product (INTSUM, INTREP or SPOT REPORT): the product
   title, originator, date-time group and reference number, then headed sections: SUMMARY, DETAILS, ASSESSMENT, INDICATORS, ACTIONS
   REQUESTED, with confidence levels where an analyst would give them.
+- Intel as a CTI event (MISP style), when the request says so: a threat-sharing platform's event page. An event header table in
+  label and value columns: Event ID, Event info (a one-line title), Date, Threat level (High, Medium, Low or Undefined), Analysis
+  (Initial, Ongoing or Completed), Distribution (Your organisation only, This community only, Connected communities or All
+  communities), Creator org. Then a row of tags, each a small boxed label: the ones given, as written. Then the attributes table
+  with the columns Category, Type, Value, IDS and Comment, one row for each attribute given, values exactly as given. Then Related
+  events: the events given, by ID, date and info, or a line saying there are none. End with a short analyst comment.
 - Reporting: a bulletin, advisory or situation report: the issuing body's letterhead with its logo, a reference number and date, the
   title, then headed sections: Summary, Affected Systems, Recommended Actions, Indicators (as a table), and Contact.
   A press release or official statement from the same kind of body has its letterhead and logo, FOR IMMEDIATE RELEASE, a dateline,
@@ -146,7 +152,7 @@ Answer only by calling the tool.";
             _usage.Use("article", draftId: draft.DraftId == Guid.Empty ? null : draft.DraftId);
             var photos = _aiImageClient.IsConfigured;
             var input = await _aiModelClient.InvokeToolAsync(photos ? SystemPrompt + "\n\n" + PhotoRules : SystemPrompt,
-                BuildPrompt(draft, template, values), ToolName, "Submit the article's HTML.", Schema(photos), ct);
+                BuildPrompt(draft, template, values, request.InjectIndex), ToolName, "Submit the article's HTML.", Schema(photos), ct);
             var result = new ArticleDraftResult { FieldName = body.Name };
             var html = GetString(input, "html");
             // every address, domain, hash and sender the scenario's indicator set does not have becomes one it has; checked before
@@ -222,7 +228,7 @@ Answer only by calling the tool.";
             return title.Length > 60 ? title[..60] + "..." : title;
         }
 
-        public static string BuildPrompt(MselDraft draft, MselEntity template, IReadOnlyDictionary<string, string> values)
+        public static string BuildPrompt(MselDraft draft, MselEntity template, IReadOnlyDictionary<string, string> values, int injectIndex = -1)
         {
             string Value(GalleryArticleParameter parameter)
             {
@@ -251,6 +257,27 @@ Answer only by calling the tool.";
             sb.AppendLine($"Summary: {Value(GalleryArticleParameter.Summary)}");
             sb.AppendLine("Draft text:");
             sb.AppendLine(DataValueDraftService.StripHtml(Value(GalleryArticleParameter.Description)) ?? "");
+            // the scenario's indicators this article names, so every document shares the same values
+            var inject = injectIndex >= 0 && injectIndex < (draft.Injects?.Count ?? 0) ? draft.Injects[injectIndex] : null;
+            if (draft.Indicators != null)
+            {
+                var sourceType = Value(GalleryArticleParameter.SourceType);
+                var intelligence = sourceType != null && (sourceType.Equals(nameof(GallerySourceType.Intel), StringComparison.OrdinalIgnoreCase)
+                    || sourceType.Equals(nameof(GallerySourceType.Reporting), StringComparison.OrdinalIgnoreCase));
+                sb.AppendLine();
+                sb.Append(MselIndicatorRules.Describe(draft.Indicators, inject, intelligence));
+                if (inject?.Layout == MselIndicatorRules.CtiEvent)
+                {
+                    string Of(MselDraftInject other, GalleryArticleParameter parameter)
+                    {
+                        var field = template.DataFields.FirstOrDefault(f => f.GalleryArticleParameter == parameter.ToString());
+                        return field != null && other.Values != null && other.Values.TryGetValue(field.Name, out var value) ? value : null;
+                    }
+                    sb.AppendLine();
+                    sb.Append(MselIndicatorRules.CtiEventRequest(draft, injectIndex, Value(GalleryArticleParameter.DatePosted),
+                        other => Of(other, GalleryArticleParameter.Name), other => Of(other, GalleryArticleParameter.DatePosted)));
+                }
+            }
             return sb.ToString();
         }
 

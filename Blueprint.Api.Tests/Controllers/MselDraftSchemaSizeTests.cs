@@ -26,7 +26,7 @@ namespace Blueprint.Api.Tests.Controllers;
 /// </summary>
 public class MselDraftSchemaSizeTests(DatabaseFixture fixture, AiEnabledFactory factory) : ApiTestBase(fixture, factory), IClassFixture<AiEnabledFactory>
 {
-    private const int FreeTextFieldsBedrockAccepts = 34;
+    internal const int FreeTextFieldsBedrockAccepts = 34;
 
     [Fact]
     public async Task DesignSchema_StaysWithinWhatBedrockStrictModeTakes()
@@ -64,7 +64,7 @@ public class MselDraftSchemaSizeTests(DatabaseFixture fixture, AiEnabledFactory 
     }
 
     // strings without an enum; integers, booleans and enums cost the grammar little
-    private static int FreeTextFields(JsonNode node) => node["type"]?.GetValue<string>() switch
+    internal static int FreeTextFields(JsonNode node) => node["type"]?.GetValue<string>() switch
     {
         "object" => node["properties"]?.AsObject().Sum(p => FreeTextFields(p.Value)) ?? 0,
         "array" => FreeTextFields(node["items"]),

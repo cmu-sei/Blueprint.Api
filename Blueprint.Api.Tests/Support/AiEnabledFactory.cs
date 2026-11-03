@@ -29,6 +29,9 @@ public class AiEnabledFactory(DatabaseFixture database) : BlueprintAppFactory(da
     /// <summary>Answers for the speech provider; not configured unless a test says so</summary>
     public IAiSpeechClient Speech { get; } = Substitute.For<IAiSpeechClient>();
 
+    /// <summary>Answers for a Caster workspace's topology, which the AI build reads its hosts from; returns null unless a test says otherwise</summary>
+    public ICasterTopologyClient CasterTopology { get; } = Substitute.For<ICasterTopologyClient>();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
@@ -47,6 +50,7 @@ public class AiEnabledFactory(DatabaseFixture database) : BlueprintAppFactory(da
             services.Replace(ServiceDescriptor.Singleton(Model));
             services.Replace(ServiceDescriptor.Singleton(Images));
             services.Replace(ServiceDescriptor.Singleton(Speech));
+            services.Replace(ServiceDescriptor.Singleton(CasterTopology));
         });
     }
 }

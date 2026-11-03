@@ -358,6 +358,27 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
     }
 
     /// <summary>
+    /// The Assessor View lists only the columns marked for it, so a drafted MSEL whose template marks none marks the title,
+    /// Expected Actions, the competencies and the recipient, never the sender, and shows each row's move and time.
+    /// </summary>
+    [Fact]
+    public async Task Create_MarksTheColumnsTheAssessorViewShows()
+    {
+        var template = await SeedTemplate();
+        await Seed(
+            TestData.DataField(template.Id, name: "Competencies", dataType: DataFieldType.Competency, displayOrder: 2),
+            TestData.DataField(template.Id, name: "From Org", dataType: DataFieldType.Organization, displayOrder: 3),
+            TestData.DataField(template.Id, name: "To Org", dataType: DataFieldType.Organization, displayOrder: 4));
+        var (mselId, _) = await CreateFromDesign(template);
+
+        await using var db = NewContext();
+        var fields = await db.DataFields.Where(f => f.MselId == mselId).ToListAsync(Ct);
+        Assert.Equal(["Competencies", "Expected Actions", "Title", "To Org"], fields.Where(f => f.IsAssessorVisible).Select(f => f.Name).OrderBy(n => n));
+        var msel = await db.Msels.SingleAsync(m => m.Id == mselId, Ct);
+        Assert.True(msel.ShowMoveOnAssessorView && msel.ShowTimeOnAssessorView);
+    }
+
+    /// <summary>
     /// The browser may choose the new MSEL's ID, so it can open the MSEL's page before the MSEL exists; an ID already taken
     /// is not reused, and the MSEL gets a new one.
     /// </summary>
@@ -390,9 +411,10 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Equal(HttpStatusCode.Conflict, (await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/articles/{Guid.NewGuid()}", null, Ct)).StatusCode);
     }
 
-    private async Task<(Guid MselId, TestActor Planner)> CreateFromDesign(bool useCite = false)
+    private async Task<(Guid MselId, TestActor Planner)> CreateFromDesign(bool useCite = false) => await CreateFromDesign(await SeedTemplate(useCite));
+
+    private async Task<(Guid MselId, TestActor Planner)> CreateFromDesign(MselEntity template)
     {
-        var template = await SeedTemplate(useCite);
         var planner = await Planner();
         var design = await Read<MselDraftResult>(await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/design", new MselDraftRequest { TemplateMselId = template.Id, Prompt = "Cables" }, JsonOptions, Ct));
         var build = new MselDesignBuild

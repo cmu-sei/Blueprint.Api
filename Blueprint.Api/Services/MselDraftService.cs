@@ -1199,6 +1199,19 @@ Answer only by calling the tool.";
             if (!msel.DataFields.Any(f => f.IsFacilitationField))
                 foreach (var field in shown)
                     field.IsFacilitationField = true;
+            // the Assessor View lists only the columns marked for it, so with none marked an assessor saw no events: it gets the
+            // title and Expected Actions, the competencies assessed, and who the inject goes to, which picks the team to assess
+            if (!msel.DataFields.Any(f => f.IsAssessorVisible))
+            {
+                foreach (var field in shown.Concat(msel.DataFields.Where(f => f.DataType == DataFieldType.Competency
+                    || (f.DataType == DataFieldType.Organization && !f.Name.Trim().StartsWith("From", StringComparison.OrdinalIgnoreCase)))))
+                    field.IsAssessorVisible = true;
+                if (!msel.ShowTimeOnAssessorView && !msel.ShowMoveOnAssessorView && !msel.ShowGroupOnAssessorView && !msel.ShowIntegrationTargetOnAssessorView)
+                {
+                    msel.ShowMoveOnAssessorView = true;
+                    msel.ShowTimeOnAssessorView = true;
+                }
+            }
         }
 
         /// <summary>Whether the draft puts Gallery articles on cards: the MSEL uses Gallery and has a column for the card</summary>

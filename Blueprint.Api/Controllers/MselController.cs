@@ -27,6 +27,7 @@ namespace Blueprint.Api.Controllers
         private readonly IMselAssistantService _mselAssistantService;
         private readonly IPageDraftService _pageDraftService;
         private readonly IMoveDraftService _moveDraftService;
+        private readonly IAudioDraftService _audioDraftService;
         private readonly IArticleDraftService _articleDraftService;
         private readonly IProfileDraftService _profileDraftService;
         private readonly IIntegrationNameService _integrationNameService;
@@ -39,6 +40,7 @@ namespace Blueprint.Api.Controllers
             IMselAssistantService mselAssistantService,
             IPageDraftService pageDraftService,
             IMoveDraftService moveDraftService,
+            IAudioDraftService audioDraftService,
             IArticleDraftService articleDraftService,
             IProfileDraftService profileDraftService,
             ICiteService citeService,
@@ -52,6 +54,7 @@ namespace Blueprint.Api.Controllers
             _mselAssistantService = mselAssistantService;
             _pageDraftService = pageDraftService;
             _moveDraftService = moveDraftService;
+            _audioDraftService = audioDraftService;
             _articleDraftService = articleDraftService;
             _profileDraftService = profileDraftService;
             _integrationNameService = integrationNameService;
@@ -500,6 +503,40 @@ namespace Blueprint.Api.Controllers
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             return Ok(await _moveDraftService.DraftAsync(mselId, request, hasSystemPermission, ct));
+        }
+
+        /// <summary> Which audio and video this server can make for a MSEL's injects </summary>
+        /// <remarks>
+        /// Available when a speech provider is configured (Ai:Speech); Scripts when a text model is too, for voicemails, calls,
+        /// broadcasts and reels; Photos when an image model can make a reel's picture.
+        /// </remarks>
+        /// <param name="mselId"> The id of the MSEL </param>
+        /// <param name="ct"></param>
+        [HttpGet("msels/{mselId}/ai-draft/audio/available")]
+        [ProducesResponseType(typeof(AudioDraftAvailability), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getAudioDraftAvailability")]
+        public async Task<IActionResult> GetAudioDraftAvailabilityAsync([FromRoute] Guid mselId, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            return Ok(await _audioDraftService.GetAvailabilityAsync(mselId, hasSystemPermission, ct));
+        }
+
+        /// <summary> Voice an inject: its article read aloud, or a voicemail, call, broadcast or news reel written with AI </summary>
+        /// <remarks>
+        /// Nothing is saved. Listen reads the field's article as written, in its outlet's voice, with no text model. The other kinds
+        /// have the model write a short script from the inject first. Each line comes back as an MP3 data URI with when its
+        /// sentences and words start, for the planner's browser to join into audio or video. 400 when no speech provider is configured.
+        /// </remarks>
+        /// <param name="mselId"> The id of the MSEL the inject belongs to </param>
+        /// <param name="request"> The field, the inject's current values, and the kind of clip </param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{mselId}/ai-draft/audio")]
+        [ProducesResponseType(typeof(AudioDraftResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "draftAudio")]
+        public async Task<IActionResult> DraftAudioAsync([FromRoute] Guid mselId, [FromBody] AudioDraftRequest request, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            return Ok(await _audioDraftService.DraftAsync(mselId, request, hasSystemPermission, ct));
         }
 
         /// <summary> Ask AI for changes to a MSEL </summary>

@@ -54,34 +54,53 @@ namespace Blueprint.Api.Services
             };
         }
 
+        /// <summary>
+        /// The marking as a bar drawn on a video's title card, in the words and colours of the article banner; null for none.
+        /// A classification is shown as written, in upper case.
+        /// </summary>
+        public static (string Text, string Background, string Color)? Bar(string marking, string text)
+        {
+            var (kind, value) = Clean(marking, text);
+            return kind switch
+            {
+                None => null,
+                Tlp => ("TLP:" + value, "#000000", TlpColour(value)),
+                Classification => (value.ToUpperInvariant(), ClassificationColours(value).Background, ClassificationColours(value).Colour),
+                _ => ("EXERCISE · EXERCISE · EXERCISE", "#FDB516", "#000000")
+            };
+        }
+
         private static string ExerciseBanner(string exerciseName) =>
             Banner("#FDB516", "#000000", "EXERCISE · EXERCISE · EXERCISE",
                 $"<br><font color=\"#000000\" face=\"Arial, Helvetica, sans-serif\" size=\"1\">{E(exerciseName)}{(string.IsNullOrWhiteSpace(exerciseName) ? "" : " · ")}FICTIONAL SCENARIO</font>");
 
         // TLP 2.0: the level's colour on black
-        private static string TlpBanner(string level)
+        private static string TlpBanner(string level) =>
+            Banner("#000000", TlpColour(level), "TLP:" + level, null, align: "left");
+
+        private static string TlpColour(string level) => level switch
         {
-            var colour = level switch
-            {
-                "RED" => "#FF2B2B",
-                "AMBER" or "AMBER+STRICT" => "#FFC000",
-                "GREEN" => "#33FF00",
-                _ => "#FFFFFF"
-            };
-            return Banner("#000000", colour, "TLP:" + level, null, align: "left");
+            "RED" => "#FF2B2B",
+            "AMBER" or "AMBER+STRICT" => "#FFC000",
+            "GREEN" => "#33FF00",
+            _ => "#FFFFFF"
+        };
+
+        private static string ClassificationBanner(string text)
+        {
+            var (background, colour) = ClassificationColours(text);
+            return Banner(background, colour, text.ToUpperInvariant(), null);
         }
 
         // the colours used on US classification banners, by the level the text names
-        private static string ClassificationBanner(string text)
+        private static (string Background, string Colour) ClassificationColours(string text)
         {
             var upper = text.ToUpperInvariant();
-            var (background, colour) =
-                upper.Contains("TOP SECRET") ? (upper.Contains("SCI") ? "#FCE83A" : "#FF8C00", "#000000")
+            return upper.Contains("TOP SECRET") ? (upper.Contains("SCI") ? "#FCE83A" : "#FF8C00", "#000000")
                 : Regex.IsMatch(upper, @"\bSECRET\b") ? ("#C8102E", "#FFFFFF")
                 : upper.Contains("CONFIDENTIAL") ? ("#0033A0", "#FFFFFF")
                 : Regex.IsMatch(upper, @"\bCUI\b|CONTROLLED UNCLASSIFIED") ? ("#502B85", "#FFFFFF")
                 : ("#007A33", "#FFFFFF");
-            return Banner(background, colour, upper, null);
         }
 
         private static string Banner(string background, string colour, string text, string more, string align = "center") =>

@@ -249,6 +249,7 @@ public class Startup
         services.AddScoped<PollySpeechClient>();
         services.AddScoped<OpenAiSpeechClient>();
         services.AddScoped<IAiSpeechClient, AiSpeechRouter>();
+        services.AddScoped<IAudioDraftService, AudioDraftService>();
         services.AddScoped<IAiUsageContext, AiUsageContext>();
         services.AddScoped<IAiProgress, AiProgress>();
         services.AddScoped<IAiUsageRecorder, AiUsageRecorder>();

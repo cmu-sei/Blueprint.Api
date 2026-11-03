@@ -2,24 +2,27 @@ Blueprint.Api has an automated test suite in the `Blueprint.Api.Tests` project, 
 
 # Testing
 
-The suite is built on xUnit v3 and NSubstitute, and runs against a real PostgreSQL instance started in a container. It is on the Crucible API test standard in `agent-docs/api-testing/` of the workspace (shared by every Crucible API): the harness files under `Blueprint.Api.Tests/Support/Shared/` are copied from there and are not edited here, and the test-project `Directory.Build.props`, `xunit.runner.json`, `coverlet.runsettings` and `.github/workflows/build-and-test.yml` are the standard's copies too. These are not isolated unit tests. A typical test sends an HTTP request to the application hosted in process, through the real `Startup`, routing, model binding, authorization, claims transformer, AutoMapper profiles, MediatR event handlers and a real database with the real migrations, then asserts on the response, on what changed in the database and on what was broadcast. Collaborators that leave the process are substituted, and so is one in-process service: `BlueprintAppFactory` substitutes `IXApiService`. `XApiEndpointTests` drives the four xAPI routes against that substitute, for what the controller passes on (the permission verdicts, the query and the cancellation token). `XApiLiveEndpointTests` drives the same four routes, and `DataValueXApiTests` (which shares `DataValueTestsBase` with `DataValueEndpointTests`) the checkbox statements, over `XApiEnabledFactory`, which runs the real `XApiService` and lets a test read the queued row (`XApiQueuedStatements`). Its LRS endpoint is an address nothing listens on, so `GET xapi/statements`, the one route that calls the LRS, fails at once rather than leaving the machine.
+The suite is built on xUnit v3 and NSubstitute, and runs against a real PostgreSQL instance started in a container. It is on the Crucible API test standard in `agent-docs/api-testing/` of the workspace (shared by every Crucible API): the harness files under `Blueprint.Api.Tests/Support/Shared/` are copied from there and are not edited here, and the test-project `Directory.Build.props` and `xunit.runner.json` are the standard's copies too. CI is the shared `dotnet-test.yaml` workflow in cmu-sei/Crucible-Github-Actions, called from `.github/workflows/build-and-test.yml`. These are not isolated unit tests. A typical test sends an HTTP request to the application hosted in process, through the real `Startup`, routing, model binding, authorization, claims transformer, AutoMapper profiles, MediatR event handlers and a real database with the real migrations, then asserts on the response, on what changed in the database and on what was broadcast. Collaborators that leave the process are substituted, and so is one in-process service: `BlueprintAppFactory` substitutes `IXApiService`. `XApiEndpointTests` drives the four xAPI routes against that substitute, for what the controller passes on (the permission verdicts, the query and the cancellation token). `XApiLiveEndpointTests` drives the same four routes, and `DataValueXApiTests` (which shares `DataValueTestsBase` with `DataValueEndpointTests`) the checkbox statements, over `XApiEnabledFactory`, which runs the real `XApiService` and lets a test read the queued row (`XApiQueuedStatements`). Its LRS endpoint is an address nothing listens on, so `GET xapi/statements`, the one route that calls the LRS, fails at once rather than leaving the machine.
 
 # Running the tests
 
 ```bash
 dotnet test
+dotnet run --project Blueprint.Api.Tests -- --xunit-diagnostics on    # prints the database provider banner
 ```
+
+The suite runs on Microsoft.Testing.Platform (`"test": { "runner": "Microsoft.Testing.Platform" }` in `global.json`), which xunit.v3 4 requires on the .NET 10 SDK, so test options are xUnit's own (`--filter-class`, `--filter-method`, `--xunit-diagnostics`; see `dotnet test Blueprint.Api.Tests --help`) rather than VSTest's `--filter` and `-- xUnit.…` settings. The banner is printed with `dotnet run` because `dotnet test` does not forward the test app's diagnostic messages. Under `dotnet test` use `--progress off` rather than the deprecated `--no-progress`.
 
 Docker must be running. The suite starts and disposes its own PostgreSQL container through [Testcontainers](https://testcontainers.com/), so there is nothing to install and no local database to keep in sync. Nothing else is needed: no Keycloak, no Player, Gallery, CITE, Steamfitter or Caster, no network access and no `appsettings.json` edit. The container starts when the first test asks for a database, so the tests that take none still run without Docker.
 
 A single class or a single test can be run with a filter:
 
 ```bash
-dotnet test --filter "FullyQualifiedName~.MoveEndpointTests"
-dotnet test --filter "FullyQualifiedName~.MoveEndpointTests.GetByMsel_ForEveryMselRole_Is200"
+dotnet test --filter-class "*.MoveEndpointTests"
+dotnet test --filter-method "*.MoveEndpointTests.GetByMsel_ForEveryMselRole_Is200"
 ```
 
-`~` is a substring match on the whole name, namespace included, so `~TeamEndpointTests` also selects `CardTeamEndpointTests`; the leading dot (`~.TeamEndpointTests`) keeps one class name from matching another that ends with it. Filters OR with `|`.
+The filters match the fully qualified name, namespace included, with `*` as a wildcard, so `*TeamEndpointTests` also selects `CardTeamEndpointTests`; the leading dot (`*.TeamEndpointTests`) keeps one class name from matching another that ends with it. Repeating an option ORs the filters.
 
 ## Site accounting checks
 
@@ -31,11 +34,18 @@ to include this check together with the suite, harness self-tests and coverage r
 # Coverage
 
 ```bash
-dotnet test --collect:"XPlat Code Coverage"
+dotnet test Blueprint.Api.Tests --results-directory TestResults/coverage \
+  --coverlet --coverlet-output-format cobertura \
+  --coverlet-include "[Blueprint.Api]*" --coverlet-include "[Blueprint.Api.Data]*" \
+  --coverlet-exclude "[*.Migrations.PostgreSQL]*" --coverlet-exclude "[*.Tests]*" \
+  --coverlet-exclude-by-file "**/.nuget/packages/**/*.cs" --coverlet-exclude-by-file "**/Migrations/**/*.cs" \
+  --coverlet-exclude-by-attribute GeneratedCodeAttribute --coverlet-exclude-by-attribute CompilerGeneratedAttribute \
+  --coverlet-exclude-by-attribute ExcludeFromCodeCoverageAttribute --coverlet-exclude-by-attribute Obsolete \
+  --coverlet-skip-auto-props
 scripts/coverage.sh                      # the same run, plus an HTML report and a ranked list of untested lines
 ```
 
-`coverlet.runsettings` sits beside the test project and is applied automatically, because `Blueprint.Api.Tests.csproj` names it in `RunSettingsFilePath`. It is the standard's file: the collector is disabled unless a run asks for it, and it excludes the migrations assembly, generated code and auto-implemented properties. `Cite.Api.Client` and `Gallery.Api.Client`, the checked-in NSwag clients, compile into `Blueprint.Api` and are reported with it.
+Coverage comes from `coverlet.MTP`, the Microsoft.Testing.Platform form of coverlet, and is opt-in through `--coverlet`. The include filters keep the figure to `Blueprint.Api` and `Blueprint.Api.Data` (without them coverlet also instruments third-party assemblies that ship sources), and the rest exclude `Blueprint.Api.Migrations.PostgreSQL`, the test assembly, the `Crucible.Common.EntityEvents` content files, generated code and auto-implemented properties. Read cobertura totals from the root element's `lines-covered` and `lines-valid`. `Cite.Api.Client` and `Gallery.Api.Client`, the checked-in NSwag clients, compile into `Blueprint.Api` and are reported with it.
 
 `scripts/coverage.sh` and `.github/workflows/coverage.yml` (manual dispatch) are this repository's own extras; neither is a gate. Coverage is a local diagnostic rather than a maintained statistic, so this document carries no figure that can drift from the suite.
 
@@ -51,7 +61,7 @@ The root `Directory.Build.props` sets `TreatWarningsAsErrors` for every project,
 
 Restore-time warnings stay warnings, through `WarningsNotAsErrors`: NU1901 to NU1904 are the NuGet audit (AutoMapper 13 and MediatR 12 are pinned deliberately, and the rest is transitive), NU1701 reports TinCan's .NET Framework assets, and NU1510 names three `PackageReference`s of `Blueprint.Api` the framework already provides.
 
-Package versions live in `Directory.Packages.props` (central package management); the test packages are pinned by the standard (`agent-docs/api-testing/test-packages.props`) and `sync.sh` checks them. `Microsoft.AspNetCore.SignalR.Client` is the standard's optional pin (10.0.1): `MainHubConnectionTests` dials the hub over a real connection, as an `Actor()`, over WebSockets.
+Package versions live in `Directory.Packages.props` (central package management); the test packages are pinned by the standard (`agent-docs/api-testing/test-packages.props`) and `sync.sh` checks them. The suite runs on Microsoft.Testing.Platform: `global.json` selects it for `dotnet test`, and `UseMicrosoftTestingPlatformRunner` in the project file builds the test app for it. Coverage comes from `coverlet.MTP`; `xunit.runner.visualstudio` and `Microsoft.NET.Test.Sdk` are not referenced (both VSTest only). `Microsoft.AspNetCore.SignalR.Client` is the standard's optional pin (10.0.1): `MainHubConnectionTests` dials the hub over a real connection, as an `Actor()`, over WebSockets.
 
 # How the harness works
 

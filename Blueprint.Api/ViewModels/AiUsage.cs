@@ -9,7 +9,7 @@ namespace Blueprint.Api.ViewModels
     /// <summary>Calls to AI models and what they used</summary>
     public class AiUsageTotals
     {
-        /// <summary>The MSEL's name, or the operation: draft, article, profile, value, assist or photo</summary>
+        /// <summary>The MSEL's name, or the operation: draft, article, profile, value, assist, photo, script or audio</summary>
         public string Name { get; set; }
         public int Calls { get; set; }
         /// <summary>Calls a safety classifier declined; they are billed too</summary>
@@ -19,6 +19,8 @@ namespace Blueprint.Api.ViewModels
         public long CacheReadTokens { get; set; }
         public long CacheWriteTokens { get; set; }
         public int Images { get; set; }
+        /// <summary>Characters read aloud by a speech model</summary>
+        public long Characters { get; set; }
         /// <summary>
         /// The estimated cost in millionths of a US dollar (1,000,000 is $1), from the configured prices; null when a model
         /// used has no price. A whole number, as every number the API sends is.

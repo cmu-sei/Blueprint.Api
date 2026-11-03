@@ -52,10 +52,18 @@ namespace Blueprint.Api.Services
     public interface IAiUsageRecorder
     {
         Task RecordAsync(string model, JsonElement message, int images, CancellationToken ct);
+
+        /// <summary>One request to a speech model, as an <see cref="AiUsageRecorder.Audio"/> row whose input counts the characters voiced</summary>
+        Task RecordSpeechAsync(string model, int characters, CancellationToken ct);
     }
 
     public class AiUsageRecorder : IAiUsageRecorder
     {
+        /// <summary>
+        /// The operation of a speech request, whatever the request is for. Its row's InputTokens are the characters voiced, so a
+        /// speech model's usage needs no columns of its own.
+        /// </summary>
+        public const string Audio = "audio";
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IAiUsageContext _context;
         private readonly ClaimsPrincipal _user;
@@ -74,6 +82,21 @@ namespace Blueprint.Api.Services
             var usage = Read(model, message, images);
             // an image call made for an article is a news photo; the MSEL's own picture keeps its operation
             usage.Operation = images > 0 ? (_context.Operation == "image" ? "image" : "photo") : _context.Operation ?? "other";
+            await SaveAsync(usage, model, ct);
+        }
+
+        public Task RecordSpeechAsync(string model, int characters, CancellationToken ct) =>
+            SaveAsync(new AiUsageEntity
+            {
+                Id = Guid.NewGuid(),
+                Model = model,
+                Operation = Audio,
+                InputTokens = characters,
+                DateCreated = DateTime.UtcNow
+            }, model, ct);
+
+        private async Task SaveAsync(AiUsageEntity usage, string model, CancellationToken ct)
+        {
             usage.MselId = _context.MselId;
             usage.DraftId = _context.DraftId;
             usage.CreatedBy = UserId();
@@ -207,6 +230,12 @@ namespace Blueprint.Api.Services
                     if (PriceFor(prices, call.Model) is not AiPrice price)
                         continue;
                     priced = true;
+                    // a speech request's input is the characters it voiced
+                    if (call.Operation == AiUsageRecorder.Audio)
+                    {
+                        total += call.InputTokens * price.PerMillionCharacters / 1_000_000m;
+                        continue;
+                    }
                     total += call.InputTokens * price.InputPerMillion / 1_000_000m
                         + call.OutputTokens * price.OutputPerMillion / 1_000_000m
                         + call.CacheReadTokens * price.CacheReadPerMillion / 1_000_000m
@@ -220,7 +249,8 @@ namespace Blueprint.Api.Services
                 Name = name,
                 Calls = calls.Count,
                 Refused = calls.Count(c => c.StopReason == "refusal"),
-                InputTokens = calls.Sum(c => c.InputTokens),
+                InputTokens = calls.Where(c => c.Operation != AiUsageRecorder.Audio).Sum(c => (long)c.InputTokens),
+                Characters = calls.Where(c => c.Operation == AiUsageRecorder.Audio).Sum(c => (long)c.InputTokens),
                 OutputTokens = calls.Sum(c => c.OutputTokens),
                 CacheReadTokens = calls.Sum(c => c.CacheReadTokens),
                 CacheWriteTokens = calls.Sum(c => c.CacheWriteTokens),
@@ -239,6 +269,7 @@ namespace Blueprint.Api.Services
                 CacheReadTokens = all.CacheReadTokens,
                 CacheWriteTokens = all.CacheWriteTokens,
                 Images = all.Images,
+                Characters = all.Characters,
                 EstimatedCostMicros = all.EstimatedCostMicros,
                 Unpriced = rows.Select(r => r.Model).Where(m => m != null && PriceFor(prices, m) == null).Distinct().Order().ToList(),
                 FirstCall = rows.Count > 0 ? rows.Min(r => r.DateCreated) : null,

@@ -21,9 +21,10 @@ namespace Blueprint.Api.Data.Models
         public Guid? MselId { get; set; }
         public virtual MselEntity Msel { get; set; }
         public Guid? DraftId { get; set; }
-        /// <summary>What the call was for: draft, article, profile, value, assist or photo</summary>
+        /// <summary>What the call was for: draft, article, profile, value, assist, photo, script, or audio for a speech request</summary>
         public string Operation { get; set; }
         public string Model { get; set; }
+        /// <summary>The prompt's tokens; for an audio row, the characters the speech model voiced</summary>
         public int InputTokens { get; set; }
         public int OutputTokens { get; set; }
         public int CacheReadTokens { get; set; }

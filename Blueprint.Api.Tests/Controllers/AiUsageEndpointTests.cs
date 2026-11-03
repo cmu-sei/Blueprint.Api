@@ -77,6 +77,45 @@ public class AiUsageEndpointTests(DatabaseFixture fixture, AiEnabledFactory fact
         Assert.All(rows, r => Assert.Null(r.MselId));
     }
 
+    /// <summary>A speech request is an audio row, whatever the request is for, counting the characters it voiced.</summary>
+    [Fact]
+    public async Task RecordSpeech_SavesAnAudioRowOfCharacters()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var accessor = Factory.Services.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
+        var request = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        request.Request.Headers[TestDatabaseScope.HeaderName] = SessionId;
+        accessor.HttpContext = request;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<IAiUsageContext>().Use("script", msel.Id);
+            await scope.ServiceProvider.GetRequiredService<IAiUsageRecorder>().RecordSpeechAsync("polly-neural", 1250, Ct);
+        }
+        accessor.HttpContext = null;
+
+        await using var db = NewContext();
+        var row = await db.AiUsages.SingleAsync(u => u.MselId == msel.Id, Ct);
+        Assert.Equal((AiUsageRecorder.Audio, "polly-neural", 1250, 0, 0), (row.Operation, row.Model, row.InputTokens, row.OutputTokens, row.Images));
+    }
+
+    /// <summary>The characters voiced are priced per million under the speech model's price, and kept out of the token totals.</summary>
+    [Fact]
+    public async Task GetByMsel_PricesAudioByTheCharacter()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel, Usage(msel.Id, "script", "test-model", 1000, 500), Usage(msel.Id, AiUsageRecorder.Audio, "polly-neural", 2500, stopReason: null));
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var summary = await Read<AiUsageSummary>(await Client(owner).GetAsync($"/api/msels/{msel.Id}/ai-usage", Ct));
+
+        Assert.Equal((1000L, 2500L), (summary.InputTokens, summary.Characters));
+        var audio = summary.ByOperation.Single(o => o.Name == AiUsageRecorder.Audio);
+        // 2,500 characters at $16 per million
+        Assert.Equal((2500L, 40_000L), (audio.Characters, audio.EstimatedCostMicros));
+        Assert.Empty(summary.Unpriced);
+    }
+
     /// <summary>The MSEL's totals and each operation's, priced where every model has a price, for its owner.</summary>
     [Fact]
     public async Task GetByMsel_TotalsAndPricesTheMselsCalls()

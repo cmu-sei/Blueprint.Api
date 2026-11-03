@@ -11,7 +11,7 @@ using NSubstitute;
 namespace Blueprint.Api.Tests.Support;
 
 /// <summary>
-/// A host with AI drafting turned on and <see cref="Model"/> and <see cref="Images"/> answering for Bedrock, so a request can be
+/// A host with AI drafting turned on and <see cref="Model"/>, <see cref="Images"/> and <see cref="Speech"/> answering for Bedrock and Polly, so a request can be
 /// followed to the prompt it sends and back to what the planner is shown.
 /// </summary>
 /// <remarks>
@@ -26,6 +26,9 @@ public class AiEnabledFactory(DatabaseFixture database) : BlueprintAppFactory(da
     /// <summary>Answers for the Bedrock image model; not configured unless a test says so</summary>
     public IAiImageClient Images { get; } = Substitute.For<IAiImageClient>();
 
+    /// <summary>Answers for the speech provider; not configured unless a test says so</summary>
+    public IAiSpeechClient Speech { get; } = Substitute.For<IAiSpeechClient>();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
@@ -36,11 +39,14 @@ public class AiEnabledFactory(DatabaseFixture database) : BlueprintAppFactory(da
         builder.UseSetting("Ai:Prices:test-model:InputPerMillion", "2");
         builder.UseSetting("Ai:Prices:test-model:OutputPerMillion", "10");
         builder.UseSetting("Ai:Prices:test-image:PerImage", "0.04");
+        // Polly's neural voices, keyed as an environment variable writes the id
+        builder.UseSetting("Ai:Prices:polly_neural:PerMillionCharacters", "16");
 
         builder.ConfigureTestServices(services =>
         {
             services.Replace(ServiceDescriptor.Singleton(Model));
             services.Replace(ServiceDescriptor.Singleton(Images));
+            services.Replace(ServiceDescriptor.Singleton(Speech));
         });
     }
 }

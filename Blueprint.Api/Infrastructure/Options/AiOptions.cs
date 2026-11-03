@@ -39,6 +39,8 @@ namespace Blueprint.Api.Infrastructure.Options
         public bool Strict { get; set; } = true;
         // how many of a drafted MSEL's rows, articles and profiles are written at once
         public int Parallel { get; set; } = 6;
+        // the speech provider that voices audio and video injects; off unless a provider is named
+        public AiSpeechOptions Speech { get; set; } = new AiSpeechOptions();
 
         public const string Bedrock = "Bedrock";
         public const string OpenAi = "OpenAI";
@@ -86,7 +88,7 @@ namespace Blueprint.Api.Infrastructure.Options
         public bool? Strict { get; set; }
     }
 
-    /// <summary>A model's price in US dollars: per million tokens of each kind, and per image</summary>
+    /// <summary>A model's price in US dollars: per million tokens of each kind, per image, and per million characters voiced</summary>
     public class AiPrice
     {
         public decimal InputPerMillion { get; set; }
@@ -94,5 +96,7 @@ namespace Blueprint.Api.Infrastructure.Options
         public decimal CacheReadPerMillion { get; set; }
         public decimal CacheWritePerMillion { get; set; }
         public decimal PerImage { get; set; }
+        // a speech model's, e.g. Polly's neural voices (polly-neural) at $16 per million characters
+        public decimal PerMillionCharacters { get; set; }
     }
 }

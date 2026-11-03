@@ -100,7 +100,11 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // to start at the MSEL start time once that time has come. Otherwise SteamfitterStartService starts it.
         public static bool StartsWithThePush(MselEntity msel, DateTime now) =>
             msel.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.OnPush ||
-            (msel.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.AtStartTime && msel.StartTime <= now);
+            (msel.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.AtStartTime && StartTimeHasCome(msel.StartTime, now));
+
+        // Whether a Scenario that is to start at the MSEL start time is due. The push and SteamfitterStartService
+        // both ask this, so they agree on when that is.
+        public static bool StartTimeHasCome(DateTime startTime, DateTime now) => startTime <= now;
 
         // Start a Scenario that has not been started yet. Steamfitter creates every Scenario ready, whatever
         // status it is sent, and runs no task until it is active. A Scenario already active or ended is left

@@ -82,10 +82,13 @@ namespace Blueprint.Api.Services
                     m.Status == MselItemStatus.Deployed &&
                     m.UseSteamfitter &&
                     m.SteamfitterScenarioId != null &&
-                    m.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.AtStartTime &&
-                    m.StartTime <= now)
+                    m.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.AtStartTime)
                 .Select(m => new { m.Id, ScenarioId = (Guid)m.SteamfitterScenarioId, m.StartTime, m.DurationSeconds })
                 .ToListAsync(ct);
+            // the start time is checked here rather than in the query, so that the push and this service share one rule
+            candidates = candidates
+                .Where(c => IntegrationSteamfitterExtensions.StartTimeHasCome(c.StartTime, now))
+                .ToList();
             // forget a Scenario whose MSEL was pulled or changed, so the set does not grow without end
             _handledScenarioIds.IntersectWith(candidates.Select(c => c.ScenarioId));
             // an exercise that is over is not started; a MSEL with no duration has no end to be over

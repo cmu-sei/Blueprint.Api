@@ -50,8 +50,9 @@ dotnet test Blueprint.Api.Tests/Blueprint.Api.Tests.csproj \
 TESTS=$?
 set -e
 
-# All of the cobertura files, rather than the first: a multi-targeted run would write one per framework.
-mapfile -t REPORTS < <(find "$RAW" -name 'coverage.cobertura.xml')
+# coverlet.MTP adds a timestamp to the file name, so it is not knowable in advance. All of the
+# cobertura files, rather than the first: a multi-targeted run would write one per framework.
+mapfile -t REPORTS < <(find "$RAW" -name 'coverage.cobertura*.xml')
 if [ ${#REPORTS[@]} -eq 0 ]; then
   echo "coverage.sh: no coverage file under $RAW - did the test host start?" >&2
   exit 1

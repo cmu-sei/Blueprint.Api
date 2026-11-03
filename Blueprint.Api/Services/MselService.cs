@@ -2480,7 +2480,17 @@ namespace Blueprint.Api.Services
             var fileName = mselEntity.Name;
             var nameInUse = await _context.Msels
                 .AnyAsync(m => m.Name.ToLower() == (mselEntity.Name ?? "").ToLower(), ct);
-            mselEntity = await privateMselCopyAsync(mselEntity, null, ct, keepName: !nameInUse);
+            try
+            {
+                mselEntity = await privateMselCopyAsync(mselEntity, null, ct, keepName: !nameInUse);
+            }
+            catch (DbUpdateException ex)
+            {
+                // the save is one transaction, so nothing was imported; say what the database refused
+                // instead of EF's "see the inner exception", which a planner never sees
+                _logger.LogWarning(ex, "The import of MSEL file {FileName} could not be saved", uploadItem.FileName);
+                throw new BadRequestException(ImportSaveFailure(ex));
+            }
             if (nameInUse)
                 AddChange(result, "name", $"A MSEL named \"{fileName}\" already exists, so this one was named \"{mselEntity.Name}\".");
 
@@ -2511,6 +2521,27 @@ namespace Blueprint.Api.Services
         private static void AddFailure(MselImportResult result, string step, string message)
         {
             result.Failures.Add(new MselImportFailure { Step = step, Message = message });
+        }
+
+        /// <summary>
+        /// What the database refused in a failed import, by table and constraint name. Nothing from the
+        /// database's own message goes out, as its detail can quote the file's values.
+        /// </summary>
+        private static string ImportSaveFailure(DbUpdateException ex)
+        {
+            if (ex.InnerException is not Npgsql.PostgresException postgres)
+                return "The MSEL could not be imported because the database refused to save it. Nothing was imported.";
+            var table = string.IsNullOrEmpty(postgres.TableName) ? "" : $" in {postgres.TableName}";
+            var what = postgres.SqlState switch
+            {
+                Npgsql.PostgresErrorCodes.ForeignKeyViolation => $"a row{table} refers to something this Blueprint does not have",
+                Npgsql.PostgresErrorCodes.UniqueViolation => $"the file has the same row twice{table}",
+                Npgsql.PostgresErrorCodes.NotNullViolation when !string.IsNullOrEmpty(postgres.ColumnName) => $"a row{table} has no {postgres.ColumnName}",
+                Npgsql.PostgresErrorCodes.CheckViolation => $"a row{table} breaks a database rule",
+                _ => $"the database refused a row{table}"
+            };
+            var constraint = string.IsNullOrEmpty(postgres.ConstraintName) ? "" : $" ({postgres.ConstraintName})";
+            return $"The MSEL could not be imported because {what}{constraint}. Nothing was imported.";
         }
 
         private static string TeamLabel(TeamEntity team)

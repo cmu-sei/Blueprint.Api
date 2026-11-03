@@ -1481,6 +1481,29 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Empty(result.Failures);
     }
 
+    /// <summary>
+    /// A file the database still refuses used to come back as EF's "See the inner exception for details",
+    /// behind "A server error occurred.". It is a 400 that names the table and the constraint, carries
+    /// nothing of the database's own message, and saves nothing.
+    /// </summary>
+    [Fact]
+    public async Task Import_ThatTheDatabaseRefuses_Is400AndNamesTheTableAndConstraint()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var before = await ReadBack(rb => rb.Msels.CountAsync(Ct));
+        // a MSEL's data field may not also belong to an inject type
+        var file = Exported(m => m.DataFields.Add(TestData.DataField(mselId: m.Id, injectTypeId: Guid.NewGuid())));
+
+        var response = await Post(Client(actor), file, ImportRoute);
+
+        var error = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.BadRequest, response);
+        Assert.Equal(
+            "The MSEL could not be imported because a row in data_fields breaks a database rule (CK_data_fields_data_field_msel_or_inject_type). Nothing was imported.",
+            error.Title);
+        Assert.Null(error.Detail);
+        Assert.Equal(before, await ReadBack(rb => rb.Msels.CountAsync(Ct)));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Competencies, whose ids are local to the Blueprint that exported them
     // ---------------------------------------------------------------------------------------------

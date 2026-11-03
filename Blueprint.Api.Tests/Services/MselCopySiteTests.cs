@@ -38,8 +38,9 @@ public class MselCopySiteTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(competency.Id, (await ReadBack(db => db.TeamCompetencies.SingleAsync(Ct))).CompetencyId);
     }
 
+    /// <summary>A save the database refuses is a 400 naming the table and constraint, and saves nothing.</summary>
     [Fact]
-    public async Task Import_answers_duplicate_card_team_assignments_with_a_server_error_and_saves_no_copy()
+    public async Task Import_answers_duplicate_card_team_assignments_with_a_readable_error_and_saves_no_copy()
     {
         var msel = TestData.Msel();
         var team = TestData.Team(msel.Id);
@@ -51,7 +52,7 @@ public class MselCopySiteTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Import(msel);
 
-        await CopyError(response);
+        await ImportError(response, "the file has the same row twice in card_teams (IX_card_teams_team_id_card_id)");
         Assert.Equal(0, await ReadBack(db => db.Msels.CountAsync(Ct)));
         Assert.Equal(0, await ReadBack(db => db.CardTeams.CountAsync(Ct)));
     }
@@ -75,7 +76,7 @@ public class MselCopySiteTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     [Fact]
-    public async Task Import_answers_duplicate_application_team_assignments_with_a_server_error_and_saves_no_copy()
+    public async Task Import_answers_duplicate_application_team_assignments_with_a_readable_error_and_saves_no_copy()
     {
         var msel = TestData.Msel();
         var team = TestData.Team(msel.Id);
@@ -87,7 +88,7 @@ public class MselCopySiteTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Import(msel);
 
-        await CopyError(response);
+        await ImportError(response, "the file has the same row twice in player_application_teams (IX_player_application_teams_team_id_player_application_id)");
         Assert.Equal(0, await ReadBack(db => db.Msels.CountAsync(Ct)));
         Assert.Equal(0, await ReadBack(db => db.PlayerApplicationTeams.CountAsync(Ct)));
     }
@@ -116,6 +117,13 @@ public class MselCopySiteTests(DatabaseFixture fixture, BlueprintAppFactory fact
         using var form = new MultipartFormDataContent();
         form.Add(new StringContent(json.ToJsonString(), Encoding.UTF8, "application/json"), "ToUpload", "copy.json");
         return await RootClient.PostAsync("api/msels/json", form, Ct);
+    }
+
+    private async Task ImportError(HttpResponseMessage response, string reason)
+    {
+        var error = await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.BadRequest, response);
+        Assert.Equal($"The MSEL could not be imported because {reason}. Nothing was imported.", error.Title);
+        Assert.Null(error.Detail);
     }
 
     private async Task CopyError(HttpResponseMessage response)

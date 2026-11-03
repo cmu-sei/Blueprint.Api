@@ -514,9 +514,13 @@ namespace Blueprint.Api.Services
                 }
             }
             // copy ScenarioEvents
+            var competencyFieldIds = mselEntity.DataFields
+                .Where(df => df.DataType == DataFieldType.Competency)
+                .Select(df => df.Id)
+                .ToHashSet();
             foreach (var scenarioEventEntity in mselEntity.ScenarioEvents)
             {
-                ScenarioEventReplaceIds(scenarioEventEntity, mselEntity.Id, mselEntity.DateCreated, mselEntity.CreatedBy, newGuidValues);
+                ScenarioEventReplaceIds(scenarioEventEntity, mselEntity.Id, mselEntity.DateCreated, mselEntity.CreatedBy, newGuidValues, competencyFieldIds);
             }
 
             _context.Msels.Add(mselEntity);
@@ -564,7 +568,8 @@ namespace Blueprint.Api.Services
             Guid mselId,
             DateTime dateCreated,
             Guid createdBy,
-            Dictionary<Guid, Guid> newGuidValues)
+            Dictionary<Guid, Guid> newGuidValues,
+            ISet<Guid> competencyFieldIds)
         {
             scenarioEventEntity.Id = Guid.NewGuid();
             scenarioEventEntity.MselId = mselId;
@@ -581,9 +586,10 @@ namespace Blueprint.Api.Services
                 dataValue.DataFieldId = newGuidValues[dataValue.DataFieldId];
                 dataValue.DataField = null;
                 dataValue.CreatedBy = createdBy;
-                // substitute new Guid value for any old Guid value
+                // substitute new Guid value for any old Guid value. A Competency field's value is a competency
+                // code, not an id of this MSEL, even when the framework's codes look like Guids.
                 Guid oldGuidValue;
-                if (Guid.TryParse(dataValue.Value, out oldGuidValue))
+                if (!competencyFieldIds.Contains(dataValue.DataFieldId) && Guid.TryParse(dataValue.Value, out oldGuidValue))
                 {
                     try
                     {
@@ -2518,7 +2524,7 @@ namespace Blueprint.Api.Services
         /// competency is here; otherwise it is matched by the framework code and competency code the export
         /// carries. A link with no match, or from an older file that carries no codes, is dropped rather
         /// than failing the whole import on its foreign key, and the report says how many and which
-        /// frameworks are missing.
+        /// frameworks are missing. Competency data fields are then held to the competencies that were kept.
         /// </summary>
         private async Task MatchImportedCompetenciesAsync(MselEntity mselEntity, MselImportResult result, CancellationToken ct)
         {
@@ -2526,15 +2532,20 @@ namespace Blueprint.Api.Services
             var carried = mselEntity.MselCompetencies.Select(l => (l.CompetencyId, l.Competency))
                 .Concat(teamLinks.Select(l => (l.CompetencyId, l.Competency)))
                 .ToList();
+            // a file from before MSELs had competencies has none to hold its data fields to
+            var hasMselCompetencies = mselEntity.MselCompetencies.Count > 0;
             if (carried.Count == 0)
+            {
+                await RemoveUnknownCompetencyCodesAsync(mselEntity, null, result, ct);
                 return;
+            }
 
             var fileIds = carried.Select(c => c.CompetencyId).Distinct().ToList();
-            var localIds = (await _context.Competencies
+            var localCodesById = await _context.Competencies
                 .AsNoTracking()
                 .Where(c => fileIds.Contains(c.Id))
-                .Select(c => c.Id)
-                .ToListAsync(ct)).ToHashSet();
+                .Select(c => new { c.Id, c.IdNumber })
+                .ToDictionaryAsync(c => c.Id, c => c.IdNumber, ct);
             var frameworkCodes = carried.Select(c => c.Competency?.CompetencyFramework?.IdNumber)
                 .Where(code => !string.IsNullOrEmpty(code)).Distinct().ToList();
             var competencyCodes = carried.Select(c => c.Competency?.IdNumber)
@@ -2559,14 +2570,22 @@ namespace Blueprint.Api.Services
 
             var dropped = 0;
             var missingFrameworks = new List<string>();
+            // the codes of the competencies kept, which are what Competency data fields name
+            var keptCodes = new HashSet<string>();
             Guid? Match(Guid competencyId, CompetencyEntity competency)
             {
-                if (localIds.Contains(competencyId))
+                if (localCodesById.TryGetValue(competencyId, out var localCode))
+                {
+                    keptCodes.Add(localCode);
                     return competencyId;
+                }
                 var frameworkCode = competency?.CompetencyFramework?.IdNumber;
                 if (!string.IsNullOrEmpty(frameworkCode) && !string.IsNullOrEmpty(competency.IdNumber) &&
                     localByCode.TryGetValue((frameworkCode, competency.IdNumber), out var localId))
+                {
+                    keptCodes.Add(competency.IdNumber);
                     return localId;
+                }
                 dropped++;
                 if (!string.IsNullOrEmpty(frameworkCode) && !localFrameworkCodes.Contains(frameworkCode))
                 {
@@ -2618,6 +2637,73 @@ namespace Blueprint.Api.Services
                     message += $" Missing competency framework{(missingFrameworks.Count == 1 ? "" : "s")}: {string.Join(", ", missingFrameworks)}.";
                 AddChange(result, "competencies", message);
             }
+
+            await RemoveUnknownCompetencyCodesAsync(mselEntity, hasMselCompetencies ? keptCodes : null, result, ct);
+        }
+
+        /// <summary>
+        /// A Competency data field's options and its scenario event values name competencies by code (an
+        /// option's name, a comma-separated value), with no foreign key to catch a code that names nothing
+        /// here. Codes of competencies the import kept stay; the rest are removed and counted in the report.
+        /// <paramref name="keptCodes"/> null means the file had no MSEL competencies to hold the codes to, as
+        /// files from before competencies were exported do; a code then stays if any competency here has it.
+        /// </summary>
+        private async Task RemoveUnknownCompetencyCodesAsync(MselEntity mselEntity, HashSet<string> keptCodes, MselImportResult result, CancellationToken ct)
+        {
+            var fieldIds = mselEntity.DataFields
+                .Where(df => df.DataType == DataFieldType.Competency)
+                .Select(df => df.Id)
+                .ToHashSet();
+            if (fieldIds.Count == 0)
+                return;
+            var options = mselEntity.DataFields.Where(df => fieldIds.Contains(df.Id)).SelectMany(df => df.DataOptions).ToList();
+            var values = mselEntity.ScenarioEvents
+                .SelectMany(se => se.DataValues)
+                .Where(dv => fieldIds.Contains(dv.DataFieldId) && !string.IsNullOrWhiteSpace(dv.Value))
+                .ToList();
+            static List<string> Codes(string value) =>
+                value.Split(',').Select(code => code.Trim()).Where(code => code.Length > 0).ToList();
+            if (keptCodes == null)
+            {
+                var named = options.Select(o => o.OptionName)
+                    .Concat(values.SelectMany(v => Codes(v.Value)))
+                    .Where(code => !string.IsNullOrEmpty(code))
+                    .Distinct()
+                    .ToList();
+                keptCodes = named.Count == 0 ? [] : (await _context.Competencies
+                    .AsNoTracking()
+                    .Where(c => named.Contains(c.IdNumber))
+                    .Select(c => c.IdNumber)
+                    .ToListAsync(ct)).ToHashSet();
+            }
+
+            var droppedOptions = 0;
+            foreach (var dataField in mselEntity.DataFields.Where(df => fieldIds.Contains(df.Id)))
+            {
+                var kept = dataField.DataOptions.Where(o => o.OptionName != null && keptCodes.Contains(o.OptionName)).ToList();
+                droppedOptions += dataField.DataOptions.Count - kept.Count;
+                dataField.DataOptions = kept;
+            }
+            var droppedValueCodes = 0;
+            foreach (var value in values)
+            {
+                var codes = Codes(value.Value);
+                var kept = codes.Where(keptCodes.Contains).ToList();
+                if (kept.Count == codes.Count)
+                    continue;
+                droppedValueCodes += codes.Count - kept.Count;
+                value.Value = string.Join(", ", kept);
+            }
+
+            if (droppedOptions == 0 && droppedValueCodes == 0)
+                return;
+            var removed = new List<string>();
+            if (droppedOptions > 0)
+                removed.Add(droppedOptions == 1 ? "1 option" : $"{droppedOptions} options");
+            if (droppedValueCodes > 0)
+                removed.Add(droppedValueCodes == 1 ? "1 entry in scenario event values" : $"{droppedValueCodes} entries in scenario event values");
+            AddChange(result, "competencies",
+                $"Competencies that are not in this Blueprint were removed from Competency data fields: {string.Join(" and ", removed)}.");
         }
 
         public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)

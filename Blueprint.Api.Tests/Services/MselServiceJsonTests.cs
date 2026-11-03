@@ -1672,6 +1672,107 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.DoesNotContain(result.Changes, c => c.Field == "competencies");
     }
 
+    /// <summary>
+    /// A Competency data field names competencies by code, in its options and in the scenario event values,
+    /// with no foreign key behind them. Codes of the competencies the import kept stay; codes of the ones
+    /// it dropped are removed with them, and the report counts them.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfACompetencyDataField_KeepsTheCodesOfTheCompetenciesKeptAndRemovesTheRest()
+    {
+        var framework = TestData.CompetencyFramework();
+        var local = TestData.Competency(framework.Id, idNumber: "T1118");
+        await Seed(framework, local);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var missingFramework = $"dcwf-{Guid.NewGuid()}";
+        var file = Exported(m =>
+        {
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), framework.IdNumber, "T1118"));
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), missingFramework, "S0002"));
+            var dataField = TestData.DataField(mselId: m.Id, dataType: DataFieldType.Competency);
+            dataField.DataOptions.Add(TestData.DataOption(dataField.Id, "T1118", "competency T1118", displayOrder: 1));
+            dataField.DataOptions.Add(TestData.DataOption(dataField.Id, "S0002", "competency S0002", displayOrder: 2));
+            m.DataFields.Add(dataField);
+            var scenarioEvent = TestData.ScenarioEvent(m.Id);
+            scenarioEvent.DataValues.Add(TestData.DataValue(dataField.Id, scenarioEvent.Id, "T1118, S0002"));
+            var otherEvent = TestData.ScenarioEvent(m.Id);
+            otherEvent.DataValues.Add(TestData.DataValue(dataField.Id, otherEvent.Id, "S0002"));
+            m.ScenarioEvents.Add(scenarioEvent);
+            m.ScenarioEvents.Add(otherEvent);
+        });
+
+        var result = await Import(Client(actor), file);
+
+        var field = await ReadBack(rb => rb.DataFields.Include(df => df.DataOptions).SingleAsync(df => df.MselId == result.Msel.Id, Ct));
+        Assert.Equal("T1118", Assert.Single(field.DataOptions).OptionName);
+        var values = await ReadBack(rb => rb.DataValues.Where(dv => dv.DataFieldId == field.Id).Select(dv => dv.Value).ToListAsync(Ct));
+        Assert.Equal(["", "T1118"], values.Order());
+        Assert.Contains(result.Changes, c => c.Field == "competencies" && c.Message ==
+            "Competencies that are not in this Blueprint were removed from Competency data fields: 1 option and 2 entries in scenario event values.");
+    }
+
+    /// <summary>
+    /// A file from before MSELs had competencies has none to hold a Competency field's codes to, so a code
+    /// stays if any competency here has it.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfACompetencyDataFieldWithNoMselCompetencies_KeepsTheCodesOfCompetenciesHere()
+    {
+        var framework = TestData.CompetencyFramework();
+        var code = $"K-{Guid.NewGuid()}";
+        await Seed(framework, TestData.Competency(framework.Id, idNumber: code));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            var dataField = TestData.DataField(mselId: m.Id, dataType: DataFieldType.Competency);
+            dataField.DataOptions.Add(TestData.DataOption(dataField.Id, code, "here", displayOrder: 1));
+            dataField.DataOptions.Add(TestData.DataOption(dataField.Id, "NOT-HERE", "nowhere", displayOrder: 2));
+            m.DataFields.Add(dataField);
+            var scenarioEvent = TestData.ScenarioEvent(m.Id);
+            scenarioEvent.DataValues.Add(TestData.DataValue(dataField.Id, scenarioEvent.Id, $"NOT-HERE, {code}"));
+            m.ScenarioEvents.Add(scenarioEvent);
+        });
+
+        var result = await Import(Client(actor), file);
+
+        var field = await ReadBack(rb => rb.DataFields.Include(df => df.DataOptions).SingleAsync(df => df.MselId == result.Msel.Id, Ct));
+        Assert.Equal(code, Assert.Single(field.DataOptions).OptionName);
+        Assert.Equal(code, await ReadBack(rb => rb.DataValues.Where(dv => dv.DataFieldId == field.Id).Select(dv => dv.Value).SingleAsync(Ct)));
+        Assert.Equal(
+            "Competencies that are not in this Blueprint were removed from Competency data fields: 1 option and 1 entry in scenario event values.",
+            Assert.Single(result.Changes, c => c.Field == "competencies").Message);
+    }
+
+    /// <summary>
+    /// Some frameworks' codes are Guids. A copy swaps every Guid-shaped value for the id it gave the same
+    /// row and blanks the ones it has no new id for; a Competency field's value is a code, so it is kept.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfACompetencyValueWhoseCodeIsAGuid_KeepsIt()
+    {
+        var framework = TestData.CompetencyFramework();
+        var code = Guid.NewGuid().ToString();
+        var local = TestData.Competency(framework.Id, idNumber: code);
+        await Seed(framework, local);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            m.MselCompetencies.Add(TestData.MselCompetency(m.Id, local.Id));
+            var dataField = TestData.DataField(mselId: m.Id, dataType: DataFieldType.Competency);
+            dataField.DataOptions.Add(TestData.DataOption(dataField.Id, code, "a CASE competency"));
+            m.DataFields.Add(dataField);
+            var scenarioEvent = TestData.ScenarioEvent(m.Id);
+            scenarioEvent.DataValues.Add(TestData.DataValue(dataField.Id, scenarioEvent.Id, code));
+            m.ScenarioEvents.Add(scenarioEvent);
+        });
+
+        var result = await Import(Client(actor), file);
+
+        var field = await ReadBack(rb => rb.DataFields.SingleAsync(df => df.MselId == result.Msel.Id, Ct));
+        Assert.Equal(code, await ReadBack(rb => rb.DataValues.Where(dv => dv.DataFieldId == field.Id).Select(dv => dv.Value).SingleAsync(Ct)));
+        Assert.Empty(result.Changes);
+    }
+
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>

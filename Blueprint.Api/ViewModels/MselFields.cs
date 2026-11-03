@@ -33,6 +33,11 @@ namespace Blueprint.Api.ViewModels
         public IntegrationType CiteIntegrationType { get; set; }
         public bool UseSteamfitter { get; set; }
         public IntegrationType SteamfitterIntegrationType { get; set; }
+        /// <summary>
+        /// When the push's Steamfitter scenario is started. Not an integration setting: it does not change what
+        /// the push builds, so it can be changed while the MSEL is pushed.
+        /// </summary>
+        public SteamfitterScenarioStartMode SteamfitterScenarioStartMode { get; set; }
         public bool UseCaster { get; set; }
         /// <summary>The Caster directory a push deploys from, which the caller must be able to view.</summary>
         public Guid? CasterDirectoryId { get; set; }

@@ -37,6 +37,9 @@ namespace Blueprint.Api.Infrastructure.Options
         public int CasterPlanMaxWaitMinutes { get; set; } = 15;
         public int CasterApplyMaxWaitMinutes { get; set; } = 120;
         public int CasterDestroyMaxWaitMinutes { get; set; } = 60;
+
+        // How often to look for Steamfitter scenarios that are to start at their MSEL start time
+        public int SteamfitterStartCheckSeconds { get; set; } = 30;
     }
 }
 

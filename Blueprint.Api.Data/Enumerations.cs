@@ -22,6 +22,14 @@ namespace Blueprint.Api.Data.Enumerations
         Connect = 30
     }
 
+    // when Blueprint starts the Steamfitter scenario it pushes; Steamfitter runs no task until it is started
+    public enum SteamfitterScenarioStartMode
+    {
+        Manual = 0,
+        OnPush = 10,
+        AtStartTime = 20
+    }
+
     public enum EventType
     {
         Inject = 10,

@@ -115,6 +115,37 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal("the headline", Single(exportedEvent, "DataValues").GetProperty("Value").GetString());
     }
 
+    [Fact]
+    public async Task Download_ThenUpload_KeepsWhenTheSteamfitterScenarioStarts()
+    {
+        var msel = TestData.Msel();
+        msel.UseSteamfitter = true;
+        msel.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.AtStartTime;
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, SystemPermission.CreateMsels).SeedAsync();
+        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
+        var file = (await ReadExport(response)).GetRawText();
+
+        var imported = await Upload(Client(actor), file);
+
+        Assert.Equal((int)SteamfitterScenarioStartMode.AtStartTime,
+            JsonDocument.Parse(file).RootElement.GetProperty("SteamfitterScenarioStartMode").GetInt32());
+        Assert.Equal(SteamfitterScenarioStartMode.AtStartTime, imported.SteamfitterScenarioStartMode);
+    }
+
+    /// <summary>A file from before the setting existed imports as a scenario someone starts by hand.</summary>
+    [Fact]
+    public async Task Upload_OfAFileWithoutTheSteamfitterStartMode_StartsTheScenarioManually()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(Exported(m => m.UseSteamfitter = true)).AsObject();
+        file.Remove("SteamfitterScenarioStartMode");
+
+        var imported = await Upload(Client(actor), file.ToJsonString());
+
+        Assert.Equal(SteamfitterScenarioStartMode.Manual, imported.SteamfitterScenarioStartMode);
+    }
+
     /// <summary>Text outside ASCII survives the export, as <c>\uXXXX</c> escapes in an ASCII file.</summary>
     [Fact]
     public async Task Download_KeepsTextOutsideAscii()
@@ -1146,6 +1177,38 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal(["usePlayer", "useSteamfitter"], result.Changes.Select(c => c.Field).Order());
     }
 
+    /// <summary>
+    /// A scenario that starts itself runs its tasks as soon as a facilitator clicks them, so the report says so.
+    /// </summary>
+    [Theory]
+    [InlineData(SteamfitterScenarioStartMode.OnPush, "The Steamfitter scenario starts when the push finishes.")]
+    [InlineData(SteamfitterScenarioStartMode.AtStartTime, "The Steamfitter scenario starts at the MSEL start time.")]
+    public async Task Import_ReportsAScenarioThatStartsItself(SteamfitterScenarioStartMode mode, string message)
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            m.UseSteamfitter = true;
+            m.SteamfitterScenarioStartMode = mode;
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(message, Assert.Single(result.Changes, c => c.Field == "steamfitterScenarioStartMode").Message);
+        Assert.Equal(mode, result.Msel.SteamfitterScenarioStartMode);
+    }
+
+    [Fact]
+    public async Task Import_OfAManuallyStartedScenario_ReportsNothingAboutIt()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var result = await Import(Client(actor), Exported(m => m.UseSteamfitter = true));
+
+        Assert.DoesNotContain(result.Changes, c => c.Field == "steamfitterScenarioStartMode");
+        Assert.Equal(SteamfitterScenarioStartMode.Manual, result.Msel.SteamfitterScenarioStartMode);
+    }
+
     [Fact]
     public async Task Import_OfAnUnknownScoringModel_ReportsThatItWasNotLinked()
     {
@@ -1481,7 +1544,349 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Empty(result.Failures);
     }
 
+    /// <summary>
+    /// A file the database still refuses used to come back as EF's "See the inner exception for details",
+    /// behind "A server error occurred.". It is a 400 that names the table and the constraint, carries
+    /// nothing of the database's own message, and saves nothing.
+    /// </summary>
+    [Fact]
+    public async Task Import_ThatTheDatabaseRefuses_Is400AndNamesTheTableAndConstraint()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var before = await ReadBack(rb => rb.Msels.CountAsync(Ct));
+        // a MSEL's data field may not also belong to an inject type
+        var file = Exported(m => m.DataFields.Add(TestData.DataField(mselId: m.Id, injectTypeId: Guid.NewGuid())));
+
+        var response = await Post(Client(actor), file, ImportRoute);
+
+        var error = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.BadRequest, response);
+        Assert.Equal(
+            "The MSEL could not be imported because a row in data_fields breaks a database rule (CK_data_fields_data_field_msel_or_inject_type). Nothing was imported.",
+            error.Title);
+        Assert.Null(error.Detail);
+        Assert.Equal(before, await ReadBack(rb => rb.Msels.CountAsync(Ct)));
+    }
+
     // ---------------------------------------------------------------------------------------------
+    // Competencies, whose ids are local to the Blueprint that exported them
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Each competency link, the MSEL's and its teams', carries its competency's code and its framework's
+    /// code, name and version beside the id, so another Blueprint can find the same competency.
+    /// </summary>
+    [Fact]
+    public async Task Download_CarriesTheCodesOfEachLinkedCompetency()
+    {
+        var msel = TestData.Msel();
+        var team = TestData.Team(msel.Id);
+        var framework = TestData.CompetencyFramework(version: "2.0.0");
+        var competency = TestData.Competency(framework.Id, idNumber: "T1118");
+        await Seed(msel, team, framework, competency);
+        await Seed(TestData.MselCompetency(msel.Id, competency.Id), TestData.TeamCompetency(team.Id, competency.Id));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var exported = await ReadExport(await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct));
+
+        foreach (var link in new[] { Single(exported, "MselCompetencies"), Single(Single(exported, "Teams"), "TeamCompetencies") })
+        {
+            Assert.Equal(competency.Id, link.GetProperty("CompetencyId").GetGuid());
+            var carried = link.GetProperty("Competency");
+            Assert.Equal("T1118", carried.GetProperty("IdNumber").GetString());
+            Assert.Equal(competency.ShortName, carried.GetProperty("ShortName").GetString());
+            var carriedFramework = carried.GetProperty("CompetencyFramework");
+            Assert.Equal(framework.IdNumber, carriedFramework.GetProperty("IdNumber").GetString());
+            Assert.Equal(framework.Name, carriedFramework.GetProperty("Name").GetString());
+            Assert.Equal("2.0.0", carriedFramework.GetProperty("Version").GetString());
+            // the codes, not the framework: its description stays behind
+            Assert.Equal(JsonValueKind.Null, carriedFramework.GetProperty("Description").ValueKind);
+        }
+    }
+
+    /// <summary>
+    /// A link to a competency of a framework this Blueprint also has is pointed at the local competency
+    /// with the same framework and competency codes, whatever its id is here.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfCompetencyLinksToAFrameworkThisBlueprintHas_LinksTheLocalCompetenciesByCode()
+    {
+        var framework = TestData.CompetencyFramework();
+        var local = TestData.Competency(framework.Id, idNumber: "T1118");
+        await Seed(framework, local);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            var elsewhere = Guid.NewGuid();
+            var team = TestData.Team(m.Id);
+            team.TeamCompetencies.Add(CarriedLink(TestData.TeamCompetency(team.Id, elsewhere), framework.IdNumber, "T1118"));
+            m.Teams.Add(team);
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, elsewhere), framework.IdNumber, "T1118"));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(local.Id, Assert.Single(await ReadBack(rb => rb.MselCompetencies.Where(x => x.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.Equal(local.Id, Assert.Single(await ReadBack(rb => rb.TeamCompetencies.Where(x => x.Team.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.DoesNotContain(result.Changes, c => c.Field == "competencies");
+    }
+
+    /// <summary>
+    /// A link to a framework this Blueprint does not have used to fail the whole import on its foreign key.
+    /// It is dropped instead, and the report says how many links went and which frameworks are missing.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfCompetencyLinksToAFrameworkThisBlueprintLacks_DropsThemAndNamesTheFramework()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var frameworkCode = $"nice-{Guid.NewGuid()}";
+        var file = Exported(m =>
+        {
+            var team = TestData.Team(m.Id);
+            team.TeamCompetencies.Add(CarriedLink(TestData.TeamCompetency(team.Id, Guid.NewGuid()), frameworkCode, "T1118", "NICE Framework", "2.0.0"));
+            m.Teams.Add(team);
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), frameworkCode, "T1118", "NICE Framework", "2.0.0"));
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), frameworkCode, "T1119", "NICE Framework", "2.0.0"));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(
+            "3 competency links to the MSEL or its teams were not imported because their competencies are not in this Blueprint. Missing competency framework: NICE Framework 2.0.0.",
+            Assert.Single(result.Changes, c => c.Field == "competencies").Message);
+        Assert.Equal(1, result.Imported.Teams);
+        Assert.Empty(await ReadBack(rb => rb.MselCompetencies.Where(x => x.MselId == result.Msel.Id).ToListAsync(Ct)));
+        Assert.Empty(await ReadBack(rb => rb.TeamCompetencies.Where(x => x.Team.MselId == result.Msel.Id).ToListAsync(Ct)));
+    }
+
+    /// <summary>
+    /// A framework this Blueprint has, but in a version without one of the file's competencies: that link
+    /// is dropped, and no framework is reported missing.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfALinkToACompetencyTheLocalFrameworkLacks_DropsOnlyThatLink()
+    {
+        var framework = TestData.CompetencyFramework();
+        var local = TestData.Competency(framework.Id, idNumber: "T1118");
+        await Seed(framework, local);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), framework.IdNumber, "T1118"));
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), framework.IdNumber, "T9999"));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(
+            "1 competency link to the MSEL or a team was not imported because its competency is not in this Blueprint.",
+            Assert.Single(result.Changes, c => c.Field == "competencies").Message);
+        Assert.Equal(local.Id, Assert.Single(await ReadBack(rb => rb.MselCompetencies.Where(x => x.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+    }
+
+    /// <summary>
+    /// A file from before the export carried codes has only the ids: a link keeps its competency if that
+    /// id is here, and is otherwise dropped and reported.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfAnOlderFileWithoutCodes_KeepsOnlyTheLinksToCompetenciesHere()
+    {
+        var framework = TestData.CompetencyFramework();
+        var local = TestData.Competency(framework.Id);
+        await Seed(framework, local);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            var team = TestData.Team(m.Id);
+            team.TeamCompetencies.Add(TestData.TeamCompetency(team.Id, local.Id));
+            team.TeamCompetencies.Add(TestData.TeamCompetency(team.Id, Guid.NewGuid()));
+            m.Teams.Add(team);
+            m.MselCompetencies.Add(TestData.MselCompetency(m.Id, local.Id));
+            m.MselCompetencies.Add(TestData.MselCompetency(m.Id, Guid.NewGuid()));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(local.Id, Assert.Single(await ReadBack(rb => rb.MselCompetencies.Where(x => x.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.Equal(local.Id, Assert.Single(await ReadBack(rb => rb.TeamCompetencies.Where(x => x.Team.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.Equal(
+            "2 competency links to the MSEL or its teams were not imported because their competencies are not in this Blueprint.",
+            Assert.Single(result.Changes, c => c.Field == "competencies").Message);
+    }
+
+    /// <summary>
+    /// Two of the file's competencies that are one competency here give one link, as the unique index on
+    /// the link requires, rather than a failed save.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfTwoLinksThatMatchOneCompetencyHere_KeepsOneLink()
+    {
+        var framework = TestData.CompetencyFramework();
+        var local = TestData.Competency(framework.Id, idNumber: "T1118");
+        await Seed(framework, local);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            m.MselCompetencies.Add(TestData.MselCompetency(m.Id, local.Id));
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), framework.IdNumber, "T1118"));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(local.Id, Assert.Single(await ReadBack(rb => rb.MselCompetencies.Where(x => x.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.DoesNotContain(result.Changes, c => c.Field == "competencies");
+    }
+
+    /// <summary>A real export, codes and all, imports back into the Blueprint it came from with its links.</summary>
+    [Fact]
+    public async Task Download_ThenImport_KeepsTheCompetencyLinks()
+    {
+        var msel = TestData.Msel();
+        var team = TestData.Team(msel.Id);
+        var framework = TestData.CompetencyFramework();
+        var competency = TestData.Competency(framework.Id);
+        await Seed(msel, team, framework, competency);
+        await Seed(TestData.MselCompetency(msel.Id, competency.Id), TestData.TeamCompetency(team.Id, competency.Id));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, SystemPermission.CreateMsels).SeedAsync();
+        var exported = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
+        Assert.Equal(HttpStatusCode.OK, exported.StatusCode);
+
+        var result = await Import(Client(actor), await exported.Content.ReadAsStringAsync(Ct));
+
+        Assert.Equal(competency.Id, Assert.Single(await ReadBack(rb => rb.MselCompetencies.Where(x => x.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.Equal(competency.Id, Assert.Single(await ReadBack(rb => rb.TeamCompetencies.Where(x => x.Team.MselId == result.Msel.Id).ToListAsync(Ct))).CompetencyId);
+        Assert.Equal(1, await ReadBack(rb => rb.CompetencyFrameworks.CountAsync(f => f.IdNumber == framework.IdNumber, Ct)));
+        Assert.DoesNotContain(result.Changes, c => c.Field == "competencies");
+    }
+
+    /// <summary>
+    /// A Competency data field names competencies by code, in its options and in the scenario event values,
+    /// with no foreign key behind them. Codes of the competencies the import kept stay; codes of the ones
+    /// it dropped are removed with them, and the report counts them.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfACompetencyDataField_KeepsTheCodesOfTheCompetenciesKeptAndRemovesTheRest()
+    {
+        var framework = TestData.CompetencyFramework();
+        var local = TestData.Competency(framework.Id, idNumber: "T1118");
+        await Seed(framework, local);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var missingFramework = $"dcwf-{Guid.NewGuid()}";
+        var file = Exported(m =>
+        {
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), framework.IdNumber, "T1118"));
+            m.MselCompetencies.Add(CarriedLink(TestData.MselCompetency(m.Id, Guid.NewGuid()), missingFramework, "S0002"));
+            var dataField = TestData.DataField(mselId: m.Id, dataType: DataFieldType.Competency);
+            dataField.DataOptions.Add(TestData.DataOption(dataField.Id, "T1118", "competency T1118", displayOrder: 1));
+            dataField.DataOptions.Add(TestData.DataOption(dataField.Id, "S0002", "competency S0002", displayOrder: 2));
+            m.DataFields.Add(dataField);
+            var scenarioEvent = TestData.ScenarioEvent(m.Id);
+            scenarioEvent.DataValues.Add(TestData.DataValue(dataField.Id, scenarioEvent.Id, "T1118, S0002"));
+            var otherEvent = TestData.ScenarioEvent(m.Id);
+            otherEvent.DataValues.Add(TestData.DataValue(dataField.Id, otherEvent.Id, "S0002"));
+            m.ScenarioEvents.Add(scenarioEvent);
+            m.ScenarioEvents.Add(otherEvent);
+        });
+
+        var result = await Import(Client(actor), file);
+
+        var field = await ReadBack(rb => rb.DataFields.Include(df => df.DataOptions).SingleAsync(df => df.MselId == result.Msel.Id, Ct));
+        Assert.Equal("T1118", Assert.Single(field.DataOptions).OptionName);
+        var values = await ReadBack(rb => rb.DataValues.Where(dv => dv.DataFieldId == field.Id).Select(dv => dv.Value).ToListAsync(Ct));
+        Assert.Equal(["", "T1118"], values.Order());
+        Assert.Contains(result.Changes, c => c.Field == "competencies" && c.Message ==
+            "Competencies that are not in this Blueprint were removed from Competency data fields: 1 option and 2 entries in scenario event values.");
+    }
+
+    /// <summary>
+    /// A file from before MSELs had competencies has none to hold a Competency field's codes to, so a code
+    /// stays if any competency here has it.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfACompetencyDataFieldWithNoMselCompetencies_KeepsTheCodesOfCompetenciesHere()
+    {
+        var framework = TestData.CompetencyFramework();
+        var code = $"K-{Guid.NewGuid()}";
+        await Seed(framework, TestData.Competency(framework.Id, idNumber: code));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            var dataField = TestData.DataField(mselId: m.Id, dataType: DataFieldType.Competency);
+            dataField.DataOptions.Add(TestData.DataOption(dataField.Id, code, "here", displayOrder: 1));
+            dataField.DataOptions.Add(TestData.DataOption(dataField.Id, "NOT-HERE", "nowhere", displayOrder: 2));
+            m.DataFields.Add(dataField);
+            var scenarioEvent = TestData.ScenarioEvent(m.Id);
+            scenarioEvent.DataValues.Add(TestData.DataValue(dataField.Id, scenarioEvent.Id, $"NOT-HERE, {code}"));
+            m.ScenarioEvents.Add(scenarioEvent);
+        });
+
+        var result = await Import(Client(actor), file);
+
+        var field = await ReadBack(rb => rb.DataFields.Include(df => df.DataOptions).SingleAsync(df => df.MselId == result.Msel.Id, Ct));
+        Assert.Equal(code, Assert.Single(field.DataOptions).OptionName);
+        Assert.Equal(code, await ReadBack(rb => rb.DataValues.Where(dv => dv.DataFieldId == field.Id).Select(dv => dv.Value).SingleAsync(Ct)));
+        Assert.Equal(
+            "Competencies that are not in this Blueprint were removed from Competency data fields: 1 option and 1 entry in scenario event values.",
+            Assert.Single(result.Changes, c => c.Field == "competencies").Message);
+    }
+
+    /// <summary>
+    /// Some frameworks' codes are Guids. A copy swaps every Guid-shaped value for the id it gave the same
+    /// row and blanks the ones it has no new id for; a Competency field's value is a code, so it is kept.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfACompetencyValueWhoseCodeIsAGuid_KeepsIt()
+    {
+        var framework = TestData.CompetencyFramework();
+        var code = Guid.NewGuid().ToString();
+        var local = TestData.Competency(framework.Id, idNumber: code);
+        await Seed(framework, local);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            m.MselCompetencies.Add(TestData.MselCompetency(m.Id, local.Id));
+            var dataField = TestData.DataField(mselId: m.Id, dataType: DataFieldType.Competency);
+            dataField.DataOptions.Add(TestData.DataOption(dataField.Id, code, "a CASE competency"));
+            m.DataFields.Add(dataField);
+            var scenarioEvent = TestData.ScenarioEvent(m.Id);
+            scenarioEvent.DataValues.Add(TestData.DataValue(dataField.Id, scenarioEvent.Id, code));
+            m.ScenarioEvents.Add(scenarioEvent);
+        });
+
+        var result = await Import(Client(actor), file);
+
+        var field = await ReadBack(rb => rb.DataFields.SingleAsync(df => df.MselId == result.Msel.Id, Ct));
+        Assert.Equal(code, await ReadBack(rb => rb.DataValues.Where(dv => dv.DataFieldId == field.Id).Select(dv => dv.Value).SingleAsync(Ct)));
+        Assert.Empty(result.Changes);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Gives a file's competency link the codes an export carries: its competency's and its framework's.
+    /// </summary>
+    private static T CarriedLink<T>(T link, string frameworkCode, string competencyCode, string frameworkName = null, string version = null)
+        where T : class
+    {
+        var competency = new CompetencyEntity
+        {
+            IdNumber = competencyCode,
+            ShortName = $"competency {competencyCode}",
+            CompetencyFramework = new CompetencyFrameworkEntity { IdNumber = frameworkCode, Name = frameworkName, Version = version }
+        };
+        switch (link)
+        {
+            case MselCompetencyEntity mselCompetency:
+                competency.Id = mselCompetency.CompetencyId;
+                mselCompetency.Competency = competency;
+                break;
+            case TeamCompetencyEntity teamCompetency:
+                competency.Id = teamCompetency.CompetencyId;
+                teamCompetency.Competency = competency;
+                break;
+        }
+
+        return link;
+    }
 
     /// <summary>
     /// Tells the substituted CITE client what this installation's CITE contains. Both lists default to

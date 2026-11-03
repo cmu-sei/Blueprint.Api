@@ -113,6 +113,7 @@ namespace Blueprint.Api.Services
             if (playerApplication == null)
                 throw new EntityNotFoundException<PlayerApplication>();
             await ServiceUtilities.EnsureTeamIsInMselAsync(playerApplicationTeam.TeamId, playerApplication.MselId, _context, ct);
+            await PlayerApplicationViews.EnsureTeamHasNoSameViewAsync(_context, playerApplicationTeam.TeamId, playerApplication, ct);
 
             // make sure that the display order is valid
             var itemList = await _context.PlayerApplicationTeams.Where(m => m.TeamId == playerApplicationTeam.TeamId).OrderBy(m => m.DisplayOrder).ToListAsync();

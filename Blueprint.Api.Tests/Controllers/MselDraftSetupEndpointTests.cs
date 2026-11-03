@@ -149,7 +149,7 @@ public class MselDraftSetupEndpointTests(DatabaseFixture fixture, AiEnabledFacto
     [InlineData("{blueprintUrl}/mselpage/a{theme}", "{blueprintUrl}/mselpage/b{theme}", false)]
     [InlineData("https://range.example/admin/", "https://range.example/admin", true)]
     public void ApplicationView_TreatsTheSameViewAsOne(string a, string b, bool same) =>
-        Assert.Equal(same, MselDraftBuilder.ApplicationView(a) == MselDraftBuilder.ApplicationView(b));
+        Assert.Equal(same, PlayerApplicationViews.Same(a, b));
 
     private async Task<(Guid MselId, MselImportResult Result)> Import(TestActor planner, MselEntity template)
     {

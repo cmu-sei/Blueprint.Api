@@ -66,7 +66,6 @@ public class UniqueIndexEndpointTests(DatabaseFixture fixture, BlueprintAppFacto
     [InlineData("api/cataloginjects", "CatalogInjectService.CreateAsync")]
     [InlineData("api/cataloginjects/multiple", "CatalogInjectService.CreateMultipleAsync")]
     [InlineData("api/groups/{0}/memberships", "GroupService.CreateMembershipAsync")]
-    [InlineData("api/teamplayerApplications", "PlayerApplicationTeamService.CreateAsync")]
     public async Task Create_answers_an_existing_join_pair_with_a_server_error_and_keeps_one_membership(string route, string service)
     {
         var request = await JoinPair(route);
@@ -74,6 +73,18 @@ public class UniqueIndexEndpointTests(DatabaseFixture fixture, BlueprintAppFacto
         var response = await RootClient.PostAsJsonAsync(request.Route, request.Body, Ct);
 
         await SaveError(response, service);
+        Assert.Equal(1, await CountRows(request.Type));
+    }
+
+    /// <summary>A team that has the application already is told so before the unique index is reached.</summary>
+    [Fact]
+    public async Task Create_answers_an_existing_team_application_pair_with_a_conflict_and_keeps_one_membership()
+    {
+        var request = await JoinPair("api/teamplayerApplications");
+
+        var response = await RootClient.PostAsJsonAsync(request.Route, request.Body, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal(1, await CountRows(request.Type));
     }
 

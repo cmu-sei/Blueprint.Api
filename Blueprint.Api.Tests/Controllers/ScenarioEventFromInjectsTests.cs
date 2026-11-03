@@ -159,6 +159,59 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
         Assert.Contains(DataFieldType.String, named.Select(x => x.DataType));
     }
 
+    /// <summary>
+    /// The inject's description is text, which an HTML column holds as well as a plain one, so an HTML
+    /// Description column is the Description column - the Gallery article body is one.
+    /// </summary>
+    [Fact]
+    public async Task CreateFromInjects_ReusesAnExistingHtmlDescriptionField()
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var existing = TestData.DataField(
+            mselId: msel.Id,
+            dataType: DataFieldType.Html,
+            name: "Description");
+        await Seed(existing);
+        var source = await SeedInjects(1);
+
+        await FromInjects(Client(actor), msel, source);
+
+        var described = (await FieldsOn(msel.Id)).Where(x => x.Name == "Description").ToList();
+
+        Assert.Equal(existing.Id, Assert.Single(described).Id);
+        Assert.Equal(source.Injects[0].Description, (await CellsByFieldName(msel.Id))["Description"]);
+    }
+
+    /// <summary>
+    /// With both a plain and an HTML Description column, the description goes to the one the Gallery
+    /// push reads the article body from.
+    /// </summary>
+    [Fact]
+    public async Task CreateFromInjects_PrefersTheDescriptionFieldMappedToTheGalleryArticleBody()
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        await Seed(TestData.DataField(
+            mselId: msel.Id,
+            dataType: DataFieldType.String,
+            name: "Description"));
+        var mapped = TestData.DataField(
+            mselId: msel.Id,
+            dataType: DataFieldType.Html,
+            displayOrder: 2,
+            name: "Description");
+        mapped.GalleryArticleParameter = nameof(GalleryArticleParameter.Description);
+        await Seed(mapped);
+        var source = await SeedInjects(1);
+
+        var rows = await FromInjects(Client(actor), msel, source);
+
+        Assert.Equal(2, (await FieldsOn(msel.Id)).Count(x => x.Name == "Description"));
+        var cells = await CellsOn(Assert.Single(rows).Id);
+        Assert.Equal(source.Injects[0].Description, Assert.Single(cells, x => x.DataFieldId == mapped.Id).Value);
+    }
+
     [Fact]
     public async Task CreateFromInjects_CopiesTheOptionsOfAChosenFromListField()
     {

@@ -213,9 +213,14 @@ namespace Blueprint.Api.Services
                 };
                 _context.DataFields.Add(mselDataFieldEntity);
             }
-            // add the desciption data field
+            // add the desciption data field, reusing a plain text or HTML Description column (preferring the one
+            // mapped to the Gallery article body), so a MSEL with an HTML Description does not get a second one
             var descriptionDataFieldId = Guid.Empty;
-            mselDataFieldEntity = msel.DataFields.SingleOrDefault(m => m.Name == "Description" && m.DataType == DataFieldType.String);
+            mselDataFieldEntity = msel.DataFields
+                .Where(m => m.Name == "Description" && (m.DataType == DataFieldType.String || m.DataType == DataFieldType.Html))
+                .OrderByDescending(m => m.GalleryArticleParameter == nameof(GalleryArticleParameter.Description))
+                .ThenBy(m => m.DataType == DataFieldType.Html)
+                .FirstOrDefault();
             if (mselDataFieldEntity != null)
             {
                 descriptionDataFieldId = mselDataFieldEntity.Id;

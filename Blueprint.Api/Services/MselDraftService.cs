@@ -32,7 +32,7 @@ namespace Blueprint.Api.Services
         Task<MselDraftResult> DesignAsync(MselDraftRequest request, CancellationToken ct);
         /// <summary>The second step: the injects, CITE tasks and questions, and read-in, written to an approved design</summary>
         Task<MselDraft> WriteInjectsAsync(MselEntity template, MselDraft design, string prompt, List<MselDesignAnswer> answers,
-            Dictionary<string, CompetencyEntity> competencies, List<string> warnings, CancellationToken ct);
+            Dictionary<string, CompetencyEntity> competencies, List<string> warnings, CancellationToken ct, CasterRange range = null);
         /// <summary>The full text of one long column of one outlined inject, written on its own so no answer runs out of room</summary>
         Task<string> WriteInjectTextAsync(MselEntity msel, MselDraft draft, int injectIndex, DataFieldEntity field, CancellationToken ct);
         /// <summary>The catalog metadata of a built MSEL, from everything written into it</summary>
@@ -187,7 +187,15 @@ and ENDEX rows. In move 0 put only the read-in notice and any welcome; in the la
 inject of play belongs to moves 1 and on, at or after move 1's start.
 Write each inject as an outline: its time, type, card and short columns, its expected action and objective. Its long text (the
 document, message or description) is written next, one inject at a time, from what you give here, so make each inject's title,
-summary, sender and recipients specific enough to write it from and keep the storyline in them.";
+summary, sender and recipients specific enough to write it from and keep the storyline in them.
+Write the scenario's indicator set once, in indicators, and use only it: the defenders' hosts (assets), each organization's own
+domain (domains), and the adversary's infrastructure (adversary: C2 addresses, domains, files, phishing senders and user agents,
+each with what it is for). Adversary addresses come from 192.0.2.0/24, 198.51.100.0/24 or 203.0.113.0/24, hosts from 10.0.0.0/8,
+172.16.0.0/12 or 192.168.0.0/16, and every domain ends .example or .test; give a file its name, Blueprint makes up its hashes. Reuse
+the same indicators across moves so participants can pivot from one alert or report to the next. In each inject, list in indicators
+the values its document names (host names, addresses, domains, files, senders) and in techniques the ATT&CK techniques it shows, as
+ID and name. Give two to four Intel articles the CtiEvent layout, a MISP-style CTI event of what is known by then, and every other
+row the Standard layout.";
 
         public async Task<MselDraftResult> DesignAsync(MselDraftRequest request, CancellationToken ct)
         {
@@ -239,13 +247,14 @@ summary, sender and recipients specific enough to write it from and keep the sto
         }
 
         public async Task<MselDraft> WriteInjectsAsync(MselEntity template, MselDraft design, string prompt, List<MselDesignAnswer> answers,
-            Dictionary<string, CompetencyEntity> competencies, List<string> warnings, CancellationToken ct)
+            Dictionary<string, CompetencyEntity> competencies, List<string> warnings, CancellationToken ct, CasterRange range = null)
         {
             if (!_aiOptions.Enabled)
                 throw new InvalidOperationException("AI drafting is not enabled on this server.");
             var fields = MselDraftRules.DraftedFields(template).ToList();
             var schema = InjectsSchema(BuildSchema(fields, _aiOptions.MaxInjects, competencies, MselDraftRules.UsesCards(template), template.UseCite,
-                design.Design?.CiteAssessment == MselDraftRules.QuestionsByMove), LongFields(fields));
+                design.Design?.CiteAssessment == MselDraftRules.QuestionsByMove), fields,
+                (design.Organizations ?? new List<MselDraftOrganization>()).Select(o => o.ShortName).Where(n => !string.IsNullOrWhiteSpace(n)).ToList());
             var sb = new StringBuilder(BuildPrompt(prompt ?? design.Description ?? design.Name, template, fields, _aiOptions.MaxInjects, competencies, design.Design));
             sb.AppendLine();
             sb.AppendLine("The approved design:");
@@ -273,6 +282,16 @@ summary, sender and recipients specific enough to write it from and keep the sto
                 foreach (var answer in answered)
                     sb.AppendLine($"- {answer.Question?.Trim()}: {answer.Answer.Trim()}");
             }
+            // the range participants work in: its machines are the scenario's hosts, so a report names one they can reach
+            if (range?.Hosts.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("The range's machines, from its Caster workspace. They are the scenario's hosts: list each in assets by this name, with this address and network where given, and name no other host.");
+                foreach (var host in range.Hosts)
+                    sb.AppendLine($"- {host.Name}{(host.Role == null ? "" : $" ({host.Role})")}{(host.IpAddresses.Any() ? ": " + string.Join(", ", host.IpAddresses) : "")}{(host.Network == null ? "" : $" on {host.Network}")}{(host.NetworkName == null ? "" : $" ({host.NetworkName})")}{(host.Gateway == null ? "" : $", gateway {host.Gateway}")}");
+                if (range.ExternalNetworks.Any())
+                    sb.AppendLine($"The adversary's addresses may also come from the range's outside {(range.ExternalNetworks.Count == 1 ? "network" : "networks")}: {string.Join(", ", range.ExternalNetworks)}.");
+            }
 
             // the MSEL being built, so its live progress and its usage are both found by it
             _usage.Use("injects", template.Id, design.DraftId == Guid.Empty ? null : design.DraftId);
@@ -296,7 +315,10 @@ summary, sender and recipients specific enough to write it from and keep the sto
                 move.ControllerNotes = details.ControllerNotes;
                 move.CiteQuestions = details.CiteQuestions;
             }
+            // one indicator set for every document, made safe, and each inject's share of it
+            design.Indicators = MselIndicatorRules.Clean(written.Indicators, design, range, warnings);
             MselDraftRules.Normalize(design, template, _aiOptions.MaxInjects, competencies, warnings);
+            MselIndicatorRules.CleanInjects(design, template, warnings);
             return design;
         }
 
@@ -307,7 +329,8 @@ recipients, at its time on the scenario clock. Keep to the outline and the story
 numbers as the injects around it, and nothing participants should only learn from a later inject. Make it something participants can act
 on: it leads to the inject's expected action without stating it.
 Use fictional organizations, people, domains and IP addresses (RFC 5737 / RFC 1918 ranges, example.com style domains); never real personal
-data. Describe adversary activity as a defender would observe it; never working exploit code, malware or real credentials.
+data. Where the scenario's indicators are listed, name only those hosts, addresses, domains, hashes and senders.
+Describe adversary activity as a defender would observe it; never working exploit code, malware or real credentials.
 Write HTML with p, b, i, ul, ol, li, h4 and table with border=""1"" cellpadding=""6"" cellspacing=""0"" only: no colors, no images,
 no style attributes. Answer only by calling the tool.";
 
@@ -461,6 +484,11 @@ Answer only by calling the tool.";
                 sb.AppendLine($"Expected action: {target.ExpectedAction}");
             if (!string.IsNullOrWhiteSpace(field.Description))
                 sb.AppendLine($"The {field.Name} column holds: {field.Description}");
+            if (draft.Indicators != null)
+            {
+                sb.AppendLine();
+                sb.Append(MselIndicatorRules.Describe(draft.Indicators, target, false));
+            }
             return sb.ToString();
         }
 
@@ -539,16 +567,46 @@ Answer only by calling the tool.";
             fields.Where(f => f.DataType == DataFieldType.Html).ToList();
 
         // the injects, read-in and CITE tasks of the full schema, and each move's details by number; the injects without their long columns
-        private static JsonObject InjectsSchema(JsonObject full, List<DataFieldEntity> longFields)
+        private static JsonObject InjectsSchema(JsonObject full, List<DataFieldEntity> fields, List<string> organizations)
         {
             var all = (JsonObject)full["properties"];
             if (all["injects"]?["items"]?["properties"]?["values"] is JsonObject valuesSchema && valuesSchema["properties"] is JsonObject values)
-                foreach (var field in longFields)
+            {
+                foreach (var field in LongFields(fields))
                 {
                     values.Remove(field.Name);
                     if (valuesSchema["required"] is JsonArray required && required.FirstOrDefault(r => r.GetValue<string>() == field.Name) is JsonNode node)
                         required.Remove(node);
                 }
+                // the address and network columns come from the indicator set, and are checked against it
+                foreach (var field in fields.Where(f => values.ContainsKey(f.Name)))
+                    if (field.DataType == DataFieldType.IpAddress)
+                        values[field.Name]["description"] = "An IP address from the indicator set the row is about: one of its hosts' or the adversary's; empty for none";
+                    else if (field.DataType == DataFieldType.Network)
+                        values[field.Name]["description"] = "The network, in CIDR form, of one of the indicator set's hosts the row is about; empty for none";
+            }
+            // each inject's share of the indicator set, its ATT&CK techniques, and its layout
+            if (all["injects"]?["items"]?["properties"] is JsonObject injectProperties)
+            {
+                injectProperties["indicators"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["description"] = "The indicator set's values the inject's document names: host names, addresses, domains, file names, senders; empty for none",
+                    ["items"] = new JsonObject { ["type"] = "string" }
+                };
+                injectProperties["techniques"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["description"] = "The ATT&CK techniques the inject shows, as ID and name, e.g. T1566.001 Spearphishing Attachment; empty for none",
+                    ["items"] = new JsonObject { ["type"] = "string" }
+                };
+                injectProperties["layout"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["enum"] = new JsonArray(MselIndicatorRules.StandardLayout, MselIndicatorRules.CtiEvent),
+                    ["description"] = "CtiEvent for two to four Intel articles written as a MISP-style CTI event; Standard for every other row"
+                };
+            }
             var move = (JsonObject)all["moves"]["items"]["properties"];
             var moveDetails = new JsonObject
             {
@@ -569,11 +627,12 @@ Answer only by calling the tool.";
                 },
                 ["injects"] = all["injects"].DeepClone(),
                 ["readIn"] = all["readIn"].DeepClone(),
-                ["plannerNotes"] = all["plannerNotes"].DeepClone()
+                ["plannerNotes"] = all["plannerNotes"].DeepClone(),
+                ["indicators"] = MselIndicatorRules.Schema(organizations)
             };
             if (all["citeActions"] is JsonNode actions)
                 properties["citeActions"] = actions.DeepClone();
-            return RequireAll(new JsonObject { ["type"] = "object", ["properties"] = properties, ["required"] = new JsonArray("moves", "injects", "readIn") });
+            return RequireAll(new JsonObject { ["type"] = "object", ["properties"] = properties, ["required"] = new JsonArray("moves", "injects", "readIn", "indicators") });
         }
 
         /// <summary>

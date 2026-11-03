@@ -88,6 +88,7 @@ namespace Blueprint.Api.Services
         private readonly AiOptions _aiOptions;
         private readonly IAiImageClient _imageClient;
         private readonly IAiUsageContext _usageContext;
+        private readonly ICasterTopologyClient _casterTopology;
         private readonly ILogger<MselBuildService> _logger;
         private readonly ClaimsPrincipal _user;
         // what the stage loaded; anything else it tracks at save was written by the stage
@@ -95,8 +96,9 @@ namespace Blueprint.Api.Services
 
         public MselBuildService(BlueprintContext context, IMselDraftService mselDraftService, IArticleDraftService articleDraftService,
             IProfileDraftService profileDraftService, IAiUsageService aiUsageService, ICiteApiClient citeApiClient, IPrincipal user,
-            AiOptions aiOptions, IAiImageClient imageClient, IAiUsageContext usageContext, ILogger<MselBuildService> logger)
+            AiOptions aiOptions, IAiImageClient imageClient, IAiUsageContext usageContext, ICasterTopologyClient casterTopology, ILogger<MselBuildService> logger)
         {
+            _casterTopology = casterTopology;
             _context = context;
             _mselDraftService = mselDraftService;
             _articleDraftService = articleDraftService;
@@ -124,7 +126,8 @@ namespace Blueprint.Api.Services
             var warnings = new List<string>();
             var competencies = await MselDraftService.LoadCompetencyChoicesAsync(_context, state.TemplateMselId, state.CompetencyFrameworkIds, ct);
             // the MSEL now holds the design's teams, organizations, cards and columns, so the injects are checked against it
-            var draft = await _mselDraftService.WriteInjectsAsync(msel, state.Draft, state.Prompt, state.Answers, competencies, warnings, ct);
+            var range = await ReadRangeAsync(msel, state, warnings, ct);
+            var draft = await _mselDraftService.WriteInjectsAsync(msel, state.Draft, state.Prompt, state.Answers, competencies, warnings, ct, range);
 
             var created = new Dictionary<MselDraftInject, ScenarioEventEntity>();
             var readIn = MselDraftBuilder.AddInjects(msel, draft, competencies, created);
@@ -276,6 +279,38 @@ namespace Blueprint.Api.Services
             catch (System.Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogWarning(ex, "Could not make the picture of MSEL {MselId}", msel.Id);
+            }
+        }
+
+        /// <summary>
+        /// The machines and networks of the MSEL's Caster workspace, or else of its template's, which become the scenario's
+        /// hosts; a MSEL without Caster, or a workspace Caster cannot show, has its hosts made up, and the build goes on
+        /// </summary>
+        private async Task<CasterRange> ReadRangeAsync(MselEntity msel, MselBuildState state, List<string> warnings, CancellationToken ct)
+        {
+            if (!msel.UseCaster)
+                return null;
+            var workspaceId = msel.CasterWorkspaceId
+                ?? await _context.Msels.AsNoTracking().Where(m => m.Id == state.TemplateMselId).Select(m => m.CasterWorkspaceId).SingleOrDefaultAsync(ct);
+            if (workspaceId is not Guid id)
+                return null;
+            try
+            {
+                var range = await _casterTopology.GetRangeAsync(id, ct);
+                if (range == null || range.Hosts.Count == 0)
+                {
+                    warnings.Add("The Caster workspace has no machines in its plan yet, so the scenario's hosts are made up.");
+                    return range;
+                }
+                if (range.Hosts.All(h => h.IpAddresses.Count == 0))
+                    warnings.Add($"Caster gave no addresses for the workspace's {range.Hosts.Count} machines, so their addresses are made up; their names are the range's.");
+                return range;
+            }
+            catch (System.Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Could not read the topology of Caster workspace {WorkspaceId} for MSEL {MselId}", id, msel.Id);
+                warnings.Add($"Could not read the Caster workspace's machines ({ex.Message}), so the scenario's hosts are made up.");
+                return null;
             }
         }
 

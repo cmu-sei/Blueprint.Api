@@ -35,6 +35,8 @@ public class EnumRangeEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     [InlineData("PUT", "steamfitterIntegrationType", HttpStatusCode.OK, "api/msels/{0}")]
     [InlineData("POST", "casterIntegrationType", HttpStatusCode.Created, "api/msels")]
     [InlineData("PUT", "casterIntegrationType", HttpStatusCode.OK, "api/msels/{0}")]
+    [InlineData("POST", "steamfitterScenarioStartMode", HttpStatusCode.Created, "api/msels")]
+    [InlineData("PUT", "steamfitterScenarioStartMode", HttpStatusCode.OK, "api/msels/{0}")]
     public async Task Write_stores_and_returns_an_undefined_Msel_enum(string method, string member, HttpStatusCode status, string route)
     {
         var msel = TestData.Msel();
@@ -86,7 +88,8 @@ public class EnumRangeEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         ["galleryIntegrationType"] = (int)row.GalleryIntegrationType,
         ["citeIntegrationType"] = (int)row.CiteIntegrationType,
         ["steamfitterIntegrationType"] = (int)row.SteamfitterIntegrationType,
-        ["casterIntegrationType"] = (int)row.CasterIntegrationType
+        ["casterIntegrationType"] = (int)row.CasterIntegrationType,
+        ["steamfitterScenarioStartMode"] = (int)row.SteamfitterScenarioStartMode
     };
 
     private static HttpRequestMessage EventRequest(string method, string member, Guid id, Guid mselId, string route)

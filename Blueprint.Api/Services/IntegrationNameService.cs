@@ -107,8 +107,11 @@ namespace Blueprint.Api.Services
             if (msel.SteamfitterScenarioId.HasValue)
             {
                 var id = msel.SteamfitterScenarioId.Value;
+                // the status comes with the name, and tells whether the push's start of the scenario took
+                Steamfitter.Api.Client.Scenario scenario = null;
                 names.SteamfitterScenarioName = await ResolveAsync("Steamfitter scenario", id,
-                    async () => (await _steamfitterApiClient.GetScenarioAsync(id, ct))?.Name, ct);
+                    async () => (scenario = await _steamfitterApiClient.GetScenarioAsync(id, ct))?.Name, ct);
+                names.SteamfitterScenarioStatus = scenario?.Status.ToString() ?? "";
             }
 
             if (msel.CasterDirectoryId.HasValue)

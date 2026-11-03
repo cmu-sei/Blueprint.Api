@@ -87,6 +87,64 @@ namespace Blueprint.Api.ViewModels
         public List<string> Competencies { get; set; } = new List<string>();
         /// <summary>Assumptions and open questions the model wants the planner to check</summary>
         public List<string> PlannerNotes { get; set; } = new List<string>();
+        /// <summary>
+        /// The scenario's indicators, written once with the injects, so every alert, report, email and CTI event names the
+        /// same hosts, addresses, domains and hashes; null for a draft written in one step
+        /// </summary>
+        public MselIndicatorSet Indicators { get; set; }
+    }
+
+    /// <summary>
+    /// The one set of indicators a scenario's documents share: the defenders' own hosts, the organizations' domains, and the
+    /// adversary's infrastructure. Every value is fictional and safe: documentation and private address ranges, reserved
+    /// domains, and hashes Blueprint makes up.
+    /// </summary>
+    public class MselIndicatorSet
+    {
+        /// <summary>The adversary's fictional name, as CTI reports call it</summary>
+        public string ThreatActor { get; set; }
+        /// <summary>The defenders' hosts: a Caster workspace's machines where the MSEL has one, else made up</summary>
+        public List<MselIndicatorAsset> Assets { get; set; } = new List<MselIndicatorAsset>();
+        /// <summary>Each organization's own domain, for its email addresses and web sites</summary>
+        public List<MselIndicatorDomain> Domains { get; set; } = new List<MselIndicatorDomain>();
+        /// <summary>The adversary's infrastructure: C2 addresses, domains, file hashes, sender addresses and user agents</summary>
+        public List<MselIndicator> Adversary { get; set; } = new List<MselIndicator>();
+        /// <summary>Caster when the hosts are a Caster workspace's machines; empty when they were made up</summary>
+        public string AssetSource { get; set; }
+    }
+
+    public class MselIndicatorAsset
+    {
+        public string HostName { get; set; }
+        /// <summary>Workstation, Server, DomainController, Firewall, Router, WebServer, Database, MailServer or Other</summary>
+        public string Role { get; set; }
+        public string IpAddress { get; set; }
+        /// <summary>The network the host is on, in CIDR form</summary>
+        public string Network { get; set; }
+        /// <summary>The host's gateway, where its Caster workspace gives one</summary>
+        public string Gateway { get; set; }
+    }
+
+    public class MselIndicatorDomain
+    {
+        /// <summary>The organization's short name</summary>
+        public string Organization { get; set; }
+        public string Domain { get; set; }
+    }
+
+    public class MselIndicator
+    {
+        /// <summary>ip, domain, sha256, email or user-agent</summary>
+        public string Type { get; set; }
+        public string Value { get; set; }
+        /// <summary>What it is for, in a few words: C2 server, phishing sender, loader DLL</summary>
+        public string Purpose { get; set; }
+        /// <summary>For a file: its name, which the documents may name it by</summary>
+        public string Name { get; set; }
+        /// <summary>For a file: the same file's MD5, made up with its SHA-256</summary>
+        public string Md5 { get; set; }
+        /// <summary>For a file: the same file's SHA-1</summary>
+        public string Sha1 { get; set; }
     }
 
     public class MselDraftMove
@@ -216,6 +274,12 @@ namespace Blueprint.Api.ViewModels
         public string ExpectedAction { get; set; }
         /// <summary>The ID of the objective the inject serves</summary>
         public string Objective { get; set; }
+        /// <summary>The values of the indicator set the inject's document names: host names, addresses, domains, hashes</summary>
+        public List<string> Indicators { get; set; } = new List<string>();
+        /// <summary>The ATT&amp;CK techniques the inject shows, as ID and name, e.g. T1566.001 Spearphishing Attachment</summary>
+        public List<string> Techniques { get; set; } = new List<string>();
+        /// <summary>CtiEvent for an Intel article written as a MISP-style CTI event; empty for the source type's usual layout</summary>
+        public string Layout { get; set; }
     }
 
     /// <summary>
@@ -283,6 +347,8 @@ namespace Blueprint.Api.ViewModels
     public class MselBuildContent
     {
         public string Html { get; set; }
+        /// <summary>What the server corrected in what was written, such as values outside the scenario's indicator set</summary>
+        public List<string> Warnings { get; set; } = new List<string>();
     }
 
     /// <summary>A competency the draft assigned, named so the planner can review it</summary>
@@ -341,6 +407,8 @@ namespace Blueprint.Api.ViewModels
         public string Html { get; set; }
         /// <summary>Corrections made to the model's HTML, and its assumptions</summary>
         public List<string> Notes { get; set; } = new List<string>();
+        /// <summary>What the server corrected that the planner should know of, such as values outside the scenario's indicator set</summary>
+        public List<string> Warnings { get; set; } = new List<string>();
     }
 
     /// <summary>

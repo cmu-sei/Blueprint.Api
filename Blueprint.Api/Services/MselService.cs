@@ -2161,6 +2161,39 @@ namespace Blueprint.Api.Services
                 }
             }
 
+            // A competency id is local to this Blueprint, so each competency link also carries the codes the
+            // import on another Blueprint finds the competency by there: its own and its framework's. Only those
+            // and the names the import report shows are exported, not the whole framework.
+            var linkedCompetencyIds = msel.MselCompetencies.Select(mc => mc.CompetencyId)
+                .Concat(msel.Teams.SelectMany(t => t.TeamCompetencies).Select(tc => tc.CompetencyId))
+                .Distinct()
+                .ToList();
+            if (linkedCompetencyIds.Count > 0)
+            {
+                var competencies = await _context.Competencies
+                    .AsNoTracking()
+                    .Where(c => linkedCompetencyIds.Contains(c.Id))
+                    .Select(c => new CompetencyEntity
+                    {
+                        Id = c.Id,
+                        CompetencyFrameworkId = c.CompetencyFrameworkId,
+                        IdNumber = c.IdNumber,
+                        ShortName = c.ShortName,
+                        CompetencyFramework = new CompetencyFrameworkEntity
+                        {
+                            Id = c.CompetencyFramework.Id,
+                            Name = c.CompetencyFramework.Name,
+                            IdNumber = c.CompetencyFramework.IdNumber,
+                            Version = c.CompetencyFramework.Version
+                        }
+                    })
+                    .ToDictionaryAsync(c => c.Id, ct);
+                foreach (var mselCompetency in msel.MselCompetencies)
+                    mselCompetency.Competency = competencies.GetValueOrDefault(mselCompetency.CompetencyId);
+                foreach (var teamCompetency in msel.Teams.SelectMany(t => t.TeamCompetencies))
+                    teamCompetency.Competency = competencies.GetValueOrDefault(teamCompetency.CompetencyId);
+            }
+
             var mselJson = "";
             var options = new JsonSerializerOptions()
             {

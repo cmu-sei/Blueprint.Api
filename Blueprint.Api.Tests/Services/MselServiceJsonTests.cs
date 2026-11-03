@@ -1482,6 +1482,42 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     // ---------------------------------------------------------------------------------------------
+    // Competencies, whose ids are local to the Blueprint that exported them
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Each competency link, the MSEL's and its teams', carries its competency's code and its framework's
+    /// code, name and version beside the id, so another Blueprint can find the same competency.
+    /// </summary>
+    [Fact]
+    public async Task Download_CarriesTheCodesOfEachLinkedCompetency()
+    {
+        var msel = TestData.Msel();
+        var team = TestData.Team(msel.Id);
+        var framework = TestData.CompetencyFramework(version: "2.0.0");
+        var competency = TestData.Competency(framework.Id, idNumber: "T1118");
+        await Seed(msel, team, framework, competency);
+        await Seed(TestData.MselCompetency(msel.Id, competency.Id), TestData.TeamCompetency(team.Id, competency.Id));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var exported = await ReadExport(await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct));
+
+        foreach (var link in new[] { Single(exported, "MselCompetencies"), Single(Single(exported, "Teams"), "TeamCompetencies") })
+        {
+            Assert.Equal(competency.Id, link.GetProperty("CompetencyId").GetGuid());
+            var carried = link.GetProperty("Competency");
+            Assert.Equal("T1118", carried.GetProperty("IdNumber").GetString());
+            Assert.Equal(competency.ShortName, carried.GetProperty("ShortName").GetString());
+            var carriedFramework = carried.GetProperty("CompetencyFramework");
+            Assert.Equal(framework.IdNumber, carriedFramework.GetProperty("IdNumber").GetString());
+            Assert.Equal(framework.Name, carriedFramework.GetProperty("Name").GetString());
+            Assert.Equal("2.0.0", carriedFramework.GetProperty("Version").GetString());
+            // the codes, not the framework: its description stays behind
+            Assert.Equal(JsonValueKind.Null, carriedFramework.GetProperty("Description").ValueKind);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
 
     /// <summary>
     /// Tells the substituted CITE client what this installation's CITE contains. Both lists default to

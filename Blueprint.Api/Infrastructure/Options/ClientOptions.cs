@@ -15,6 +15,8 @@ namespace Blueprint.Api.Infrastructure.Options
         public string PlayerApiUrl { get; set; }
         public string SteamfitterApiUrl { get; set; }
         public string CasterApiUrl { get; set; }
+        // Player's VM API, where a MSEL's network map is written. Empty turns the map off.
+        public string VmApiUrl { get; set; }
 
         public string CiteUiUrl { get; set; }
         public string GalleryUiUrl { get; set; }

@@ -242,6 +242,8 @@ public class Startup
         services.AddScoped<IPlayerApplicationTeamService, PlayerApplicationTeamService>();
         services.AddScoped<IPlayerService, PlayerService>();
         services.AddScoped<ICasterService, CasterService>();
+        services.AddScoped<ICasterTopologyClient, CasterTopologyClient>();
+        services.AddScoped<ITopologyMapService, TopologyMapService>();
         services.AddScoped<ITeamService, TeamService>();
         services.AddScoped<ITeamUserService, TeamUserService>();
         services.AddScoped<IUnitService, UnitService>();

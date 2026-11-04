@@ -10,10 +10,10 @@
     <RootNamespace>Blueprint.Api.Tests</RootNamespace>
 
     <!--
-      Applies coverlet.runsettings to every run, so a coverage run cannot go without its exclusions. The
-      collector in that file is disabled by default, so an ordinary `dotnet test` collects nothing.
+      Microsoft.Testing.Platform (global.json test.runner): the test project runs as its own test app, under
+      `dotnet test` and `dotnet run` alike. xunit.v3 4 and later only run this way on the .NET 10 SDK.
     -->
-    <RunSettingsFilePath>$(MSBuildProjectDirectory)/coverlet.runsettings</RunSettingsFilePath>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,16 +29,8 @@
 
   <!-- Versions live in Directory.Packages.props. -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
-    <PackageReference Include="xunit.runner.visualstudio">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="coverlet.collector">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
+    <PackageReference Include="coverlet.MTP" />
     <!-- The four sibling Crucible API clients and the xAPI service, substituted in the per-class factory. -->
     <PackageReference Include="NSubstitute" />
     <!-- Hosts Blueprint.Api in process over TestServer, so the tests drive the real Startup. -->

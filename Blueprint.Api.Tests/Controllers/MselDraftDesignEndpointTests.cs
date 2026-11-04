@@ -265,6 +265,36 @@ public class MselDraftDesignEndpointTests(DatabaseFixture fixture, AiEnabledFact
         Assert.Null(events[1].SteamfitterTask);
     }
 
+    /// <summary>
+    /// A row the model wrote for STARTEX or ENDEX is that boundary: it moves to the boundary's time, first of the rows
+    /// there, and carries the notification, so the MSEL has one of each and not a second beside it.
+    /// </summary>
+    [Fact]
+    public async Task Import_UsesTheModelsOwnStartexAndEndexRows()
+    {
+        var template = await SeedTemplate(useCite: false, useGallery: true, useSteamfitter: true);
+        var draft = JsonSerializer.Deserialize<MselDraft>(Draft(), JsonOptions);
+        draft.Injects.Add(new MselDraftInject { Minutes = 120, EventType = "Facilitation", Values = new Dictionary<string, string> { ["Title"] = "Feedback form" } });
+        draft.Injects.Add(new MselDraftInject { Minutes = 120, EventType = "Facilitation", Values = new Dictionary<string, string> { ["Title"] = "ENDEX and hot wash" } });
+        draft.Injects.Add(new MselDraftInject { Minutes = 16, EventType = "Facilitation", Values = new Dictionary<string, string> { ["Title"] = "startex briefing" } });
+        var planner = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/import", new MselDraftImport { TemplateMselId = template.Id, Draft = draft }, JsonOptions, Ct);
+
+        var mselId = (await Read<MselImportResult>(response)).Msel.Id;
+        await using var db = NewContext();
+        var title = await db.DataFields.SingleAsync(f => f.MselId == mselId && f.Name == "Title", Ct);
+        var events = await db.ScenarioEvents.Include(e => e.DataValues).Include(e => e.SteamfitterTask)
+            .Where(e => e.MselId == mselId).OrderBy(e => e.DeltaSeconds).ThenBy(e => e.GroupOrder).ToListAsync(Ct);
+        string Title(ScenarioEventEntity e) => e.DataValues.Single(v => v.DataFieldId == title.Id).Value;
+        // one STARTEX and one ENDEX, each the model's own row, at the boundary's time with the notification
+        Assert.Equal(["startex briefing", "Outage", "Press call", "Feedback form", "ENDEX and hot wash"], events.Select(Title));
+        Assert.Equal(15 * 60, events[0].DeltaSeconds);
+        Assert.StartsWith("STARTEX:", events[0].SteamfitterTask.ActionParameters["notificationText"]);
+        Assert.StartsWith("ENDEX:", events[4].SteamfitterTask.ActionParameters["notificationText"]);
+        Assert.Null(events[3].SteamfitterTask);
+    }
+
     /// <summary>Copying a MSEL keeps a Player application that links to one of its pages pointing at the copy's page.</summary>
     [Fact]
     public async Task Copy_PointsAPageApplicationAtTheCopysPage()

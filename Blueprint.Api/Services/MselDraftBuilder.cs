@@ -215,19 +215,31 @@ namespace Blueprint.Api.Services
             var titleField = MselDraftRules.TitleField(mselEntity);
             if (mselEntity.UseSteamfitter)
             {
-                MselDraftInject Boundary(int minutes, string title, string text)
+                // the row the model wrote for a boundary, such as "ENDEX and hot wash", is that boundary rather than a second
+                // row beside it; it moves to the boundary's time, first of the rows there, and carries the notification
+                void Boundary(int minutes, string title, string text)
                 {
-                    var row = new MselDraftInject { Minutes = minutes, EventType = nameof(EventType.Facilitation) };
-                    if (titleField != null)
-                        row.Values[titleField.Name] = title;
+                    var row = titleField == null ? null : rows.FirstOrDefault(r =>
+                        r.Values.TryGetValue(titleField.Name, out var written) && written != null
+                        && System.Text.RegularExpressions.Regex.IsMatch(written, $@"^\W*{title}\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+                    if (row == null)
+                    {
+                        row = new MselDraftInject { EventType = nameof(EventType.Facilitation) };
+                        if (titleField != null)
+                            row.Values[titleField.Name] = title;
+                    }
+                    else
+                        rows.Remove(row);
+                    row.Minutes = minutes;
+                    var at = rows.FindIndex(r => r.Minutes >= minutes);
+                    rows.Insert(at < 0 ? rows.Count : at, row);
                     notifications[row] = (title, text);
-                    return row;
                 }
                 // STARTEX opens the first move of play and ENDEX the post-exercise move, so each is where CITE and Gallery change move
                 var startex = draft.Moves.Where(m => m.Phase == null).Select(m => (int?)m.StartMinutes).Min() ?? 0;
                 var endex = draft.Moves.FirstOrDefault(m => m.Phase == MselDraftRules.PostExercise)?.StartMinutes ?? draft.DurationMinutes;
-                rows.Insert(0, Boundary(startex, "STARTEX", "STARTEX: the exercise has started. Review the new material in Gallery and Player."));
-                rows.Add(Boundary(endex, "ENDEX", "ENDEX: the exercise has ended. Join the hot wash; thank you for taking part."));
+                Boundary(startex, "STARTEX", "STARTEX: the exercise has started. Review the new material in Gallery and Player.");
+                Boundary(endex, "ENDEX", "ENDEX: the exercise has ended. Join the hot wash; thank you for taking part.");
             }
 
             // one data value per column, as when a planner adds a row

@@ -187,7 +187,7 @@ question the answer you would use if the planner gives none, and say in a few wo
 its moves, teams, organizations and Gallery cards, by the same names and numbers. Write the injects, each move's situation briefing,
 expected decisions, controller notes and discussion questions, the CITE tasks, and the read-in. Where an answer changes the design, follow the answer.
 Move 0 is the pre-exercise, before STARTEX, and the last move the post-exercise hot wash, after ENDEX; Blueprint adds the STARTEX
-and ENDEX rows. In move 0 put only the read-in notice and any welcome; in the last move only hot-wash and feedback material. Every
+and ENDEX rows, so write no row named STARTEX or ENDEX yourself. In move 0 put only the read-in notice and any welcome; in the last move only hot-wash and feedback material. Every
 inject of play belongs to moves 1 and on, at or after move 1's start.
 Write each inject as an outline: its time, type, card and short columns, its expected action and objective. Its long text (the
 document, message or description) is written next, one inject at a time, from what you give here, so make each inject's title,

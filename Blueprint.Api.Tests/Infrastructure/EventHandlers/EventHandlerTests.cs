@@ -254,10 +254,11 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
     }
 
     /// <summary>
-    /// A team user is sent as its view model, as every other family is; the unit user family still sends the whole entity.
+    /// The membership families send view models, as every other family does: a team user its ids, a unit user its ids and
+    /// its user, never the entities, whose navigations reach whatever the saving request has loaded.
     /// </summary>
     [Fact]
-    public async Task ATeamUser_IsSentAsAViewModel_AndAUnitUserAsTheWholeEntity()
+    public async Task TheMembershipFamilies_SendViewModels()
     {
         var msel = TestData.Msel();
         var team = TestData.Team(msel.Id);
@@ -274,9 +275,11 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
 
         var created = Assert.IsType<Blueprint.Api.ViewModels.TeamUser>(_hub.Of(MainHubMethods.TeamUserCreated)[0].Payload);
         Assert.Equal((teamUser.Id, team.Id, user.Id), (created.Id, created.TeamId, created.UserId));
-        Assert.IsType<UnitUserEntity>(_hub.Of(MainHubMethods.UnitUserCreated)[0].Payload);
+        var unitCreated = Assert.IsType<Blueprint.Api.ViewModels.UnitUser>(_hub.Of(MainHubMethods.UnitUserCreated)[0].Payload);
+        Assert.Equal((unitUser.Id, unit.Id, user.Id, user.Name), (unitCreated.Id, unitCreated.UnitId, unitCreated.UserId, unitCreated.User.Name));
         Assert.IsType<Blueprint.Api.ViewModels.TeamUser>(_hub.Of(MainHubMethods.TeamUserDeleted)[0].Payload);
-        Assert.IsType<UnitUserEntity>(_hub.Of(MainHubMethods.UnitUserDeleted)[0].Payload);
+        var unitDeleted = Assert.IsType<Blueprint.Api.ViewModels.UnitUser>(_hub.Of(MainHubMethods.UnitUserDeleted)[0].Payload);
+        Assert.Equal((unitUser.Id, unit.Id, user.Id), (unitDeleted.Id, unitDeleted.UnitId, unitDeleted.UserId));
     }
 
     /// <summary>The installation wide families name no modified properties even on an update.</summary>
@@ -349,8 +352,17 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
             () => Created(TestData.CiteAction(mselId)));
         await Assert.ThrowsAsync<NullReferenceException>(
             () => Created(TestData.CiteDuty(mselId)));
-        await Assert.ThrowsAsync<NullReferenceException>(
-            () => Created(TestData.UnitUser(Guid.NewGuid(), Guid.NewGuid())));
+    }
+
+    /// <summary>A unit user removed before its event is handled is broadcast to nobody, rather than failing the request.</summary>
+    [Fact]
+    public async Task AUnitUserThatIsGone_IsBroadcastToNobody()
+    {
+        var gone = TestData.UnitUser(Guid.NewGuid(), Guid.NewGuid());
+
+        await Created(gone);
+
+        Assert.Empty(_hub.Of(MainHubMethods.UnitUserCreated, gone.UnitId, gone.UserId));
     }
 
     /// <summary>

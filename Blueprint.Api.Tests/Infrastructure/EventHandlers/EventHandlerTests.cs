@@ -253,9 +253,11 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         Assert.Single(send.Arguments);
     }
 
-    /// <summary>The membership families send the whole entity where every other family sends a view model.</summary>
+    /// <summary>
+    /// A team user is sent as its view model, as every other family is; the unit user family still sends the whole entity.
+    /// </summary>
     [Fact]
-    public async Task TheMembershipFamilies_SendTheWholeEntityWhereEveryOtherFamilySendsAViewModel()
+    public async Task ATeamUser_IsSentAsAViewModel_AndAUnitUserAsTheWholeEntity()
     {
         var msel = TestData.Msel();
         var team = TestData.Team(msel.Id);
@@ -270,9 +272,10 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         await Deleted(teamUser);
         await Deleted(unitUser);
 
-        Assert.IsType<TeamUserEntity>(_hub.Of(MainHubMethods.TeamUserCreated)[0].Payload);
+        var created = Assert.IsType<Blueprint.Api.ViewModels.TeamUser>(_hub.Of(MainHubMethods.TeamUserCreated)[0].Payload);
+        Assert.Equal((teamUser.Id, team.Id, user.Id), (created.Id, created.TeamId, created.UserId));
         Assert.IsType<UnitUserEntity>(_hub.Of(MainHubMethods.UnitUserCreated)[0].Payload);
-        Assert.IsType<TeamUserEntity>(_hub.Of(MainHubMethods.TeamUserDeleted)[0].Payload);
+        Assert.IsType<Blueprint.Api.ViewModels.TeamUser>(_hub.Of(MainHubMethods.TeamUserDeleted)[0].Payload);
         Assert.IsType<UnitUserEntity>(_hub.Of(MainHubMethods.UnitUserDeleted)[0].Payload);
     }
 
@@ -347,14 +350,15 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         await Assert.ThrowsAsync<NullReferenceException>(
             () => Created(TestData.CiteDuty(mselId)));
         await Assert.ThrowsAsync<NullReferenceException>(
-            () => Created(TestData.TeamUser(Guid.NewGuid(), Guid.NewGuid())));
-        await Assert.ThrowsAsync<NullReferenceException>(
             () => Created(TestData.UnitUser(Guid.NewGuid(), Guid.NewGuid())));
     }
 
-    /// <summary>A team user is only broadcastable while its team is tracked.</summary>
+    /// <summary>
+    /// A team user is broadcast whatever the saving request has loaded: its message is its own ids, never what its
+    /// navigations reach, so a drafted MSEL's team, with its competency tree loaded, adds nothing to it.
+    /// </summary>
     [Fact]
-    public async Task ATeamUser_IsOnlyBroadcastableWhileItsTeamIsTracked()
+    public async Task ATeamUser_IsBroadcastWhateverTheRequestHasLoaded()
     {
         var msel = TestData.Msel();
         var team = TestData.Team(msel.Id);
@@ -370,10 +374,14 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         await Created(tracked);
         await using (var cold = NewContext())
         {
-            await Assert.ThrowsAsync<NullReferenceException>(() => Created(untracked, cold));
+            await Created(untracked, cold);
         }
 
-        Assert.Equal(3, _hub.Of(MainHubMethods.TeamUserCreated, team.Id, user.Id).Count);
+        // both members are broadcast, the one whose team the request never loaded too, each as its view model
+        var sends = _hub.Of(MainHubMethods.TeamUserCreated, team.Id, user.Id).Concat(_hub.Of(MainHubMethods.TeamUserCreated, team.Id, stranger.Id)).ToList();
+        Assert.All(sends, send => Assert.IsType<Blueprint.Api.ViewModels.TeamUser>(send.Payload));
+        Assert.Contains(sends, send => ((Blueprint.Api.ViewModels.TeamUser)send.Payload).UserId == user.Id);
+        Assert.Contains(sends, send => ((Blueprint.Api.ViewModels.TeamUser)send.Payload).UserId == stranger.Id);
     }
 
     /// <summary>A MSEL gone by the time its event is handled is broadcast to nobody.</summary>

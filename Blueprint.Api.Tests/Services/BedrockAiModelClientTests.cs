@@ -106,6 +106,27 @@ public class BedrockAiModelClientTests
         Assert.Equal("Here is a draft.", message.GetProperty("content")[0].GetProperty("text").GetString());
     }
 
+    /// <summary>
+    /// A stream stopped part-way has its input count but not its output count yet, so what was written is counted at about
+    /// four characters a token; a count the stream already gave that is higher stays.
+    /// </summary>
+    [Theory]
+    [InlineData(1, 10)]
+    [InlineData(500, 500)]
+    public void StreamedMessage_CountsWhatAStoppedStreamWrote(int reported, int expected)
+    {
+        var message = new StreamedMessage();
+        message.Add("""{"type":"message_start","message":{"usage":{"input_tokens":120,"output_tokens":""" + reported + "}}}");
+        message.Add("""{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t1","name":"submit_msel_draft","input":{}}}""");
+        // 40 characters of an answer cut off mid-way, so not JSON yet
+        message.Add("""{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"name\":\"Draft\",\"moves\":[{\"moveNumber\":1"}}""");
+
+        var stopped = message.Stopped();
+
+        Assert.Equal(120, stopped.GetProperty("usage").GetProperty("input_tokens").GetInt32());
+        Assert.Equal(expected, stopped.GetProperty("usage").GetProperty("output_tokens").GetInt32());
+    }
+
     [Fact]
     public void StreamedMessage_RaisesAnErrorEvent()
     {

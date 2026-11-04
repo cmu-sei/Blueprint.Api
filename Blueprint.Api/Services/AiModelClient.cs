@@ -447,6 +447,12 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                     }
                 }
             }
+            catch (OperationCanceledException)
+            {
+                // stopped by the planner, or the request ended: Bedrock bills what it wrote up to then, so it is counted too
+                await _usage.RecordAsync(modelId, message.Stopped(), 0, CancellationToken.None);
+                throw;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not InvalidOperationException)
             {
                 // Bedrock ended the stream with an error event; its type and inner message say more than the outer one
@@ -607,6 +613,21 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 content.Add(block.DeepClone());
             }
             return JsonSerializer.SerializeToElement(_message);
+        }
+
+        /// <summary>
+        /// The message of a stream stopped part-way, for its usage: the input counts arrive first, but the output count only
+        /// at the end, so what was written is counted at about four characters a token when the stream has not said more.
+        /// </summary>
+        public JsonElement Stopped()
+        {
+            var written = _partialJson.Values.Sum(b => b.Length)
+                + _blocks.Values.Sum(b => (b["text"]?.GetValue<string>()?.Length ?? 0) + (b["thinking"]?.GetValue<string>()?.Length ?? 0));
+            if (_message["usage"] is not JsonObject usage)
+                _message["usage"] = usage = new JsonObject();
+            var reported = usage["output_tokens"]?.GetValue<int>() ?? 0;
+            usage["output_tokens"] = Math.Max(reported, (written + 3) / 4);
+            return ToMessage(withInput: false);
         }
 
         /// <summary>What was done to read the answer when it was not quite JSON, or null when it was</summary>

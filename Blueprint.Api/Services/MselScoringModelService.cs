@@ -197,8 +197,9 @@ namespace Blueprint.Api.Services
 
         /// <summary>
         /// Refuses a model the push could not send to CITE as it is: an enum value CITE does not have, a category whose
-        /// moves run backwards, or an embedded URL that is not http(s), which CITE would frame on every scoresheet. Every
-        /// way in runs it: the editor's save, a preset, a copy from CITE and a MSEL file's import.
+        /// moves run backwards while the model shows its categories by move (otherwise CITE ignores them, and the editor
+        /// hides them), or an embedded URL that is not http(s), which CITE would frame on every scoresheet. Every way in
+        /// runs it: the editor's save, a preset, a copy from CITE and a MSEL file's import.
         /// </summary>
         internal static void Validate(MselScoringModelEntity model)
         {
@@ -211,7 +212,7 @@ namespace Blueprint.Api.Services
             {
                 if (!Enum.IsDefined(category.ScoringOptionSelection))
                     throw new BadRequestException($"The category \"{category.Description}\" has {(int)category.ScoringOptionSelection}, which is not a scoring option selection.");
-                if (category.MoveNumberFirstDisplay > category.MoveNumberLastDisplay)
+                if (model.DisplayScoringModelByMoveNumber && category.MoveNumberFirstDisplay > category.MoveNumberLastDisplay)
                     throw new BadRequestException($"The category \"{category.Description}\" ends at move {category.MoveNumberLastDisplay}, before it starts at move {category.MoveNumberFirstDisplay}.");
             }
         }

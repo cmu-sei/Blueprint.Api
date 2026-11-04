@@ -426,11 +426,31 @@ public class MselScoringModelEndpointTests(DatabaseFixture fixture, BlueprintApp
     {
         var msel = await SeedMsel();
         var body = Body("Backwards");
+        body.DisplayScoringModelByMoveNumber = true;
         body.Categories.Add(Category("Backwards", 3, 2, "Question"));
 
         var response = await RootClient.PutAsJsonAsync(Route(msel), body, JsonOptions, Ct);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>
+    /// A model that shows every category in every move hides the move fields, and CITE ignores them, so their order
+    /// is not refused: there would be nothing in the editor to fix.
+    /// </summary>
+    [Fact]
+    public async Task Replace_WithACategoryEndingBeforeItStarts_WhenNotShownByMove_StoresIt()
+    {
+        var msel = await SeedMsel();
+        var body = Body("Backwards");
+        body.DisplayScoringModelByMoveNumber = false;
+        body.Categories.Add(Category("Backwards", 3, 1, "Question"));
+
+        var response = await RootClient.PutAsJsonAsync(Route(msel), body, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = Assert.Single(await StoredCategories(msel));
+        Assert.Equal((3, 1), (stored.MoveNumberFirstDisplay, stored.MoveNumberLastDisplay));
     }
 
     /// <summary>CITE shows the embedded URL in a frame, so only a web address is taken.</summary>
@@ -1021,6 +1041,25 @@ public class MselScoringModelEndpointTests(DatabaseFixture fixture, BlueprintApp
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.False(await ReadBack(db => db.Msels.AnyAsync(m => m.Name == file.Name, Ct)));
+    }
+
+    /// <summary>A backwards move range is imported when the model does not show its categories by move, as a save takes it.</summary>
+    [Fact]
+    public async Task Import_OfAFileWithAHiddenBackwardsMoveRange_ImportsIt()
+    {
+        var file = TestData.Msel();
+        file.Name = "Imported " + Guid.NewGuid();
+        file.ScoringModel = TestData.MselScoringModel(file.Id);
+        file.ScoringModel.DisplayScoringModelByMoveNumber = false;
+        var category = file.ScoringModel.Categories.Single();
+        category.MoveNumberFirstDisplay = 3;
+        category.MoveNumberLastDisplay = 1;
+        var json = JsonSerializer.Serialize(file, new JsonSerializerOptions { ReferenceHandler = ReferenceHandler.IgnoreCycles });
+
+        var imported = await Import(json);
+
+        var stored = Assert.Single(await StoredCategories(imported.Id));
+        Assert.Equal((3, 1), (stored.MoveNumberFirstDisplay, stored.MoveNumberLastDisplay));
     }
 
     // ---------------------------------------------------------------------------------------------

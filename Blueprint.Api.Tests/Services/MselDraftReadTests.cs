@@ -35,6 +35,27 @@ public class MselDraftReadTests
         Assert.Contains(warnings, w => w.StartsWith("Left out the model's moves[1].moveNumber,"));
     }
 
+    /// <summary>
+    /// A list or object the model wrote as a string of JSON, as an answer without strict mode can, is read as what it holds,
+    /// not left out: the teams and cards of a design are kept.
+    /// </summary>
+    [Fact]
+    public void ReadDraft_ReadsAListWrittenAsAStringOfJson()
+    {
+        var warnings = new List<string>();
+        var input = JsonDocument.Parse("""
+            {"name":"Deep Bite","moves":"[{\"moveNumber\":1,\"description\":\"Outage\"}]",
+             "teams":"[{\"name\":\"Security operations\",\"shortName\":\"SOC\"}]","cards":"[{\"name\":\"Exercise Control\"}]"}
+            """).RootElement;
+
+        var draft = MselDraftRules.ReadDraft(input, warnings);
+
+        Assert.Equal(["Outage"], draft.Moves.Select(m => m.Description));
+        Assert.Equal(["SOC"], draft.Teams.Select(t => t.ShortName));
+        Assert.Equal(["Exercise Control"], draft.Cards.Select(c => c.Name));
+        Assert.Empty(warnings);
+    }
+
     /// <summary>A readable draft is read as it is, with no warnings.</summary>
     [Fact]
     public void ReadDraft_OfAReadableDraft_WarnsOfNothing()

@@ -21,6 +21,7 @@ using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blueprint.Api.Services
 {
@@ -42,6 +43,7 @@ namespace Blueprint.Api.Services
     public class MselDraftService : IMselDraftService
     {
         private const string ToolName = "submit_msel_draft";
+        private readonly ILogger<MselDraftService> _logger;
         private readonly BlueprintContext _context;
         private readonly IAiModelClient _aiModelClient;
         private readonly AiOptions _aiOptions;
@@ -110,8 +112,10 @@ When the MSEL uses Gallery:
   appears on the wall with its first article.
 Answer only by calling the tool.";
 
-        public MselDraftService(BlueprintContext context, IAiModelClient aiModelClient, AiOptions aiOptions, IPrincipal user, IAiUsageContext usage)
+        public MselDraftService(BlueprintContext context, IAiModelClient aiModelClient, AiOptions aiOptions, IPrincipal user, IAiUsageContext usage,
+            ILogger<MselDraftService> logger = null)
         {
+            _logger = logger;
             _context = context;
             _aiModelClient = aiModelClient;
             _aiOptions = aiOptions;
@@ -221,6 +225,15 @@ row the Standard layout.";
                 "Submit the design and your questions for the planner to review.", schema, ct);
             var unreadable = new List<string>();
             var draft = MselDraftRules.ReadDraft(input, unreadable);
+            foreach (var note in unreadable)
+                _logger?.LogWarning("Design for template {TemplateId}: {Note}", template.Id, note);
+            // a design without moves or teams is not one to review, however it came to be: the planner drafts again
+            var missing = new[] { draft.Moves.Any() ? null : "moves", draft.Teams.Any() ? null : "teams" }.Where(m => m != null).ToList();
+            if (missing.Any())
+            {
+                _logger?.LogWarning("Design for template {TemplateId} has no {Missing}", template.Id, string.Join(" or ", missing));
+                throw new BadRequestException($"The model's design could not be read: it has no {string.Join(" or ", missing)}. Draft again; the answer differs each time.");
+            }
             MselDraftRules.ResolveAssessment(design, input, template, unreadable);
             draft.Design = design;
             draft.DraftId = draftId;
@@ -297,7 +310,10 @@ row the Standard layout.";
             _usage.Use("injects", template.Id, design.DraftId == Guid.Empty ? null : design.DraftId);
             var input = await _aiModelClient.InvokeToolAsync(SystemPrompt + "\n\n" + InjectsStep, sb.ToString(), ToolName,
                 "Submit the injects for the approved design.", schema, ct);
+            var before = warnings.Count;
             var written = MselDraftRules.ReadDraft(input, warnings);
+            foreach (var note in warnings.Skip(before))
+                _logger?.LogWarning("Injects for MSEL {MselId}: {Note}", template.Id, note);
 
             // the design stays as approved; the second step adds to it
             design.Injects = written.Injects ?? new List<MselDraftInject>();
@@ -1769,6 +1785,10 @@ Answer only by calling the tool.";
                 {
                     return node.Deserialize<MselDraft>(options) ?? new MselDraft();
                 }
+                // a list or object the model wrote as a string of JSON, as an answer without strict mode can, is read as JSON
+                catch (JsonException ex) when (!string.IsNullOrEmpty(ex.Path) && ex.Path != "$" && UnpackAt(node, ex.Path))
+                {
+                }
                 catch (JsonException ex) when (!string.IsNullOrEmpty(ex.Path) && ex.Path != "$" && RemoveAt(node, ex.Path))
                 {
                     warnings.Add($"Left out the model's {ex.Path.TrimStart('$', '.')}, which it wrote in a form the draft cannot use. Check it before creating the MSEL.");
@@ -1777,22 +1797,61 @@ Answer only by calling the tool.";
             throw new InvalidOperationException("The model's draft could not be read. Draft again; the answer differs each time.");
         }
 
-        // removes the value at a System.Text.Json path such as $.moves[2].expectedDecisions or $.scenario
-        private static bool RemoveAt(JsonNode root, string path)
+        // replaces a string holding a JSON list or object, at a System.Text.Json path, with what it holds
+        private static bool UnpackAt(JsonNode root, string path)
+        {
+            if (!Locate(root, path, out var parent, out var last))
+                return false;
+            var current = last is int i ? (parent as JsonArray)?.ElementAtOrDefault(i) : FindProperty(parent as JsonObject, (string)last);
+            if (current is not JsonValue value || !value.TryGetValue<string>(out var text))
+                return false;
+            text = text.Trim();
+            if (!(text.StartsWith('[') && text.EndsWith(']')) && !(text.StartsWith('{') && text.EndsWith('}')))
+                return false;
+            JsonNode parsed;
+            try
+            {
+                parsed = JsonNode.Parse(text);
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+            if (last is int index && parent is JsonArray array)
+                array[index] = parsed;
+            else if (parent is JsonObject obj && FindKey(obj, (string)last) is string key)
+                obj[key] = parsed;
+            else
+                return false;
+            return true;
+        }
+
+        // the parent of the value at a System.Text.Json path such as $.moves[2].expectedDecisions, and the last step to it
+        private static bool Locate(JsonNode root, string path, out JsonNode parent, out object last)
         {
             var steps = System.Text.RegularExpressions.Regex.Matches(path, @"\.([^.\[]+)|\['([^']+)'\]|\[(\d+)\]")
                 .Select(m => m.Groups[3].Success ? (object)int.Parse(m.Groups[3].Value) : m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)
                 .ToList();
+            parent = root;
+            last = null;
             if (!steps.Any())
                 return false;
-            JsonNode parent = root;
             foreach (var step in steps.Take(steps.Count - 1))
             {
                 parent = step is int i ? (parent as JsonArray)?.ElementAtOrDefault(i) : FindProperty(parent as JsonObject, (string)step);
                 if (parent == null)
                     return false;
             }
-            switch (steps[^1])
+            last = steps[^1];
+            return true;
+        }
+
+        // removes the value at a System.Text.Json path such as $.moves[2].expectedDecisions or $.scenario
+        private static bool RemoveAt(JsonNode root, string path)
+        {
+            if (!Locate(root, path, out var parent, out var last))
+                return false;
+            switch (last)
             {
                 case int index when parent is JsonArray array && index < array.Count:
                     array.RemoveAt(index);

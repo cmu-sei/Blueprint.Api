@@ -425,6 +425,25 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
     }
 
     /// <summary>
+    /// A design without teams is not one to review: the planner is told to draft again, as a 400 with the reason, rather than
+    /// shown an empty design.
+    /// </summary>
+    [Fact]
+    public async Task Design_WithNoTeams_AsksThePlannerToDraftAgain()
+    {
+        var empty = System.Text.Json.Nodes.JsonNode.Parse(Design())!.AsObject();
+        empty["teams"] = new System.Text.Json.Nodes.JsonArray();
+        Answer(empty.ToJsonString());
+        var template = await SeedTemplate();
+        var planner = await Planner();
+
+        var response = await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/design", new MselDraftRequest { TemplateMselId = template.Id, Prompt = "Cables" }, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("could not be read: it has no teams. Draft again", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    /// <summary>
     /// The browser may choose the new MSEL's ID, so it can open the MSEL's page before the MSEL exists; an ID already taken
     /// is not reused, and the MSEL gets a new one.
     /// </summary>

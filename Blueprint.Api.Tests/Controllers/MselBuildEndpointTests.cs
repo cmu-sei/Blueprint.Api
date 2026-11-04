@@ -362,7 +362,9 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
 
         // made again with the planner's direction, it replaces the picture rather than adding one
         await Read<Msel>(await Client(planner).PostAsJsonAsync($"/api/msels/{mselId}/image/generate", new MselImageRequest { Prompt = "Show the cable ship at night." }, JsonOptions, Ct));
-        await factory.Images.Received().PhotoAsync(Arg.Is<string>(s => s.EndsWith("Show the cable ship at night.")), Arg.Any<CancellationToken>());
+        // the planner's direction leads the prompt, which an image model weights most, and the scene follows as the setting
+        await factory.Images.Received().PhotoAsync(Arg.Is<string>(s =>
+            s.StartsWith("An establishing shot for a cyber exercise: Show the cable ship at night. Setting: ") && s.Contains("Two cables are cut.")), Arg.Any<CancellationToken>());
         await using var db = NewContext();
         Assert.Equal(1, await db.MselImages.CountAsync(i => i.MselId == mselId, Ct));
 
@@ -442,6 +444,14 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("could not be read: it has no teams. Draft again", await response.Content.ReadAsStringAsync(Ct));
     }
+
+    /// <summary>A long scene is cut at a sentence end, so the image model reads all of what it is given.</summary>
+    [Theory]
+    [InlineData("Short scene.", 300, "Short scene.")]
+    [InlineData("First sentence here. Second sentence that runs on and on.", 30, "First sentence here.")]
+    [InlineData("one two three four five six seven", 15, "one two three")]
+    public void ImageScene_IsCutAtASentenceEnd(string text, int length, string expected) =>
+        Assert.Equal(expected, MselImageService.Shorten(text, length));
 
     /// <summary>
     /// The browser may choose the new MSEL's ID, so it can open the MSEL's page before the MSEL exists; an ID already taken

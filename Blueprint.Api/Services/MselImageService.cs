@@ -61,11 +61,13 @@ namespace Blueprint.Api.Services
             if (string.IsNullOrWhiteSpace(scene))
                 throw new BadRequestException("Give the MSEL a description first; the picture is made from it.");
 
-            // the planner's direction comes last, so it overrides the scene where the two disagree
-            if (!string.IsNullOrWhiteSpace(prompt))
-                scene += " " + prompt.Trim();
+            // an image model weights the start of its prompt and all but ignores the end of a long one, so the planner's
+            // direction leads, and the scene follows as a short setting
+            var subject = string.IsNullOrWhiteSpace(prompt)
+                ? Shorten(scene, MaxScene * 2)
+                : prompt.Trim().TrimEnd('.') + ". Setting: " + Shorten(scene, MaxScene);
             _usageContext.Use("image", mselId);
-            var dataUri = await _imageClient.PhotoAsync("An establishing shot for a cyber exercise: " + scene, ct);
+            var dataUri = await _imageClient.PhotoAsync("An establishing shot for a cyber exercise: " + subject, ct);
             var comma = dataUri?.IndexOf(',') ?? -1;
             if (comma < 0 || !dataUri.StartsWith("data:", StringComparison.Ordinal))
                 throw new InvalidOperationException("The image model returned nothing usable. Try again.");
@@ -195,6 +197,23 @@ namespace Blueprint.Api.Services
         private static bool StartsWith(byte[] data, params byte[] signature)
         {
             return data.Length >= signature.Length && signature.Select((b, i) => data[i] == b).All(match => match);
+        }
+
+        // the scene a picture is set in, kept short enough that the image model reads all of it
+        private const int MaxScene = 300;
+
+        // the text cut at the last sentence end within length, else at the last space
+        public static string Shorten(string text, int length)
+        {
+            text = System.Text.RegularExpressions.Regex.Replace(text ?? "", @"\s+", " ").Trim();
+            if (text.Length <= length)
+                return text;
+            var cut = text[..length];
+            var end = cut.LastIndexOfAny(['.', '!', '?']);
+            if (end > length / 3)
+                return cut[..(end + 1)];
+            var space = cut.LastIndexOf(' ');
+            return (space > 0 ? cut[..space] : cut).TrimEnd(',', ';', ':');
         }
     }
 }

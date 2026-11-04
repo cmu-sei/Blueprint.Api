@@ -9,6 +9,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
@@ -537,9 +538,13 @@ namespace Blueprint.Api.Services
                 }
             }
             // copy ScenarioEvents
+            var competencyFieldIds = mselEntity.DataFields
+                .Where(df => df.DataType == DataFieldType.Competency)
+                .Select(df => df.Id)
+                .ToHashSet();
             foreach (var scenarioEventEntity in mselEntity.ScenarioEvents)
             {
-                ScenarioEventReplaceIds(scenarioEventEntity, mselEntity.Id, mselEntity.DateCreated, mselEntity.CreatedBy, newGuidValues);
+                ScenarioEventReplaceIds(scenarioEventEntity, mselEntity.Id, mselEntity.DateCreated, mselEntity.CreatedBy, newGuidValues, competencyFieldIds);
             }
             // copy the MSEL's own scoring model
             if (mselEntity.ScoringModel != null)
@@ -605,7 +610,8 @@ namespace Blueprint.Api.Services
             Guid mselId,
             DateTime dateCreated,
             Guid createdBy,
-            Dictionary<Guid, Guid> newGuidValues)
+            Dictionary<Guid, Guid> newGuidValues,
+            ISet<Guid> competencyFieldIds)
         {
             scenarioEventEntity.Id = Guid.NewGuid();
             scenarioEventEntity.MselId = mselId;
@@ -622,9 +628,10 @@ namespace Blueprint.Api.Services
                 dataValue.DataFieldId = newGuidValues[dataValue.DataFieldId];
                 dataValue.DataField = null;
                 dataValue.CreatedBy = createdBy;
-                // substitute new Guid value for any old Guid value
+                // substitute new Guid value for any old Guid value. A Competency field's value is a competency
+                // code, not an id of this MSEL, even when the framework's codes look like Guids.
                 Guid oldGuidValue;
-                if (Guid.TryParse(dataValue.Value, out oldGuidValue))
+                if (!competencyFieldIds.Contains(dataValue.DataFieldId) && Guid.TryParse(dataValue.Value, out oldGuidValue))
                 {
                     try
                     {
@@ -2212,6 +2219,39 @@ namespace Blueprint.Api.Services
                 }
             }
 
+            // A competency id is local to this Blueprint, so each competency link also carries the codes the
+            // import on another Blueprint finds the competency by there: its own and its framework's. Only those
+            // and the names the import report shows are exported, not the whole framework.
+            var linkedCompetencyIds = msel.MselCompetencies.Select(mc => mc.CompetencyId)
+                .Concat(msel.Teams.SelectMany(t => t.TeamCompetencies).Select(tc => tc.CompetencyId))
+                .Distinct()
+                .ToList();
+            if (linkedCompetencyIds.Count > 0)
+            {
+                var competencies = await _context.Competencies
+                    .AsNoTracking()
+                    .Where(c => linkedCompetencyIds.Contains(c.Id))
+                    .Select(c => new CompetencyEntity
+                    {
+                        Id = c.Id,
+                        CompetencyFrameworkId = c.CompetencyFrameworkId,
+                        IdNumber = c.IdNumber,
+                        ShortName = c.ShortName,
+                        CompetencyFramework = new CompetencyFrameworkEntity
+                        {
+                            Id = c.CompetencyFramework.Id,
+                            Name = c.CompetencyFramework.Name,
+                            IdNumber = c.CompetencyFramework.IdNumber,
+                            Version = c.CompetencyFramework.Version
+                        }
+                    })
+                    .ToDictionaryAsync(c => c.Id, ct);
+                foreach (var mselCompetency in msel.MselCompetencies)
+                    mselCompetency.Competency = competencies.GetValueOrDefault(mselCompetency.CompetencyId);
+                foreach (var teamCompetency in msel.Teams.SelectMany(t => t.TeamCompetencies))
+                    teamCompetency.Competency = competencies.GetValueOrDefault(teamCompetency.CompetencyId);
+            }
+
             var mselJson = "";
             var options = new JsonSerializerOptions()
             {
@@ -2231,6 +2271,27 @@ namespace Blueprint.Api.Services
             return (await ImportJsonAsync(form, ct)).Msel;
         }
 
+        /// <summary>
+        /// An explicit null for a collection in an imported file leaves the entity's empty collection in
+        /// place, as leaving the collection out does, instead of a null the import then fails on.
+        /// </summary>
+        private static void KeepEmptyCollectionForNull(JsonTypeInfo typeInfo)
+        {
+            if (typeInfo.Kind != JsonTypeInfoKind.Object)
+                return;
+            foreach (var property in typeInfo.Properties)
+            {
+                if (property.Set is not { } set || property.PropertyType == typeof(string) ||
+                    !typeof(System.Collections.IEnumerable).IsAssignableFrom(property.PropertyType))
+                    continue;
+                property.Set = (entity, value) =>
+                {
+                    if (value != null)
+                        set(entity, value);
+                };
+            }
+        }
+
         public async Task<MselImportResult> ImportJsonAsync(FileForm form, CancellationToken ct)
         {
             var result = new MselImportResult();
@@ -2243,9 +2304,26 @@ namespace Blueprint.Api.Services
             }
             var options = new JsonSerializerOptions()
             {
-                ReferenceHandler = ReferenceHandler.Preserve
+                ReferenceHandler = ReferenceHandler.Preserve,
+                TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { KeepEmptyCollectionForNull } }
             };
-            var mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
+            MselEntity mselEntity;
+            try
+            {
+                mselEntity = JsonSerializer.Deserialize<MselEntity>(mselJson, options);
+            }
+            catch (System.Exception ex) when (ex is JsonException or NotSupportedException)
+            {
+                // the serializer's message names Blueprint's types; say where the file went wrong instead
+                var where = ex is JsonException { LineNumber: long line } json
+                    ? $" (line {line + 1}{(json.Path is null or "$" ? "" : $", at {json.Path}")})"
+                    : "";
+                throw new BadRequestException($"The file is not a Blueprint MSEL JSON file{where}.");
+            }
+            // Any JSON object deserializes, so a file that is not a MSEL would become an empty MSEL.
+            // Every export carries the MSEL's id; a hand-written file at least gives it a name.
+            if (mselEntity == null || (mselEntity.Id == Guid.Empty && string.IsNullOrWhiteSpace(mselEntity.Name)))
+                throw new BadRequestException("The file is not a Blueprint MSEL. Upload a file downloaded from Blueprint.");
             // The file carries no image, only its source MSEL's ID and image date. Both are the
             // importer's to write, so keeping the date would copy whatever image that ID has here,
             // even one of a MSEL the importer cannot view.
@@ -2257,17 +2335,8 @@ namespace Blueprint.Api.Services
             {
                 team.TeamUsers = [];
                 team.UserTeamRoles = [];
-                foreach (var teamCompetency in team.TeamCompetencies)
-                {
-                    teamCompetency.Team = null;
-                    teamCompetency.Competency = null;
-                }
             }
-            foreach (var mselCompetency in mselEntity.MselCompetencies)
-            {
-                mselCompetency.Msel = null;
-                mselCompetency.Competency = null;
-            }
+            await MatchImportedCompetenciesAsync(mselEntity, result, ct);
 
             return await ImportEntityAsync(mselEntity, result, ct);
         }
@@ -2600,7 +2669,17 @@ namespace Blueprint.Api.Services
             var fileName = mselEntity.Name;
             var nameInUse = await _context.Msels
                 .AnyAsync(m => m.Name.ToLower() == (mselEntity.Name ?? "").ToLower(), ct);
-            mselEntity = await privateMselCopyAsync(mselEntity, null, ct, keepName: !nameInUse, newId: mselId);
+            try
+            {
+                mselEntity = await privateMselCopyAsync(mselEntity, null, ct, keepName: !nameInUse, newId: mselId);
+            }
+            catch (DbUpdateException ex)
+            {
+                // the save is one transaction, so nothing was imported; say what the database refused
+                // instead of EF's "see the inner exception", which a planner never sees
+                _logger.LogWarning(ex, "The import of MSEL {MselName} could not be saved", mselEntity.Name);
+                throw new BadRequestException(ImportSaveFailure(ex));
+            }
             if (nameInUse)
                 AddChange(result, "name", $"A MSEL named \"{fileName}\" already exists, so this one was named \"{mselEntity.Name}\".");
 
@@ -2609,6 +2688,10 @@ namespace Blueprint.Api.Services
             if (mselEntity.UseGallery) AddChange(result, "useGallery", "Gallery integration is on.");
             if (mselEntity.UseCite) AddChange(result, "useCite", "CITE integration is on.");
             if (mselEntity.UseSteamfitter) AddChange(result, "useSteamfitter", "Steamfitter integration is on.");
+            if (mselEntity.UseSteamfitter && mselEntity.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.OnPush)
+                AddChange(result, "steamfitterScenarioStartMode", "The Steamfitter scenario starts when the push finishes.");
+            if (mselEntity.UseSteamfitter && mselEntity.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.AtStartTime)
+                AddChange(result, "steamfitterScenarioStartMode", "The Steamfitter scenario starts at the MSEL start time.");
 
             result.Imported = new MselImportCounts
             {
@@ -2633,9 +2716,218 @@ namespace Blueprint.Api.Services
             result.Failures.Add(new MselImportFailure { Step = step, Message = message });
         }
 
+        /// <summary>
+        /// What the database refused in a failed import, by table and constraint name. Nothing from the
+        /// database's own message goes out, as its detail can quote the file's values.
+        /// </summary>
+        private static string ImportSaveFailure(DbUpdateException ex)
+        {
+            if (ex.InnerException is not Npgsql.PostgresException postgres)
+                return "The MSEL could not be imported because the database refused to save it. Nothing was imported.";
+            var table = string.IsNullOrEmpty(postgres.TableName) ? "" : $" in {postgres.TableName}";
+            var what = postgres.SqlState switch
+            {
+                Npgsql.PostgresErrorCodes.ForeignKeyViolation => $"a row{table} refers to something this Blueprint does not have",
+                Npgsql.PostgresErrorCodes.UniqueViolation => $"the file has the same row twice{table}",
+                Npgsql.PostgresErrorCodes.NotNullViolation when !string.IsNullOrEmpty(postgres.ColumnName) => $"a row{table} has no {postgres.ColumnName}",
+                Npgsql.PostgresErrorCodes.CheckViolation => $"a row{table} breaks a database rule",
+                _ => $"the database refused a row{table}"
+            };
+            var constraint = string.IsNullOrEmpty(postgres.ConstraintName) ? "" : $" ({postgres.ConstraintName})";
+            return $"The MSEL could not be imported because {what}{constraint}. Nothing was imported.";
+        }
+
         private static string TeamLabel(TeamEntity team)
         {
             return string.IsNullOrWhiteSpace(team.ShortName) ? team.Name : team.ShortName;
+        }
+
+        /// <summary>
+        /// Points the file's competency links, the MSEL's and its teams', at this Blueprint's competencies.
+        /// A competency id is local to the Blueprint that exported it, so a link keeps its id only when that
+        /// competency is here; otherwise it is matched by the framework code and competency code the export
+        /// carries. A link with no match, or from an older file that carries no codes, is dropped rather
+        /// than failing the whole import on its foreign key, and the report says how many and which
+        /// frameworks are missing. Competency data fields are then held to the competencies that were kept.
+        /// </summary>
+        private async Task MatchImportedCompetenciesAsync(MselEntity mselEntity, MselImportResult result, CancellationToken ct)
+        {
+            var teamLinks = mselEntity.Teams.SelectMany(t => t.TeamCompetencies).ToList();
+            var carried = mselEntity.MselCompetencies.Select(l => (l.CompetencyId, l.Competency))
+                .Concat(teamLinks.Select(l => (l.CompetencyId, l.Competency)))
+                .ToList();
+            // a file from before MSELs had competencies has none to hold its data fields to
+            var hasMselCompetencies = mselEntity.MselCompetencies.Count > 0;
+            if (carried.Count == 0)
+            {
+                await RemoveUnknownCompetencyCodesAsync(mselEntity, null, result, ct);
+                return;
+            }
+
+            var fileIds = carried.Select(c => c.CompetencyId).Distinct().ToList();
+            var localCodesById = await _context.Competencies
+                .AsNoTracking()
+                .Where(c => fileIds.Contains(c.Id))
+                .Select(c => new { c.Id, c.IdNumber })
+                .ToDictionaryAsync(c => c.Id, c => c.IdNumber, ct);
+            var frameworkCodes = carried.Select(c => c.Competency?.CompetencyFramework?.IdNumber)
+                .Where(code => !string.IsNullOrEmpty(code)).Distinct().ToList();
+            var competencyCodes = carried.Select(c => c.Competency?.IdNumber)
+                .Where(code => !string.IsNullOrEmpty(code)).Distinct().ToList();
+            var localByCode = new Dictionary<(string, string), Guid>();
+            var localFrameworkCodes = new HashSet<string>();
+            if (frameworkCodes.Count > 0 && competencyCodes.Count > 0)
+            {
+                var matches = await _context.Competencies
+                    .AsNoTracking()
+                    .Where(c => frameworkCodes.Contains(c.CompetencyFramework.IdNumber) && competencyCodes.Contains(c.IdNumber))
+                    .Select(c => new { Framework = c.CompetencyFramework.IdNumber, c.IdNumber, c.Id })
+                    .ToListAsync(ct);
+                foreach (var match in matches)
+                    localByCode[(match.Framework, match.IdNumber)] = match.Id;
+                localFrameworkCodes = (await _context.CompetencyFrameworks
+                    .AsNoTracking()
+                    .Where(f => frameworkCodes.Contains(f.IdNumber))
+                    .Select(f => f.IdNumber)
+                    .ToListAsync(ct)).ToHashSet();
+            }
+
+            var dropped = 0;
+            var missingFrameworks = new List<string>();
+            // the codes of the competencies kept, which are what Competency data fields name
+            var keptCodes = new HashSet<string>();
+            Guid? Match(Guid competencyId, CompetencyEntity competency)
+            {
+                if (localCodesById.TryGetValue(competencyId, out var localCode))
+                {
+                    keptCodes.Add(localCode);
+                    return competencyId;
+                }
+                var frameworkCode = competency?.CompetencyFramework?.IdNumber;
+                if (!string.IsNullOrEmpty(frameworkCode) && !string.IsNullOrEmpty(competency.IdNumber) &&
+                    localByCode.TryGetValue((frameworkCode, competency.IdNumber), out var localId))
+                {
+                    keptCodes.Add(competency.IdNumber);
+                    return localId;
+                }
+                dropped++;
+                if (!string.IsNullOrEmpty(frameworkCode) && !localFrameworkCodes.Contains(frameworkCode))
+                {
+                    var framework = competency.CompetencyFramework;
+                    var label = string.IsNullOrWhiteSpace(framework.Name) ? framework.IdNumber : framework.Name;
+                    if (!string.IsNullOrWhiteSpace(framework.Version))
+                        label += $" {framework.Version}";
+                    if (!missingFrameworks.Contains(label))
+                        missingFrameworks.Add(label);
+                }
+                return null;
+            }
+
+            var mselLinks = new List<MselCompetencyEntity>();
+            foreach (var link in mselEntity.MselCompetencies)
+            {
+                var competencyId = Match(link.CompetencyId, link.Competency);
+                link.Msel = null;
+                link.Competency = null;
+                // two of the file's competencies can be one competency here; the link is unique per MSEL
+                if (competencyId == null || mselLinks.Any(l => l.CompetencyId == competencyId))
+                    continue;
+                link.CompetencyId = competencyId.Value;
+                mselLinks.Add(link);
+            }
+            mselEntity.MselCompetencies = mselLinks;
+            foreach (var team in mselEntity.Teams)
+            {
+                var teamCompetencies = new List<TeamCompetencyEntity>();
+                foreach (var link in team.TeamCompetencies)
+                {
+                    var competencyId = Match(link.CompetencyId, link.Competency);
+                    link.Team = null;
+                    link.Competency = null;
+                    if (competencyId == null || teamCompetencies.Any(l => l.CompetencyId == competencyId))
+                        continue;
+                    link.CompetencyId = competencyId.Value;
+                    teamCompetencies.Add(link);
+                }
+                team.TeamCompetencies = teamCompetencies;
+            }
+
+            if (dropped > 0)
+            {
+                var message = dropped == 1
+                    ? "1 competency link to the MSEL or a team was not imported because its competency is not in this Blueprint."
+                    : $"{dropped} competency links to the MSEL or its teams were not imported because their competencies are not in this Blueprint.";
+                if (missingFrameworks.Count > 0)
+                    message += $" Missing competency framework{(missingFrameworks.Count == 1 ? "" : "s")}: {string.Join(", ", missingFrameworks)}.";
+                AddChange(result, "competencies", message);
+            }
+
+            await RemoveUnknownCompetencyCodesAsync(mselEntity, hasMselCompetencies ? keptCodes : null, result, ct);
+        }
+
+        /// <summary>
+        /// A Competency data field's options and its scenario event values name competencies by code (an
+        /// option's name, a comma-separated value), with no foreign key to catch a code that names nothing
+        /// here. Codes of competencies the import kept stay; the rest are removed and counted in the report.
+        /// <paramref name="keptCodes"/> null means the file had no MSEL competencies to hold the codes to, as
+        /// files from before competencies were exported do; a code then stays if any competency here has it.
+        /// </summary>
+        private async Task RemoveUnknownCompetencyCodesAsync(MselEntity mselEntity, HashSet<string> keptCodes, MselImportResult result, CancellationToken ct)
+        {
+            var fieldIds = mselEntity.DataFields
+                .Where(df => df.DataType == DataFieldType.Competency)
+                .Select(df => df.Id)
+                .ToHashSet();
+            if (fieldIds.Count == 0)
+                return;
+            var options = mselEntity.DataFields.Where(df => fieldIds.Contains(df.Id)).SelectMany(df => df.DataOptions).ToList();
+            var values = mselEntity.ScenarioEvents
+                .SelectMany(se => se.DataValues)
+                .Where(dv => fieldIds.Contains(dv.DataFieldId) && !string.IsNullOrWhiteSpace(dv.Value))
+                .ToList();
+            static List<string> Codes(string value) =>
+                value.Split(',').Select(code => code.Trim()).Where(code => code.Length > 0).ToList();
+            if (keptCodes == null)
+            {
+                var named = options.Select(o => o.OptionName)
+                    .Concat(values.SelectMany(v => Codes(v.Value)))
+                    .Where(code => !string.IsNullOrEmpty(code))
+                    .Distinct()
+                    .ToList();
+                keptCodes = named.Count == 0 ? [] : (await _context.Competencies
+                    .AsNoTracking()
+                    .Where(c => named.Contains(c.IdNumber))
+                    .Select(c => c.IdNumber)
+                    .ToListAsync(ct)).ToHashSet();
+            }
+
+            var droppedOptions = 0;
+            foreach (var dataField in mselEntity.DataFields.Where(df => fieldIds.Contains(df.Id)))
+            {
+                var kept = dataField.DataOptions.Where(o => o.OptionName != null && keptCodes.Contains(o.OptionName)).ToList();
+                droppedOptions += dataField.DataOptions.Count - kept.Count;
+                dataField.DataOptions = kept;
+            }
+            var droppedValueCodes = 0;
+            foreach (var value in values)
+            {
+                var codes = Codes(value.Value);
+                var kept = codes.Where(keptCodes.Contains).ToList();
+                if (kept.Count == codes.Count)
+                    continue;
+                droppedValueCodes += codes.Count - kept.Count;
+                value.Value = string.Join(", ", kept);
+            }
+
+            if (droppedOptions == 0 && droppedValueCodes == 0)
+                return;
+            var removed = new List<string>();
+            if (droppedOptions > 0)
+                removed.Add(droppedOptions == 1 ? "1 option" : $"{droppedOptions} options");
+            if (droppedValueCodes > 0)
+                removed.Add(droppedValueCodes == 1 ? "1 entry in scenario event values" : $"{droppedValueCodes} entries in scenario event values");
+            AddChange(result, "competencies",
+                $"Competencies that are not in this Blueprint were removed from Competency data fields: {string.Join(" and ", removed)}.");
         }
 
         public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -2652,7 +2944,7 @@ namespace Blueprint.Api.Services
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>($"MSEL {mselId} was not found when attempting to push integrations.");
             if (msel.PlayerViewId != null)
-                throw new InvalidOperationException($"MSEL {mselId} is already deployed.");
+                throw new ConflictException($"MSEL {mselId} is already deployed.");
             if (msel.UseCaster)
             {
                 await ValidateCasterSetupAsync(msel, ct);
@@ -2662,7 +2954,7 @@ namespace Blueprint.Api.Services
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
-                throw new InvalidOperationException(userVerificationErrorMessage);
+                throw new ConflictException(userVerificationErrorMessage);
             msel.Status = MselItemStatus.Pushing;
             msel.IntegrationStatus = "Pushing Integrations";
             await _context.SaveChangesAsync(ct);

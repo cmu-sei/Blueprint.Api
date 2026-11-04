@@ -16,12 +16,13 @@ CITE or Steamfitter, and no network.
 
 To run one class or one test:
 
-    dotnet test --filter "FullyQualifiedName~.OrganizationEndpointTests"
-    dotnet test --filter "FullyQualifiedName~.MselPageEndpointTests.Create_ForAnOwnerOfTheMsel_Is201"
+    dotnet test --filter-class "*.OrganizationEndpointTests"
+    dotnet test --filter-method "*.MselPageEndpointTests.Create_ForAnOwnerOfTheMsel_Is201"
 
-`--filter FullyQualifiedName~X` is a substring match on the whole name, so prefix the namespace when a
-class name is a suffix of another (`~.TeamEndpointTests`, not `~TeamEndpointTests`; the classes sit in
-sub-namespaces such as `Blueprint.Api.Tests.Controllers`, so `~Tests.X` does not match).
+The filters match the whole name, namespace included, with `*` as a wildcard, so start with `*.` when a
+class name is a suffix of another (`*.TeamEndpointTests`, not `*TeamEndpointTests`; the classes sit in
+sub-namespaces such as `Blueprint.Api.Tests.Controllers`, so `*Tests.X` does not match). The suite runs on
+Microsoft.Testing.Platform (`global.json`), so these are xUnit's options rather than VSTest's `--filter`.
 
 See [docs/Testing.md](docs/Testing.md) for the harness, the conventions a new test has to respect, and coverage.
 

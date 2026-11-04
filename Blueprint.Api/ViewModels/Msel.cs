@@ -38,6 +38,7 @@ namespace Blueprint.Api.ViewModels
         public bool UseSteamfitter { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
         public IntegrationType SteamfitterIntegrationType { get; set; }
+        public SteamfitterScenarioStartMode SteamfitterScenarioStartMode { get; set; }
         public bool UseCaster { get; set; }
         public Guid? CasterDirectoryId { get; set; }
         public Guid? CasterWorkspaceId { get; set; }
@@ -97,7 +98,6 @@ namespace Blueprint.Api.ViewModels
         public ICollection<MselCompetency> MselCompetencies { get; set; } = new List<MselCompetency>();
    }
 
-    /// <summary>What the MSEL's generated picture should show or change, in the planner's words</summary>
     /// <summary>A picture made for a MSEL and not yet saved, for the planner to keep or not</summary>
     public class MselImagePreview
     {
@@ -105,6 +105,7 @@ namespace Blueprint.Api.ViewModels
         public string Image { get; set; }
     }
 
+    /// <summary>What the MSEL's generated picture should show or change, in the planner's words</summary>
     public class MselImageRequest
     {
         public string Prompt { get; set; }

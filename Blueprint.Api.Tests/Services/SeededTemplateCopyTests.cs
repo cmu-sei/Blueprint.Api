@@ -73,6 +73,48 @@ public class SeededTemplateCopyTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(2, await db.CardTeams.CountAsync(x => x.Card.MselId == copy.Id, Ct));
     }
 
+    /// <summary>Injects from a catalog of the seeded Gallery Article inject type land in the copy's existing
+    /// columns: no column is added, and the inject's description fills the HTML article body.</summary>
+    [Fact]
+    public async Task FromInjects_OfTheSeededGalleryArticleType_IntoACopyOfTheTemplate_AddsNoField()
+    {
+        SeedFromTheShippedSeedFile();
+        var actor = await Actor()
+            .WithSystemPermissions(SystemPermission.CreateMsels, SystemPermission.EditMsels, SystemPermission.ViewMsels)
+            .SeedAsync();
+        var client = Client(actor);
+        var copy = await (await client.PostAsync($"/api/msels/{CrucibleMselId}/copy", null, Ct))
+            .Content.ReadFromJsonAsync<Msel>(JsonOptions, Ct);
+
+        Guid injectTypeId;
+        await using (var db = NewContext())
+        {
+            injectTypeId = (await db.InjectTypes.SingleAsync(x => x.Name == "Gallery Article", Ct)).Id;
+        }
+        var catalog = TestData.Catalog(injectTypeId, isPublic: true);
+        var inject = TestData.Inject(injectTypeId);
+        await Seed(catalog, inject, TestData.CatalogInject(catalog.Id, inject.Id));
+        int fieldCount;
+        await using (var db = NewContext())
+        {
+            fieldCount = await db.DataFields.CountAsync(x => x.MselId == copy.Id, Ct);
+        }
+
+        var response = await client.PostAsJsonAsync(
+            "/api/scenarioEvents/fromInjects",
+            new { MselId = copy.Id, InjectTypeId = injectTypeId, InjectIdList = new[] { inject.Id } },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await using var read = NewContext();
+        Assert.Equal(fieldCount, await read.DataFields.CountAsync(x => x.MselId == copy.Id, Ct));
+        var body = await read.DataValues
+            .Where(x => x.ScenarioEvent.InjectId == inject.Id
+                && x.DataField.GalleryArticleParameter == nameof(GalleryArticleParameter.Description))
+            .SingleAsync(Ct);
+        Assert.Equal(inject.Description, body.Value);
+    }
+
     /// <summary>The template pickers list system-wide templates (a template on no MSEL), so every one
     /// the shipped seed-data.json holds must come back from its <c>*/templates</c> endpoint.</summary>
     [Fact]

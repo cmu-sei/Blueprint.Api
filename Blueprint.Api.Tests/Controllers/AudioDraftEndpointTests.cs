@@ -131,12 +131,12 @@ public class AudioDraftEndpointTests(DatabaseFixture fixture, AiEnabledFactory f
 
         Assert.Empty(_model.ReceivedCalls());
         var voice = AudioDraftService.PickVoice(Voices, "WPN News").Name;
-        Assert.Equal([("Pumps stop. Two stations went offline at six.", voice, null)], _spoken);
+        Assert.Equal([("Two stations went offline at six.", voice, null)], _spoken);
         var line = Assert.Single(result.Lines);
         Assert.Equal(("WPN News", voice), (line.Speaker, line.Voice));
         Assert.StartsWith("data:audio/mpeg;base64,", line.Audio);
         Assert.Equal(1200, line.DurationMs);
-        Assert.Equal(8, line.Words.Count);
+        Assert.Equal(6, line.Words.Count);
         Assert.Equal((AudioDraftKind.Listen, false, 2, "Pumps stop"), (result.Kind, result.Phone, result.Seconds, result.Headline));
         Assert.Null(result.Transcript);
         Assert.Equal("EXERCISE · EXERCISE · EXERCISE", result.Marking.Text);

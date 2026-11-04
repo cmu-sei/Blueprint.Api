@@ -136,7 +136,7 @@ Answer only by calling the tool.";
             string scene = null;
             if (!scripted)
             {
-                var text = ReadAloud(inject.Headline, inject.Article);
+                var text = ReadAloud(inject.Article);
                 if (string.IsNullOrWhiteSpace(text))
                     throw new BadRequestException($"{field.Name} has no article text to read aloud.");
                 lines = [new ScriptLine(inject.SourceName ?? "Reader", outletVoice.Name, text)];
@@ -224,10 +224,11 @@ Answer only by calling the tool.";
         }
 
         /// <summary>
-        /// An article's words as a reader would read them: the headline, then its headings, paragraphs, list items and quotes. The
-        /// marking, captions in small print, transcripts and media are skipped. An article laid out without paragraphs is read whole.
+        /// An article's words as a reader would read them: its own headline, headings, paragraphs, list items and quotes, in order.
+        /// The inject's title is not read, since the article has its headline and the two often differ or repeat. The marking,
+        /// captions in small print, transcripts and media are skipped. An article laid out without paragraphs is read whole.
         /// </summary>
-        public static string ReadAloud(string headline, string html)
+        public static string ReadAloud(string html)
         {
             var body = Parser.ParseDocument($"<body>{html ?? ""}</body>").Body;
             foreach (var skipped in body.QuerySelectorAll("table[title=Marking], details, audio, video, script, style, figcaption, font[size='1']").ToList())
@@ -242,12 +243,6 @@ Answer only by calling the tool.";
             // a layout of table cells and fonts has its words outside paragraphs
             if (parts.Sum(p => p.Length) < Math.Min(200, whole.Length * 0.4))
                 parts = [whole];
-            var h = Normalize(headline);
-            if (h.Length > 0)
-            {
-                parts.RemoveAll(p => string.Equals(p.TrimEnd('.', '!', '?'), h.TrimEnd('.', '!', '?'), StringComparison.OrdinalIgnoreCase));
-                parts.Insert(0, h);
-            }
             return string.Join(" ", parts.Where(p => p.Length > 0).Select(Sentence));
         }
 
@@ -415,7 +410,7 @@ recognizable faces in it.",
                 if (!string.IsNullOrWhiteSpace(value))
                     sb.AppendLine($"- {other.Name}: {Excerpt(value, ValueLength)}");
             }
-            var article = ReadAloud(null, inject.Article);
+            var article = ReadAloud(inject.Article);
             if (!string.IsNullOrWhiteSpace(article))
             {
                 sb.AppendLine();

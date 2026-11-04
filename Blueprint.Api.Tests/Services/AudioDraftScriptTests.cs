@@ -28,7 +28,7 @@ public class AudioDraftScriptTests
 
     private static readonly AudioDraftService.Inject Article = new("Pumps stop", "WPN News", "News", null, null, new Dictionary<Guid, string>());
 
-    /// <summary>The headline, then the paragraphs; the marking, small-print captions, transcripts and media are not read.</summary>
+    /// <summary>The article's own headline, then its paragraphs; the marking, small-print captions, transcripts and media are not read.</summary>
     [Fact]
     public void ReadAloud_ReadsTheHeadlineAndParagraphs()
     {
@@ -39,7 +39,7 @@ public class AudioDraftScriptTests
             "<audio controls src=\"data:audio/mpeg;base64,AAAA\"></audio><details><summary>Transcript</summary><p>Old words.</p></details>";
 
         Assert.Equal("Pumps stop. Two stations went offline at six. Crews & officials are on site. Fuel is late.",
-            AudioDraftService.ReadAloud("Pumps stop", html));
+            AudioDraftService.ReadAloud(html));
     }
 
     /// <summary>An article laid out in table cells with no paragraphs is read whole, with a pause between cells.</summary>
@@ -48,9 +48,24 @@ public class AudioDraftScriptTests
     {
         var html = "<table><tr><td>INTSUM 042</td></tr><tr><td><font>The actor used a stolen VPN account. Confidence is moderate</font></td></tr></table>";
 
-        Assert.Equal("Relay compromise. INTSUM 042 The actor used a stolen VPN account. Confidence is moderate.",
-            AudioDraftService.ReadAloud("Relay compromise", html));
-        Assert.Equal("", AudioDraftService.ReadAloud(null, null));
+        Assert.Equal("INTSUM 042 The actor used a stolen VPN account. Confidence is moderate.",
+            AudioDraftService.ReadAloud(html));
+        Assert.Equal("", AudioDraftService.ReadAloud(null));
+    }
+
+    /// <summary>
+    /// The inject's title is not read: an article whose layout keeps its words outside paragraphs, starting with the same
+    /// headline, says it once, and an article whose headline differs from the title says only its own.
+    /// </summary>
+    [Fact]
+    public void ReadAloud_ReadsTheArticlesOwnHeadlineOnce()
+    {
+        var html = "<table><tr><td><font size=\"6\">Residents queue at ATMs ahead of Marisol</font></td></tr>" +
+            "<tr><td><font>Lines stretched around the block as banks warned of outages.</font></td></tr></table>";
+
+        Assert.Equal("Residents queue at ATMs ahead of Marisol Lines stretched around the block as banks warned of outages.",
+            AudioDraftService.ReadAloud(html));
+        Assert.DoesNotContain("GNN:", AudioDraftService.ReadAloud("<h1>Day three: fuel shortages deepen</h1><p>Hospitals come first.</p>"));
     }
 
     /// <summary>The same outlet always gets the same voice, whatever its case or spacing, and every voice is used by some outlet.</summary>

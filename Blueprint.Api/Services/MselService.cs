@@ -271,9 +271,10 @@ namespace Blueprint.Api.Services
             if (!await _context.Msels.AnyAsync(m => m.Id == mselId, ct))
                 throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
 
-            // a copy hands over the whole MSEL, so the caller must be able to view it.
-            // The caller already holds CreateMsels, which is what lets them view a template.
-            if (!hasViewMselsPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, true, _context)))
+            // a copy hands over the whole MSEL, hidden events and all, so the caller must contribute to it: a
+            // participant is shown only the Exercise View. The caller already holds CreateMsels, which is what
+            // lets them copy a template.
+            if (!hasViewMselsPermission && !(await MselContributorRequirement.IsMet(_user.GetId(), mselId, true, _context)))
                 throw new ForbiddenException();
 
             var newMselEntity = await privateMselCopyAsync(mselId, null, ct);
@@ -778,8 +779,9 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
-            // the export holds every event and data value, so the caller must be able to view the MSEL's contents
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
+            // the export holds every event and data value, hidden or not, so it is for the MSEL's contributors,
+            // not its participants, who are shown only the Exercise View
+            if (!hasSystemPermission && !(await MselContributorRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
             var filename = msel.Name.ToLower().EndsWith(".xlsx") ? msel.Name : msel.Name + ".xlsx";
 

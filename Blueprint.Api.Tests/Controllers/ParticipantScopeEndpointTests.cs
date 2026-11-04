@@ -59,6 +59,109 @@ public class ParticipantScopeEndpointTests(DatabaseFixture fixture, BlueprintApp
             (await Client(contributor).GetAsync($"/api/dataFields/{keptOff.Id}", Ct)).StatusCode);
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // CITE actions and duties
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CiteActions_ForAParticipant_AreAnEmptyList_AndOneByIdIs403()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var action = TestData.CiteAction(msel.Id, team.Id);
+        await Seed(action);
+        var (participant, contributor) = await SeedParticipantAndContributor(msel, team);
+
+        Assert.Empty(await Read<List<ViewModels.CiteAction>>(
+            await Client(participant).GetAsync($"/api/msels/{msel.Id}/citeActions", Ct)));
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await Client(participant).GetAsync($"/api/citeActions/{action.Id}", Ct)).StatusCode);
+
+        Assert.Single(await Read<List<ViewModels.CiteAction>>(
+            await Client(contributor).GetAsync($"/api/msels/{msel.Id}/citeActions", Ct)));
+        Assert.Equal(HttpStatusCode.OK,
+            (await Client(contributor).GetAsync($"/api/citeActions/{action.Id}", Ct)).StatusCode);
+    }
+
+    [Fact]
+    public async Task CiteDuties_ForAParticipant_AreAnEmptyList_AndOneByIdIs403()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var duty = TestData.CiteDuty(msel.Id, team.Id);
+        await Seed(duty);
+        var (participant, contributor) = await SeedParticipantAndContributor(msel, team);
+
+        Assert.Empty(await Read<List<ViewModels.CiteDuty>>(
+            await Client(participant).GetAsync($"/api/msels/{msel.Id}/citeDuties", Ct)));
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await Client(participant).GetAsync($"/api/citeDuties/{duty.Id}", Ct)).StatusCode);
+
+        Assert.Single(await Read<List<ViewModels.CiteDuty>>(
+            await Client(contributor).GetAsync($"/api/msels/{msel.Id}/citeDuties", Ct)));
+        Assert.Equal(HttpStatusCode.OK,
+            (await Client(contributor).GetAsync($"/api/citeDuties/{duty.Id}", Ct)).StatusCode);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Card teams
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CardTeams_ForAParticipant_AreAnEmptyList_ByMselAndByCard_AndOneByIdIs403()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var card = TestData.Card(msel.Id);
+        await Seed(card);
+        var cardTeam = TestData.CardTeam(card.Id, team.Id);
+        await Seed(cardTeam);
+        var (participant, contributor) = await SeedParticipantAndContributor(msel, team);
+
+        Assert.Empty(await Read<List<ViewModels.CardTeam>>(
+            await Client(participant).GetAsync($"/api/msels/{msel.Id}/teamcards", Ct)));
+        Assert.Empty(await Read<List<ViewModels.CardTeam>>(
+            await Client(participant).GetAsync($"/api/cards/{card.Id}/teamcards", Ct)));
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await Client(participant).GetAsync($"/api/teamcards/{cardTeam.Id}", Ct)).StatusCode);
+
+        Assert.Single(await Read<List<ViewModels.CardTeam>>(
+            await Client(contributor).GetAsync($"/api/msels/{msel.Id}/teamcards", Ct)));
+        Assert.Single(await Read<List<ViewModels.CardTeam>>(
+            await Client(contributor).GetAsync($"/api/cards/{card.Id}/teamcards", Ct)));
+        Assert.Equal(HttpStatusCode.OK,
+            (await Client(contributor).GetAsync($"/api/teamcards/{cardTeam.Id}", Ct)).StatusCode);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // The whole MSEL: the xlsx export and the copy
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>The export holds every event and cell, hidden or not, so a participant may not download it.</summary>
+    [Fact]
+    public async Task Xlsx_IsForbiddenToAParticipant_AndDownloadedByAContributor()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var (participant, contributor) = await SeedParticipantAndContributor(msel, team);
+
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await Client(participant).GetAsync($"/api/msels/{msel.Id}/xlsx", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,
+            (await Client(contributor).GetAsync($"/api/msels/{msel.Id}/xlsx", Ct)).StatusCode);
+    }
+
+    /// <summary>
+    /// A copy hands over the whole MSEL, so a participant holding CreateMsels, which the copy route asks
+    /// for, still may not copy it.
+    /// </summary>
+    [Fact]
+    public async Task Copy_IsForbiddenToAParticipantHoldingCreateMsels()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var participant = await Actor().OnTeam(team).WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(participant).PostAsync($"/api/msels/{msel.Id}/copy", content: null, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     private async Task<(MselEntity Msel, TeamEntity Team)> SeedMselAndTeam()
     {
         var msel = TestData.Msel();

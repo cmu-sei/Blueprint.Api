@@ -49,7 +49,7 @@ The root `Directory.Build.props` sets `TreatWarningsAsErrors` for every project,
 - xUnit2029, xUnit2031 - `Assert.Empty`/`Assert.Single` with a predicate. Materialize the sequence first.
 - CS4007 - A collection expression that binds to `ReadOnlySpan<T>` across an `await`. Hoist the awaited call into a local.
 
-Restore-time warnings stay warnings, through `WarningsNotAsErrors`: NU1901 to NU1904 are the NuGet audit (AutoMapper 13 and MediatR 12 are pinned deliberately, and the rest is transitive), NU1701 reports TinCan's .NET Framework assets, and NU1510 names three `PackageReference`s of `Blueprint.Api` the framework already provides.
+Restore-time warnings stay warnings, through `WarningsNotAsErrors`: NU1901 to NU1904 are the NuGet audit (AutoMapper 13 and MediatR 12 are pinned deliberately, and the rest is transitive), and NU1510 names three `PackageReference`s of `Blueprint.Api` the framework already provides.
 
 Package versions live in `Directory.Packages.props` (central package management); the test packages are pinned by the standard (`agent-docs/api-testing/test-packages.props`) and `sync.sh` checks them. `Microsoft.AspNetCore.SignalR.Client` is the standard's optional pin (10.0.1): `MainHubConnectionTests` dials the hub over a real connection, as an `Actor()`, over WebSockets.
 

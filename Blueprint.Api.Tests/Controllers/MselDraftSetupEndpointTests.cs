@@ -111,6 +111,10 @@ public class MselDraftSetupEndpointTests(DatabaseFixture fixture, AiEnabledFacto
         Assert.Equal(everyone, apps["Team Profiles"]);
         Assert.Equal(["EXCON"], apps["Steamfitter Tasks"]);
         Assert.Equal(["EXCON"], apps["Steamfitter Scenarios"]);
+        // Steamfitter's own icon, not Player's alert icon
+        await using (var icons = NewContext())
+            Assert.All(await icons.PlayerApplications.Where(a => a.MselId == mselId && a.Name.StartsWith("Steamfitter")).Select(a => a.Icon).ToListAsync(Ct),
+                icon => Assert.Equal("{steamfitterUrl}/assets/img/monkey_wrench.png", icon));
         // the template's archive application is Gallery Archive already, and reaches the drafted team SOC
         Assert.False(apps.ContainsKey("Gallery Archive"));
         Assert.Equal(everyone, apps["Gallery"]);

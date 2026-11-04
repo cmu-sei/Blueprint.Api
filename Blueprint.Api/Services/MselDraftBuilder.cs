@@ -419,8 +419,8 @@ namespace Blueprint.Api.Services
                 AddApplication("Exercise Timeline", "{blueprintUrl}/msel/{blueprintMselId}/view{theme}", pageIcon, everyone, 6);
                 if (mselEntity.UseSteamfitter)
                 {
-                    AddApplication("Steamfitter Tasks", "{steamfitterUrl}/scenario/{steamfitterScenarioId}{theme}", "{playerUrl}/assets/img/SP_Icon_Alert.png", control, 9);
-                    AddApplication("Steamfitter Scenarios", "{steamfitterUrl}/?scenarioId={steamfitterScenarioId}&viewId={playerViewId}{theme}", "{playerUrl}/assets/img/SP_Icon_Alert.png", control, 10);
+                    AddApplication("Steamfitter Tasks", "{steamfitterUrl}/scenario/{steamfitterScenarioId}{theme}", "{steamfitterUrl}/assets/img/monkey_wrench.png", control, 9);
+                    AddApplication("Steamfitter Scenarios", "{steamfitterUrl}/?scenarioId={steamfitterScenarioId}&viewId={playerViewId}{theme}", "{steamfitterUrl}/assets/img/monkey_wrench.png", control, 10);
                 }
             }
 

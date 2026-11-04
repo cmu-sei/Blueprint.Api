@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Data.Models;
 
 namespace Blueprint.Api.ViewModels
 {
@@ -12,7 +13,7 @@ namespace Blueprint.Api.ViewModels
     /// The CITE scoring model a MSEL authors itself, with CITE's ScoringModel fields. Pushing the MSEL creates it
     /// in CITE for the MSEL's evaluation.
     /// </summary>
-    public class MselScoringModel
+    public class MselScoringModel : IScoringModelFields
     {
         public Guid MselId { get; set; }
 
@@ -37,7 +38,7 @@ namespace Blueprint.Api.ViewModels
         public List<MselScoringCategory> Categories { get; set; } = new List<MselScoringCategory>();
     }
 
-    public class MselScoringCategory
+    public class MselScoringCategory : IScoringCategoryFields
     {
         public Guid Id { get; set; }
         public int DisplayOrder { get; set; }
@@ -53,7 +54,7 @@ namespace Blueprint.Api.ViewModels
         public List<MselScoringOption> Options { get; set; } = new List<MselScoringOption>();
     }
 
-    public class MselScoringOption
+    public class MselScoringOption : IScoringOptionFields
     {
         public Guid Id { get; set; }
         public int DisplayOrder { get; set; }

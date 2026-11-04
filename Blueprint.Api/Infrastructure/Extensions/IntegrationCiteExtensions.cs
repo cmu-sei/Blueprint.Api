@@ -81,7 +81,15 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Update a Cite Evaluation for this MSEL
         public static async Task ActivateAsync(Evaluation evaluation, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            await citeApiClient.UpdateEvaluationAsync(evaluation.Id, evaluation, ct);
+            await citeApiClient.UpdateEvaluationAsync(evaluation.Id, new UpdateEvaluationRequest() {
+                Description = evaluation.Description,
+                Status = evaluation.Status,
+                CurrentMoveNumber = evaluation.CurrentMoveNumber,
+                SituationTime = evaluation.SituationTime,
+                SituationDescription = evaluation.SituationDescription,
+                GalleryExhibitId = evaluation.GalleryExhibitId,
+                ShowAdvanceButton = evaluation.ShowAdvanceButton
+            }, ct);
         }
 
         // Create Cite Moves for this MSEL
@@ -122,14 +130,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 {
                     var citeTeamId = team.Id;
                     // create team in Cite
-                    var citeTeam = new Team() {
+                    var citeTeam = new CreateTeamRequest() {
                         Id = citeTeamId,
                         Name = team.Name,
                         ShortName = team.ShortName,
                         EvaluationId = (Guid)msel.CiteEvaluationId,
                         TeamTypeId = (Guid)team.CiteTeamTypeId
                     };
-                    citeTeam = await citeApiClient.CreateTeamAsync(citeTeam, ct);
+                    var createdTeam = await citeApiClient.CreateTeamAsync(citeTeam, ct);
                     // use eager-loaded users from the team
                     var users = team.TeamUsers.Select(tu => tu.User).ToList();
                     foreach (var user in users)
@@ -149,13 +157,13 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             .FirstOrDefault(utr => utr.UserId == user.Id);
                         // create Cite TeamMemberships
                         var teamMembership = new TeamMembership() {
-                            TeamId = citeTeam.Id,
+                            TeamId = createdTeam.Id,
                             UserId = user.Id,
-                            RoleId = GetTeamRoleId(roleNameToId, userTeamRole?.Role)
+                            RoleId = GetTeamRoleId(roleNameToId, userTeamRole?.Role) ?? Guid.Empty
                         };
                         try
                         {
-                            await citeApiClient.CreateTeamMembershipAsync(citeTeam.Id, teamMembership, ct);
+                            await citeApiClient.CreateTeamMembershipAsync(createdTeam.Id, teamMembership, ct);
                         }
                         catch (System.Exception)
                         {}
@@ -278,7 +286,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             var citeTeamMembership = new TeamMembership() {
                 TeamId = teamId,
                 UserId = userId,
-                RoleId = GetTeamRoleId(roleNameToId, teamRole)
+                RoleId = GetTeamRoleId(roleNameToId, teamRole) ?? Guid.Empty
             };
             await citeApiClient.CreateTeamMembershipAsync(teamId, citeTeamMembership, ct);
         }

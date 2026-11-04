@@ -174,6 +174,8 @@ public class JsonConverterTests
             .Where(x => x.Namespace == "Blueprint.Api.ViewModels")
             .Concat(typeof(Data.BlueprintContext).Assembly.GetTypes()
                 .Where(x => x.Namespace == "Blueprint.Api.Data.Models"))
+            // an interface is never serialized; the models that implement one are
+            .Where(x => !x.IsInterface)
             .SelectMany(x => x.GetProperties())
             .Where(x => floating.Contains(Nullable.GetUnderlyingType(x.PropertyType) ?? x.PropertyType))
             .Select(x => $"{x.DeclaringType.Name}.{x.Name}")

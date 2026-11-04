@@ -292,7 +292,8 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
 
     /// <summary>
     /// The MSEL's own model goes to CITE in one request, its categories and options nested in display order, the
-    /// enums by name and the model active.
+    /// enums by name and the model active. CITE's create takes new categories and options only, so they carry no ids
+    /// and no parents.
     /// </summary>
     [Fact]
     public async Task CreateScoringModel_PostsTheModelWithItsCategoriesAndOptions()
@@ -320,6 +321,9 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
         Assert.Equal(
             ["What do you tell the press?", "Who do you call first?"],
             sentCategory.GetProperty("scoringOptions").EnumerateArray().Select(o => o.GetProperty("description").GetString()));
+        Assert.DoesNotContain(sentCategory.EnumerateObject(), p => p.Name is "id" or "scoringModelId");
+        Assert.All(sentCategory.GetProperty("scoringOptions").EnumerateArray(),
+            o => Assert.DoesNotContain(o.EnumerateObject(), p => p.Name is "id" or "scoringCategoryId"));
     }
 
     /// <summary>A model with no description is named after the MSEL, since CITE lists models by description.</summary>
@@ -627,7 +631,7 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
 
     /// <summary>A CITE with no Member role leaves an unmapped member's role to CITE.</summary>
     [Fact]
-    public async Task CreateTeams_WhenCiteHasNoMemberRole_CreatesTheMembershipWithNoRole()
+    public async Task CreateTeams_WhenCiteHasNoMemberRole_LeavesTheRoleToCite()
     {
         var msel = Msel();
         var team = Team(msel.Id);
@@ -643,7 +647,8 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
 
         await IntegrationCiteExtensions.CreateTeamsAsync(msel, Client(handler), null, [], Ct);
 
-        Assert.Equal(JsonValueKind.Null, Body(handler.Sent[^1].Body)["roleId"].ValueKind);
+        // CITE requires a role, and gives the empty one its default, Member role
+        Assert.Equal(Guid.Empty.ToString(), Body(handler.Sent[^1].Body)["roleId"].GetString());
     }
 
     /// <summary>A refused team membership is swallowed and the push carries on.</summary>
@@ -964,7 +969,7 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
 
     /// <summary>A CITE with no Member role leaves an unmapped joiner's role to CITE.</summary>
     [Fact]
-    public async Task AddUserToTeam_WhenCiteHasNoMemberRole_SendsNoRole()
+    public async Task AddUserToTeam_WhenCiteHasNoMemberRole_LeavesTheRoleToCite()
     {
         var actor = await Actor().SeedAsync();
         var teamId = Guid.NewGuid();
@@ -976,7 +981,8 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
 
         await IntegrationCiteExtensions.AddUserToTeamAsync(actor.Id, teamId, null, Client(handler), Db, Ct);
 
-        Assert.Equal(JsonValueKind.Null, Body(handler.Sent[^1].Body)["roleId"].ValueKind);
+        // CITE requires a role, and gives the empty one its default, Member role
+        Assert.Equal(Guid.Empty.ToString(), Body(handler.Sent[^1].Body)["roleId"].GetString());
     }
 
     /// <summary>A user blueprint does not know is added to the team without being created.</summary>

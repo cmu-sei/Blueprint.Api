@@ -433,6 +433,14 @@ namespace Blueprint.Api.Services
                                 currentProcessStep = "Caster - begin processing";
                                 var casterClientSource = new CasterClientSource(_httpClientFactory, _clientOptions.CurrentValue.CasterApiUrl, () => ApiClientsExtensions.GetToken(scope));
                                 await CasterProcess(msel, integrationInformation.UserId ?? msel.CreatedBy, scope, casterClientSource, blueprintContext, step => currentProcessStep = step, ct);
+
+                                // the network map needs the view and what the apply built
+                                if (msel.UsePlayer && msel.PlayerViewId != null)
+                                {
+                                    ct.ThrowIfCancellationRequested();
+                                    currentProcessStep = "Player - network map";
+                                    await TopologyMapProcess(msel, scope, blueprintContext, ct);
+                                }
                             }
                             // Start the Steamfitter Scenario last, so that a Caster retry that finishes the push starts it too
                             if (msel.UseSteamfitter && msel.SteamfitterScenarioId != null &&
@@ -697,6 +705,43 @@ namespace Blueprint.Api.Services
             await SaveCasterIdsAsync(blueprintContext, msel, ct);
 
             await IntegrationCasterExtensions.PlanAndApplyAsync(run.Id, casterClientSource, _clientOptions.CurrentValue, _clientOptions.CurrentValue.CasterApplyMaxWaitMinutes, sendStatus, ct);
+        }
+
+        /// <summary>
+        /// Draws the Caster workspace's topology as the Player view's VM map and adds the Network Map
+        /// application. A map that cannot be made does not fail the push: the VMs are there, and Update map
+        /// on the MSEL Info page tries again. A workspace with no machines gets no map.
+        /// </summary>
+        private async STT.Task TopologyMapProcess(MselEntity msel, IServiceScope scope, BlueprintContext blueprintContext, CancellationToken ct)
+        {
+            var clientOptions = _clientOptions.CurrentValue;
+            if (string.IsNullOrWhiteSpace(clientOptions.VmApiUrl) || msel.CasterWorkspaceId == null)
+            {
+                _logger.LogInformation($"Player - network map skipped ({msel.Id}): no VM API URL is configured, or there is no Caster workspace");
+                return;
+            }
+            try
+            {
+                // a fresh token, because the apply can outlast the one the push started with
+                var tokenResponse = await ApiClientsExtensions.GetToken(scope);
+                var casterHttpClient = ApiClientsExtensions.GetHttpClient(_httpClientFactory, clientOptions.CasterApiUrl, tokenResponse);
+                var topology = await CasterTopologyReader.ReadAsync(casterHttpClient, (Guid)msel.CasterWorkspaceId, ct);
+                if (!topology.Nodes.Any(n => n.IsMachine))
+                    return;
+
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, "Pushing Network Map to Player", ct);
+                var vmHttpClient = ApiClientsExtensions.GetHttpClient(_httpClientFactory, clientOptions.VmApiUrl, tokenResponse);
+                var playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, clientOptions.PlayerApiUrl, tokenResponse);
+                // its own context, so saving the Network Map application saves nothing else of the push's
+                using var mapScope = _scopeFactory.CreateScope();
+                var mapContext = mapScope.ServiceProvider.GetRequiredService<BlueprintContext>();
+                await TopologyMapPublisher.PublishAsync(msel.Id, topology, TopologyMapPublisher.Settings(msel), vmHttpClient, playerApiClient, mapContext, clientOptions, null, ct);
+            }
+            catch (System.Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, $"Player - network map failed ({msel.Id}); the push continues");
+                await SendIntegrationStatusAsync(blueprintContext, msel.Id, $"Network map was not made in Player - {ex.Message}", ct);
+            }
         }
 
         /// <summary>

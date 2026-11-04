@@ -603,7 +603,7 @@
       "DataType": 40,
       "DisplayOrder": 9,
       "IsChosenFromList": false,
-      "OnScenarioEventList": false,
+      "OnScenarioEventList": true,
       "OnExerciseView": false,
       "IsShownOnDefaultTab": false,
       "GalleryArticleParameter": "DatePosted"
@@ -653,7 +653,7 @@
       "DisplayOrder": 13,
       "IsChosenFromList": true,
       "IsMultiSelect": true,
-      "OnScenarioEventList": false,
+      "OnScenarioEventList": true,
       "OnExerciseView": false,
       "IsShownOnDefaultTab": false
     },

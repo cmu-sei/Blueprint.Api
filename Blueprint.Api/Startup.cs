@@ -284,6 +284,7 @@ public class Startup
         services.AddScoped<IIdentityResolver, IdentityResolver>();
         services.AddSingleton<IUserIdProvider, SubUserIdProvider>();
         services.AddSingleton<Hubs.HubCache>();
+        services.AddSingleton<MselBuildClaims>();
         services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         services.AddScoped<IPrincipal>(p => p.GetService<IHttpContextAccessor>()?.HttpContext?.User);
         services.AddScoped<IXApiService, XApiService>();

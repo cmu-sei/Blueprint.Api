@@ -74,32 +74,32 @@ namespace Blueprint.Api.Controllers
         [HttpPost("msels/{id}/ai-draft/injects")]
         [ProducesResponseType(typeof(MselBuildStatus), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "writeMselInjects")]
-        public async Task<IActionResult> WriteInjectsAsync(Guid id, CancellationToken ct) =>
-            Ok(await _mselBuildService.WriteInjectsAsync(id, await CanEditAllAsync(ct), ct));
+        public async Task<IActionResult> WriteInjectsAsync(Guid id, [FromQuery] string connectionId, CancellationToken ct) =>
+            Ok(await _mselBuildService.WriteInjectsAsync(id, connectionId, await CanEditAllAsync(ct), ct));
 
         /// <summary> Write the long text of one of a MSEL's drafted injects with AI </summary>
         /// <remarks> The injects are outlined first; each one's document, message or description is then written and saved on its own. </remarks>
         [HttpPost("msels/{id}/ai-draft/rows/{scenarioEventId}")]
         [ProducesResponseType(typeof(MselBuildContent), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "writeMselRow")]
-        public async Task<IActionResult> WriteRowAsync(Guid id, Guid scenarioEventId, CancellationToken ct) =>
-            Ok(await _mselBuildService.WriteRowAsync(id, scenarioEventId, await CanEditAllAsync(ct), ct));
+        public async Task<IActionResult> WriteRowAsync(Guid id, Guid scenarioEventId, [FromQuery] string connectionId, CancellationToken ct) =>
+            Ok(await _mselBuildService.WriteRowAsync(id, scenarioEventId, connectionId, await CanEditAllAsync(ct), ct));
 
         /// <summary> Write one of a MSEL's Gallery articles with AI </summary>
         /// <remarks> Saved on its row as written; its graphics are SVG until saved again as PNG. </remarks>
         [HttpPost("msels/{id}/ai-draft/articles/{scenarioEventId}")]
         [ProducesResponseType(typeof(ArticleDraftResult), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "writeMselArticle")]
-        public async Task<IActionResult> WriteArticleAsync(Guid id, Guid scenarioEventId, CancellationToken ct) =>
-            Ok(await _mselBuildService.WriteArticleAsync(id, scenarioEventId, await CanEditAllAsync(ct), ct));
+        public async Task<IActionResult> WriteArticleAsync(Guid id, Guid scenarioEventId, [FromQuery] string connectionId, CancellationToken ct) =>
+            Ok(await _mselBuildService.WriteArticleAsync(id, scenarioEventId, connectionId, await CanEditAllAsync(ct), ct));
 
         /// <summary> Save a written Gallery article again, with its graphics as PNG </summary>
         [HttpPut("msels/{id}/ai-draft/articles/{scenarioEventId}")]
         [ProducesResponseType((int)HttpStatusCode.NoContent)]
         [SwaggerOperation(OperationId = "saveMselArticle")]
-        public async Task<IActionResult> SaveArticleAsync(Guid id, Guid scenarioEventId, [FromBody] MselBuildContent content, CancellationToken ct)
+        public async Task<IActionResult> SaveArticleAsync(Guid id, Guid scenarioEventId, [FromBody] MselBuildContent content, [FromQuery] string connectionId, CancellationToken ct)
         {
-            await _mselBuildService.SaveArticleAsync(id, scenarioEventId, content?.Html, await CanEditAllAsync(ct), ct);
+            await _mselBuildService.SaveArticleAsync(id, scenarioEventId, content?.Html, connectionId, await CanEditAllAsync(ct), ct);
             return NoContent();
         }
 
@@ -107,16 +107,16 @@ namespace Blueprint.Api.Controllers
         [HttpPost("msels/{id}/ai-draft/profiles/{ownerId}")]
         [ProducesResponseType(typeof(ProfileDraftResult), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "writeMselProfile")]
-        public async Task<IActionResult> WriteProfileAsync(Guid id, Guid ownerId, CancellationToken ct) =>
-            Ok(await _mselBuildService.WriteProfileAsync(id, ownerId, await CanEditAllAsync(ct), ct));
+        public async Task<IActionResult> WriteProfileAsync(Guid id, Guid ownerId, [FromQuery] string connectionId, CancellationToken ct) =>
+            Ok(await _mselBuildService.WriteProfileAsync(id, ownerId, connectionId, await CanEditAllAsync(ct), ct));
 
         /// <summary> Save a written profile again, with its logo as PNG </summary>
         [HttpPut("msels/{id}/ai-draft/profiles/{ownerId}")]
         [ProducesResponseType((int)HttpStatusCode.NoContent)]
         [SwaggerOperation(OperationId = "saveMselProfile")]
-        public async Task<IActionResult> SaveProfileAsync(Guid id, Guid ownerId, [FromBody] MselBuildContent content, CancellationToken ct)
+        public async Task<IActionResult> SaveProfileAsync(Guid id, Guid ownerId, [FromBody] MselBuildContent content, [FromQuery] string connectionId, CancellationToken ct)
         {
-            await _mselBuildService.SaveProfileAsync(id, ownerId, content?.Html, await CanEditAllAsync(ct), ct);
+            await _mselBuildService.SaveProfileAsync(id, ownerId, content?.Html, connectionId, await CanEditAllAsync(ct), ct);
             return NoContent();
         }
 
@@ -125,8 +125,34 @@ namespace Blueprint.Api.Controllers
         [HttpPost("msels/{id}/ai-draft/finish")]
         [ProducesResponseType(typeof(MselBuildStatus), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "finishMselBuild")]
-        public async Task<IActionResult> FinishAsync(Guid id, CancellationToken ct) =>
-            Ok(await _mselBuildService.FinishAsync(id, await CanEditAllAsync(ct), ct));
+        public async Task<IActionResult> FinishAsync(Guid id, [FromQuery] string connectionId, CancellationToken ct) =>
+            Ok(await _mselBuildService.FinishAsync(id, connectionId, await CanEditAllAsync(ct), ct));
+
+        /// <summary> Build a MSEL with AI in this browser tab </summary>
+        /// <remarks>
+        /// One tab builds a MSEL at a time; the others are told who is building it. With takeOver, this tab takes the build
+        /// from the one that has it, which is told to stop. Every writing step claims the build too, while no tab has it.
+        /// </remarks>
+        /// <param name="id">The MSEL</param>
+        /// <param name="connectionId">This tab's hub connection id</param>
+        /// <param name="takeOver">Take the build from another tab</param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{id}/ai-draft/claim")]
+        [ProducesResponseType(typeof(MselBuildBuilder), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "claimMselBuild")]
+        public async Task<IActionResult> ClaimAsync(Guid id, [FromQuery] string connectionId, [FromQuery] bool takeOver, CancellationToken ct) =>
+            Ok(await _mselBuildService.ClaimAsync(id, connectionId, takeOver, await CanEditAllAsync(ct), ct));
+
+        /// <summary> Stop building a MSEL with AI in this browser tab </summary>
+        /// <remarks> Frees the build for another tab; what is written stays. </remarks>
+        [HttpDelete("msels/{id}/ai-draft/claim")]
+        [ProducesResponseType((int)HttpStatusCode.NoContent)]
+        [SwaggerOperation(OperationId = "releaseMselBuild")]
+        public async Task<IActionResult> ReleaseAsync(Guid id, [FromQuery] string connectionId, CancellationToken ct)
+        {
+            await _mselBuildService.ReleaseAsync(id, connectionId, await CanEditAllAsync(ct), ct);
+            return NoContent();
+        }
 
         private Task<bool> CanEditAllAsync(CancellationToken ct) =>
             _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);

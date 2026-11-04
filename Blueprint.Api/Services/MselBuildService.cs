@@ -11,12 +11,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
 using Cite.Api.Client;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -63,13 +65,17 @@ namespace Blueprint.Api.Services
     public interface IMselBuildService
     {
         Task<MselBuildStatus> GetStatusAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<MselBuildStatus> WriteInjectsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
-        Task<MselBuildContent> WriteRowAsync(Guid mselId, Guid scenarioEventId, bool hasSystemPermission, CancellationToken ct);
-        Task<ArticleDraftResult> WriteArticleAsync(Guid mselId, Guid scenarioEventId, bool hasSystemPermission, CancellationToken ct);
-        Task SaveArticleAsync(Guid mselId, Guid scenarioEventId, string html, bool hasSystemPermission, CancellationToken ct);
-        Task<ProfileDraftResult> WriteProfileAsync(Guid mselId, Guid ownerId, bool hasSystemPermission, CancellationToken ct);
-        Task SaveProfileAsync(Guid mselId, Guid ownerId, string html, bool hasSystemPermission, CancellationToken ct);
-        Task<MselBuildStatus> FinishAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
+        Task<MselBuildStatus> WriteInjectsAsync(Guid mselId, string connectionId, bool hasSystemPermission, CancellationToken ct);
+        Task<MselBuildContent> WriteRowAsync(Guid mselId, Guid scenarioEventId, string connectionId, bool hasSystemPermission, CancellationToken ct);
+        Task<ArticleDraftResult> WriteArticleAsync(Guid mselId, Guid scenarioEventId, string connectionId, bool hasSystemPermission, CancellationToken ct);
+        Task SaveArticleAsync(Guid mselId, Guid scenarioEventId, string html, string connectionId, bool hasSystemPermission, CancellationToken ct);
+        Task<ProfileDraftResult> WriteProfileAsync(Guid mselId, Guid ownerId, string connectionId, bool hasSystemPermission, CancellationToken ct);
+        Task SaveProfileAsync(Guid mselId, Guid ownerId, string html, string connectionId, bool hasSystemPermission, CancellationToken ct);
+        Task<MselBuildStatus> FinishAsync(Guid mselId, string connectionId, bool hasSystemPermission, CancellationToken ct);
+        /// <summary>Claims the build for a tab, taking it from another tab with takeOver; says who has it</summary>
+        Task<MselBuildBuilder> ClaimAsync(Guid mselId, string connectionId, bool takeOver, bool hasSystemPermission, CancellationToken ct);
+        /// <summary>Frees the build when this tab has it</summary>
+        Task ReleaseAsync(Guid mselId, string connectionId, bool hasSystemPermission, CancellationToken ct);
     }
 
     /// <summary>
@@ -91,13 +97,18 @@ namespace Blueprint.Api.Services
         private readonly ICasterRangeClient _casterTopology;
         private readonly ILogger<MselBuildService> _logger;
         private readonly ClaimsPrincipal _user;
+        private readonly MselBuildClaims _claims;
+        private readonly IHubContext<MainHub> _hub;
         // what the stage loaded; anything else it tracks at save was written by the stage
         private readonly HashSet<object> _loaded = new HashSet<object>(ReferenceEqualityComparer.Instance);
 
         public MselBuildService(BlueprintContext context, IMselDraftService mselDraftService, IArticleDraftService articleDraftService,
             IProfileDraftService profileDraftService, IAiUsageService aiUsageService, ICiteApiClient citeApiClient, IPrincipal user,
-            AiOptions aiOptions, IAiImageClient imageClient, IAiUsageContext usageContext, ICasterRangeClient casterTopology, ILogger<MselBuildService> logger)
+            AiOptions aiOptions, IAiImageClient imageClient, IAiUsageContext usageContext, ICasterRangeClient casterTopology, ILogger<MselBuildService> logger,
+            MselBuildClaims claims, IHubContext<MainHub> hub)
         {
+            _claims = claims;
+            _hub = hub;
             _casterTopology = casterTopology;
             _context = context;
             _mselDraftService = mselDraftService;
@@ -120,9 +131,31 @@ namespace Blueprint.Api.Services
             return await StatusAsync(msel, MselBuildState.Deserialize(msel.AiDraft), ct);
         }
 
-        public async Task<MselBuildStatus> WriteInjectsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<MselBuildBuilder> ClaimAsync(Guid mselId, string connectionId, bool takeOver, bool hasSystemPermission, CancellationToken ct)
         {
-            var (msel, state) = await LoadAsync(mselId, hasSystemPermission, MselBuildStage.Injects, ct);
+            if (string.IsNullOrWhiteSpace(connectionId))
+                throw new BadRequestException("Say which tab is building: its hub connection id.");
+            var stage = await _context.Msels.Where(m => m.Id == mselId).Select(m => new { m.AiDraftStage }).SingleOrDefaultAsync(ct)
+                ?? throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId);
+            await AuthorizeAsync(mselId, hasSystemPermission, ct);
+            if (stage.AiDraftStage == null)
+                throw new ConflictException("The MSEL is already built.");
+            await ClaimForAsync(mselId, connectionId, takeOver);
+            return Builder(_claims.Holder(mselId));
+        }
+
+        public async Task ReleaseAsync(Guid mselId, string connectionId, bool hasSystemPermission, CancellationToken ct)
+        {
+            await AuthorizeAsync(mselId, hasSystemPermission, ct);
+            if (_claims.Release(mselId, connectionId))
+                await BuilderChangedAsync(mselId, null);
+        }
+
+        public async Task<MselBuildStatus> WriteInjectsAsync(Guid mselId, string connectionId, bool hasSystemPermission, CancellationToken ct)
+        {
+            // one outline at a time: a second, from a tab that was taken over, would add every inject again
+            using var step = _claims.Run(mselId, MselBuildStage.Injects, "The MSEL's injects are");
+            var (msel, state) = await LoadAsync(mselId, connectionId, hasSystemPermission, MselBuildStage.Injects, ct);
             var warnings = new List<string>();
             var competencies = await MselDraftService.LoadCompetencyChoicesAsync(_context, state.TemplateMselId, state.CompetencyFrameworkIds, ct);
             // the MSEL now holds the design's teams, organizations, cards and columns, so the injects are checked against it
@@ -157,9 +190,10 @@ namespace Blueprint.Api.Services
             return status;
         }
 
-        public async Task<MselBuildContent> WriteRowAsync(Guid mselId, Guid scenarioEventId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<MselBuildContent> WriteRowAsync(Guid mselId, Guid scenarioEventId, string connectionId, bool hasSystemPermission, CancellationToken ct)
         {
-            var (msel, state) = await LoadAsync(mselId, hasSystemPermission, MselBuildStage.Articles, ct);
+            using var step = _claims.Run(mselId, scenarioEventId.ToString(), "That inject is");
+            var (msel, state) = await LoadAsync(mselId, connectionId, hasSystemPermission, MselBuildStage.Articles, ct);
             if (!state.Rows.TryGetValue(scenarioEventId, out var index))
                 throw new BadRequestException("That row is not one of the drafted injects.");
             string first = null;
@@ -180,9 +214,10 @@ namespace Blueprint.Api.Services
             return content;
         }
 
-        public async Task<ArticleDraftResult> WriteArticleAsync(Guid mselId, Guid scenarioEventId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ArticleDraftResult> WriteArticleAsync(Guid mselId, Guid scenarioEventId, string connectionId, bool hasSystemPermission, CancellationToken ct)
         {
-            var (msel, state) = await LoadAsync(mselId, hasSystemPermission, MselBuildStage.Articles, ct);
+            using var step = _claims.Run(mselId, scenarioEventId.ToString(), "That article is");
+            var (msel, state) = await LoadAsync(mselId, connectionId, hasSystemPermission, MselBuildStage.Articles, ct);
             if (!state.Articles.TryGetValue(scenarioEventId, out var index))
                 throw new BadRequestException("That row is not one of the drafted Gallery articles.");
             var result = await _articleDraftService.DraftAsync(new ArticleDraftRequest { TemplateMselId = state.TemplateMselId, Draft = state.Draft, InjectIndex = index }, ct);
@@ -191,9 +226,9 @@ namespace Blueprint.Api.Services
             return result;
         }
 
-        public async Task SaveArticleAsync(Guid mselId, Guid scenarioEventId, string html, bool hasSystemPermission, CancellationToken ct)
+        public async Task SaveArticleAsync(Guid mselId, Guid scenarioEventId, string html, string connectionId, bool hasSystemPermission, CancellationToken ct)
         {
-            var (msel, state) = await LoadAsync(mselId, hasSystemPermission, null, ct);
+            var (msel, state) = await LoadAsync(mselId, connectionId, hasSystemPermission, null, ct);
             if (!state.Articles.ContainsKey(scenarioEventId))
                 throw new BadRequestException("That row is not one of the drafted Gallery articles.");
             var body = ArticleFields.Body(msel) ?? throw new BadRequestException("The MSEL has no column for a Gallery article's body.");
@@ -201,9 +236,10 @@ namespace Blueprint.Api.Services
             await SaveItemAsync(msel, state, ct);
         }
 
-        public async Task<ProfileDraftResult> WriteProfileAsync(Guid mselId, Guid ownerId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<ProfileDraftResult> WriteProfileAsync(Guid mselId, Guid ownerId, string connectionId, bool hasSystemPermission, CancellationToken ct)
         {
-            var (msel, state) = await LoadAsync(mselId, hasSystemPermission, MselBuildStage.Articles, ct);
+            using var step = _claims.Run(mselId, ownerId.ToString(), "That profile is");
+            var (msel, state) = await LoadAsync(mselId, connectionId, hasSystemPermission, MselBuildStage.Articles, ct);
             if (!state.Profiles.Contains(ownerId))
                 throw new BadRequestException("That is not one of the drafted teams or organizations.");
             var team = msel.Teams.FirstOrDefault(t => t.Id == ownerId);
@@ -222,9 +258,9 @@ namespace Blueprint.Api.Services
             return result;
         }
 
-        public async Task SaveProfileAsync(Guid mselId, Guid ownerId, string html, bool hasSystemPermission, CancellationToken ct)
+        public async Task SaveProfileAsync(Guid mselId, Guid ownerId, string html, string connectionId, bool hasSystemPermission, CancellationToken ct)
         {
-            var (msel, state) = await LoadAsync(mselId, hasSystemPermission, null, ct);
+            var (msel, state) = await LoadAsync(mselId, connectionId, hasSystemPermission, null, ct);
             if (!state.Profiles.Contains(ownerId))
                 throw new BadRequestException("That is not one of the drafted teams or organizations.");
             SetProfile(msel.Teams.FirstOrDefault(t => t.Id == ownerId), msel.Organizations.FirstOrDefault(o => o.Id == ownerId),
@@ -232,9 +268,11 @@ namespace Blueprint.Api.Services
             await SaveItemAsync(msel, state, ct);
         }
 
-        public async Task<MselBuildStatus> FinishAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
+        public async Task<MselBuildStatus> FinishAsync(Guid mselId, string connectionId, bool hasSystemPermission, CancellationToken ct)
         {
-            var (msel, state) = await LoadAsync(mselId, hasSystemPermission, null, ct);
+            // one finish at a time: a second would add the pages and Player applications again
+            using var step = _claims.Run(mselId, MselBuildStage.Finish, "The MSEL's pages, Player applications and CITE are");
+            var (msel, state) = await LoadAsync(mselId, connectionId, hasSystemPermission, null, ct);
             if (msel.AiDraftStage == MselBuildStage.Injects)
                 throw new ConflictException("The MSEL's injects are not written yet.");
             var changes = new List<string>();
@@ -256,6 +294,9 @@ namespace Blueprint.Api.Services
             await AddImageAsync(msel, state.Draft, changes, ct);
             msel.AiDraftStage = null;
             await SaveAsync(msel, state, ct);
+            // built: no tab is building it now
+            if (_claims.Release(mselId, connectionId))
+                await BuilderChangedAsync(mselId, null);
 
             var status = await StatusAsync(msel, state, ct);
             status.Warnings.AddRange(changes);
@@ -354,7 +395,7 @@ namespace Blueprint.Api.Services
             }
         }
 
-        private async Task<(MselEntity, MselBuildState)> LoadAsync(Guid mselId, bool hasSystemPermission, string stage, CancellationToken ct)
+        private async Task<(MselEntity, MselBuildState)> LoadAsync(Guid mselId, string connectionId, bool hasSystemPermission, string stage, CancellationToken ct)
         {
             var msel = await _context.Msels
                 .Include(m => m.DataFields).ThenInclude(f => f.DataOptions)
@@ -372,6 +413,11 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(m => m.Id == mselId, ct)
                 ?? throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId);
             await AuthorizeAsync(mselId, hasSystemPermission, ct);
+            // only the tab building the MSEL writes it; a tab that says which it is claims the build when no tab has it
+            if (string.IsNullOrWhiteSpace(connectionId))
+                _claims.RequireUnclaimed(mselId, _user.GetId());
+            else
+                await ClaimForAsync(mselId, connectionId, takeOver: false);
             foreach (var entry in _context.ChangeTracker.Entries())
                 _loaded.Add(entry.Entity);
             var state = MselBuildState.Deserialize(msel.AiDraft)
@@ -382,6 +428,38 @@ namespace Blueprint.Api.Services
                 throw new ConflictException($"The MSEL is at the {msel.AiDraftStage} stage of its build, not {stage}.");
             return (msel, state);
         }
+
+        private async Task ClaimForAsync(Guid mselId, string connectionId, bool takeOver)
+        {
+            var claim = new MselBuildClaim(connectionId, _user.GetId(), _user.Claims.FirstOrDefault(c => c.Type == "name")?.Value);
+            var before = _claims.Holder(mselId);
+            var replaced = _claims.Claim(mselId, claim, takeOver);
+            // the tab taken over stops; every tab on the MSEL learns who builds it now
+            if (replaced != null)
+                await SendAsync(_hub.Clients.Client(replaced.ConnectionId), MainHubMethods.AiBuildTakenOver,
+                    new MselBuildTakenOver { MselId = mselId, UserName = claim.UserName });
+            if (before?.ConnectionId != connectionId)
+                await BuilderChangedAsync(mselId, claim);
+        }
+
+        private Task BuilderChangedAsync(Guid mselId, MselBuildClaim claim) =>
+            SendAsync(_hub.Clients.Group(mselId.ToString()), MainHubMethods.AiBuilderChanged, new MselBuildBuilderChange { MselId = mselId, Builder = Builder(claim) });
+
+        // news for the tabs on the MSEL; a send that fails never fails the build
+        private async Task SendAsync(IClientProxy clients, string method, object message)
+        {
+            try
+            {
+                await clients.SendAsync(method, message);
+            }
+            catch (System.Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Could not send {Method} to the tabs on a MSEL", method);
+            }
+        }
+
+        private static MselBuildBuilder Builder(MselBuildClaim claim) =>
+            claim == null ? null : new MselBuildBuilder { UserId = claim.UserId, UserName = claim.UserName };
 
         // the drafting user, or anyone who may edit every MSEL, builds it
         private async Task AuthorizeAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -413,7 +491,7 @@ namespace Blueprint.Api.Services
 
         private async Task<MselBuildStatus> StatusAsync(MselEntity msel, MselBuildState state, CancellationToken ct)
         {
-            var status = new MselBuildStatus { MselId = msel.Id, Stage = msel.AiDraftStage, Parallel = Math.Max(1, _aiOptions.Parallel) };
+            var status = new MselBuildStatus { MselId = msel.Id, Stage = msel.AiDraftStage, Parallel = Math.Max(1, _aiOptions.Parallel), Builder = Builder(_claims.Holder(msel.Id)) };
             if (state == null || msel.AiDraftStage == null)
                 return status;
             // the design's plan, so the outline's progress has a total

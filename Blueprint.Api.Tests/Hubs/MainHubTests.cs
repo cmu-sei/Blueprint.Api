@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Hubs;
+using Blueprint.Api.ViewModels;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Identity;
 using Blueprint.Api.Services;
@@ -30,6 +31,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
     /// test builds, which is what lets one test play two connections against each other.
     /// </remarks>
     private readonly HubCache _cache = new();
+    private readonly MselBuildClaims _buildClaims = new();
 
     // ---------------------------------------------------------------------------------------------
     // Join
@@ -231,6 +233,25 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         Assert.Empty(_cache.Connections);
         Assert.Empty(Removed(harness));
         AssertAddressedOnlyOthersInGroup(harness);
+    }
+
+    /// <summary>A closed tab frees the MSEL it was building with AI, and every tab on that MSEL is told no tab is building it.</summary>
+    [Fact]
+    public async Task OnDisconnected_FreesTheAiBuildItHad()
+    {
+        var mselId = Guid.NewGuid();
+        var otherMsel = Guid.NewGuid();
+        var harness = Harness(Guid.NewGuid());
+        _buildClaims.Claim(mselId, new MselBuildClaim(HubHarness.ConnectionId, harness.UserId, "test-user"), takeOver: false);
+        _buildClaims.Claim(otherMsel, new MselBuildClaim("another-tab", harness.UserId, "test-user"), takeOver: false);
+
+        await Hub(harness).OnDisconnectedAsync(null);
+
+        Assert.Null(_buildClaims.Holder(mselId));
+        Assert.Equal("another-tab", _buildClaims.Holder(otherMsel).ConnectionId);
+        var change = HubHarness.Sent<MselBuildBuilderChange>(harness.Group(mselId.ToString()), MainHubMethods.AiBuilderChanged);
+        Assert.Equal(mselId, change.MselId);
+        Assert.Null(change.Builder);
     }
 
     [Fact]
@@ -534,7 +555,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         // Presence messages go to the others in a MSEL's group; each lands on a proxy of the harness's own.
         harness.Clients.OthersInGroup(Arg.Any<string>()).Returns(call => harness.Group(OthersIn(call.Arg<string>())));
 
-        return harness.Attach(new MainHub(null, null, Db, null, authorization, _cache));
+        return harness.Attach(new MainHub(null, null, Db, null, authorization, _cache, _buildClaims));
     }
 
     /// <summary>

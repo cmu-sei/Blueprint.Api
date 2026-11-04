@@ -27,6 +27,7 @@ namespace Blueprint.Api.Hubs
         private readonly CancellationToken _ct;
         private readonly IBlueprintAuthorizationService _blueprintAuthorizationService;
         private readonly HubCache _hubCache;
+        private readonly MselBuildClaims _buildClaims;
         public const string ADMIN_DATA_GROUP = "AdminDataGroup";
         public const string GROUP_GROUP = "AdminGroupGroup";
         public const string ROLE_GROUP = "AdminRoleGroup";
@@ -38,9 +39,11 @@ namespace Blueprint.Api.Hubs
             BlueprintContext context,
             DatabaseOptions options,
             IBlueprintAuthorizationService blueprintAuthorizationService,
-            HubCache hubCache
+            HubCache hubCache,
+            MselBuildClaims buildClaims
         )
         {
+            _buildClaims = buildClaims;
             _teamService = teamService;
             _mselService = mselService;
             _context = context;
@@ -85,6 +88,13 @@ namespace Blueprint.Api.Hubs
 
         public override async Task OnDisconnectedAsync(Exception exception)
         {
+            // a closed tab builds nothing: its MSELs are free for another tab to continue
+            foreach (var mselId in _buildClaims.ReleaseConnection(Context.ConnectionId))
+            {
+                await Clients.Group(mselId.ToString()).SendAsync(
+                    MainHubMethods.AiBuilderChanged,
+                    new ViewModels.MselBuildBuilderChange { MselId = mselId, Builder = null });
+            }
             if (_hubCache.Connections.TryRemove(Context.ConnectionId, out var connection) && !string.IsNullOrEmpty(connection.MselId))
             {
                 await Clients.OthersInGroup(connection.MselId).SendAsync(
@@ -295,6 +305,8 @@ namespace Blueprint.Api.Hubs
         public const string IntegrationStatusUpdated = "IntegrationStatusUpdated";
         public const string CasterIdsUpdated = "CasterIdsUpdated";
         public const string AiDraftProgress = "AiDraftProgress";
+        public const string AiBuilderChanged = "AiBuilderChanged";
+        public const string AiBuildTakenOver = "AiBuildTakenOver";
 
         public const string MoveCreated = "MoveCreated";
         public const string MoveUpdated = "MoveUpdated";

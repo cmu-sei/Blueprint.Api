@@ -527,6 +527,69 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Equal(HttpStatusCode.Conflict, (await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/articles/{Guid.NewGuid()}", null, Ct)).StatusCode);
     }
 
+    /// <summary>
+    /// One tab builds a MSEL at a time: another tab of the same planner, or a request that does not say which tab it is, is
+    /// refused and told why, until it takes the build over; then the first tab is the one refused.
+    /// </summary>
+    [Fact]
+    public async Task Build_RunsInOneTabAtATime_UntilAnotherTakesItOver()
+    {
+        var (mselId, planner) = await CreateFromDesign();
+        var client = Client(planner);
+
+        var builder = await Read<MselBuildBuilder>(await client.PostAsync($"/api/msels/{mselId}/ai-draft/claim?connectionId=tab-a", null, Ct));
+        Assert.Equal(planner.Id, builder.UserId);
+
+        var other = await client.PostAsync($"/api/msels/{mselId}/ai-draft/injects?connectionId=tab-b", null, Ct);
+        Assert.Equal(HttpStatusCode.Conflict, other.StatusCode);
+        Assert.Contains("You are building this MSEL with AI in another tab. Take over to build it here.", await other.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync($"/api/msels/{mselId}/ai-draft/injects", null, Ct)).StatusCode);
+        Assert.Equal(planner.Id, (await Read<MselBuildStatus>(await client.GetAsync($"/api/msels/{mselId}/ai-draft", Ct))).Builder.UserId);
+        // nothing was written by the refused requests
+        Assert.DoesNotContain(_calls, c => !c.System.Contains("first of two steps"));
+
+        await Read<MselBuildBuilder>(await client.PostAsync($"/api/msels/{mselId}/ai-draft/claim?connectionId=tab-b&takeOver=true", null, Ct));
+
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync($"/api/msels/{mselId}/ai-draft/injects?connectionId=tab-a", null, Ct)).StatusCode);
+        Assert.Equal("Articles", (await Read<MselBuildStatus>(await client.PostAsync($"/api/msels/{mselId}/ai-draft/injects?connectionId=tab-b", null, Ct))).Stage);
+    }
+
+    /// <summary>Another person building the MSEL is named, and an EditMsels holder may take the build over.</summary>
+    [Fact]
+    public async Task Build_NamesWhoElseIsBuildingIt()
+    {
+        var (mselId, planner) = await CreateFromDesign();
+        var editor = await Actor().WithName("Grace Hopper").WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        await Read<MselBuildBuilder>(await Client(editor).PostAsync($"/api/msels/{mselId}/ai-draft/claim?connectionId=grace", null, Ct));
+
+        var refused = await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/claim?connectionId=mine", null, Ct);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Contains("Grace Hopper is building this MSEL with AI. Take over to build it here.", await refused.Content.ReadAsStringAsync(Ct));
+        Assert.Equal("Grace Hopper", (await Read<MselBuildStatus>(await Client(planner).GetAsync($"/api/msels/{mselId}/ai-draft", Ct))).Builder.UserName);
+    }
+
+    /// <summary>A tab that stops frees the build for another; a finished build is no tab's, and cannot be claimed.</summary>
+    [Fact]
+    public async Task Build_IsFreedWhenItStopsOrFinishes()
+    {
+        var (mselId, planner) = await CreateFromDesign();
+        var client = Client(planner);
+        await Read<MselBuildBuilder>(await client.PostAsync($"/api/msels/{mselId}/ai-draft/claim?connectionId=tab-a", null, Ct));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/msels/{mselId}/ai-draft/claim?connectionId=tab-a", Ct)).StatusCode);
+        Assert.Null((await Read<MselBuildStatus>(await client.GetAsync($"/api/msels/{mselId}/ai-draft", Ct))).Builder);
+
+        // another tab continues it, claiming it with its first step
+        await Read<MselBuildStatus>(await client.PostAsync($"/api/msels/{mselId}/ai-draft/injects?connectionId=tab-b", null, Ct));
+        Assert.Equal(planner.Id, (await Read<MselBuildStatus>(await client.GetAsync($"/api/msels/{mselId}/ai-draft", Ct))).Builder.UserId);
+        var finished = await Read<MselBuildStatus>(await client.PostAsync($"/api/msels/{mselId}/ai-draft/finish?connectionId=tab-b", null, Ct));
+
+        Assert.Null(finished.Stage);
+        Assert.Null(finished.Builder);
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync($"/api/msels/{mselId}/ai-draft/claim?connectionId=tab-c", null, Ct)).StatusCode);
+    }
+
     private async Task<(Guid MselId, TestActor Planner)> CreateFromDesign(bool useCite = false) => await CreateFromDesign(await SeedTemplate(useCite));
 
     private async Task<(Guid MselId, TestActor Planner)> CreateFromDesign(MselEntity template)

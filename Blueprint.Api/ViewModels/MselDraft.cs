@@ -332,6 +332,29 @@ namespace Blueprint.Api.ViewModels
         /// <summary>The team and organization profiles still to write</summary>
         public List<MselBuildItem> Profiles { get; set; } = new List<MselBuildItem>();
         public List<string> Warnings { get; set; } = new List<string>();
+        /// <summary>Who is building the MSEL in a browser tab now; null when no tab is</summary>
+        public MselBuildBuilder Builder { get; set; }
+    }
+
+    /// <summary>Who is building a MSEL with AI in a browser tab</summary>
+    public class MselBuildBuilder
+    {
+        public Guid UserId { get; set; }
+        public string UserName { get; set; }
+    }
+
+    /// <summary>Sent to every tab on a MSEL when the tab building it changes; Builder is null when no tab is</summary>
+    public class MselBuildBuilderChange
+    {
+        public Guid MselId { get; set; }
+        public MselBuildBuilder Builder { get; set; }
+    }
+
+    /// <summary>Sent to the tab that was building a MSEL when another tab takes the build over</summary>
+    public class MselBuildTakenOver
+    {
+        public Guid MselId { get; set; }
+        public string UserName { get; set; }
     }
 
     public class MselBuildItem

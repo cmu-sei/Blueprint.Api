@@ -88,7 +88,7 @@ namespace Blueprint.Api.Services
         private readonly AiOptions _aiOptions;
         private readonly IAiImageClient _imageClient;
         private readonly IAiUsageContext _usageContext;
-        private readonly ICasterTopologyClient _casterTopology;
+        private readonly ICasterRangeClient _casterTopology;
         private readonly ILogger<MselBuildService> _logger;
         private readonly ClaimsPrincipal _user;
         // what the stage loaded; anything else it tracks at save was written by the stage
@@ -96,7 +96,7 @@ namespace Blueprint.Api.Services
 
         public MselBuildService(BlueprintContext context, IMselDraftService mselDraftService, IArticleDraftService articleDraftService,
             IProfileDraftService profileDraftService, IAiUsageService aiUsageService, ICiteApiClient citeApiClient, IPrincipal user,
-            AiOptions aiOptions, IAiImageClient imageClient, IAiUsageContext usageContext, ICasterTopologyClient casterTopology, ILogger<MselBuildService> logger)
+            AiOptions aiOptions, IAiImageClient imageClient, IAiUsageContext usageContext, ICasterRangeClient casterTopology, ILogger<MselBuildService> logger)
         {
             _casterTopology = casterTopology;
             _context = context;

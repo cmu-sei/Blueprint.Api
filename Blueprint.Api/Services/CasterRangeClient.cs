@@ -16,7 +16,7 @@ using Microsoft.AspNetCore.Http;
 namespace Blueprint.Api.Services
 {
     /// <summary>A Caster workspace's machines and networks, as an AI build names them in its documents</summary>
-    public interface ICasterTopologyClient
+    public interface ICasterRangeClient
     {
         /// <summary>The workspace's machines and networks, read with the signed-in user's own token</summary>
         Task<CasterRange> GetRangeAsync(Guid workspaceId, CancellationToken ct);
@@ -26,13 +26,13 @@ namespace Blueprint.Api.Services
     /// Reads GET api/workspaces/{id}/topology, which the Caster client package does not have yet, with the caller's own token,
     /// as the other Caster calls a planner makes are.
     /// </summary>
-    public class CasterTopologyClient : ICasterTopologyClient
+    public class CasterRangeClient : ICasterRangeClient
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ClientOptions _clientOptions;
         private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public CasterTopologyClient(IHttpClientFactory httpClientFactory, ClientOptions clientOptions, IHttpContextAccessor httpContextAccessor)
+        public CasterRangeClient(IHttpClientFactory httpClientFactory, ClientOptions clientOptions, IHttpContextAccessor httpContextAccessor)
         {
             _httpClientFactory = httpClientFactory;
             _clientOptions = clientOptions;

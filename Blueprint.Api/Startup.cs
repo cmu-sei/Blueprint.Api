@@ -268,6 +268,9 @@ public class Startup
         services.AddScoped<IPlayerService, PlayerService>();
         services.AddScoped<ICasterService, CasterService>();
         services.AddScoped<ICasterTopologyClient, CasterTopologyClient>();
+        // the CTI indicator set reads the range's machines and networks this way; one reader of the topology is a follow-up
+        services.AddScoped<ICasterRangeClient, CasterRangeClient>();
+        services.AddScoped<ITopologyMapService, TopologyMapService>();
         services.AddScoped<ITeamService, TeamService>();
         services.AddScoped<ITeamUserService, TeamUserService>();
         services.AddScoped<IUnitService, UnitService>();

@@ -30,7 +30,7 @@ public class AiEnabledFactory(DatabaseFixture database) : BlueprintAppFactory(da
     public IAiSpeechClient Speech { get; } = Substitute.For<IAiSpeechClient>();
 
     /// <summary>Answers for a Caster workspace's topology, which the AI build reads its hosts from; returns null unless a test says otherwise</summary>
-    public ICasterTopologyClient CasterTopology { get; } = Substitute.For<ICasterTopologyClient>();
+    public ICasterRangeClient CasterTopology { get; } = Substitute.For<ICasterRangeClient>();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {

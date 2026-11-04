@@ -67,4 +67,16 @@ public class MselDraftReadTests
         Assert.Equal("Deep Bite", draft.Name);
         Assert.Empty(warnings);
     }
+
+    /// <summary>
+    /// A design with no moves or teams is logged with the fields its answer did have, each with its kind and size, so an
+    /// answer of a shape the reader does not know can be seen.
+    /// </summary>
+    [Theory]
+    [InlineData("""{"name":"Deep Bite","moves":[],"teams":"[{\"shortName\":\"SOC\"}]","draft":{"moves":[],"teams":[]},"durationMinutes":120}""",
+        "name: string of 9 characters, moves: array of 0, teams: string of 21 characters, draft: object of 2 fields, durationMinutes: number")]
+    [InlineData("{}", "no fields")]
+    [InlineData("[]", "no fields: it is array")]
+    public void DescribeFields_SaysWhatAnAnswerHad(string answer, string expected) =>
+        Assert.Equal(expected, MselDraftService.DescribeFields(JsonDocument.Parse(answer).RootElement));
 }

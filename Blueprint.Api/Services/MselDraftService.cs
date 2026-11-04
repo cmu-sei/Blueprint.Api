@@ -201,6 +201,23 @@ the values its document names (host names, addresses, domains, files, senders) a
 ID and name. Give two to four Intel articles the CtiEvent layout, a MISP-style CTI event of what is known by then, and every other
 row the Standard layout.";
 
+        /// <summary>
+        /// A model answer's top-level fields, each with its kind and size: "moves: array of 0, teams: string of 812 characters".
+        /// </summary>
+        public static string DescribeFields(JsonElement input)
+        {
+            if (input.ValueKind != JsonValueKind.Object)
+                return $"no fields: it is {input.ValueKind.ToString().ToLowerInvariant()}";
+            var fields = input.EnumerateObject().Select(p => p.Name + ": " + (p.Value.ValueKind switch
+            {
+                JsonValueKind.Array => $"array of {p.Value.GetArrayLength()}",
+                JsonValueKind.Object => $"object of {p.Value.EnumerateObject().Count()} fields",
+                JsonValueKind.String => $"string of {p.Value.GetString().Length} characters",
+                var kind => kind.ToString().ToLowerInvariant()
+            })).ToList();
+            return fields.Any() ? string.Join(", ", fields) : "no fields";
+        }
+
         public async Task<MselDraftResult> DesignAsync(MselDraftRequest request, CancellationToken ct)
         {
             if (!_aiOptions.Enabled)
@@ -231,7 +248,9 @@ row the Standard layout.";
             var missing = new[] { draft.Moves.Any() ? null : "moves", draft.Teams.Any() ? null : "teams" }.Where(m => m != null).ToList();
             if (missing.Any())
             {
-                _logger?.LogWarning("Design for template {TemplateId} has no {Missing}", template.Id, string.Join(" or ", missing));
+                // what the answer did have, so a shape the reader does not know shows in the log
+                _logger?.LogWarning("Design for template {TemplateId} has no {Missing}; the answer had {Fields}",
+                    template.Id, string.Join(" or ", missing), DescribeFields(input));
                 throw new BadRequestException($"The model's design could not be read: it has no {string.Join(" or ", missing)}. Draft again; the answer differs each time.");
             }
             MselDraftRules.ResolveAssessment(design, input, template, unreadable);

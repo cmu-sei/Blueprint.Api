@@ -208,6 +208,8 @@ public class TopologyMapEndpointTests(DatabaseFixture fixture, TopologyMapAppFac
         Assert.Equal("Network Map", application.GetProperty("name").GetString());
         Assert.Equal($"http://vm.test/views/{ViewId}/map{{theme}}", application.GetProperty("url").GetString());
         Assert.True(application.GetProperty("embeddable").GetBoolean());
+        // Player's own map icon, as the Virtual Machines application has its VM icon
+        Assert.EndsWith("/assets/img/SP_Icon_Map.png", application.GetProperty("icon").GetString());
         foreach (var teamId in new[] { team.Id, AdminTeamId })
         {
             var instance = Json(Assert.Single(Factory.Siblings.Sent, x => x.Method == HttpMethod.Post && x.Path == $"player/api/teams/{teamId}/application-instances").Body);
@@ -218,6 +220,7 @@ public class TopologyMapEndpointTests(DatabaseFixture fixture, TopologyMapAppFac
         var row = await db.PlayerApplications.Include(a => a.PlayerApplicationTeams).SingleAsync(a => a.MselId == msel.Id, Ct);
         Assert.Equal("Network Map", row.Name);
         Assert.Equal(TopologyMapPublisher.ApplicationUrl, row.Url);
+        Assert.Equal(TopologyMapPublisher.ApplicationIcon, row.Icon);
         Assert.Equal([team.Id], row.PlayerApplicationTeams.Select(t => t.TeamId));
     }
 
@@ -240,6 +243,9 @@ public class TopologyMapEndpointTests(DatabaseFixture fixture, TopologyMapAppFac
         Assert.False(result.ApplicationAdded);
         Assert.Empty(result.ApplicationTeamIds);
         Assert.DoesNotContain(Factory.Siblings.Sent, x => x.Method == HttpMethod.Post && x.Path.StartsWith("player/"));
+        // a map application made before it had an icon gets the map icon
+        var icon = Json(Assert.Single(Factory.Siblings.Sent, x => x.Method == HttpMethod.Put && x.Path == $"player/api/applications/{ApplicationId}").Body);
+        Assert.EndsWith("/assets/img/SP_Icon_Map.png", icon.GetProperty("icon").GetString());
         await using var db = NewContext();
         Assert.Equal(1, await db.PlayerApplications.CountAsync(a => a.MselId == msel.Id, Ct));
         Assert.Equal(1, await db.PlayerApplicationTeams.CountAsync(t => t.PlayerApplicationId == existing.Id, Ct));
@@ -383,6 +389,8 @@ public class TopologyMapEndpointTests(DatabaseFixture fixture, TopologyMapAppFac
             .AnswersJson($"GET player/api/views/{ViewId}/applications", applications)
             .AnswersJson($"POST player/api/views/{ViewId}/applications",
                 $$"""{"id":"{{ApplicationId}}","name":"Network Map","viewId":"{{ViewId}}"}""", HttpStatusCode.Created)
+            .AnswersJson($"PUT player/api/applications/{ApplicationId}",
+                $$"""{"id":"{{ApplicationId}}","name":"Range map","viewId":"{{ViewId}}","icon":"/assets/img/SP_Icon_Map.png"}""")
             .AnswersJson($"GET player/api/teams/{teamId}/application-instances", instances)
             .AnswersJson($"GET player/api/teams/{AdminTeamId}/application-instances", instances)
             .AnswersJson("POST player/api/teams/*/application-instances",

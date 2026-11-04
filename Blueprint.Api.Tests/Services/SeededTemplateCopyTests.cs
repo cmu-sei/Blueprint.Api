@@ -188,6 +188,20 @@ public class SeededTemplateCopyTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(DataFieldType.Card, fields.Single(x => x.GalleryArticleParameter == nameof(GalleryArticleParameter.CardId)).DataType);
     }
 
+    /// <summary>The Crucible MSEL shows each inject's source type on the Scenario Events list and its default tab, so a
+    /// planner sees where each inject comes from without choosing the column.</summary>
+    [Fact]
+    public async Task CrucibleMsel_FromTheShippedSeedFile_ShowsTheSourceTypeOnTheScenarioEventList()
+    {
+        SeedFromTheShippedSeedFile();
+
+        await using var db = NewContext();
+        var sourceType = await db.DataFields.SingleAsync(x => x.MselId == CrucibleMselId && x.GalleryArticleParameter == nameof(GalleryArticleParameter.SourceType), Ct);
+
+        Assert.True(sourceType.OnScenarioEventList);
+        Assert.True(sourceType.IsShownOnDefaultTab);
+    }
+
     /// <summary>GETs <c>api/{route}/templates</c> and checks it returns exactly the rows of the shipped
     /// seed file's <paramref name="section"/> that are templates on no MSEL.</summary>
     private async Task AssertTemplates<T>(

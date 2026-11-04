@@ -579,9 +579,9 @@
       "DataType": 80,
       "DisplayOrder": 7,
       "IsChosenFromList": false,
-      "OnScenarioEventList": false,
+      "OnScenarioEventList": true,
       "OnExerciseView": false,
-      "IsShownOnDefaultTab": false,
+      "IsShownOnDefaultTab": true,
       "GalleryArticleParameter": "SourceType"
     },
     {

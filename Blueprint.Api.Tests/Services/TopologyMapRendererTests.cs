@@ -127,9 +127,12 @@ public class TopologyMapRendererTests
     // Layout
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>With no saved layout, networks sit in a row and each machine below its network.</summary>
+    /// <summary>
+    /// With no saved layout, the map is a network diagram: each network a bar across it, one above another, and each machine
+    /// in the band under its network's bar.
+    /// </summary>
     [Fact]
-    public void Render_WithNoSavedLayout_PutsNetworksInARowAndMachinesBelowTheirNetwork()
+    public void Render_WithNoSavedLayout_StacksTheNetworksAsBarsWithTheirMachinesUnderThem()
     {
         var drawing = TopologyMapRenderer.Render(Topology(
             Network(Lan, "lan"), Network(Dmz, "dmz"),
@@ -137,25 +140,24 @@ public class TopologyMapRendererTests
             Machine("vm.ws1", "ws1", player: "WS1", on: Lan),
             Machine("vm.ws2", "ws2", player: "WS2", on: Lan)));
 
-        var networks = Rects(drawing).Where(r => r.Rx > 8).ToList();
-        Assert.Equal(2, networks.Count);
-        Assert.Equal(networks[0].CenterY, networks[1].CenterY);
-
-        var dmz = networks.Single(n => n.Label == "dmz");
-        var lan = networks.Single(n => n.Label == "lan");
-        var web = Pixels(drawing, "Web");
-        var ws1 = Pixels(drawing, "WS1");
-        var ws2 = Pixels(drawing, "WS2");
-        Assert.True(web.Y > dmz.CenterY && ws1.Y > lan.CenterY && ws2.Y > lan.CenterY);
-        // each machine is closer, across, to its own network than to the other one
-        Assert.True(Math.Abs(web.X - dmz.CenterX) < Math.Abs(web.X - lan.CenterX));
-        Assert.True(Math.Abs(ws1.X - lan.CenterX) < Math.Abs(ws1.X - dmz.CenterX));
-        Assert.NotEqual(ws1.X, ws2.X);
+        var dmz = Rects(drawing).Single(r => r.Label == "dmz");
+        var lan = Rects(drawing).Single(r => r.Label == "lan");
+        Assert.Equal((dmz.X, dmz.Width), (lan.X, lan.Width));
+        Assert.NotEqual(dmz.CenterY, lan.CenterY);
+        var (upper, lower) = dmz.CenterY < lan.CenterY ? (dmz, lan) : (lan, dmz);
+        foreach (var (name, bar) in new[] { ("Web", dmz), ("WS1", lan), ("WS2", lan) })
+        {
+            var y = Pixels(drawing, name).Y;
+            Assert.True(y > bar.CenterY, $"{name} is under its network");
+            if (bar == upper)
+                Assert.True(y < lower.CenterY, $"{name} is above the next network");
+        }
+        Assert.NotEqual(Pixels(drawing, "WS1").X, Pixels(drawing, "WS2").X);
     }
 
-    /// <summary>A machine on two networks hangs under the one its first NIC is on, with a line to each.</summary>
+    /// <summary>A machine on two networks sits between their bars, with a link to each.</summary>
     [Fact]
-    public void Render_DrawsALineForEveryNicAndHangsAMachineUnderItsFirstNic()
+    public void Render_PutsAMachineOnTwoNetworksBetweenTheirBars()
     {
         var firewall = Machine("vm.fw", "fw", player: "Firewall", on: Dmz);
         var topology = Topology(Network(Lan, "lan"), Network(Dmz, "dmz"), firewall);
@@ -163,9 +165,52 @@ public class TopologyMapRendererTests
 
         var drawing = TopologyMapRenderer.Render(topology);
 
-        Assert.Equal(2, Elements(drawing, "line").Count());
-        var dmz = Rects(drawing).Single(r => r.Rx > 8 && r.Label == "dmz");
-        Assert.Equal(dmz.CenterX, Pixels(drawing, "Firewall").X, 0);
+        Assert.Equal(2, Elements(drawing, "line").Count() + Elements(drawing, "polyline").Count());
+        var bars = Rects(drawing).Where(r => r.Label is "dmz" or "lan").OrderBy(r => r.CenterY).ToList();
+        var y = Pixels(drawing, "Firewall").Y;
+        Assert.True(y > bars[0].CenterY && y < bars[1].CenterY);
+    }
+
+    /// <summary>
+    /// The bars are ordered so machines on two networks span as few as they can: a LAN that both the DMZ's firewall and the
+    /// plant's historian reach sits between the DMZ and the plant network.
+    /// </summary>
+    [Fact]
+    public void Render_PutsAHubNetworkBetweenTheNetworksItShares()
+    {
+        const string Ot = "proxmox_sdn_vnet.ot";
+        var topology = Topology(Network(Dmz, "dmz"), Network(Ot, "ot"), Network(Lan, "lan"),
+            Machine("vm.fw", "fw", player: "Firewall", on: Dmz), Machine("vm.hist", "hist", player: "Historian", on: Lan),
+            Machine("vm.dc", "dc", player: "DC", on: Lan), Machine("vm.hmi", "hmi", player: "HMI", on: Ot));
+        topology.Edges.Add(new CasterTopologyEdge { From = "vm.fw", To = Lan, Nic = 1 });
+        topology.Edges.Add(new CasterTopologyEdge { From = "vm.hist", To = Ot, Nic = 1 });
+
+        var drawing = TopologyMapRenderer.Render(topology);
+
+        var order = Rects(drawing).Where(r => r.Label is "dmz" or "lan" or "ot").OrderBy(r => r.CenterY).Select(r => r.Label).ToList();
+        Assert.Equal("lan", order[1]);
+    }
+
+    /// <summary>
+    /// A machine in a band's second row reaches its bar through the gap between columns, so its link crosses no machine
+    /// above it.
+    /// </summary>
+    [Fact]
+    public void Render_RunsALinkFromASecondRowBetweenTheColumns()
+    {
+        var machines = Enumerable.Range(1, 6).Select(i => Machine($"vm.ws{i}", $"ws{i}", player: $"Workstation {i}", on: Lan)).ToArray();
+        var drawing = TopologyMapRenderer.Render(Topology([Network(Lan, "lan"), .. machines]));
+
+        var boxes = Rects(drawing).Where(r => r.Rx == 8 && r.Label?.StartsWith("Workstation") == true).ToList();
+        Assert.True(boxes.Select(b => b.CenterY).Distinct().Count() > 1, "the band wraps onto a second row");
+        foreach (var polyline in Elements(drawing, "polyline"))
+        {
+            var points = polyline.Attribute("points")!.Value.Split(' ')
+                .Select(p => p.Split(',').Select(v => double.Parse(v, CultureInfo.InvariantCulture)).ToArray()).ToList();
+            // the run up to the bar is vertical, at an x outside every machine
+            var x = points[^1][0];
+            Assert.All(boxes, b => Assert.False(x > b.X && x < b.X + b.Width, $"the link at x={x} crosses {b.Label}"));
+        }
     }
 
     /// <summary>Caster's saved tree positions are used as they are: the drawing keeps their proportions.</summary>

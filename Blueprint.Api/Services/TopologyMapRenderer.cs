@@ -70,8 +70,8 @@ namespace Blueprint.Api.Services
     /// <summary>
     /// Draws a Caster topology as an SVG, labelled with the machines' Player names, and works out where on
     /// it Player's click points go. Nodes sit where Caster's topology view saved them (its tree layout,
-    /// else its force layout); a node nobody placed is laid out here: networks in a row, each network's
-    /// machines in a grid below it. The same topology and settings always give the same bytes.
+    /// else its force layout); when nobody laid it out there, it is drawn as a network diagram: networks as stacked
+    /// bars, each machine under the topmost network it is on. The same topology and settings always give the same bytes.
     /// </summary>
     public static class TopologyMapRenderer
     {
@@ -121,6 +121,11 @@ namespace Blueprint.Api.Services
             public double Y;
             public bool Placed;
             public string Color;
+            // a network drawn as a bar across the map, which its machines join straight up or down
+            public bool IsBar;
+            // in a stacked band: the row it is in, and the width of its column, for routing its links between columns
+            public int Row;
+            public double SlotWidth;
             public double Left => X - W / 2;
             public double Right => X + W / 2;
             public double Top => Y - H / 2;
@@ -177,7 +182,10 @@ namespace Blueprint.Api.Services
                 }
             }
 
-            Place(networks, machines, primary, layout);
+            if (!HasSavedPositions(networks.Concat(machines), layout))
+                Stack(networks, machines, edges, byId);
+            else
+                Place(networks, machines, primary, layout);
 
             return Draw(networks, machines, edges, byId, settings);
         }
@@ -207,6 +215,125 @@ namespace Blueprint.Api.Services
                 W = Math.Clamp(TextWidth(label, 13) + 28, MachineMinWidth, MachineMaxWidth),
                 H = MachineHeight
             };
+        }
+
+        private static int IndexIn(IReadOnlyList<Box> list, Box box)
+        {
+            for (var i = 0; i < list.Count; i++)
+                if (list[i] == box)
+                    return i;
+            return -1;
+        }
+
+        // every order of the list, the given order first, so the first best order found is the natural one
+        private static IEnumerable<List<Box>> Permutations(List<Box> items)
+        {
+            if (items.Count <= 1)
+            {
+                yield return items.ToList();
+                yield break;
+            }
+            for (var i = 0; i < items.Count; i++)
+            {
+                var rest = items.Where((_, k) => k != i).ToList();
+                foreach (var tail in Permutations(rest))
+                {
+                    tail.Insert(0, items[i]);
+                    yield return tail;
+                }
+            }
+        }
+
+        private static bool HasSavedPositions(IEnumerable<Box> boxes, Dictionary<string, CasterTopologyNodeLayout> layout) =>
+            boxes.Any(b => layout.TryGetValue(b.Node.Id, out var l)
+                && ((l.TreeX != null && l.TreeY != null) || (l.X != null && l.Y != null)));
+
+        /// <summary>
+        /// A network diagram for a topology nobody laid out in Caster: each network a bar across the map, stacked so that
+        /// networks sharing machines sit next to each other, and each machine in the band under the topmost network it is on,
+        /// so a machine on two networks sits between their bars and joins both with short straight lines. The columns are
+        /// chosen to make the drawing about as tall as it is wide, since Player shows the map square.
+        /// </summary>
+        private static void Stack(List<Box> networks, List<Box> machines, List<CasterTopologyEdge> edges, Dictionary<string, Box> byId)
+        {
+            var nets = edges.GroupBy(e => e.From).ToDictionary(g => g.Key, g => g.Select(e => byId[e.To]).Distinct().ToList(), StringComparer.Ordinal);
+            List<Box> NetsOf(Box m) => nets.TryGetValue(m.Node.Id, out var list) ? list : new List<Box>();
+
+            // the order of the bars: the one where machines on more than one network span the fewest bars, tried in full for up
+            // to seven networks; past that, the busiest network first and then each time the one sharing most with the last
+            int Size(Box n) => machines.Count(m => NetsOf(m).Contains(n));
+            var multi = machines.Select(NetsOf).Where(list => list.Count > 1).ToList();
+            int Span(IReadOnlyList<Box> arrangement) =>
+                multi.Sum(list => list.Max(n => IndexIn(arrangement, n)) - list.Min(n => IndexIn(arrangement, n)));
+            var start = networks.OrderByDescending(Size).ThenBy(n => networks.IndexOf(n)).ToList();
+            List<Box> order;
+            if (networks.Count <= 7)
+                order = Permutations(start).OrderBy(Span).First();
+            else
+            {
+                order = new List<Box>();
+                var left = start.ToList();
+                int Shared(Box a, Box b) => machines.Count(m => NetsOf(m).Contains(a) && NetsOf(m).Contains(b));
+                while (left.Count > 0)
+                {
+                    var next = order.Count == 0 ? left[0] : left.OrderByDescending(n => Shared(order[^1], n)).ThenByDescending(Size).First();
+                    order.Add(next);
+                    left.Remove(next);
+                }
+            }
+            networks.Sort((a, b) => order.IndexOf(a).CompareTo(order.IndexOf(b)));
+
+            // each machine in the band under the topmost of its networks; a machine on none goes in a band of its own at the end
+            var bands = order.Select(n => machines.Where(m => NetsOf(m).Any() && NetsOf(m).OrderBy(n => order.IndexOf(n)).First() == n).ToList()).ToList();
+            var loose = machines.Where(m => !NetsOf(m).Any()).ToList();
+            // within a band, machines that also reach a lower network go to the right, nearest that network last
+            foreach (var band in bands)
+                band.Sort((a, b) =>
+                {
+                    int Reach(Box m) => NetsOf(m).Select(n => order.IndexOf(n)).DefaultIfEmpty(0).Max();
+                    var byReach = Reach(a).CompareTo(Reach(b));
+                    return byReach != 0 ? byReach : machines.IndexOf(a).CompareTo(machines.IndexOf(b));
+                });
+            if (loose.Any())
+                bands.Add(loose);
+
+            var slotWidth = (machines.Count == 0 ? MachineMinWidth : machines.Max(m => m.W)) + Gap;
+            var slotHeight = MachineHeight + RowGap;
+            double Height(int columns) =>
+                order.Count * (NetworkHeight + RowGap) + bands.Sum(b => Math.Ceiling(b.Count / (double)columns)) * slotHeight;
+            var widest = Math.Max(1, bands.Select(b => b.Count).DefaultIfEmpty(1).Max());
+            var columnsWanted = Enumerable.Range(1, Math.Max(1, Math.Min(widest, 8)))
+                .OrderBy(c => Math.Abs(Math.Log(Math.Max(c * slotWidth, NetworkMinWidth) / Math.Max(Height(c), 1))))
+                .First();
+            var width = Math.Max(columnsWanted * slotWidth, networks.Select(n => n.W).DefaultIfEmpty(NetworkMinWidth).Max() + Gap);
+
+            double y = 0;
+            for (var i = 0; i < bands.Count; i++)
+            {
+                if (i < order.Count)
+                {
+                    var bar = order[i];
+                    bar.IsBar = true;
+                    bar.W = width;
+                    bar.X = width / 2;
+                    bar.Y = y + NetworkHeight / 2;
+                    bar.Placed = true;
+                    y += NetworkHeight + RowGap;
+                }
+                var band = bands[i];
+                var columns = Math.Min(columnsWanted, Math.Max(band.Count, 1));
+                // the band's columns on one grid, centred as a block, so the gaps between them line up for the links to run in
+                var offset = (width - columns * slotWidth) / 2;
+                for (var k = 0; k < band.Count; k++)
+                {
+                    band[k].X = offset + slotWidth * (k % columns + 0.5);
+                    band[k].Y = y + MachineHeight / 2 + (k / columns) * slotHeight;
+                    band[k].Row = k / columns;
+                    band[k].SlotWidth = slotWidth;
+                    band[k].Placed = true;
+                }
+                y += Math.Ceiling(band.Count / (double)columns) * slotHeight;
+            }
         }
 
         /// <summary>
@@ -318,13 +445,38 @@ namespace Blueprint.Api.Services
             {
                 var from = byId[edge.From];
                 var to = byId[edge.To];
-                svg.Append($"<line x1=\"{N(from.X)}\" y1=\"{N(from.Y)}\" x2=\"{N(to.X)}\" y2=\"{N(to.Y)}\" stroke=\"{to.Color}\" stroke-width=\"2\"/>\n");
+                if (to.IsBar)
+                {
+                    var above = to.Y < from.Y;
+                    var clear = above ? from.Row == 0 : !machines.Any(m => m != from && m.X == from.X && m.Y > from.Y && m.Y < to.Y);
+                    if (clear)
+                    {
+                        // straight up to the bar above the machine, or down to the one below with nothing in between
+                        var y1 = above ? from.Top : from.Bottom;
+                        var y2 = above ? to.Bottom : to.Top;
+                        svg.Append($"<line x1=\"{N(from.X)}\" y1=\"{N(y1)}\" x2=\"{N(from.X)}\" y2=\"{N(y2)}\" stroke=\"{to.Color}\" stroke-width=\"3\"/>\n");
+                    }
+                    else
+                    {
+                        // out of the side into the gap between columns, then along it to the bar, so the line crosses no machine;
+                        // up on the left side, down on the right
+                        var side = above ? from.Left : from.Right;
+                        var gap = above ? from.X - from.SlotWidth / 2 : from.X + from.SlotWidth / 2;
+                        var end = above ? to.Bottom : to.Top;
+                        svg.Append($"<polyline points=\"{N(side)},{N(from.Y)} {N(gap)},{N(from.Y)} {N(gap)},{N(end)}\" fill=\"none\" stroke=\"{to.Color}\" stroke-width=\"3\"/>\n");
+                    }
+                }
+                else
+                    svg.Append($"<line x1=\"{N(from.X)}\" y1=\"{N(from.Y)}\" x2=\"{N(to.X)}\" y2=\"{N(to.Y)}\" stroke=\"{to.Color}\" stroke-width=\"2\"/>\n");
             }
 
             foreach (var network in networks)
             {
-                svg.Append($"<rect x=\"{N(network.Left)}\" y=\"{N(network.Top)}\" width=\"{N(network.W)}\" height=\"{N(network.H)}\" rx=\"{N(network.H / 2)}\" fill=\"{network.Color}\"/>\n");
-                svg.Append($"<text x=\"{N(network.X)}\" y=\"{N(network.Y + 4)}\" font-size=\"12\" font-weight=\"bold\" fill=\"#ffffff\" text-anchor=\"middle\">{Escape(network.Label)}</text>\n");
+                svg.Append($"<rect x=\"{N(network.Left)}\" y=\"{N(network.Top)}\" width=\"{N(network.W)}\" height=\"{N(network.H)}\" rx=\"{N(network.IsBar ? 6 : network.H / 2)}\" fill=\"{network.Color}\"/>\n");
+                if (network.IsBar)
+                    svg.Append($"<text x=\"{N(network.Left + 14)}\" y=\"{N(network.Y + 4)}\" font-size=\"12\" font-weight=\"bold\" fill=\"#ffffff\">{Escape(network.Label)}</text>\n");
+                else
+                    svg.Append($"<text x=\"{N(network.X)}\" y=\"{N(network.Y + 4)}\" font-size=\"12\" font-weight=\"bold\" fill=\"#ffffff\" text-anchor=\"middle\">{Escape(network.Label)}</text>\n");
             }
 
             var drawing = new TopologyMapDrawing { Size = size, NetworkCount = networks.Count, MachineCount = machines.Count };

@@ -16,6 +16,7 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
 using Blueprint.Api.ViewModels;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NSubstitute.ClearExtensions;
 using Xunit;
@@ -534,6 +535,7 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
     [Fact]
     public async Task Build_RunsInOneTabAtATime_UntilAnotherTakesItOver()
     {
+        Open("tab-a", "tab-b");
         var (mselId, planner) = await CreateFromDesign();
         var client = Client(planner);
 
@@ -558,6 +560,7 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
     [Fact]
     public async Task Build_NamesWhoElseIsBuildingIt()
     {
+        Open("grace", "mine");
         var (mselId, planner) = await CreateFromDesign();
         var editor = await Actor().WithName("Grace Hopper").WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
@@ -573,6 +576,7 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
     [Fact]
     public async Task Build_IsFreedWhenItStopsOrFinishes()
     {
+        Open("tab-a", "tab-b", "tab-c");
         var (mselId, planner) = await CreateFromDesign();
         var client = Client(planner);
         await Read<MselBuildBuilder>(await client.PostAsync($"/api/msels/{mselId}/ai-draft/claim?connectionId=tab-a", null, Ct));
@@ -588,6 +592,14 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Null(finished.Stage);
         Assert.Null(finished.Builder);
         Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync($"/api/msels/{mselId}/ai-draft/claim?connectionId=tab-c", null, Ct)).StatusCode);
+    }
+
+    // the tabs' hub connections, as the hub marks them open when they connect
+    private void Open(params string[] connectionIds)
+    {
+        var claims = factory.Services.GetRequiredService<MselBuildClaims>();
+        foreach (var id in connectionIds)
+            claims.Connected(id);
     }
 
     private async Task<(Guid MselId, TestActor Planner)> CreateFromDesign(bool useCite = false) => await CreateFromDesign(await SeedTemplate(useCite));

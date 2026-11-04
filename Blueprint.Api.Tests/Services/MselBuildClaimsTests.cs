@@ -21,6 +21,8 @@ public class MselBuildClaimsTests
     {
         var claims = new MselBuildClaims();
         var mselId = Guid.NewGuid();
+        for (var i = 0; i < 32; i++)
+            claims.Connected($"tab-{i}");
 
         var results = await Task.WhenAll(Enumerable.Range(0, 32).Select(i => Task.Run(() =>
         {
@@ -42,7 +44,7 @@ public class MselBuildClaimsTests
     [Fact]
     public void Claim_TakingOverReturnsTheTabThatHadIt()
     {
-        var claims = new MselBuildClaims();
+        var claims = Open("tab-a", "tab-b");
         var mselId = Guid.NewGuid();
         claims.Claim(mselId, new MselBuildClaim("tab-a", Ada, "Ada"), takeOver: false);
 
@@ -57,7 +59,7 @@ public class MselBuildClaimsTests
     [Fact]
     public void ReleaseConnection_FreesOnlyThatTabsBuilds()
     {
-        var claims = new MselBuildClaims();
+        var claims = Open("tab-a", "tab-b");
         Guid first = Guid.NewGuid(), second = Guid.NewGuid(), other = Guid.NewGuid();
         claims.Claim(first, new MselBuildClaim("tab-a", Ada, "Ada"), false);
         claims.Claim(second, new MselBuildClaim("tab-a", Ada, "Ada"), false);
@@ -84,5 +86,48 @@ public class MselBuildClaimsTests
         step.Dispose();
 
         claims.Run(mselId, "Injects", "The MSEL's injects are").Dispose();
+    }
+
+    /// <summary>
+    /// A tab that reconnects under a new connection takes its build back: the claim its closed connection held is free,
+    /// and a claim is never shown as held by a closed connection.
+    /// </summary>
+    [Fact]
+    public void Claim_HeldByAClosedConnection_IsFree()
+    {
+        var claims = Open("old", "new", "other");
+        var mselId = Guid.NewGuid();
+        claims.Claim(mselId, new MselBuildClaim("old", Ada, "Ada"), takeOver: false);
+
+        claims.ReleaseConnection("old");
+        // the claim came in after its connection closed: as when a request was already on its way
+        claims.Claim(mselId, new MselBuildClaim("old", Ada, "Ada"), takeOver: false);
+        Assert.Null(claims.Holder(mselId));
+
+        Assert.Null(claims.Claim(mselId, new MselBuildClaim("new", Ada, "Ada"), takeOver: false));
+        Assert.Equal("new", claims.Holder(mselId).ConnectionId);
+        Assert.Throws<ConflictException>(() => claims.Claim(mselId, new MselBuildClaim("other", Ada, "Ada"), takeOver: false));
+    }
+
+    /// <summary>A request from a closed connection writes only while no open tab has the build, and claims nothing.</summary>
+    [Fact]
+    public void Claim_FromAClosedConnection_ClaimsNothing()
+    {
+        var claims = Open("open");
+        var free = Guid.NewGuid();
+        var held = Guid.NewGuid();
+        claims.Claim(held, new MselBuildClaim("open", Ada, "Ada"), takeOver: false);
+
+        Assert.Null(claims.Claim(free, new MselBuildClaim("closed", Ada, "Ada"), takeOver: false));
+        Assert.Null(claims.Holder(free));
+        Assert.Throws<ConflictException>(() => claims.Claim(held, new MselBuildClaim("closed", Ada, "Ada"), takeOver: true));
+    }
+
+    private static MselBuildClaims Open(params string[] connectionIds)
+    {
+        var claims = new MselBuildClaims();
+        foreach (var id in connectionIds)
+            claims.Connected(id);
+        return claims;
     }
 }

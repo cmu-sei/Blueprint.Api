@@ -438,8 +438,9 @@ namespace Blueprint.Api.Services
             if (replaced != null)
                 await SendAsync(_hub.Clients.Client(replaced.ConnectionId), MainHubMethods.AiBuildTakenOver,
                     new MselBuildTakenOver { MselId = mselId, UserName = claim.UserName });
-            if (before?.ConnectionId != connectionId)
-                await BuilderChangedAsync(mselId, claim);
+            var now = _claims.Holder(mselId);
+            if (before?.ConnectionId != now?.ConnectionId)
+                await BuilderChangedAsync(mselId, now);
         }
 
         private Task BuilderChangedAsync(Guid mselId, MselBuildClaim claim) =>

@@ -242,6 +242,8 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         var mselId = Guid.NewGuid();
         var otherMsel = Guid.NewGuid();
         var harness = Harness(Guid.NewGuid());
+        _buildClaims.Connected(HubHarness.ConnectionId);
+        _buildClaims.Connected("another-tab");
         _buildClaims.Claim(mselId, new MselBuildClaim(HubHarness.ConnectionId, harness.UserId, "test-user"), takeOver: false);
         _buildClaims.Claim(otherMsel, new MselBuildClaim("another-tab", harness.UserId, "test-user"), takeOver: false);
 

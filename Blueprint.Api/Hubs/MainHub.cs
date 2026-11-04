@@ -86,6 +86,13 @@ namespace Blueprint.Api.Hubs
             }
         }
 
+        public override async Task OnConnectedAsync()
+        {
+            // only an open connection's tab can hold a MSEL's AI build
+            _buildClaims.Connected(Context.ConnectionId);
+            await base.OnConnectedAsync();
+        }
+
         public override async Task OnDisconnectedAsync(Exception exception)
         {
             // a closed tab builds nothing: its MSELs are free for another tab to continue

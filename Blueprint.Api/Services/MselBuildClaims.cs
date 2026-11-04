@@ -20,10 +20,17 @@ namespace Blueprint.Api.Services
     public class MselBuildClaims
     {
         private readonly ConcurrentDictionary<Guid, MselBuildClaim> _claims = new();
+        // the hub connections open now: a claim is only ever held by one of them
+        private readonly ConcurrentDictionary<string, byte> _open = new();
+
+        public void Connected(string connectionId) => _open[connectionId] = 0;
+
+        private bool IsOpen(string connectionId) => connectionId != null && _open.ContainsKey(connectionId);
         // the steps running now: a stage, or one row, article or profile
         private readonly ConcurrentDictionary<(Guid MselId, string Key), byte> _running = new();
 
-        public MselBuildClaim Holder(Guid mselId) => _claims.TryGetValue(mselId, out var claim) ? claim : null;
+        // a claim whose tab's connection closed is no one's
+        public MselBuildClaim Holder(Guid mselId) => _claims.TryGetValue(mselId, out var claim) && IsOpen(claim.ConnectionId) ? claim : null;
 
         /// <summary>
         /// Claims the build for a tab when no tab has it or this one does; with takeOver, from another tab too. Returns the
@@ -31,12 +38,26 @@ namespace Blueprint.Api.Services
         /// </summary>
         public MselBuildClaim Claim(Guid mselId, MselBuildClaim claim, bool takeOver)
         {
+            // a request can carry a connection that has just closed, as when its tab reconnects under a new one; it writes
+            // while no open tab has the build, but claims nothing, so no claim is left behind that nothing would free
+            if (!IsOpen(claim.ConnectionId))
+            {
+                RequireUnclaimed(mselId, claim.UserId);
+                return null;
+            }
             while (true)
             {
                 if (_claims.TryAdd(mselId, claim))
                     return null;
                 if (!_claims.TryGetValue(mselId, out var holder))
                     continue;
+                // a claim whose tab's connection closed is free
+                if (!IsOpen(holder.ConnectionId))
+                {
+                    if (_claims.TryUpdate(mselId, claim, holder))
+                        return null;
+                    continue;
+                }
                 if (holder.ConnectionId == claim.ConnectionId)
                 {
                     // the same tab, maybe after its user's name changed
@@ -56,7 +77,7 @@ namespace Blueprint.Api.Services
         /// </summary>
         public void RequireUnclaimed(Guid mselId, Guid userId)
         {
-            if (Holder(mselId) is MselBuildClaim holder)
+            if (Holder(mselId) is MselBuildClaim holder && IsOpen(holder.ConnectionId))
                 throw new ConflictException(Building(holder, new MselBuildClaim(null, userId, null)));
         }
 
@@ -66,11 +87,14 @@ namespace Blueprint.Api.Services
                 && _claims.TryRemove(new KeyValuePair<Guid, MselBuildClaim>(mselId, holder));
 
         /// <summary>Frees every build a closed tab had; returns their MSELs</summary>
-        public List<Guid> ReleaseConnection(string connectionId) =>
-            _claims.Where(c => c.Value.ConnectionId == connectionId)
+        public List<Guid> ReleaseConnection(string connectionId)
+        {
+            _open.TryRemove(connectionId, out _);
+            return _claims.Where(c => c.Value.ConnectionId == connectionId)
                 .Where(c => _claims.TryRemove(c))
                 .Select(c => c.Key)
                 .ToList();
+        }
 
         /// <summary>
         /// Marks a step as running until the result is disposed; throws when it already is, as when a tab that was taken

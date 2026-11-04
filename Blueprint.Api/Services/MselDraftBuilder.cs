@@ -23,7 +23,10 @@ namespace Blueprint.Api.Services
         public static void PrepareShell(MselEntity mselEntity, MselDraft draft, IReadOnlyDictionary<string, CompetencyEntity> competencies)
         {
             mselEntity.Name = draft.Name;
-            mselEntity.Description = draft.Description;
+            // within what the MSEL's form allows, whatever path the draft came by
+            mselEntity.Description = draft.Description?.Trim().Length > MselDraftRules.MaxDescription
+                ? MselImageService.Shorten(draft.Description, MselDraftRules.MaxDescription)
+                : draft.Description;
             mselEntity.DurationSeconds = draft.DurationMinutes * 60;
             SetMetadata(mselEntity, draft.Metadata);
             // the marking the planner chose for the articles; Write with AI keeps to it

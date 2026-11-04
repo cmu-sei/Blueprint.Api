@@ -805,7 +805,7 @@ Answer only by calling the tool.";
             var properties = new JsonObject
             {
                 ["name"] = Str("Short exercise name"),
-                ["description"] = Str("One paragraph: scenario, audience and objectives"),
+                ["description"] = Str("One paragraph of at most 600 characters (about 90 words): scenario, audience and objectives"),
                 ["durationMinutes"] = Int("Total exercise length in minutes"),
                 ["scenario"] = Obj(new JsonObject
                 {
@@ -1356,9 +1356,18 @@ Answer only by calling the tool.";
         /// Puts a draft into a shape import can trust: known columns and names only, times in range,
         /// at most maxInjects rows. Every correction is reported.
         /// </summary>
+        /// <summary>The most a MSEL's description holds, as its form on the Info tab allows</summary>
+        public const int MaxDescription = 600;
+
         public static void Normalize(MselDraft draft, MselEntity template, int maxInjects, IReadOnlyDictionary<string, CompetencyEntity> competencies, List<string> warnings, bool designOnly = false)
         {
             draft.Name = string.IsNullOrWhiteSpace(draft.Name) ? "AI draft" : draft.Name.Trim();
+            // the MSEL's description holds 600 characters, as its form does, so a longer one is cut at a sentence end
+            if (draft.Description?.Trim().Length > MaxDescription)
+            {
+                draft.Description = MselImageService.Shorten(draft.Description, MaxDescription);
+                warnings.Add($"Shortened the description to {draft.Description.Length} characters, within the {MaxDescription} a MSEL's description holds.");
+            }
             draft.Moves ??= new List<MselDraftMove>();
             draft.Teams ??= new List<MselDraftTeam>();
             draft.Organizations ??= new List<MselDraftOrganization>();

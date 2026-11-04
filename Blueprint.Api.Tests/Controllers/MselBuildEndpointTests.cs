@@ -475,6 +475,26 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Equal(expected, MselImageService.Shorten(text, length));
 
     /// <summary>
+    /// A design's description longer than the 600 characters a MSEL's description holds is cut at a sentence end, with a note,
+    /// so the MSEL's form can show and save it.
+    /// </summary>
+    [Fact]
+    public async Task Design_CutsALongDescriptionToWhatTheMselHolds()
+    {
+        var design = System.Text.Json.Nodes.JsonNode.Parse(Design())!.AsObject();
+        design["description"] = string.Concat(Enumerable.Repeat("The CPT hunts the actor across the plant network. ", 20));
+        Answer(design.ToJsonString());
+        var template = await SeedTemplate();
+        var planner = await Planner();
+
+        var result = await Read<MselDraftResult>(await Client(planner).PostAsJsonAsync("/api/msels/ai-draft/design", new MselDraftRequest { TemplateMselId = template.Id, Prompt = "Cables" }, JsonOptions, Ct));
+
+        Assert.True(result.Draft.Description.Length <= MselDraftRules.MaxDescription);
+        Assert.EndsWith("network.", result.Draft.Description);
+        Assert.Contains(result.Warnings, w => w.StartsWith("Shortened the description"));
+    }
+
+    /// <summary>
     /// The browser may choose the new MSEL's ID, so it can open the MSEL's page before the MSEL exists; an ID already taken
     /// is not reused, and the MSEL gets a new one.
     /// </summary>

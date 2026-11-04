@@ -119,6 +119,9 @@ namespace Blueprint.Api.Services
         /// <summary>The Blueprint application's URL. Player replaces {theme} itself.</summary>
         public const string ApplicationUrl = "{vmUrl}/views/{playerViewId}/map{theme}";
 
+        /// <summary>Player's own map icon, as the Virtual Machines application has Player's VM icon.</summary>
+        public const string ApplicationIcon = "{playerUrl}/assets/img/SP_Icon_Map.png";
+
         private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
 
         /// <summary>
@@ -260,12 +263,15 @@ namespace Blueprint.Api.Services
                     MselId = msel.Id,
                     Name = ApplicationName,
                     Url = ApplicationUrl,
+                    Icon = ApplicationIcon,
                     Embeddable = true,
                     LoadInBackground = false,
                     CreatedBy = userId ?? msel.CreatedBy
                 };
                 context.PlayerApplications.Add(application);
             }
+            else if (string.IsNullOrWhiteSpace(application.Icon))
+                application.Icon = ApplicationIcon;
 
             var mselTeamIds = msel.Teams.Select(t => t.Id).ToHashSet();
             foreach (var teamId in teamIds.Where(mselTeamIds.Contains))
@@ -283,6 +289,13 @@ namespace Blueprint.Api.Services
         {
             var applications = await playerApiClient.GetViewApplicationsAsync(viewId, ct);
             var application = applications.FirstOrDefault(a => IsNetworkMapApplication(a.Name, a.Url?.OriginalString));
+            var icon = ApplicationIcon.Replace("{playerUrl}", (clientOptions.PlayerUiUrl ?? "").TrimEnd('/'));
+            if (application != null && string.IsNullOrWhiteSpace(application.Icon))
+            {
+                // a map application made before it had an icon gets one
+                application.Icon = icon;
+                application = await playerApiClient.UpdateApplicationAsync((Guid)application.Id, application, ct);
+            }
             if (application == null)
             {
                 var url = ApplicationUrl
@@ -293,6 +306,7 @@ namespace Blueprint.Api.Services
                     Name = ApplicationName,
                     ViewId = viewId,
                     Url = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri : null,
+                    Icon = icon,
                     Embeddable = true,
                     LoadInBackground = false
                 }, ct);

@@ -709,7 +709,9 @@ Answer only by calling the tool.";
                 if (MselDraftRules.IsArticleColumn(field))
                 {
                     articleColumns.Add(field.Name);
-                    if (field.GalleryArticleParameter != nameof(GalleryArticleParameter.Name))
+                    if (field.GalleryArticleParameter == nameof(GalleryArticleParameter.Status))
+                        property["description"] = MselDraftRules.GalleryStatusDescription;
+                    else if (field.GalleryArticleParameter != nameof(GalleryArticleParameter.Name))
                         property["description"] = property["description"].GetValue<string>() + "; empty for a row that is not a Gallery article";
                 }
                 var options = MselDraftRules.AllowedOptions(field);
@@ -937,13 +939,13 @@ Answer only by calling the tool.";
             (GalleryArticleParameter.SourceName, ["Source Name"], [DataFieldType.String]),
             (GalleryArticleParameter.DatePosted, ["Simulated Time", "Date Posted"], [DataFieldType.DateTime]),
             (GalleryArticleParameter.CardId, ["Card"], [DataFieldType.Card]),
-            // Gallery needs these mapped too; the draft leaves them empty for the planner
+            // Gallery needs these mapped too: the draft chooses each article's status color, and leaves the link to the planner
             (GalleryArticleParameter.Status, ["Card Status", "Gallery Status"], [DataFieldType.String]),
             (GalleryArticleParameter.Url, ["Url", "URL"], [DataFieldType.Url, DataFieldType.String]),
             (GalleryArticleParameter.OpenInNewTab, ["Open In New Tab"], [DataFieldType.Boolean, DataFieldType.Checkbox])
         ];
         private static readonly string[] _plannerGalleryParameters =
-            [nameof(GalleryArticleParameter.Status), nameof(GalleryArticleParameter.Url), nameof(GalleryArticleParameter.OpenInNewTab)];
+            [nameof(GalleryArticleParameter.Url), nameof(GalleryArticleParameter.OpenInNewTab)];
 
         /// <summary>
         /// A MSEL that uses Gallery needs columns mapped to the article parameters, or its injects never become
@@ -1104,7 +1106,7 @@ Answer only by calling the tool.";
         [
             nameof(GalleryArticleParameter.Name), nameof(GalleryArticleParameter.Summary), nameof(GalleryArticleParameter.FromOrg),
             nameof(GalleryArticleParameter.ToOrg), nameof(GalleryArticleParameter.SourceType), nameof(GalleryArticleParameter.SourceName),
-            nameof(GalleryArticleParameter.DatePosted)
+            nameof(GalleryArticleParameter.DatePosted), nameof(GalleryArticleParameter.Status)
         ];
         private static readonly string[] _cardGroupings = ["Sources", "Organizations", "Sectors", "Countries", "Terrain"];
         /// <summary>The 16 critical infrastructure sectors, as CISA names them</summary>
@@ -1282,8 +1284,22 @@ Answer only by calling the tool.";
                 .Where(f => !IsServerFilled(f))
                 .OrderBy(f => f.DisplayOrder);
 
+        public const string GalleryStatusDescription =
+            "The article's status color on the Gallery wall: Gray for background or routine news, Green for good news or a " +
+            "problem resolved, Yellow for a developing or worrying situation, Orange for a serious one, Red for a critical one; " +
+            "Gray for a row that is not a Gallery article";
+
+        /// <summary>A Gallery status color as Gallery names it, Gray when the answer is none of them or is missing</summary>
+        public static string GalleryStatus(string value) =>
+            Enum.TryParse<GalleryItemStatus>((value ?? "").Trim(), true, out var status) && Enum.IsDefined(status)
+                ? status.ToString()
+                : nameof(GalleryItemStatus.Gray);
+
         public static List<string> AllowedOptions(DataFieldEntity field)
         {
+            // Gallery's status colors, which Blueprint offers as a color picker
+            if (field.GalleryArticleParameter == nameof(GalleryArticleParameter.Status))
+                return Enum.GetNames(typeof(GalleryItemStatus)).ToList();
             if (field.IsChosenFromList && field.DataOptions.Any())
                 return field.DataOptions.OrderBy(o => o.DisplayOrder).Select(o => o.OptionValue).ToList();
             if (field.DataType == DataFieldType.SourceType)

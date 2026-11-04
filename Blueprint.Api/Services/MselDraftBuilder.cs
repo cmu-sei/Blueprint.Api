@@ -282,6 +282,9 @@ namespace Blueprint.Api.Services
                                 _ => null
                             };
                         }
+                        // every row has a Gallery status color, Gray when the model gave none it could be, so the column is never blank
+                        if (dataField.GalleryArticleParameter == nameof(GalleryArticleParameter.Status))
+                            value = MselDraftRules.GalleryStatus(value);
                         scenarioEvent.DataValues.Add(new DataValueEntity
                         {
                             Id = Guid.NewGuid(),

@@ -31,6 +31,8 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
 {
     private readonly IAiModelClient _model = factory.Model;
     private readonly List<(string System, string Prompt, string Schema)> _calls = new();
+    // the outline answer, when a test gives its own
+    private string _injects;
 
     public override async ValueTask InitializeAsync()
     {
@@ -52,7 +54,7 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
                     "submit_inject_text" => """{"html":"<p>Check in with each team lead.</p>"}""",
                     "submit_msel_metadata" => """{"educationalLevel":"Intermediate","educationalUse":"Instruction","courseMode":"Blended","subject":"Incident response","keywords":"cables, islands","language":"en-US"}""",
                     _ when system.Contains("first of two steps") => Design(),
-                    _ => Injects()
+                    _ => _injects ?? Injects()
                 };
                 return JsonDocument.Parse(answer).RootElement.Clone();
             });
@@ -134,6 +136,38 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Equal("Articles", msel.AiDraftStage);
         var state = MselBuildState.Deserialize(msel.AiDraft);
         Assert.Equal(["Decide who leads"], state.Draft.Moves.First().ExpectedDecisions);
+    }
+
+    /// <summary>
+    /// Every row gets a Gallery status color: the outline asks for one of Gallery's colors on each row, keeps the one the model
+    /// chose, and makes a row the model gave none, such as a Facilitation row, Gray.
+    /// </summary>
+    [Fact]
+    public async Task Injects_GiveEveryRowAGalleryStatusColor()
+    {
+        _injects = JsonSerializer.Serialize(new
+        {
+            moves = new object[] { new { moveNumber = 0, expectedDecisions = new[] { "Decide who leads" } } },
+            injects = new object[]
+            {
+                new { minutes = 5, eventType = "Inject", card = "Exercise Control", values = new Dictionary<string, string> { ["Title"] = "Cables cut", ["SourceType"] = "News", ["Card Status"] = "Red" } },
+                new { minutes = 70, eventType = "Facilitation", values = new Dictionary<string, string> { ["Title"] = "Check in" } }
+            },
+            readIn = "<p>Read this.</p>"
+        });
+        var (mselId, planner) = await CreateFromDesign();
+
+        await Read<MselBuildStatus>(await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/injects", null, Ct));
+
+        Assert.Contains("\"enum\":[\"Gray\",\"Green\",\"Yellow\",\"Orange\",\"Red\"]", _calls.Last().Schema);
+        await using var db = NewContext();
+        var statusField = await db.DataFields.SingleAsync(f => f.MselId == mselId && f.GalleryArticleParameter == "Status", Ct);
+        var titleField = await db.DataFields.SingleAsync(f => f.MselId == mselId && f.Name == "Title", Ct);
+        var rows = await db.ScenarioEvents.Where(e => e.MselId == mselId).Include(e => e.DataValues).ToListAsync(Ct);
+        string Value(string title, Guid field) =>
+            rows.Single(e => e.DataValues.Any(v => v.DataFieldId == titleField.Id && v.Value == title)).DataValues.Single(v => v.DataFieldId == field).Value;
+        Assert.Equal("Red", Value("Cables cut", statusField.Id));
+        Assert.Equal("Gray", Value("Check in", statusField.Id));
     }
 
     /// <summary>
@@ -449,7 +483,7 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
             {
                 var system = call.ArgAt<string>(0);
                 _calls.Add((system, call.ArgAt<string>(1), call.ArgAt<System.Text.Json.Nodes.JsonObject>(4).ToJsonString()));
-                return JsonDocument.Parse(system.Contains("first of two steps") ? design : Injects()).RootElement.Clone();
+                return JsonDocument.Parse(system.Contains("first of two steps") ? design : _injects ?? Injects()).RootElement.Clone();
             });
 
     private static string Design(string citeAssessment = null, int[] plannedInjects = null) =>

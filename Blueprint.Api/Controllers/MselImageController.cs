@@ -91,6 +91,25 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
+        /// Makes a new picture for a Msel without saving it
+        /// </summary>
+        /// <remarks>
+        /// Makes the picture as generate does and returns it as a data URI, so the planner sees it before keeping it; setting
+        /// it with PUT msels/{id}/image saves it. Each call is recorded as AI usage.
+        /// </remarks>
+        /// <param name="id">The id of the Msel</param>
+        /// <param name="request">What the picture should show or change; optional</param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{id}/image/preview")]
+        [ProducesResponseType(typeof(MselImagePreview), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "previewMselImage")]
+        public async Task<IActionResult> Preview(Guid id, [FromBody] MselImageRequest request, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            return Ok(await _mselImageService.PreviewAsync(id, request?.Prompt, hasSystemPermission, ct));
+        }
+
+        /// <summary>
         /// Removes the image of a Msel
         /// </summary>
         /// <remarks>

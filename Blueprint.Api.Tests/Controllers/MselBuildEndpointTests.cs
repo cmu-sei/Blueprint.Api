@@ -445,6 +445,27 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Contains("could not be read: it has no teams. Draft again", await response.Content.ReadAsStringAsync(Ct));
     }
 
+    /// <summary>
+    /// A preview makes the picture as generate does but saves nothing, so the planner sees it before keeping it, and needs
+    /// the same edit rights.
+    /// </summary>
+    [Fact]
+    public async Task ImagePreview_MakesThePictureWithoutSavingIt()
+    {
+        var (mselId, planner) = await CreateFromDesign();
+        factory.Images.IsConfigured.Returns(true);
+        factory.Images.PhotoAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("data:image/jpeg;base64," + Convert.ToBase64String(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 9, 9, 9 }));
+
+        var preview = await Read<MselImagePreview>(await Client(planner).PostAsJsonAsync($"/api/msels/{mselId}/image/preview", new MselImageRequest { Prompt = "The port at dawn." }, JsonOptions, Ct));
+
+        Assert.StartsWith("data:image/jpeg;base64,", preview.Image);
+        await factory.Images.Received().PhotoAsync(Arg.Is<string>(s => s.Contains("The port at dawn. Setting: ")), Arg.Any<CancellationToken>());
+        await using var db = NewContext();
+        Assert.False(await db.MselImages.AnyAsync(i => i.MselId == mselId, Ct));
+        var stranger = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        Assert.Equal(HttpStatusCode.Forbidden, (await Client(stranger).PostAsJsonAsync($"/api/msels/{mselId}/image/preview", new MselImageRequest(), JsonOptions, Ct)).StatusCode);
+    }
+
     /// <summary>A long scene is cut at a sentence end, so the image model reads all of what it is given.</summary>
     [Theory]
     [InlineData("Short scene.", 300, "Short scene.")]

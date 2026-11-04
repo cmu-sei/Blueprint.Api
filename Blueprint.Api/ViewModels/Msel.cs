@@ -98,6 +98,13 @@ namespace Blueprint.Api.ViewModels
    }
 
     /// <summary>What the MSEL's generated picture should show or change, in the planner's words</summary>
+    /// <summary>A picture made for a MSEL and not yet saved, for the planner to keep or not</summary>
+    public class MselImagePreview
+    {
+        /// <summary>The picture as a data URI</summary>
+        public string Image { get; set; }
+    }
+
     public class MselImageRequest
     {
         public string Prompt { get; set; }

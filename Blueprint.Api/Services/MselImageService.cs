@@ -26,6 +26,8 @@ namespace Blueprint.Api.Services
         Task<ViewModels.Msel> DeleteAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         /// <summary>Makes the MSEL's image with the image model, from its scenario and what the planner asks for, replacing the one it has</summary>
         Task<ViewModels.Msel> GenerateAsync(Guid mselId, string prompt, bool hasSystemPermission, CancellationToken ct);
+        /// <summary>A new picture for the MSEL, made as GenerateAsync makes it, but not saved: the planner sees it first</summary>
+        Task<ViewModels.MselImagePreview> PreviewAsync(Guid mselId, string prompt, bool hasSystemPermission, CancellationToken ct);
     }
 
     public class MselImageService : IMselImageService
@@ -47,9 +49,10 @@ namespace Blueprint.Api.Services
             _usageContext = usageContext;
         }
 
-        public async Task<ViewModels.Msel> GenerateAsync(Guid mselId, string prompt, bool hasSystemPermission, CancellationToken ct)
+        // the picture the image model makes for the MSEL, with the planner's direction leading
+        private async Task<(byte[] Data, string ContentType)> MakeAsync(MselEntity msel, string prompt, CancellationToken ct)
         {
-            var msel = await GetEditableMselAsync(mselId, hasSystemPermission, ct);
+            var mselId = msel.Id;
             if (!_imageClient.IsConfigured)
                 throw new BadRequestException("This server has no image model, so it cannot make a picture. Upload one instead.");
 
@@ -73,7 +76,20 @@ namespace Blueprint.Api.Services
                 throw new InvalidOperationException("The image model returned nothing usable. Try again.");
             var data = Convert.FromBase64String(dataUri[(comma + 1)..]);
             var contentType = DetectContentType(data) ?? dataUri[5..dataUri.IndexOf(';')];
+            return (data, contentType);
+        }
 
+        public async Task<ViewModels.MselImagePreview> PreviewAsync(Guid mselId, string prompt, bool hasSystemPermission, CancellationToken ct)
+        {
+            var msel = await GetEditableMselAsync(mselId, hasSystemPermission, ct);
+            var (data, contentType) = await MakeAsync(msel, prompt, ct);
+            return new ViewModels.MselImagePreview { Image = $"data:{contentType};base64,{Convert.ToBase64String(data)}" };
+        }
+
+        public async Task<ViewModels.Msel> GenerateAsync(Guid mselId, string prompt, bool hasSystemPermission, CancellationToken ct)
+        {
+            var msel = await GetEditableMselAsync(mselId, hasSystemPermission, ct);
+            var (data, contentType) = await MakeAsync(msel, prompt, ct);
             if (!await ReplaceImageAsync(mselId, data, contentType, ct))
                 _context.MselImages.Add(new MselImageEntity { MselId = mselId, Data = data, ContentType = contentType });
             msel.ImageDateModified = DateTime.UtcNow;

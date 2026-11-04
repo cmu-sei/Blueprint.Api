@@ -273,11 +273,13 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
 
         // MselScoringModelService / MselScoringModelController - the read wants ViewMsels, the writes EditMsels;
         // each falls back to a role on the MSEL. The seeded MSEL has no moves, no scoring model of its own and no
-        // model CITE answers, so the read lifts to a 204, the delete to a 404 and the others to a 200. Copying a
-        // CITE model is absent: CITE answering no model is itself a 403, so its gate is in MselScoringModelEndpointTests.
+        // model CITE answers, so the read lifts to a 204, the delete to a 404 and the others, the link cleared, to a
+        // 200. Copying a CITE model is absent: CITE answering no model is itself a 403, so its gate is in
+        // MselScoringModelEndpointTests, with linking one.
         { "GET", "api/msels/{msel}/scoringmodel", "ViewMsels", null },
         { "PUT", "api/msels/{msel}/scoringmodel", "EditMsels", """{"description":"{unique}"}""" },
         { "POST", "api/msels/{msel}/scoringmodel/presets/Nciss", "EditMsels", null },
+        { "PUT", "api/msels/{msel}/scoringmodel/link", "EditMsels", "{}" },
         { "DELETE", "api/msels/{msel}/scoringmodel", "EditMsels", null }
     };
 

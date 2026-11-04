@@ -14,6 +14,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
 using Blueprint.Api.ViewModels;
@@ -31,8 +32,8 @@ namespace Blueprint.Api.Tests.Controllers;
 /// <summary>
 /// <c>MselScoringModelService</c> / <c>MselScoringModelController</c> - the CITE scoring model a MSEL authors
 /// itself. Reading it wants <c>ViewMsels</c> or <c>MselContributorRequirement</c>, which leaves out the people who
-/// are only on one of the MSEL's teams; every write wants <c>EditMsels</c> or the MSEL's <c>Owner</c> role, like the
-/// MSEL's scoring model link, and is refused while the MSEL is pushed.
+/// are only on one of the MSEL's teams; every write, linking a CITE model too, wants <c>EditMsels</c> or the MSEL's
+/// <c>Owner</c> or <c>Editor</c> role, as its CITE actions and duties do, and is refused while the MSEL is pushed.
 /// </summary>
 /// <remarks>
 /// 401 and 403 for these routes live in <see cref="RouteAuthorizationTests"/>.
@@ -249,15 +250,31 @@ public class MselScoringModelEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.True(response.IsSuccessStatusCode, $"{write} answered {response.StatusCode}");
     }
 
-    /// <summary>An editor of the MSEL may not, as they may not change its scoring model link.</summary>
+    /// <summary>An editor of the MSEL may, as they may edit its CITE actions and duties.</summary>
     [Theory]
     [MemberData(nameof(Writes))]
-    public async Task Write_is_forbidden_for_an_editor_of_the_msel(string write)
+    public async Task Write_ForAnEditorOfTheMsel_IsAllowed(string write)
     {
         var msel = await SeedMsel(withModel: true);
         var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
 
         var response = await Send(Client(actor), write, msel);
+
+        Assert.True(response.IsSuccessStatusCode, $"{write} answered {response.StatusCode}");
+    }
+
+    /// <summary>The MSEL's other contributors may only read it.</summary>
+    [Theory]
+    [InlineData(MselRole.Approver)]
+    [InlineData(MselRole.MoveEditor)]
+    [InlineData(MselRole.Evaluator)]
+    [InlineData(MselRole.Viewer)]
+    public async Task Write_is_forbidden_for_a_contributor_who_is_not_an_owner_or_editor(MselRole role)
+    {
+        var msel = await SeedMsel(withModel: true);
+        var actor = await Actor().OnMsel(msel, role).SeedAsync();
+
+        var response = await Send(Client(actor), "replace", msel);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Single(await StoredCategories(msel));
@@ -431,6 +448,42 @@ public class MselScoringModelEndpointTests(DatabaseFixture fixture, BlueprintApp
         var response = await RootClient.PutAsJsonAsync(Route(msel), body, JsonOptions, Ct);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>The push sends the enums to CITE by name, so a number that is none of them is refused.</summary>
+    [Theory]
+    [InlineData("rightSideDisplay", 7)]
+    [InlineData("scoringOptionSelection", 5)]
+    public async Task Replace_WithAnEnumValueCiteDoesNotHave_Is400(string field, int value)
+    {
+        var msel = await SeedMsel();
+        var body = JsonSerializer.SerializeToNode(Body("Undefined"), JsonOptions)!.AsObject();
+        body["categories"] = new System.Text.Json.Nodes.JsonArray(JsonSerializer.SerializeToNode(Category("Category", 1, 1), JsonOptions));
+        if (field == "rightSideDisplay")
+            body[field] = value;
+        else
+            body["categories"]![0]![field] = value;
+
+        var response = await RootClient.PutAsync(Route(msel), new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.False(await ReadBack(db => db.MselScoringModels.AnyAsync(m => m.MselId == msel.Id, Ct)));
+    }
+
+    /// <summary>A category sent without a weight counts once.</summary>
+    [Fact]
+    public async Task Replace_WithACategoryWithNoWeight_GivesItAWeightOfOne()
+    {
+        var msel = await SeedMsel();
+        var body = JsonSerializer.SerializeToNode(Body("Weightless"), JsonOptions)!.AsObject();
+        var category = JsonSerializer.SerializeToNode(Category("Category", 1, 1), JsonOptions)!.AsObject();
+        category.Remove("scoringWeight");
+        body["categories"] = new System.Text.Json.Nodes.JsonArray(category);
+
+        var response = await RootClient.PutAsync(Route(msel), new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, Assert.Single(await StoredCategories(msel)).ScoringWeight);
     }
 
     [Fact]
@@ -625,6 +678,27 @@ public class MselScoringModelEndpointTests(DatabaseFixture fixture, BlueprintApp
         var response = await RootClient.PostAsync($"{Route(msel)}/cite/{citeId}", null, Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(CiteAccessDeniedException.Type, (await response.Content.ReadFromJsonAsync<ApiError>(JsonOptions, Ct)).Type);
+        Assert.False(await ReadBack(db => db.MselScoringModels.AnyAsync(m => m.MselId == msel.Id, Ct)));
+    }
+
+    /// <summary>
+    /// CITE shows a participant or observer a model with its equations redacted. Copying that would store the
+    /// redaction as the equations, and show the caller what CITE does not, so it is a 403 as well.
+    /// </summary>
+    [Fact]
+    public async Task CopyFromCite_OfAModelCiteShowsTheCallerRedacted_Is403()
+    {
+        var msel = await SeedMsel();
+        var citeId = Guid.NewGuid();
+        Factory.Cite.GetScoringModelAsync(citeId, Arg.Any<CancellationToken>()).Returns(RedactedCiteModel(citeId));
+
+        var response = await RootClient.PostAsync($"{Route(msel)}/cite/{citeId}", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var error = await response.Content.ReadFromJsonAsync<ApiError>(JsonOptions, Ct);
+        Assert.Equal(CiteAccessDeniedException.Type, error.Type);
+        Assert.Contains("only as a participant", error.Title);
         Assert.False(await ReadBack(db => db.MselScoringModels.AnyAsync(m => m.MselId == msel.Id, Ct)));
     }
 
@@ -700,16 +774,130 @@ public class MselScoringModelEndpointTests(DatabaseFixture fixture, BlueprintApp
     }
 
     [Fact]
-    public async Task UpdateMsel_LinkingACiteModelWithoutOneOfItsOwn_LinksIt()
+    public async Task UpdateMsel_LinkingACiteModelWithoutOneOfItsOwn_LinksItWithItsName()
     {
         var msel = await SeedMsel(adjust: m => m.UseCite = true);
         var body = MselBody(msel);
         body.CiteScoringModelId = Guid.NewGuid();
+        Factory.Cite.GetScoringModelAsync((Guid)body.CiteScoringModelId, Arg.Any<CancellationToken>())
+            .Returns(new ScoringModel { Id = (Guid)body.CiteScoringModelId, Description = "Linked Model" });
 
         var response = await RootClient.PutAsJsonAsync($"api/msels/{msel.Id}", body, JsonOptions, Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(body.CiteScoringModelId, (await ReadBack(db => db.Msels.SingleAsync(m => m.Id == msel.Id, Ct))).CiteScoringModelId);
+        var stored = await ReadBack(db => db.Msels.SingleAsync(m => m.Id == msel.Id, Ct));
+        Assert.Equal((body.CiteScoringModelId, "Linked Model"), (stored.CiteScoringModelId, stored.CiteScoringModelName));
+    }
+
+    /// <summary>The push builds the evaluation from the linked model as the service account, so CITE must show it to the caller in full.</summary>
+    [Fact]
+    public async Task UpdateMsel_LinkingACiteModelCiteShowsTheCallerRedacted_Is403()
+    {
+        var msel = await SeedMsel(adjust: m => m.UseCite = true);
+        var body = MselBody(msel);
+        body.CiteScoringModelId = Guid.NewGuid();
+        Factory.Cite.GetScoringModelAsync((Guid)body.CiteScoringModelId, Arg.Any<CancellationToken>()).Returns(RedactedCiteModel((Guid)body.CiteScoringModelId));
+
+        var response = await RootClient.PutAsJsonAsync($"api/msels/{msel.Id}", body, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null((await ReadBack(db => db.Msels.SingleAsync(m => m.Id == msel.Id, Ct))).CiteScoringModelId);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // PUT msels/{id}/scoringmodel/link
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>An editor of the MSEL may link, as they may author its model, and the MSEL keeps the model's name.</summary>
+    [Fact]
+    public async Task Link_ForAnEditorOfTheMsel_LinksTheModelWithItsName()
+    {
+        var msel = await SeedMsel(adjust: m => m.UseCite = true);
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+        var citeId = Guid.NewGuid();
+        Factory.Cite.GetScoringModelAsync(citeId, Arg.Any<CancellationToken>()).Returns(new ScoringModel { Id = citeId, Description = "Linked Model" });
+
+        var response = await Client(actor).PutAsJsonAsync($"{Route(msel)}/link", new MselScoringModelLink { CiteScoringModelId = citeId }, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(citeId, (await ReadAsync<ViewModels.Msel>(response, JsonOptions)).CiteScoringModelId);
+        var stored = await ReadBack(db => db.Msels.SingleAsync(m => m.Id == msel.Id, Ct));
+        Assert.Equal((citeId, "Linked Model"), (stored.CiteScoringModelId, stored.CiteScoringModelName));
+    }
+
+    [Fact]
+    public async Task Link_WithNoModel_ClearsTheLink()
+    {
+        var msel = await SeedMsel(adjust: m => { m.UseCite = true; m.CiteScoringModelId = Guid.NewGuid(); m.CiteScoringModelName = "Old"; });
+
+        var response = await RootClient.PutAsJsonAsync($"{Route(msel)}/link", new MselScoringModelLink(), JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await ReadBack(db => db.Msels.SingleAsync(m => m.Id == msel.Id, Ct));
+        Assert.Equal(((Guid?)null, (string)null), (stored.CiteScoringModelId, stored.CiteScoringModelName));
+    }
+
+    [Fact]
+    public async Task Link_WhileTheMselHasItsOwn_Is409()
+    {
+        var msel = await SeedMsel(withModel: true, adjust: m => m.UseCite = true);
+
+        var response = await RootClient.PutAsJsonAsync($"{Route(msel)}/link", new MselScoringModelLink { CiteScoringModelId = Guid.NewGuid() }, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Null((await ReadBack(db => db.Msels.SingleAsync(m => m.Id == msel.Id, Ct))).CiteScoringModelId);
+    }
+
+    [Fact]
+    public async Task Link_WhileTheMselIsPushed_Is409()
+    {
+        var msel = await SeedMsel(adjust: m => { m.UseCite = true; m.CiteEvaluationId = Guid.NewGuid(); });
+
+        var response = await RootClient.PutAsJsonAsync($"{Route(msel)}/link", new MselScoringModelLink(), JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(403)]
+    [InlineData(404)]
+    public async Task Link_ToAModelCiteRefusesTheCaller_Is403(int status)
+    {
+        var msel = await SeedMsel(adjust: m => m.UseCite = true);
+        var citeId = Guid.NewGuid();
+        Factory.Cite.GetScoringModelAsync(citeId, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiException("refused", status, "", new Dictionary<string, IEnumerable<string>>(), null));
+
+        var response = await RootClient.PutAsJsonAsync($"{Route(msel)}/link", new MselScoringModelLink { CiteScoringModelId = citeId }, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null((await ReadBack(db => db.Msels.SingleAsync(m => m.Id == msel.Id, Ct))).CiteScoringModelId);
+    }
+
+    [Fact]
+    public async Task Link_ToAModelCiteShowsTheCallerRedacted_Is403()
+    {
+        var msel = await SeedMsel(adjust: m => m.UseCite = true);
+        var citeId = Guid.NewGuid();
+        Factory.Cite.GetScoringModelAsync(citeId, Arg.Any<CancellationToken>()).Returns(RedactedCiteModel(citeId));
+
+        var response = await RootClient.PutAsJsonAsync($"{Route(msel)}/link", new MselScoringModelLink { CiteScoringModelId = citeId }, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null((await ReadBack(db => db.Msels.SingleAsync(m => m.Id == msel.Id, Ct))).CiteScoringModelId);
+    }
+
+    [Fact]
+    public async Task Link_is_forbidden_for_a_viewer_of_the_msel()
+    {
+        var msel = await SeedMsel(adjust: m => m.UseCite = true);
+        var actor = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"{Route(msel)}/link", new MselScoringModelLink(), JsonOptions, Ct);
+
+        // Blueprint's own refusal, which is not CITE's
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null((await response.Content.ReadFromJsonAsync<ApiError>(JsonOptions, Ct)).Type);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -734,6 +922,26 @@ public class MselScoringModelEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal(original.Options.Select(o => o.Description).Order(), category.Options.Select(o => o.Description).Order());
         Assert.DoesNotContain(category.Options.Select(o => o.Id), id => original.Options.Any(o => o.Id == id));
         Assert.Single(await StoredCategories(msel));
+    }
+
+    /// <summary>
+    /// A participant on one of the MSEL's teams may copy it with CreateMsels, but may not read its model, so the copy,
+    /// which is theirs to read, leaves the model behind.
+    /// </summary>
+    [Fact]
+    public async Task Copy_ByAParticipantOnOneOfItsTeams_LeavesTheScoringModelBehind()
+    {
+        var msel = await SeedMsel(withModel: true);
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).OnTeam(team).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/msels/{msel.Id}/copy", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var copy = await response.Content.ReadFromJsonAsync<ViewModels.Msel>(JsonOptions, Ct);
+        Assert.False(await ReadBack(db => db.MselScoringModels.AnyAsync(m => m.MselId == copy.Id, Ct)));
+        Assert.Equal(HttpStatusCode.NoContent, (await Client(actor).GetAsync($"api/msels/{copy.Id}/scoringmodel", Ct)).StatusCode);
     }
 
     /// <summary>The JSON file carries the model, and importing it gives the new MSEL a copy of its own.</summary>
@@ -778,9 +986,54 @@ public class MselScoringModelEndpointTests(DatabaseFixture fixture, BlueprintApp
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool?>(), Arg.Any<CancellationToken>());
     }
 
+    /// <summary>The file's model is read straight into the database model, so the import checks it as a save does.</summary>
+    [Theory]
+    [InlineData("url")]
+    [InlineData("moves")]
+    [InlineData("display")]
+    [InlineData("selection")]
+    public async Task Import_OfAFileWhoseModelASaveWouldRefuse_Is400(string problem)
+    {
+        var file = TestData.Msel();
+        file.Name = "Imported " + Guid.NewGuid();
+        file.ScoringModel = TestData.MselScoringModel(file.Id);
+        var category = file.ScoringModel.Categories.Single();
+        switch (problem)
+        {
+            case "url":
+                file.ScoringModel.RightSideDisplay = CiteRightSideDisplay.EmbeddedUrl;
+                file.ScoringModel.RightSideEmbeddedUrl = "javascript:alert(1)";
+                break;
+            case "moves":
+                category.MoveNumberFirstDisplay = 3;
+                category.MoveNumberLastDisplay = 1;
+                break;
+            case "display":
+                file.ScoringModel.RightSideDisplay = (CiteRightSideDisplay)7;
+                break;
+            default:
+                category.ScoringOptionSelection = (CiteScoringOptionSelection)5;
+                break;
+        }
+        var json = JsonSerializer.Serialize(file, new JsonSerializerOptions { ReferenceHandler = ReferenceHandler.IgnoreCycles });
+
+        var response = await ImportResponse(json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.False(await ReadBack(db => db.Msels.AnyAsync(m => m.Name == file.Name, Ct)));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------
+
+    // what CITE answers a participant or observer: each category's equation redacted and its weight 0
+    private static ScoringModel RedactedCiteModel(Guid id) => new()
+    {
+        Id = id,
+        Description = "Evaluation Model",
+        ScoringCategories = [new ScoringCategory { Description = "c", CalculationEquation = "Redacted", ScoringWeight = 0, MoveNumberFirstDisplay = 1, MoveNumberLastDisplay = 1 }]
+    };
 
     private static string Route(MselEntity msel) => $"api/msels/{msel.Id}/scoringmodel";
 
@@ -827,13 +1080,18 @@ public class MselScoringModelEndpointTests(DatabaseFixture fixture, BlueprintApp
 
     private async Task<ViewModels.Msel> Import(string json)
     {
-        using var form = new MultipartFormDataContent();
-        form.Add(new StringContent(json, Encoding.UTF8, "application/json"), "ToUpload", "msel.json");
-
-        var response = await RootClient.PostAsync("api/msels/json", form, Ct);
+        var response = await ImportResponse(json);
 
         Assert.True(response.IsSuccessStatusCode, $"import answered {response.StatusCode}");
         return await response.Content.ReadFromJsonAsync<ViewModels.Msel>(JsonOptions, Ct);
+    }
+
+    private async Task<HttpResponseMessage> ImportResponse(string json)
+    {
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent(json, Encoding.UTF8, "application/json"), "ToUpload", "msel.json");
+
+        return await RootClient.PostAsync("api/msels/json", form, Ct);
     }
 
     private static MselScoringModel Body(string description) => new()

@@ -3,7 +3,6 @@
 
 using System;
 using System.Linq;
-using System.Net;
 using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
@@ -26,12 +25,13 @@ namespace Blueprint.Api.Services
         Task<MselScoringModel> ReplaceAsync(Guid mselId, MselScoringModel scoringModel, bool hasSystemPermission, CancellationToken ct);
         Task<MselScoringModel> CreateFromPresetAsync(Guid mselId, ScoringModelPreset preset, bool hasSystemPermission, CancellationToken ct);
         Task<MselScoringModel> CopyFromCiteAsync(Guid mselId, Guid citeScoringModelId, bool hasSystemPermission, CancellationToken ct);
+        Task LinkAsync(Guid mselId, Guid? citeScoringModelId, bool hasSystemPermission, CancellationToken ct);
         Task DeleteAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
     }
 
     /// <summary>
-    /// The CITE scoring model a MSEL authors itself. A MSEL either links a CITE model (CiteScoringModelId) or authors
-    /// one here, never both: storing one here clears the link.
+    /// The CITE scoring model a MSEL authors itself, and the CITE model it links instead. A MSEL either links a CITE
+    /// model (CiteScoringModelId) or authors one here, never both: storing one here clears the link.
     /// </summary>
     public class MselScoringModelService : IMselScoringModelService
     {
@@ -65,13 +65,6 @@ namespace Blueprint.Api.Services
         public async Task<MselScoringModel> ReplaceAsync(Guid mselId, MselScoringModel scoringModel, bool hasSystemPermission, CancellationToken ct)
         {
             var msel = await GetEditableMselAsync(mselId, hasSystemPermission, ct);
-            if (!string.IsNullOrWhiteSpace(scoringModel.RightSideEmbeddedUrl) &&
-                !(Uri.TryCreate(scoringModel.RightSideEmbeddedUrl, UriKind.Absolute, out var url) && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps)))
-                throw new BadRequestException("The embedded URL must be an absolute http or https URL.");
-            var backwards = (scoringModel.Categories ?? []).FirstOrDefault(c => c.MoveNumberFirstDisplay > c.MoveNumberLastDisplay);
-            if (backwards != null)
-                throw new BadRequestException($"The category \"{backwards.Description}\" ends at move {backwards.MoveNumberLastDisplay}, before it starts at move {backwards.MoveNumberFirstDisplay}.");
-
             return await StoreAsync(msel, ToEntity(scoringModel), ct);
         }
 
@@ -104,23 +97,29 @@ namespace Blueprint.Api.Services
         public async Task<MselScoringModel> CopyFromCiteAsync(Guid mselId, Guid citeScoringModelId, bool hasSystemPermission, CancellationToken ct)
         {
             var msel = await GetEditableMselAsync(mselId, hasSystemPermission, ct);
-            ScoringModel citeModel;
-            try
-            {
-                // with the caller's own token, so CITE decides whether they may read the model and its equations
-                citeModel = await _citeApiClient.GetScoringModelAsync(citeScoringModelId, ct);
-            }
-            catch (ApiException ex) when (
-                ex.StatusCode == (int)HttpStatusCode.Unauthorized ||
-                ex.StatusCode == (int)HttpStatusCode.Forbidden ||
-                ex.StatusCode == (int)HttpStatusCode.NotFound)
-            {
-                citeModel = null;
-            }
-            if (citeModel == null)
-                throw new ForbiddenException($"CITE scoring model {citeScoringModelId} does not exist or you cannot view it in CITE.");
-
+            var citeModel = await CiteScoringModelAccess.GetViewableAsync(_citeApiClient, citeScoringModelId, ct);
             return await StoreAsync(msel, CiteScoringModelConverter.FromCite(citeModel), ct);
+        }
+
+        public async Task LinkAsync(Guid mselId, Guid? citeScoringModelId, bool hasSystemPermission, CancellationToken ct)
+        {
+            var msel = await GetEditableMselAsync(mselId, hasSystemPermission, ct);
+            if (citeScoringModelId == null)
+            {
+                msel.CiteScoringModelId = null;
+                msel.CiteScoringModelName = null;
+            }
+            else
+            {
+                // a MSEL that authors its own scoring model pushes that one, so it cannot link a CITE model as well
+                if (await _context.MselScoringModels.AnyAsync(sm => sm.MselId == mselId, ct))
+                    throw new ConflictException("The MSEL has its own scoring model. Remove it before linking a CITE scoring model.");
+                var citeModel = await CiteScoringModelAccess.GetViewableAsync(_citeApiClient, (Guid)citeScoringModelId, ct);
+                msel.CiteScoringModelId = citeModel.Id;
+                msel.CiteScoringModelName = citeModel.Description;
+            }
+            msel.ModifiedBy = _user.GetId();
+            await _context.SaveChangesAsync(ct);
         }
 
         public async Task DeleteAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -136,15 +135,19 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
         }
 
-        // the same people who can change the MSEL's scoring model link in MselService.UpdateAsync, under the
-        // same lock: what was pushed was built from it, and only a pull and a new push rebuild it
+        // EditMsels, the MSEL's owner or an editor of it, as for its other CITE content (its actions and duties),
+        // under the integration settings' lock: what was pushed was built from it, and only a pull and a new push
+        // rebuild it
         private async Task<MselEntity> GetEditableMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == mselId, ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
 
-            if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
+            var userId = _user.GetId();
+            if (!hasSystemPermission &&
+                !await MselOwnerRequirement.IsMet(userId, mselId, _context) &&
+                !await MselEditorRequirement.IsMet(userId, mselId, _context))
                 throw new ForbiddenException();
 
             if (MselService.HasIntegrations(msel))
@@ -166,12 +169,66 @@ namespace Blueprint.Api.Services
         /// </summary>
         private async Task<MselScoringModel> StoreAsync(MselEntity msel, MselScoringModelEntity model, CancellationToken ct)
         {
+            Validate(model);
             var userId = _user.GetId();
+            AssignIds(model, msel.Id, userId);
+
+            // the model is keyed by its MSEL, so a replace keeps the row and swaps its contents
+            var stored = await LoadAsync(msel.Id, ct);
+            if (stored == null)
+            {
+                _context.MselScoringModels.Add(model);
+            }
+            else
+            {
+                model.CopyFieldsTo(stored);
+                stored.RightSideDisplay = model.RightSideDisplay;
+                stored.ModifiedBy = userId;
+                _context.MselScoringCategories.RemoveRange(stored.Categories);
+                _context.MselScoringCategories.AddRange(model.Categories);
+            }
+            msel.CiteScoringModelId = null;
+            msel.CiteScoringModelName = null;
+            msel.ModifiedBy = userId;
+            await _context.SaveChangesAsync(ct);
+
+            return _mapper.Map<MselScoringModel>(await LoadAsync(msel.Id, ct));
+        }
+
+        /// <summary>
+        /// Refuses a model the push could not send to CITE as it is: an enum value CITE does not have, a category whose
+        /// moves run backwards, or an embedded URL that is not http(s), which CITE would frame on every scoresheet. Every
+        /// way in runs it: the editor's save, a preset, a copy from CITE and a MSEL file's import.
+        /// </summary>
+        internal static void Validate(MselScoringModelEntity model)
+        {
+            if (!Enum.IsDefined(model.RightSideDisplay))
+                throw new BadRequestException($"{(int)model.RightSideDisplay} is not a right-side display.");
+            if (!string.IsNullOrWhiteSpace(model.RightSideEmbeddedUrl) &&
+                !(Uri.TryCreate(model.RightSideEmbeddedUrl.Trim(), UriKind.Absolute, out var url) && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps)))
+                throw new BadRequestException("The embedded URL must be an absolute http or https URL.");
+            foreach (var category in model.Categories)
+            {
+                if (!Enum.IsDefined(category.ScoringOptionSelection))
+                    throw new BadRequestException($"The category \"{category.Description}\" has {(int)category.ScoringOptionSelection}, which is not a scoring option selection.");
+                if (category.MoveNumberFirstDisplay > category.MoveNumberLastDisplay)
+                    throw new BadRequestException($"The category \"{category.Description}\" ends at move {category.MoveNumberLastDisplay}, before it starts at move {category.MoveNumberFirstDisplay}.");
+            }
+        }
+
+        /// <summary>
+        /// Makes <paramref name="model"/> the MSEL's: new ids for its categories and options, with their parents, and
+        /// display orders numbered from 1 in the order they had. A store, a MSEL copy and an import each use it.
+        /// </summary>
+        internal static void AssignIds(MselScoringModelEntity model, Guid mselId, Guid userId)
+        {
+            model.MselId = mselId;
+            model.CreatedBy = userId;
             var categories = model.Categories.OrderBy(c => c.DisplayOrder).ToList();
             foreach (var (category, i) in categories.Select((c, i) => (c, i)))
             {
                 category.Id = Guid.NewGuid();
-                category.MselScoringModelId = msel.Id;
+                category.MselScoringModelId = mselId;
                 category.DisplayOrder = i + 1;
                 category.CreatedBy = userId;
                 foreach (var (option, j) in category.Options.OrderBy(o => o.DisplayOrder).Select((o, j) => (o, j)))
@@ -182,86 +239,28 @@ namespace Blueprint.Api.Services
                     option.CreatedBy = userId;
                 }
             }
-
-            // the model is keyed by its MSEL, so a replace keeps the row and swaps its contents
-            var stored = await LoadAsync(msel.Id, ct);
-            if (stored == null)
-            {
-                model.MselId = msel.Id;
-                model.CreatedBy = userId;
-                model.Categories = categories;
-                _context.MselScoringModels.Add(model);
-            }
-            else
-            {
-                CopySettings(model, stored);
-                stored.ModifiedBy = userId;
-                _context.MselScoringCategories.RemoveRange(stored.Categories);
-                _context.MselScoringCategories.AddRange(categories);
-            }
-            msel.CiteScoringModelId = null;
-            msel.CiteScoringModelName = null;
-            msel.ModifiedBy = userId;
-            await _context.SaveChangesAsync(ct);
-
-            return _mapper.Map<MselScoringModel>(await LoadAsync(msel.Id, ct));
+            model.Categories = categories;
         }
 
-        private static void CopySettings(MselScoringModelEntity from, MselScoringModelEntity to)
+        // the request's ids and display orders are not kept: the lists are numbered in the order they arrive
+        private static MselScoringModelEntity ToEntity(MselScoringModel scoringModel)
         {
-            to.Description = from.Description;
-            to.CalculationEquation = from.CalculationEquation;
-            to.HideScoresOnScoreSheet = from.HideScoresOnScoreSheet;
-            to.DisplayCommentTextBoxes = from.DisplayCommentTextBoxes;
-            to.DisplayScoringModelByMoveNumber = from.DisplayScoringModelByMoveNumber;
-            to.ShowPastSituationDescriptions = from.ShowPastSituationDescriptions;
-            to.UseSubmit = from.UseSubmit;
-            to.UseUserScore = from.UseUserScore;
-            to.UseTeamScore = from.UseTeamScore;
-            to.UseTeamAverageScore = from.UseTeamAverageScore;
-            to.UseTypeAverageScore = from.UseTypeAverageScore;
-            to.UseOfficialScore = from.UseOfficialScore;
-            to.RightSideDisplay = from.RightSideDisplay;
-            to.RightSideHtmlBlock = from.RightSideHtmlBlock;
-            to.RightSideEmbeddedUrl = from.RightSideEmbeddedUrl;
-        }
-
-        // the request's ids and display orders are not kept: StoreAsync numbers the lists as they arrive
-        private static MselScoringModelEntity ToEntity(MselScoringModel scoringModel) => new()
-        {
-            Description = scoringModel.Description?.Trim(),
-            CalculationEquation = scoringModel.CalculationEquation,
-            HideScoresOnScoreSheet = scoringModel.HideScoresOnScoreSheet,
-            DisplayCommentTextBoxes = scoringModel.DisplayCommentTextBoxes,
-            DisplayScoringModelByMoveNumber = scoringModel.DisplayScoringModelByMoveNumber,
-            ShowPastSituationDescriptions = scoringModel.ShowPastSituationDescriptions,
-            UseSubmit = scoringModel.UseSubmit,
-            UseUserScore = scoringModel.UseUserScore,
-            UseTeamScore = scoringModel.UseTeamScore,
-            UseTeamAverageScore = scoringModel.UseTeamAverageScore,
-            UseTypeAverageScore = scoringModel.UseTypeAverageScore,
-            UseOfficialScore = scoringModel.UseOfficialScore,
-            RightSideDisplay = scoringModel.RightSideDisplay,
-            RightSideHtmlBlock = scoringModel.RightSideHtmlBlock,
-            RightSideEmbeddedUrl = string.IsNullOrWhiteSpace(scoringModel.RightSideEmbeddedUrl) ? null : scoringModel.RightSideEmbeddedUrl.Trim(),
-            Categories = (scoringModel.Categories ?? []).Select((c, i) => new MselScoringCategoryEntity
+            var model = scoringModel.CopyFieldsTo(new MselScoringModelEntity { RightSideDisplay = scoringModel.RightSideDisplay });
+            model.Description = model.Description?.Trim();
+            model.RightSideEmbeddedUrl = string.IsNullOrWhiteSpace(model.RightSideEmbeddedUrl) ? null : model.RightSideEmbeddedUrl.Trim();
+            foreach (var (c, i) in (scoringModel.Categories ?? []).Select((c, i) => (c, i)))
             {
-                DisplayOrder = i + 1,
-                Description = c.Description,
-                CalculationEquation = c.CalculationEquation,
-                IsModifierRequired = c.IsModifierRequired,
-                ScoringWeight = c.ScoringWeight,
-                MoveNumberFirstDisplay = c.MoveNumberFirstDisplay,
-                MoveNumberLastDisplay = c.MoveNumberLastDisplay,
-                ScoringOptionSelection = c.ScoringOptionSelection,
-                Options = (c.Options ?? []).Select((o, j) => new MselScoringOptionEntity
+                var category = c.CopyFieldsTo(new MselScoringCategoryEntity { ScoringOptionSelection = c.ScoringOptionSelection });
+                category.DisplayOrder = i + 1;
+                foreach (var (o, j) in (c.Options ?? []).Select((o, j) => (o, j)))
                 {
-                    DisplayOrder = j + 1,
-                    Description = o.Description,
-                    IsModifier = o.IsModifier,
-                    Value = o.Value
-                }).ToList()
-            }).ToList()
-        };
+                    var option = o.CopyFieldsTo(new MselScoringOptionEntity());
+                    option.DisplayOrder = j + 1;
+                    category.Options.Add(option);
+                }
+                model.Categories.Add(category);
+            }
+            return model;
+        }
     }
 }

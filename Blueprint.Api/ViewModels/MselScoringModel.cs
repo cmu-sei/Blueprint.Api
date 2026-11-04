@@ -45,7 +45,8 @@ namespace Blueprint.Api.ViewModels
         public string Description { get; set; }
         public string CalculationEquation { get; set; }
         public bool IsModifierRequired { get; set; }
-        public double ScoringWeight { get; set; }
+        // a category the client sends without a weight counts once
+        public double ScoringWeight { get; set; } = 1;
         /// <summary>The first move whose score sheet shows the category, when the model displays by move number.</summary>
         public int MoveNumberFirstDisplay { get; set; }
         public int MoveNumberLastDisplay { get; set; }
@@ -61,6 +62,12 @@ namespace Blueprint.Api.ViewModels
         public string Description { get; set; }
         public bool IsModifier { get; set; }
         public double Value { get; set; }
+    }
+
+    /// <summary>The CITE scoring model a MSEL links, or none.</summary>
+    public class MselScoringModelLink
+    {
+        public Guid? CiteScoringModelId { get; set; }
     }
 
     /// <summary>The starting points a MSEL's own scoring model can be created from.</summary>

@@ -990,6 +990,12 @@ Answer only by calling the tool.";
                     body.DataType = DataFieldType.Html;
                 body.OnExerciseView = false;
             }
+            // a planner sorts and scans the injects by where each comes from, so the source type is on the list from the start
+            foreach (var sourceType in msel.DataFields.Where(f => f.GalleryArticleParameter == nameof(GalleryArticleParameter.SourceType)))
+            {
+                sourceType.OnScenarioEventList = true;
+                sourceType.IsShownOnDefaultTab = true;
+            }
         }
 
         public const string PreExercise = "PreExercise";

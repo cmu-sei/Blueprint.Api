@@ -391,6 +391,18 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
         Assert.Equal(["Expected Actions", "Title"], fields.Where(f => f.IsFacilitationField).Select(f => f.Name).OrderBy(n => n));
     }
 
+    /// <summary>A drafted MSEL shows each row's source type on the scenario events list and its default tab.</summary>
+    [Fact]
+    public async Task Create_ShowsTheSourceTypeOnTheScenarioEventList()
+    {
+        var (mselId, _) = await CreateFromDesign();
+
+        await using var db = NewContext();
+        var sourceType = await db.DataFields.SingleAsync(f => f.MselId == mselId && f.GalleryArticleParameter == "SourceType", Ct);
+        Assert.True(sourceType.OnScenarioEventList);
+        Assert.True(sourceType.IsShownOnDefaultTab);
+    }
+
     /// <summary>
     /// The Assessor View lists only the columns marked for it, so a drafted MSEL whose template marks none marks the title,
     /// Expected Actions, the competencies and the recipient, never the sender, and shows each row's move and time.

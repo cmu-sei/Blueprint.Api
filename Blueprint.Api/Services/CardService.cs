@@ -12,7 +12,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -20,6 +19,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -39,16 +39,13 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
         public CardService(
             BlueprintContext context,
-            IPrincipal user,
-            IMapper mapper)
+            IPrincipal user)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.Card>> GetTemplatesAsync(CancellationToken ct)
@@ -57,7 +54,7 @@ namespace Blueprint.Api.Services
                 .Where(card => card.IsTemplate && card.MselId == null)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Card>>(cardEntities).ToList();;
+            return cardEntities.Select(x => x.ToCard()).ToList();;
         }
 
         public async Task<IEnumerable<ViewModels.Card>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -73,7 +70,7 @@ namespace Blueprint.Api.Services
                 .Where(card => card.MselId == mselId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Card>>(cardEntities).ToList();;
+            return cardEntities.Select(x => x.ToCard()).ToList();;
         }
 
         public async Task<ViewModels.Card> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -87,7 +84,7 @@ namespace Blueprint.Api.Services
             if (item.MselId.HasValue && !hasSystemPermission && !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
                 throw new ForbiddenException();
 
-            return _mapper.Map<Card>(item);
+            return item.ToCard();
         }
 
         public async Task<ViewModels.Card> CreateAsync(ViewModels.CardCreate card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct)
@@ -108,7 +105,7 @@ namespace Blueprint.Api.Services
                 if (!hasGalleryCardPermission)
                     throw new ForbiddenException();
             }
-            var cardEntity = _mapper.Map<CardEntity>(card);
+            var cardEntity = card.ToEntity();
             cardEntity.Id = card.Id != Guid.Empty ? card.Id : Guid.NewGuid();
             cardEntity.CreatedBy = _user.GetId();
 
@@ -141,7 +138,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            _mapper.Map(card, cardToUpdate);
+            card.ApplyTo(cardToUpdate);
             cardToUpdate.ModifiedBy = _user.GetId();
 
             _context.Cards.Update(cardToUpdate);
@@ -185,7 +182,7 @@ namespace Blueprint.Api.Services
             var cardEntities = await _context.Cards
                 .Where(c => idList.Contains(c.Id) && c.MselId == null)
                 .ToListAsync(ct);
-            var cards = _mapper.Map<IEnumerable<ViewModels.Card>>(cardEntities).ToList();
+            var cards = cardEntities.Select(x => x.ToCard()).ToList();
 
             var json = JsonSerializer.Serialize(cards, new JsonSerializerOptions
             {
@@ -223,9 +220,9 @@ namespace Blueprint.Api.Services
                 item.DateCreated = DateTime.UtcNow;
                 item.ModifiedBy = null;
                 item.DateModified = null;
-                var entity = _mapper.Map<CardEntity>(item);
+                var entity = item.ToEntity();
                 _context.Cards.Add(entity);
-                created.Add(_mapper.Map<ViewModels.Card>(entity));
+                created.Add(entity.ToCard());
             }
             await _context.SaveChangesAsync(ct);
 

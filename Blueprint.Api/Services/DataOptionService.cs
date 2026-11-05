@@ -11,7 +11,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
@@ -22,6 +21,7 @@ using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -40,16 +40,13 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
         public DataOptionService(
             BlueprintContext context,
-            IPrincipal user,
-            IMapper mapper)
+            IPrincipal user)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.DataOption>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -65,7 +62,7 @@ namespace Blueprint.Api.Services
                 .Where(op => dataFieldIdList.Contains(op.DataFieldId))
                 .ToListAsync();
 
-            return _mapper.Map<IEnumerable<DataOption>>(dataOptionEntities).ToList();;
+            return dataOptionEntities.Select(x => x.ToDataOption()).ToList();;
         }
 
         public async Task<IEnumerable<ViewModels.DataOption>> GetByDataFieldAsync(Guid dataFieldId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -83,7 +80,7 @@ namespace Blueprint.Api.Services
                 .Where(dataOption => dataOption.DataFieldId == dataFieldId)
                 .ToListAsync();
 
-            return _mapper.Map<IEnumerable<DataOption>>(dataOptionEntities).ToList();;
+            return dataOptionEntities.Select(x => x.ToDataOption()).ToList();;
         }
 
         public async Task<ViewModels.DataOption> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -100,7 +97,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            return _mapper.Map<DataOption>(dataOption);
+            return dataOption.ToDataOption();
         }
 
         public async Task<ViewModels.DataOption> CreateAsync(ViewModels.DataOptionCreate dataOption, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
@@ -123,7 +120,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            var dataOptionEntity = _mapper.Map<DataOptionEntity>(dataOption);
+            var dataOptionEntity = dataOption.ToEntity();
             dataOptionEntity.Id = dataOption.Id != Guid.Empty ? dataOption.Id : Guid.NewGuid();
             dataOptionEntity.CreatedBy = _user.GetId();
             _context.DataOptions.Add(dataOptionEntity);
@@ -160,7 +157,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            _mapper.Map(dataOption, dataOptionToUpdate);
+            dataOption.ApplyTo(dataOptionToUpdate);
             dataOptionToUpdate.ModifiedBy = _user.GetId();
             _context.DataOptions.Update(dataOptionToUpdate);
             await _context.SaveChangesAsync(ct);

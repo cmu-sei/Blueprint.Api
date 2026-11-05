@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -16,6 +15,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -32,13 +32,11 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
-        public InvitationService(BlueprintContext context, IPrincipal user, IMapper mapper)
+        public InvitationService(BlueprintContext context, IPrincipal user)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.Invitation>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -56,7 +54,7 @@ namespace Blueprint.Api.Services
                 .Where(tc => tc.MselId == mselId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Invitation>>(items);
+            return items.Select(x => x.ToInvitation()).ToList();
         }
 
         public async Task<ViewModels.Invitation> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -74,7 +72,7 @@ namespace Blueprint.Api.Services
             var item = await _context.Invitations
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
-            return _mapper.Map<Invitation>(item);
+            return item.ToInvitation();
         }
 
         public async Task<ViewModels.Invitation> CreateAsync(ViewModels.InvitationCreate invitation, bool hasSystemPermission, CancellationToken ct)
@@ -89,7 +87,7 @@ namespace Blueprint.Api.Services
 
             await ServiceUtilities.EnsureTeamIsInMselAsync(invitation.TeamId, msel.Id, _context, ct);
 
-            var invitationEntity = _mapper.Map<InvitationEntity>(invitation);
+            var invitationEntity = invitation.ToEntity();
             invitationEntity.Id = invitationEntity.Id != Guid.Empty ? invitationEntity.Id : Guid.NewGuid();
 
             _context.Invitations.Add(invitationEntity);
@@ -110,7 +108,7 @@ namespace Blueprint.Api.Services
 
             await ServiceUtilities.EnsureTeamIsInMselAsync(invitation.TeamId, invitationToUpdate.MselId, _context, ct);
 
-            _mapper.Map(invitation, invitationToUpdate);
+            invitation.ApplyTo(invitationToUpdate);
 
             _context.Invitations.Update(invitationToUpdate);
             await _context.SaveChangesAsync(ct);

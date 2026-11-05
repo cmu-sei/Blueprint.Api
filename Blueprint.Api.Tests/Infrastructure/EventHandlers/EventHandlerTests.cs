@@ -7,7 +7,6 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
-using AutoMapper;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
@@ -574,7 +573,6 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         var arguments = constructor.GetParameters()
             .Select(x =>
                 x.ParameterType == typeof(BlueprintContext) ? db :
-                x.ParameterType == typeof(IMapper) ? TestMapper.Mapper :
                 x.ParameterType == typeof(IHubContext<MainHub>) ? _hub :
                 (object)null)
             .ToArray();

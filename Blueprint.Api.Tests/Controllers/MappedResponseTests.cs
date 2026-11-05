@@ -773,6 +773,67 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
         Assert.All(catalogs, x => Assert.Empty(x.Units));
     }
 
+    /// <summary>
+    /// A competency updated to be its own parent is answered with itself as its only child, which the
+    /// response's cycle handling writes as null.
+    /// </summary>
+    [Fact]
+    public async Task A_competency_that_is_its_own_parent_is_answered_with_a_null_child()
+    {
+        var framework = TestData.CompetencyFramework();
+        await Seed(framework);
+        var competency = TestData.Competency(framework.Id, "SELF");
+        await Seed(competency);
+
+        var response = await RootClient.PutAsJsonAsync($"api/competencies/{competency.Id}",
+            new { idNumber = "SELF", shortName = "Self", parentId = competency.Id }, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(competency.Id, json.RootElement.GetProperty("parentId").GetGuid());
+        var child = Assert.Single(json.RootElement.GetProperty("children").EnumerateArray());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, child.ValueKind);
+    }
+
+    /// <summary>
+    /// A catalog that is its own parent is read with itself as its parent, which the response's cycle
+    /// handling writes as null; in a parent cycle each catalog is read with the other as its parent, down to
+    /// where the cycle closes.
+    /// </summary>
+    [Fact]
+    public async Task Catalogs_in_a_parent_cycle_are_read_with_the_cycle_cut()
+    {
+        var injectType = TestData.InjectType();
+        await Seed(injectType);
+        var self = TestData.Catalog(injectType.Id, createdBy: Root.Id);
+        var first = TestData.Catalog(injectType.Id, createdBy: Root.Id);
+        var second = TestData.Catalog(injectType.Id, createdBy: Root.Id);
+        await Seed(self, first, second);
+        await using (var db = NewContext())
+        {
+            (await db.Catalogs.SingleAsync(x => x.Id == self.Id, Ct)).ParentId = self.Id;
+            (await db.Catalogs.SingleAsync(x => x.Id == first.Id, Ct)).ParentId = second.Id;
+            (await db.Catalogs.SingleAsync(x => x.Id == second.Id, Ct)).ParentId = first.Id;
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var one = await RootClient.GetAsync($"api/catalogs/{self.Id}", Ct);
+        var all = await RootClient.GetAsync($"api/users/{Root.Id}/catalogs", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, one.StatusCode);
+        using var oneJson = System.Text.Json.JsonDocument.Parse(await one.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, oneJson.RootElement.GetProperty("parent").ValueKind);
+        using var allJson = System.Text.Json.JsonDocument.Parse(await all.Content.ReadAsStringAsync(Ct));
+        var rows = allJson.RootElement.EnumerateArray().ToDictionary(x => x.GetProperty("id").GetGuid());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, rows[self.Id].GetProperty("parent").ValueKind);
+        var firstParent = rows[first.Id].GetProperty("parent");
+        Assert.Equal(second.Id, firstParent.GetProperty("id").GetGuid());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, firstParent.GetProperty("parent").ValueKind);
+        var secondParent = rows[second.Id].GetProperty("parent");
+        Assert.Equal(first.Id, secondParent.GetProperty("id").GetGuid());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, secondParent.GetProperty("parent").ValueKind);
+    }
+
     /// <summary>A CITE action is read with its team, whose lists are empty rather than missing when not read.</summary>
     [Fact]
     public async Task A_cite_action_is_read_with_its_team_and_the_teams_empty_lists()

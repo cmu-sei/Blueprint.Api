@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -15,24 +14,22 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class DataFieldHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly IDataFieldService _dataFieldService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public DataFieldHandler(
             BlueprintContext db,
-            IMapper mapper,
             IDataFieldService dataFieldService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _dataFieldService = dataFieldService;
             _mainHub = mainHub;
         }
@@ -57,7 +54,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             dataFieldEntity = await _db.DataFields
                 .Include(f => f.DataOptions)
                 .SingleOrDefaultAsync(f => f.Id == dataFieldEntity.Id);
-            var dataField = _mapper.Map<ViewModels.DataField>(dataFieldEntity);
+            var dataField = dataFieldEntity.ToDataField();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -73,9 +70,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public DataFieldCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IDataFieldService dataFieldService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, dataFieldService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, dataFieldService, mainHub) { }
 
         public async Task Handle(EntityCreated<DataFieldEntity> notification, CancellationToken cancellationToken)
         {
@@ -87,9 +83,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public DataFieldUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IDataFieldService dataFieldService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, dataFieldService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, dataFieldService, mainHub) { }
 
         public async Task Handle(EntityUpdated<DataFieldEntity> notification, CancellationToken cancellationToken)
         {
@@ -105,9 +100,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public DataFieldDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IDataFieldService dataFieldService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, dataFieldService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, dataFieldService, mainHub)
         {
         }
 

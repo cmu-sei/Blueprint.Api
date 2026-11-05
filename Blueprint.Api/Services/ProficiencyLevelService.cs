@@ -8,13 +8,13 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -31,13 +31,11 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
-        public ProficiencyLevelService(BlueprintContext context, IPrincipal user, IMapper mapper)
+        public ProficiencyLevelService(BlueprintContext context, IPrincipal user)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.ProficiencyLevel>> GetByScaleAsync(Guid scaleId, CancellationToken ct)
@@ -47,7 +45,7 @@ namespace Blueprint.Api.Services
                 .OrderBy(x => x.DisplayOrder)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<ProficiencyLevel>>(items);
+            return items.Select(x => x.ToProficiencyLevel()).ToList();
         }
 
         public async Task<ViewModels.ProficiencyLevel> GetAsync(Guid id, CancellationToken ct)
@@ -55,12 +53,12 @@ namespace Blueprint.Api.Services
             var item = await _context.ProficiencyLevels
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
-            return _mapper.Map<ProficiencyLevel>(item);
+            return item.ToProficiencyLevel();
         }
 
         public async Task<ViewModels.ProficiencyLevel> CreateAsync(ViewModels.ProficiencyLevelCreate proficiencyLevel, CancellationToken ct)
         {
-            var entity = _mapper.Map<ProficiencyLevelEntity>(proficiencyLevel);
+            var entity = proficiencyLevel.ToEntity();
             entity.Id = proficiencyLevel.Id != Guid.Empty ? proficiencyLevel.Id : Guid.NewGuid();
             entity.CreatedBy = _user.GetId();
 
@@ -77,13 +75,13 @@ namespace Blueprint.Api.Services
             if (entityToUpdate == null)
                 throw new EntityNotFoundException<ProficiencyLevel>();
 
-            _mapper.Map(proficiencyLevel, entityToUpdate);
+            proficiencyLevel.ApplyTo(entityToUpdate);
             entityToUpdate.ModifiedBy = _user.GetId();
 
             _context.ProficiencyLevels.Update(entityToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            return _mapper.Map<ProficiencyLevel>(entityToUpdate);
+            return entityToUpdate.ToProficiencyLevel();
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

@@ -12,7 +12,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -20,6 +19,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -39,16 +39,13 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
         public OrganizationService(
             BlueprintContext context,
-            IPrincipal user,
-            IMapper mapper)
+            IPrincipal user)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.Organization>> GetTemplatesAsync(CancellationToken ct)
@@ -57,7 +54,7 @@ namespace Blueprint.Api.Services
                 .Where(organization => organization.Msel == null)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Organization>>(organizationEntities).ToList();;
+            return organizationEntities.Select(x => x.ToOrganization()).ToList();;
         }
 
         public async Task<IEnumerable<ViewModels.Organization>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -73,7 +70,7 @@ namespace Blueprint.Api.Services
                 .Where(organization => organization.MselId == mselId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Organization>>(organizationEntities).ToList();;
+            return organizationEntities.Select(x => x.ToOrganization()).ToList();;
         }
 
         public async Task<ViewModels.Organization> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -89,7 +86,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            return _mapper.Map<Organization>(item);
+            return item.ToOrganization();
         }
 
         public async Task<ViewModels.Organization> CreateAsync(ViewModels.OrganizationCreate organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct)
@@ -113,7 +110,7 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
-            var organizationEntity = _mapper.Map<OrganizationEntity>(organization);
+            var organizationEntity = organization.ToEntity();
             organizationEntity.Id = organization.Id != Guid.Empty ? organization.Id : Guid.NewGuid();
             organizationEntity.CreatedBy = _user.GetId();
             _context.Organizations.Add(organizationEntity);
@@ -154,7 +151,7 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
-            _mapper.Map(organization, organizationToUpdate);
+            organization.ApplyTo(organizationToUpdate);
             organizationToUpdate.ModifiedBy = _user.GetId();
             _context.Organizations.Update(organizationToUpdate);
             await _context.SaveChangesAsync(ct);
@@ -212,7 +209,7 @@ namespace Blueprint.Api.Services
             var organizationEntities = await _context.Organizations
                 .Where(o => idList.Contains(o.Id) && o.MselId == null)
                 .ToListAsync(ct);
-            var organizations = _mapper.Map<IEnumerable<ViewModels.Organization>>(organizationEntities).ToList();
+            var organizations = organizationEntities.Select(x => x.ToOrganization()).ToList();
 
             var json = JsonSerializer.Serialize(organizations, new JsonSerializerOptions
             {
@@ -250,9 +247,9 @@ namespace Blueprint.Api.Services
                 item.DateCreated = DateTime.UtcNow;
                 item.ModifiedBy = null;
                 item.DateModified = null;
-                var entity = _mapper.Map<OrganizationEntity>(item);
+                var entity = item.ToEntity();
                 _context.Organizations.Add(entity);
-                created.Add(_mapper.Map<ViewModels.Organization>(entity));
+                created.Add(entity.ToOrganization());
             }
             await _context.SaveChangesAsync(ct);
 

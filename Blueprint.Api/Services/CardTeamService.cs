@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -16,6 +15,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -35,13 +35,11 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
-        public CardTeamService(BlueprintContext context, IPrincipal team, IMapper mapper)
+        public CardTeamService(BlueprintContext context, IPrincipal team)
         {
             _context = context;
             _user = team as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.CardTeam>> GetAsync(CancellationToken ct)
@@ -49,7 +47,7 @@ namespace Blueprint.Api.Services
             var items = await _context.CardTeams
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<CardTeam>>(items);
+            return items.Select(x => x.ToCardTeam()).ToList();
         }
 
         public async Task<ViewModels.CardTeam> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -64,7 +62,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            return _mapper.Map<CardTeam>(item);
+            return item.ToCardTeam();
         }
 
         public async Task<IEnumerable<ViewModels.CardTeam>> GetByCardAsync(Guid cardId, bool hasSystemPermission, CancellationToken ct)
@@ -80,7 +78,7 @@ namespace Blueprint.Api.Services
                 .Where(et => et.CardId == cardId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<CardTeam>>(items);
+            return items.Select(x => x.ToCardTeam()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.CardTeam>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -99,7 +97,7 @@ namespace Blueprint.Api.Services
                 .Where(et => cardIds.Contains(et.CardId))
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<CardTeam>>(items);
+            return items.Select(x => x.ToCardTeam()).ToList();
         }
 
         public async Task<ViewModels.CardTeam> CreateAsync(ViewModels.CardTeamCreate cardTeam, CancellationToken ct)
@@ -110,7 +108,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<Card>();
             await ServiceUtilities.EnsureTeamIsInMselAsync(cardTeam.TeamId, card.MselId, _context, ct);
 
-            var cardTeamEntity = _mapper.Map<CardTeamEntity>(cardTeam);
+            var cardTeamEntity = cardTeam.ToEntity();
             cardTeamEntity.Id = cardTeamEntity.Id != Guid.Empty ? cardTeamEntity.Id : Guid.NewGuid();
 
             _context.CardTeams.Add(cardTeamEntity);
@@ -126,7 +124,7 @@ namespace Blueprint.Api.Services
             if (cardTeamToUpdate == null)
                 throw new EntityNotFoundException<CardTeam>();
 
-            _mapper.Map(cardTeam, cardTeamToUpdate);
+            cardTeam.ApplyTo(cardTeamToUpdate);
 
             _context.CardTeams.Update(cardTeamToUpdate);
             await _context.SaveChangesAsync(ct);

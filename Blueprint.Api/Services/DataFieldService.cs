@@ -12,7 +12,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
@@ -21,6 +20,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -41,16 +41,13 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
         public DataFieldService(
             BlueprintContext context,
-            IPrincipal user,
-            IMapper mapper)
+            IPrincipal user)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.DataField>> GetTemplatesAsync(CancellationToken ct)
@@ -60,7 +57,7 @@ namespace Blueprint.Api.Services
                 .Include(dataField => dataField.DataOptions)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<DataField>>(dataFieldEntities).ToList();;
+            return dataFieldEntities.Select(x => x.ToDataField()).ToList();;
         }
 
         public async Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -77,7 +74,7 @@ namespace Blueprint.Api.Services
                 .Include(df => df.DataOptions)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<DataField>>(dataFieldEntities).ToList();;
+            return dataFieldEntities.Select(x => x.ToDataField()).ToList();;
         }
 
         public async Task<IEnumerable<ViewModels.DataField>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct)
@@ -87,7 +84,7 @@ namespace Blueprint.Api.Services
                 .Include(df => df.DataOptions)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<DataField>>(dataFieldEntities).ToList();;
+            return dataFieldEntities.Select(x => x.ToDataField()).ToList();;
         }
 
         public async Task<ViewModels.DataField> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -106,7 +103,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            return _mapper.Map<DataField>(item);
+            return item.ToDataField();
         }
 
         public async Task<ViewModels.DataField> CreateAsync(ViewModels.DataFieldCreate dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
@@ -138,14 +135,14 @@ namespace Blueprint.Api.Services
 
             // start a transaction
             await _context.Database.BeginTransactionAsync();
-            var dataFieldEntity = _mapper.Map<DataFieldEntity>(dataField);
+            var dataFieldEntity = dataField.ToEntity();
             dataFieldEntity.Id = dataField.Id != Guid.Empty ? dataField.Id : Guid.NewGuid();
             dataFieldEntity.CreatedBy = userId;
             _context.DataFields.Add(dataFieldEntity);
             // add the DataOptions
             foreach (var dataOption in dataField.DataOptions)
             {
-                var newDataOption = _mapper.Map<DataOptionEntity>(dataOption);
+                var newDataOption = dataOption.ToEntity();
                 newDataOption.Id = Guid.NewGuid();
                 newDataOption.DataFieldId = dataFieldEntity.Id;
                 newDataOption.CreatedBy = userId;
@@ -170,7 +167,7 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return _mapper.Map<DataField>(dataFieldEntity);
+            return dataFieldEntity.ToDataField();
         }
 
         public async Task<ViewModels.DataField> UpdateAsync(Guid id, ViewModels.DataFieldEdit dataField, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
@@ -227,12 +224,12 @@ namespace Blueprint.Api.Services
                     .SingleOrDefault(d => d.Id == dataOption.Id);
                 if (existingDataOption != null)
                 {
-                    _mapper.Map(dataOption, existingDataOption);
+                    dataOption.ApplyTo(existingDataOption);
                     existingDataOption.ModifiedBy = userId;
                 }
                 else
                 {
-                    var newDataOption = _mapper.Map<DataOptionEntity>(dataOption);
+                    var newDataOption = dataOption.ToEntity();
                     newDataOption.Id = Guid.NewGuid();
                     newDataOption.DataFieldId = id;
                     newDataOption.CreatedBy = userId;
@@ -244,7 +241,7 @@ namespace Blueprint.Api.Services
             var updateDisplayOrder = dataFieldToUpdate.DisplayOrder != dataField.DisplayOrder;
             var newIndexIsGreater = dataField.DisplayOrder > dataFieldToUpdate.DisplayOrder;
             // update values
-            _mapper.Map(dataField, dataFieldToUpdate);
+            dataField.ApplyTo(dataFieldToUpdate);
             dataFieldToUpdate.ModifiedBy = userId;
             _context.DataFields.Update(dataFieldToUpdate);
             await _context.SaveChangesAsync(ct);
@@ -258,7 +255,7 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return _mapper.Map<DataField>(dataFieldToUpdate);
+            return dataFieldToUpdate.ToDataField();
         }
 
         public async Task<Guid> DeleteAsync(Guid id, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
@@ -340,7 +337,7 @@ namespace Blueprint.Api.Services
                 .Where(df => idList.Contains(df.Id) && df.MselId == null)
                 .Include(df => df.DataOptions)
                 .ToListAsync(ct);
-            var dataFields = _mapper.Map<IEnumerable<ViewModels.DataField>>(dataFieldEntities).ToList();
+            var dataFields = dataFieldEntities.Select(x => x.ToDataField()).ToList();
 
             var json = JsonSerializer.Serialize(dataFields, new JsonSerializerOptions
             {
@@ -383,7 +380,7 @@ namespace Blueprint.Api.Services
                 item.DateModified = null;
                 var incomingOptions = item.DataOptions?.ToList() ?? new List<ViewModels.DataOption>();
                 item.DataOptions = new HashSet<ViewModels.DataOption>();
-                var entity = _mapper.Map<DataFieldEntity>(item);
+                var entity = item.ToEntity();
                 _context.DataFields.Add(entity);
                 foreach (var opt in incomingOptions)
                 {
@@ -399,7 +396,7 @@ namespace Blueprint.Api.Services
                     };
                     _context.DataOptions.Add(optionEntity);
                 }
-                created.Add(_mapper.Map<ViewModels.DataField>(entity));
+                created.Add(entity.ToDataField());
             }
             await _context.SaveChangesAsync(ct);
 

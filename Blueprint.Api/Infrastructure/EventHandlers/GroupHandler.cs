@@ -3,31 +3,28 @@
 
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class GroupCreatedSignalRHandler : INotificationHandler<EntityCreated<GroupEntity>>
     {
         private readonly IHubContext<MainHub> _mainHub;
-        private readonly IMapper _mapper;
 
         public GroupCreatedSignalRHandler(
-            IHubContext<MainHub> mainHub,
-            IMapper mapper)
+            IHubContext<MainHub> mainHub)
         {
             _mainHub = mainHub;
-            _mapper = mapper;
         }
 
         public async Task Handle(EntityCreated<GroupEntity> notification, CancellationToken cancellationToken)
         {
-            var group = _mapper.Map<ViewModels.Group>(notification.Entity);
+            var group = notification.Entity.ToGroup();
             await _mainHub.Clients
                 .Groups(MainHub.GROUP_GROUP)
                 .SendAsync(MainHubMethods.GroupCreated, group, cancellationToken);
@@ -37,19 +34,16 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     public class GroupUpdatedSignalRHandler : INotificationHandler<EntityUpdated<GroupEntity>>
     {
         private readonly IHubContext<MainHub> _mainHub;
-        private readonly IMapper _mapper;
 
         public GroupUpdatedSignalRHandler(
-            IHubContext<MainHub> mainHub,
-            IMapper mapper)
+            IHubContext<MainHub> mainHub)
         {
             _mainHub = mainHub;
-            _mapper = mapper;
         }
 
         public async Task Handle(EntityUpdated<GroupEntity> notification, CancellationToken cancellationToken)
         {
-            var group = _mapper.Map<ViewModels.Group>(notification.Entity);
+            var group = notification.Entity.ToGroup();
             await _mainHub.Clients
                 .Groups(MainHub.GROUP_GROUP)
                 .SendAsync(MainHubMethods.GroupUpdated, group, cancellationToken);

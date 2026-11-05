@@ -1,0 +1,27 @@
+// Copyright 2026 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
+
+using System.Collections.Generic;
+using System.Linq;
+using Blueprint.Api.Data.Models;
+using Blueprint.Api.ViewModels;
+using Riok.Mapperly.Abstractions;
+
+namespace Blueprint.Api.Infrastructure.Mappings;
+
+/// <summary>Organizations' mappings.</summary>
+[Mapper]
+public static partial class OrganizationMapper
+{
+    public static partial Organization ToOrganization(this OrganizationEntity source);
+
+    /// <remarks>The JSON template upload.</remarks>
+    [MapperRequiredMapping(RequiredMappingStrategy.Source)]
+    public static partial OrganizationEntity ToEntity(this Organization source);
+
+    [MapperRequiredMapping(RequiredMappingStrategy.Source)]
+    public static partial OrganizationEntity ToEntity(this OrganizationCreate source);
+
+    [MapperRequiredMapping(RequiredMappingStrategy.Source)]
+    public static partial void ApplyTo(this OrganizationEdit source, OrganizationEntity target);
+}

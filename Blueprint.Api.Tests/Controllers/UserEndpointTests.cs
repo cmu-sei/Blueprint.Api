@@ -85,12 +85,10 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// Both reads project with <c>ProjectTo&lt;ViewModels.User&gt;(…, dest =&gt; dest.Permissions)</c>,
-    /// naming an <c>ExplicitExpansion</c> member that <c>UserProfile</c> never maps from anything -
-    /// <c>UserEntity</c> has no permissions, they come from the system role. AutoMapper 13 validates
-    /// lazily and per map, so naming an unmapped destination member in an expansion is not an error, and
-    /// the property crosses the wire as null. <c>GET me/systemPermissions</c> is where a client actually
-    /// asks this question; see <c>ClaimsPipelineTests</c>.
+    /// Both reads project with <c>UserMapper.ProjectToUser</c>, which leaves <c>Permissions</c> out:
+    /// <c>UserEntity</c> has no permissions, they come from the system role, so the property crosses the
+    /// wire as null. <c>GET me/systemPermissions</c> is where a client actually asks this question; see
+    /// <c>ClaimsPipelineTests</c>.
     /// </remarks>
     [Fact]
     public async Task GetAll_AnswersNoPermissions()

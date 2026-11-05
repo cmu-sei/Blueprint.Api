@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -16,6 +15,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -32,16 +32,13 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
         public MoveService(
             BlueprintContext context,
-            IPrincipal user,
-            IMapper mapper)
+            IPrincipal user)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.Move>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -53,7 +50,7 @@ namespace Blueprint.Api.Services
                 .Where(move => move.MselId == mselId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Move>>(moveEntities).ToList();;
+            return moveEntities.Select(x => x.ToMove()).ToList();;
         }
 
         public async Task<ViewModels.Move> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -65,7 +62,7 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
                 throw new ForbiddenException();
 
-            return _mapper.Map<Move>(item);
+            return item.ToMove();
         }
 
         public async Task<ViewModels.Move> CreateAsync(ViewModels.MoveCreate move, bool hasSystemPermission, CancellationToken ct)
@@ -78,7 +75,7 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
-            var moveEntity = _mapper.Map<MoveEntity>(move);
+            var moveEntity = move.ToEntity();
             moveEntity.Id = move.Id != Guid.Empty ? move.Id : Guid.NewGuid();
             moveEntity.CreatedBy = _user.GetId();
             _context.Moves.Add(moveEntity);
@@ -106,7 +103,7 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
-            _mapper.Map(move, moveToUpdate);
+            move.ApplyTo(moveToUpdate);
             moveToUpdate.ModifiedBy = _user.GetId();
             _context.Moves.Update(moveToUpdate);
             await _context.SaveChangesAsync(ct);

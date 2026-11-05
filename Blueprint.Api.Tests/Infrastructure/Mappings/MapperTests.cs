@@ -262,6 +262,34 @@ public class MapperTests
         Assert.Same(mappedFramework.Competencies.Last(), Assert.Single(mappedFramework.Competencies.First().Children));
     }
 
+    /// <summary>
+    /// An update writes a nested parent or unit onto the loaded one, as AutoMapper mapped onto an existing
+    /// nested object, makes a new one when none is loaded, and clears it when the body has none.
+    /// </summary>
+    [Fact]
+    public void An_update_writes_a_nested_object_onto_the_loaded_one()
+    {
+        var parent = new CatalogEntity { Id = Guid.NewGuid(), Name = "Stored parent" };
+        var catalog = new CatalogEntity { Id = Guid.NewGuid(), Parent = parent };
+        var unit = new UnitEntity { Id = Guid.NewGuid(), Name = "Stored unit" };
+        var catalogUnit = new CatalogUnitEntity { Id = Guid.NewGuid(), Unit = unit };
+        var unloaded = new CatalogEntity { Id = Guid.NewGuid() };
+        var cleared = new CatalogEntity { Id = Guid.NewGuid(), Parent = new CatalogEntity() };
+
+        new Catalog { Id = catalog.Id, Parent = new Catalog { Id = parent.Id, Name = "Renamed parent" } }.ApplyTo(catalog);
+        new CatalogUnit { Id = catalogUnit.Id, Unit = new Unit { Id = unit.Id, Name = "Renamed unit" } }.ApplyTo(catalogUnit);
+        new Catalog { Id = unloaded.Id, Parent = new Catalog { Id = parent.Id, Name = "New parent" } }.ApplyTo(unloaded);
+        new Catalog { Id = cleared.Id }.ApplyTo(cleared);
+
+        Assert.Same(parent, catalog.Parent);
+        Assert.Equal("Renamed parent", parent.Name);
+        Assert.Same(unit, catalogUnit.Unit);
+        Assert.Equal("Renamed unit", unit.Name);
+        Assert.Equal("New parent", unloaded.Parent.Name);
+        Assert.NotSame(parent, unloaded.Parent);
+        Assert.Null(cleared.Parent);
+    }
+
     /// <summary>A null entity maps to a null view model, as AutoMapper's <c>Map</c> answered.</summary>
     [Fact]
     public void A_null_entity_maps_to_null()

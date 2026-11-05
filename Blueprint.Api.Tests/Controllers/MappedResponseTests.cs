@@ -400,6 +400,41 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
     }
 
     /// <summary>
+    /// A catalog that is its own parent has itself as its loaded parent, so an update with a nested parent of
+    /// that id writes the nested parent onto the stored catalog rather than adding a second one: it saves.
+    /// </summary>
+    [Fact]
+    public async Task A_self_parented_catalog_update_with_a_nested_parent_writes_it_onto_the_catalog()
+    {
+        var injectType = TestData.InjectType();
+        await Seed(injectType);
+        var catalog = TestData.Catalog(injectType.Id);
+        await Seed(catalog);
+        await using (var db = NewContext())
+        {
+            (await db.Catalogs.SingleAsync(x => x.Id == catalog.Id, Ct)).ParentId = catalog.Id;
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var response = await RootClient.PutAsJsonAsync($"api/catalogs/{catalog.Id}",
+            new
+            {
+                id = catalog.Id,
+                name = "Outer",
+                description = "Outer",
+                injectTypeId = injectType.Id,
+                parentId = catalog.Id,
+                listDataFields = "outer",
+                parent = new { id = catalog.Id, name = "Inner", description = "Inner", injectTypeId = injectType.Id, parentId = catalog.Id, listDataFields = "inner" },
+            }, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await ReadBack(db => db.Catalogs.SingleAsync(x => x.Id == catalog.Id, Ct));
+        Assert.Equal(("Inner", "Inner", "outer", (Guid?)catalog.Id), (stored.Name, stored.Description, stored.ListDataFields, stored.ParentId));
+        Assert.Equal(1, await ReadBack(db => db.Catalogs.CountAsync(x => x.Id == catalog.Id, Ct)));
+    }
+
+    /// <summary>
     /// A proficiency scale update writes the levels in its body onto the stored ones with those ids, and
     /// answers them; the scale's other levels are left alone.
     /// </summary>

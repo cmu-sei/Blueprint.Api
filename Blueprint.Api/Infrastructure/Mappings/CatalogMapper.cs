@@ -50,11 +50,48 @@ public static partial class CatalogMapper
     public static partial CatalogEntity ToEntity(this Catalog source);
 
     /// <remarks>
+    /// <para>
     /// Writes the body's id onto the row as well, so a body whose id is not the route's (or has none) tries
-    /// to change the key and fails the save. A parent nested in the body is a new object, which the update
-    /// writes over the stored parent with that id.
+    /// to change the key and fails the save.
+    /// </para>
+    /// <para>
+    /// A parent nested in the body is written onto the loaded parent when there is one, as AutoMapper mapped
+    /// onto an existing nested object; otherwise it is a new object, which the update writes over the stored
+    /// parent with that id. A catalog that is its own parent is its own loaded parent, so the nested parent
+    /// is written onto the catalog itself, and then the members AutoMapper mapped after the parent
+    /// (<see cref="Catalog.ListDataFields"/> and the audit fields) are written again from the body.
+    /// </para>
     /// </remarks>
+    public static void ApplyTo(this Catalog source, CatalogEntity target)
+    {
+        if (source == null || target == null)
+            return;
+
+        ApplyCatalogFields(source, target);
+        if (source.Parent == null)
+        {
+            target.Parent = null;
+        }
+        else if (target.Parent == null)
+        {
+            target.Parent = source.Parent.ToEntity();
+        }
+        else
+        {
+            var parent = target.Parent;
+            source.Parent.ApplyTo(parent);
+            target.Parent = parent;
+        }
+
+        target.ListDataFields = source.ListDataFields;
+        target.DateCreated = source.DateCreated;
+        target.DateModified = source.DateModified;
+        target.CreatedBy = source.CreatedBy;
+        target.ModifiedBy = source.ModifiedBy;
+    }
+
     [MapperRequiredMapping(RequiredMappingStrategy.Source)]
     [MapperIgnoreSource(nameof(Catalog.Units))]
-    public static partial void ApplyTo(this Catalog source, CatalogEntity target);
+    [MapperIgnoreSource(nameof(Catalog.Parent))]
+    private static partial void ApplyCatalogFields(Catalog source, CatalogEntity target);
 }

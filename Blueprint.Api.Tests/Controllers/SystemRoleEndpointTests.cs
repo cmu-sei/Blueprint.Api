@@ -326,6 +326,8 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.Equal([MainHub.ROLE_GROUP], Hub.Recipients(MainHubMethods.SystemRoleCreated, actor.Id));
+        Assert.Equal((await Read<ViewModels.SystemRole>(response)).Id,
+            Assert.IsType<ViewModels.SystemRole>(Hub.Of(MainHubMethods.SystemRoleCreated)[0].Payload).Id);
     }
 
     // ---------------------------------------------------------------------------------------------

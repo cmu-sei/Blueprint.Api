@@ -43,7 +43,8 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         await Created(TestData.Card(mselId));
         await Created(TestData.Move(mselId));
         await Created(TestData.ScenarioEvent(mselId));
-        await Created(TestData.PlayerApplication(mselId));
+        var playerApplication = TestData.PlayerApplication(mselId);
+        await Created(playerApplication);
         await Created(TestData.UserMselRole(Guid.NewGuid(), mselId));
 
         AssertTold(MainHubMethods.OrganizationCreated, mselId.ToString(), MainHub.ADMIN_DATA_GROUP);
@@ -52,6 +53,8 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         AssertTold(MainHubMethods.ScenarioEventCreated, mselId.ToString(), MainHub.ADMIN_DATA_GROUP);
         AssertTold(MainHubMethods.PlayerApplicationCreated, mselId.ToString(), MainHub.ADMIN_DATA_GROUP);
         AssertTold(MainHubMethods.UserMselRoleCreated, mselId.ToString(), MainHub.ADMIN_DATA_GROUP);
+        Assert.Equal(playerApplication.Id, Assert.IsType<Blueprint.Api.ViewModels.PlayerApplication>(
+            _hub.Of(MainHubMethods.PlayerApplicationCreated, mselId)[0].Payload).Id);
     }
 
     /// <remarks>
@@ -77,6 +80,10 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         AssertTold(MainHubMethods.CiteActionCreated, msel.Id.ToString(), MainHub.ADMIN_DATA_GROUP);
         AssertTold(MainHubMethods.CiteDutyCreated, msel.Id.ToString(), MainHub.ADMIN_DATA_GROUP);
         AssertTold(MainHubMethods.DataFieldCreated, msel.Id.ToString(), MainHub.ADMIN_DATA_GROUP);
+        Assert.Equal(citeAction.Id, Assert.IsType<Blueprint.Api.ViewModels.CiteAction>(
+            _hub.Of(MainHubMethods.CiteActionCreated, msel.Id)[0].Payload).Id);
+        Assert.Equal(citeDuty.Id, Assert.IsType<Blueprint.Api.ViewModels.CiteDuty>(
+            _hub.Of(MainHubMethods.CiteDutyCreated, msel.Id)[0].Payload).Id);
     }
 
     /// <summary>The three families whose entity has no MSEL id look the MSEL up and tell its group and the
@@ -91,13 +98,16 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         await Seed(msel, card, playerApplication, scenarioEvent);
 
         await Created(TestData.CardTeam(card.Id, Guid.NewGuid()));
-        await Created(TestData.PlayerApplicationTeam(playerApplication.Id, Guid.NewGuid()));
+        var playerApplicationTeam = TestData.PlayerApplicationTeam(playerApplication.Id, Guid.NewGuid());
+        await Created(playerApplicationTeam);
         await Created(TestData.DataValue(Guid.NewGuid(), scenarioEvent.Id));
 
         AssertTold(MainHubMethods.CardTeamCreated, msel.Id.ToString(), MainHub.ADMIN_DATA_GROUP);
         AssertTold(
             MainHubMethods.PlayerApplicationTeamCreated, msel.Id.ToString(), MainHub.ADMIN_DATA_GROUP);
         AssertTold(MainHubMethods.DataValueCreated, msel.Id.ToString(), MainHub.ADMIN_DATA_GROUP);
+        Assert.Equal(playerApplicationTeam.Id, Assert.IsType<Blueprint.Api.ViewModels.PlayerApplicationTeam>(
+            _hub.Of(MainHubMethods.PlayerApplicationTeamCreated, msel.Id)[0].Payload).Id);
     }
 
     /// <remarks>
@@ -167,6 +177,8 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         await Created(catalog);
 
         AssertTold(MainHubMethods.CatalogCreated, unit.Id.ToString(), MainHub.ADMIN_DATA_GROUP);
+        Assert.Equal(catalog.Id, Assert.IsType<Blueprint.Api.ViewModels.Catalog>(
+            _hub.Of(MainHubMethods.CatalogCreated, unit.Id)[0].Payload).Id);
     }
 
     /// <summary>The inject families tell nobody but the admin group.</summary>

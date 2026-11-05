@@ -575,6 +575,8 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Contains(actor.Id.ToString(), recipients);
         Assert.Contains(MainHub.ADMIN_DATA_GROUP, recipients);
         Assert.Empty(Hub.ToGroup(MainHub.USER_GROUP));
+        Assert.Equal((await Read<ViewModels.User>(response)).Id,
+            Assert.IsType<ViewModels.User>(Hub.Of(MainHubMethods.UserCreated, actor.Id)[0].Payload).Id);
     }
 
     // Same case as Update_lets_a_caller_holding_only_ManageUsers_give_itself_the_Administrator_role.

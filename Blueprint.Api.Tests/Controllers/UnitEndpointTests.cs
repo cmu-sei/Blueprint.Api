@@ -408,6 +408,7 @@ public class UnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(
             new[] { created.Id.ToString(), MainHub.ADMIN_DATA_GROUP }.Order(),
             Hub.Recipients(MainHubMethods.UnitCreated, created.Id).Order());
+        Assert.Equal(created.Id, Assert.IsType<ViewModels.Unit>(Hub.Of(MainHubMethods.UnitCreated, created.Id)[0].Payload).Id);
     }
 
     [Fact]

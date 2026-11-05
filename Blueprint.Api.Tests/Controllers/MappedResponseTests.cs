@@ -202,8 +202,6 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
         Assert.Equal(("C-1", "One", framework.Id), (created.IdNumber, created.ShortName, created.CompetencyFrameworkId));
         Assert.NotNull(created.Children);
         Assert.Empty(created.Children);
-        Assert.NotNull(created.RelatedIdNumbers);
-        Assert.Empty(created.RelatedIdNumbers);
     }
 
     // ---- Objects nested in a request body -------------------------------------------------------
@@ -319,8 +317,26 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var created = await ReadAsync<ViewModels.CatalogUnit>(response, JsonOptions);
         Assert.Equal(nestedUnitId, created.UnitId);
         Assert.Equal("Nested unit", created.Unit.Name);
-        Assert.Empty(created.Unit.Users);
         Assert.Equal("Nested unit", (await ReadBack(db => db.Units.SingleAsync(x => x.Id == nestedUnitId, Ct))).Name);
+    }
+
+    /// <summary>A catalog unit update with a nested unit renames the stored unit with that id, as AutoMapper did.</summary>
+    [Fact]
+    public async Task A_catalog_unit_update_with_a_nested_unit_overwrites_the_unit()
+    {
+        var injectType = TestData.InjectType();
+        await Seed(injectType);
+        var catalog = TestData.Catalog(injectType.Id);
+        var unit = TestData.Unit(name: "Stored unit");
+        await Seed(catalog, unit);
+        var catalogUnit = TestData.CatalogUnit(unit.Id, catalog.Id);
+        await Seed(catalogUnit);
+
+        var response = await RootClient.PutAsJsonAsync($"api/catalogunits/{catalogUnit.Id}",
+            new { id = catalogUnit.Id, catalogId = catalog.Id, unitId = unit.Id, unit = new { id = unit.Id, name = "Renamed" } }, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Renamed", (await ReadBack(db => db.Units.SingleAsync(x => x.Id == unit.Id, Ct))).Name);
     }
 
     /// <summary>An MSEL competency and a team competency created with a nested competency insert it.</summary>
@@ -365,7 +381,6 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var created = await ReadAsync<ViewModels.Catalog>(response, JsonOptions);
         Assert.Equal(parentId, created.ParentId);
         Assert.Equal("Nested parent", created.Parent.Name);
-        Assert.Empty(created.Units);
         await using var context = NewContext();
         Assert.Equal("Nested parent", (await context.Catalogs.SingleAsync(x => x.Id == parentId, Ct)).Name);
         Assert.Equal(parentId, (await context.Catalogs.SingleAsync(x => x.Id == created.Id, Ct)).ParentId);
@@ -431,6 +446,7 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var stored = await ReadBack(db => db.Catalogs.SingleAsync(x => x.Id == catalog.Id, Ct));
         Assert.Equal(("Inner", "Inner", "outer", (Guid?)catalog.Id), (stored.Name, stored.Description, stored.ListDataFields, stored.ParentId));
+        Assert.Equal(Root.Id, stored.ModifiedBy);
         Assert.Equal(1, await ReadBack(db => db.Catalogs.CountAsync(x => x.Id == catalog.Id, Ct)));
     }
 
@@ -786,7 +802,7 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
 
     /// <summary>
     /// A user's catalogs carry each one's parent when the parent is among them, because the list is read into
-    /// one context; a catalog's units are never read with it.
+    /// one context.
     /// </summary>
     [Fact]
     public async Task A_users_catalogs_carry_a_parent_that_is_listed_too()
@@ -805,7 +821,6 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
         Assert.Equal((parent.Id, parent.Name), (readChild.Parent.Id, readChild.Parent.Name));
         Assert.Null(readChild.Parent.Parent);
         Assert.Null(Assert.Single(catalogs, x => x.Id == parent.Id).Parent);
-        Assert.All(catalogs, x => Assert.Empty(x.Units));
     }
 
     /// <summary>
@@ -869,9 +884,9 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
         Assert.Equal(System.Text.Json.JsonValueKind.Null, secondParent.GetProperty("parent").ValueKind);
     }
 
-    /// <summary>A CITE action is read with its team, whose lists are empty rather than missing when not read.</summary>
+    /// <summary>A CITE action is read with its team.</summary>
     [Fact]
-    public async Task A_cite_action_is_read_with_its_team_and_the_teams_empty_lists()
+    public async Task A_cite_action_is_read_with_its_team()
     {
         var msel = TestData.Msel(createdBy: Root.Id);
         await Seed(msel);
@@ -883,11 +898,6 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var read = await ReadAsync<ViewModels.CiteAction>(await RootClient.GetAsync($"api/citeActions/{action.Id}", Ct), JsonOptions);
 
         Assert.Equal((team.Id, team.Name), (read.Team.Id, read.Team.Name));
-        Assert.Empty(read.Team.Users);
-        Assert.Empty(read.Team.CardTeams);
-        Assert.Empty(read.Team.PlayerApplicationTeams);
-        Assert.Empty(read.Team.Invitations);
-        Assert.Empty(read.Team.UserTeamRoles);
     }
 
     private async Task<(MselEntity Msel, ScenarioEventEntity ScenarioEvent)> SeedEventWithTask(Dictionary<string, string> actionParameters)

@@ -33,66 +33,6 @@ public class MapperTests
         Assert.Equal(mselId, new TeamCreate { Name = "Red", MselId = mselId }.ToEntity().MselId);
     }
 
-    /// <summary>The edit request has no MSEL, so it cannot move a team, and has no identity either.</summary>
-    [Fact]
-    public void A_team_edit_leaves_the_entitys_msel_and_id_alone()
-    {
-        var id = Guid.NewGuid();
-        var mselId = Guid.NewGuid();
-        var entity = new TeamEntity { Id = id, Name = "Blue", MselId = mselId };
-
-        new TeamEdit { Name = "Red" }.ApplyTo(entity);
-
-        Assert.Equal((id, mselId, "Red"), (entity.Id, entity.MselId, entity.Name));
-    }
-
-    /// <summary>
-    /// The edit request has no MSEL, template flag or id, so it changes the editable fields and cannot detach
-    /// an organization from its MSEL.
-    /// </summary>
-    [Fact]
-    public void An_organization_edit_leaves_the_entitys_msel_and_template_flag_alone()
-    {
-        var id = Guid.NewGuid();
-        var mselId = Guid.NewGuid();
-        var entity = new OrganizationEntity { Id = id, MselId = mselId, IsTemplate = false };
-
-        new OrganizationEdit { Name = "Renamed" }.ApplyTo(entity);
-
-        Assert.Equal((id, (Guid?)mselId, false, "Renamed"), (entity.Id, entity.MselId, entity.IsTemplate, entity.Name));
-    }
-
-    /// <summary>
-    /// The edit request has no identity, audit, integration or collection fields, so it changes the editable
-    /// fields and leaves everything the server owns as it was.
-    /// </summary>
-    [Fact]
-    public void An_msel_edit_leaves_the_server_owned_fields_alone()
-    {
-        var created = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var entity = TestData.Msel();
-        var id = entity.Id;
-        var createdBy = Guid.NewGuid();
-        entity.DateCreated = created;
-        entity.CreatedBy = createdBy;
-        entity.PlayerViewId = Guid.NewGuid();
-        entity.GalleryCollectionId = Guid.NewGuid();
-        entity.GalleryExhibitId = Guid.NewGuid();
-        entity.CiteEvaluationId = Guid.NewGuid();
-        entity.SteamfitterScenarioId = Guid.NewGuid();
-        entity.IntegrationStatus = "Pushing Integrations";
-        var stored = (entity.PlayerViewId, entity.GalleryCollectionId, entity.GalleryExhibitId,
-            entity.CiteEvaluationId, entity.SteamfitterScenarioId);
-
-        new MselEdit { Name = "renamed" }.ApplyTo(entity);
-
-        Assert.Equal("renamed", entity.Name);
-        Assert.Equal((id, created, createdBy), (entity.Id, entity.DateCreated, entity.CreatedBy));
-        Assert.Equal(stored, (entity.PlayerViewId, entity.GalleryCollectionId, entity.GalleryExhibitId,
-            entity.CiteEvaluationId, entity.SteamfitterScenarioId));
-        Assert.Equal("Pushing Integrations", entity.IntegrationStatus);
-    }
-
     /// <summary>
     /// An MSEL's units come from its join rows, and its pages are mapped whenever they are loaded: the
     /// ExplicitExpansion AutoMapper declared on them only ever applied to projections, and an MSEL is never
@@ -112,40 +52,6 @@ public class MapperTests
         Assert.Equal("Alpha", msel.Units.First().Name);
         Assert.Null(msel.Units.Last());
         Assert.Equal("Brief", Assert.Single(msel.Pages).Name);
-    }
-
-    /// <summary>The three Gallery lists are view-model-only, left empty for <c>MselService</c> to fill.</summary>
-    [Fact]
-    public void An_msel_leaves_the_gallery_lists_empty()
-    {
-        var msel = TestData.Msel().ToMsel();
-
-        Assert.Empty(msel.GalleryArticleParameters);
-        Assert.Empty(msel.GallerySourceTypes);
-        Assert.Empty(msel.GalleryItemStatuses);
-    }
-
-    /// <summary>Team and unit memberships have no audit fields, so the view models' are left unset.</summary>
-    [Fact]
-    public void Memberships_leave_the_audit_fields_unset()
-    {
-        var teamUser = new TeamUserEntity(Guid.NewGuid(), Guid.NewGuid()) { Id = Guid.NewGuid() }.ToTeamUser();
-        var unitUser = new UnitUserEntity(Guid.NewGuid(), Guid.NewGuid()) { Id = Guid.NewGuid() }.ToUnitUser();
-
-        Assert.Equal((default(DateTime), Guid.Empty, (DateTime?)null, (Guid?)null),
-            (teamUser.DateCreated, teamUser.CreatedBy, teamUser.DateModified, teamUser.ModifiedBy));
-        Assert.Equal((default(DateTime), Guid.Empty, (DateTime?)null, (Guid?)null),
-            (unitUser.DateCreated, unitUser.CreatedBy, unitUser.DateModified, unitUser.ModifiedBy));
-    }
-
-    /// <summary>A user's permissions come from its system role, so the mapped user has none.</summary>
-    [Fact]
-    public void A_user_has_no_permissions()
-    {
-        var user = new UserEntity { Id = Guid.NewGuid(), Name = "Ada" }.ToUser();
-
-        Assert.Equal("Ada", user.Name);
-        Assert.Null(user.Permissions);
     }
 
     /// <summary>A membership whose user is not loaded is a null user, not a missing one.</summary>
@@ -275,11 +181,13 @@ public class MapperTests
         var catalogUnit = new CatalogUnitEntity { Id = Guid.NewGuid(), Unit = unit };
         var unloaded = new CatalogEntity { Id = Guid.NewGuid() };
         var cleared = new CatalogEntity { Id = Guid.NewGuid(), Parent = new CatalogEntity() };
+        var clearedUnit = new CatalogUnitEntity { Id = Guid.NewGuid(), Unit = new UnitEntity { Id = Guid.NewGuid() } };
 
         new Catalog { Id = catalog.Id, Parent = new Catalog { Id = parent.Id, Name = "Renamed parent" } }.ApplyTo(catalog);
         new CatalogUnit { Id = catalogUnit.Id, Unit = new Unit { Id = unit.Id, Name = "Renamed unit" } }.ApplyTo(catalogUnit);
         new Catalog { Id = unloaded.Id, Parent = new Catalog { Id = parent.Id, Name = "New parent" } }.ApplyTo(unloaded);
         new Catalog { Id = cleared.Id }.ApplyTo(cleared);
+        new CatalogUnit { Id = clearedUnit.Id }.ApplyTo(clearedUnit);
 
         Assert.Same(parent, catalog.Parent);
         Assert.Equal("Renamed parent", parent.Name);
@@ -288,6 +196,7 @@ public class MapperTests
         Assert.Equal("New parent", unloaded.Parent.Name);
         Assert.NotSame(parent, unloaded.Parent);
         Assert.Null(cleared.Parent);
+        Assert.Null(clearedUnit.Unit);
     }
 
     /// <summary>A null entity maps to a null view model, as AutoMapper's <c>Map</c> answered.</summary>

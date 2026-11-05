@@ -511,6 +511,8 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         Assert.Contains(msel.Id.ToString(), recipients);
         Assert.Contains(MainHub.ADMIN_DATA_GROUP, recipients);
+        Assert.Equal((await Read<ViewModels.UserMselRole>(response)).Id,
+            Assert.IsType<ViewModels.UserMselRole>(Hub.Of(MainHubMethods.UserMselRoleCreated, msel.Id)[0].Payload).Id);
     }
 
     // ---------------------------------------------------------------------------------------------

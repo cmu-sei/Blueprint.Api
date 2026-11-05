@@ -25,21 +25,21 @@
   <!-- Application and data access. -->
   <ItemGroup>
     <PackageVersion Include="AutoMapper" Version="13.0.1" /> <!-- DO NOT UPDATE. Version 15+ requires a license. Plan to migrate to something else. -->
-    <PackageVersion Include="MediatR" Version="12.4.1" /> <!-- DO NOT UPDATE. Version 13+ requires a license. Plan to migrate to something else. -->
+    <PackageVersion Include="MediatR" Version="12.5.0" /> <!-- DO NOT UPDATE. Version 13+ requires a license. Plan to migrate to something else. -->
     <PackageVersion Include="Crucible.Common.EntityEvents" Version="0.2.1" />
     <PackageVersion Include="Crucible.Common.ServiceDefaults" Version="0.0.3" />
     <PackageVersion Include="HtmlSanitizer" Version="9.2.1039" />
-    <PackageVersion Include="Microsoft.Build" Version="18.0.2" />
+    <PackageVersion Include="Microsoft.Build" Version="18.9.6" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="Open-XML-SDK" Version="2.9.1" />
-    <PackageVersion Include="Z.EntityFramework.Plus.EFCore" Version="10.105.0" />
+    <PackageVersion Include="Z.EntityFramework.Plus.EFCore" Version="10.105.9" />
   </ItemGroup>
 
   <!-- The Crucible APIs this one calls. Cite and Gallery have no package: their clients are NSwag
        output checked in under Blueprint.Api/Cite.Api.Client and Blueprint.Api/GalleryApiClient. -->
   <ItemGroup>
     <PackageVersion Include="caster.api.client" Version="1.5.0" />
-    <PackageVersion Include="Player.Api.Client" Version="3.2.0" />
+    <PackageVersion Include="Player.Api.Client" Version="3.5.0" />
     <PackageVersion Include="steamfitter.api.client" Version="3.11.0" />
     <PackageVersion Include="TinCanStandard" Version="1.5.0" />
   </ItemGroup>
@@ -53,7 +53,7 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.13" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.13" />
-    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
   </ItemGroup>
 
   <!-- ASP.NET Core, diagnostics and API surface. -->
@@ -63,12 +63,12 @@
     <PackageVersion Include="AspNetCore.HealthChecks.SqlServer" Version="9.0.0" />
     <PackageVersion Include="IdentityServer4.AccessTokenValidation" Version="3.0.1" />
     <PackageVersion Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.23.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.13" />
     <PackageVersion Include="Microsoft.VisualStudio.Web.CodeGeneration.Design" Version="10.0.2" />
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.0.1" />
-    <PackageVersion Include="Swashbuckle.AspNetCore.Annotations" Version="10.0.1" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.3.1" />
+    <PackageVersion Include="Swashbuckle.AspNetCore.Annotations" Version="10.3.1" />
   </ItemGroup>
 
   <!-- Legacy references the framework now provides. NU1510 reports all three; they are kept until
@@ -82,7 +82,7 @@
   <!-- The generated client, which targets netstandard2.0 and is released separately. -->
   <ItemGroup>
     <PackageVersion Include="System.ComponentModel.Annotations" Version="5.0.0" />
-    <PackageVersion Include="System.Text.Json" Version="10.0.0" />
+    <PackageVersion Include="System.Text.Json" Version="10.0.14" />
   </ItemGroup>
 
   <!-- Test-only. -->
@@ -90,18 +90,18 @@
     <!-- Hosts the application in process for the endpoint tests. Tied to the ASP.NET Core version, so
          it tracks Microsoft.AspNetCore.Authentication.JwtBearer above rather than the test-tool
          versions around it. -->
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.14" />
     <!-- The SignalR client, for connecting to MainHub the way the Angular UI does. Tied to the
          ASP.NET Core version for the same reason Mvc.Testing is: it has to speak the protocol the
          hosted server negotiates. -->
-    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
-    <PackageVersion Include="NSubstitute" Version="6.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.14" />
+    <PackageVersion Include="NSubstitute" Version="6.2.0" />
     <!-- Coverage collection, and inert until it is asked for: it is the Microsoft.Testing.Platform
          form of coverlet and only instruments a run that asks for it, so a plain `dotnet test`
          neither instruments the assembly nor pays for it. `scripts/coverage.sh` is what turns it on. -->
-    <PackageVersion Include="coverlet.MTP" Version="10.0.1" />
-    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.15.0" />
-    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+    <PackageVersion Include="coverlet.MTP" Version="10.1.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.16.0" />
+    <PackageVersion Include="xunit.v3" Version="4.0.2" />
   </ItemGroup>
 
   <!-- Security pins. Blueprint.Api references these only to raise a package that otherwise arrives
@@ -112,13 +112,13 @@
        dependencies need newer (System.ComponentModel.Annotations, Newtonsoft.Json). -->
   <ItemGroup>
     <!-- Through Microsoft.VisualStudio.Web.CodeGeneration.Design, which carries 6.12.1. -->
-    <PackageVersion Include="NuGet.Packaging" Version="6.12.5" />
-    <PackageVersion Include="NuGet.Protocol" Version="6.12.5" />
+    <PackageVersion Include="NuGet.Packaging" Version="6.14.3" />
+    <PackageVersion Include="NuGet.Protocol" Version="6.14.3" />
     <!-- Through Microsoft.Data.SqlClient, which carries 9.0.11 even under EF Core 10.0.13. -->
-    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
     <!-- Through Swashbuckle.AspNetCore 10.0.1, which carries 2.3.0. Swashbuckle 10.2.1+ carries
          2.7.5 itself, so this pin can go when Swashbuckle moves. -->
-    <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.13.0" />
   </ItemGroup>
 
 </Project>

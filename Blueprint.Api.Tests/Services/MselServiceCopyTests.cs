@@ -167,6 +167,20 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.False(copy.IsTemplate);
     }
 
+    /// <summary>A copy, and so an event launched from a template, hides names from its assessors as the original does.</summary>
+    [Fact]
+    public async Task Copy_KeepsHidingNamesOnTheAssessorView()
+    {
+        var msel = TestData.Msel();
+        msel.HideNamesOnAssessorView = true;
+        await Seed(msel);
+        var actor = await Copier().SeedAsync();
+
+        var copy = await Copy(Client(actor), msel.Id);
+
+        Assert.True(copy.HideNamesOnAssessorView);
+    }
+
     /// <summary>A copy, and so an event launched from a template, starts its Steamfitter scenario as the original does.</summary>
     [Fact]
     public async Task Copy_KeepsWhenTheSteamfitterScenarioStarts()

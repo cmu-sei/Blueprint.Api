@@ -293,6 +293,25 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal(msel.SteamfitterScenarioId, row.SteamfitterScenarioId);
     }
 
+    /// <summary>
+    /// Hiding names changes only what the Assessor View lists, so it can be turned on during the event.
+    /// </summary>
+    [Fact]
+    public async Task Update_HidingNamesOnTheAssessorView_OfADeployedMsel_Is200()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Deployed);
+        await Seed(msel);
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(owner).PutAsJsonAsync(
+            $"/api/msels/{msel.Id}",
+            new { name = msel.Name, status = msel.Status, hideNamesOnAssessorView = true },
+            JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True((await Stored(msel.Id)).HideNamesOnAssessorView);
+    }
+
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>

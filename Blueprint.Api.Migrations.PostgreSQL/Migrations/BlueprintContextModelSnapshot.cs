@@ -1151,6 +1151,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("header_row_metadata");
 
+                    b.Property<bool>("HideNamesOnAssessorView")
+                        .HasColumnType("boolean")
+                        .HasColumnName("hide_names_on_assessor_view");
+
                     b.Property<DateTime?>("ImageDateModified")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("image_date_modified");

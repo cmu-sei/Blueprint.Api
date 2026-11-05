@@ -161,12 +161,15 @@ public class JsonConverterTests
     }
 
     // -------------------------------------------------------------------------------------------------
-    // JsonDoubleConverter, which nothing reaches
+    // JsonDoubleConverter, which only the CITE team responses reach
     // -------------------------------------------------------------------------------------------------
 
-    /// <summary>Nothing in the API is a floating point number.</summary>
+    /// <summary>
+    /// The only floating point numbers in the API are the CITE scores and option values the Assessor View's
+    /// Team Responses panel shows, which CITE itself holds as doubles.
+    /// </summary>
     [Fact]
-    public void NothingInTheApiIsAFloatingPointNumber()
+    public void OnlyTheCiteScoresInTheApiAreFloatingPointNumbers()
     {
         var floating = new[] { typeof(double), typeof(float), typeof(decimal) };
 
@@ -180,7 +183,9 @@ public class JsonConverterTests
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
 
-        Assert.Empty(properties);
+        Assert.Equal(
+            ["CiteCategoryResponse.Score", "CiteOptionResponse.Value", "CiteSubmissionResponse.Score"],
+            properties);
     }
 
     /// <summary>A NaN is written as <c>0.0</c>.</summary>

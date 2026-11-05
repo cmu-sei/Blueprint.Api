@@ -230,6 +230,11 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         { "DELETE", "api/teamcompetencies/{teamcompetency}", "ManageMsels", null },
         { "DELETE", "api/teams/{team}/competencies/{competency}", "ManageMsels", null },
 
+        // CiteSubmissionService / CiteController - a team's CITE answers, read like the xAPI evidence
+        // beside them: ViewMsels, or a MSEL role the caller in these cases does not have. The seeded MSEL is
+        // not pushed to CITE, so the lifted case answers without reaching CITE.
+        { "GET", "api/msels/{msel}/citeSubmissions?teamId={team}&moveNumber=0", "ViewMsels", null },
+
         // ProficiencyLevelService / ProficiencyLevelController - reads want ViewCompetencyFrameworks,
         // writes ManageCompetencyFrameworks, and the controller's five throws are the whole guard.
         {

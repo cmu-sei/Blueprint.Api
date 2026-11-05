@@ -248,9 +248,9 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         { "DELETE", "api/proficiencyLevels/{proficiencylevel}", "ManageCompetencyFrameworks", null },
 
         // ProficiencyScaleService / ProficiencyScaleController - the same split, and the download wants
-        // ManageCompetencyFrameworks though it writes nothing.
+        // ManageCompetencyFrameworks though it writes nothing. A single scale is readable by anyone signed
+        // in, like a single framework, so it is not here (see ProficiencyScaleEndpointTests).
         { "GET", "api/proficiencyScales", "ViewCompetencyFrameworks", null },
-        { "GET", "api/proficiencyScales/{proficiencyscale}", "ViewCompetencyFrameworks", null },
         { "POST", "api/proficiencyScales", "ManageCompetencyFrameworks", """{"name":"{unique}"}""" },
         {
             "PUT", "api/proficiencyScales/{proficiencyscale}", "ManageCompetencyFrameworks",

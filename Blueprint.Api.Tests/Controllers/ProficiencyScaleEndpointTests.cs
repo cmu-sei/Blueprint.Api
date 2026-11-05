@@ -18,8 +18,8 @@ using Xunit;
 namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary><c>ProficiencyScaleService</c> / <c>ProficiencyScaleController</c> - the seven routes over the
-/// scales whose levels <see cref="ProficiencyLevelEndpointTests"/> covers. Reads want
-/// <c>ViewCompetencyFrameworks</c>; every write, including the read-only download, wants
+/// scales whose levels <see cref="ProficiencyLevelEndpointTests"/> covers. The list wants
+/// <c>ViewCompetencyFrameworks</c>, a single scale is readable by anyone signed in; every write, including the read-only download, wants
 /// <c>ManageCompetencyFrameworks</c>.</summary>
 public class ProficiencyScaleEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
@@ -72,6 +72,40 @@ public class ProficiencyScaleEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal(scale.Id, answered.Id);
         Assert.Equal("wanted", answered.Name);
         Assert.Equal(["mine"], answered.ProficiencyLevels.Select(x => x.Name));
+    }
+
+    /// <summary>
+    /// The Assessor View loads its framework's default scale for the rating levels, so an Evaluator with no
+    /// system permission at all reads it, as it reads the framework.
+    /// </summary>
+    [Fact]
+    public async Task Get_ByAnEvaluatorWithNoSystemPermissions_Is200_WithTheScalesLevels()
+    {
+        var msel = TestData.Msel();
+        var scale = TestData.ProficiencyScale(name: "rating");
+        await Seed(msel, scale);
+        await Seed(TestData.ProficiencyLevel(scale.Id, "proficient"));
+        var actor = await Actor().OnMsel(msel, MselRole.Evaluator).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/proficiencyScales/{scale.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var answered = await response.Content
+            .ReadFromJsonAsync<ViewModels.ProficiencyScale>(JsonOptions, Ct);
+        Assert.Equal(["proficient"], answered.ProficiencyLevels.Select(x => x.Name));
+    }
+
+    /// <summary>The list of every scale is still for those who can view the frameworks.</summary>
+    [Fact]
+    public async Task GetAll_WithoutViewCompetencyFrameworks_Is403()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Evaluator).SeedAsync();
+
+        var response = await Client(actor).GetAsync("api/proficiencyScales", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]

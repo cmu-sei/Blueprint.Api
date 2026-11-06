@@ -396,10 +396,17 @@ namespace Blueprint.Api.Services
                 void AddApplication(string name, string url, string icon, IEnumerable<TeamEntity> teams, int displayOrder)
                 {
                     var forTeams = teams.ToList();
-                    // the template's own application for the same view stays, whatever it is called: CITE without a section
-                    // opens on the dashboard, as CITE Dashboard does
-                    if (!forTeams.Any() || mselEntity.PlayerApplications.Any(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || PlayerApplicationViews.Same(a.Url, url)))
+                    if (!forTeams.Any())
                         return;
+                    // the template's own application for the same view stays, whatever it is called: CITE without a section
+                    // opens on the dashboard, as CITE Dashboard does; the teams it does not reach get it, rather than going without
+                    var existing = mselEntity.PlayerApplications.FirstOrDefault(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || PlayerApplicationViews.Same(a.Url, url));
+                    if (existing != null)
+                    {
+                        foreach (var team in forTeams.Where(t => existing.PlayerApplicationTeams.All(pt => pt.TeamId != t.Id)))
+                            existing.PlayerApplicationTeams.Add(new PlayerApplicationTeamEntity { Id = Guid.NewGuid(), PlayerApplicationId = existing.Id, TeamId = team.Id, DisplayOrder = displayOrder });
+                        return;
+                    }
                     var application = new PlayerApplicationEntity
                     {
                         Id = Guid.NewGuid(),
@@ -433,6 +440,25 @@ namespace Blueprint.Api.Services
                 {
                     AddApplication("Steamfitter Tasks", "{steamfitterUrl}/scenario/{steamfitterScenarioId}{theme}", "{steamfitterUrl}/assets/img/monkey_wrench.png", control, 9);
                     AddApplication("Steamfitter Scenarios", "{steamfitterUrl}/?scenarioId={steamfitterScenarioId}&viewId={playerViewId}{theme}", "{steamfitterUrl}/assets/img/monkey_wrench.png", control, 10);
+                }
+
+                // Player opens on a team's first tab: CITE's dashboard where the MSEL uses CITE, whatever the template calls
+                // its CITE application, or else the read-in; the rest keep their order, numbered from 1 with no ties, since
+                // the template's applications came with its own numbers and the drafted teams' with none
+                const string citeDashboard = "{citeUrl}?section=dashboard&evaluation={citeEvaluationId}{theme}";
+                var readInUrl = readInPage == null ? null : $"/mselpage/{readInPage.Id}";
+                int First(PlayerApplicationEntity application) =>
+                    mselEntity.UseCite && PlayerApplicationViews.Same(application.Url, citeDashboard) ? 0
+                    : readInUrl != null && (application.Url ?? "").Contains(readInUrl, StringComparison.OrdinalIgnoreCase) ? 1
+                    : 2;
+                foreach (var team in mselEntity.Teams)
+                {
+                    var tabs = mselEntity.PlayerApplications
+                        .SelectMany(a => a.PlayerApplicationTeams.Where(pt => pt.TeamId == team.Id).Select(pt => (Application: a, Tab: pt)))
+                        .OrderBy(x => First(x.Application)).ThenBy(x => x.Tab.DisplayOrder).ThenBy(x => x.Application.Name)
+                        .ToList();
+                    for (var i = 0; i < tabs.Count; i++)
+                        tabs[i].Tab.DisplayOrder = i + 1;
                 }
             }
 

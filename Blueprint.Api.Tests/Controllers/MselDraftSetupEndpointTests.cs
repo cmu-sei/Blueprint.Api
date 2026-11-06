@@ -144,6 +144,57 @@ public class MselDraftSetupEndpointTests(DatabaseFixture fixture, AiEnabledFacto
         Assert.Contains("Gallery Wall", names);
     }
 
+    /// <summary>
+    /// Player opens on a team's first tab, so every team's first is CITE's dashboard, the template's own CITE application
+    /// here, which came with the template's number 3 and none for the drafted team; the others follow, numbered 1 up with no ties.
+    /// </summary>
+    [Fact]
+    public async Task Import_PutsCitesDashboardFirstForEveryTeam()
+    {
+        var (template, excon) = await SeedTemplate(usePlayer: true);
+        var cite = TestData.PlayerApplication(template.Id, name: "CITE", url: "{citeUrl}?evaluation={citeEvaluationId}{theme}");
+        var link = TestData.PlayerApplicationTeam(cite.Id, excon.Id);
+        link.DisplayOrder = 3;
+        await Seed(cite, link);
+        var planner = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var (mselId, _) = await Import(planner, template);
+
+        await using var db = NewContext();
+        var tabs = await db.PlayerApplicationTeams.Include(pt => pt.Team).Include(pt => pt.PlayerApplication)
+            .Where(pt => pt.PlayerApplication.MselId == mselId).ToListAsync(Ct);
+        foreach (var team in tabs.GroupBy(t => t.Team.ShortName))
+        {
+            var ordered = team.OrderBy(t => t.DisplayOrder).ToList();
+            Assert.Equal("CITE", ordered[0].PlayerApplication.Name);
+            Assert.Equal(Enumerable.Range(1, ordered.Count), ordered.Select(t => t.DisplayOrder));
+        }
+        // the template's CITE was exercise control's alone; every team gets it, the drafted team SOC too, and no second one
+        Assert.Equal(["BLUE", "EXCON", "SOC"], tabs.Where(t => t.PlayerApplication.Name == "CITE").Select(t => t.Team.ShortName).Order());
+        Assert.DoesNotContain(tabs, t => t.PlayerApplication.Name == "CITE Dashboard");
+    }
+
+    /// <summary>A MSEL without CITE opens on its read-in.</summary>
+    [Fact]
+    public async Task Import_PutsTheReadInFirstWithoutCite()
+    {
+        var (template, _) = await SeedTemplate(usePlayer: true);
+        template.UseCite = false;
+        await using (var edit = NewContext())
+        {
+            edit.Msels.Update(template);
+            await edit.SaveChangesAsync(Ct);
+        }
+        var planner = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var (mselId, _) = await Import(planner, template);
+
+        await using var db = NewContext();
+        var firsts = await db.PlayerApplicationTeams.Where(pt => pt.PlayerApplication.MselId == mselId && pt.DisplayOrder == 1)
+            .Select(pt => pt.PlayerApplication.Name).Distinct().ToListAsync(Ct);
+        Assert.Equal(["Read-In"], firsts);
+    }
+
     /// <summary>Applications for the same view compare equal: a section's default, a trailing slash, other parameters.</summary>
     [Theory]
     [InlineData("{citeUrl}?evaluation={citeEvaluationId}{theme}", "{citeUrl}?section=dashboard&evaluation={citeEvaluationId}{theme}", true)]

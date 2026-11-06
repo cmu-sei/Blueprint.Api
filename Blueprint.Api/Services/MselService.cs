@@ -258,6 +258,7 @@ namespace Blueprint.Api.Services
             // the integration IDs and status are not part of the request, so a new MSEL starts with none
             var mselEntity = _mapper.Map<MselEntity>(msel);
             mselEntity.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
+            (mselEntity.ArticleMarking, mselEntity.ArticleMarkingText) = ArticleMarkings.Clean(msel.ArticleMarking, msel.ArticleMarkingText);
             mselEntity.CreatedBy = _user.GetId();
 
             _context.Msels.Add(mselEntity);
@@ -636,6 +637,7 @@ namespace Blueprint.Api.Services
 
             // okay to update this msel
             _mapper.Map(msel, mselToUpdate);
+            (mselToUpdate.ArticleMarking, mselToUpdate.ArticleMarkingText) = ArticleMarkings.Clean(msel.ArticleMarking, msel.ArticleMarkingText);
             mselToUpdate.ModifiedBy = _user.GetId();
 
             _context.Msels.Update(mselToUpdate);

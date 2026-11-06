@@ -30,6 +30,8 @@ namespace Blueprint.Api.ViewModels
         public bool UseCite { get; set; }
         public Guid? CiteEvaluationId { get; set; }
         public Guid? CiteScoringModelId { get; set; }
+        public string ArticleMarking { get; set; }
+        public string ArticleMarkingText { get; set; }
         public IntegrationType CiteIntegrationType { get; set; }
         public bool UseSteamfitter { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }

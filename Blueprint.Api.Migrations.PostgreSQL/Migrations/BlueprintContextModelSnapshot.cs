@@ -1357,6 +1357,105 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.ToTable("msel_pages");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselRunEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<DateTime?>("ActualEndTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("actual_end_time");
+
+                    b.Property<DateTime?>("ActualStartTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("actual_start_time");
+
+                    b.Property<Guid?>("CasterRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caster_run_id");
+
+                    b.Property<Guid?>("CasterWorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caster_workspace_id");
+
+                    b.Property<Guid?>("CiteEvaluationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cite_evaluation_id");
+
+                    b.Property<Guid?>("CiteScoringModelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cite_scoring_model_id");
+
+                    b.Property<string>("CiteSubmissionsJson")
+                        .HasColumnType("text")
+                        .HasColumnName("cite_submissions_json");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<DateTime?>("DateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_modified");
+
+                    b.Property<Guid?>("GalleryCollectionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("gallery_collection_id");
+
+                    b.Property<Guid?>("GalleryExhibitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("gallery_exhibit_id");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modified_by");
+
+                    b.Property<Guid>("MselId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("msel_id");
+
+                    b.Property<string>("MselSnapshotJson")
+                        .HasColumnType("text")
+                        .HasColumnName("msel_snapshot_json");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<Guid?>("PlayerViewId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("player_view_id");
+
+                    b.Property<string>("RecordJson")
+                        .HasColumnType("text")
+                        .HasColumnName("record_json");
+
+                    b.Property<string>("Statistics")
+                        .HasColumnType("text")
+                        .HasColumnName("statistics");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("SteamfitterScenarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("steamfitter_scenario_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MselId");
+
+                    b.ToTable("msel_runs");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselScoringCategoryEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2905,6 +3004,15 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .IsRequired();
 
                     b.Navigation("Msel");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselRunEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.MselEntity", null)
+                        .WithMany()
+                        .HasForeignKey("MselId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselScoringCategoryEntity", b =>

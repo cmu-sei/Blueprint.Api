@@ -882,6 +882,35 @@ public static class TestData
     }
 
     /// <summary>
+    /// A run of a MSEL holding an id for each of the four applications. Active and started an hour ago
+    /// unless told otherwise; a Removed run is also ended.
+    /// </summary>
+    /// <remarks>
+    /// The ids are fresh guids, not the MSEL's: a test that wants the two to agree copies them. The row
+    /// cascades from the MSEL. A save stamps <c>DateCreated</c>, which is what orders a MSEL's runs, so a
+    /// test that needs an order seeds the runs one save at a time.
+    /// </remarks>
+    public static MselRunEntity MselRun(Guid mselId, MselRunStatus status = MselRunStatus.Active, Guid? createdBy = null)
+    {
+        var started = DateTime.UtcNow.AddHours(-1);
+
+        return new MselRunEntity
+        {
+            Id = Guid.NewGuid(),
+            MselId = mselId,
+            Status = status,
+            PlayerViewId = Guid.NewGuid(),
+            CiteEvaluationId = Guid.NewGuid(),
+            GalleryCollectionId = Guid.NewGuid(),
+            GalleryExhibitId = Guid.NewGuid(),
+            SteamfitterScenarioId = Guid.NewGuid(),
+            ActualStartTime = status == MselRunStatus.Deploying ? null : started,
+            ActualEndTime = status == MselRunStatus.Removed || status == MselRunStatus.Ended ? started.AddMinutes(30) : null,
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
     /// The scoring model a MSEL authors itself: two questions for move 1, in one category, shown in that move
     /// only. Keyed by its MSEL, so a second one for the same MSEL is a 500.
     /// </summary>

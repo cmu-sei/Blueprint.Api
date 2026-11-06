@@ -15,6 +15,15 @@ namespace Blueprint.Api.Data.Enumerations
         Archived = 50
     }
 
+    // a run of a MSEL: pushing, live, ended by the planner, then its integrations removed
+    public enum MselRunStatus
+    {
+        Deploying = 10,
+        Active = 20,
+        Ended = 30,
+        Removed = 40
+    }
+
     public enum IntegrationType
     {
         Deploy = 10,

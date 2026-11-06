@@ -1082,6 +1082,108 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
     }
 
     // -------------------------------------------------------------------------------------------------
+    // GetStatementsAsync: which registrations it asks the LRS for
+    // -------------------------------------------------------------------------------------------------
+
+    private async Task<IReadOnlyList<string>> RegistrationsQueriedFor(Guid mselId, string source = null)
+    {
+        using var lrs = new FakeLrs("""{"statements":[]}""");
+
+        await Service(Options(endpoint: lrs.Endpoint))
+            .GetStatementsAsync(mselId, null, null, 100, source, true, Ct);
+
+        return lrs.Registrations;
+    }
+
+    /// <summary>A MSEL with no run is queried by its own ids, as before runs were recorded.</summary>
+    [Fact]
+    public async Task GetStatements_ForAMselWithNoRun_AsksForTheMselsOwnIds()
+    {
+        var msel = TestData.Msel();
+        msel.CiteEvaluationId = Guid.NewGuid();
+        msel.SteamfitterScenarioId = Guid.NewGuid();
+        msel.PlayerViewId = Guid.NewGuid();
+        msel.GalleryExhibitId = Guid.NewGuid();
+        await Seed(msel);
+
+        Assert.Equal(
+            [
+                msel.Id.ToString(),
+                msel.CiteEvaluationId.ToString(),
+                msel.SteamfitterScenarioId.ToString(),
+                msel.PlayerViewId.ToString(),
+                msel.GalleryExhibitId.ToString()
+            ],
+            await RegistrationsQueriedFor(msel.Id));
+    }
+
+    /// <summary>
+    /// After Remove Integrations the MSEL holds no ids, but its run does, so the run's statements are still
+    /// asked for. This is what keeps the Assessor View from going blank after the pull.
+    /// </summary>
+    [Fact]
+    public async Task GetStatements_AfterThePull_AsksForTheRemovedRunsIds()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var run = TestData.MselRun(msel.Id, MselRunStatus.Removed);
+        await Seed(run);
+
+        Assert.Equal(
+            [
+                msel.Id.ToString(),
+                run.CiteEvaluationId.ToString(),
+                run.SteamfitterScenarioId.ToString(),
+                run.PlayerViewId.ToString(),
+                run.GalleryExhibitId.ToString()
+            ],
+            await RegistrationsQueriedFor(msel.Id));
+    }
+
+    /// <summary>A source names one application, and its id comes from the run too.</summary>
+    [Fact]
+    public async Task GetStatements_ForOneSourceAfterThePull_AsksForThatIdFromTheRun()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var run = TestData.MselRun(msel.Id, MselRunStatus.Removed);
+        await Seed(run);
+
+        Assert.Equal([run.CiteEvaluationId.ToString()], await RegistrationsQueriedFor(msel.Id, "cite"));
+    }
+
+    /// <summary>Of several runs the latest is the one the Assessor View shows, as the MSEL's ids were the
+    /// latest push's before runs.</summary>
+    [Fact]
+    public async Task GetStatements_ForAMselWithSeveralRuns_AsksForTheLatestRunsIds()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var earlier = TestData.MselRun(msel.Id, MselRunStatus.Removed);
+        await Seed(earlier);
+        var latest = TestData.MselRun(msel.Id, MselRunStatus.Removed);
+        await Seed(latest);
+
+        var asked = await RegistrationsQueriedFor(msel.Id, "cite");
+
+        Assert.Equal([latest.CiteEvaluationId.ToString()], asked);
+    }
+
+    /// <summary>An id the run lacks is taken from the MSEL.</summary>
+    [Fact]
+    public async Task GetStatements_ForARunMissingAnId_AsksForTheMselsInstead()
+    {
+        var msel = TestData.Msel();
+        msel.GalleryExhibitId = Guid.NewGuid();
+        await Seed(msel);
+        var run = TestData.MselRun(msel.Id);
+        run.GalleryExhibitId = null;
+        await Seed(run);
+
+        Assert.Equal([msel.GalleryExhibitId.ToString()], await RegistrationsQueriedFor(msel.Id, "gallery"));
+    }
+
+    // -------------------------------------------------------------------------------------------------
     // GetStatementsAsync on a MSEL that hides names on the Assessor View
     // -------------------------------------------------------------------------------------------------
 

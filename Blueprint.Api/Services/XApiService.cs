@@ -858,7 +858,10 @@ namespace Blueprint.Api.Services
                 !await EvaluatorRequirement.IsMet(_user.GetId(), msel.Id, _context))
                 throw new ForbiddenException();
 
-            var registrationIds = BuildRegistrationIds(msel, source);
+            // the MSEL's latest run holds the ids even after its integrations were removed, which clears the
+            // MSEL's own; the MSEL's columns stand in for an id the run lacks, or for a MSEL with no run
+            var run = await IntegrationRunExtensions.FindLatestRunAsync(_context, msel.Id, ct);
+            var registrationIds = BuildRegistrationIds(msel.Id, IntegrationRunExtensions.WithMselIds(run, msel), source);
             if (registrationIds.Count == 0)
             {
                 return "{\"statements\":[]}";
@@ -988,38 +991,38 @@ namespace Blueprint.Api.Services
         private static string ObjectType(JsonObject node) =>
             node["objectType"] is JsonValue value && value.TryGetValue<string>(out var type) ? type : null;
 
-        private List<string> BuildRegistrationIds(MselEntity msel, string source)
+        private static List<string> BuildRegistrationIds(Guid mselId, MselRunEntity ids, string source)
         {
             var registrationIds = new List<string>();
             var filterBySource = !string.IsNullOrWhiteSpace(source);
 
             if (!filterBySource || source.Equals("blueprint", StringComparison.OrdinalIgnoreCase))
             {
-                registrationIds.Add(msel.Id.ToString());
+                registrationIds.Add(mselId.ToString());
             }
 
             if ((!filterBySource || source.Equals("cite", StringComparison.OrdinalIgnoreCase))
-                && msel.CiteEvaluationId.HasValue)
+                && ids.CiteEvaluationId.HasValue)
             {
-                registrationIds.Add(msel.CiteEvaluationId.Value.ToString());
+                registrationIds.Add(ids.CiteEvaluationId.Value.ToString());
             }
 
             if ((!filterBySource || source.Equals("steamfitter", StringComparison.OrdinalIgnoreCase))
-                && msel.SteamfitterScenarioId.HasValue)
+                && ids.SteamfitterScenarioId.HasValue)
             {
-                registrationIds.Add(msel.SteamfitterScenarioId.Value.ToString());
+                registrationIds.Add(ids.SteamfitterScenarioId.Value.ToString());
             }
 
             if ((!filterBySource || source.Equals("player", StringComparison.OrdinalIgnoreCase))
-                && msel.PlayerViewId.HasValue)
+                && ids.PlayerViewId.HasValue)
             {
-                registrationIds.Add(msel.PlayerViewId.Value.ToString());
+                registrationIds.Add(ids.PlayerViewId.Value.ToString());
             }
 
             if ((!filterBySource || source.Equals("gallery", StringComparison.OrdinalIgnoreCase))
-                && msel.GalleryExhibitId.HasValue)
+                && ids.GalleryExhibitId.HasValue)
             {
-                registrationIds.Add(msel.GalleryExhibitId.Value.ToString());
+                registrationIds.Add(ids.GalleryExhibitId.Value.ToString());
             }
 
             return registrationIds;

@@ -2,6 +2,9 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -34,6 +37,13 @@ public sealed class FakeLrs : IDisposable
     /// <summary>The value for <c>XApiOptions.Endpoint</c>.</summary>
     public string Endpoint { get; }
 
+    private readonly ConcurrentQueue<Uri> _requests = new();
+
+    /// <summary>The <c>registration</c> of every statement query received, in order.</summary>
+    public IReadOnlyList<string> Registrations => _requests
+        .Select(x => System.Web.HttpUtility.ParseQueryString(x.Query)["registration"])
+        .ToList();
+
     private async Task Serve()
     {
         while (!_stop.IsCancellationRequested)
@@ -48,6 +58,7 @@ public sealed class FakeLrs : IDisposable
                 return;
             }
 
+            _requests.Enqueue(context.Request.Url);
             var bytes = Encoding.UTF8.GetBytes(_body);
             context.Response.ContentType = "application/json";
             context.Response.ContentLength64 = bytes.Length;

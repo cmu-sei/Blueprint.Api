@@ -233,6 +233,7 @@ public class Startup
         services.AddScoped<IMselService, MselService>();
         services.AddScoped<IMselPageService, MselPageService>();
         services.AddScoped<IMselImageService, MselImageService>();
+        services.AddScoped<IMselScoringModelService, MselScoringModelService>();
         services.AddScoped<IMselUnitService, MselUnitService>();
         services.AddScoped<IMselCompetencyService, MselCompetencyService>();
         services.AddScoped<ITeamCompetencyService, TeamCompetencyService>();

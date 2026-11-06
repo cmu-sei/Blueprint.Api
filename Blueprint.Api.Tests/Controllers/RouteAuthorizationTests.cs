@@ -44,14 +44,16 @@ namespace Blueprint.Api.Tests.Controllers;
 /// action's authorization check, so a JSON body would assert nothing. Add a row per route as each
 /// remaining service is covered; do not add per-service 401/403 tests.
 /// <para />
-/// Five routes are deliberately absent because each resolves no authorization at all and so cannot
+/// Six routes are deliberately absent because each resolves no authorization at all and so cannot
 /// satisfy <see cref="EveryRoute_is_forbidden_for_a_caller_holding_every_permission_but_the_named_one"/>: <c>GET lmt/resource/{mselId}</c>
 /// (<c>LmtController</c> is <c>[AllowAnonymous]</c> - see <see cref="LmtEndpointTests"/>),
-/// <c>GET my-catalogs</c>, <c>GET citeActions/templates</c>, <c>GET citeDuties/templates</c> and
-/// <c>GET playerApplications/templates</c>. The latter four are covered by the happy-path test in their
-/// own files, which is where the absence of a check is recorded.
+/// <c>GET my-catalogs</c>, <c>GET citeActions/templates</c>, <c>GET citeDuties/templates</c>,
+/// <c>GET playerApplications/templates</c> and <c>GET proficiencyScales/{id}</c>. The latter five are
+/// covered by the happy-path test in their own files, which is where the absence of a check is recorded,
+/// and <c>GET proficiencyScales/{id}</c> also holds a row in <see cref="RoutesWithoutAPermission"/> so its
+/// refusal of an anonymous caller is still asserted.
 /// <para />
-/// A sixth is absent for a different reason: <c>POST playerApplications/push</c> does resolve
+/// A seventh is absent for a different reason: <c>POST playerApplications/push</c> does resolve
 /// <c>EditMsels</c>, but it is covered end to end by <see cref="PlayerServiceTests"/>, including its
 /// refusals, and a row here would both duplicate that and push an application as a side effect of an
 /// authorization assertion.
@@ -247,10 +249,11 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         },
         { "DELETE", "api/proficiencyLevels/{proficiencylevel}", "ManageCompetencyFrameworks", null },
 
-        // ProficiencyScaleService / ProficiencyScaleController - the same split, and the download wants
-        // ManageCompetencyFrameworks though it writes nothing.
+        // ProficiencyScaleService / ProficiencyScaleController - the list wants ViewCompetencyFrameworks and
+        // every write ManageCompetencyFrameworks, as does the download though it writes nothing. A single
+        // scale is readable by anyone signed in, like a single framework, so its read is not here but in
+        // RoutesWithoutAPermission (see ProficiencyScaleEndpointTests).
         { "GET", "api/proficiencyScales", "ViewCompetencyFrameworks", null },
-        { "GET", "api/proficiencyScales/{proficiencyscale}", "ViewCompetencyFrameworks", null },
         { "POST", "api/proficiencyScales", "ManageCompetencyFrameworks", """{"name":"{unique}"}""" },
         {
             "PUT", "api/proficiencyScales/{proficiencyscale}", "ManageCompetencyFrameworks",
@@ -296,18 +299,21 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
     }
 
     /// <summary>
-    /// The routes that ask Blueprint's authorization service nothing, because the application they read
-    /// decides what the caller may see. Behind the MVC-wide authorization filter all the same.
+    /// The routes that ask Blueprint's authorization service nothing, so no system permission lifts or
+    /// imposes a refusal and they cannot hold a row in <see cref="Routes"/>. Behind the MVC-wide
+    /// authorization filter all the same, which is what this table asserts.
     /// </summary>
     /// <remarks>
-    /// <c>CasterController</c>'s two routes call Caster with the caller's own token, so they cannot hold a row
-    /// in <see cref="Routes"/>: no system permission lifts or imposes a refusal. Their answers are in
-    /// <see cref="CasterEndpointTests"/>.
+    /// <c>CasterController</c>'s two routes call Caster with the caller's own token, so Caster decides what
+    /// the caller may see; their answers are in <see cref="CasterEndpointTests"/>. A single proficiency scale
+    /// is readable by anyone signed in, because the Assessor View offers its levels to an Evaluator who holds
+    /// no system permission; its answers are in <see cref="ProficiencyScaleEndpointTests"/>.
     /// </remarks>
     public static TheoryData<string, string> RoutesWithoutAPermission => new()
     {
         { "GET", "api/caster/directories" },
-        { "GET", "api/caster/directories/00000000-0000-0000-0000-000000000001/team-variables" }
+        { "GET", "api/caster/directories/00000000-0000-0000-0000-000000000001/team-variables" },
+        { "GET", "api/proficiencyScales/{proficiencyscale}" }
     };
 
     [Theory]

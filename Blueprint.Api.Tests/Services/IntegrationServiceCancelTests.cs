@@ -116,6 +116,35 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
         Assert.Equal(MselItemStatus.Approved, cleared.Status);
     }
 
+    /// <summary>The cancel deletes what the push's run names; the run keeps the ids and is marked Removed,
+    /// so whatever the cancelled push sent to the LRS can still be found.</summary>
+    [Fact]
+    public async Task CancelPush_PullsWhatTheRunNamesAndMarksItRemovedWithItsIds()
+    {
+        var msel = await SeedDeployedMsel(withCite: false);
+        var run = TestData.MselRun(msel.Id, MselRunStatus.Deploying);
+        run.PlayerViewId = PlayerViewId;
+        run.GalleryCollectionId = GalleryCollectionId;
+        run.GalleryExhibitId = GalleryExhibitId;
+        run.CiteEvaluationId = CiteEvaluationId;
+        run.SteamfitterScenarioId = SteamfitterScenarioId;
+        await Seed(run);
+        var handler = Idp().AllFourPullsSucceed();
+
+        Service(handler).CancelPush(msel.Id);
+
+        await WaitForApproval(msel.Id);
+
+        var stored = await ReadBack(db => db.MselRuns.AsNoTracking().SingleAsync(x => x.Id == run.Id, Ct));
+        Assert.Contains($"api/evaluations/{CiteEvaluationId}", handler.Paths);
+        Assert.Equal(MselRunStatus.Removed, stored.Status);
+        Assert.NotNull(stored.ActualEndTime);
+        Assert.Null(stored.ActualStartTime);
+        Assert.Equal(PlayerViewId, stored.PlayerViewId);
+        Assert.Equal(CiteEvaluationId, stored.CiteEvaluationId);
+        Assert.Equal(SteamfitterScenarioId, stored.SteamfitterScenarioId);
+    }
+
     /// <remarks>
     /// The first thing the cleanup does, before it has a token or has reached any sibling API: write the
     /// status and tell the browsers. So a user sees "Cancelling" immediately and then either an approved

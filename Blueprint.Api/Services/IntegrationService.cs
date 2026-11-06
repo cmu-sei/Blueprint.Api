@@ -118,14 +118,16 @@ namespace Blueprint.Api.Services
                     return;
                 }
 
-                _logger.LogInformation($"Cancel cleanup: MSEL {mselId} loaded. PlayerViewId={msel.PlayerViewId}, GalleryCollectionId={msel.GalleryCollectionId}, CiteEvaluationId={msel.CiteEvaluationId}, SteamfitterScenarioId={msel.SteamfitterScenarioId}");
+                // the open run's ids, falling back to the MSEL's for a MSEL with no run
+                var ids = await IntegrationRunExtensions.GetIdsToPullAsync(dbContext, msel, freshCt);
+                _logger.LogInformation($"Cancel cleanup: MSEL {mselId} loaded. PlayerViewId={ids.PlayerViewId}, GalleryCollectionId={ids.GalleryCollectionId}, CiteEvaluationId={ids.CiteEvaluationId}, SteamfitterScenarioId={ids.SteamfitterScenarioId}");
 
                 // Caster first, while the Player view still exists. If the destroy fails, stop here
                 // and keep every ID, so Remove Integrations can retry instead of orphaning VMs.
-                if (msel.CasterWorkspaceId != null)
+                if (ids.CasterWorkspaceId != null)
                 {
                     var casterClientSource = new CasterClientSource(_httpClientFactory, _clientOptions.CurrentValue.CasterApiUrl, () => ApiClientsExtensions.GetToken(scope));
-                    if (!await TryPullFromCasterAsync(dbContext, mselId, (Guid)msel.CasterWorkspaceId, casterClientSource, "Cancelling - pulling", freshCt))
+                    if (!await TryPullFromCasterAsync(dbContext, mselId, (Guid)ids.CasterWorkspaceId, casterClientSource, "Cancelling - pulling", freshCt))
                         return;
                 }
 
@@ -134,13 +136,13 @@ namespace Blueprint.Api.Services
                 _logger.LogInformation($"Cancel cleanup: token acquired for MSEL {mselId}. Starting external pulls.");
 
                 // Step 4: Call external API deletes directly (no BlueprintContext/SaveChanges needed).
-                if (msel.SteamfitterScenarioId != null)
+                if (ids.SteamfitterScenarioId != null)
                 {
                     try
                     {
                         await SendIntegrationStatusAsync(dbContext, mselId, "Cancelling - pulling Steamfitter Scenario", freshCt);
                         var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
-                        await IntegrationSteamfitterExtensions.PullFromSteamfitterAsync((Guid)msel.SteamfitterScenarioId, steamfitterApiClient, freshCt);
+                        await IntegrationSteamfitterExtensions.PullFromSteamfitterAsync((Guid)ids.SteamfitterScenarioId, steamfitterApiClient, freshCt);
                     }
                     catch (System.Exception ex)
                     {
@@ -148,13 +150,13 @@ namespace Blueprint.Api.Services
                     }
                 }
 
-                if (msel.CiteEvaluationId != null)
+                if (ids.CiteEvaluationId != null)
                 {
                     try
                     {
                         await SendIntegrationStatusAsync(dbContext, mselId, "Cancelling - pulling CITE Evaluation", freshCt);
                         var citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CurrentValue.CiteApiUrl, tokenResponse);
-                        await IntegrationCiteExtensions.PullFromCiteAsync((Guid)msel.CiteEvaluationId, citeApiClient, freshCt);
+                        await IntegrationCiteExtensions.PullFromCiteAsync((Guid)ids.CiteEvaluationId, citeApiClient, freshCt);
                     }
                     catch (System.Exception ex)
                     {
@@ -162,13 +164,13 @@ namespace Blueprint.Api.Services
                     }
                 }
 
-                if (msel.GalleryCollectionId != null)
+                if (ids.GalleryCollectionId != null)
                 {
                     try
                     {
                         await SendIntegrationStatusAsync(dbContext, mselId, "Cancelling - pulling Gallery Collection", freshCt);
                         var galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse);
-                        await IntegrationGalleryExtensions.PullFromGalleryAsync((Guid)msel.GalleryCollectionId, galleryApiClient, freshCt);
+                        await IntegrationGalleryExtensions.PullFromGalleryAsync((Guid)ids.GalleryCollectionId, galleryApiClient, freshCt);
                     }
                     catch (System.Exception ex)
                     {
@@ -176,14 +178,14 @@ namespace Blueprint.Api.Services
                     }
                 }
 
-                if (msel.PlayerViewId != null)
+                if (ids.PlayerViewId != null)
                 {
                     try
                     {
                         await SendIntegrationStatusAsync(dbContext, mselId, "Cancelling - pulling Player View", freshCt);
                         var playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
-                        await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, freshCt);
-                        await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, freshCt);
+                        await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)ids.PlayerViewId, playerApiClient, freshCt);
+                        await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)ids.PlayerViewId, playerApiClient, freshCt);
                     }
                     catch (System.Exception ex)
                     {
@@ -207,6 +209,8 @@ namespace Blueprint.Api.Services
                     finalMsel.CasterRunId = null;
                     finalMsel.IntegrationStatus = null;
                     finalMsel.Status = Data.Enumerations.MselItemStatus.Approved;
+                    // the run keeps its ids: what the cancelled push sent to the LRS can still be found
+                    await IntegrationRunExtensions.RemoveRunAsync(finalContext, mselId, freshCt);
                     await finalContext.SaveChangesAsync(freshCt);
                 }
 
@@ -328,6 +332,9 @@ namespace Blueprint.Api.Services
                                 if (msel.UseSteamfitter && msel.SteamfitterScenarioId == null)
                                     msel.SteamfitterScenarioId = Guid.NewGuid();
 
+                                // the run starts with the same ids, in the same save, before any remote call
+                                currentProcessStep = "Recording the run";
+                                await IntegrationRunExtensions.StartRunAsync(blueprintContext, msel, integrationInformation.UserId ?? msel.CreatedBy, ct);
                                 await UpdateIntegrationStatusAsync(msel, blueprintContext, "Pushing Integrations", ct);
 
                                 // Create all API clients upfront
@@ -451,6 +458,7 @@ namespace Blueprint.Api.Services
                                 var finalMsel = await finalContext.Msels.FindAsync(new object[] { msel.Id }, ct);
                                 finalMsel.Status = Data.Enumerations.MselItemStatus.Deployed;
                                 finalMsel.IntegrationStatus = null;
+                                await IntegrationRunExtensions.CompleteRunAsync(finalContext, finalMsel, integrationInformation.UserId ?? finalMsel.CreatedBy, ct);
                                 await finalContext.SaveChangesAsync(ct);
                             }
                         }
@@ -523,7 +531,8 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// Pulls (deletes) integrations from external services and clears integration IDs.
+        /// Pulls (deletes) integrations from external services and clears the MSEL's integration IDs.
+        /// The IDs come from the MSEL's open run, which keeps them and is marked Removed.
         /// Uses ExecuteUpdateAsync for all DB writes to avoid the EntityEventInterceptor →
         /// MediatR → SignalR chain that can hang on slow/saturated browser connections.
         /// </summary>
@@ -532,26 +541,28 @@ namespace Blueprint.Api.Services
             var mselId = msel.Id;
             var currentProcessStep = "Pulling Integrations";
             await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Integrations", ct);
+            // the open run's ids, falling back to the MSEL's for a MSEL with no run
+            var ids = await IntegrationRunExtensions.GetIdsToPullAsync(blueprintContext, msel, ct);
 
             // Pull from Caster first, while the Player view its VMs belong to still exists
-            if (msel.CasterWorkspaceId != null)
+            if (ids.CasterWorkspaceId != null)
             {
                 var casterClientSource = new CasterClientSource(_httpClientFactory, _clientOptions.CurrentValue.CasterApiUrl, () => ApiClientsExtensions.GetToken(scope));
-                if (!await TryPullFromCasterAsync(blueprintContext, mselId, (Guid)msel.CasterWorkspaceId, casterClientSource, "Pulling", ct))
+                if (!await TryPullFromCasterAsync(blueprintContext, mselId, (Guid)ids.CasterWorkspaceId, casterClientSource, "Pulling", ct))
                     return;
                 // the destroy can outlast the token the other pulls were given
                 tokenResponse = await ApiClientsExtensions.GetToken(scope);
             }
 
             // Pull from Steamfitter
-            if (msel.SteamfitterScenarioId != null)
+            if (ids.SteamfitterScenarioId != null)
             {
                 try
                 {
                     currentProcessStep = "Steamfitter - pull scenario";
                     await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Steamfitter Scenario", ct);
                     var steamfitterApiClient = IntegrationSteamfitterExtensions.GetSteamfitterApiClient(_httpClientFactory, _clientOptions.CurrentValue.SteamfitterApiUrl, tokenResponse);
-                    await IntegrationSteamfitterExtensions.PullFromSteamfitterAsync((Guid)msel.SteamfitterScenarioId, steamfitterApiClient, ct);
+                    await IntegrationSteamfitterExtensions.PullFromSteamfitterAsync((Guid)ids.SteamfitterScenarioId, steamfitterApiClient, ct);
                 }
                 catch (System.Exception ex)
                 {
@@ -559,14 +570,14 @@ namespace Blueprint.Api.Services
                 }
             }
             // Pull from CITE
-            if (msel.CiteEvaluationId != null)
+            if (ids.CiteEvaluationId != null)
             {
                 try
                 {
                     currentProcessStep = "CITE - pull evaluation";
                     await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling CITE Evaluation", ct);
                     var citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CurrentValue.CiteApiUrl, tokenResponse);
-                    await IntegrationCiteExtensions.PullFromCiteAsync((Guid)msel.CiteEvaluationId, citeApiClient, ct);
+                    await IntegrationCiteExtensions.PullFromCiteAsync((Guid)ids.CiteEvaluationId, citeApiClient, ct);
                 }
                 catch (System.Exception ex)
                 {
@@ -574,14 +585,14 @@ namespace Blueprint.Api.Services
                 }
             }
             // Pull from Gallery
-            if (msel.GalleryCollectionId != null)
+            if (ids.GalleryCollectionId != null)
             {
                 try
                 {
                     currentProcessStep = "Gallery - pull collection";
                     await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Gallery Collection", ct);
                     var galleryApiClient = IntegrationGalleryExtensions.GetGalleryApiClient(_httpClientFactory, _clientOptions.CurrentValue.GalleryApiUrl, tokenResponse);
-                    await IntegrationGalleryExtensions.PullFromGalleryAsync((Guid)msel.GalleryCollectionId, galleryApiClient, ct);
+                    await IntegrationGalleryExtensions.PullFromGalleryAsync((Guid)ids.GalleryCollectionId, galleryApiClient, ct);
                 }
                 catch (System.Exception ex)
                 {
@@ -589,7 +600,7 @@ namespace Blueprint.Api.Services
                 }
             }
             // Pull from Player
-            if (msel.PlayerViewId != null)
+            if (ids.PlayerViewId != null)
             {
                 try
                 {
@@ -597,8 +608,8 @@ namespace Blueprint.Api.Services
                     await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Player View", ct);
                     var playerApiClient = IntegrationPlayerExtensions.GetPlayerApiClient(_httpClientFactory, _clientOptions.CurrentValue.PlayerApiUrl, tokenResponse);
                     // TODO:  Player requires two deletes?
-                    await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, ct);
-                    await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)msel.PlayerViewId, playerApiClient, ct);
+                    await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)ids.PlayerViewId, playerApiClient, ct);
+                    await IntegrationPlayerExtensions.PullFromPlayerAsync((Guid)ids.PlayerViewId, playerApiClient, ct);
                 }
                 catch (System.Exception ex)
                 {
@@ -621,6 +632,8 @@ namespace Blueprint.Api.Services
                 finalMsel.CasterRunId = null;
                 finalMsel.IntegrationStatus = null;
                 finalMsel.Status = integrationInformation.FinalStatus;
+                // the run keeps its ids, so its xAPI statements can still be found
+                await IntegrationRunExtensions.RemoveRunAsync(finalContext, mselId, ct);
                 await finalContext.SaveChangesAsync(ct);
             }
         }
@@ -718,6 +731,7 @@ namespace Blueprint.Api.Services
                     .SetProperty(m => m.CasterWorkspaceId, workspaceId)
                     .SetProperty(m => m.CasterRunId, runId),
                     CancellationToken.None);
+            await IntegrationRunExtensions.RecordIdsAsync(blueprintContext, msel);
 
             await _mainHub.Clients.Group(mselId.ToString())
                 .SendAsync(MainHubMethods.CasterIdsUpdated, mselId, workspaceId, runId, ct);

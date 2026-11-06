@@ -544,6 +544,114 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
     }
 
     // ---------------------------------------------------------------------------------------------
+    // The run row
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>A push records one run, holding every id the MSEL holds, marked Active and started when the
+    /// push completed, by the user who pushed.</summary>
+    [Fact]
+    public async Task Push_RecordsARunWithTheIdsItPushedAndMarksItActive()
+    {
+        var msel = await SeedPushableMsel();
+        var pusher = Guid.NewGuid();
+        var harness = Harness();
+        var before = DateTime.UtcNow;
+
+        await harness.PushAsync(msel.Id, userId: pusher);
+
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+        var run = Assert.Single(await Runs(msel.Id));
+
+        Assert.Equal(MselRunStatus.Active, run.Status);
+        Assert.Equal(pusher, run.CreatedBy);
+        Assert.NotNull(run.ActualStartTime);
+        Assert.InRange(run.ActualStartTime.Value, before, DateTime.UtcNow);
+        Assert.Null(run.ActualEndTime);
+        Assert.Equal(deployed.PlayerViewId, run.PlayerViewId);
+        Assert.Equal(deployed.GalleryCollectionId, run.GalleryCollectionId);
+        Assert.Equal(deployed.GalleryExhibitId, run.GalleryExhibitId);
+        Assert.Equal(deployed.CiteEvaluationId, run.CiteEvaluationId);
+        Assert.Equal(msel.CiteScoringModelId, run.CiteScoringModelId);
+        Assert.Equal(deployed.SteamfitterScenarioId, run.SteamfitterScenarioId);
+        Assert.NotNull(run.PlayerViewId);
+        Assert.NotNull(run.CiteEvaluationId);
+    }
+
+    /// <remarks>
+    /// The run is written with the pre-generated ids, before the first request, so a push that dies
+    /// leaves a run that names everything it may have created. It stays Deploying, with no start: the push
+    /// did not complete, and Remove Integrations or Cancel Push is what closes it.
+    /// </remarks>
+    [Fact]
+    public async Task Push_WhenAnApplicationFails_LeavesTheRunDeployingWithItsIds()
+    {
+        var msel = await SeedPushableMsel();
+        var harness = Harness(x => x.AnswersJson("gallery/api/collections", "no", HttpStatusCode.InternalServerError));
+
+        await harness.PushAsync(msel.Id);
+
+        var failed = await harness.WaitForError(msel.Id, Ct);
+        var run = Assert.Single(await Runs(msel.Id));
+
+        Assert.Equal(MselRunStatus.Deploying, run.Status);
+        Assert.Null(run.ActualStartTime);
+        Assert.Equal(failed.PlayerViewId, run.PlayerViewId);
+        Assert.Equal(failed.GalleryCollectionId, run.GalleryCollectionId);
+        Assert.Equal(failed.CiteEvaluationId, run.CiteEvaluationId);
+        Assert.Equal(failed.SteamfitterScenarioId, run.SteamfitterScenarioId);
+    }
+
+    /// <summary>Pushing again after a failed push reuses the open run, as it reuses the MSEL's ids, rather
+    /// than recording a second deployment of the same ids.</summary>
+    [Fact]
+    public async Task Push_OfAMselWithAnOpenRun_CompletesThatRunRatherThanAddingOne()
+    {
+        var existing = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        var msel = await SeedPushableMsel(x => x.CiteEvaluationId = existing);
+        var open = TestData.MselRun(msel.Id, MselRunStatus.Deploying);
+        open.CiteEvaluationId = existing;
+        await Seed(open);
+        var harness = Harness();
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var run = Assert.Single(await Runs(msel.Id));
+        Assert.Equal(open.Id, run.Id);
+        Assert.Equal(MselRunStatus.Active, run.Status);
+        Assert.Equal(existing, run.CiteEvaluationId);
+        Assert.NotNull(run.ActualStartTime);
+    }
+
+    /// <summary>A run that was removed is the record of an earlier deployment: a new push leaves it as it was
+    /// and records a run of its own.</summary>
+    [Fact]
+    public async Task Push_AfterARemovedRun_RecordsANewRunAndLeavesTheOldOne()
+    {
+        var msel = await SeedPushableMsel();
+        var removed = TestData.MselRun(msel.Id, MselRunStatus.Removed);
+        await Seed(removed);
+        var harness = Harness();
+
+        await harness.PushAsync(msel.Id);
+
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+        var runs = await Runs(msel.Id);
+
+        Assert.Equal(2, runs.Count);
+        var old = runs.Single(x => x.Id == removed.Id);
+        Assert.Equal(MselRunStatus.Removed, old.Status);
+        Assert.Equal(removed.PlayerViewId, old.PlayerViewId);
+        Assert.Equal(removed.CiteEvaluationId, old.CiteEvaluationId);
+        var added = runs.Single(x => x.Id != removed.Id);
+        Assert.Equal(MselRunStatus.Active, added.Status);
+        Assert.Equal(deployed.PlayerViewId, added.PlayerViewId);
+    }
+
+    private async Task<List<MselRunEntity>> Runs(Guid mselId) =>
+        await ReadBack(db => db.MselRuns.AsNoTracking().Where(x => x.MselId == mselId).ToListAsync(Ct));
+
+    // ---------------------------------------------------------------------------------------------
     // A MSEL's own scoring model
     // ---------------------------------------------------------------------------------------------
 

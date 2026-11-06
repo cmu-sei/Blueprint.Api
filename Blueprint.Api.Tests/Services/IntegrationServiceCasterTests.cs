@@ -13,6 +13,7 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace Blueprint.Api.Tests.Services;
@@ -225,9 +226,84 @@ public class IntegrationServiceCasterTests(DatabaseFixture fixture) : DatabaseTe
         Assert.DoesNotContain(harness.Handler.Paths, x => x == "caster/api/runs");
     }
 
+    /// <summary>The workspace and run ids reach the push's run as they are recorded on the MSEL.</summary>
+    [Fact]
+    public async Task Push_OfACasterMsel_RecordsTheWorkspaceAndTheRunOnThePushsRun()
+    {
+        var msel = await SeedCasterMsel();
+        var harness = PushHarness();
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var run = await ReadBack(db => db.MselRuns.AsNoTracking().SingleAsync(x => x.MselId == msel.Id, Ct));
+        Assert.Equal(MselRunStatus.Active, run.Status);
+        Assert.Equal(WorkspaceId, run.CasterWorkspaceId);
+        Assert.Equal(RunId, run.CasterRunId);
+    }
+
+    /// <summary>A Caster step that fails leaves its ids on the run too, which stays Deploying for the retry
+    /// or the cleanup.</summary>
+    [Fact]
+    public async Task Push_WhenTheCasterPlanFails_KeepsTheWorkspaceAndRunIdsOnTheDeployingRun()
+    {
+        var msel = await SeedCasterMsel();
+        var harness = PushHarness(x => x.AnswersJson($"GET caster/api/runs/{RunId}", Run("Failed")));
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForError(msel.Id, Ct);
+
+        var run = await ReadBack(db => db.MselRuns.AsNoTracking().SingleAsync(x => x.MselId == msel.Id, Ct));
+        Assert.Equal(MselRunStatus.Deploying, run.Status);
+        Assert.Equal(WorkspaceId, run.CasterWorkspaceId);
+        Assert.Equal(RunId, run.CasterRunId);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Retry Caster
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>A retry that finishes the push completes the run the failed push left Deploying, with the
+    /// new Caster run's id.</summary>
+    [Fact]
+    public async Task RetryCaster_OfAFailedCasterPush_CompletesItsRun()
+    {
+        var msel = await SeedFailedCasterPush();
+        var open = TestData.MselRun(msel.Id, MselRunStatus.Deploying);
+        open.PlayerViewId = PlayerViewId;
+        open.CasterWorkspaceId = WorkspaceId;
+        open.CasterRunId = msel.CasterRunId;
+        await Seed(open);
+        var harness = RetryHarness();
+
+        await RetryAsync(harness, msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var run = await ReadBack(db => db.MselRuns.AsNoTracking().SingleAsync(x => x.MselId == msel.Id, Ct));
+        Assert.Equal(open.Id, run.Id);
+        Assert.Equal(MselRunStatus.Active, run.Status);
+        Assert.NotNull(run.ActualStartTime);
+        Assert.Equal(PlayerViewId, run.PlayerViewId);
+        Assert.Equal(WorkspaceId, run.CasterWorkspaceId);
+        Assert.Equal(RunId, run.CasterRunId);
+    }
+
+    /// <summary>A retry of a push from before runs were recorded still ends with a run.</summary>
+    [Fact]
+    public async Task RetryCaster_OfAPushWithNoRun_RecordsOneWhenItCompletes()
+    {
+        var msel = await SeedFailedCasterPush();
+        var harness = RetryHarness();
+
+        await RetryAsync(harness, msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var run = await ReadBack(db => db.MselRuns.AsNoTracking().SingleAsync(x => x.MselId == msel.Id, Ct));
+        Assert.Equal(MselRunStatus.Active, run.Status);
+        Assert.Equal(PlayerViewId, run.PlayerViewId);
+        Assert.Equal(WorkspaceId, run.CasterWorkspaceId);
+        Assert.Equal(RunId, run.CasterRunId);
+    }
 
     /// <summary>A retry redoes the Caster step alone, in the workspace the failed push made, and finishes
     /// the push.</summary>
@@ -437,6 +513,56 @@ public class IntegrationServiceCasterTests(DatabaseFixture fixture) : DatabaseTe
         Assert.Equal(RunId, failed.CasterRunId);
         Assert.Equal(PlayerViewId, failed.PlayerViewId);
         Assert.DoesNotContain(harness.Handler.Paths, x => x.StartsWith("player/"));
+    }
+
+    /// <summary>The pull reads the workspace from the run, keeps it there and marks the run Removed.</summary>
+    [Fact]
+    public async Task Pull_OfACasterMsel_DestroysTheRunsWorkspaceAndKeepsItsIds()
+    {
+        var msel = await SeedDeployedCasterMsel();
+        var open = await SeedRunOf(msel);
+        var harness = PullHarness();
+
+        await harness.PullAsync(msel.Id);
+        await harness.WaitForFinalStatus(msel.Id, MselItemStatus.Approved, Ct);
+
+        var run = await ReadBack(db => db.MselRuns.AsNoTracking().SingleAsync(x => x.Id == open.Id, Ct));
+        Assert.Contains($"caster/api/workspaces/{WorkspaceId}", harness.Handler.Paths);
+        Assert.Equal(MselRunStatus.Removed, run.Status);
+        Assert.Equal(WorkspaceId, run.CasterWorkspaceId);
+        Assert.Equal(RunId, run.CasterRunId);
+        Assert.Equal(PlayerViewId, run.PlayerViewId);
+    }
+
+    /// <summary>A failed destroy stops the pull before the run is closed, so it stays open for the retry.</summary>
+    [Fact]
+    public async Task Pull_WhenTheCasterDestroyFails_LeavesTheRunOpen()
+    {
+        var msel = await SeedDeployedCasterMsel();
+        var open = await SeedRunOf(msel);
+        var harness = PullHarness(x => x.AnswersJson($"GET caster/api/workspaces/{WorkspaceId}", "{}", HttpStatusCode.InternalServerError));
+
+        await harness.PullAsync(msel.Id);
+        await harness.WaitForError(msel.Id, Ct);
+
+        var run = await ReadBack(db => db.MselRuns.AsNoTracking().SingleAsync(x => x.Id == open.Id, Ct));
+        Assert.Equal(MselRunStatus.Active, run.Status);
+        Assert.Null(run.ActualEndTime);
+    }
+
+    private async Task<MselRunEntity> SeedRunOf(MselEntity msel)
+    {
+        var run = TestData.MselRun(msel.Id);
+        run.PlayerViewId = msel.PlayerViewId;
+        run.CasterWorkspaceId = msel.CasterWorkspaceId;
+        run.CasterRunId = msel.CasterRunId;
+        run.GalleryCollectionId = null;
+        run.GalleryExhibitId = null;
+        run.CiteEvaluationId = null;
+        run.SteamfitterScenarioId = null;
+        await Seed(run);
+
+        return run;
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -10,6 +10,7 @@ using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Tests.Support;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace Blueprint.Api.Tests.Services;
@@ -244,8 +245,136 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
     }
 
     // ---------------------------------------------------------------------------------------------
+    // The run row
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>The pull clears the MSEL's ids as before, but the run keeps its own, and is marked Removed
+    /// and ended.</summary>
+    [Fact]
+    public async Task Pull_KeepsTheRunsIdsAndMarksItRemoved()
+    {
+        var msel = await SeedDeployedMsel();
+        var run = await SeedRunOf(msel);
+        var harness = Harness();
+        var before = DateTime.UtcNow;
+
+        await harness.PullAsync(msel.Id);
+
+        var pulled = await harness.WaitForFinalStatus(msel.Id, MselItemStatus.Approved, Ct);
+        var stored = await ReadBack(db => db.MselRuns.AsNoTracking().SingleAsync(x => x.Id == run.Id, Ct));
+
+        Assert.Null(pulled.PlayerViewId);
+        Assert.Equal(MselRunStatus.Removed, stored.Status);
+        Assert.NotNull(stored.ActualEndTime);
+        Assert.InRange(stored.ActualEndTime.Value, before, DateTime.UtcNow);
+        Assert.Equal(PlayerViewId, stored.PlayerViewId);
+        Assert.Equal(GalleryCollectionId, stored.GalleryCollectionId);
+        Assert.Equal(GalleryExhibitId, stored.GalleryExhibitId);
+        Assert.Equal(CiteEvaluationId, stored.CiteEvaluationId);
+        Assert.Equal(SteamfitterScenarioId, stored.SteamfitterScenarioId);
+    }
+
+    /// <summary>The ids the pull deletes come from the run, so an id only the run still holds is pulled
+    /// too.</summary>
+    [Fact]
+    public async Task Pull_DeletesWhatTheRunNames()
+    {
+        var msel = await SeedDeployedMsel(withCite: false, withSteamfitter: false);
+        var run = TestData.MselRun(msel.Id);
+        run.PlayerViewId = PlayerViewId;
+        run.GalleryCollectionId = GalleryCollectionId;
+        run.GalleryExhibitId = GalleryExhibitId;
+        run.CiteEvaluationId = CiteEvaluationId;
+        run.SteamfitterScenarioId = SteamfitterScenarioId;
+        await Seed(run);
+        var harness = Harness();
+
+        await harness.PullAsync(msel.Id);
+        await harness.WaitForFinalStatus(msel.Id, MselItemStatus.Approved, Ct);
+
+        Assert.Equal(
+            [
+                $"steamfitter/api/scenarios/{SteamfitterScenarioId}",
+                $"cite/api/evaluations/{CiteEvaluationId}",
+                $"gallery/api/collections/{GalleryCollectionId}",
+                $"player/api/views/{PlayerViewId}",
+                $"player/api/views/{PlayerViewId}"
+            ],
+            harness.Handler.Paths.Where(x => !x.StartsWith("realms/")).ToList());
+    }
+
+    /// <summary>A MSEL with no run (none was recorded for it) is pulled from its own ids, as before, and gets
+    /// no run.</summary>
+    [Fact]
+    public async Task Pull_ForAMselWithNoRun_PullsTheMselsIdsAndRecordsNoRun()
+    {
+        var msel = await SeedDeployedMsel();
+        var harness = Harness();
+
+        await harness.PullAsync(msel.Id);
+        await harness.WaitForFinalStatus(msel.Id, MselItemStatus.Approved, Ct);
+
+        Assert.Contains($"cite/api/evaluations/{CiteEvaluationId}", harness.Handler.Paths);
+        Assert.False(await ReadBack(db => db.MselRuns.AnyAsync(x => x.MselId == msel.Id, Ct)));
+    }
+
+    /// <summary>A run removed earlier is a closed record; the pull neither reads nor changes it.</summary>
+    [Fact]
+    public async Task Pull_LeavesAnEarlierRemovedRunAsItWas()
+    {
+        var msel = await SeedDeployedMsel();
+        var earlier = TestData.MselRun(msel.Id, MselRunStatus.Removed);
+        await Seed(earlier);
+        var current = await SeedRunOf(msel);
+        // as PostgreSQL stores it, to the microsecond
+        var endedAt = (await ReadBack(db => db.MselRuns.AsNoTracking().SingleAsync(x => x.Id == earlier.Id, Ct))).ActualEndTime;
+        var harness = Harness();
+
+        await harness.PullAsync(msel.Id);
+        await harness.WaitForFinalStatus(msel.Id, MselItemStatus.Approved, Ct);
+
+        var stored = await ReadBack(db => db.MselRuns.AsNoTracking().SingleAsync(x => x.Id == earlier.Id, Ct));
+        Assert.Equal(MselRunStatus.Removed, stored.Status);
+        Assert.Equal(endedAt, stored.ActualEndTime);
+        Assert.DoesNotContain($"cite/api/evaluations/{earlier.CiteEvaluationId}", harness.Handler.Paths);
+        Assert.Equal(MselRunStatus.Removed,
+            (await ReadBack(db => db.MselRuns.AsNoTracking().SingleAsync(x => x.Id == current.Id, Ct))).Status);
+    }
+
+    /// <summary>A pull that never begins (no token) leaves the run open, like the MSEL.</summary>
+    [Fact]
+    public async Task Pull_WhenNoTokenCanBeFetched_LeavesTheRunOpen()
+    {
+        var msel = await SeedDeployedMsel();
+        var run = await SeedRunOf(msel);
+        var harness = Harness(x => x.AnswersJson(
+            IntegrationServiceHarness.DiscoveryPath, "not found", HttpStatusCode.NotFound));
+
+        await harness.PullAsync(msel.Id);
+        await harness.WaitForError(msel.Id, Ct);
+
+        var stored = await ReadBack(db => db.MselRuns.AsNoTracking().SingleAsync(x => x.Id == run.Id, Ct));
+        Assert.Equal(MselRunStatus.Active, stored.Status);
+        Assert.Null(stored.ActualEndTime);
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>An Active run holding the same ids as <see cref="SeedDeployedMsel"/>'s MSEL.</summary>
+    private async Task<MselRunEntity> SeedRunOf(MselEntity msel)
+    {
+        var run = TestData.MselRun(msel.Id);
+        run.PlayerViewId = msel.PlayerViewId;
+        run.GalleryCollectionId = msel.GalleryCollectionId;
+        run.GalleryExhibitId = msel.GalleryExhibitId;
+        run.CiteEvaluationId = msel.CiteEvaluationId;
+        run.SteamfitterScenarioId = msel.SteamfitterScenarioId;
+        await Seed(run);
+
+        return run;
+    }
 
     private static readonly Guid PlayerViewId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid GalleryCollectionId = Guid.Parse("22222222-2222-2222-2222-222222222222");

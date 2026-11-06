@@ -945,11 +945,11 @@ public class MselScoringModelEndpointTests(DatabaseFixture fixture, BlueprintApp
     }
 
     /// <summary>
-    /// A participant on one of the MSEL's teams may copy it with CreateMsels, but may not read its model, so the copy,
-    /// which is theirs to read, leaves the model behind.
+    /// A participant on one of the MSEL's teams may not read its model, and may not copy the MSEL even with
+    /// CreateMsels, so no copy of the model reaches them that way.
     /// </summary>
     [Fact]
-    public async Task Copy_ByAParticipantOnOneOfItsTeams_LeavesTheScoringModelBehind()
+    public async Task Copy_ByAParticipantOnOneOfItsTeams_IsForbidden_AndMakesNoCopy()
     {
         var msel = await SeedMsel(withModel: true);
         var team = TestData.Team(msel.Id);
@@ -958,10 +958,8 @@ public class MselScoringModelEndpointTests(DatabaseFixture fixture, BlueprintApp
 
         var response = await Client(actor).PostAsync($"api/msels/{msel.Id}/copy", null, Ct);
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var copy = await response.Content.ReadFromJsonAsync<ViewModels.Msel>(JsonOptions, Ct);
-        Assert.False(await ReadBack(db => db.MselScoringModels.AnyAsync(m => m.MselId == copy.Id, Ct)));
-        Assert.Equal(HttpStatusCode.NoContent, (await Client(actor).GetAsync($"api/msels/{copy.Id}/scoringmodel", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.False(await ReadBack(db => db.Msels.AnyAsync(m => m.CreatedBy == actor.Id, Ct)));
     }
 
     /// <summary>The JSON file carries the model, and importing it gives the new MSEL a copy of its own.</summary>

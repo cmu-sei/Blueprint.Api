@@ -101,6 +101,8 @@ When the MSEL uses CITE:
 When the MSEL uses Gallery:
 - Most participant-facing injects are Gallery articles: news stories, social posts, emails, phone calls, intel and situation reports, orders.
   Pick the source type that matches the document, and name the outlet, account or office in the source name.
+  Only an Inject row is a Gallery article: leave the source type, source name, date posted, From Org and To Org empty on
+  Facilitation and Information rows, such as a controller's step or a clock update.
 - From Org is the short name of the organization or team the article comes from. To Org is the team short names it goes to, or ALL.
 - The summary is one plain-text sentence for the wall. The description or details column is the full document.
 - Group the articles on 4 to 8 Gallery cards, starting with Exercise Control for the read-in and facilitator messages. Use the
@@ -1143,6 +1145,14 @@ Answer only by calling the tool.";
         public static bool IsArticleColumn(DataFieldEntity field) =>
             field.DataType != DataFieldType.Html && field.GalleryArticleParameter is string parameter && _articleParameters.Contains(parameter);
 
+        // the columns only a Gallery article has; a row's title, summary and long text are its own whatever its type
+        private static readonly string[] _articleOnlyParameters =
+        [
+            nameof(GalleryArticleParameter.SourceType), nameof(GalleryArticleParameter.SourceName), nameof(GalleryArticleParameter.DatePosted),
+            nameof(GalleryArticleParameter.FromOrg), nameof(GalleryArticleParameter.ToOrg), nameof(GalleryArticleParameter.Url),
+            nameof(GalleryArticleParameter.OpenInNewTab), nameof(GalleryArticleParameter.Status)
+        ];
+
         private static readonly string[] _articleParameters =
         [
             nameof(GalleryArticleParameter.Name), nameof(GalleryArticleParameter.Summary), nameof(GalleryArticleParameter.FromOrg),
@@ -1575,6 +1585,19 @@ Answer only by calling the tool.";
                 warnings.Add($"Took injects off cards the draft does not have: {string.Join(", ", unknownCards)}.");
             if (droppedColumns.Any())
                 warnings.Add($"Dropped values for columns the template does not have: {string.Join(", ", droppedColumns)}.");
+
+            // only an inject is a Gallery article: a facilitation or information row the model gave a source type, a sender
+            // or an audience is a controller's step, not news, so it loses the columns that would send it to the wall
+            var articleOnly = fields.Values.Where(f => f.GalleryArticleParameter is string parameter && _articleOnlyParameters.Contains(parameter)).ToList();
+            var unmarked = 0;
+            foreach (var inject in draft.Injects.Where(i => !string.Equals(i.EventType, nameof(EventType.Inject), StringComparison.OrdinalIgnoreCase)))
+            {
+                var removed = articleOnly.Count(f => inject.Values.Remove(f.Name));
+                if (removed > 0)
+                    unmarked++;
+            }
+            if (unmarked > 0)
+                warnings.Add($"Took the Gallery article columns off {unmarked} facilitation or information {(unmarked == 1 ? "row" : "rows")}: only injects are articles.");
 
             // an article dated outside its move's stretch of the scenario clock reads out of order on the wall, so it is
             // dated as far into the move's scenario time as it is into the move's exercise time; an undated one is too

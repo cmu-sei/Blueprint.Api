@@ -602,6 +602,44 @@ public class MselBuildEndpointTests(DatabaseFixture fixture, AiEnabledFactory fa
             claims.Connected(id);
     }
 
+    /// <summary>
+    /// A facilitation row the model gave Gallery article columns, such as a controller's step marked as orders, is not an
+    /// article: it loses those columns and goes to no application, the draft says so, and no article is written for it.
+    /// </summary>
+    [Fact]
+    public async Task Injects_KeepGalleryArticleColumnsOffFacilitationRows()
+    {
+        var template = TestData.Msel(isTemplate: true);
+        template.UseGallery = true;
+        var excon = TestData.Team(template.Id);
+        excon.ShortName = "EXCON";
+        var source = TestData.DataField(template.Id, name: "Source Type", displayOrder: 2);
+        source.GalleryArticleParameter = "SourceType";
+        await Seed(template, excon, TestData.DataField(template.Id, name: "Title", displayOrder: 1), source);
+        _injects = JsonSerializer.Serialize(new
+        {
+            moves = new object[] { new { moveNumber = 0 }, new { moveNumber = 1, situationDescription = "<p>Outage.</p>" } },
+            injects = new object[]
+            {
+                new { minutes = 5, eventType = "Inject", card = "Exercise Control", values = new Dictionary<string, string> { ["Title"] = "Cables cut", ["Source Type"] = "News" } },
+                new { minutes = 70, eventType = "Facilitation", values = new Dictionary<string, string> { ["Title"] = "EXCON: collect the assessment", ["Source Type"] = "Orders" } }
+            },
+            readIn = "<p>Read this.</p>"
+        });
+        var (mselId, planner) = await CreateFromDesign(template);
+
+        var status = await Read<MselBuildStatus>(await Client(planner).PostAsync($"/api/msels/{mselId}/ai-draft/injects", null, Ct));
+
+        Assert.Contains(status.Warnings, w => w == "Took the Gallery article columns off 1 facilitation or information row: only injects are articles.");
+        Assert.Equal(["Cables cut"], status.Articles.Select(a => a.Name));
+        await using var db = NewContext();
+        var events = await db.ScenarioEvents.Include(e => e.DataValues).ThenInclude(v => v.DataField)
+            .Where(e => e.MselId == mselId && e.ScenarioEventType == EventType.Facilitation).ToListAsync(Ct);
+        var step = events.Single(e => e.DataValues.Any(v => v.Value == "EXCON: collect the assessment"));
+        Assert.Null(step.IntegrationTarget);
+        Assert.DoesNotContain(step.DataValues, v => v.DataField.Name == "Source Type" && !string.IsNullOrEmpty(v.Value));
+    }
+
     private async Task<(Guid MselId, TestActor Planner)> CreateFromDesign(bool useCite = false) => await CreateFromDesign(await SeedTemplate(useCite));
 
     private async Task<(Guid MselId, TestActor Planner)> CreateFromDesign(MselEntity template)

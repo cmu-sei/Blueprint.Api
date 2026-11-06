@@ -232,6 +232,7 @@ public class Startup
         services.AddScoped<IInjectTypeService, InjectTypeService>();
         services.AddScoped<IMselService, MselService>();
         services.AddScoped<IMselPageService, MselPageService>();
+        services.AddScoped<IMselRunService, MselRunService>();
         services.AddScoped<IMselImageService, MselImageService>();
         services.AddScoped<IMselScoringModelService, MselScoringModelService>();
         services.AddScoped<IMselUnitService, MselUnitService>();

@@ -32,7 +32,7 @@ namespace Blueprint.Api.Tests.Controllers;
 /// <c>{citeaction}</c>, <c>{citeduty}</c>, <c>{playerapplication}</c>,
 /// <c>{sparePlayerApplication}</c>, <c>{playerapplicationteam}</c>, <c>{mselpage}</c>,
 /// <c>{competency}</c>, <c>{spareCompetency}</c>, <c>{mselcompetency}</c>, <c>{teamcompetency}</c>,
-/// <c>{proficiencyscale}</c>, <c>{proficiencylevel}</c>, and <c>{unique}</c> for a name that has to clear
+/// <c>{proficiencyscale}</c>, <c>{proficiencylevel}</c>, <c>{run}</c>, and <c>{unique}</c> for a name that has to clear
 /// a unique index.
 /// So a row exercises the real object rather than an id nothing matches, and the 403 it asserts is the
 /// permission check answering rather than a 404 arriving first. The spares exist so a row that creates a
@@ -208,6 +208,10 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             """{"id":"{mselpage}","mselId":"{msel}","name":"{unique}","content":"<p>seeded</p>"}"""
         },
         { "DELETE", "api/mselpages/{mselpage}", "EditMsels", null },
+
+        // MselRunService / MselRunController - reads want ViewMsels, or an Assessor View role on the MSEL.
+        { "GET", "api/msels/{msel}/runs", "ViewMsels", null },
+        { "GET", "api/runs/{run}", "ViewMsels", null },
 
         // MselCompetencyService / MselCompetencyController - reads want ViewMsels, writes ManageMsels.
         { "GET", "api/msels/{msel}/mselcompetencies", "ViewMsels", null },
@@ -416,10 +420,11 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         var spareCompetency = TestData.Competency(framework.Id);
         var proficiencyLevel = TestData.ProficiencyLevel(proficiencyScale.Id);
         var mselPage = TestData.MselPage(msel.Id);
+        var run = TestData.MselRun(msel.Id);
         var playerApplication = TestData.PlayerApplication(msel.Id);
         var sparePlayerApplication = TestData.PlayerApplication(msel.Id);
         await Seed(
-            team, membership, competency, spareCompetency, proficiencyLevel, mselPage,
+            team, membership, competency, spareCompetency, proficiencyLevel, mselPage, run,
             playerApplication, sparePlayerApplication);
 
         var invitation = TestData.Invitation(msel.Id, team.Id);
@@ -472,6 +477,7 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             ["teamcompetency"] = teamCompetency.Id.ToString(),
             ["proficiencyscale"] = proficiencyScale.Id.ToString(),
             ["proficiencylevel"] = proficiencyLevel.Id.ToString(),
+            ["run"] = run.Id.ToString(),
             ["unique"] = $"row-{Guid.NewGuid()}"
         };
     }

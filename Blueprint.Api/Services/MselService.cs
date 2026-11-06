@@ -687,6 +687,7 @@ namespace Blueprint.Api.Services
             msel.UseCite != stored.UseCite ||
             msel.CiteScoringModelId != stored.CiteScoringModelId ||
             msel.UseSteamfitter != stored.UseSteamfitter ||
+            msel.SteamfitterScenarioStartMode != stored.SteamfitterScenarioStartMode ||
             msel.UseCaster != stored.UseCaster ||
             msel.CasterDirectoryId != stored.CasterDirectoryId;
 

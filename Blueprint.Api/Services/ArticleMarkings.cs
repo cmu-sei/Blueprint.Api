@@ -25,26 +25,30 @@ namespace Blueprint.Api.Services
         private static readonly Regex _existing = new(
             @"<table\b[^>]*\btitle=""" + Title + @"""[^>]*>.*?</table>\s*", RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
-        /// <summary>The marking a MSEL may have, defaulting to the exercise banner; the text is a TLP level or the classification</summary>
-        public static (string Marking, string Text) Clean(string marking, string text)
+        /// <summary>
+        /// The marking a MSEL may have; the text is a TLP level or the classification. A marking that is not set or not known,
+        /// or a classification with no text, is the fallback: None unless the caller asks for the exercise banner.
+        /// </summary>
+        public static (string Marking, string Text) Clean(string marking, string text, string fallback = None)
         {
-            var kind = All.FirstOrDefault(m => m.Equals(marking?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? Exercise;
+            var otherwise = Exercise.Equals(fallback, StringComparison.OrdinalIgnoreCase) ? Exercise : None;
+            var kind = All.FirstOrDefault(m => m.Equals(marking?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? otherwise;
             var value = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
             return kind switch
             {
                 Tlp => (kind, TlpLevels.FirstOrDefault(l => l.Equals(value?.Replace("TLP:", "", StringComparison.OrdinalIgnoreCase).Trim(), StringComparison.OrdinalIgnoreCase)) ?? "CLEAR"),
-                Classification => value == null ? (Exercise, null) : (kind, value.Length > 120 ? value[..120] : value),
+                Classification => value == null ? (otherwise, null) : (kind, value.Length > 120 ? value[..120] : value),
                 _ => (kind, null)
             };
         }
 
         /// <summary>The article with its MSEL's marking: at the top, and at the bottom too for a classification</summary>
-        public static string Apply(string html, string marking, string text, string exerciseName)
+        public static string Apply(string html, string marking, string text, string exerciseName, string fallback = None)
         {
             if (string.IsNullOrWhiteSpace(html))
                 return html;
             var body = _existing.Replace(html, "").Trim();
-            var (kind, value) = Clean(marking, text);
+            var (kind, value) = Clean(marking, text, fallback);
             return kind switch
             {
                 None => body,
@@ -55,12 +59,12 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// The marking as a bar drawn on a video's title card, in the words and colours of the article banner; null for none.
+        /// The marking as a single bar, such as one drawn on a title card, in the words and colours of the article banner; null for none.
         /// A classification is shown as written, in upper case.
         /// </summary>
-        public static (string Text, string Background, string Color)? Bar(string marking, string text)
+        public static (string Text, string Background, string Color)? Bar(string marking, string text, string fallback = None)
         {
-            var (kind, value) = Clean(marking, text);
+            var (kind, value) = Clean(marking, text, fallback);
             return kind switch
             {
                 None => null,

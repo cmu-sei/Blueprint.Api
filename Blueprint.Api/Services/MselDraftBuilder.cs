@@ -31,7 +31,7 @@ namespace Blueprint.Api.Services
             SetMetadata(mselEntity, draft.Metadata);
             // the marking the planner chose for the articles; Write with AI keeps to it
             if (draft.Design?.Marking != null)
-                (mselEntity.ArticleMarking, mselEntity.ArticleMarkingText) = ArticleMarkings.Clean(draft.Design.Marking, draft.Design.MarkingText);
+                (mselEntity.ArticleMarking, mselEntity.ArticleMarkingText) = ArticleMarkings.Clean(draft.Design.Marking, draft.Design.MarkingText, ArticleMarkings.Exercise);
             if (mselEntity.StartTime == default)
             {
                 var now = DateTime.UtcNow;

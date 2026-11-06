@@ -8,6 +8,7 @@ using System.Net.Http;
 using System.Security.Claims;
 using System.Security.Principal;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -892,8 +893,100 @@ namespace Blueprint.Api.Services
                 allStatements.Add(json);
             }
 
-            return MergeStatementResponses(allStatements);
+            var merged = MergeStatementResponses(allStatements);
+
+            // The MSEL's owners and anyone who can view every MSEL keep the names; they run the event.
+            if (msel.HideNamesOnAssessorView &&
+                !hasSystemPermission &&
+                !await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context))
+            {
+                return WithoutNames(merged);
+            }
+
+            return merged;
         }
+
+        /// <summary>The properties that say which person an agent is: its name and every inverse functional identifier.</summary>
+        private static readonly string[] AgentIdentity = ["name", "mbox", "mbox_sha1sum", "openid", "account"];
+
+        /// <summary>
+        /// A statement list with nothing left in it that says which person a statement is about, for the
+        /// Assessor View of a MSEL that hides names. An agent actor or object loses its name and identifiers,
+        /// a group keeps its own (that is the team) but loses its members, and <c>context.team</c> loses its
+        /// members. <c>context.instructor</c> is the assessor, so it is kept. The LRS is not changed.
+        /// </summary>
+        internal static string WithoutNames(string json)
+        {
+            var root = JsonNode.Parse(json);
+            var statements = root as JsonArray ?? root?["statements"] as JsonArray;
+            if (statements == null)
+                return json;
+
+            foreach (var statement in statements.OfType<JsonObject>())
+                RemoveNames(statement);
+
+            return root.ToJsonString();
+        }
+
+        private static void RemoveNames(JsonObject statement)
+        {
+            RemoveIdentity(statement["actor"] as JsonObject);
+
+            if (statement["object"] is JsonObject obj)
+            {
+                var type = ObjectType(obj);
+                if (type == "Agent" || type == "Group")
+                    RemoveIdentity(obj);
+                else if (type == "SubStatement")
+                    RemoveNames(obj);
+            }
+
+            if (statement["context"] is not JsonObject context)
+                return;
+
+            if (context["team"] is JsonObject team)
+                team.Remove("member");
+
+            // CITE names the person a statement is about with a user-profile activity in
+            // contextActivities (its id ends in the user's id), so those go too.
+            if (context["contextActivities"] is JsonObject contextActivities)
+            {
+                foreach (var (_, list) in contextActivities)
+                {
+                    if (list is not JsonArray activities)
+                        continue;
+
+                    foreach (var activity in activities.OfType<JsonObject>().Where(IsUserProfile).ToList())
+                        activities.Remove(activity);
+                }
+            }
+        }
+
+        private const string UserProfileActivityType = "http://id.tincanapi.com/activitytype/user-profile";
+
+        private static bool IsUserProfile(JsonObject activity) =>
+            activity["definition"] is JsonObject definition &&
+            definition["type"] is JsonValue value &&
+            value.TryGetValue<string>(out var type) &&
+            type == UserProfileActivityType;
+
+        private static void RemoveIdentity(JsonObject agent)
+        {
+            if (agent == null)
+                return;
+
+            if (ObjectType(agent) == "Group")
+            {
+                agent.Remove("member");
+                return;
+            }
+
+            foreach (var property in AgentIdentity)
+                agent.Remove(property);
+        }
+
+        private static string ObjectType(JsonObject node) =>
+            node["objectType"] is JsonValue value && value.TryGetValue<string>(out var type) ? type : null;
 
         private List<string> BuildRegistrationIds(MselEntity msel, string source)
         {

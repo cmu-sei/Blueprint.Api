@@ -166,7 +166,7 @@ public class AudioDraftScriptTests
     }
 
     [Theory]
-    [InlineData(null, null, "EXERCISE · EXERCISE · EXERCISE", "#FDB516")]
+    [InlineData("Exercise", null, "EXERCISE · EXERCISE · EXERCISE", "#FDB516")]
     [InlineData("Tlp", "amber", "TLP:AMBER", "#000000")]
     [InlineData("Classification", "secret//rel to usa", "SECRET//REL TO USA", "#C8102E")]
     public void MarkingBar_UsesTheArticleBannersWordsAndColours(string marking, string text, string expected, string background)
@@ -175,6 +175,9 @@ public class AudioDraftScriptTests
 
         Assert.Equal((expected, background), (bar.Value.Text, bar.Value.Background));
         Assert.Null(ArticleMarkings.Bar("None", null));
+        // a MSEL whose marking was never set has none; a draft asks for the exercise banner instead
+        Assert.Null(ArticleMarkings.Bar(null, null));
+        Assert.Equal("EXERCISE · EXERCISE · EXERCISE", ArticleMarkings.Bar(null, null, ArticleMarkings.Exercise).Value.Text);
     }
 
     private static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement.Clone();

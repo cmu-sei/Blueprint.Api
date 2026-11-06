@@ -232,7 +232,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     }
                     var name = GetArticleValue(GalleryArticleParameter.Name.ToString(), scenarioEvent.DataValues, msel.DataFields);
                     var summary = GetArticleValue(GalleryArticleParameter.Summary.ToString(), scenarioEvent.DataValues, msel.DataFields);
-                    var description = GetArticleValue(GalleryArticleParameter.Description.ToString(), scenarioEvent.DataValues, msel.DataFields);
+                    // the MSEL's marking goes on what is pushed, not on the stored data value, replacing any marking already in it
+                    var description = ArticleMarkings.Apply(
+                        GetArticleValue(GalleryArticleParameter.Description.ToString(), scenarioEvent.DataValues, msel.DataFields),
+                        msel.ArticleMarking, msel.ArticleMarkingText, msel.Name);
                     var move = movesAndInjects[scenarioEvent.Id][0];
                     var inject = movesAndInjects[scenarioEvent.Id][1];
                     var status = ParseItemStatus(GetArticleValue(GalleryArticleParameter.Status.ToString(), scenarioEvent.DataValues, msel.DataFields));

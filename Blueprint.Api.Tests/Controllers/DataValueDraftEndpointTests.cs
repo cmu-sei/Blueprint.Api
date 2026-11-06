@@ -135,6 +135,7 @@ public class DataValueDraftEndpointTests(DatabaseFixture fixture, AiEnabledFacto
     {
         Answer("""{"value":"<table width=\"720\" style=\"x\"><tr><td bgcolor=\"#FDB516\"><font size=\"2\"><b>EXERCISE</b></font></td></tr></table><svg viewBox=\"0 0 40 40\" aria-label=\"Logo\"></svg>"}""");
         var (msel, title, body, _) = await SeedMsel(useGallery: true);
+        await Marked(msel, ArticleMarkings.Exercise);
         var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
 
         var result = await Read<DataValueDraftResult>(await Post(actor, msel.Id, Request(body, title, "Port closure")));
@@ -236,6 +237,16 @@ public class DataValueDraftEndpointTests(DatabaseFixture fixture, AiEnabledFacto
         };
 
     /// <summary>A MSEL with a scenario, a title, an Html body and a list field, and one inject either side of 30 minutes.</summary>
+    // the marking an AI-drafted MSEL saves, the exercise banner unless the planner chose another
+    private async Task Marked(MselEntity msel, string marking)
+    {
+        await using var db = NewContext();
+        var stored = await db.Msels.SingleAsync(m => m.Id == msel.Id, Ct);
+        stored.ArticleMarking = marking;
+        await db.SaveChangesAsync(Ct);
+        msel.ArticleMarking = marking;
+    }
+
     private async Task<(MselEntity, DataFieldEntity Title, DataFieldEntity Body, DataFieldEntity SourceType)> SeedMsel(bool useGallery = false)
     {
         var msel = TestData.Msel();

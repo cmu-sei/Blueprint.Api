@@ -124,8 +124,9 @@ public class AudioDraftEndpointTests(DatabaseFixture fixture, AiEnabledFactory f
     public async Task Listen_ReadsTheArticleInTheOutletsVoiceWithoutTheModel()
     {
         var (msel, f) = await SeedMsel();
+        await Marked(msel, ArticleMarkings.Exercise);
         var editor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
-        var article = ArticleMarkings.Apply("<p>Two stations went offline at six.</p><details><summary>Transcript</summary><p>Old.</p></details>", null, null, msel.Name);
+        var article = ArticleMarkings.Apply("<p>Two stations went offline at six.</p><details><summary>Transcript</summary><p>Old.</p></details>", ArticleMarkings.Exercise, null, msel.Name);
 
         var result = await Read<AudioDraftResult>(await Post(editor, msel.Id, Request(f, AudioDraftKind.Listen, article)));
 
@@ -389,6 +390,16 @@ public class AudioDraftEndpointTests(DatabaseFixture fixture, AiEnabledFactory f
     private record Fields(DataFieldEntity Title, DataFieldEntity Source, DataFieldEntity Body);
 
     /// <summary>A Gallery MSEL with a title, a source name and an HTML body</summary>
+    // the marking an AI-drafted MSEL saves, the exercise banner unless the planner chose another
+    private async Task Marked(MselEntity msel, string marking)
+    {
+        await using var db = NewContext();
+        var stored = await db.Msels.SingleAsync(m => m.Id == msel.Id, Ct);
+        stored.ArticleMarking = marking;
+        await db.SaveChangesAsync(Ct);
+        msel.ArticleMarking = marking;
+    }
+
     private async Task<(MselEntity, Fields)> SeedMsel()
     {
         var msel = TestData.Msel();

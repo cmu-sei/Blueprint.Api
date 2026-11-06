@@ -432,7 +432,7 @@ namespace Blueprint.Api.Services
                 .Take(6).ToList();
             var techniques = (inject.Techniques ?? new List<string>()).Concat(related.SelectMany(r => r.Inject.Techniques ?? new List<string>()))
                 .DistinctBy(t => t.Split(' ')[0]).Take(8).ToList();
-            var (marking, level) = ArticleMarkings.Clean(draft.Design?.Marking, draft.Design?.MarkingText);
+            var (marking, level) = ArticleMarkings.Clean(draft.Design?.Marking, draft.Design?.MarkingText, ArticleMarkings.Exercise);
             var tags = new List<string>();
             if (marking == ArticleMarkings.Tlp)
                 tags.Add("tlp:" + level.ToLowerInvariant());

@@ -1190,10 +1190,10 @@ Answer only by calling the tool.";
         public static MselDraftDesign CleanDesign(MselDraftDesign design, MselEntity template)
         {
             design ??= new MselDraftDesign();
-            // the planner's choice, else the template's
+            // the planner's choice, else the template's; a draft has the exercise banner unless the planner or the template says otherwise
             var marking = string.IsNullOrWhiteSpace(design.Marking)
-                ? ArticleMarkings.Clean(template.ArticleMarking, template.ArticleMarkingText)
-                : ArticleMarkings.Clean(design.Marking, design.MarkingText);
+                ? ArticleMarkings.Clean(template.ArticleMarking, template.ArticleMarkingText, ArticleMarkings.Exercise)
+                : ArticleMarkings.Clean(design.Marking, design.MarkingText, ArticleMarkings.Exercise);
             string Pick(string value, string[] allowed) => allowed.FirstOrDefault(a => a.Equals(value?.Trim(), StringComparison.OrdinalIgnoreCase));
             string Text(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim().Length > 300 ? value.Trim()[..300] : value.Trim();
             return new MselDraftDesign

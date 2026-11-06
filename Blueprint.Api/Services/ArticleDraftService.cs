@@ -171,7 +171,7 @@ Answer only by calling the tool.";
                 result.Notes.AddRange(notes.EnumerateArray().Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()));
             if (photos)
                 result.Html = await PlacePhotoAsync(_aiImageClient, _logger, result.Html, input, result.Notes, ct);
-            result.Html = ArticleMarkings.Apply(result.Html, draft.Design?.Marking, draft.Design?.MarkingText, draft.Name);
+            result.Html = ArticleMarkings.Apply(result.Html, draft.Design?.Marking, draft.Design?.MarkingText, draft.Name, ArticleMarkings.Exercise);
             return result;
         }
 

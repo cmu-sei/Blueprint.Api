@@ -8,6 +8,7 @@ using System.Net.Http;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Services;
@@ -1078,6 +1079,175 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         await Assert.ThrowsAnyAsync<HttpRequestException>(
             () => Service(Options(endpoint: "http://127.0.0.1:1/xapi"))
                 .GetStatementsAsync(msel.Id, null, null, 100, null, true, Ct));
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // GetStatementsAsync on a MSEL that hides names on the Assessor View
+    // -------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A rating of one team member, with the member as the actor, the assessor as the instructor and the
+    /// team, members and all, as the context; then a statement about a person and one wrapping a
+    /// sub-statement.
+    /// </summary>
+    private const string StatementsWithNames = """
+        {"statements":[
+          {"id":"s1",
+           "actor":{"objectType":"Agent","name":"Pat Learner","mbox":"mailto:pat@example.test",
+                    "account":{"homePage":"https://id.test","name":"pat-sub"}},
+           "verb":{"id":"https://w3id.org/xapi/tla/verbs/asserted"},
+           "object":{"id":"https://blueprint.test/api/competency/1"},
+           "context":{
+             "instructor":{"name":"Sam Assessor","account":{"homePage":"https://id.test","name":"sam-sub"}},
+             "team":{"objectType":"Group","name":"BLU",
+                     "account":{"homePage":"https://blueprint.test/","name":"team-1"},
+                     "member":[{"name":"Pat Learner","account":{"homePage":"https://id.test","name":"pat-sub"}}]}}},
+          {"id":"s2",
+           "actor":{"name":"Sam Assessor","openid":"https://id.test/sam","mbox_sha1sum":"abc"},
+           "verb":{"id":"http://adlnet.gov/expapi/verbs/mentored"},
+           "object":{"objectType":"Agent","name":"Pat Learner","account":{"homePage":"https://id.test","name":"pat-sub"}}},
+          {"id":"s3",
+           "actor":{"objectType":"Group","name":"BLU","account":{"homePage":"https://blueprint.test/","name":"team-1"},
+                    "member":[{"name":"Pat Learner","mbox":"mailto:pat@example.test"}]},
+           "verb":{"id":"http://adlnet.gov/expapi/verbs/planned"},
+           "object":{"objectType":"SubStatement",
+                     "actor":{"name":"Pat Learner","mbox":"mailto:pat@example.test"},
+                     "verb":{"id":"http://adlnet.gov/expapi/verbs/attempted"},
+                     "object":{"id":"https://blueprint.test/api/inject/1"}}},
+          {"id":"s4",
+           "actor":{"name":"Pat Learner","account":{"homePage":"https://id.test","name":"pat-sub"}},
+           "verb":{"id":"http://adlnet.gov/expapi/verbs/assigned"},
+           "object":{"id":"https://cite.test/api/duties/1"},
+           "context":{"contextActivities":{
+             "parent":[{"id":"https://cite.test/api/evaluations/1",
+                        "definition":{"name":{"en-US":"Evaluation"},"type":"http://adlnet.gov/expapi/activities/simulation"}}],
+             "other":[{"id":"https://cite.test/api/users/pat-user-id",
+                       "definition":{"name":{"en-US":"Pat Learner"},"type":"http://id.tincanapi.com/activitytype/user-profile"}}]}}}
+        ]}
+        """;
+
+    /// <summary>What <see cref="StatementsWithNames"/> says about who its actors and objects are.</summary>
+    private static readonly string[] IdentityOfWhoItIsAbout = ["Pat Learner", "pat@example.test", "pat-sub", "https://id.test/sam", "abc", "pat-user-id"];
+
+    private async Task<JsonElement> StatementsFor(MselEntity msel, Guid userId, bool hasSystemPermission)
+    {
+        using var lrs = new FakeLrs(StatementsWithNames);
+
+        var json = await Service(Options(endpoint: lrs.Endpoint), Principal(userId))
+            .GetStatementsAsync(msel.Id, null, null, 100, null, hasSystemPermission, Ct);
+
+        return JsonDocument.Parse(json).RootElement.GetProperty("statements");
+    }
+
+    /// <summary>An assessor rates the team's work, so nothing in the list says which member it is about.</summary>
+    [Theory]
+    [InlineData(MselRole.Evaluator)]
+    [InlineData(MselRole.Editor)]
+    [InlineData(MselRole.Approver)]
+    public async Task GetStatements_OnAMselThatHidesNames_LeavesOutWhoEachStatementIsAbout(MselRole role)
+    {
+        var msel = TestData.Msel();
+        msel.HideNamesOnAssessorView = true;
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, role).SeedAsync();
+
+        var statements = await StatementsFor(msel, actor.Id, hasSystemPermission: false);
+
+        var text = statements.GetRawText();
+        Assert.All(IdentityOfWhoItIsAbout, identity => Assert.DoesNotContain(identity, text));
+        Assert.Equal(["s1", "s2", "s3", "s4"], statements.EnumerateArray().Select(s => Text(s, "id")));
+    }
+
+    /// <summary>The team is still there, by name and id, which is what the Assessor View groups by.</summary>
+    [Fact]
+    public async Task GetStatements_OnAMselThatHidesNames_KeepsTheTeam()
+    {
+        var msel = TestData.Msel();
+        msel.HideNamesOnAssessorView = true;
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Evaluator).SeedAsync();
+
+        var statements = await StatementsFor(msel, actor.Id, hasSystemPermission: false);
+
+        var team = statements[0].GetProperty("context").GetProperty("team");
+        Assert.Equal("BLU", Text(team, "name"));
+        Assert.Equal("team-1", Text(team.GetProperty("account"), "name"));
+        Assert.False(team.TryGetProperty("member", out _));
+        var groupActor = statements[2].GetProperty("actor");
+        Assert.Equal("BLU", Text(groupActor, "name"));
+        Assert.False(groupActor.TryGetProperty("member", out _));
+    }
+
+    /// <summary>
+    /// CITE names the person a statement is about with a user-profile activity; that goes, and the
+    /// statement's other context activities stay.
+    /// </summary>
+    [Fact]
+    public async Task GetStatements_OnAMselThatHidesNames_DropsUserProfileActivities()
+    {
+        var msel = TestData.Msel();
+        msel.HideNamesOnAssessorView = true;
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Evaluator).SeedAsync();
+
+        var statements = await StatementsFor(msel, actor.Id, hasSystemPermission: false);
+
+        var activities = statements[3].GetProperty("context").GetProperty("contextActivities");
+        Assert.Equal(0, activities.GetProperty("other").GetArrayLength());
+        Assert.Equal("https://cite.test/api/evaluations/1", Text(activities.GetProperty("parent")[0], "id"));
+    }
+
+    /// <summary>The instructor is the assessor, not someone being assessed, so it keeps its name.</summary>
+    [Fact]
+    public async Task GetStatements_OnAMselThatHidesNames_KeepsTheAssessor()
+    {
+        var msel = TestData.Msel();
+        msel.HideNamesOnAssessorView = true;
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Evaluator).SeedAsync();
+
+        var statements = await StatementsFor(msel, actor.Id, hasSystemPermission: false);
+
+        Assert.Equal("Sam Assessor", Text(statements[0].GetProperty("context").GetProperty("instructor"), "name"));
+    }
+
+    /// <summary>The MSEL's owner runs the event and keeps the names.</summary>
+    [Fact]
+    public async Task GetStatements_OnAMselThatHidesNames_ShowsTheOwnerTheNames()
+    {
+        var owner = Guid.NewGuid();
+        var msel = TestData.Msel(createdBy: owner);
+        msel.HideNamesOnAssessorView = true;
+        await Seed(msel);
+
+        var statements = await StatementsFor(msel, owner, hasSystemPermission: false);
+
+        Assert.Equal("Pat Learner", Text(statements[0].GetProperty("actor"), "name"));
+    }
+
+    [Fact]
+    public async Task GetStatements_OnAMselThatHidesNames_ShowsTheNamesToSomeoneWhoCanViewEveryMsel()
+    {
+        var msel = TestData.Msel();
+        msel.HideNamesOnAssessorView = true;
+        await Seed(msel);
+
+        var statements = await StatementsFor(msel, Guid.NewGuid(), hasSystemPermission: true);
+
+        Assert.Equal("Pat Learner", Text(statements[0].GetProperty("actor"), "name"));
+    }
+
+    [Fact]
+    public async Task GetStatements_OnAMselThatShowsNames_ShowsTheAssessorTheNames()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Evaluator).SeedAsync();
+
+        var statements = await StatementsFor(msel, actor.Id, hasSystemPermission: false);
+
+        Assert.Equal("Pat Learner", Text(statements[0].GetProperty("actor"), "name"));
+        Assert.Equal(1, statements[0].GetProperty("context").GetProperty("team").GetProperty("member").GetArrayLength());
     }
 
     // -------------------------------------------------------------------------------------------------

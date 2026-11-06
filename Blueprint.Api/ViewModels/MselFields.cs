@@ -30,9 +30,12 @@ namespace Blueprint.Api.ViewModels
         public IntegrationType GalleryIntegrationType { get; set; }
         public bool UseCite { get; set; }
         public Guid? CiteScoringModelId { get; set; }
-        /// <summary>The banner Blueprint puts on the MSEL's Gallery articles: None, Exercise (the default), Tlp or Classification</summary>
+        /// <summary>
+        /// The banner Blueprint puts on the MSEL's Gallery articles when it pushes them, and on its pages: None (the default),
+        /// Exercise, Tlp or Classification. A value it does not know is saved as None.
+        /// </summary>
         public string ArticleMarking { get; set; }
-        /// <summary>The TLP level (CLEAR, GREEN, AMBER, AMBER+STRICT, RED), or the classification banner's text</summary>
+        /// <summary>The TLP level (CLEAR, GREEN, AMBER, AMBER+STRICT, RED), or the classification banner's text, up to 120 characters</summary>
         public string ArticleMarkingText { get; set; }
         public IntegrationType CiteIntegrationType { get; set; }
         public bool UseSteamfitter { get; set; }
@@ -70,6 +73,12 @@ namespace Blueprint.Api.ViewModels
         public bool ShowMoveOnAssessorView { get; set; }
         public bool ShowGroupOnAssessorView { get; set; }
         public bool ShowIntegrationTargetOnAssessorView { get; set; }
+        /// <summary>
+        /// Leaves out who each xAPI statement is about when the Assessor View lists them, so an assessor
+        /// rates the team's work without seeing its members' names. The MSEL's owners and anyone with
+        /// ViewMsels still see the names. The statements in the LRS are unchanged.
+        /// </summary>
+        public bool HideNamesOnAssessorView { get; set; }
         public string HeaderRowMetadata { get; set; }
         // IEEE 2881 (LMT) metadata fields
         public string EducationalLevel { get; set; }

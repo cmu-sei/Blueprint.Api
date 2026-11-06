@@ -6,15 +6,25 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Services;
 
-/// <summary>The banner Blueprint puts on every Gallery article of a MSEL, whatever the model wrote.</summary>
+/// <summary>The banner Blueprint puts on every Gallery article of a MSEL, whatever the article already says.</summary>
 public class ArticleMarkingsTests
 {
     private const string Article = "<p>Cables cut, says the Herald.</p>";
 
-    [Fact]
-    public void Apply_PutsTheExerciseBannerOnTop_ByDefault()
+    /// <summary>A MSEL whose marking was never set has none, so nothing changes for one that predates markings.</summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("Bogus")]
+    public void Apply_LeavesTheArticleUnmarked_ByDefault(string marking)
     {
-        var html = ArticleMarkings.Apply(Article, null, null, "Deep Bite");
+        Assert.Equal(Article, ArticleMarkings.Apply(Article, marking, null, "Deep Bite"));
+    }
+
+    [Fact]
+    public void Apply_PutsTheExerciseBannerOnTop()
+    {
+        var html = ArticleMarkings.Apply(Article, "exercise", null, "Deep Bite");
 
         Assert.StartsWith("<table title=\"Marking\"", html);
         Assert.Contains("EXERCISE · EXERCISE · EXERCISE", html);
@@ -57,7 +67,7 @@ public class ArticleMarkingsTests
         Assert.Contains($"bgcolor=\"{background}\"", html);
     }
 
-    /// <summary>A marking already on the article, as when Write with AI rewrites one, is replaced, not repeated.</summary>
+    /// <summary>A marking already on the article, as when it is pushed again, is replaced, not repeated.</summary>
     [Fact]
     public void Apply_ReplacesAMarkingAlreadyThere()
     {
@@ -70,9 +80,51 @@ public class ArticleMarkingsTests
     }
 
     [Fact]
-    public void Clean_FallsBackToTheExerciseBanner_ForAClassificationWithNoText()
+    public void Apply_TakesAMarkingAlreadyThereOff_ForNone()
     {
-        Assert.Equal(("Exercise", null), ArticleMarkings.Clean("Classification", " "));
-        Assert.Equal(("Exercise", null), ArticleMarkings.Clean("Bogus", "x"));
+        var marked = ArticleMarkings.Apply(Article, "Classification", "SECRET", "Deep Bite");
+
+        Assert.Equal(Article, ArticleMarkings.Apply(marked, "None", null, "Deep Bite"));
+    }
+
+    [Fact]
+    public void Apply_UsesTheFallback_WhenTheMarkingIsNotSet()
+    {
+        var html = ArticleMarkings.Apply(Article, null, null, "Deep Bite", ArticleMarkings.Exercise);
+
+        Assert.Contains("EXERCISE · EXERCISE · EXERCISE", html);
+    }
+
+    [Fact]
+    public void Clean_FallsBackToNone_ForAClassificationWithNoTextOrAMarkingItDoesNotKnow()
+    {
+        Assert.Equal(("None", null), ArticleMarkings.Clean("Classification", " "));
+        Assert.Equal(("None", null), ArticleMarkings.Clean("Bogus", "x"));
+        Assert.Equal(("None", null), ArticleMarkings.Clean(null, null));
+    }
+
+    [Fact]
+    public void Clean_FallsBackToTheExerciseBanner_WhenAskedTo()
+    {
+        Assert.Equal(("Exercise", null), ArticleMarkings.Clean("Classification", " ", ArticleMarkings.Exercise));
+        Assert.Equal(("Exercise", null), ArticleMarkings.Clean("Bogus", "x", ArticleMarkings.Exercise));
+    }
+
+    [Fact]
+    public void Clean_KeepsTheKnownMarkings_AndDropsTextOnlyATlpOrClassificationUses()
+    {
+        Assert.Equal(("Exercise", null), ArticleMarkings.Clean(" exercise ", "ignored"));
+        Assert.Equal(("Tlp", "AMBER+STRICT"), ArticleMarkings.Clean("tlp", "tlp:amber+strict"));
+        Assert.Equal(("Tlp", "CLEAR"), ArticleMarkings.Clean("Tlp", null));
+        Assert.Equal(("Classification", new string('x', 120)), ArticleMarkings.Clean("Classification", new string('x', 200)));
+    }
+
+    [Fact]
+    public void Bar_IsTheBannersWordsAndColours_AndNothingForNone()
+    {
+        Assert.Null(ArticleMarkings.Bar(null, null));
+        Assert.Equal(("TLP:RED", "#000000", "#FF2B2B"), ArticleMarkings.Bar("Tlp", "red"));
+        Assert.Equal(("SECRET//NOFORN", "#C8102E", "#FFFFFF"), ArticleMarkings.Bar("Classification", "Secret//NoForn"));
+        Assert.Equal(("EXERCISE · EXERCISE · EXERCISE", "#FDB516", "#000000"), ArticleMarkings.Bar("Exercise", null));
     }
 }

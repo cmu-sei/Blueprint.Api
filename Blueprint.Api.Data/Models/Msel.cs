@@ -28,7 +28,7 @@ namespace Blueprint.Api.Data.Models
         public bool UseCite { get; set; }
         public Guid? CiteEvaluationId { get; set; }
         public Guid? CiteScoringModelId { get; set; }
-        /// <summary>The banner on the MSEL's Gallery articles: None, Exercise, Tlp or Classification</summary>
+        /// <summary>The banner on the MSEL's Gallery articles and pages: None, Exercise, Tlp or Classification</summary>
         public string ArticleMarking { get; set; }
         /// <summary>The TLP level, or the classification banner's text</summary>
         public string ArticleMarkingText { get; set; }
@@ -62,6 +62,7 @@ namespace Blueprint.Api.Data.Models
         public bool ShowMoveOnAssessorView { get; set; }
         public bool ShowGroupOnAssessorView { get; set; }
         public bool ShowIntegrationTargetOnAssessorView { get; set; }
+        public bool HideNamesOnAssessorView { get; set; }
         public virtual ICollection<MoveEntity> Moves { get; set; } = new HashSet<MoveEntity>();
         public virtual ICollection<DataFieldEntity> DataFields { get; set; } = new HashSet<DataFieldEntity>();
         public virtual ICollection<ScenarioEventEntity> ScenarioEvents { get; set; } = new HashSet<ScenarioEventEntity>();

@@ -270,11 +270,11 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
     }
 
     /// <summary>
-    /// When the Steamfitter scenario starts changes nothing the push built, so a pushed MSEL can still change
-    /// it - which is what lets a facilitator have a pushed scenario start at the MSEL start time after all.
+    /// When the Steamfitter scenario starts is read by the push and, for At the MSEL start time, by the
+    /// background start service while the MSEL is deployed, so it stays as pushed until Remove Integrations.
     /// </summary>
     [Fact]
-    public async Task Update_ChangingTheSteamfitterScenarioStartMode_OfADeployedMsel_Is200()
+    public async Task Update_ChangingTheSteamfitterScenarioStartMode_OfADeployedMsel_Is409AndLeavesTheMselAlone()
     {
         var msel = TestData.Msel(status: MselItemStatus.Deployed);
         msel.UseSteamfitter = true;
@@ -287,9 +287,9 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
             new { name = msel.Name, status = msel.Status, useSteamfitter = true, steamfitterScenarioStartMode = "AtStartTime" },
             JsonOptions, Ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var row = await Stored(msel.Id);
-        Assert.Equal(SteamfitterScenarioStartMode.AtStartTime, row.SteamfitterScenarioStartMode);
+        Assert.Equal(SteamfitterScenarioStartMode.Manual, row.SteamfitterScenarioStartMode);
         Assert.Equal(msel.SteamfitterScenarioId, row.SteamfitterScenarioId);
     }
 

@@ -60,6 +60,63 @@ public class ParticipantScopeEndpointTests(DatabaseFixture fixture, BlueprintApp
     }
 
     // ---------------------------------------------------------------------------------------------
+    // Data Options
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task DataOptions_ByMsel_ForAParticipant_AreOnlyThoseOfFieldsOnTheExerciseView()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var shown = TestData.DataField(mselId: msel.Id);
+        shown.OnExerciseView = true;
+        var keptOff = TestData.DataField(mselId: msel.Id, displayOrder: 2);
+        await Seed(shown, keptOff);
+        var shownOption = TestData.DataOption(shown.Id);
+        var keptOffOption = TestData.DataOption(keptOff.Id);
+        await Seed(shownOption, keptOffOption);
+        var (participant, contributor) = await SeedParticipantAndContributor(msel, team);
+
+        var sent = await Read<List<ViewModels.DataOption>>(
+            await Client(participant).GetAsync($"/api/msels/{msel.Id}/dataOptions", Ct));
+
+        Assert.Equal(shownOption.Id, Assert.Single(sent).Id);
+        Assert.Equal(2, (await Read<List<ViewModels.DataOption>>(
+            await Client(contributor).GetAsync($"/api/msels/{msel.Id}/dataOptions", Ct))).Count);
+    }
+
+    /// <summary>
+    /// The options of a field kept off the Exercise View are refused to a participant, by field and by id, and
+    /// read by a contributor. The options of a field the view shows stay readable to the participant.
+    /// </summary>
+    [Fact]
+    public async Task DataOptions_OfAFieldKeptOffTheExerciseView_AreForbiddenToAParticipant_AndReadByAContributor()
+    {
+        var (msel, team) = await SeedMselAndTeam();
+        var shown = TestData.DataField(mselId: msel.Id);
+        shown.OnExerciseView = true;
+        var keptOff = TestData.DataField(mselId: msel.Id, displayOrder: 2);
+        await Seed(shown, keptOff);
+        var shownOption = TestData.DataOption(shown.Id);
+        var keptOffOption = TestData.DataOption(keptOff.Id);
+        await Seed(shownOption, keptOffOption);
+        var (participant, contributor) = await SeedParticipantAndContributor(msel, team);
+
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await Client(participant).GetAsync($"/api/datafields/{keptOff.Id}/dataOptions", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await Client(participant).GetAsync($"/api/dataOptions/{keptOffOption.Id}", Ct)).StatusCode);
+        Assert.Single(await Read<List<ViewModels.DataOption>>(
+            await Client(participant).GetAsync($"/api/datafields/{shown.Id}/dataOptions", Ct)));
+        Assert.Equal(HttpStatusCode.OK,
+            (await Client(participant).GetAsync($"/api/dataOptions/{shownOption.Id}", Ct)).StatusCode);
+
+        Assert.Single(await Read<List<ViewModels.DataOption>>(
+            await Client(contributor).GetAsync($"/api/datafields/{keptOff.Id}/dataOptions", Ct)));
+        Assert.Equal(HttpStatusCode.OK,
+            (await Client(contributor).GetAsync($"/api/dataOptions/{keptOffOption.Id}", Ct)).StatusCode);
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // CITE actions and duties
     // ---------------------------------------------------------------------------------------------
 

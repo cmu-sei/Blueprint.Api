@@ -119,7 +119,8 @@ Rules:
   references (E1, E2, ...), exactly as listed.
 - Short names are short, upper case and unique. Team and card descriptions are plain text; organization descriptions are HTML paragraphs.
 - Use competency ID numbers exactly as listed. Prefer a work role for a team's role in the exercise and tasks for specific actions.
-- An inject's values are keyed by column name and follow the column's description. For an edit, give only the columns that change.
+- An inject's values are keyed by column name and follow the column's description. For an edit, give only the columns that change;
+  to clear a column, give it an empty value.
 - Keep injects consistent with the scenario, the moves and the injects around them: the same organizations, people, places and times.
 - Every inject needs a clear purpose: what participants receive, who sends it, and what they are expected to do.
 - Use fictional organizations, people, domains and IP addresses (RFC 5737 / RFC 1918 ranges) unless the planner names real ones.";
@@ -462,7 +463,7 @@ Rules:
                         DeltaSeconds = deltaSeconds,
                         ScenarioEventType = Enum.Parse<EventType>(change.EventType),
                         // the push sends a row to Gallery only when its integration target says so
-                        IntegrationTarget = state.Msel.UseGallery && ArticleFields.IsArticle(state.Msel, change.Values) ? "Gallery" : null,
+                        IntegrationTarget = GalleryTarget(state.Msel, Enum.Parse<EventType>(change.EventType), null, cells),
                         DataValues = cells
                     }, permissions.EditMsels, ct);
                     break;
@@ -491,7 +492,7 @@ Rules:
                         IsHidden = inject.IsHidden,
                         RowMetadata = inject.RowMetadata,
                         ScenarioEventType = change.EventType != null ? Enum.Parse<EventType>(change.EventType) : inject.ScenarioEventType,
-                        IntegrationTarget = GalleryTarget(state.Msel, inject.IntegrationTarget, cells),
+                        IntegrationTarget = GalleryTarget(state.Msel, change.EventType != null ? Enum.Parse<EventType>(change.EventType) : inject.ScenarioEventType, inject.IntegrationTarget, cells),
                         Information = inject.Information,
                         DataValues = cells
                     }, permissions.EditMsels, ct);
@@ -641,15 +642,24 @@ Rules:
                 state.Competencies.TryAdd(match.Key, match.OrderByDescending(c => frameworks.Contains(c.CompetencyFrameworkId)).First());
         }
 
-        // an edit that makes a row a Gallery article also sends it to Gallery; the row's other targets stay
-        private static string GalleryTarget(MselEntity msel, string target, List<ScenarioEventCell> cells)
+        // a row is a Gallery article when it is an inject with a source type: making it one also sends it to Gallery, and an
+        // edit that leaves it no longer one, such as clearing the source type of a controller's step, takes Gallery off it;
+        // a MSEL with no article columns cannot tell, so its rows keep the targets they have; the row's other targets stay
+        public static string GalleryTarget(MselEntity msel, EventType eventType, string target, List<ScenarioEventCell> cells)
         {
+            if (!msel.UseGallery || ArticleFields.Body(msel) == null
+                || !msel.DataFields.Any(f => f.GalleryArticleParameter == nameof(Data.Enumerations.GalleryArticleParameter.SourceType)))
+                return target;
             var values = cells.Where(c => c.Value != null)
                 .Join(msel.DataFields, c => c.DataFieldId, f => f.Id, (c, f) => (f.Name, c.Value))
                 .ToDictionary(v => v.Name, v => v.Value);
-            if (!msel.UseGallery || !ArticleFields.IsArticle(msel, values) || (target?.Contains("Gallery") ?? false))
-                return target;
-            return string.IsNullOrEmpty(target) ? "Gallery" : target + "|Gallery";
+            var targets = (target ?? "").Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            var article = eventType == EventType.Inject && ArticleFields.IsArticle(msel, values);
+            if (article && !targets.Contains("Gallery"))
+                targets.Add("Gallery");
+            else if (!article)
+                targets.RemoveAll(t => t == "Gallery");
+            return targets.Any() ? string.Join("|", targets) : null;
         }
 
         private static string BuildPrompt(MselAssistRequest request, MselAssistState state, List<CompetencyEntity> workRoles, MselAssistAccess access)
@@ -783,7 +793,7 @@ Rules:
                             ["values"] = new JsonObject
                             {
                                 ["type"] = "object",
-                                ["description"] = "An inject's values by column name. For an edit, only the columns that change.",
+                                ["description"] = "An inject's values by column name. For an edit, only the columns that change; an empty value clears the column.",
                                 ["additionalProperties"] = new JsonObject { ["type"] = "string" }
                             }
                         },
@@ -1284,6 +1294,9 @@ Rules:
                         : DataValueDraftService.CleanHtml(value);
                 if (!string.IsNullOrEmpty(value))
                     cleaned[field.Name] = value;
+                // an empty value clears the column, as when the planner asks to take a source type off a controller's step
+                else if (string.IsNullOrWhiteSpace(raw))
+                    cleaned[field.Name] = null;
             }
             return cleaned;
         }

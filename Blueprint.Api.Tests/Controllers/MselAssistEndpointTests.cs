@@ -399,6 +399,37 @@ public class MselAssistEndpointTests(DatabaseFixture fixture, AiEnabledFactory f
         Assert.Equal("Steamfitter|Gallery", targets[existing.DeltaSeconds]);
     }
 
+    /// <summary>
+    /// Only an inject is a Gallery article: a facilitation row the assistant adds with a source type goes to no application,
+    /// and an edit that clears a controller's step's source type takes Gallery off it while its other targets stay.
+    /// </summary>
+    [Fact]
+    public async Task Apply_TakesGalleryOffARowThatIsNotAnArticle()
+    {
+        var (msel, _) = await SeedMsel();
+        var title = TestData.DataField(msel.Id, name: "Title", displayOrder: 1);
+        title.GalleryArticleParameter = "Name";
+        var details = TestData.DataField(msel.Id, dataType: DataFieldType.Html, name: "Details", displayOrder: 2);
+        details.GalleryArticleParameter = "Description";
+        var source = TestData.DataField(msel.Id, dataType: DataFieldType.SourceType, name: "Source Type", displayOrder: 3);
+        source.GalleryArticleParameter = "SourceType";
+        var step = TestData.ScenarioEvent(msel.Id);
+        step.ScenarioEventType = EventType.Facilitation;
+        step.IntegrationTarget = "Steamfitter|Gallery";
+        await Seed(title, details, source, step, TestData.DataValue(title.Id, step.Id, "EXCON: collect the assessment"), TestData.DataValue(source.Id, step.Id, "Orders"));
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var result = await Read<MselAssistApplyResult>(await Apply(owner, msel.Id,
+            new MselChange { Op = "inject.add", Minutes = 50, EventType = "Facilitation", Values = new Dictionary<string, string> { ["Title"] = "EXCON: start the timer", ["Source Type"] = "Orders" } },
+            new MselChange { Op = "inject.update", Target = "E1", Values = new Dictionary<string, string> { ["Source Type"] = "" } }));
+
+        Assert.All(result.Results, r => Assert.True(r.Applied, r.Error));
+        await using var db = NewContext();
+        var targets = await db.ScenarioEvents.Where(e => e.MselId == msel.Id).ToDictionaryAsync(e => e.DeltaSeconds, e => e.IntegrationTarget, Ct);
+        Assert.Null(targets[50 * 60]);
+        Assert.Equal("Steamfitter", targets[step.DeltaSeconds]);
+    }
+
     private Task<HttpResponseMessage> Apply(TestActor actor, Guid mselId, params MselChange[] changes) =>
         Client(actor).PostAsJsonAsync($"/api/msels/{mselId}/ai-assist/apply", new MselAssistApply { Changes = changes.ToList() }, Ct);
 

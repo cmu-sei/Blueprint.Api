@@ -161,12 +161,12 @@ public class JsonConverterTests
     }
 
     // -------------------------------------------------------------------------------------------------
-    // JsonDoubleConverter, which nothing reaches
+    // JsonDoubleConverter, which only a MSEL's own scoring model reaches
     // -------------------------------------------------------------------------------------------------
 
-    /// <summary>Nothing in the API is a floating point number.</summary>
+    /// <summary>The only floating point numbers in the API are a scoring model's weights and option values, as in CITE.</summary>
     [Fact]
-    public void NothingInTheApiIsAFloatingPointNumber()
+    public void TheOnlyFloatingPointNumbersInTheApi_AreTheScoringModelsWeightsAndValues()
     {
         var floating = new[] { typeof(double), typeof(float), typeof(decimal) };
 
@@ -174,13 +174,22 @@ public class JsonConverterTests
             .Where(x => x.Namespace == "Blueprint.Api.ViewModels")
             .Concat(typeof(Data.BlueprintContext).Assembly.GetTypes()
                 .Where(x => x.Namespace == "Blueprint.Api.Data.Models"))
+            // an interface is never serialized; the models that implement one are
+            .Where(x => !x.IsInterface)
             .SelectMany(x => x.GetProperties())
             .Where(x => floating.Contains(Nullable.GetUnderlyingType(x.PropertyType) ?? x.PropertyType))
             .Select(x => $"{x.DeclaringType.Name}.{x.Name}")
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
 
-        Assert.Empty(properties);
+        Assert.Equal(
+            [
+                "MselScoringCategory.ScoringWeight",
+                "MselScoringCategoryEntity.ScoringWeight",
+                "MselScoringOption.Value",
+                "MselScoringOptionEntity.Value"
+            ],
+            properties);
     }
 
     /// <summary>A NaN is written as <c>0.0</c>.</summary>

@@ -253,9 +253,12 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         Assert.Single(send.Arguments);
     }
 
-    /// <summary>The membership families send the whole entity where every other family sends a view model.</summary>
+    /// <summary>
+    /// The membership families send view models, as every other family does: a team user its ids, a unit user its ids and
+    /// its user, never the entities, whose navigations reach whatever the saving request has loaded.
+    /// </summary>
     [Fact]
-    public async Task TheMembershipFamilies_SendTheWholeEntityWhereEveryOtherFamilySendsAViewModel()
+    public async Task TheMembershipFamilies_SendViewModels()
     {
         var msel = TestData.Msel();
         var team = TestData.Team(msel.Id);
@@ -270,10 +273,13 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         await Deleted(teamUser);
         await Deleted(unitUser);
 
-        Assert.IsType<TeamUserEntity>(_hub.Of(MainHubMethods.TeamUserCreated)[0].Payload);
-        Assert.IsType<UnitUserEntity>(_hub.Of(MainHubMethods.UnitUserCreated)[0].Payload);
-        Assert.IsType<TeamUserEntity>(_hub.Of(MainHubMethods.TeamUserDeleted)[0].Payload);
-        Assert.IsType<UnitUserEntity>(_hub.Of(MainHubMethods.UnitUserDeleted)[0].Payload);
+        var created = Assert.IsType<Blueprint.Api.ViewModels.TeamUser>(_hub.Of(MainHubMethods.TeamUserCreated)[0].Payload);
+        Assert.Equal((teamUser.Id, team.Id, user.Id), (created.Id, created.TeamId, created.UserId));
+        var unitCreated = Assert.IsType<Blueprint.Api.ViewModels.UnitUser>(_hub.Of(MainHubMethods.UnitUserCreated)[0].Payload);
+        Assert.Equal((unitUser.Id, unit.Id, user.Id, user.Name), (unitCreated.Id, unitCreated.UnitId, unitCreated.UserId, unitCreated.User.Name));
+        Assert.IsType<Blueprint.Api.ViewModels.TeamUser>(_hub.Of(MainHubMethods.TeamUserDeleted)[0].Payload);
+        var unitDeleted = Assert.IsType<Blueprint.Api.ViewModels.UnitUser>(_hub.Of(MainHubMethods.UnitUserDeleted)[0].Payload);
+        Assert.Equal((unitUser.Id, unit.Id, user.Id), (unitDeleted.Id, unitDeleted.UnitId, unitDeleted.UserId));
     }
 
     /// <summary>The installation wide families name no modified properties even on an update.</summary>
@@ -346,15 +352,25 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
             () => Created(TestData.CiteAction(mselId)));
         await Assert.ThrowsAsync<NullReferenceException>(
             () => Created(TestData.CiteDuty(mselId)));
-        await Assert.ThrowsAsync<NullReferenceException>(
-            () => Created(TestData.TeamUser(Guid.NewGuid(), Guid.NewGuid())));
-        await Assert.ThrowsAsync<NullReferenceException>(
-            () => Created(TestData.UnitUser(Guid.NewGuid(), Guid.NewGuid())));
     }
 
-    /// <summary>A team user is only broadcastable while its team is tracked.</summary>
+    /// <summary>A unit user removed before its event is handled is broadcast to nobody, rather than failing the request.</summary>
     [Fact]
-    public async Task ATeamUser_IsOnlyBroadcastableWhileItsTeamIsTracked()
+    public async Task AUnitUserThatIsGone_IsBroadcastToNobody()
+    {
+        var gone = TestData.UnitUser(Guid.NewGuid(), Guid.NewGuid());
+
+        await Created(gone);
+
+        Assert.Empty(_hub.Of(MainHubMethods.UnitUserCreated, gone.UnitId, gone.UserId));
+    }
+
+    /// <summary>
+    /// A team user is broadcast whatever the saving request has loaded: its message is its own ids, never what its
+    /// navigations reach, so a drafted MSEL's team, with its competency tree loaded, adds nothing to it.
+    /// </summary>
+    [Fact]
+    public async Task ATeamUser_IsBroadcastWhateverTheRequestHasLoaded()
     {
         var msel = TestData.Msel();
         var team = TestData.Team(msel.Id);
@@ -370,10 +386,14 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         await Created(tracked);
         await using (var cold = NewContext())
         {
-            await Assert.ThrowsAsync<NullReferenceException>(() => Created(untracked, cold));
+            await Created(untracked, cold);
         }
 
-        Assert.Equal(3, _hub.Of(MainHubMethods.TeamUserCreated, team.Id, user.Id).Count);
+        // both members are broadcast, the one whose team the request never loaded too, each as its view model
+        var sends = _hub.Of(MainHubMethods.TeamUserCreated, team.Id, user.Id).Concat(_hub.Of(MainHubMethods.TeamUserCreated, team.Id, stranger.Id)).ToList();
+        Assert.All(sends, send => Assert.IsType<Blueprint.Api.ViewModels.TeamUser>(send.Payload));
+        Assert.Contains(sends, send => ((Blueprint.Api.ViewModels.TeamUser)send.Payload).UserId == user.Id);
+        Assert.Contains(sends, send => ((Blueprint.Api.ViewModels.TeamUser)send.Payload).UserId == stranger.Id);
     }
 
     /// <summary>A MSEL gone by the time its event is handled is broadcast to nobody.</summary>
@@ -439,9 +459,9 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         Assert.Equal(created, HandledEntities(typeof(EntityDeleted<>)));
     }
 
-    /// <summary>Twenty of the forty four entities raise events no handler receives.</summary>
+    /// <summary>Twenty three of the forty seven entities raise events no handler receives.</summary>
     [Fact]
-    public void TwentyOfTheFortyFourEntities_RaiseEventsNoHandlerReceives()
+    public void TwentyThreeOfTheFortySevenEntities_RaiseEventsNoHandlerReceives()
     {
         var tracked = typeof(BlueprintContext).GetProperties()
             .Where(x => x.PropertyType.IsGenericType
@@ -453,7 +473,7 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(44, tracked.Count);
+        Assert.Equal(47, tracked.Count);
         Assert.Equal(
             new[]
             {
@@ -467,6 +487,9 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
                 "MselCompetencyEntity",
                 "MselImageEntity",
                 "MselPageEntity",
+                "MselScoringCategoryEntity",
+                "MselScoringModelEntity",
+                "MselScoringOptionEntity",
                 "MselTeamEntity",
                 "MselUnitEntity",
                 "PermissionEntity",

@@ -277,7 +277,10 @@ namespace Blueprint.Api.Services
             if (!hasViewMselsPermission && !(await MselContributorRequirement.IsMet(_user.GetId(), mselId, true, _context)))
                 throw new ForbiddenException();
 
-            var newMselEntity = await privateMselCopyAsync(mselId, null, ct);
+            // the copy is the caller's, so it carries the MSEL's own scoring model only to a caller who may read it
+            // here: a participant on one of the MSEL's teams copies the rest without it
+            var canReadScoringModel = hasViewMselsPermission || await MselContributorRequirement.IsMet(_user.GetId(), mselId, true, _context);
+            var newMselEntity = await privateMselCopyAsync(mselId, null, ct, includeScoringModel: canReadScoringModel);
             var msel = _mapper.Map<Msel>(newMselEntity);
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
@@ -289,7 +292,7 @@ namespace Blueprint.Api.Services
             return msel;
         }
 
-        private async Task<MselEntity> privateMselCopyAsync(Guid mselId, Guid? currentUserTeamId, CancellationToken ct)
+        private async Task<MselEntity> privateMselCopyAsync(Guid mselId, Guid? currentUserTeamId, CancellationToken ct, bool includeScoringModel = true)
         {
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == _user.GetId())).Name;
@@ -317,10 +320,15 @@ namespace Blueprint.Api.Services
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
                 .Include(m => m.Pages)
+                .Include(m => m.ScoringModel)
+                .ThenInclude(sm => sm.Categories)
+                .ThenInclude(c => c.Options)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (mselEntity == null)
                 throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
+            if (!includeScoringModel)
+                mselEntity.ScoringModel = null;
 
             return await privateMselCopyAsync(mselEntity, currentUserTeamId, ct);
         }
@@ -523,6 +531,9 @@ namespace Blueprint.Api.Services
             {
                 ScenarioEventReplaceIds(scenarioEventEntity, mselEntity.Id, mselEntity.DateCreated, mselEntity.CreatedBy, newGuidValues, competencyFieldIds);
             }
+            // copy the MSEL's own scoring model
+            if (mselEntity.ScoringModel != null)
+                MselScoringModelService.AssignIds(mselEntity.ScoringModel, mselEntity.Id, mselEntity.CreatedBy);
 
             _context.Msels.Add(mselEntity);
             if (sourceImage != null)
@@ -631,12 +642,25 @@ namespace Blueprint.Api.Services
             if (HasIntegrations(mselToUpdate) && IntegrationSettingsChanged(msel, mselToUpdate))
                 throw new ConflictException("The integration settings cannot be changed while the MSEL is pushed, or is being pushed or pulled. Remove Integrations first.");
 
+            // a MSEL that authors its own scoring model pushes that one, so it cannot link a CITE model as well
+            if (msel.CiteScoringModelId != null && msel.CiteScoringModelId != mselToUpdate.CiteScoringModelId &&
+                await _context.MselScoringModels.AnyAsync(sm => sm.MselId == id, ct))
+                throw new ConflictException("The MSEL has its own scoring model. Remove it before linking a CITE scoring model.");
+
+            // the push builds the evaluation from this scoring model as the service account, so only accept one the
+            // user can read in full in CITE
+            var linkChanged = msel.CiteScoringModelId != mselToUpdate.CiteScoringModelId;
+            var linkedName = linkChanged && msel.CiteScoringModelId != null
+                ? (await CiteScoringModelAccess.GetViewableAsync(_citeApiClient, (Guid)msel.CiteScoringModelId, ct)).Description
+                : mselToUpdate.CiteScoringModelName;
+
             // the push deploys this directory as the service account, so only accept one the user can view in Caster
             if (msel.CasterDirectoryId != null && msel.CasterDirectoryId != mselToUpdate.CasterDirectoryId)
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
 
             // okay to update this msel
             _mapper.Map(msel, mselToUpdate);
+            mselToUpdate.CiteScoringModelName = msel.CiteScoringModelId == null ? null : linkedName;
             mselToUpdate.ModifiedBy = _user.GetId();
 
             _context.Msels.Update(mselToUpdate);
@@ -649,7 +673,7 @@ namespace Blueprint.Api.Services
             status == MselItemStatus.Pushing || status == MselItemStatus.Pulling || status == MselItemStatus.Deployed;
 
         // a failed push leaves its partial integrations, and a failed pull leaves what it could not remove
-        private static bool HasIntegrations(MselEntity msel) =>
+        internal static bool HasIntegrations(MselEntity msel) =>
             IsPipelineStatus(msel.Status) ||
             msel.PlayerViewId != null ||
             msel.GalleryCollectionId != null ||
@@ -2142,6 +2166,9 @@ namespace Blueprint.Api.Services
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
                 .Include(m => m.Pages)
+                .Include(m => m.ScoringModel)
+                .ThenInclude(sm => sm.Categories)
+                .ThenInclude(c => c.Options)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)
@@ -2287,6 +2314,15 @@ namespace Blueprint.Api.Services
                 team.UserTeamRoles = [];
             }
             await MatchImportedCompetenciesAsync(mselEntity, result, ct);
+
+            // A file carrying the MSEL's own scoring model pushes that one, so a CITE model it also links is dropped.
+            // The file's model is read straight into the entity, so it is checked as the editor's save checks it.
+            if (mselEntity.ScoringModel != null)
+            {
+                MselScoringModelService.Validate(mselEntity.ScoringModel);
+                mselEntity.CiteScoringModelId = null;
+                mselEntity.CiteScoringModelName = null;
+            }
 
             // Validate and fix scoring model linkage if MSEL uses CITE integration.
             // Mirror team type handling by allowing plain-name remap when the ID is

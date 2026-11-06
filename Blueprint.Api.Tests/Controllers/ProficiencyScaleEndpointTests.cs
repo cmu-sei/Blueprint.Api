@@ -95,6 +95,27 @@ public class ProficiencyScaleEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal(["proficient"], answered.ProficiencyLevels.Select(x => x.Name));
     }
 
+    /// <summary>
+    /// The read is open to anyone signed in, not only to an Evaluator: a caller with no system permission
+    /// and no role on any MSEL reads the scale and its levels too.
+    /// </summary>
+    [Fact]
+    public async Task Get_ByASignedInUserWithNoPermissionsOrMselRole_Is200_WithTheScalesLevels()
+    {
+        var scale = TestData.ProficiencyScale(name: "open");
+        await Seed(scale);
+        await Seed(TestData.ProficiencyLevel(scale.Id, "novice"));
+        var actor = await Actor().SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/proficiencyScales/{scale.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var answered = await response.Content
+            .ReadFromJsonAsync<ViewModels.ProficiencyScale>(JsonOptions, Ct);
+        Assert.Equal(scale.Id, answered.Id);
+        Assert.Equal(["novice"], answered.ProficiencyLevels.Select(x => x.Name));
+    }
+
     /// <summary>The list of every scale is still for those who can view the frameworks.</summary>
     [Fact]
     public async Task GetAll_WithoutViewCompetencyFrameworks_Is403()

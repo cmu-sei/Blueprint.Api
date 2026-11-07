@@ -146,7 +146,21 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
     }
 
     [Fact]
-    public async Task Viewed_ByAMemberOfAUnitOnTheMsel_QueuesTheStatement()
+    public async Task Viewed_ByAViewerOfTheMsel_QueuesTheStatement()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
+
+        var response = await Client(actor).PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(msel.Id, (await Queued()).MselId);
+    }
+
+    /// <summary>A member of a unit on the MSEL with no role on it may not view it, so nothing is queued.</summary>
+    [Fact]
+    public async Task Viewed_ByAMemberOfAUnitOnTheMselWithNoRole_Is403AndQueuesNothing()
     {
         var msel = TestData.Msel();
         await Seed(msel);
@@ -154,8 +168,8 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
 
         var response = await Client(actor).PostAsync(XApiEndpointTests.Viewed(msel.Id), null, Ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(msel.Id, (await Queued()).MselId);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, await QueuedCount());
     }
 
     [Fact]

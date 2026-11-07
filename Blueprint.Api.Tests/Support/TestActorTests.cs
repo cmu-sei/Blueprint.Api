@@ -443,16 +443,16 @@ public class TestActorTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         Assert.Empty(await PermissionsOf(actor));
     }
 
-    /// <summary>A unit of the MSEL and no role: the user requirement is met and the view requirement is not.</summary>
+    /// <summary>A unit of the MSEL and no role: neither the user requirement nor the view requirement is met.</summary>
     [Fact]
-    public async Task InUnitOf_MeetsTheUserRequirementAndNoRoleRequirement()
+    public async Task InUnitOf_MeetsNoRequirement()
     {
         var msel = TestData.Msel();
         await Seed(msel);
 
         var actor = await Actor().InUnitOf(msel).SeedAsync();
 
-        Assert.True(await MselUserRequirement.IsMet(actor.Id, msel.Id, Db));
+        Assert.False(await MselUserRequirement.IsMet(actor.Id, msel.Id, Db));
         Assert.False(await MselViewRequirement.IsMet(actor.Id, msel.Id, Db));
         Assert.Empty(await PermissionsOf(actor));
     }

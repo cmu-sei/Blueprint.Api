@@ -35,15 +35,9 @@ namespace Blueprint.Api.Infrastructure.Authorization
                     return true;
                 }
 
-                // Fallback to unit-based authorization
-                var mselUnitIdList = await blueprintContext.MselUnits
-                    .Where(t => t.MselId == mselId)
-                    .Select(t => t.UnitId)
-                    .ToListAsync();
-                var isSuccess = await blueprintContext.UnitUsers
-                    .Where(tu => tu.UserId == userId && mselUnitIdList.Contains(tu.UnitId))
-                    .AnyAsync();
-                return isSuccess;
+                // otherwise the user must be a contributor: a member of one of the MSEL's units who
+                // holds a role on it. Unit membership alone grants nothing.
+                return await MselContributorRequirement.IsMet(userId, mselId, false, blueprintContext);
             }
         }
     }

@@ -125,11 +125,11 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
     /// <remarks>
     /// A unit assigned to the MSEL and no <c>UserMselRole</c> row at all - which is the state an
-    /// administrator leaves somebody in by adding them to a unit and stopping there. Every other read in
-    /// the API refuses it.
+    /// administrator leaves somebody in by adding them to a unit and stopping there, or an owner by removing
+    /// their last role. Like every other build read, the moves are refused to them.
     /// </remarks>
     [Fact]
-    public async Task GetByMsel_ForAUnitMemberHoldingNoRole_Is200()
+    public async Task GetByMsel_ForAUnitMemberHoldingNoRole_Is403()
     {
         var msel = await SeedMsel();
         var actor = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
@@ -137,7 +137,7 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Client(actor).GetAsync(MovesOf(msel.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -1032,7 +1032,7 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
     /// <summary>
     /// Drops an actor's <c>UserMselRole</c> rows, leaving the unit membership <c>TestActorBuilder</c> seeded
-    /// alongside them - the state <c>MselUserRequirement</c> accepts and every other helper refuses.
+    /// alongside them - the state every requirement helper refuses.
     /// </summary>
     private async Task RemoveTheRoleRows(Guid userId)
     {

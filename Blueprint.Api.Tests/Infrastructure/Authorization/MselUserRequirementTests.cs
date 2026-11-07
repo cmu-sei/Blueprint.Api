@@ -43,24 +43,40 @@ public class MselUserRequirementTests(DatabaseFixture fixture) : DatabaseTestBas
     }
 
     /// <summary>
-    /// The asymmetry that gives this helper its reason to exist: membership of a unit assigned to the MSEL
-    /// is enough on its own, where <c>MselViewRequirement</c> would additionally demand a role. Any service
-    /// choosing between the two is choosing whether a role-less unit member gets in.
+    /// Membership of a unit on the Contributors tab grants nothing on its own: the member needs a role on the
+    /// MSEL, the same rule as <c>MselViewRequirement</c>, so removing a member's last role takes the MSEL away.
     /// </summary>
     [Fact]
-    public async Task IsMet_ForAUnitMemberWithNoRole_IsTrue()
+    public async Task IsMet_ForAUnitMemberWithNoRole_IsFalse()
     {
         var actor = await Actor().SeedAsync();
         var msel = TestData.Msel();
         await Seed(msel);
         await Db.AddUnitMembershipAsync(actor.Id, msel.Id, Ct);
 
-        Assert.True(await MselUserRequirement.IsMet(actor.Id, msel.Id, Db));
+        Assert.False(await MselUserRequirement.IsMet(actor.Id, msel.Id, Db));
         Assert.False(await MselViewRequirement.IsMet(actor.Id, msel.Id, Db));
     }
 
     /// <summary>
-    /// Every role reaches it too, because the role is never consulted - only the unit is.
+    /// A unit member without a role who is also on one of the MSEL's teams gets in through the team, as a
+    /// participant.
+    /// </summary>
+    [Fact]
+    public async Task IsMet_ForAUnitMemberWithNoRoleOnATeam_IsTrue()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+        var actor = await Actor().OnTeam(team).SeedAsync();
+        await Db.AddUnitMembershipAsync(actor.Id, msel.Id, Ct);
+
+        Assert.True(await MselUserRequirement.IsMet(actor.Id, msel.Id, Db));
+    }
+
+    /// <summary>
+    /// Every role reaches it, Viewer included.
     /// </summary>
     [Theory]
     [InlineData(MselRole.Viewer)]

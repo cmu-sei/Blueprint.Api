@@ -182,9 +182,12 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>Get for a unit member with no role is answered with a 200 though they may not list the same row.</summary>
+    /// <summary>
+    /// A unit member with no role is refused the row as they are the list: membership of a contributing unit
+    /// reaches a MSEL only with a role on it.
+    /// </summary>
     [Fact]
-    public async Task Get_ForAUnitMemberWithNoRole_Is200_ThoughTheyMayNotListTheSameRow()
+    public async Task Get_ForAUnitMemberWithNoRole_Is403_LikeTheList()
     {
         var msel = await SeedMsel();
         var actor = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
@@ -193,7 +196,7 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
         await Seed(application);
 
         var read = await Client(actor).GetAsync($"api/playerApplications/{application.Id}", Ct);
-        Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, read.StatusCode);
 
         var listed = await Client(actor).GetAsync($"api/msels/{msel.Id}/playerApplications", Ct);
         Assert.Equal(HttpStatusCode.Forbidden, listed.StatusCode);
@@ -671,7 +674,7 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
 
     /// <remarks>
     /// Drops an actor's <c>UserMselRole</c> rows, leaving the unit membership <c>TestActorBuilder</c>
-    /// seeded alongside them - the state <c>MselUserRequirement</c> accepts and every other helper refuses.
+    /// seeded alongside them - the state every requirement helper refuses.
     /// </remarks>
     private async Task RemoveTheRoleRows(Guid userId)
     {

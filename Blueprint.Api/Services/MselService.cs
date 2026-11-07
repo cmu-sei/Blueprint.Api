@@ -176,9 +176,12 @@ namespace Blueprint.Api.Services
                 .Where(tu => tu.UserId == userId)
                 .Select(tu => tu.UnitId)
                 .ToListAsync(ct);
-            // get the units' msels
+            // get the units' msels on which the user holds a role. Membership of a contributing unit
+            // alone does not list a MSEL; a unit member without a role reaches it, if at all, as a
+            // participant through one of its teams, in the Exercise View
             var unitMselList = await _context.MselUnits
                 .Where(mu => unitIdList.Contains(mu.UnitId) && mu.Msel.Status != MselItemStatus.Archived)
+                .Where(mu => _context.UserMselRoles.Any(umr => umr.UserId == userId && umr.MselId == mu.MselId))
                 .Include(mu => mu.Msel.UserMselRoles.Where(r => r.UserId == userId))
                 .Select(mu => mu.Msel)
                 .ToListAsync(ct);

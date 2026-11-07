@@ -246,9 +246,9 @@ public sealed class TestActorBuilder(BlueprintContext db, CancellationToken ct)
     }
 
     /// <summary>
-    /// Puts the actor in a new unit assigned to <paramref name="msel"/>, holding no role on it: the membership
-    /// that satisfies <c>MselUserRequirement</c> and no role-based requirement (the "unit member with no role"
-    /// of a denied test).
+    /// Puts the actor in a new unit assigned to <paramref name="msel"/>, holding no role on it: a membership
+    /// that satisfies no requirement, because a unit member reaches a MSEL only with a role on it (the "unit
+    /// member with no role" of a denied test).
     /// </summary>
     public TestActorBuilder InUnitOf(MselEntity msel)
     {

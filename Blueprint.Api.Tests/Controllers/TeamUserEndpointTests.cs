@@ -78,15 +78,19 @@ public class TeamUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>A member of a unit on the MSEL, with no role, lists every team member of the MSEL.</summary>
+    /// <summary>A member of a unit on the MSEL with no role is refused; with Viewer they list every team member.</summary>
     [Fact]
-    public async Task GetByMsel_ForAUnitMemberWithNoRole_Is200()
+    public async Task GetByMsel_ForAUnitMemberWithNoRole_Is403_AndWithViewer_Is200()
     {
         var msel = await SeedMsel();
         await Actor().OnTeam(await SeedTeam(msel)).SeedAsync();
         var actor = await Actor().InUnitOf(msel).SeedAsync();
+        var viewer = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
 
-        Assert.Single(await GetRows(Client(actor), TeamUsersOf(msel.Id)));
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await Client(actor).GetAsync(TeamUsersOf(msel.Id), Ct)).StatusCode);
+        Assert.Single(await GetRows(Client(viewer), TeamUsersOf(msel.Id)));
     }
 
     /// <remarks>
@@ -270,9 +274,9 @@ public class TeamUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>Get for a unit member with no role is answered with a 403 though they may list the same row.</summary>
+    /// <summary>A unit member with no role is refused the row and the list: unit membership needs a role on the MSEL.</summary>
     [Fact]
-    public async Task Get_ForAUnitMemberWithNoRole_Is403_ThoughTheyMayListTheSameRow()
+    public async Task Get_ForAUnitMemberWithNoRole_Is403_AndSoIsTheList()
     {
         var msel = await SeedMsel();
         var team = await SeedTeam(msel);
@@ -280,9 +284,9 @@ public class TeamUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var row = await StoredFor(member.Id, team.Id);
         var actor = await Actor().InUnitOf(msel).SeedAsync();
 
-        var listed = await GetRows(Client(actor), TeamUsersOf(msel.Id));
-
-        Assert.Equal(row.Id, Assert.Single(listed).Id);
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await Client(actor).GetAsync(TeamUsersOf(msel.Id), Ct)).StatusCode);
         Assert.Equal(
             HttpStatusCode.Forbidden,
             (await Client(actor).GetAsync(TeamUserRoute(row.Id), Ct)).StatusCode);

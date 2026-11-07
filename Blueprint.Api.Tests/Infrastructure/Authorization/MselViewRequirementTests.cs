@@ -172,8 +172,8 @@ public class MselViewRequirementTests(DatabaseFixture fixture) : DatabaseTestBas
     }
 
     /// <summary>
-    /// Unit membership on its own is not enough - unlike <c>MselUserRequirement</c>, which takes it. The two
-    /// helpers differ on exactly this, and services choose between them.
+    /// Unit membership on its own is not enough, here or in <c>MselUserRequirement</c>: a unit member needs a
+    /// role on the MSEL.
     /// </summary>
     [Fact]
     public async Task IsMet_ForAUnitMemberWithNoRole_IsFalse()
@@ -184,7 +184,7 @@ public class MselViewRequirementTests(DatabaseFixture fixture) : DatabaseTestBas
         await Db.AddUnitMembershipAsync(actor.Id, msel.Id, Ct);
 
         Assert.False(await MselViewRequirement.IsMet(actor.Id, msel.Id, Db));
-        Assert.True(await MselUserRequirement.IsMet(actor.Id, msel.Id, Db));
+        Assert.False(await MselUserRequirement.IsMet(actor.Id, msel.Id, Db));
     }
 
     /// <summary>

@@ -161,12 +161,16 @@ public class JsonConverterTests
     }
 
     // -------------------------------------------------------------------------------------------------
-    // JsonDoubleConverter, which only a MSEL's own scoring model reaches
+    // JsonDoubleConverter, which only a MSEL's own scoring model and the CITE team responses reach
     // -------------------------------------------------------------------------------------------------
 
-    /// <summary>The only floating point numbers in the API are a scoring model's weights and option values, as in CITE.</summary>
+    /// <summary>
+    /// The only floating point numbers in the API are a scoring model's weights and option values, as in CITE,
+    /// and the CITE scores and option values the Assessor View's Team Responses panel shows, which CITE itself
+    /// holds as doubles.
+    /// </summary>
     [Fact]
-    public void TheOnlyFloatingPointNumbersInTheApi_AreTheScoringModelsWeightsAndValues()
+    public void TheOnlyFloatingPointNumbersInTheApi_AreTheScoringModelsWeightsAndValuesAndTheCiteScores()
     {
         var floating = new[] { typeof(double), typeof(float), typeof(decimal) };
 
@@ -184,6 +188,9 @@ public class JsonConverterTests
 
         Assert.Equal(
             [
+                "CiteCategoryResponse.Score",
+                "CiteOptionResponse.Value",
+                "CiteSubmissionResponse.Score",
                 "MselScoringCategory.ScoringWeight",
                 "MselScoringCategoryEntity.ScoringWeight",
                 "MselScoringOption.Value",

@@ -17,5 +17,14 @@ namespace Blueprint.Api.Infrastructure.Options
         public int RetentionDays { get; set; } = 7;
         public int ProcessingTimeoutMinutes { get; set; } = 10;
         public int ProcessingDelaySeconds { get; set; } = 30;
+
+        public const int DefaultMaxStatementsPerRegistration = 5000;
+
+        /// <summary>
+        /// The most statements the Assessor View reads from the LRS for each registration (the MSEL and each
+        /// integration it is pushed to) before it stops following the LRS's <c>more</c> links. Zero or less
+        /// means the default.
+        /// </summary>
+        public int MaxStatementsPerRegistration { get; set; } = DefaultMaxStatementsPerRegistration;
     }
 }

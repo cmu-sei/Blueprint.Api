@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Blueprint.Api.Services;
 using Swashbuckle.AspNetCore.Annotations;
 using Cite.Api.Client;
@@ -96,19 +97,20 @@ namespace Blueprint.Api.Controllers
         /// scoring model uses them. Team-level answers only; no participant's own submission.
         /// <para />
         /// When there is nothing to read, the status says why: the MSEL is not pushed to CITE, the team or
-        /// the move is not in CITE, the move has not started, or CITE could not be read.
+        /// the move is not in CITE, the move has not started, or CITE could not be read, with a message naming
+        /// what failed: Blueprint's CITE API URL, the identity provider, or CITE, a timeout included.
         /// <para />
         /// Accessible with the ViewMsels permission, or to the MSEL's Owners, Editors, Approvers and Evaluators
         /// </remarks>
         /// <param name="mselId">The MSEL</param>
         /// <param name="teamId">The MSEL team</param>
-        /// <param name="moveNumber">The move number</param>
+        /// <param name="moveNumber">The move number. Required: without it the request is a 400 rather than move 0's answers</param>
         /// <param name="ct"></param>
         /// <returns></returns>
         [HttpGet("msels/{mselId}/citeSubmissions")]
         [ProducesResponseType(typeof(CiteTeamResponses), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getMselCiteTeamResponses")]
-        public async Task<IActionResult> GetTeamResponses(Guid mselId, [FromQuery] Guid teamId, [FromQuery] int moveNumber, CancellationToken ct)
+        public async Task<IActionResult> GetTeamResponses(Guid mselId, [FromQuery] Guid teamId, [FromQuery, BindRequired] int moveNumber, CancellationToken ct)
         {
             var hasSystemPermission = await _blueprintAuthorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
             var responses = await _citeSubmissionService.GetTeamResponsesAsync(mselId, teamId, moveNumber, hasSystemPermission, ct);

@@ -10,9 +10,12 @@ using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Tests.Support;
 using Blueprint.Api.ViewModels;
 using Cite.Api.Client;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 using Move = Cite.Api.Client.Move;
@@ -379,6 +382,70 @@ public class CiteTeamResponsesEndpointTests(DatabaseFixture fixture, BlueprintAp
         Assert.Equal("CITE could not be reached.", responses.Message);
     }
 
+    /// <summary>
+    /// HttpClient's own timeout throws a <c>TaskCanceledException</c> the caller did not ask for. That is CITE
+    /// not answering, said as such, not a 500 after the wait.
+    /// </summary>
+    [Fact]
+    public async Task CiteTimingOut_IsUnavailableRatherThanA500()
+    {
+        var graph = await SeedPushedGraph();
+        ArrangeCite(graph);
+        // the url table answers before the route rules ArrangeCite added
+        Factory.OutboundHttp.RespondByThrowing(
+            $"{CiteApiUrl()}api/evaluations/{graph.EvaluationId}/teams/{graph.Team.Id}/submissions",
+            new TaskCanceledException(
+                "The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.",
+                new TimeoutException("The operation was canceled.")));
+
+        var responses = await Read(RootClient, graph.Msel.Id, graph.Team.Id, 1);
+
+        Assert.Equal(CiteTeamResponsesStatus.Unavailable, responses.Status);
+        Assert.Equal("CITE did not answer in time.", responses.Message);
+        Assert.Null(responses.TeamSubmission);
+    }
+
+    /// <summary>
+    /// The generated client throws with the 200 it was sent when the body is not the JSON it expects, which
+    /// is not "CITE answered 200".
+    /// </summary>
+    [Fact]
+    public async Task CiteAnsweringWithSomethingUnreadable_SaysSoRatherThanItsStatus()
+    {
+        var graph = await SeedPushedGraph();
+        ArrangeToken();
+        Factory.OutboundHttp.AnswersJson($"GET api/evaluations/{graph.EvaluationId}", "<html>a proxy's page</html>");
+
+        var responses = await Read(RootClient, graph.Msel.Id, graph.Team.Id, 1);
+
+        Assert.Equal(CiteTeamResponsesStatus.Unavailable, responses.Status);
+        Assert.Equal("CITE sent an answer Blueprint could not read.", responses.Message);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // The request
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>A move number left out, empty or not a number is a 400, never move 0's answers.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("&moveNumber=")]
+    [InlineData("&moveNumber=one")]
+    public async Task NoMoveNumber_Is400AndCiteIsNotAsked(string moveNumberQuery)
+    {
+        var graph = await SeedPushedGraph();
+        ArrangeCite(graph);
+        var tokenRequests = TokenRequests();
+
+        var response = await RootClient.GetAsync(
+            $"/api/msels/{graph.Msel.Id}/citeSubmissions?teamId={graph.Team.Id}{moveNumberQuery}", Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("moveNumber", await response.Content.ReadAsStringAsync(Ct), StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(CiteRequests(graph));
+        Assert.Equal(tokenRequests, TokenRequests());
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Arrangement
     // ---------------------------------------------------------------------------------------------
@@ -561,6 +628,10 @@ public class CiteTeamResponsesEndpointTests(DatabaseFixture fixture, BlueprintAp
 
     private IEnumerable<string> CiteRequests(Graph graph) =>
         Factory.OutboundHttp.Paths.Where(p => p.Contains(graph.EvaluationId.ToString()));
+
+    /// <summary>The CITE base url the host is configured with, for the url table's absolute urls.</summary>
+    private string CiteApiUrl() =>
+        Factory.Services.GetRequiredService<IOptionsMonitor<ClientOptions>>().CurrentValue.CiteApiUrl;
 
     private static string Route(Guid mselId, Guid teamId, int moveNumber) =>
         $"/api/msels/{mselId}/citeSubmissions?teamId={teamId}&moveNumber={moveNumber}";

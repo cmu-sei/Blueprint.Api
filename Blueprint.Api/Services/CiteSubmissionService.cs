@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -20,6 +21,8 @@ using Blueprint.Api.ViewModels;
 using Cite.Api.Client;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using ResponseErrorType = IdentityModel.Client.ResponseErrorType;
+using TokenResponse = IdentityModel.Client.TokenResponse;
 
 namespace Blueprint.Api.Services
 {
@@ -98,10 +101,25 @@ namespace Blueprint.Api.Services
             if (team.CiteTeamTypeId == null)
                 return WithStatus(responses, CiteTeamResponsesStatus.TeamNotInCite, "This team has no CITE team type, so it is not in CITE.");
 
+            // Each failure names the system that failed: Blueprint's own configuration, the identity provider
+            // the service account signs in with, or CITE. A timeout is a failure like any other; only the
+            // caller giving up (ct) is let through.
+            var citeApiUrl = _clientOptions.CiteApiUrl;
+            if (!Uri.TryCreate(citeApiUrl, UriKind.Absolute, out var citeApiUri) ||
+                (citeApiUri.Scheme != Uri.UriSchemeHttp && citeApiUri.Scheme != Uri.UriSchemeHttps))
+            {
+                _logger.LogWarning("CiteApiUrl {CiteApiUrl} is not an http or https url, so team {TeamId} submissions on MSEL {MselId} cannot be read", citeApiUrl, teamId, mselId);
+                return WithStatus(responses, CiteTeamResponsesStatus.Unavailable, "Blueprint has no valid CITE API URL configured.");
+            }
+
+            var (tokenResponse, identityProviderProblem) = await RequestServiceAccountTokenAsync(teamId, mselId, ct);
+            if (identityProviderProblem != null)
+                return WithStatus(responses, CiteTeamResponsesStatus.Unavailable, identityProviderProblem);
+
             var evaluationId = (Guid)msel.CiteEvaluationId;
             try
             {
-                var citeApiClient = await GetServiceAccountClientAsync(ct);
+                var citeApiClient = IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, citeApiUrl, tokenResponse);
 
                 Evaluation evaluation;
                 try
@@ -141,26 +159,77 @@ namespace Blueprint.Api.Services
             catch (ApiException ex)
             {
                 _logger.LogWarning(ex, "CITE answered {StatusCode} reading team {TeamId} submissions on MSEL {MselId}", ex.StatusCode, teamId, mselId);
-                var message = ex.StatusCode == (int)HttpStatusCode.Forbidden || ex.StatusCode == (int)HttpStatusCode.Unauthorized
-                    ? "CITE refused Blueprint's service account."
-                    : $"CITE answered {ex.StatusCode}.";
+                string message;
+                if (ex.StatusCode == (int)HttpStatusCode.Forbidden || ex.StatusCode == (int)HttpStatusCode.Unauthorized)
+                    message = "CITE refused Blueprint's service account.";
+                // the generated client throws with the success status when the body is empty or not the expected JSON
+                else if (ex.StatusCode >= 200 && ex.StatusCode < 300)
+                    message = "CITE sent an answer Blueprint could not read.";
+                else
+                    message = $"CITE answered {ex.StatusCode}.";
                 return WithStatus(responses, CiteTeamResponsesStatus.Unavailable, message);
             }
-            catch (System.Exception ex) when (ex is not OperationCanceledException)
+            // HttpClient's own timeout, which cancels without the caller having asked
+            catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
             {
-                _logger.LogWarning(ex, "CITE could not be read for team {TeamId} submissions on MSEL {MselId}", teamId, mselId);
+                _logger.LogWarning(ex, "CITE did not answer in time reading team {TeamId} submissions on MSEL {MselId}", teamId, mselId);
+                return WithStatus(responses, CiteTeamResponsesStatus.Unavailable, "CITE did not answer in time.");
+            }
+            // a name that does not resolve, a refused connection, or a connection dropped mid-answer
+            catch (System.Exception ex) when (ex is HttpRequestException or IOException)
+            {
+                _logger.LogWarning(ex, "CITE could not be reached reading team {TeamId} submissions on MSEL {MselId}", teamId, mselId);
                 return WithStatus(responses, CiteTeamResponsesStatus.Unavailable, "CITE could not be reached.");
             }
         }
 
-        private async Task<CiteApiClient> GetServiceAccountClientAsync(CancellationToken ct)
+        /// <summary>
+        /// The service account's token, or what the identity provider did wrong instead; never both.
+        /// </summary>
+        private async Task<(TokenResponse Token, string Problem)> RequestServiceAccountTokenAsync(Guid teamId, Guid mselId, CancellationToken ct)
         {
-            using var tokenHttpClient = _httpClientFactory.CreateClient();
-            var tokenResponse = await ApiClientsExtensions.RequestTokenAsync(_resourceOwnerAuthorizationOptions, tokenHttpClient);
-            if (tokenResponse.IsError)
-                throw new InvalidOperationException($"The service account token request failed: {tokenResponse.Error}");
+            TokenResponse tokenResponse;
+            try
+            {
+                using var tokenHttpClient = _httpClientFactory.CreateClient();
+                tokenResponse = await ApiClientsExtensions.RequestTokenAsync(_resourceOwnerAuthorizationOptions, tokenHttpClient, ct);
+            }
+            catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "The identity provider did not answer in time signing in to read team {TeamId} submissions on MSEL {MselId}", teamId, mselId);
+                return (null, "The identity provider did not answer in time.");
+            }
+            // RequestTokenAsync throws when the discovery document is not read, with IdentityModel's own
+            // exception inside when the transport failed, a timeout or the caller giving up included
+            catch (System.Exception ex) when (ex is not OperationCanceledException)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (ex.InnerException is OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "The identity provider did not answer in time signing in to read team {TeamId} submissions on MSEL {MselId}", teamId, mselId);
+                    return (null, "The identity provider did not answer in time.");
+                }
+                _logger.LogWarning(ex, "The identity provider's discovery document could not be read signing in to read team {TeamId} submissions on MSEL {MselId}", teamId, mselId);
+                return (null, "The identity provider's discovery document could not be read.");
+            }
 
-            return IntegrationCiteExtensions.GetCiteApiClient(_httpClientFactory, _clientOptions.CiteApiUrl, tokenResponse);
+            if (!tokenResponse.IsError)
+                return (tokenResponse, null);
+
+            // IdentityModel answers a failed token request with an error response rather than throwing,
+            // including the transport failing, which it marks as an exception
+            if (tokenResponse.ErrorType == ResponseErrorType.Exception)
+            {
+                ct.ThrowIfCancellationRequested();
+                _logger.LogWarning(tokenResponse.Exception, "The identity provider's token endpoint failed signing in to read team {TeamId} submissions on MSEL {MselId}", teamId, mselId);
+                return (null, tokenResponse.Exception is OperationCanceledException
+                    ? "The identity provider did not answer in time."
+                    : "The identity provider could not be reached.");
+            }
+
+            _logger.LogWarning("The identity provider refused the service account ({Error}, HTTP {StatusCode}) signing in to read team {TeamId} submissions on MSEL {MselId}",
+                tokenResponse.Error, (int)tokenResponse.HttpStatusCode, teamId, mselId);
+            return (null, "The identity provider refused Blueprint's service account.");
         }
 
         private static CiteTeamResponses WithStatus(CiteTeamResponses responses, CiteTeamResponsesStatus status, string message)

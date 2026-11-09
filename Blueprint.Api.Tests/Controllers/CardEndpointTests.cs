@@ -275,12 +275,11 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// <c>MselUserRequirement</c> is the one helper of the eight that accepts a unit member holding no MSEL
-    /// role, so dropping the role rows <c>TestActorBuilder</c> wrote leaves a caller who may read this card
-    /// and nothing else about the MSEL.
+    /// A MSEL's card is for its contributors, so dropping the role rows <c>TestActorBuilder</c> wrote leaves
+    /// a unit member who may read neither the card nor the MSEL's list of them.
     /// </remarks>
     [Fact]
-    public async Task Get_ForAUnitMemberHoldingNoRoleOnTheMsel_Is200()
+    public async Task Get_ForAUnitMemberHoldingNoRoleOnTheMsel_Is403()
     {
         var msel = await SeedMsel();
         var card = await SeedCard(msel.Id);
@@ -289,8 +288,28 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Client(actor).GetAsync(Card(card.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await Client(actor).GetAsync(CardsOf(msel.Id), Ct)).StatusCode);
+    }
+
+    /// <summary>
+    /// A member of one of the MSEL's teams holding no role is a participant, shown only the Exercise View,
+    /// which has no cards: the list is empty, and a card by id is refused.
+    /// </summary>
+    [Fact]
+    public async Task ForAMemberOfOneOfTheMselsTeams_TheListIsEmpty_AndACardByIdIs403()
+    {
+        var msel = await SeedMsel();
+        var card = await SeedCard(msel.Id);
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+        var actor = await Actor().OnTeam(team).SeedAsync();
+
+        var list = await Client(actor).GetAsync(CardsOf(msel.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Empty(await list.Content.ReadFromJsonAsync<List<ViewModels.Card>>(JsonOptions, Ct));
+        Assert.Equal(HttpStatusCode.Forbidden, (await Client(actor).GetAsync(Card(card.Id), Ct)).StatusCode);
     }
 
     [Fact]

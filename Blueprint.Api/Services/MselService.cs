@@ -271,15 +271,14 @@ namespace Blueprint.Api.Services
             if (!await _context.Msels.AnyAsync(m => m.Id == mselId, ct))
                 throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
 
-            // a copy hands over the whole MSEL, so the caller must be able to view it.
-            // The caller already holds CreateMsels, which is what lets them view a template.
-            if (!hasViewMselsPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, true, _context)))
+            // a copy hands over the whole MSEL, hidden events and all, so the caller must contribute to it: a
+            // participant is shown only the Exercise View. The caller already holds CreateMsels, which is what
+            // lets them copy a template.
+            if (!hasViewMselsPermission && !(await MselContributorRequirement.IsMet(_user.GetId(), mselId, true, _context)))
                 throw new ForbiddenException();
 
-            // the copy is the caller's, so it carries the MSEL's own scoring model only to a caller who may read it
-            // here: a participant on one of the MSEL's teams copies the rest without it
-            var canReadScoringModel = hasViewMselsPermission || await MselContributorRequirement.IsMet(_user.GetId(), mselId, true, _context);
-            var newMselEntity = await privateMselCopyAsync(mselId, null, ct, includeScoringModel: canReadScoringModel);
+            // the copy carries the MSEL's own scoring model, which a contributor may read
+            var newMselEntity = await privateMselCopyAsync(mselId, null, ct);
             var msel = _mapper.Map<Msel>(newMselEntity);
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
@@ -291,7 +290,7 @@ namespace Blueprint.Api.Services
             return msel;
         }
 
-        private async Task<MselEntity> privateMselCopyAsync(Guid mselId, Guid? currentUserTeamId, CancellationToken ct, bool includeScoringModel = true)
+        private async Task<MselEntity> privateMselCopyAsync(Guid mselId, Guid? currentUserTeamId, CancellationToken ct)
         {
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == _user.GetId())).Name;
@@ -326,8 +325,6 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (mselEntity == null)
                 throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
-            if (!includeScoringModel)
-                mselEntity.ScoringModel = null;
 
             return await privateMselCopyAsync(mselEntity, currentUserTeamId, ct);
         }
@@ -802,8 +799,9 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(ct);
             if (msel == null)
                 throw new EntityNotFoundException<MselEntity>();
-            // the export holds every event and data value, so the caller must be able to view the MSEL's contents
-            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
+            // the export holds every event and data value, hidden or not, so it is for the MSEL's contributors,
+            // not its participants, who are shown only the Exercise View
+            if (!hasSystemPermission && !(await MselContributorRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
             var filename = msel.Name.ToLower().EndsWith(".xlsx") ? msel.Name : msel.Name + ".xlsx";
 

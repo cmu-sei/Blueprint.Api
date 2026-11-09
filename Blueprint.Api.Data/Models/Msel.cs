@@ -58,6 +58,7 @@ namespace Blueprint.Api.Data.Models
         public bool ShowMoveOnAssessorView { get; set; }
         public bool ShowGroupOnAssessorView { get; set; }
         public bool ShowIntegrationTargetOnAssessorView { get; set; }
+        public bool HideNamesOnAssessorView { get; set; }
         public virtual ICollection<MoveEntity> Moves { get; set; } = new HashSet<MoveEntity>();
         public virtual ICollection<DataFieldEntity> DataFields { get; set; } = new HashSet<DataFieldEntity>();
         public virtual ICollection<ScenarioEventEntity> ScenarioEvents { get; set; } = new HashSet<ScenarioEventEntity>();
@@ -74,6 +75,8 @@ namespace Blueprint.Api.Data.Models
         public string CourseMode { get; set; }
         public string Language { get; set; }
         public DateTime? ImageDateModified { get; set; }
+        // the CITE scoring model the MSEL authors itself, pushed to CITE instead of CiteScoringModelId
+        public virtual MselScoringModelEntity ScoringModel { get; set; }
         public virtual ICollection<CardEntity> Cards { get; set; } = new HashSet<CardEntity>();
         public virtual ICollection<CiteDutyEntity> CiteDuties { get; set; } = new HashSet<CiteDutyEntity>();
         public virtual ICollection<CiteActionEntity> CiteActions { get; set; } = new HashSet<CiteActionEntity>();

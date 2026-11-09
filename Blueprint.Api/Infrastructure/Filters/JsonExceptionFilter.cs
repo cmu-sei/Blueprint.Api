@@ -25,6 +25,7 @@ namespace Blueprint.Api.Infrastructure.Filters
         {
             var error = new ApiError();
             error.Status = GetStatusCodeFromException(context.Exception);
+            error.Type = (context.Exception as IApiException)?.ProblemType;
 
             if(error.Status == (int)HttpStatusCode.InternalServerError)
             {

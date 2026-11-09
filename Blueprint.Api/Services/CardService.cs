@@ -66,6 +66,10 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
+            // the MSEL's participants are shown only the Exercise View, which does not include these
+            if (await MselParticipantScope.IsLimitedAsync(_user.GetId(), mselId, hasSystemPermission, _context))
+                return new List<Card>();
+
             var cardEntities = await _context.Cards
                 .Where(card => card.MselId == mselId)
                 .ToListAsync(ct);
@@ -80,8 +84,9 @@ namespace Blueprint.Api.Services
             if (item == null)
                 throw new EntityNotFoundException<Card>("Card not found: " + id);
 
-            // templates (null MselId) can be viewed by anyone, as the template list already shows them
-            if (item.MselId.HasValue && !hasSystemPermission && !await MselUserRequirement.IsMet(_user.GetId(), item.MselId, _context))
+            // templates (null MselId) can be viewed by anyone, as the template list already shows them.
+            // A MSEL's card is for its contributors: its participants are shown only the Exercise View
+            if (item.MselId.HasValue && !hasSystemPermission && !await MselContributorRequirement.IsMet(_user.GetId(), item.MselId, false, _context))
                 throw new ForbiddenException();
 
             return item.ToCard();

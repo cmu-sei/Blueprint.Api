@@ -197,9 +197,12 @@ namespace Blueprint.Api.Hubs
                     .Where(tu => tu.UserId == userGuid)
                     .Select(tu => tu.UnitId)
                     .ToListAsync();
-                // get my unit's msels
+                // get my unit's msels, where I hold a role. A MSEL's live data carries every event and cell,
+                // hidden or not, so it goes to contributors only: a unit member with no role is at most a
+                // participant, shown only the Exercise View
                 var unitMselIds = _context.MselUnits
                     .Where(mu => unitIdList.Contains(mu.UnitId) && mu.Msel.Status != Data.Enumerations.MselItemStatus.Archived)
+                    .Where(mu => _context.UserMselRoles.Any(umr => umr.UserId == userGuid && umr.MselId == mu.MselId))
                     .Select(mu => mu.MselId.ToString());
                 var unitMselIdList = await unitMselIds
                     .Where(id => id != null)

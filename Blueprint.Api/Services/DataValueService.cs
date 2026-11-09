@@ -47,16 +47,20 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.DataValue>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
-            if (!hasSystemPermission && !await MselUserRequirement.IsMet(_user.GetId(), mselId, _context))
+            // the cells are the MSEL's contents, so the caller must be able to view the MSEL, the same as for its events
+            if (!hasSystemPermission && !await MselViewRequirement.IsMet(_user.GetId(), mselId, _context))
                 throw new ForbiddenException();
 
+            // a participant is sent only the cells the Exercise View shows: those of shown events and shown Data Fields
+            var isLimited = await MselParticipantScope.IsLimitedAsync(_user.GetId(), mselId, hasSystemPermission, _context);
             var scenarioEventIdList = await _context.ScenarioEvents
-                .Where(se => se.MselId == mselId)
+                .Where(se => se.MselId == mselId && (!isLimited || !se.IsHidden))
                 .Select(se => se.Id)
                 .ToListAsync(ct);
             // a value counts as this MSEL's only when its Data Field is the MSEL's too
             var dataValueEntities = await _context.DataValues
-                .Where(dv => scenarioEventIdList.Contains((Guid)dv.ScenarioEventId) && dv.DataField.MselId == mselId)
+                .Where(dv => scenarioEventIdList.Contains((Guid)dv.ScenarioEventId) && dv.DataField.MselId == mselId &&
+                    (!isLimited || dv.DataField.OnExerciseView))
                 .ToListAsync(ct);
 
             return dataValueEntities.Select(x => x.ToDataValue()).ToList();;
@@ -72,6 +76,15 @@ namespace Blueprint.Api.Services
 
             if (!hasSystemPermission && !await MselViewRequirement.IsMet(_user.GetId(), item.DataField.MselId, _context))
                 throw new ForbiddenException();
+
+            // a participant is shown only a cell the Exercise View shows
+            if (await MselParticipantScope.IsLimitedAsync(_user.GetId(), item.DataField.MselId, hasSystemPermission, _context))
+            {
+                var eventIsShown = await _context.ScenarioEvents
+                    .AnyAsync(se => se.Id == item.ScenarioEventId && !se.IsHidden, ct);
+                if (!eventIsShown || !MselParticipantScope.Shows(item.DataField))
+                    throw new ForbiddenException();
+            }
 
             return item.ToDataValue();
         }

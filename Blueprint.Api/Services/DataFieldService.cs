@@ -69,8 +69,10 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
+            // a participant is sent only the Data Fields the Exercise View shows
+            var isLimited = await MselParticipantScope.IsLimitedAsync(_user.GetId(), mselId, hasSystemPermission, _context);
             var dataFieldEntities = await _context.DataFields
-                .Where(dataField => dataField.MselId == mselId)
+                .Where(dataField => dataField.MselId == mselId && (!isLimited || dataField.OnExerciseView))
                 .Include(df => df.DataOptions)
                 .ToListAsync(ct);
 
@@ -100,6 +102,9 @@ namespace Blueprint.Api.Services
             if (item.MselId.HasValue)
             {
                 if (!hasSystemPermission && !await MselViewRequirement.IsMet(_user.GetId(), item.MselId, _context))
+                    throw new ForbiddenException();
+                if (!MselParticipantScope.Shows(item) &&
+                    await MselParticipantScope.IsLimitedAsync(_user.GetId(), item.MselId, hasSystemPermission, _context))
                     throw new ForbiddenException();
             }
 

@@ -54,8 +54,10 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
+            // a participant is sent only the options of the Data Fields the Exercise View shows
+            var isLimited = await MselParticipantScope.IsLimitedAsync(_user.GetId(), mselId, hasSystemPermission, _context);
             var dataFieldIdList = await _context.DataFields
-                .Where(df => df.MselId == mselId)
+                .Where(df => df.MselId == mselId && (!isLimited || df.OnExerciseView))
                 .Select(df => df.Id)
                 .ToListAsync(ct);
             var dataOptionEntities = await _context.DataOptions
@@ -74,6 +76,11 @@ namespace Blueprint.Api.Services
             if (!(dataField.MselId == null) &&
                 !hasSystemPermission &&
                 !(await MselViewRequirement.IsMet(_user.GetId(), dataField.MselId, hasCreateMselsPermission, _context)))
+                throw new ForbiddenException();
+            // a participant is shown only the Data Fields the Exercise View shows
+            if (dataField.MselId.HasValue &&
+                !MselParticipantScope.Shows(dataField) &&
+                await MselParticipantScope.IsLimitedAsync(_user.GetId(), dataField.MselId, hasSystemPermission, _context))
                 throw new ForbiddenException();
 
             var dataOptionEntities = await _context.DataOptions
@@ -94,6 +101,10 @@ namespace Blueprint.Api.Services
             if (dataField.MselId.HasValue)
             {
                 if (!hasSystemPermission && !await MselViewRequirement.IsMet(_user.GetId(), dataField.MselId, hasCreateMselsPermission, _context))
+                    throw new ForbiddenException();
+                // a participant is shown only the Data Fields the Exercise View shows
+                if (!MselParticipantScope.Shows(dataField) &&
+                    await MselParticipantScope.IsLimitedAsync(_user.GetId(), dataField.MselId, hasSystemPermission, _context))
                     throw new ForbiddenException();
             }
 

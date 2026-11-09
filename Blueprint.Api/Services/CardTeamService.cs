@@ -61,6 +61,9 @@ namespace Blueprint.Api.Services
                 if (!mselCheck.IsTemplate)
                     throw new ForbiddenException();
             }
+            // the MSEL's participants are shown only the Exercise View, which does not include these
+            if (!hasSystemPermission && await MselParticipantScope.IsLimitedAsync(_user.GetId(), item.Card.MselId, hasSystemPermission, _context))
+                throw new ForbiddenException();
 
             return item.ToCardTeam();
         }
@@ -74,6 +77,9 @@ namespace Blueprint.Api.Services
                 if (!mselCheck.IsTemplate)
                     throw new ForbiddenException();
             }
+            // the MSEL's participants are shown only the Exercise View, which does not include these
+            if (!hasSystemPermission && await MselParticipantScope.IsLimitedAsync(_user.GetId(), card.MselId, hasSystemPermission, _context))
+                return new List<CardTeam>();
             var items = await _context.CardTeams
                 .Where(et => et.CardId == cardId)
                 .ToListAsync(ct);
@@ -89,6 +95,9 @@ namespace Blueprint.Api.Services
                 if (!mselCheck.IsTemplate)
                     throw new ForbiddenException();
             }
+            // the MSEL's participants are shown only the Exercise View, which does not include these
+            if (await MselParticipantScope.IsLimitedAsync(_user.GetId(), mselId, hasSystemPermission, _context))
+                return new List<CardTeam>();
             var cardIds = await _context.Cards
                 .Where(c => c.MselId == mselId)
                 .Select(c => c.Id)

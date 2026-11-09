@@ -14,6 +14,7 @@ using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using Xunit.Sdk;
@@ -1248,6 +1249,377 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
 
         Assert.Equal("Pat Learner", Text(statements[0].GetProperty("actor"), "name"));
         Assert.Equal(1, statements[0].GetProperty("context").GetProperty("team").GetProperty("member").GetArrayLength());
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // GetStatementsAsync following the LRS's more links
+    // -------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// One page of statements, each about Pat Learner, with <paramref name="more"/> as its <c>more</c> link
+    /// (null leaves the property out, which an LRS may do on its last page).
+    /// </summary>
+    private static string Page(string more, params string[] ids)
+    {
+        var statements = ids.Select(id => new Dictionary<string, object>
+        {
+            ["id"] = id,
+            ["timestamp"] = $"2026-11-05T10:00:{Array.IndexOf(ids, id):00}.000Z",
+            ["actor"] = new Dictionary<string, object>
+            {
+                ["name"] = "Pat Learner",
+                ["mbox"] = "mailto:pat@example.test",
+            },
+            ["verb"] = new Dictionary<string, object> { ["id"] = "http://adlnet.gov/expapi/verbs/attempted" },
+            ["object"] = new Dictionary<string, object> { ["id"] = $"https://blueprint.test/api/inject/{id}" },
+        });
+        var page = new Dictionary<string, object> { ["statements"] = statements };
+        if (more != null)
+            page["more"] = more;
+        return JsonSerializer.Serialize(page);
+    }
+
+    /// <summary>
+    /// An LRS that answers a first query by its registration and a follow-up by the <c>more</c> query
+    /// parameter of the link it handed out; anything else is a 404.
+    /// </summary>
+    private static Func<FakeLrs.Request, FakeLrs.Response> Pages(Dictionary<string, string> byRegistrationOrMore) =>
+        request =>
+        {
+            var key = request.Query("more") ?? request.Query("registration");
+            return key != null && byRegistrationOrMore.TryGetValue(key, out var body)
+                ? new FakeLrs.Response(body)
+                : new FakeLrs.Response("{}", 404);
+        };
+
+    private static string More(string key) => $"/xapi/statements?more={key}";
+
+    private async Task<(List<string> Ids, string Json)> PagedStatements(
+        FakeLrs lrs,
+        MselEntity msel,
+        int limit = 2,
+        int? max = null,
+        Guid? userId = null,
+        bool hasSystemPermission = true)
+    {
+        var options = Options(endpoint: lrs.Endpoint);
+        if (max.HasValue)
+            options.MaxStatementsPerRegistration = max.Value;
+
+        var json = await Service(options, Principal(userId ?? UserId))
+            .GetStatementsAsync(msel.Id, null, null, limit, null, hasSystemPermission, Ct);
+
+        var ids = JsonDocument.Parse(json).RootElement.GetProperty("statements")
+            .EnumerateArray().Select(s => Text(s, "id")).ToList();
+        return (ids, json);
+    }
+
+    /// <summary>
+    /// One registration with more statements than the page size: every page is read, the request's limit is
+    /// the page size, and the pages are merged into one list, newest first, with no <c>more</c> left in it.
+    /// </summary>
+    [Fact]
+    public async Task GetStatements_FollowsMoreUntilTheLastPage_AndMergesEveryPage()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var reg = msel.Id.ToString();
+        using var lrs = new FakeLrs(Pages(new()
+        {
+            [reg] = Page(More("p2"), "a1", "a2"),
+            ["p2"] = Page(More("p3"), "a3", "a4"),
+            ["p3"] = Page("", "a5"),
+        }));
+
+        var (ids, json) = await PagedStatements(lrs, msel);
+
+        Assert.Equal(["a1", "a2", "a3", "a4", "a5"], ids.Order());
+        Assert.Equal(3, lrs.Requests.Count);
+        Assert.Equal(reg, lrs.Requests[0].Query("registration"));
+        Assert.Equal("2", lrs.Requests[0].Query("limit"));
+        Assert.Equal(["/xapi/statements?more=p2", "/xapi/statements?more=p3"], lrs.Requests.Skip(1).Select(r => r.PathAndQuery));
+        Assert.False(JsonDocument.Parse(json).RootElement.TryGetProperty("more", out _));
+        var timestamps = JsonDocument.Parse(json).RootElement.GetProperty("statements")
+            .EnumerateArray().Select(s => Text(s, "timestamp")).ToList();
+        Assert.Equal(timestamps.OrderDescending(StringComparer.Ordinal), timestamps);
+    }
+
+    /// <summary>A last page with no <c>more</c> property at all ends the paging as an empty one does.</summary>
+    [Fact]
+    public async Task GetStatements_StopsAtAPageWithNoMoreProperty()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        using var lrs = new FakeLrs(Pages(new()
+        {
+            [msel.Id.ToString()] = Page(More("p2"), "a1", "a2"),
+            ["p2"] = Page(null, "a3"),
+        }));
+
+        var (ids, _) = await PagedStatements(lrs, msel);
+
+        Assert.Equal(["a1", "a2", "a3"], ids.Order());
+        Assert.Equal(2, lrs.Requests.Count);
+    }
+
+    /// <summary>An absolute <c>more</c> link is followed as it is.</summary>
+    [Fact]
+    public async Task GetStatements_FollowsAnAbsoluteMoreLink()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        FakeLrs lrs = null;
+        var pages = new Dictionary<string, string>();
+        lrs = new FakeLrs(Pages(pages));
+        using var _ = lrs;
+        pages[msel.Id.ToString()] = Page($"{lrs.Origin}/xapi/statements?more=p2", "a1", "a2");
+        pages["p2"] = Page("", "a3");
+
+        var (ids, _) = await PagedStatements(lrs, msel);
+
+        Assert.Equal(["a1", "a2", "a3"], ids.Order());
+        Assert.Equal("/xapi/statements?more=p2", lrs.Requests[1].PathAndQuery);
+    }
+
+    /// <summary>
+    /// Every page is sent the LRS credentials, so an absolute <c>more</c> on another host is not followed:
+    /// the first page is kept and a warning names the link.
+    /// </summary>
+    [Fact]
+    public async Task GetStatements_DoesNotFollowAMoreLinkToAnotherHost()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        FakeLrs lrs = null;
+        var pages = new Dictionary<string, string>();
+        lrs = new FakeLrs(Pages(pages));
+        using var _ = lrs;
+        pages[msel.Id.ToString()] = Page("https://elsewhere.test/xapi/statements?more=p2", "a1", "a2");
+        pages["p2"] = Page("", "a3");
+
+        var (ids, _) = await PagedStatements(lrs, msel);
+
+        Assert.Equal(["a1", "a2"], ids.Order());
+        Assert.Single(lrs.Requests);
+        Assert.Contains(Log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("elsewhere.test"));
+    }
+
+    /// <summary>
+    /// A relative <c>more</c> is relative to the LRS's host, not to <c>Endpoint</c>'s path, so a link that
+    /// does not repeat the endpoint's path is not read under it.
+    /// </summary>
+    [Fact]
+    public async Task GetStatements_ResolvesARelativeMoreAgainstTheLrsHost()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        using var lrs = new FakeLrs(request =>
+            request.PathAndQuery.StartsWith("/xapi/statements?registration=")
+                ? new FakeLrs.Response(Page("/other/statements?more=p2", "a1", "a2"))
+                : request.PathAndQuery == "/other/statements?more=p2"
+                    ? new FakeLrs.Response(Page("", "a3"))
+                    : new FakeLrs.Response("{}", 404));
+
+        var (ids, _) = await PagedStatements(lrs, msel);
+
+        Assert.Equal(["a1", "a2", "a3"], ids.Order());
+    }
+
+    /// <summary>
+    /// <c>MaxStatementsPerRegistration</c> stops the paging once a registration has that many, keeps what
+    /// was read, and says so in a warning naming the registration and the count.
+    /// </summary>
+    [Fact]
+    public async Task GetStatements_StopsAtMaxStatementsPerRegistration_AndLogsAWarning()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var reg = msel.Id.ToString();
+        using var lrs = new FakeLrs(Pages(new()
+        {
+            [reg] = Page(More("p2"), "a1", "a2"),
+            ["p2"] = Page(More("p3"), "a3", "a4"),
+            ["p3"] = Page(More("p4"), "a5", "a6"),
+            ["p4"] = Page("", "a7"),
+        }));
+
+        var (ids, _) = await PagedStatements(lrs, msel, max: 3);
+
+        Assert.Equal(["a1", "a2", "a3", "a4"], ids.Order());
+        Assert.Equal(2, lrs.Requests.Count);
+        var warning = Assert.Single(Log.At(LogLevel.Warning));
+        Assert.Contains(reg, warning.Message);
+        Assert.Contains("4 statements", warning.Message);
+    }
+
+    /// <summary>The cap's default is the one appsettings.json documents.</summary>
+    [Fact]
+    public void MaxStatementsPerRegistration_DefaultsTo5000() =>
+        Assert.Equal(5000, new XApiOptions().MaxStatementsPerRegistration);
+
+    /// <summary>A <c>more</c> link the LRS already handed out ends the paging, so a bad LRS cannot loop it.</summary>
+    [Fact]
+    public async Task GetStatements_StopsWhenTheLrsRepeatsAMoreLink()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        using var lrs = new FakeLrs(Pages(new()
+        {
+            [msel.Id.ToString()] = Page(More("p2"), "a1", "a2"),
+            ["p2"] = Page(More("p2"), "a3", "a4"),
+        }));
+
+        var (ids, _) = await PagedStatements(lrs, msel);
+
+        Assert.Equal(["a1", "a2", "a3", "a4"], ids.Order());
+        Assert.Equal(2, lrs.Requests.Count);
+        Assert.Contains(Log.At(LogLevel.Warning), w => w.Message.Contains("repeated"));
+    }
+
+    /// <summary>A later page the LRS refuses is logged, and the pages before it are still answered.</summary>
+    [Fact]
+    public async Task GetStatements_WhenALaterPageFails_KeepsTheEarlierPages()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        using var lrs = new FakeLrs(Pages(new()
+        {
+            [msel.Id.ToString()] = Page(More("p2"), "a1", "a2"),
+            ["p2"] = Page(More("p3"), "a3", "a4"),
+        }));
+
+        var (ids, _) = await PagedStatements(lrs, msel);
+
+        Assert.Equal(["a1", "a2", "a3", "a4"], ids.Order());
+        Assert.Equal(3, lrs.Requests.Count);
+        Assert.Contains(Log.At(LogLevel.Warning), w => w.Message.Contains("NotFound"));
+    }
+
+    /// <summary>
+    /// A later page the LRS drops the connection on is logged too, rather than failing the whole list;
+    /// only the first query still throws (see the unreachable LRS test above).
+    /// </summary>
+    [Fact]
+    public async Task GetStatements_WhenALaterPageCannotBeReached_KeepsTheEarlierPages()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        using var lrs = new FakeLrs(request =>
+            request.PathAndQuery.Contains("more=p2")
+                ? new FakeLrs.Response("", Drop: true)
+                : new FakeLrs.Response(Page("/xapi/statements?more=p2", "a1", "a2")));
+
+        var (ids, _) = await PagedStatements(lrs, msel);
+
+        Assert.Equal(["a1", "a2"], ids.Order());
+        // A dropped connection surfaces as a failed request or, on HttpListener under Linux, an empty answer.
+        Assert.Contains(Log.At(LogLevel.Warning), w =>
+            w.Exception is HttpRequestException or System.IO.IOException || w.Message.Contains("not a statement list"));
+    }
+
+    /// <summary>An answer that is not a statement list is left out with a warning instead of failing the whole list.</summary>
+    [Fact]
+    public async Task GetStatements_LeavesOutAnAnswerThatIsNotAStatementList()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        using var lrs = new FakeLrs(_ => new FakeLrs.Response("<html>proxy error</html>"));
+
+        var (ids, _) = await PagedStatements(lrs, msel);
+
+        Assert.Empty(ids);
+        Assert.Contains(Log.At(LogLevel.Warning), w => w.Message.Contains("not a statement list"));
+    }
+
+    /// <summary>Each registration - the MSEL and every integration it is pushed to - is paged on its own.</summary>
+    [Fact]
+    public async Task GetStatements_PagesEachRegistration()
+    {
+        var msel = TestData.Msel();
+        msel.CiteEvaluationId = Guid.NewGuid();
+        msel.GalleryExhibitId = Guid.NewGuid();
+        await Seed(msel);
+        using var lrs = new FakeLrs(Pages(new()
+        {
+            [msel.Id.ToString()] = Page(More("m2"), "m1", "m2"),
+            ["m2"] = Page("", "m3"),
+            [msel.CiteEvaluationId.ToString()] = Page(More("c2"), "c1", "c2"),
+            ["c2"] = Page(More("c3"), "c3", "c4"),
+            ["c3"] = Page("", "c5"),
+            [msel.GalleryExhibitId.ToString()] = Page(More("g2"), "g1", "g2"),
+            ["g2"] = Page("", "g3"),
+        }));
+
+        var (ids, _) = await PagedStatements(lrs, msel);
+
+        Assert.Equal(["c1", "c2", "c3", "c4", "c5", "g1", "g2", "g3", "m1", "m2", "m3"], ids.Order());
+        Assert.Equal(7, lrs.Requests.Count);
+    }
+
+    /// <summary>The cap is per registration, so one busy source does not starve the others.</summary>
+    [Fact]
+    public async Task GetStatements_AppliesTheCapToEachRegistration()
+    {
+        var msel = TestData.Msel();
+        msel.CiteEvaluationId = Guid.NewGuid();
+        await Seed(msel);
+        using var lrs = new FakeLrs(Pages(new()
+        {
+            [msel.Id.ToString()] = Page(More("m2"), "m1", "m2"),
+            ["m2"] = Page(More("m3"), "m3", "m4"),
+            [msel.CiteEvaluationId.ToString()] = Page(More("c2"), "c1", "c2"),
+            ["c2"] = Page("", "c3"),
+        }));
+
+        var (ids, _) = await PagedStatements(lrs, msel, max: 2);
+
+        Assert.Equal(["c1", "c2", "m1", "m2"], ids.Order());
+        Assert.Equal(2, Log.At(LogLevel.Warning).Count);
+    }
+
+    /// <summary>The names are left out of every page, not only the first.</summary>
+    [Fact]
+    public async Task GetStatements_OnAMselThatHidesNames_LeavesTheNamesOutOfLaterPages()
+    {
+        var msel = TestData.Msel();
+        msel.HideNamesOnAssessorView = true;
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Evaluator).SeedAsync();
+        using var lrs = new FakeLrs(Pages(new()
+        {
+            [msel.Id.ToString()] = Page(More("p2"), "a1", "a2"),
+            ["p2"] = Page("", "a3"),
+        }));
+
+        var (ids, json) = await PagedStatements(lrs, msel, userId: actor.Id, hasSystemPermission: false);
+
+        Assert.Equal(["a1", "a2", "a3"], ids.Order());
+        Assert.DoesNotContain("Pat Learner", json);
+        Assert.DoesNotContain("pat@example.test", json);
+    }
+
+    /// <summary>Every page carries the LRS credentials and the xAPI version, not only the first query.</summary>
+    [Fact]
+    public async Task GetStatements_SendsTheAuthAndVersionHeadersOnEveryPage()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        using var lrs = new FakeLrs(Pages(new()
+        {
+            [msel.Id.ToString()] = Page(More("p2"), "a1", "a2"),
+            ["p2"] = Page(More("p3"), "a3", "a4"),
+            ["p3"] = Page("", "a5"),
+        }));
+
+        await PagedStatements(lrs, msel);
+
+        var basic = "Basic " + Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("lrs-user:lrs-secret"));
+        Assert.Equal(3, lrs.Requests.Count);
+        Assert.All(lrs.Requests, request =>
+        {
+            Assert.Equal(basic, request.Authorization);
+            Assert.Equal("1.0.3", request.Version);
+        });
     }
 
     // -------------------------------------------------------------------------------------------------

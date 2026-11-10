@@ -217,6 +217,7 @@ public class Startup
         services.AddScoped<ICatalogInjectService, CatalogInjectService>();
         services.AddScoped<ICatalogUnitService, CatalogUnitService>();
         services.AddScoped<ICiteService, CiteService>();
+        services.AddScoped<ICiteSubmissionService, CiteSubmissionService>();
         services.AddScoped<ICiteActionService, CiteActionService>();
         services.AddScoped<ICiteDutyService, CiteDutyService>();
         services.AddScoped<IDataFieldService, DataFieldService>();

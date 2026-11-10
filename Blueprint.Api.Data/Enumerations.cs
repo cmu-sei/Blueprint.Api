@@ -190,4 +190,22 @@ namespace Blueprint.Api.Data.Enumerations
         ManagePlayerApplications = 30
     }
 
+    // CITE's own values, as its database stores them. The CITE client numbers its copies of these
+    // 0, 1, 2..., so convert between the two by name.
+    public enum CiteScoringOptionSelection
+    {
+        Single = 0,
+        Multiple = 10,
+        None = 20
+    }
+
+    public enum CiteRightSideDisplay
+    {
+        ScoreSummary = 0,
+        HtmlBlock = 10,
+        EmbeddedUrl = 20,
+        Scoresheet = 30,
+        None = 40
+    }
+
 }

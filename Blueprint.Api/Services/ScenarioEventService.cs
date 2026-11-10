@@ -749,7 +749,9 @@ namespace Blueprint.Api.Services
             var movesAndInjects= new Dictionary<Guid, int[]>();
             // order scenario events and moves by DeltaSeconds
             var scenarioEvents = await _context.ScenarioEvents.Where(se => se.MselId == mselId).OrderBy(se => se.DeltaSeconds).ToArrayAsync(ct);
-            var moves = await _context.Moves.Where(se => se.MselId == mselId).OrderBy(m => m.DeltaSeconds).ToArrayAsync(ct);
+            // moves sharing a start time are ordered by number, so an event at that time goes to the higher-numbered
+            // move, as Blueprint shows it
+            var moves = await _context.Moves.Where(se => se.MselId == mselId).OrderBy(m => m.DeltaSeconds).ThenBy(m => m.MoveNumber).ToArrayAsync(ct);
             var m = 0;  // move index
             var inject = 0;  // inject value
             var deltaSeconds = scenarioEvents.Length > 0 ? scenarioEvents[0].DeltaSeconds : 0;  // value of the previous scenario event.  Used to determine the inject number.

@@ -1494,6 +1494,7 @@ namespace Blueprint.Api.Services
             var moves = await _context.Moves
                 .Where(m => m.MselId == mselId)
                 .OrderBy(m => m.DeltaSeconds)
+                .ThenBy(m => m.MoveNumber)
                 .ToListAsync(ct);
 
             // Load cards for GUID-to-name resolution

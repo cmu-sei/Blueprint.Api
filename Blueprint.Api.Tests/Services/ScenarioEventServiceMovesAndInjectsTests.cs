@@ -218,6 +218,41 @@ public class ScenarioEventServiceMovesAndInjectsTests(DatabaseFixture fixture) :
         Assert.Equal(1, answer[late.Id][0]);
     }
 
+    /// <summary>
+    /// Two moves sharing a start time: an event at that time is in the higher-numbered move, as Blueprint's own
+    /// event list shows it, whichever order the moves were saved in. Ordering by time alone left the tie to the
+    /// database, so Gallery could get an article as Move 0 that Blueprint listed under Move 1 and show it before
+    /// the exhibit reached Move 1.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetMovesAndInjects_ForMovesSharingAStartTime_PutsTheEventInTheHigherNumberedMove(bool lowerFirst)
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var move0 = TestData.Move(msel.Id, moveNumber: 0, deltaSeconds: 0);
+        var move1 = TestData.Move(msel.Id, moveNumber: 1, deltaSeconds: 0);
+        if (lowerFirst)
+        {
+            await Seed(move0);
+            await Seed(move1);
+        }
+        else
+        {
+            await Seed(move1);
+            await Seed(move0);
+        }
+
+        var atStart = await SeedEvent(msel.Id, 0);
+        var later = await SeedEvent(msel.Id, 60);
+
+        var answer = await Service().GetMovesAndInjects(msel.Id, Ct);
+
+        Assert.Equal([1, 0], answer[atStart.Id]);
+        Assert.Equal([1, 1], answer[later.Id]);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------

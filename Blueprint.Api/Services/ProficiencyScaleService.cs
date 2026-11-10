@@ -12,13 +12,13 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -37,13 +37,11 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
-        public ProficiencyScaleService(BlueprintContext context, IPrincipal user, IMapper mapper)
+        public ProficiencyScaleService(BlueprintContext context, IPrincipal user)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.ProficiencyScale>> GetAllAsync(CancellationToken ct)
@@ -53,7 +51,7 @@ namespace Blueprint.Api.Services
                 .OrderBy(x => x.Name)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<ProficiencyScale>>(items);
+            return items.Select(x => x.ToProficiencyScale()).ToList();
         }
 
         public async Task<ViewModels.ProficiencyScale> GetAsync(Guid id, CancellationToken ct)
@@ -62,14 +60,14 @@ namespace Blueprint.Api.Services
                 .Include(x => x.ProficiencyLevels)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
-            return _mapper.Map<ProficiencyScale>(item);
+            return item.ToProficiencyScale();
         }
 
         public async Task<ViewModels.ProficiencyScale> CreateAsync(ViewModels.ProficiencyScale proficiencyScale, CancellationToken ct)
         {
             proficiencyScale.Id = proficiencyScale.Id != Guid.Empty ? proficiencyScale.Id : Guid.NewGuid();
             proficiencyScale.CreatedBy = _user.GetId();
-            var entity = _mapper.Map<ProficiencyScaleEntity>(proficiencyScale);
+            var entity = proficiencyScale.ToEntity();
 
             _context.ProficiencyScales.Add(entity);
             await _context.SaveChangesAsync(ct);
@@ -85,12 +83,13 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<ProficiencyScale>();
 
             proficiencyScale.ModifiedBy = _user.GetId();
-            _mapper.Map(proficiencyScale, entityToUpdate);
+            proficiencyScale.ApplyTo(entityToUpdate);
 
             _context.ProficiencyScales.Update(entityToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            return _mapper.Map(entityToUpdate, proficiencyScale);
+            entityToUpdate.ApplyTo(proficiencyScale);
+            return proficiencyScale;
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
@@ -113,7 +112,7 @@ namespace Blueprint.Api.Services
                 .Where(s => idList.Contains(s.Id))
                 .Include(s => s.ProficiencyLevels)
                 .ToListAsync(ct);
-            var scales = _mapper.Map<IEnumerable<ViewModels.ProficiencyScale>>(entities).ToList();
+            var scales = entities.Select(x => x.ToProficiencyScale()).ToList();
 
             var json = JsonSerializer.Serialize(scales, new JsonSerializerOptions
             {
@@ -153,7 +152,7 @@ namespace Blueprint.Api.Services
                 item.DateCreated = dateNow;
                 item.ModifiedBy = null;
                 item.DateModified = null;
-                var entity = _mapper.Map<ProficiencyScaleEntity>(item);
+                var entity = item.ToEntity();
                 _context.ProficiencyScales.Add(entity);
 
                 foreach (var level in incomingLevels)
@@ -172,7 +171,7 @@ namespace Blueprint.Api.Services
                     _context.ProficiencyLevels.Add(levelEntity);
                 }
 
-                created.Add(_mapper.Map<ViewModels.ProficiencyScale>(entity));
+                created.Add(entity.ToProficiencyScale());
             }
             await _context.SaveChangesAsync(ct);
 

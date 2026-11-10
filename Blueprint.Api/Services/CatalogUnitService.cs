@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -17,6 +16,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -34,14 +34,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<ICatalogUnitService> _logger;
 
-        public CatalogUnitService(BlueprintContext context, IPrincipal user, ILogger<ICatalogUnitService> logger, IMapper mapper)
+        public CatalogUnitService(BlueprintContext context, IPrincipal user, ILogger<ICatalogUnitService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -58,7 +56,7 @@ namespace Blueprint.Api.Services
                 .ThenInclude(tu => tu.User)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<CatalogUnit>>(items);
+            return items.Select(x => x.ToCatalogUnit()).ToList();
         }
 
         public async Task<ViewModels.CatalogUnit> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -77,7 +75,7 @@ namespace Blueprint.Api.Services
                 .ThenInclude(tu => tu.User)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
-            return _mapper.Map<CatalogUnit>(item);
+            return item.ToCatalogUnit();
         }
 
         public async Task<ViewModels.CatalogUnit> CreateAsync(ViewModels.CatalogUnit catalogUnit, CancellationToken ct)
@@ -93,7 +91,7 @@ namespace Blueprint.Api.Services
             if (await _context.CatalogUnits.AnyAsync(mt => mt.UnitId == unit.Id && mt.CatalogId == catalog.Id))
                 throw new ArgumentException("Catalog Unit already exists.");
 
-            var catalogUnitEntity = _mapper.Map<CatalogUnitEntity>(catalogUnit);
+            var catalogUnitEntity = catalogUnit.ToEntity();
             catalogUnitEntity.Id = catalogUnitEntity.Id != Guid.Empty ? catalogUnitEntity.Id : Guid.NewGuid();
 
             _context.CatalogUnits.Add(catalogUnitEntity);
@@ -108,7 +106,7 @@ namespace Blueprint.Api.Services
             if (catalogUnitToUpdate == null)
                 throw new EntityNotFoundException<CatalogUnit>();
 
-            _mapper.Map(catalogUnit, catalogUnitToUpdate);
+            catalogUnit.ApplyTo(catalogUnitToUpdate);
 
             _context.CatalogUnits.Update(catalogUnitToUpdate);
             await _context.SaveChangesAsync(ct);

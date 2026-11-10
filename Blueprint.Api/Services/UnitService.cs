@@ -12,8 +12,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -21,6 +19,7 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -41,14 +40,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<IUnitService> _logger;
 
-        public UnitService(BlueprintContext context, IPrincipal unit, ILogger<IUnitService> logger, IMapper mapper)
+        public UnitService(BlueprintContext context, IPrincipal unit, ILogger<IUnitService> logger)
         {
             _context = context;
             _user = unit as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -56,14 +53,14 @@ namespace Blueprint.Api.Services
         {
             var items = await _context.Units
                 .ToArrayAsync(ct);
-            return _mapper.Map<IEnumerable<Unit>>(items);
+            return items.Select(x => x.ToUnit()).ToList();
         }
 
         public async Task<ViewModels.Unit> GetAsync(Guid id, CancellationToken ct)
         {
             var item = await _context.Units
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
-            return _mapper.Map<Unit>(item);
+            return item.ToUnit();
         }
 
         public async Task<IEnumerable<ViewModels.Unit>> GetMineAsync(CancellationToken ct)
@@ -74,7 +71,7 @@ namespace Blueprint.Api.Services
                 .Select(x => x.Unit)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Unit>>(items);
+            return items.Select(x => x.ToUnit()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.Unit>> GetByUserAsync(Guid userId, CancellationToken ct)
@@ -84,14 +81,14 @@ namespace Blueprint.Api.Services
                 .Select(x => x.Unit)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Unit>>(items);
+            return items.Select(x => x.ToUnit()).ToList();
         }
 
         public async Task<ViewModels.Unit> CreateAsync(ViewModels.Unit unit, CancellationToken ct)
         {
             unit.Id = unit.Id != Guid.Empty ? unit.Id : Guid.NewGuid();
             unit.CreatedBy = _user.GetId();
-            var unitEntity = _mapper.Map<UnitEntity>(unit);
+            var unitEntity = unit.ToEntity();
 
             _context.Units.Add(unitEntity);
             await _context.SaveChangesAsync(ct);
@@ -113,7 +110,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<Unit>();
 
             unit.ModifiedBy = _user.GetId();
-            _mapper.Map(unit, unitToUpdate);
+            unit.ApplyTo(unitToUpdate);
 
             _context.Units.Update(unitToUpdate);
             await _context.SaveChangesAsync(ct);
@@ -145,7 +142,7 @@ namespace Blueprint.Api.Services
             var unitEntities = await _context.Units
                 .Where(u => idList.Contains(u.Id))
                 .ToListAsync(ct);
-            var units = _mapper.Map<IEnumerable<ViewModels.Unit>>(unitEntities).ToList();
+            var units = unitEntities.Select(x => x.ToUnit()).ToList();
             // Strip user assignments — the user explicitly asked Users be excluded from Unit exports.
             foreach (var u in units)
             {
@@ -188,9 +185,9 @@ namespace Blueprint.Api.Services
                 item.DateCreated = dateNow;
                 item.ModifiedBy = null;
                 item.DateModified = null;
-                var entity = _mapper.Map<UnitEntity>(item);
+                var entity = item.ToEntity();
                 _context.Units.Add(entity);
-                created.Add(_mapper.Map<ViewModels.Unit>(entity));
+                created.Add(entity.ToUnit());
             }
             await _context.SaveChangesAsync(ct);
 

@@ -88,7 +88,7 @@ public sealed class IntegrationServiceHarness
             Scope = "player player-vm cite gallery steamfitter"
         });
         services.AddScoped<IScenarioEventService>(sp => scenarioEvents ?? new ScenarioEventService(
-            sp.GetRequiredService<BlueprintContext>(), null, TestMapper.Mapper, null));
+            sp.GetRequiredService<BlueprintContext>(), null, null));
 
         var provider = services.BuildServiceProvider();
         var options = Substitute.For<IOptionsMonitor<ClientOptions>>();

@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -15,24 +14,22 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class DataValueHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly IDataValueService _dataValueService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public DataValueHandler(
             BlueprintContext db,
-            IMapper mapper,
             IDataValueService dataValueService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _dataValueService = dataValueService;
             _mainHub = mainHub;
         }
@@ -58,7 +55,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(dataValueEntity);
-            var dataValue = _mapper.Map<ViewModels.DataValue>(dataValueEntity);
+            var dataValue = dataValueEntity.ToDataValue();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -74,9 +71,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public DataValueCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IDataValueService dataValueService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, dataValueService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, dataValueService, mainHub) { }
 
         public async Task Handle(EntityCreated<DataValueEntity> notification, CancellationToken cancellationToken)
         {
@@ -88,9 +84,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public DataValueUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IDataValueService dataValueService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, dataValueService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, dataValueService, mainHub) { }
 
         public async Task Handle(EntityUpdated<DataValueEntity> notification, CancellationToken cancellationToken)
         {
@@ -106,9 +101,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public DataValueDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IDataValueService dataValueService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, dataValueService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, dataValueService, mainHub)
         {
         }
 

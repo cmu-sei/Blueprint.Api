@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
@@ -14,24 +13,22 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class InjectHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly IInjectService _InjectService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public InjectHandler(
             BlueprintContext db,
-            IMapper mapper,
             IInjectService InjectService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _InjectService = InjectService;
             _mainHub = mainHub;
         }
@@ -52,7 +49,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(InjectEntity);
-            var Inject = _mapper.Map<ViewModels.Injectm>(InjectEntity);
+            var Inject = InjectEntity.ToInjectm();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -68,9 +65,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public InjectCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IInjectService InjectService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, InjectService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, InjectService, mainHub) { }
 
         public async Task Handle(EntityCreated<InjectEntity> notification, CancellationToken cancellationToken)
         {
@@ -82,9 +78,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public InjectUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IInjectService InjectService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, InjectService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, InjectService, mainHub) { }
 
         public async Task Handle(EntityUpdated<InjectEntity> notification, CancellationToken cancellationToken)
         {
@@ -100,9 +95,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public InjectDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IInjectService InjectService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, InjectService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, InjectService, mainHub)
         {
         }
 

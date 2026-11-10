@@ -15,7 +15,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -33,6 +32,7 @@ using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Packaging;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -69,7 +69,6 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<MselService> _logger;
         private readonly ClientOptions _clientOptions;
         private readonly IScenarioEventService _scenarioEventService;
@@ -91,7 +90,6 @@ namespace Blueprint.Api.Services
             IJoinQueue joinQueue,
             IPrincipal user,
             ILogger<MselService> logger,
-            IMapper mapper,
             IXApiService xApiService,
             ICiteApiClient citeApiClient,
             ICasterService casterService)
@@ -100,7 +98,6 @@ namespace Blueprint.Api.Services
             _clientOptions = clientOptions;
             _scenarioEventService = scenarioEventService;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
             _integrationQueue = integrationQueue;
             _integrationService = integrationService;
@@ -157,7 +154,7 @@ namespace Blueprint.Api.Services
                 msels = _context.Msels;
             }
 
-            return _mapper.Map<IEnumerable<Msel>>(await msels.ToListAsync());
+            return (await msels.ToListAsync()).Select(x => x.ToMsel()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -203,7 +200,7 @@ namespace Blueprint.Api.Services
             {
                 mselList = mselList.Where(m => !m.IsTemplate).ToList();
             }
-            var result = _mapper.Map<IEnumerable<Msel>>(mselList).ToList();
+            var result = mselList.Select(x => x.ToMsel()).ToList();
             foreach (var m in result) EnsureCreatorOwnerRole(m);
             return result;
         }
@@ -233,7 +230,7 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
             if (mselEntity == null)
                 throw new EntityNotFoundException<MselEntity>("MSEL not found " + id);
-            var msel = _mapper.Map<Msel>(mselEntity);
+            var msel = mselEntity.ToMsel();
             EnsureCreatorOwnerRole(msel);
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
@@ -256,7 +253,7 @@ namespace Blueprint.Api.Services
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
 
             // the integration IDs and status are not part of the request, so a new MSEL starts with none
-            var mselEntity = _mapper.Map<MselEntity>(msel);
+            var mselEntity = msel.ToEntity();
             mselEntity.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
             mselEntity.CreatedBy = _user.GetId();
 
@@ -279,7 +276,7 @@ namespace Blueprint.Api.Services
 
             // the copy carries the MSEL's own scoring model, which a contributor may read
             var newMselEntity = await privateMselCopyAsync(mselId, null, ct);
-            var msel = _mapper.Map<Msel>(newMselEntity);
+            var msel = newMselEntity.ToMsel();
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
             {
@@ -655,7 +652,7 @@ namespace Blueprint.Api.Services
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
 
             // okay to update this msel
-            _mapper.Map(msel, mselToUpdate);
+            msel.ApplyTo(mselToUpdate);
             mselToUpdate.CiteScoringModelName = msel.CiteScoringModelId == null ? null : linkedName;
             mselToUpdate.ModifiedBy = _user.GetId();
 
@@ -765,7 +762,7 @@ namespace Blueprint.Api.Services
         {
             var mselEntity = await createMselFromXlsxFile(form.ToUpload, null, ct);
 
-            return _mapper.Map<Msel>(mselEntity);
+            return mselEntity.ToMsel();
         }
 
         public async Task<Msel> ReplaceAsync(MselFileForm form, Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -789,7 +786,7 @@ namespace Blueprint.Api.Services
             mselEntity = await createMselFromXlsxFile(form.ToUpload, mselEntity, ct);
             await _context.Database.CommitTransactionAsync(ct);
 
-            return _mapper.Map<Msel>(mselEntity);
+            return mselEntity.ToMsel();
         }
 
         public async Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -2547,7 +2544,7 @@ namespace Blueprint.Api.Services
                 DataFields = mselEntity.DataFields.Count,
                 Pages = mselEntity.Pages.Count
             };
-            result.Msel = _mapper.Map<Msel>(mselEntity);
+            result.Msel = mselEntity.ToMsel();
             return result;
         }
 
@@ -2811,7 +2808,7 @@ namespace Blueprint.Api.Services
                 await _xApiService.ExerciseStartedAsync(msel, ct);
             }
 
-            return _mapper.Map<ViewModels.Msel>(msel);
+            return msel.ToMsel();
         }
 
         /// <summary>
@@ -2843,7 +2840,7 @@ namespace Blueprint.Api.Services
             msel.IntegrationStatus = "Retrying Caster";
             _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = true, CasterOnly = true, FinalStatus = MselItemStatus.Deployed, UserId = _user.GetId() });
 
-            return _mapper.Map<ViewModels.Msel>(msel);
+            return msel.ToMsel();
         }
 
         // the start of the status a push leaves when its Caster step fails
@@ -2870,7 +2867,7 @@ namespace Blueprint.Api.Services
                 await _xApiService.ExerciseStoppedAsync(msel, ct);
             }
 
-            return _mapper.Map<ViewModels.Msel>(msel);
+            return msel.ToMsel();
         }
 
         public async Task CancelIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -2890,7 +2887,7 @@ namespace Blueprint.Api.Services
             msel.Status = MselItemStatus.Archived;
             await _context.SaveChangesAsync(ct);
 
-            return _mapper.Map<ViewModels.Msel>(msel);
+            return msel.ToMsel();
         }
 
         // Checks a Caster MSEL without calling Caster, so an invitee with no Caster access can run them too.
@@ -2972,7 +2969,7 @@ namespace Blueprint.Api.Services
             // Only return MSELs where the user is already on a team
             var mselList = teamMselList.OrderByDescending(m => m.DateCreated);
 
-            return _mapper.Map<IEnumerable<Msel>>(mselList);
+            return mselList.Select(x => x.ToMsel()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct)
@@ -3222,7 +3219,7 @@ namespace Blueprint.Api.Services
             // add the launch data to the launch queue
             _integrationQueue.Add(new IntegrationInformation { MselId = mselEntity.Id, PlayerViewId = playerViewId, IsPush = true, UserId = _user.GetId() });
             // get the MSEL to return with the new Player View ID
-            var launchedMsel = _mapper.Map<Msel>(mselEntity);
+            var launchedMsel = mselEntity.ToMsel();
             launchedMsel.PlayerViewId = playerViewId;
 
             return launchedMsel;

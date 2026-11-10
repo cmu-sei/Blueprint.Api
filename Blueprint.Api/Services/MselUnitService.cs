@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -18,6 +17,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -35,14 +35,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<IMselUnitService> _logger;
 
-        public MselUnitService(BlueprintContext context, IPrincipal user, ILogger<IMselUnitService> logger, IMapper mapper)
+        public MselUnitService(BlueprintContext context, IPrincipal user, ILogger<IMselUnitService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -63,7 +61,7 @@ namespace Blueprint.Api.Services
                 .ThenInclude(tu => tu.User)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<MselUnit>>(items);
+            return items.Select(x => x.ToMselUnit()).ToList();
         }
 
         public async Task<ViewModels.MselUnit> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -82,7 +80,7 @@ namespace Blueprint.Api.Services
                 .ThenInclude(tu => tu.User)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
-            return _mapper.Map<MselUnit>(item);
+            return item.ToMselUnit();
         }
 
         public async Task<ViewModels.MselUnit> CreateAsync(ViewModels.MselUnitCreate mselUnit, bool hasSystemPermission, CancellationToken ct)
@@ -102,7 +100,7 @@ namespace Blueprint.Api.Services
             if (await _context.MselUnits.AnyAsync(mt => mt.UnitId == unit.Id && mt.MselId == msel.Id))
                 throw new ArgumentException("MSEL Unit already exists.");
 
-            var mselUnitEntity = _mapper.Map<MselUnitEntity>(mselUnit);
+            var mselUnitEntity = mselUnit.ToEntity();
             mselUnitEntity.Id = mselUnitEntity.Id != Guid.Empty ? mselUnitEntity.Id : Guid.NewGuid();
 
             _context.MselUnits.Add(mselUnitEntity);
@@ -144,7 +142,6 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             // the pairing has no editable fields, so the edit leaves the MSEL, the Unit and the Unit's own record alone
-            _mapper.Map(mselUnit, mselUnitToUpdate);
 
             _context.MselUnits.Update(mselUnitToUpdate);
             await _context.SaveChangesAsync(ct);

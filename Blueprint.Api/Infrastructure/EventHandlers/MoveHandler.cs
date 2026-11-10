@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
@@ -14,24 +13,22 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class MoveHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly IMoveService _moveService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public MoveHandler(
             BlueprintContext db,
-            IMapper mapper,
             IMoveService moveService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _moveService = moveService;
             _mainHub = mainHub;
         }
@@ -53,7 +50,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(moveEntity);
-            var move = _mapper.Map<ViewModels.Move>(moveEntity);
+            var move = moveEntity.ToMove();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -69,9 +66,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public MoveCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IMoveService moveService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, moveService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, moveService, mainHub) { }
 
         public async Task Handle(EntityCreated<MoveEntity> notification, CancellationToken cancellationToken)
         {
@@ -83,9 +79,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public MoveUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IMoveService moveService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, moveService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, moveService, mainHub) { }
 
         public async Task Handle(EntityUpdated<MoveEntity> notification, CancellationToken cancellationToken)
         {
@@ -101,9 +96,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public MoveDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IMoveService moveService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, moveService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, moveService, mainHub)
         {
         }
 

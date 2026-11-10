@@ -13,7 +13,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -23,6 +22,7 @@ using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -44,7 +44,6 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<CatalogService> _logger;
         private readonly ClientOptions _clientOptions;
         private readonly IScenarioEventService _scenarioEventService;
@@ -60,14 +59,12 @@ namespace Blueprint.Api.Services
             IPlayerService playerService,
             IJoinQueue joinQueue,
             IPrincipal user,
-            ILogger<CatalogService> logger,
-            IMapper mapper)
+            ILogger<CatalogService> logger)
         {
             _context = context;
             _clientOptions = clientOptions;
             _scenarioEventService = scenarioEventService;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
             _integrationQueue = integrationQueue;
             _playerService = playerService;
@@ -78,7 +75,7 @@ namespace Blueprint.Api.Services
         {
             var catalogs = await _context.Catalogs.ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Catalog>>(catalogs);
+            return catalogs.Select(x => x.ToCatalog()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.Catalog>> GetMineAsync(CancellationToken ct)
@@ -114,7 +111,7 @@ namespace Blueprint.Api.Services
             // combine lists
             var catalogList = unitCatalogList.Union(myCatalogList).Union(publicCatalogList).OrderBy(m => m.Name);
 
-            return _mapper.Map<IEnumerable<Catalog>>(catalogList);
+            return catalogList.Select(x => x.ToCatalog()).ToList();
         }
 
         public async Task<ViewModels.Catalog> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -125,14 +122,14 @@ namespace Blueprint.Api.Services
             var catalogEntity = await _context.Catalogs
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
 
-            return _mapper.Map<Catalog>(catalogEntity);
+            return catalogEntity.ToCatalog();
         }
 
         public async Task<ViewModels.Catalog> CreateAsync(ViewModels.Catalog catalog, CancellationToken ct)
         {
             catalog.Id = catalog.Id != Guid.Empty ? catalog.Id : Guid.NewGuid();
             catalog.CreatedBy = _user.GetId();
-            var catalogEntity = _mapper.Map<CatalogEntity>(catalog);
+            var catalogEntity = catalog.ToEntity();
 
             _context.Catalogs.Add(catalogEntity);
             await _context.SaveChangesAsync(ct);
@@ -157,7 +154,7 @@ namespace Blueprint.Api.Services
                 .AsNoTracking()
                 .SingleOrDefaultAsync(m => m.Id == catalogId);
             newCatalogEntity = await privateCatalogCopyAsync(newCatalogEntity, ct);
-            var catalog = _mapper.Map<Catalog>(newCatalogEntity);
+            var catalog = newCatalogEntity.ToCatalog();
 
             return catalog;
         }
@@ -264,7 +261,7 @@ namespace Blueprint.Api.Services
 
             // okay to update this catalog
             catalog.ModifiedBy = _user.GetId();
-            _mapper.Map(catalog, catalogToUpdate);
+            catalog.ApplyTo(catalogToUpdate);
 
             _context.Catalogs.Update(catalogToUpdate);
             await _context.SaveChangesAsync(ct);
@@ -334,7 +331,7 @@ namespace Blueprint.Api.Services
             // make a copy of the catalog and add it to the database
             catalogEntity = await privateCatalogCopyAsync(catalogEntity, ct);
 
-            return _mapper.Map<Catalog>(catalogEntity);
+            return catalogEntity.ToCatalog();
         }
 
     }

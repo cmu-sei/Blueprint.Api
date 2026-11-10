@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -17,6 +16,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -34,14 +34,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<ITeamUserService> _logger;
 
-        public TeamUserService(BlueprintContext context, IPrincipal user, ILogger<ITeamUserService> logger, IMapper mapper)
+        public TeamUserService(BlueprintContext context, IPrincipal user, ILogger<ITeamUserService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -54,7 +52,7 @@ namespace Blueprint.Api.Services
                 .Where(tu => tu.Team.MselId == mselId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<TeamUser>>(items);
+            return items.Select(x => x.ToTeamUser()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.TeamUser>> GetByTeamAsync(Guid teamId, bool hasSystemPermission, CancellationToken ct)
@@ -71,7 +69,7 @@ namespace Blueprint.Api.Services
                 .Include(tu => tu.User)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<TeamUser>>(items);
+            return items.Select(x => x.ToTeamUser()).ToList();
         }
 
         public async Task<ViewModels.TeamUser> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -86,7 +84,7 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
 
-            return _mapper.Map<TeamUser>(item);
+            return item.ToTeamUser();
         }
 
         public async Task<ViewModels.TeamUser> CreateAsync(ViewModels.TeamUser teamUser, bool hasSystemPermission, CancellationToken ct)
@@ -101,7 +99,7 @@ namespace Blueprint.Api.Services
             // okay to add this TeamUser
             teamUser.Id = teamUser.Id != Guid.Empty ? teamUser.Id : Guid.NewGuid();
             teamUser.CreatedBy = _user.GetId();
-            var teamUserEntity = _mapper.Map<TeamUserEntity>(teamUser);
+            var teamUserEntity = teamUser.ToEntity();
 
             _context.TeamUsers.Add(teamUserEntity);
             await _context.SaveChangesAsync(ct);

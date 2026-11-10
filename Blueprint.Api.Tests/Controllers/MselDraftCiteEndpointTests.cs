@@ -46,9 +46,11 @@ public class MselDraftCiteEndpointTests(DatabaseFixture fixture, AiEnabledFactor
         _cite.ClearSubstitute();
         _cite.GetTeamTypesAsync(Arg.Any<CancellationToken>()).Returns(new List<TeamType> { Standard, Contributor, Other });
         _cite.GetScoringModelsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool?>(), Arg.Any<CancellationToken>()).Returns(_ => _models.ToList());
-        _cite.CreateScoringModelAsync(Arg.Any<ScoringModel>(), Arg.Any<CancellationToken>()).Returns(call =>
+        _cite.CreateScoringModelAsync(Arg.Any<CreateScoringModelRequest>(), Arg.Any<CancellationToken>()).Returns(call =>
         {
-            _created = call.Arg<ScoringModel>();
+            // CITE answers a create with the model it stored, the request's fields under the same names
+            _created = System.Text.Json.JsonSerializer.Deserialize<ScoringModel>(
+                System.Text.Json.JsonSerializer.Serialize(call.Arg<CreateScoringModelRequest>()));
             _created.Id = Guid.NewGuid();
             _models.Add(_created);
             return _created;
@@ -64,7 +66,7 @@ public class MselDraftCiteEndpointTests(DatabaseFixture fixture, AiEnabledFactor
     {
         var mselId = await Import("QuestionsByMove");
 
-        await _cite.DidNotReceive().CreateScoringModelAsync(Arg.Any<ScoringModel>(), Arg.Any<CancellationToken>());
+        await _cite.DidNotReceive().CreateScoringModelAsync(Arg.Any<CreateScoringModelRequest>(), Arg.Any<CancellationToken>());
         await using var db = NewContext();
         var model = await Authored(db, mselId);
         Assert.Equal("Deep Bite Questions by Move", model.Description);
@@ -94,7 +96,7 @@ public class MselDraftCiteEndpointTests(DatabaseFixture fixture, AiEnabledFactor
         var mselId = await Import("Likelihood");
 
         await _cite.DidNotReceive().GetScoringModelsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool?>(), Arg.Any<CancellationToken>());
-        await _cite.DidNotReceive().CreateScoringModelAsync(Arg.Any<ScoringModel>(), Arg.Any<CancellationToken>());
+        await _cite.DidNotReceive().CreateScoringModelAsync(Arg.Any<CreateScoringModelRequest>(), Arg.Any<CancellationToken>());
         await using var db = NewContext();
         var model = await Authored(db, mselId);
         Assert.Equal("DoD CTT Likelihood Assessment Matrix", model.Description);
@@ -130,7 +132,7 @@ public class MselDraftCiteEndpointTests(DatabaseFixture fixture, AiEnabledFactor
 
         var mselId = await Import(null, templateModel: model);
 
-        await _cite.DidNotReceive().CreateScoringModelAsync(Arg.Any<ScoringModel>(), Arg.Any<CancellationToken>());
+        await _cite.DidNotReceive().CreateScoringModelAsync(Arg.Any<CreateScoringModelRequest>(), Arg.Any<CancellationToken>());
         await using var db = NewContext();
         Assert.Equal(model.Id, (await db.Msels.SingleAsync(m => m.Id == mselId, Ct)).CiteScoringModelId);
     }
@@ -147,7 +149,7 @@ public class MselDraftCiteEndpointTests(DatabaseFixture fixture, AiEnabledFactor
     {
         var (mselId, result) = await ImportWithResult("QuestionsByMove", authoredTemplateModel: true);
 
-        await _cite.DidNotReceive().CreateScoringModelAsync(Arg.Any<ScoringModel>(), Arg.Any<CancellationToken>());
+        await _cite.DidNotReceive().CreateScoringModelAsync(Arg.Any<CreateScoringModelRequest>(), Arg.Any<CancellationToken>());
         await using var db = NewContext();
         var model = await Authored(db, mselId);
         Assert.Equal("CISA NCISS", model.Description);

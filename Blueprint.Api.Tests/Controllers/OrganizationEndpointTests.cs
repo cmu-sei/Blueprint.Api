@@ -128,8 +128,13 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         Assert.Single(await GetOrganizations(Client(actor), $"/api/msels/{msel.Id}/organizations"));
     }
 
+    /// <summary>
+    /// A member of one of the MSEL's teams holding no role is a participant, shown only the Exercise View,
+    /// which has no organizations. The answer is an empty list, not a 403, because the build page asks for
+    /// them whoever opens the MSEL there.
+    /// </summary>
     [Fact]
-    public async Task GetByMsel_AsAMemberOfATeamOnTheMsel_ReturnsThem()
+    public async Task GetByMsel_AsAMemberOfATeamOnTheMsel_IsAnEmptyList()
     {
         var msel = TestData.Msel();
         await Seed(msel);
@@ -138,6 +143,35 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         await Seed(team, TestData.Organization(msel.Id));
 
         var actor = await Actor().OnTeam(team).SeedAsync();
+
+        Assert.Empty(await GetOrganizations(Client(actor), $"/api/msels/{msel.Id}/organizations"));
+    }
+
+    /// <summary>A participant asking for one of the MSEL's organizations by id is refused it.</summary>
+    [Fact]
+    public async Task Get_AsAMemberOfATeamOnTheMsel_Is403()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var team = TestData.Team(msel.Id);
+        var organization = TestData.Organization(msel.Id);
+        await Seed(team, organization);
+        var actor = await Actor().OnTeam(team).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/organizations/{organization.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>A member of a team who also holds a role on the MSEL is a contributor, and reads them all.</summary>
+    [Fact]
+    public async Task GetByMsel_AsAMemberOfATeamOnTheMsel_HoldingARole_ReturnsThem()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var team = TestData.Team(msel.Id);
+        await Seed(team, TestData.Organization(msel.Id));
+        var actor = await Actor().OnTeam(team).OnMsel(msel, MselRole.Viewer).SeedAsync();
 
         Assert.Single(await GetOrganizations(Client(actor), $"/api/msels/{msel.Id}/organizations"));
     }
@@ -724,7 +758,35 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("Renamed", (await NewContext().Organizations.SingleAsync(x => x.Id == organization.Id, Ct)).Name);
+        Assert.Equal("Renamed", (await ReadBack(db => db.Organizations.SingleAsync(x => x.Id == organization.Id, Ct))).Name);
+    }
+
+    [Fact]
+    public async Task Update_ForAMsel_AsAnEditor_Is200()
+    {
+        var msel = TestData.Msel();
+        var organization = TestData.Organization(msel.Id);
+        await Seed(msel, organization);
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/organizations/{organization.Id}", Body(organization, name: "Renamed"), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Renamed", (await ReadBack(db => db.Organizations.SingleAsync(x => x.Id == organization.Id, Ct))).Name);
+    }
+
+    [Fact]
+    public async Task Delete_ForAMsel_AsAnEditor_Is204()
+    {
+        var msel = TestData.Msel();
+        var organization = TestData.Organization(msel.Id);
+        await Seed(msel, organization);
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/organizations/{organization.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.False(await ReadBack(db => db.Organizations.AnyAsync(x => x.Id == organization.Id, Ct)));
     }
 
     [Fact]

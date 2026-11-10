@@ -96,7 +96,7 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     [Theory]
     [InlineData(MselRole.Owner, HttpStatusCode.OK)]
     [InlineData(MselRole.Viewer, HttpStatusCode.OK)]
-    [InlineData(MselRole.Evaluator, HttpStatusCode.Forbidden)]
+    [InlineData(MselRole.Evaluator, HttpStatusCode.OK)]
     public async Task GetByMsel_TheRolesThatMayListAMselsCardTeams(MselRole role, HttpStatusCode expected)
     {
         var msel = await SeedMsel();

@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -150,26 +149,6 @@ namespace Blueprint.Api.Controllers
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
             var msel = await _mselService.GetAsync(id, hasSystemPermission, ct);
             return Ok(msel);
-        }
-
-        /// <summary>
-        /// Gets specific Msel data by id
-        /// </summary>
-        /// <remarks>
-        /// Returns a DataTable for the Msel with the id specified
-        /// </remarks>
-        /// <param name="id">The id of the Msel</param>
-        /// <param name="ct"></param>
-        /// <returns></returns>
-        [HttpGet("msels/{id}/data")]
-        [ProducesResponseType(typeof(DataTable), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getMselData")]
-        public async Task<IActionResult> GetData(Guid id, CancellationToken ct)
-        {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
-            var mselData = await _mselService.GetDataTableAsync(id, hasSystemPermission, hasCreateMselsPermission, ct);
-            return Ok(mselData);
         }
 
         /// <summary>
@@ -460,6 +439,27 @@ namespace Blueprint.Api.Controllers
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
             var msel = await _mselService.PullIntegrationsAsync(id, MselItemStatus.Approved, hasSystemPermission, ct);
+            return Ok(msel);
+        }
+
+        /// <summary>
+        /// Retry the Caster step of a failed push
+        /// </summary>
+        /// <remarks>
+        /// Redoes only the Caster step of a push that failed there: a new run in the push's workspace, or a
+        /// new workspace if the push never made one. The other integrations stay as the push left them.
+        /// <para />
+        /// Accessible only to a ContentDeveloper or MSEL owner
+        /// </remarks>
+        /// <param name="id">The id of the MSEL</param>
+        /// <param name="ct"></param>
+        [HttpPost("msels/{id}/integrations/caster/retry")]
+        [ProducesResponseType(typeof(ViewModels.Msel), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "retryCasterIntegration")]
+        public async Task<IActionResult> RetryCasterIntegration(Guid id, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
+            var msel = await _mselService.RetryCasterAsync(id, hasSystemPermission, ct);
             return Ok(msel);
         }
 

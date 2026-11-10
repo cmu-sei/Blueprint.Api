@@ -37,8 +37,23 @@ namespace Blueprint.Api.Infrastructure.Extensions
             }
         }
 
-        // Create a Cite Evaluation for this MSEL
-        public static async Task<Evaluation> CreateEvaluationAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        // Create the MSEL's own scoring model in CITE, categories and options in the same request, and return its id
+        public static async Task<Guid> CreateScoringModelAsync(MselEntity msel, CiteApiClient citeApiClient, CancellationToken ct)
+        {
+            var scoringModel = Services.CiteScoringModelConverter.ToCite(msel.ScoringModel);
+            if (string.IsNullOrWhiteSpace(scoringModel.Description))
+                scoringModel.Description = msel.Name + " Scoring Model";
+            var created = await citeApiClient.CreateScoringModelAsync(scoringModel, ct);
+            return created.Id;
+        }
+
+        public static async Task DeleteScoringModelAsync(Guid scoringModelId, CiteApiClient citeApiClient, CancellationToken ct)
+        {
+            await citeApiClient.DeleteScoringModelAsync(scoringModelId, ct);
+        }
+
+        // Create a Cite Evaluation for this MSEL, from the scoring model given, or else the one the MSEL links
+        public static async Task<Evaluation> CreateEvaluationAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct, Guid? scoringModelId = null)
         {
             var move0 = msel.Moves.SingleOrDefault(m => m.MoveNumber == 0);
             Evaluation newEvaluation = new Evaluation() {
@@ -46,7 +61,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 Description = msel.Name,
                 Status = Cite.Api.Client.ItemStatus.Pending,
                 CurrentMoveNumber = 0,
-                ScoringModelId = (Guid)msel.CiteScoringModelId,
+                ScoringModelId = scoringModelId ?? (Guid)msel.CiteScoringModelId,
                 GalleryExhibitId = msel.GalleryExhibitId,
                 SituationDescription = "Preparing for the start of the exercise."
             };
@@ -66,7 +81,15 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Update a Cite Evaluation for this MSEL
         public static async Task ActivateAsync(Evaluation evaluation, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
-            await citeApiClient.UpdateEvaluationAsync(evaluation.Id, evaluation, ct);
+            await citeApiClient.UpdateEvaluationAsync(evaluation.Id, new UpdateEvaluationRequest() {
+                Description = evaluation.Description,
+                Status = evaluation.Status,
+                CurrentMoveNumber = evaluation.CurrentMoveNumber,
+                SituationTime = evaluation.SituationTime,
+                SituationDescription = evaluation.SituationDescription,
+                GalleryExhibitId = evaluation.GalleryExhibitId,
+                ShowAdvanceButton = evaluation.ShowAdvanceButton
+            }, ct);
         }
 
         // Create Cite Moves for this MSEL
@@ -107,14 +130,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 {
                     var citeTeamId = team.Id;
                     // create team in Cite
-                    var citeTeam = new Team() {
+                    var citeTeam = new CreateTeamRequest() {
                         Id = citeTeamId,
                         Name = team.Name,
                         ShortName = team.ShortName,
                         EvaluationId = (Guid)msel.CiteEvaluationId,
                         TeamTypeId = (Guid)team.CiteTeamTypeId
                     };
-                    citeTeam = await citeApiClient.CreateTeamAsync(citeTeam, ct);
+                    var createdTeam = await citeApiClient.CreateTeamAsync(citeTeam, ct);
                     // use eager-loaded users from the team
                     var users = team.TeamUsers.Select(tu => tu.User).ToList();
                     foreach (var user in users)
@@ -132,20 +155,15 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         // Map Blueprint team role to CITE role ID
                         var userTeamRole = team.UserTeamRoles
                             .FirstOrDefault(utr => utr.UserId == user.Id);
-                        Guid? citeRoleId = null;
-                        if (userTeamRole != null && roleNameToId.TryGetValue(userTeamRole.Role, out var mappedId))
-                        {
-                            citeRoleId = mappedId;
-                        }
                         // create Cite TeamMemberships
                         var teamMembership = new TeamMembership() {
-                            TeamId = citeTeam.Id,
+                            TeamId = createdTeam.Id,
                             UserId = user.Id,
-                            RoleId = citeRoleId
+                            RoleId = GetTeamRoleId(roleNameToId, userTeamRole?.Role) ?? Guid.Empty
                         };
                         try
                         {
-                            await citeApiClient.CreateTeamMembershipAsync(citeTeam.Id, teamMembership, ct);
+                            await citeApiClient.CreateTeamMembershipAsync(createdTeam.Id, teamMembership, ct);
                         }
                         catch (System.Exception)
                         {}
@@ -230,8 +248,21 @@ namespace Blueprint.Api.Infrastructure.Extensions
             }
         }
 
-        // Add User to Cite Team
-        public static async Task AddUserToTeamAsync(Guid userId, Guid teamId, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
+        // The CITE team role a member gets when Blueprint names none, or one CITE does not have.
+        // It matches CITE's own default for a membership created without a role.
+        public const string DefaultTeamRoleName = "Member";
+
+        // The CITE role ID for a team role name: the named role if CITE has it, else Member. Null
+        // only when CITE has neither, which leaves the role to CITE.
+        public static Guid? GetTeamRoleId(IReadOnlyDictionary<string, Guid> roleNameToId, string roleName)
+        {
+            if (!string.IsNullOrWhiteSpace(roleName) && roleNameToId.TryGetValue(roleName, out var roleId))
+                return roleId;
+            return roleNameToId.TryGetValue(DefaultTeamRoleName, out var defaultRoleId) ? defaultRoleId : null;
+        }
+
+        // Add User to Cite Team, with the named team role or else Member
+        public static async Task AddUserToTeamAsync(Guid userId, Guid teamId, string teamRole, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
         {
             // create user in Cite if they don't exist
             var user = await blueprintContext.Users.FindAsync(userId);
@@ -248,10 +279,14 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 }
             }
 
+            var citeRoles = await citeApiClient.GetAllTeamRolesAsync(ct);
+            var roleNameToId = citeRoles.ToDictionary(r => r.Name, r => r.Id);
+
             // create Cite TeamMembership
             var citeTeamMembership = new TeamMembership() {
                 TeamId = teamId,
-                UserId = userId
+                UserId = userId,
+                RoleId = GetTeamRoleId(roleNameToId, teamRole) ?? Guid.Empty
             };
             await citeApiClient.CreateTeamMembershipAsync(teamId, citeTeamMembership, ct);
         }

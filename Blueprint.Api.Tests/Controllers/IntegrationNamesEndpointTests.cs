@@ -196,6 +196,49 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         var names = await Names(Client(actor), msel.Id);
 
         Assert.Equal("", names.SteamfitterScenarioName);
+        Assert.Equal("", names.SteamfitterScenarioStatus);
+    }
+
+    /// <summary>
+    /// The scenario's status comes from the same read as its name, and is how the MSEL Info page tells a
+    /// scenario nobody has started from one that is running.
+    /// </summary>
+    [Theory]
+    [InlineData(Steamfitter.Api.Client.ScenarioStatus.Ready, "Ready")]
+    [InlineData(Steamfitter.Api.Client.ScenarioStatus.Active, "Active")]
+    public async Task Names_CarryTheSteamfitterScenarioStatus(Steamfitter.Api.Client.ScenarioStatus status, string expected)
+    {
+        var msel = TestData.Msel();
+        msel.SteamfitterScenarioId = Guid.NewGuid();
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        Factory.Steamfitter
+            .GetScenarioAsync((Guid)msel.SteamfitterScenarioId, Arg.Any<CancellationToken>())
+            .Returns(new Steamfitter.Api.Client.Scenario { Name = "the scenario", Status = status });
+
+        var names = await Names(Client(actor), msel.Id);
+
+        Assert.Equal(expected, names.SteamfitterScenarioStatus);
+        await Factory.Steamfitter.Received(1)
+            .GetScenarioAsync((Guid)msel.SteamfitterScenarioId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Names_WhenSteamfitterCannotBeReached_HaveNoScenarioStatus()
+    {
+        var msel = TestData.Msel();
+        msel.SteamfitterScenarioId = Guid.NewGuid();
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        Factory.Steamfitter
+            .GetScenarioAsync((Guid)msel.SteamfitterScenarioId, Arg.Any<CancellationToken>())
+            .Throws(new HttpRequestException("unreachable"));
+
+        var names = await Names(Client(actor), msel.Id);
+
+        Assert.Equal("", names.SteamfitterScenarioStatus);
     }
 
     /// <summary>A lookup that throws <c>OperationCanceledException</c> is not caught, and fails the request with a 500.</summary>

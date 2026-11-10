@@ -81,12 +81,11 @@ namespace Blueprint.Api.Infrastructure.Extensions
         {
             var startDate = DateTime.UtcNow;
             startDate = msel.StartTime < startDate ? startDate : msel.StartTime;
-            ScenarioForm scenarioForm = new ScenarioForm()
+            ScenarioCreate scenarioForm = new ScenarioCreate()
             {
                 Id = msel.SteamfitterScenarioId,
                 Name = msel.Name,
                 Description = msel.Description,
-                Status = ScenarioStatus.Active,
                 StartDate = startDate,
                 EndDate = startDate.AddSeconds(msel.DurationSeconds),
                 ViewId = msel.PlayerViewId,
@@ -95,6 +94,29 @@ namespace Blueprint.Api.Infrastructure.Extensions
             var newScenario = await steamfitterApiClient.CreateScenarioAsync(scenarioForm, ct);
 
             return newScenario;
+        }
+
+        // Whether the push starts the Scenario itself: always when it is to start on the push, and when it is
+        // to start at the MSEL start time once that time has come. Otherwise SteamfitterStartService starts it.
+        public static bool StartsWithThePush(MselEntity msel, DateTime now) =>
+            msel.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.OnPush ||
+            (msel.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.AtStartTime && StartTimeHasCome(msel.StartTime, now));
+
+        // Whether a Scenario that is to start at the MSEL start time is due. The push and SteamfitterStartService
+        // both ask this, so they agree on when that is.
+        public static bool StartTimeHasCome(DateTime startTime, DateTime now) => startTime <= now;
+
+        // Start a Scenario that has not been started yet. Steamfitter creates every Scenario ready, whatever
+        // status it is sent, and runs no task until it is active. A Scenario already active or ended is left
+        // alone, because starting it again resets its start date. Returns whether this call started it.
+        public static async STT.Task<bool> StartScenarioAsync(Guid scenarioId, SteamfitterApiClient steamfitterApiClient, CancellationToken ct)
+        {
+            var scenario = await steamfitterApiClient.GetScenarioAsync(scenarioId, ct);
+            if (scenario.Status != ScenarioStatus.Ready)
+                return false;
+            await steamfitterApiClient.StartScenarioAsync(scenarioId, ct);
+
+            return true;
         }
 
         // Create the Scenario Tasks for this MSEL
@@ -135,7 +157,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                     break;
                 case SteamfitterIntegrationType.Email:
                     action = TaskAction.Send_email;
-                    apiUrl = "stackstorm";
+                    apiUrl = "email";
                     break;
                 case SteamfitterIntegrationType.SituationUpdate:
                     action = TaskAction.Http_put;
@@ -154,7 +176,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             moveString = moveString.Substring(moveString.Length - 2);
             var groupString = groupNumber < 0 ? "-1" : "00" + groupNumber.ToString();
             groupString = groupString.Substring(groupString.Length - 2);
-            var taskForm = new TaskForm()
+            var taskForm = new TaskCreate()
             {
                 ScenarioId = msel.SteamfitterScenarioId,
                 Name = moveString + "-" + groupString + " " + steamfitterTaskEntity.Name,
@@ -199,7 +221,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             if (msel.UseCite)
             {
                 actionParameters["Url"] = citeApiUrl + "evaluations/" + msel.CiteEvaluationId + "/move/" + moveNumber;
-                var taskForm = new TaskForm()
+                var taskForm = new TaskCreate()
                 {
                     ScenarioId = msel.SteamfitterScenarioId,
                     Name = moveString + "-00 CITE Move Change",
@@ -226,7 +248,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             if (msel.UseGallery)
             {
                 actionParameters["Url"] = galleryApiUrl + "exhibits/" + msel.GalleryExhibitId + "/move/" + moveNumber + "/inject/0";
-                var taskForm = new TaskForm()
+                var taskForm = new TaskCreate()
                 {
                     ScenarioId = msel.SteamfitterScenarioId,
                     Name = moveString + "-00 Gallery Move Change",
@@ -274,7 +296,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             if (msel.UseGallery)
             {
                 actionParameters["Url"] = galleryApiUrl + "exhibits/" + msel.GalleryExhibitId + "/move/" + moveNumber + "/inject/" + groupNumber;
-                var taskForm = new TaskForm()
+                var taskForm = new TaskCreate()
                 {
                     ScenarioId = msel.SteamfitterScenarioId,
                     Name = moveString + "-" + groupString + " Gallery Inject Change",

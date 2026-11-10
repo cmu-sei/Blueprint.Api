@@ -22,6 +22,14 @@ namespace Blueprint.Api.Data.Enumerations
         Connect = 30
     }
 
+    // when Blueprint starts the Steamfitter scenario it pushes; Steamfitter runs no task until it is started
+    public enum SteamfitterScenarioStartMode
+    {
+        Manual = 0,
+        OnPush = 10,
+        AtStartTime = 20
+    }
+
     public enum EventType
     {
         Inject = 10,
@@ -177,7 +185,27 @@ namespace Blueprint.Api.Data.Enumerations
         ViewGroups = 25,
         ManageGroups = 26,
         ViewCompetencyFrameworks = 27,
-        ManageCompetencyFrameworks = 28
+        ManageCompetencyFrameworks = 28,
+        ViewPlayerApplications = 29,
+        ManagePlayerApplications = 30
+    }
+
+    // CITE's own values, as its database stores them. The CITE client numbers its copies of these
+    // 0, 1, 2..., so convert between the two by name.
+    public enum CiteScoringOptionSelection
+    {
+        Single = 0,
+        Multiple = 10,
+        None = 20
+    }
+
+    public enum CiteRightSideDisplay
+    {
+        ScoreSummary = 0,
+        HtmlBlock = 10,
+        EmbeddedUrl = 20,
+        Scoresheet = 30,
+        None = 40
     }
 
 }

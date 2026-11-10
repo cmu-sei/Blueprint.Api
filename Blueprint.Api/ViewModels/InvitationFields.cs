@@ -18,6 +18,8 @@ namespace Blueprint.Api.ViewModels
         public DateTime? ExpirationDateTime { get; set; }
         public int MaxUsersAllowed { get; set; }
         public bool IsTeamLeader { get; set; }
+        /// <summary>The CITE team role, by name, that someone joining through this Invitation gets. Empty gives Member.</summary>
+        public string CiteTeamRole { get; set; }
         public bool WasDeactivated { get; set; }
     }
 

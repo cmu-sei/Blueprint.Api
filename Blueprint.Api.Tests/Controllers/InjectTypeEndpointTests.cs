@@ -253,7 +253,7 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.NotEqual(mselField.Id, field.Id);
         Assert.Null(field.MselId);
         Assert.False(field.IsTemplate);
-        var untouched = await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == mselField.Id, Ct);
+        var untouched = await ReadBack(db => db.DataFields.AsNoTracking().SingleAsync(x => x.Id == mselField.Id, Ct));
         Assert.Equal(msel.Id, untouched.MselId);
         Assert.Null(untouched.InjectTypeId);
         Assert.Equal("the msel's column", untouched.Name);
@@ -492,7 +492,7 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(HttpStatusCode.OK, (await Put(Client(actor), type.Id, body)).StatusCode);
 
         Assert.Empty(await StoredFields(type.Id));
-        var stored = await NewContext().DataFields.AsNoTracking().SingleAsync(x => x.Id == mselField.Id, Ct);
+        var stored = await ReadBack(db => db.DataFields.AsNoTracking().SingleAsync(x => x.Id == mselField.Id, Ct));
         Assert.Equal(msel.Id, stored.MselId);
         Assert.Null(stored.InjectTypeId);
         Assert.Equal("the msel's column", stored.Name);

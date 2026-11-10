@@ -131,10 +131,10 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// <c>MselViewRequirement</c> accepts a unit member holding any of five roles and refuses
-    /// <c>MselRole.Evaluator</c>, which is absent from its list - so the person evaluating a running exercise
-    /// cannot read the cards its articles are filed under. Pinned across the board in
-    /// <c>MselViewRequirementTests</c>; asserted here because this is where it is felt.
+    /// <c>MselViewRequirement</c> accepts a unit member holding any MSEL role, <c>MselRole.Evaluator</c>
+    /// included - so the person evaluating a running exercise can read the cards its articles are filed
+    /// under. Pinned across the board in <c>MselViewRequirementTests</c>; asserted here because this is where
+    /// it is felt.
     /// </remarks>
     [Theory]
     [InlineData(MselRole.Owner, HttpStatusCode.OK)]
@@ -142,7 +142,7 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     [InlineData(MselRole.Approver, HttpStatusCode.OK)]
     [InlineData(MselRole.MoveEditor, HttpStatusCode.OK)]
     [InlineData(MselRole.Viewer, HttpStatusCode.OK)]
-    [InlineData(MselRole.Evaluator, HttpStatusCode.Forbidden)]
+    [InlineData(MselRole.Evaluator, HttpStatusCode.OK)]
     public async Task GetByMsel_TheRolesThatMayListAMselsCards(MselRole role, HttpStatusCode expected)
     {
         var msel = await SeedMsel();
@@ -275,12 +275,11 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     /// <remarks>
-    /// <c>MselUserRequirement</c> is the one helper of the eight that accepts a unit member holding no MSEL
-    /// role, so dropping the role rows <c>TestActorBuilder</c> wrote leaves a caller who may read this card
-    /// and nothing else about the MSEL.
+    /// A MSEL's card is for its contributors, so dropping the role rows <c>TestActorBuilder</c> wrote leaves
+    /// a unit member who may read neither the card nor the MSEL's list of them.
     /// </remarks>
     [Fact]
-    public async Task Get_ForAUnitMemberHoldingNoRoleOnTheMsel_Is200()
+    public async Task Get_ForAUnitMemberHoldingNoRoleOnTheMsel_Is403()
     {
         var msel = await SeedMsel();
         var card = await SeedCard(msel.Id);
@@ -289,8 +288,28 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Client(actor).GetAsync(Card(card.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await Client(actor).GetAsync(CardsOf(msel.Id), Ct)).StatusCode);
+    }
+
+    /// <summary>
+    /// A member of one of the MSEL's teams holding no role is a participant, shown only the Exercise View,
+    /// which has no cards: the list is empty, and a card by id is refused.
+    /// </summary>
+    [Fact]
+    public async Task ForAMemberOfOneOfTheMselsTeams_TheListIsEmpty_AndACardByIdIs403()
+    {
+        var msel = await SeedMsel();
+        var card = await SeedCard(msel.Id);
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+        var actor = await Actor().OnTeam(team).SeedAsync();
+
+        var list = await Client(actor).GetAsync(CardsOf(msel.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Empty(await list.Content.ReadFromJsonAsync<List<ViewModels.Card>>(JsonOptions, Ct));
+        Assert.Equal(HttpStatusCode.Forbidden, (await Client(actor).GetAsync(Card(card.Id), Ct)).StatusCode);
     }
 
     [Fact]

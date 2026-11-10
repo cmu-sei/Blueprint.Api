@@ -2,9 +2,11 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
@@ -27,7 +29,7 @@ public class JoinServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         var harness = Harness();
 
         await harness.JoinAsync(Information(actor.Id));
-        await harness.WaitForRequests(9, Ct);
+        await harness.WaitForRequests(10, Ct);
 
         Assert.Equal(
             [
@@ -36,12 +38,35 @@ public class JoinServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
                 "gallery/api/users",
                 "gallery/api/teamusers",
                 "cite/api/users",
+                "cite/api/team-roles",
                 $"cite/api/teams/{TeamId}/memberships"
             ],
             harness.SiblingPaths);
     }
 
-    /// <summary>Every request is a POST, sent in source order.</summary>
+    /// <summary>
+    /// The CITE membership gets the join's team role, from the invitation, and Member when the join names none.
+    /// </summary>
+    [Theory]
+    [InlineData("Contributor", "Contributor")]
+    [InlineData(null, "Member")]
+    public async Task Join_GivesTheCiteMembershipTheJoinsTeamRole(string joinRole, string citeRole)
+    {
+        var actor = await Actor().SeedAsync();
+        var harness = Harness();
+
+        var information = Information(actor.Id, player: false, gallery: false, cite: true);
+        information.CiteTeamRole = joinRole;
+        await harness.JoinAsync(information);
+        await harness.WaitForRequests(6, Ct);
+
+        var membership = harness.Siblings.Single(x => x.Path == $"cite/api/teams/{TeamId}/memberships");
+        var roleId = JsonDocument.Parse(membership.Body).RootElement.GetProperty("roleId").GetString();
+
+        Assert.Equal(CiteRoleIds[citeRole].ToString(), roleId);
+    }
+
+    /// <summary>Every request is a POST, sent in source order, except the read of CITE's team roles.</summary>
     [Fact]
     public async Task Join_SendsEveryRequestAsAPost()
     {
@@ -49,25 +74,26 @@ public class JoinServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         var harness = Harness();
 
         await harness.JoinAsync(Information(actor.Id));
-        await harness.WaitForRequests(9, Ct);
+        await harness.WaitForRequests(10, Ct);
 
-        Assert.All(harness.Siblings, x => Assert.Equal(HttpMethod.Post, x.Method));
+        Assert.All(harness.Siblings, x =>
+            Assert.Equal(x.Path == "cite/api/team-roles" ? HttpMethod.Get : HttpMethod.Post, x.Method));
     }
 
     [Theory]
-    [InlineData(true, false, false, "player/")]
-    [InlineData(false, true, false, "gallery/")]
-    [InlineData(false, false, true, "cite/")]
+    [InlineData(true, false, false, "player/", 2)]
+    [InlineData(false, true, false, "gallery/", 2)]
+    [InlineData(false, false, true, "cite/", 3)]
     public async Task Join_ContactsOnlyTheApplicationsItsFlagsName(
-        bool player, bool gallery, bool cite, string prefix)
+        bool player, bool gallery, bool cite, string prefix, int requests)
     {
         var actor = await Actor().SeedAsync();
         var harness = Harness();
 
         await harness.JoinAsync(Information(actor.Id, player, gallery, cite));
-        await harness.WaitForRequests(5, Ct);
+        await harness.WaitForRequests(3 + requests, Ct);
 
-        Assert.Equal(2, harness.SiblingPaths.Count);
+        Assert.Equal(requests, harness.SiblingPaths.Count);
         Assert.All(harness.SiblingPaths, x => Assert.StartsWith(prefix, x));
     }
 
@@ -99,7 +125,7 @@ public class JoinServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         var harness = Harness();
 
         await harness.JoinAsync(Information(actor.Id));
-        await harness.WaitForRequests(9, Ct);
+        await harness.WaitForRequests(10, Ct);
 
         Assert.Single(
             harness.Handler.Paths.Where(x => x == IntegrationServiceHarness.TokenPath).ToList());
@@ -130,12 +156,12 @@ public class JoinServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         var harness = Harness();
 
         await harness.JoinAsync(Information(Guid.NewGuid()));
-        await harness.WaitForRequests(6, Ct);
+        await harness.WaitForRequests(7, Ct);
 
         Assert.DoesNotContain("player/api/users", harness.SiblingPaths);
         Assert.DoesNotContain("gallery/api/users", harness.SiblingPaths);
         Assert.DoesNotContain("cite/api/users", harness.SiblingPaths);
-        Assert.Equal(3, harness.SiblingPaths.Count);
+        Assert.Equal(4, harness.SiblingPaths.Count);
     }
 
     [Fact]
@@ -145,7 +171,7 @@ public class JoinServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         var harness = Harness();
 
         await harness.JoinAsync(Information(actor.Id));
-        await harness.WaitForRequests(9, Ct);
+        await harness.WaitForRequests(10, Ct);
 
         var creates = harness.Siblings.Where(x => x.Path.EndsWith("api/users")).ToList();
 
@@ -223,7 +249,7 @@ public class JoinServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         var harness = Harness();
 
         await harness.JoinAsync(Information(actor.Id));
-        await harness.WaitForRequests(9, Ct);
+        await harness.WaitForRequests(10, Ct);
 
         Assert.Empty(harness.Hub.Sent(actor.Id));
     }
@@ -258,7 +284,7 @@ public class JoinServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         var users = await context.Users.CountAsync(Ct);
 
         await harness.JoinAsync(Information(actor.Id));
-        await harness.WaitForRequests(9, Ct);
+        await harness.WaitForRequests(10, Ct);
 
         await using var after = NewContext();
 
@@ -290,7 +316,7 @@ public class JoinServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
     private QueueWorkerHarness Harness(Func<SiblingApiHandler, SiblingApiHandler> first = null) =>
         new(Session, Everything(first));
 
-    /// <summary>The identity provider and the six routes a join makes, and nothing else.</summary>
+    /// <summary>The identity provider and the seven routes a join makes, and nothing else.</summary>
     private static SiblingApiHandler Everything(Func<SiblingApiHandler, SiblingApiHandler> first = null) =>
         QueueWorkerHarness.IdentityProvider(first is null ? new SiblingApiHandler() : first(new SiblingApiHandler()))
             .AnswersJson("player/api/users", UserJson, HttpStatusCode.Created)
@@ -298,7 +324,17 @@ public class JoinServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
             .AnswersJson("gallery/api/users", UserJson, HttpStatusCode.Created)
             .AnswersJson("gallery/api/teamusers", TeamUserJson, HttpStatusCode.Created)
             .AnswersJson("cite/api/users", UserJson, HttpStatusCode.Created)
+            .AnswersJson("cite/api/team-roles", TeamRolesJson)
             .AnswersJson("cite/api/teams/*/memberships", MembershipJson, HttpStatusCode.Created);
+
+    private static readonly Dictionary<string, Guid> CiteRoleIds = new()
+    {
+        ["Member"] = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000004"),
+        ["Contributor"] = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000005"),
+    };
+
+    private static readonly string TeamRolesJson =
+        "[" + string.Join(",", CiteRoleIds.Select(r => $$"""{"id":"{{r.Value}}","name":"{{r.Key}}"}""")) + "]";
 
     private static readonly string UserJson = $$"""{"id":"{{TeamId}}","name":"user"}""";
 

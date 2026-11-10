@@ -40,6 +40,9 @@ namespace Blueprint.Api.Infrastructure.Options
         public int CasterApplyMaxWaitMinutes { get; set; } = 120;
         public int CasterDestroyMaxWaitMinutes { get; set; } = 60;
 
+        // How often to look for Steamfitter scenarios that are to start at their MSEL start time
+        public int SteamfitterStartCheckSeconds { get; set; } = 30;
+
         // Rocket.Chat takes no Keycloak tokens, so a push signs in as a bot user with a
         // personal access token. The bot needs the admin role, or create-p, delete-p,
         // add-user-to-any-p-room and view-full-other-user-info.

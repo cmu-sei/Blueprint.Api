@@ -98,7 +98,7 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
     [InlineData(MselRole.Approver, HttpStatusCode.OK)]
     [InlineData(MselRole.MoveEditor, HttpStatusCode.OK)]
     [InlineData(MselRole.Viewer, HttpStatusCode.OK)]
-    [InlineData(MselRole.Evaluator, HttpStatusCode.Forbidden)]
+    [InlineData(MselRole.Evaluator, HttpStatusCode.OK)]
     public async Task GetByMsel_TheRolesThatMayReadTheTimeline(MselRole role, HttpStatusCode expected)
     {
         var msel = await SeedMsel();
@@ -141,6 +141,94 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/scenarioEvents", Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>
+    /// A participant - a member of one of the MSEL's teams holding no role - is sent only the events the
+    /// Exercise View shows: a hidden event stays on the server. A contributor holding Viewer, and a holder
+    /// of ViewMsels, are sent both.
+    /// </summary>
+    [Fact]
+    public async Task GetByMsel_ForAParticipant_LeavesOutHiddenEvents()
+    {
+        var msel = await SeedMsel();
+        var shown = await SeedEvent(msel, information: "shown");
+        var hidden = TestData.ScenarioEvent(msel.Id, deltaSeconds: 60);
+        hidden.IsHidden = true;
+        await Seed(hidden);
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+        var participant = await Actor().OnTeam(team).SeedAsync();
+        var contributor = await Actor().OnTeam(team).OnMsel(msel, MselRole.Viewer).SeedAsync();
+        var viewMsels = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        Assert.Equal(shown.Id, Assert.Single(await GetEvents(Client(participant), msel.Id)).Id);
+        Assert.Equal(2, (await GetEvents(Client(contributor), msel.Id)).Count);
+        Assert.Equal(2, (await GetEvents(Client(viewMsels), msel.Id)).Count);
+    }
+
+    /// <summary>
+    /// A participant is not sent what the Exercise View leaves out of an event it shows: the Steamfitter
+    /// task, where the event is delivered, and the text of an Information event.
+    /// </summary>
+    [Fact]
+    public async Task GetByMsel_ForAParticipant_TrimsWhatTheExerciseViewDoesNotShow()
+    {
+        var msel = await SeedMsel();
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        scenarioEvent.IntegrationTarget = "Gallery";
+        await Seed(scenarioEvent);
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+        var participant = await Actor().OnTeam(team).SeedAsync();
+
+        var sent = Assert.Single(await GetEvents(Client(participant), msel.Id));
+
+        Assert.Equal(scenarioEvent.Id, sent.Id);
+        Assert.Null(sent.Information);
+        Assert.Null(sent.IntegrationTarget);
+        Assert.Null(sent.SteamfitterTaskId);
+    }
+
+    /// <summary>A participant asking for a hidden event by id is refused it.</summary>
+    [Fact]
+    public async Task Get_ForAParticipant_OfAHiddenEvent_Is403()
+    {
+        var msel = await SeedMsel();
+        var hidden = TestData.ScenarioEvent(msel.Id);
+        hidden.IsHidden = true;
+        await Seed(hidden);
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+        var participant = await Actor().OnTeam(team).SeedAsync();
+
+        var response = await Client(participant).GetAsync($"/api/scenarioEvents/{hidden.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>
+    /// A participant reading a shown event by id is sent only the cells of the Data Fields the Exercise
+    /// View shows. A contributor is sent every cell.
+    /// </summary>
+    [Fact]
+    public async Task Get_ForAParticipant_SendsOnlyTheCellsOfFieldsTheExerciseViewShows()
+    {
+        var row = await SeedRow();
+        var shownField = TestData.DataField(mselId: row.Msel.Id, displayOrder: 2);
+        shownField.OnExerciseView = true;
+        await Seed(shownField);
+        var shownValue = TestData.DataValue(shownField.Id, row.Event.Id, "shown");
+        await Seed(shownValue);
+        var team = TestData.Team(row.Msel.Id);
+        await Seed(team);
+        var participant = await Actor().OnTeam(team).SeedAsync();
+        var contributor = await Actor().OnMsel(row.Msel, MselRole.Viewer).SeedAsync();
+
+        var sent = await GetEvent(Client(participant), row.Event.Id);
+
+        Assert.Equal(shownValue.Id, Assert.Single(sent.DataValues).Id);
+        Assert.Equal(2, (await GetEvent(Client(contributor), row.Event.Id)).DataValues.Count);
     }
 
     [Fact]

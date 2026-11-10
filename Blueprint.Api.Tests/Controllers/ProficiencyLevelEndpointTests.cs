@@ -212,7 +212,7 @@ public class ProficiencyLevelEndpointTests(DatabaseFixture fixture, BlueprintApp
             $"api/proficiencyLevels/{level.Id}", Body(otherScale.Id) with { id = level.Id }, Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var stored = await NewContext().ProficiencyLevels.SingleAsync(x => x.Id == level.Id, Ct);
+        var stored = await ReadBack(db => db.ProficiencyLevels.SingleAsync(x => x.Id == level.Id, Ct));
         Assert.Equal(scale.Id, stored.ProficiencyScaleId);
     }
 

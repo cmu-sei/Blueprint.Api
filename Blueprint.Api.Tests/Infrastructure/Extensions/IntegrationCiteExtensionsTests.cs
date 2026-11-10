@@ -274,6 +274,84 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
         Assert.Equal(answered, evaluation.Id);
     }
 
+    /// <summary>A scoring model created for the evaluation is the one it is made from, in place of the link.</summary>
+    [Fact]
+    public async Task CreateEvaluation_GivenAScoringModel_UsesItRatherThanTheLinkedOne()
+    {
+        var created = Guid.Parse("88888888-8888-8888-8888-888888888888");
+        var handler = Evaluations();
+
+        await IntegrationCiteExtensions.CreateEvaluationAsync(Msel(), Client(handler), null, Ct, created);
+
+        Assert.Equal(created.ToString(), Body(handler.Sent[0].Body)["scoringModelId"].GetString());
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // CreateScoringModelAsync and DeleteScoringModelAsync
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The MSEL's own model goes to CITE in one request, its categories and options nested in display order, the
+    /// enums by name and the model active. CITE's create takes new categories and options only, so they carry no ids
+    /// and no parents.
+    /// </summary>
+    [Fact]
+    public async Task CreateScoringModel_PostsTheModelWithItsCategoriesAndOptions()
+    {
+        var msel = Msel();
+        msel.ScoringModel = TestData.MselScoringModel(msel.Id, "Harbor Questions");
+        var category = msel.ScoringModel.Categories.Single();
+        category.Options.First().DisplayOrder = 3;
+        var handler = new SiblingApiHandler()
+            .AnswersJson("api/scoringmodels", $$"""{"id":"{{ScoringModelId}}","description":"Harbor Questions"}""", HttpStatusCode.Created);
+
+        var id = await IntegrationCiteExtensions.CreateScoringModelAsync(msel, Client(handler), Ct);
+
+        Assert.Equal(ScoringModelId, id);
+        var sent = Assert.Single(handler.Sent);
+        Assert.Equal(HttpMethod.Post, sent.Method);
+        var body = Body(sent.Body);
+        Assert.Equal("Harbor Questions", body["description"].GetString());
+        Assert.Equal("Active", body["status"].GetString());
+        Assert.Equal("Scoresheet", body["rightSideDisplay"].GetString());
+        Assert.True(body["displayCommentTextBoxes"].GetBoolean());
+        var sentCategory = Assert.Single(body["scoringCategories"].EnumerateArray());
+        Assert.Equal("None", sentCategory.GetProperty("scoringOptionSelection").GetString());
+        Assert.Equal(1, sentCategory.GetProperty("moveNumberFirstDisplay").GetInt32());
+        Assert.Equal(
+            ["What do you tell the press?", "Who do you call first?"],
+            sentCategory.GetProperty("scoringOptions").EnumerateArray().Select(o => o.GetProperty("description").GetString()));
+        Assert.DoesNotContain(sentCategory.EnumerateObject(), p => p.Name is "id" or "scoringModelId");
+        Assert.All(sentCategory.GetProperty("scoringOptions").EnumerateArray(),
+            o => Assert.DoesNotContain(o.EnumerateObject(), p => p.Name is "id" or "scoringCategoryId"));
+    }
+
+    /// <summary>A model with no description is named after the MSEL, since CITE lists models by description.</summary>
+    [Fact]
+    public async Task CreateScoringModel_WithNoDescription_NamesItAfterTheMsel()
+    {
+        var msel = Msel();
+        msel.ScoringModel = TestData.MselScoringModel(msel.Id);
+        msel.ScoringModel.Description = " ";
+        var handler = new SiblingApiHandler()
+            .AnswersJson("api/scoringmodels", $$"""{"id":"{{ScoringModelId}}"}""", HttpStatusCode.Created);
+
+        await IntegrationCiteExtensions.CreateScoringModelAsync(msel, Client(handler), Ct);
+
+        Assert.Equal($"{msel.Name} Scoring Model", Body(handler.Sent[0].Body)["description"].GetString());
+    }
+
+    [Fact]
+    public async Task DeleteScoringModel_DeletesTheModel()
+    {
+        var handler = new SiblingApiHandler().Answers($"api/scoringmodels/{ScoringModelId}", HttpStatusCode.NoContent);
+
+        await IntegrationCiteExtensions.DeleteScoringModelAsync(ScoringModelId, Client(handler), Ct);
+
+        var sent = Assert.Single(handler.Sent);
+        Assert.Equal(HttpMethod.Delete, sent.Method);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // ActivateAsync
     // ---------------------------------------------------------------------------------------------
@@ -522,11 +600,12 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
         Assert.Equal(InviterRoleId.ToString(), Body(handler.Sent[^1].Body)["roleId"].GetString());
     }
 
-    /// <summary>Create teams for a role name CITE does not know creates the membership with no role.</summary>
+    /// <summary>A member with no team role, or one CITE does not know, gets CITE's Member role.</summary>
     [Theory]
     [InlineData("NoSuchRole")]
+    [InlineData("")]
     [InlineData(null)]
-    public async Task CreateTeams_ForARoleNameCiteDoesNotKnow_CreatesTheMembershipWithNoRole(string role)
+    public async Task CreateTeams_ForNoRoleOrOneCiteDoesNotKnow_GivesTheMemberRole(string role)
     {
         var msel = Msel();
         var team = Team(msel.Id);
@@ -546,8 +625,30 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
 
         var membership = Body(handler.Sent[^1].Body);
 
-        Assert.Equal(JsonValueKind.Null, membership["roleId"].ValueKind);
+        Assert.Equal(MemberRoleId.ToString(), membership["roleId"].GetString());
         Assert.Equal(user.Id.ToString(), membership["userId"].GetString());
+    }
+
+    /// <summary>A CITE with no Member role leaves an unmapped member's role to CITE.</summary>
+    [Fact]
+    public async Task CreateTeams_WhenCiteHasNoMemberRole_LeavesTheRoleToCite()
+    {
+        var msel = Msel();
+        var team = Team(msel.Id);
+        var user = User();
+        team.TeamUsers.Add(new TeamUserEntity(user.Id, team.Id) { User = user });
+        msel.Teams.Add(team);
+
+        var handler = new SiblingApiHandler()
+            .AnswersJson("api/team-roles", TeamRolesWithoutMemberJson)
+            .AnswersJson("api/teams", TeamJson, HttpStatusCode.Created)
+            .AnswersJson("api/users", UserJson, HttpStatusCode.Created)
+            .AnswersJson($"api/teams/{CiteTeamId}/memberships", MembershipJson, HttpStatusCode.Created);
+
+        await IntegrationCiteExtensions.CreateTeamsAsync(msel, Client(handler), null, [], Ct);
+
+        // CITE requires a role, and gives the empty one its default, Member role
+        Assert.Equal(Guid.Empty.ToString(), Body(handler.Sent[^1].Body)["roleId"].GetString());
     }
 
     /// <summary>A refused team membership is swallowed and the push carries on.</summary>
@@ -835,35 +936,53 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
         var actor = await Actor().WithName("Grace").SeedAsync();
         var teamId = Guid.NewGuid();
 
-        var handler = new SiblingApiHandler()
-            .AnswersJson("api/users", UserJson, HttpStatusCode.Created)
-            .AnswersJson($"api/teams/{teamId}/memberships", MembershipJson, HttpStatusCode.Created);
+        var handler = Joins(teamId);
 
-        await IntegrationCiteExtensions.AddUserToTeamAsync(actor.Id, teamId, Client(handler), Db, Ct);
+        await IntegrationCiteExtensions.AddUserToTeamAsync(actor.Id, teamId, "Inviter", Client(handler), Db, Ct);
 
-        Assert.Equal(["api/users", $"api/teams/{teamId}/memberships"], handler.Paths);
+        Assert.Equal(["api/users", "api/team-roles", $"api/teams/{teamId}/memberships"], handler.Paths);
         Assert.Equal("Grace", Body(handler.Sent[0].Body)["name"].GetString());
 
-        var membership = Body(handler.Sent[1].Body);
+        var membership = Body(handler.Sent[^1].Body);
 
         Assert.Equal(teamId.ToString(), membership["teamId"].GetString());
         Assert.Equal(actor.Id.ToString(), membership["userId"].GetString());
+        Assert.Equal(InviterRoleId.ToString(), membership["roleId"].GetString());
     }
 
-    /// <summary>Add user to team never sends a role.</summary>
+    /// <summary>A join with no team role, or one CITE does not know, gets CITE's Member role.</summary>
+    [Theory]
+    [InlineData("NoSuchRole")]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task AddUserToTeam_ForNoRoleOrOneCiteDoesNotKnow_GivesTheMemberRole(string role)
+    {
+        var actor = await Actor().SeedAsync();
+        var teamId = Guid.NewGuid();
+
+        var handler = Joins(teamId);
+
+        await IntegrationCiteExtensions.AddUserToTeamAsync(actor.Id, teamId, role, Client(handler), Db, Ct);
+
+        Assert.Equal(MemberRoleId.ToString(), Body(handler.Sent[^1].Body)["roleId"].GetString());
+    }
+
+    /// <summary>A CITE with no Member role leaves an unmapped joiner's role to CITE.</summary>
     [Fact]
-    public async Task AddUserToTeam_NeverSendsARole()
+    public async Task AddUserToTeam_WhenCiteHasNoMemberRole_LeavesTheRoleToCite()
     {
         var actor = await Actor().SeedAsync();
         var teamId = Guid.NewGuid();
 
         var handler = new SiblingApiHandler()
             .AnswersJson("api/users", UserJson, HttpStatusCode.Created)
+            .AnswersJson("api/team-roles", TeamRolesWithoutMemberJson)
             .AnswersJson($"api/teams/{teamId}/memberships", MembershipJson, HttpStatusCode.Created);
 
-        await IntegrationCiteExtensions.AddUserToTeamAsync(actor.Id, teamId, Client(handler), Db, Ct);
+        await IntegrationCiteExtensions.AddUserToTeamAsync(actor.Id, teamId, null, Client(handler), Db, Ct);
 
-        Assert.Equal(JsonValueKind.Null, Body(handler.Sent[^1].Body)["roleId"].ValueKind);
+        // CITE requires a role, and gives the empty one its default, Member role
+        Assert.Equal(Guid.Empty.ToString(), Body(handler.Sent[^1].Body)["roleId"].GetString());
     }
 
     /// <summary>A user blueprint does not know is added to the team without being created.</summary>
@@ -873,12 +992,11 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
         var stranger = Guid.NewGuid();
         var teamId = Guid.NewGuid();
 
-        var handler = new SiblingApiHandler()
-            .AnswersJson($"api/teams/{teamId}/memberships", MembershipJson, HttpStatusCode.Created);
+        var handler = Joins(teamId);
 
-        await IntegrationCiteExtensions.AddUserToTeamAsync(stranger, teamId, Client(handler), Db, Ct);
+        await IntegrationCiteExtensions.AddUserToTeamAsync(stranger, teamId, null, Client(handler), Db, Ct);
 
-        Assert.Equal($"api/teams/{teamId}/memberships", Assert.Single(handler.Paths));
+        Assert.Equal(["api/team-roles", $"api/teams/{teamId}/memberships"], handler.Paths);
     }
 
     [Fact]
@@ -889,11 +1007,12 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
 
         var handler = new SiblingApiHandler()
             .Answers("api/users", HttpStatusCode.Conflict)
+            .AnswersJson("api/team-roles", TeamRolesJson)
             .AnswersJson($"api/teams/{teamId}/memberships", MembershipJson, HttpStatusCode.Created);
 
-        await IntegrationCiteExtensions.AddUserToTeamAsync(actor.Id, teamId, Client(handler), Db, Ct);
+        await IntegrationCiteExtensions.AddUserToTeamAsync(actor.Id, teamId, null, Client(handler), Db, Ct);
 
-        Assert.Equal(["api/users", $"api/teams/{teamId}/memberships"], handler.Paths);
+        Assert.Equal(["api/users", "api/team-roles", $"api/teams/{teamId}/memberships"], handler.Paths);
     }
 
     /// <summary>A failure adding the membership escapes; a failure creating the user is swallowed.</summary>
@@ -905,10 +1024,11 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
 
         var handler = new SiblingApiHandler()
             .AnswersJson("api/users", UserJson, HttpStatusCode.Created)
+            .AnswersJson("api/team-roles", TeamRolesJson)
             .Answers($"api/teams/{teamId}/memberships", HttpStatusCode.Conflict);
 
         await Assert.ThrowsAnyAsync<ApiException>(() =>
-            IntegrationCiteExtensions.AddUserToTeamAsync(actor.Id, teamId, Client(handler), Db, Ct));
+            IntegrationCiteExtensions.AddUserToTeamAsync(actor.Id, teamId, null, Client(handler), Db, Ct));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -924,6 +1044,7 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
     private static readonly Guid InviterRoleId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
     private static readonly Guid ObserverRoleId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000002");
     private static readonly Guid ParticipantRoleId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000003");
+    private static readonly Guid MemberRoleId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000004");
 
     private static readonly string EvaluationJson =
         $$"""{"id":"{{EvaluationId}}","description":"evaluation","status":"Active"}""";
@@ -934,7 +1055,9 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
         $$"""{"id":"{{CiteTeamId}}","teamId":"{{CiteTeamId}}","userId":"{{CiteTeamId}}"}""";
     private static readonly string DutyJson = $$"""{"id":"{{CiteTeamId}}","name":"duty"}""";
     private static readonly string ActionJson = $$"""{"id":"{{CiteTeamId}}","description":"action"}""";
-    private static readonly string TeamRolesJson = $$"""[{"id":"{{InviterRoleId}}","name":"Inviter"}]""";
+    private static readonly string TeamRolesJson =
+        $$"""[{"id":"{{InviterRoleId}}","name":"Inviter"},{"id":"{{MemberRoleId}}","name":"Member"}]""";
+    private static readonly string TeamRolesWithoutMemberJson = $$"""[{"id":"{{InviterRoleId}}","name":"Inviter"}]""";
     private static readonly string EvaluationRolesJson =
         $$"""[{"id":"{{ObserverRoleId}}","name":"Observer"},{"id":"{{ParticipantRoleId}}","name":"Participant"}]""";
 
@@ -959,6 +1082,13 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
             .AnswersJson("api/teams", TeamJson, HttpStatusCode.Created)
             .AnswersJson("api/users", UserJson, HttpStatusCode.Created)
             .AnswersJson($"api/teams/{CiteTeamId}/memberships", MembershipJson, HttpStatusCode.Created);
+
+    /// <summary>CITE answering a join: the user, the team roles and the membership.</summary>
+    private static SiblingApiHandler Joins(Guid teamId) =>
+        new SiblingApiHandler()
+            .AnswersJson("api/users", UserJson, HttpStatusCode.Created)
+            .AnswersJson("api/team-roles", TeamRolesJson)
+            .AnswersJson($"api/teams/{teamId}/memberships", MembershipJson, HttpStatusCode.Created);
 
     private static SiblingApiHandler Memberships() =>
         new SiblingApiHandler()

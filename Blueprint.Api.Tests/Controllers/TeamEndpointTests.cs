@@ -167,7 +167,7 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>Which MSEL roles read the team list; an evaluator is refused (see
+    /// <summary>Which MSEL roles read the team list; every role does, an evaluator included (see
     /// <c>MselViewRequirement</c>).</summary>
     [Theory]
     [InlineData(MselRole.Owner, HttpStatusCode.OK)]
@@ -175,7 +175,7 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     [InlineData(MselRole.Approver, HttpStatusCode.OK)]
     [InlineData(MselRole.MoveEditor, HttpStatusCode.OK)]
     [InlineData(MselRole.Viewer, HttpStatusCode.OK)]
-    [InlineData(MselRole.Evaluator, HttpStatusCode.Forbidden)]
+    [InlineData(MselRole.Evaluator, HttpStatusCode.OK)]
     public async Task GetByMsel_ForEachMselRole(MselRole role, HttpStatusCode expected)
     {
         var msel = await SeedMsel();

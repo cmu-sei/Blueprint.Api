@@ -5,12 +5,12 @@
 # Nothing about this is part of a normal run or of the pull request build. Coverage is a way of
 # finding the next thing worth testing, not a number to defend: there is no threshold here, nothing
 # fails on a percentage, and `dotnet test` on its own still neither instruments nor slows down.
-# Settings and exclusions are in Blueprint.Api.Tests/coverlet.runsettings (the shared one from
-# agent-docs/api-testing, applied by the project's RunSettingsFilePath); read them before believing a figure.
+# Coverage comes from coverlet.MTP, the Microsoft.Testing.Platform form of coverlet, and the include and
+# exclude options on the `dotnet test` line below are its settings; read them before believing a figure.
 #
 # Usage:
 #   scripts/coverage.sh                            the whole suite
-#   scripts/coverage.sh --filter OrganizationService   any further arguments go to `dotnet test`
+#   scripts/coverage.sh --filter-class "*.OrganizationEndpointTests"   any further arguments go to `dotnet test`
 #   TOP=50 scripts/coverage.sh                     a longer ranking; the default is 25
 #
 # A filtered run maps only what those tests reach, and reads as 0% for everything else.
@@ -34,16 +34,25 @@ dotnet tool restore
 # The test failure is not fatal here. A run with red tests still produces coverage, and the map of
 # what nothing executed is worth having either way, so the exit code is carried to the end instead.
 set +e
+# The include filters keep the figure to the repository's own assemblies: without them coverlet also
+# instruments third-party assemblies that ship sources. The exclusions drop the migrations assembly, the
+# test assembly, the Crucible.Common.EntityEvents content files and generated code.
 dotnet test Blueprint.Api.Tests/Blueprint.Api.Tests.csproj \
-  --collect:"XPlat Code Coverage" \
   --results-directory "$RAW" \
+  --coverlet --coverlet-output-format cobertura \
+  --coverlet-include "[Blueprint.Api]*" --coverlet-include "[Blueprint.Api.Data]*" \
+  --coverlet-exclude "[*.Migrations.PostgreSQL]*" --coverlet-exclude "[*.Tests]*" \
+  --coverlet-exclude-by-file "**/.nuget/packages/**/*.cs" --coverlet-exclude-by-file "**/Migrations/**/*.cs" \
+  --coverlet-exclude-by-attribute GeneratedCodeAttribute --coverlet-exclude-by-attribute CompilerGeneratedAttribute \
+  --coverlet-exclude-by-attribute ExcludeFromCodeCoverageAttribute --coverlet-exclude-by-attribute Obsolete \
+  --coverlet-skip-auto-props \
   "$@"
 TESTS=$?
 set -e
 
-# The collector writes into a per-run guid directory whose name is not knowable in advance. All of
-# them, rather than the first: a multi-targeted run would write one per framework.
-mapfile -t REPORTS < <(find "$RAW" -name 'coverage.cobertura.xml')
+# coverlet.MTP adds a timestamp to the file name, so it is not knowable in advance. All of the
+# cobertura files, rather than the first: a multi-targeted run would write one per framework.
+mapfile -t REPORTS < <(find "$RAW" -name 'coverage.cobertura*.xml')
 if [ ${#REPORTS[@]} -eq 0 ]; then
   echo "coverage.sh: no coverage file under $RAW - did the test host start?" >&2
   exit 1

@@ -423,7 +423,6 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    // Same case as Create_ForAMselThatIsNotThere_WithoutManageMsels_Is500.
     [Fact]
     public async Task Create_ForAMselThatIsNotThere_WithManageMsels_Is500()
     {

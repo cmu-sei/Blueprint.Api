@@ -66,6 +66,12 @@ namespace Blueprint.Api.ViewModels
         public bool ShowMoveOnAssessorView { get; set; }
         public bool ShowGroupOnAssessorView { get; set; }
         public bool ShowIntegrationTargetOnAssessorView { get; set; }
+        /// <summary>
+        /// Leaves out who each xAPI statement is about when the Assessor View lists them, so an assessor
+        /// rates the team's work without seeing its members' names. The MSEL's owners and anyone with
+        /// ViewMsels still see the names. The statements in the LRS are unchanged.
+        /// </summary>
+        public bool HideNamesOnAssessorView { get; set; }
         public string HeaderRowMetadata { get; set; }
         // IEEE 2881 (LMT) metadata fields
         public string EducationalLevel { get; set; }

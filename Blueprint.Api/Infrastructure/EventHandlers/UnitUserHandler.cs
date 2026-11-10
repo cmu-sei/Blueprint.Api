@@ -63,13 +63,16 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = await GetGroupsAsync(unitUserEntity, cancellationToken);
-            var unitUser = await _db.UnitUsers
+            // the view model of a row read on its own, not the tracked entity: the entity's navigations reach whatever the
+            // request has loaded, which can serialize past SignalR's 2 GB message limit; the UI reads the unit user's user
+            var row = await _db.UnitUsers
+                .AsNoTracking()
                 .Include(uu => uu.User)
                 .SingleOrDefaultAsync(uu => uu.Id == unitUserEntity.Id, cancellationToken);
-            if (unitUser.Unit != null)
-                unitUser.Unit.UnitUsers = null;  // prevent object cycle
-            if (unitUser.User != null)
-                unitUser.User.UnitUsers = null;  // prevent object cycle
+            // a row gone by now, removed by a later request, has nothing to tell
+            if (row == null)
+                return;
+            var unitUser = _mapper.Map<ViewModels.UnitUser>(row);
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -130,7 +133,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
 
             foreach (var groupId in groupIds)
             {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.UnitUserDeleted, notification.Entity, cancellationToken));
+                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.UnitUserDeleted,
+                    new ViewModels.UnitUser(notification.Entity.UserId, notification.Entity.UnitId) { Id = notification.Entity.Id }, cancellationToken));
             }
 
             await Task.WhenAll(tasks);

@@ -2796,9 +2796,9 @@ namespace Blueprint.Api.Services
             if (msel.PlayerViewId != null)
                 throw new ConflictException($"MSEL {mselId} is already deployed.");
             if (msel.UseRocketChat && !IntegrationRocketChatExtensions.IsConfigured(_clientOptions))
-                throw new InvalidOperationException("Rocket.Chat is not configured. Set ClientSettings RocketChatUrl, RocketChatUserId and RocketChatAuthToken.");
+                throw new ConflictException("Rocket.Chat is not configured. Set ClientSettings RocketChatUrl, RocketChatUserId and RocketChatAuthToken.");
             if (msel.UseMatrix && !IntegrationMatrixExtensions.IsConfigured(_clientOptions))
-                throw new InvalidOperationException("Matrix is not configured. Set ClientSettings MatrixUrl, MatrixAccessToken and MatrixOidcAuthProvider.");
+                throw new ConflictException("Matrix is not configured. Set ClientSettings MatrixUrl, MatrixAccessToken and MatrixOidcAuthProvider.");
             if (msel.UseCaster)
             {
                 await ValidateCasterSetupAsync(msel, ct);
@@ -3218,9 +3218,9 @@ namespace Blueprint.Api.Services
             if (template.UseCaster)
                 await ValidateCasterSetupAsync(template, ct);
             if (template.UseRocketChat && !IntegrationRocketChatExtensions.IsConfigured(_clientOptions))
-                throw new InvalidOperationException("Rocket.Chat is not configured. Set ClientSettings RocketChatUrl, RocketChatUserId and RocketChatAuthToken.");
+                throw new ConflictException("Rocket.Chat is not configured. Set ClientSettings RocketChatUrl, RocketChatUserId and RocketChatAuthToken.");
             if (template.UseMatrix && !IntegrationMatrixExtensions.IsConfigured(_clientOptions))
-                throw new InvalidOperationException("Matrix is not configured. Set ClientSettings MatrixUrl, MatrixAccessToken and MatrixOidcAuthProvider.");
+                throw new ConflictException("Matrix is not configured. Set ClientSettings MatrixUrl, MatrixAccessToken and MatrixOidcAuthProvider.");
 
             // clone the template MSEL
             var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct);

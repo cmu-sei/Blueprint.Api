@@ -220,6 +220,43 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         AssertNothingEnqueued();
     }
 
+    /// <summary>
+    /// Push for a MSEL using Rocket.Chat when this Blueprint has no Rocket.Chat settings is a 409 naming
+    /// the missing settings, like the other push refusals, and enqueues nothing.
+    /// </summary>
+    [Fact]
+    public async Task Push_WithRocketChatNotConfigured_Is409()
+    {
+        var msel = TestData.Msel();
+        msel.UseRocketChat = true;
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(
+            "Rocket.Chat is not configured. Set ClientSettings RocketChatUrl, RocketChatUserId and RocketChatAuthToken.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        AssertNothingEnqueued();
+    }
+
+    /// <summary>Push for a MSEL using Matrix when this Blueprint has no Matrix settings is a 409 naming them.</summary>
+    [Fact]
+    public async Task Push_WithMatrixNotConfigured_Is409()
+    {
+        var msel = TestData.Msel();
+        msel.UseMatrix = true;
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(
+            "Matrix is not configured. Set ClientSettings MatrixUrl, MatrixAccessToken and MatrixOidcAuthProvider.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        AssertNothingEnqueued();
+    }
+
     /// <summary>Push when a user is on two CITE teams is a 409 that names them, for the planner to fix.</summary>
     [Fact]
     public async Task Push_WhenAUserIsOnTwoCiteTeams_Is409AndNamesThem()

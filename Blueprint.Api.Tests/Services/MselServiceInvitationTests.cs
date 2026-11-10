@@ -1281,6 +1281,30 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Empty(DrainIntegrationQueue());
     }
 
+    /// <summary>A template using Rocket.Chat or Matrix when this Blueprint has no settings for it is a 409 before the invitation is used.</summary>
+    [Theory]
+    [InlineData(true, false, "Rocket.Chat is not configured. Set ClientSettings RocketChatUrl, RocketChatUserId and RocketChatAuthToken.")]
+    [InlineData(false, true, "Matrix is not configured. Set ClientSettings MatrixUrl, MatrixAccessToken and MatrixOidcAuthProvider.")]
+    public async Task Launch_OfAChatTemplateWithChatNotConfigured_Is409AndSpendsNoSeat(bool rocketChat, bool matrix, string title)
+    {
+        var template = await SeedTemplate(m =>
+        {
+            m.UseRocketChat = rocketChat;
+            m.UseMatrix = matrix;
+        });
+        var team = await SeedTeam(template);
+        var invitation = await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        Assert.Equal(title, (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        await using var db = NewContext();
+        Assert.Equal(0, (await db.Invitations.SingleAsync(i => i.Id == invitation.Id, Ct)).UserCount);
+        Assert.Equal(1, await db.Msels.CountAsync(Ct));
+        Assert.Empty(DrainIntegrationQueue());
+    }
+
     /// <summary>Launch twice with one invitation clones the template twice.</summary>
     [Fact]
     public async Task Launch_TwiceWithOneInvitation_ClonesTheTemplateTwice()

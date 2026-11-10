@@ -884,16 +884,7 @@ namespace Blueprint.Api.Services
                     queryParams.Add($"until={until.Value:O}");
 
                 var url = $"{_xApiOptions.Endpoint}/statements?{string.Join("&", queryParams)}";
-                var response = await httpClient.GetAsync(url, ct);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning("Failed to query LRS for registration {RegistrationId}: HTTP {StatusCode}", registrationId, response.StatusCode);
-                    continue;
-                }
-
-                var json = await response.Content.ReadAsStringAsync(ct);
-                allStatements.Add(json);
+                allStatements.AddRange(await GetStatementPagesAsync(httpClient, registrationId, url, ct));
             }
 
             var merged = MergeStatementResponses(allStatements);
@@ -907,6 +898,153 @@ namespace Blueprint.Api.Services
             }
 
             return merged;
+        }
+
+        /// <summary>
+        /// Every page of one registration's statements: the first query, then each <c>more</c> link until the
+        /// LRS sends an empty one or none, a link repeats, or <c>MaxStatementsPerRegistration</c> is reached.
+        /// A page the LRS refuses ends the paging with the pages already read; an LRS that cannot be reached
+        /// on the first page throws, as it always has, and on a later page keeps the pages already read.
+        /// </summary>
+        private async Task<List<string>> GetStatementPagesAsync(HttpClient httpClient, string registrationId, string firstUrl, CancellationToken ct)
+        {
+            var pages = new List<string>();
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            var cap = _xApiOptions.MaxStatementsPerRegistration > 0
+                ? _xApiOptions.MaxStatementsPerRegistration
+                : XApiOptions.DefaultMaxStatementsPerRegistration;
+            var count = 0;
+            var url = firstUrl;
+
+            while (url != null)
+            {
+                visited.Add(url);
+
+                HttpResponseMessage response;
+                try
+                {
+                    response = await httpClient.GetAsync(url, ct);
+                }
+                catch (HttpRequestException ex) when (pages.Count > 0)
+                {
+                    _logger.LogWarning(ex, "Failed to read the next page of LRS statements for registration {RegistrationId} after {Count} statements", registrationId, count);
+                    break;
+                }
+
+                using (response)
+                {
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        _logger.LogWarning("Failed to query LRS for registration {RegistrationId}: HTTP {StatusCode}", registrationId, response.StatusCode);
+                        break;
+                    }
+
+                    string json;
+                    try
+                    {
+                        json = await response.Content.ReadAsStringAsync(ct);
+                    }
+                    catch (Exception ex) when ((ex is HttpRequestException || ex is System.IO.IOException) && pages.Count > 0)
+                    {
+                        _logger.LogWarning(ex, "Failed to read the next page of LRS statements for registration {RegistrationId} after {Count} statements", registrationId, count);
+                        break;
+                    }
+
+                    var (isStatementList, statementCount, more) = ReadPage(json);
+                    if (!isStatementList)
+                    {
+                        _logger.LogWarning("Ignored an LRS answer that is not a statement list for registration {RegistrationId} after {Count} statements", registrationId, count);
+                        break;
+                    }
+
+                    pages.Add(json);
+                    count += statementCount;
+
+                    if (string.IsNullOrWhiteSpace(more))
+                        break;
+
+                    if (count >= cap)
+                    {
+                        _logger.LogWarning("Stopped reading LRS statements for registration {RegistrationId} at {Count} statements, the MaxStatementsPerRegistration limit of {Cap}", registrationId, count, cap);
+                        break;
+                    }
+
+                    var next = ResolveMore(_xApiOptions.Endpoint, more);
+                    if (next == null)
+                    {
+                        _logger.LogWarning("Ignored an LRS more link that is not a url on the LRS for registration {RegistrationId}: {More}", registrationId, more);
+                        break;
+                    }
+
+                    if (visited.Contains(next))
+                    {
+                        _logger.LogWarning("Stopped reading LRS statements for registration {RegistrationId} at {Count} statements: the LRS repeated the more link {More}", registrationId, count, more);
+                        break;
+                    }
+
+                    url = next;
+                }
+            }
+
+            return pages;
+        }
+
+        /// <summary>Whether a page is a statement list, how many statements it holds, and its <c>more</c> link, if it has one.</summary>
+        private static (bool IsStatementList, int Count, string More) ReadPage(string json)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                if (root.ValueKind == JsonValueKind.Array)
+                    return (true, root.GetArrayLength(), null);
+
+                if (root.ValueKind != JsonValueKind.Object ||
+                    !root.TryGetProperty("statements", out var statements) ||
+                    statements.ValueKind != JsonValueKind.Array)
+                    return (false, 0, null);
+
+                var count = statements.GetArrayLength();
+                var more = root.TryGetProperty("more", out var moreProp) && moreProp.ValueKind == JsonValueKind.String
+                    ? moreProp.GetString()
+                    : null;
+                return (true, count, more);
+            }
+            catch (JsonException)
+            {
+                return (false, 0, null);
+            }
+        }
+
+        /// <summary>
+        /// The url a <c>more</c> link points to. xAPI 1.0.3 makes it an IRL, which an LRS usually writes
+        /// relative to its host (<c>/xapi/statements?...</c>), so that is resolved against the scheme, host
+        /// and port of <c>Endpoint</c>; an absolute http(s) url is used as it is if it is on that same scheme, host
+        /// and port, and is refused (null) anywhere else. A path with no leading slash
+        /// is taken as relative to <c>Endpoint</c> itself.
+        /// </summary>
+        internal static string ResolveMore(string endpoint, string more)
+        {
+            more = more?.Trim();
+            if (string.IsNullOrEmpty(more))
+                return null;
+
+            if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var baseUri))
+                return null;
+
+            // On Linux "/xapi/statements" parses as an absolute file:// uri, so the scheme is what decides.
+            // An absolute link is followed only on the LRS's own scheme, host and port: every page is sent
+            // the LRS credentials, so a link elsewhere would hand them to whoever it names.
+            if (Uri.TryCreate(more, UriKind.Absolute, out var absolute) &&
+                (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
+                return Uri.Compare(absolute, baseUri, UriComponents.SchemeAndServer, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) == 0
+                    ? absolute.AbsoluteUri
+                    : null;
+
+            if (!more.StartsWith('/'))
+                baseUri = new Uri(baseUri.AbsoluteUri.TrimEnd('/') + "/");
+
+            return Uri.TryCreate(baseUri, more, out var resolved) ? resolved.AbsoluteUri : null;
         }
 
         /// <summary>The properties that say which person an agent is: its name and every inverse functional identifier.</summary>

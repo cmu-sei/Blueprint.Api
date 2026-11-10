@@ -989,6 +989,23 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
             IntegrationGalleryExtensions.GetArticleValue("Name", [], [field]));
     }
 
+    /// <summary>
+    /// A value row holding null is empty too. A push read To Org from one and crashed splitting it, failing the
+    /// whole Gallery step with "Object reference not set to an instance of an object".
+    /// </summary>
+    [Fact]
+    public void GetArticleValue_WithANullValueForTheField_IsEmpty()
+    {
+        var field = TestData.DataField();
+        field.GalleryArticleParameter = "ToOrg";
+
+        var value = TestData.DataValue(field.Id, Guid.NewGuid(), null);
+
+        Assert.Equal(
+            string.Empty,
+            IntegrationGalleryExtensions.GetArticleValue("ToOrg", [value], [field]));
+    }
+
     /// <summary>Get article value for two fields mapped to one parameter throws.</summary>
     [Fact]
     public void GetArticleValue_ForTwoFieldsMappedToOneParameter_Throws()

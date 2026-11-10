@@ -41,7 +41,7 @@
     <PackageVersion Include="caster.api.client" Version="1.5.0" />
     <PackageVersion Include="Player.Api.Client" Version="3.2.0" />
     <PackageVersion Include="steamfitter.api.client" Version="3.11.0" />
-    <PackageVersion Include="TinCan" Version="1.3.0" />
+    <PackageVersion Include="TinCanStandard" Version="1.5.0" />
   </ItemGroup>
 
   <!-- EF Core and its providers. All four providers ship in the image: Postgres is production, and
@@ -95,15 +95,13 @@
          ASP.NET Core version for the same reason Mvc.Testing is: it has to speak the protocol the
          hosted server negotiates. -->
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageVersion Include="NSubstitute" Version="6.0.0" />
-    <!-- Coverage collection, and inert until it is asked for: it is a VSTest data collector, so a
-         plain `dotnet test` neither instruments the assembly nor pays for it. `scripts/coverage.sh`
-         is what turns it on. -->
-    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
+    <!-- Coverage collection, and inert until it is asked for: it is the Microsoft.Testing.Platform
+         form of coverlet and only instruments a run that asks for it, so a plain `dotnet test`
+         neither instruments the assembly nor pays for it. `scripts/coverage.sh` is what turns it on. -->
+    <PackageVersion Include="coverlet.MTP" Version="10.0.1" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.15.0" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
   </ItemGroup>
 
   <!-- Security pins. Blueprint.Api references these only to raise a package that otherwise arrives

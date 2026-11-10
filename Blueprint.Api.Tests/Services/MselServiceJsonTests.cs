@@ -133,6 +133,35 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal(SteamfitterScenarioStartMode.AtStartTime, imported.SteamfitterScenarioStartMode);
     }
 
+    [Fact]
+    public async Task Download_ThenUpload_KeepsHidingNamesOnTheAssessorView()
+    {
+        var msel = TestData.Msel();
+        msel.HideNamesOnAssessorView = true;
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, SystemPermission.CreateMsels).SeedAsync();
+        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
+        var file = (await ReadExport(response)).GetRawText();
+
+        var imported = await Upload(Client(actor), file);
+
+        Assert.True(JsonDocument.Parse(file).RootElement.GetProperty("HideNamesOnAssessorView").GetBoolean());
+        Assert.True(imported.HideNamesOnAssessorView);
+    }
+
+    /// <summary>A file from before the setting existed imports with names shown, as every MSEL had them.</summary>
+    [Fact]
+    public async Task Upload_OfAFileWithoutHideNamesOnTheAssessorView_ShowsTheNames()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(Exported(m => m.HideNamesOnAssessorView = true)).AsObject();
+        file.Remove("HideNamesOnAssessorView");
+
+        var imported = await Upload(Client(actor), file.ToJsonString());
+
+        Assert.False(imported.HideNamesOnAssessorView);
+    }
+
     /// <summary>A file from before the setting existed imports as a scenario someone starts by hand.</summary>
     [Fact]
     public async Task Upload_OfAFileWithoutTheSteamfitterStartMode_StartsTheScenarioManually()

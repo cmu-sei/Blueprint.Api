@@ -219,6 +219,7 @@ public class Startup
         services.AddScoped<ICatalogInjectService, CatalogInjectService>();
         services.AddScoped<ICatalogUnitService, CatalogUnitService>();
         services.AddScoped<ICiteService, CiteService>();
+        services.AddScoped<ICiteSubmissionService, CiteSubmissionService>();
         services.AddScoped<ICiteActionService, CiteActionService>();
         services.AddScoped<ICiteDutyService, CiteDutyService>();
         services.AddScoped<IDataFieldService, DataFieldService>();
@@ -233,6 +234,7 @@ public class Startup
         services.AddScoped<IMselService, MselService>();
         services.AddScoped<IMselPageService, MselPageService>();
         services.AddScoped<IMselImageService, MselImageService>();
+        services.AddScoped<IMselScoringModelService, MselScoringModelService>();
         services.AddScoped<IMselUnitService, MselUnitService>();
         services.AddScoped<IMselCompetencyService, MselCompetencyService>();
         services.AddScoped<ITeamCompetencyService, TeamCompetencyService>();

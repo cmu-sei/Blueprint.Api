@@ -69,6 +69,10 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
+            // the MSEL's participants are shown only the Exercise View, which does not include these
+            if (await MselParticipantScope.IsLimitedAsync(_user.GetId(), mselId, hasSystemPermission, _context))
+                return new List<Organization>();
+
             var organizationEntities = await _context.Organizations
                 .Where(organization => organization.MselId == mselId)
                 .ToListAsync(ct);
@@ -82,10 +86,11 @@ namespace Blueprint.Api.Services
             if (item == null)
                 throw new EntityNotFoundException<DataValueEntity>("DataValue not found: " + id);
 
-            // Templates (null MselId) can be viewed by anyone
+            // Templates (null MselId) can be viewed by anyone. One on a MSEL is for its contributors only,
+            // as the MSEL's participants are shown only the Exercise View
             if (item.MselId.HasValue)
             {
-                if (!hasSystemPermission && !await MselViewRequirement.IsMet(_user.GetId(), item.MselId, _context))
+                if (!hasSystemPermission && !await MselContributorRequirement.IsMet(_user.GetId(), item.MselId, false, _context))
                     throw new ForbiddenException();
             }
 

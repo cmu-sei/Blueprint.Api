@@ -294,6 +294,31 @@ public static class TestData
     }
 
     /// <summary>
+    /// A system-wide Player application template: no MSEL, <c>IsTemplate</c> set, and no team rows - a
+    /// template is copied into a MSEL before any team can see it.
+    /// </summary>
+    public static PlayerApplicationEntity PlayerApplicationTemplate(
+        string name = null,
+        string url = "http://template.example/{viewId}",
+        string icon = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new PlayerApplicationEntity
+        {
+            Id = id,
+            MselId = null,
+            IsTemplate = true,
+            Name = name ?? $"template-{id}",
+            Url = url,
+            Icon = icon,
+            Embeddable = true,
+            LoadInBackground = false,
+            CreatedBy = Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
     /// The join row that puts an application on one team's dashboard, and carries the order it appears in.
     /// </summary>
     public static PlayerApplicationTeamEntity PlayerApplicationTeam(
@@ -853,6 +878,47 @@ public static class TestData
             Content = content ?? "<p>Seeded by TestData.MselPage</p>",
             AllCanView = allCanView,
             IncludeInPlaybook = includeInPlaybook
+        };
+    }
+
+    /// <summary>
+    /// The scoring model a MSEL authors itself: two questions for move 1, in one category, shown in that move
+    /// only. Keyed by its MSEL, so a second one for the same MSEL is a 500.
+    /// </summary>
+    /// <remarks>The categories and options cascade from the model, and the model from the MSEL.</remarks>
+    public static MselScoringModelEntity MselScoringModel(Guid mselId, string description = null, Guid? createdBy = null)
+    {
+        var categoryId = Guid.NewGuid();
+
+        return new MselScoringModelEntity
+        {
+            MselId = mselId,
+            Description = description ?? $"scoring-model-{mselId}",
+            CalculationEquation = "{average}",
+            DisplayCommentTextBoxes = true,
+            DisplayScoringModelByMoveNumber = true,
+            RightSideDisplay = CiteRightSideDisplay.Scoresheet,
+            CreatedBy = createdBy ?? Guid.NewGuid(),
+            Categories =
+            [
+                new MselScoringCategoryEntity
+                {
+                    Id = categoryId,
+                    MselScoringModelId = mselId,
+                    DisplayOrder = 1,
+                    Description = "Please respond to the following discussion questions:",
+                    CalculationEquation = "{max}",
+                    ScoringWeight = 1,
+                    MoveNumberFirstDisplay = 1,
+                    MoveNumberLastDisplay = 1,
+                    ScoringOptionSelection = CiteScoringOptionSelection.None,
+                    Options =
+                    [
+                        new MselScoringOptionEntity { Id = Guid.NewGuid(), MselScoringCategoryId = categoryId, DisplayOrder = 1, Description = "Who do you call first?", Value = 1 },
+                        new MselScoringOptionEntity { Id = Guid.NewGuid(), MselScoringCategoryId = categoryId, DisplayOrder = 2, Description = "What do you tell the press?", Value = 1 }
+                    ]
+                }
+            ]
         };
     }
 

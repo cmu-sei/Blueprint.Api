@@ -78,7 +78,7 @@ public class ApiClientsExtensionsTests
     {
         var handler = Idp(token: """{"error":"invalid_grant","error_description":"Invalid user credentials"}""",
             tokenStatus: HttpStatusCode.BadRequest);
-        var refused = await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        var refused = await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
         Assert.True(refused.IsError);
         Assert.Null(refused.TokenType);
@@ -95,7 +95,7 @@ public class ApiClientsExtensionsTests
     public async Task GetHttpClient_ForAnUnreachableTokenEndpoint_ThrowsTheSameFormatException()
     {
         var handler = IdpWithAnUnreachableTokenEndpoint();
-        var failed = await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        var failed = await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
         Assert.True(failed.IsError);
         Assert.Equal(ResponseErrorType.Exception, failed.ErrorType);
@@ -187,7 +187,7 @@ public class ApiClientsExtensionsTests
     {
         var handler = Idp();
 
-        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
         Assert.Equal([DiscoveryPath, JwksPath, TokenPath], handler.Paths);
     }
@@ -201,7 +201,7 @@ public class ApiClientsExtensionsTests
     {
         var handler = Idp();
 
-        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
         var sent = handler.Sent[^1];
 
@@ -215,7 +215,7 @@ public class ApiClientsExtensionsTests
     {
         var handler = Idp();
 
-        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
         Assert.Contains("username=blueprint-admin", handler.Sent[^1].Body);
     }
@@ -225,7 +225,7 @@ public class ApiClientsExtensionsTests
     {
         var handler = Idp();
 
-        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
         Assert.Contains("client_id=blueprint-admin", handler.Sent[^1].Body);
     }
@@ -240,7 +240,7 @@ public class ApiClientsExtensionsTests
     {
         var handler = Idp();
 
-        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
         Assert.Contains("scope=player+player-vm+cite+gallery+steamfitter", handler.Sent[^1].Body);
     }
@@ -256,7 +256,7 @@ public class ApiClientsExtensionsTests
     {
         var handler = Idp();
 
-        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
         Assert.Contains("password=&", handler.Sent[^1].Body);
     }
@@ -268,7 +268,7 @@ public class ApiClientsExtensionsTests
         var options = Options();
         options.ClientSecret = "s3cret";
 
-        await ApiClientsExtensions.RequestTokenAsync(options, Client(handler));
+        await ApiClientsExtensions.RequestTokenAsync(options, Client(handler), Ct);
 
         Assert.Contains("client_secret=s3cret", handler.Sent[^1].Body);
     }
@@ -283,7 +283,7 @@ public class ApiClientsExtensionsTests
         var options = Options();
         options.ClientSecret = secret;
 
-        await ApiClientsExtensions.RequestTokenAsync(options, Client(handler));
+        await ApiClientsExtensions.RequestTokenAsync(options, Client(handler), Ct);
 
         Assert.DoesNotContain("client_secret", handler.Sent[^1].Body);
     }
@@ -302,7 +302,7 @@ public class ApiClientsExtensionsTests
         var handler = new SiblingApiHandler().AnswersJson(DiscoveryPath, "not found", HttpStatusCode.NotFound);
 
         var thrown = await Assert.ThrowsAsync<Exception>(() =>
-            ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler)));
+            ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct));
 
         Assert.Equal(typeof(Exception), thrown.GetType());
         Assert.Contains(DiscoveryPath, thrown.Message);
@@ -315,9 +315,11 @@ public class ApiClientsExtensionsTests
         var handler = new SiblingApiHandler().Throws(DiscoveryPath);
 
         var thrown = await Assert.ThrowsAsync<Exception>(() =>
-            ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler)));
+            ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct));
 
         Assert.Equal(typeof(Exception), thrown.GetType());
+        // what failed underneath, so a caller can tell a timeout from a refusal
+        Assert.IsType<HttpRequestException>(thrown.InnerException);
     }
 
     /// <summary>A rejected credential is returned as an error response.</summary>
@@ -327,7 +329,7 @@ public class ApiClientsExtensionsTests
         var handler = Idp(token: """{"error":"invalid_grant","error_description":"Invalid user credentials"}""",
             tokenStatus: HttpStatusCode.BadRequest);
 
-        var response = await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        var response = await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
         Assert.True(response.IsError);
         Assert.Equal("invalid_grant", response.Error);
@@ -344,7 +346,7 @@ public class ApiClientsExtensionsTests
         options.Authority = "http://idp.example.test/realms/crucible";
 
         var thrown = await Assert.ThrowsAsync<Exception>(() =>
-            ApiClientsExtensions.RequestTokenAsync(options, Client(handler)));
+            ApiClientsExtensions.RequestTokenAsync(options, Client(handler), Ct));
 
         Assert.Contains("HTTPS required", thrown.Message);
         Assert.Empty(handler.Sent);
@@ -359,7 +361,7 @@ public class ApiClientsExtensionsTests
     {
         var handler = Idp();
 
-        var response = await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        var response = await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
         Assert.False(response.IsError);
         Assert.Equal("abc123", response.AccessToken);
@@ -376,7 +378,7 @@ public class ApiClientsExtensionsTests
         var options = Options();
         options.ValidateDiscoveryDocument = true;
 
-        var response = await ApiClientsExtensions.RequestTokenAsync(options, Client(handler));
+        var response = await ApiClientsExtensions.RequestTokenAsync(options, Client(handler), Ct);
 
         Assert.False(response.IsError);
     }
@@ -389,7 +391,7 @@ public class ApiClientsExtensionsTests
         options.ValidateDiscoveryDocument = true;
 
         var thrown = await Assert.ThrowsAsync<Exception>(() =>
-            ApiClientsExtensions.RequestTokenAsync(options, Client(handler)));
+            ApiClientsExtensions.RequestTokenAsync(options, Client(handler), Ct));
 
         Assert.Contains("Issuer name does not match authority", thrown.Message);
     }
@@ -400,7 +402,7 @@ public class ApiClientsExtensionsTests
     {
         var handler = Idp(discovery: Discovery("http://localhost:8080/realms/somebody-else"));
 
-        var response = await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        var response = await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
         Assert.False(response.IsError);
         Assert.Equal("abc123", response.AccessToken);
@@ -412,7 +414,7 @@ public class ApiClientsExtensionsTests
     {
         var handler = IdpNamingAnEndpointOnAnotherHost();
 
-        var response = await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        var response = await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
         Assert.Equal("harvested", response.AccessToken);
 
@@ -430,7 +432,7 @@ public class ApiClientsExtensionsTests
         options.ValidateDiscoveryDocument = true;
 
         await Assert.ThrowsAsync<Exception>(() =>
-            ApiClientsExtensions.RequestTokenAsync(options, Client(handler)));
+            ApiClientsExtensions.RequestTokenAsync(options, Client(handler), Ct));
 
         Assert.DoesNotContain("collect/token", handler.Paths);
     }
@@ -581,7 +583,7 @@ public class ApiClientsExtensionsTests
     private static HttpClient Client(SiblingApiHandler handler) => new(handler, disposeHandler: false);
 
     private static async Task<TokenResponse> Token(SiblingApiHandler handler) =>
-        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler));
+        await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
     private static IServiceScope Scope(SiblingApiHandler handler, ResourceOwnerAuthorizationOptions options)
     {

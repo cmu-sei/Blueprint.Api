@@ -50,7 +50,7 @@
     <PackageReference Include="steamfitter.api.client" />
     <PackageReference Include="HtmlSanitizer" />
     <PackageReference Include="Crucible.Common.ServiceDefaults"/>
-    <PackageReference Include="TinCan" />
+    <PackageReference Include="TinCanStandard" />
     <PackageReference Include="Newtonsoft.Json" />
   </ItemGroup>
   <!-- Security pins for vulnerable transitive dependencies; see Directory.Packages.props. -->

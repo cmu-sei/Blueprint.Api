@@ -269,6 +269,49 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
         Assert.True((await Stored(msel.Id)).UseGallery);
     }
 
+    /// <summary>
+    /// When the Steamfitter scenario starts changes nothing the push built, so a pushed MSEL can still change
+    /// it - which is what lets a facilitator have a pushed scenario start at the MSEL start time after all.
+    /// </summary>
+    [Fact]
+    public async Task Update_ChangingTheSteamfitterScenarioStartMode_OfADeployedMsel_Is200()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Deployed);
+        msel.UseSteamfitter = true;
+        msel.SteamfitterScenarioId = Guid.NewGuid();
+        await Seed(msel);
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(owner).PutAsJsonAsync(
+            $"/api/msels/{msel.Id}",
+            new { name = msel.Name, status = msel.Status, useSteamfitter = true, steamfitterScenarioStartMode = "AtStartTime" },
+            JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var row = await Stored(msel.Id);
+        Assert.Equal(SteamfitterScenarioStartMode.AtStartTime, row.SteamfitterScenarioStartMode);
+        Assert.Equal(msel.SteamfitterScenarioId, row.SteamfitterScenarioId);
+    }
+
+    /// <summary>
+    /// Hiding names changes only what the Assessor View lists, so it can be turned on during the event.
+    /// </summary>
+    [Fact]
+    public async Task Update_HidingNamesOnTheAssessorView_OfADeployedMsel_Is200()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Deployed);
+        await Seed(msel);
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(owner).PutAsJsonAsync(
+            $"/api/msels/{msel.Id}",
+            new { name = msel.Name, status = msel.Status, hideNamesOnAssessorView = true },
+            JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True((await Stored(msel.Id)).HideNamesOnAssessorView);
+    }
+
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>

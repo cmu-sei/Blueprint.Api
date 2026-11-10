@@ -302,7 +302,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
         {
             var dataField = dataFields.SingleOrDefault(df => df.GalleryArticleParameter == key);
             var dataValue = dataField == null ? null : dataValues.SingleOrDefault(dv => dv.DataFieldId == dataField.Id);
-            return dataValue == null ? "" : dataValue.Value;
+            // a value row can hold null (a cell left empty), which reads the same as no row
+            return dataValue?.Value ?? "";
         }
 
         // Add User to Gallery Team

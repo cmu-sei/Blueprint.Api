@@ -35,7 +35,11 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
     // Join
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Join adds a group per reachable MSEL per unit and one for the caller themselves.</summary>
+    /// <summary>
+    /// Join adds a group per reachable MSEL per unit and one for the caller themselves. A unit's MSEL is
+    /// reachable when the caller holds a role on it: a MSEL's group is sent every event and cell, hidden or
+    /// not, and a unit member with no role is at most a participant, shown only the Exercise View.
+    /// </summary>
     [Fact]
     public async Task Join_AddsAGroupPerReachableMsel_PerUnit_AndOneForTheCallerThemselves()
     {
@@ -47,12 +51,15 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         var template = TestData.Msel(isTemplate: true);
         var strangers = TestData.Msel();
         var unitsMsel = TestData.Msel();
-        await Seed(mine, template, strangers, unitsMsel);
+        var unitsMselWithNoRole = TestData.Msel();
+        await Seed(mine, template, strangers, unitsMsel, unitsMselWithNoRole);
         var unit = TestData.Unit();
         await Seed(unit);
         await Seed(
             TestData.UnitUser(actor, unit.Id),
-            TestData.MselUnit(unit.Id, unitsMsel.Id));
+            TestData.MselUnit(unit.Id, unitsMsel.Id),
+            TestData.MselUnit(unit.Id, unitsMselWithNoRole.Id),
+            TestData.UserMselRole(actor, unitsMsel.Id, MselRole.Viewer));
         var harness = Harness(actor);
 
         await Hub(harness).Join();
@@ -67,6 +74,7 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
             ],
             Added(harness));
         Assert.DoesNotContain(strangers.Id.ToString(), Added(harness));
+        Assert.DoesNotContain(unitsMselWithNoRole.Id.ToString(), Added(harness));
         Assert.Empty(harness.Clients.ReceivedCalls());
         AssertAddressedOnlyOthersInGroup(harness);
     }

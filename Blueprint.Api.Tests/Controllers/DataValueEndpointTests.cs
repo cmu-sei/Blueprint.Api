@@ -96,13 +96,17 @@ public abstract class DataValueTestsBase(DatabaseFixture fixture, BlueprintAppFa
     protected async Task<Cell> SeedCell(
         DataFieldType dataType = DataFieldType.String,
         string value = "before",
-        Guid? createdBy = null)
+        Guid? createdBy = null,
+        bool onExerciseView = false,
+        bool isHidden = false)
     {
         var msel = TestData.Msel(createdBy: createdBy);
         await Seed(msel);
 
         var field = TestData.DataField(mselId: msel.Id, dataType: dataType);
+        field.OnExerciseView = onExerciseView;
         var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        scenarioEvent.IsHidden = isHidden;
         await Seed(field, scenarioEvent);
 
         var dataValue = TestData.DataValue(field.Id, scenarioEvent.Id, value);
@@ -252,16 +256,19 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(["before"], values.Select(x => x.Value));
     }
 
-    /// <summary>Get by MSEL for a unit member with no role is answered with a 200 while the same value by id is answered with a 403.</summary>
+    /// <summary>
+    /// A unit member with no role may not read the MSEL's cells, by MSEL or by id: they are the MSEL's
+    /// contents, which take the same check as its events.
+    /// </summary>
     [Fact]
-    public async Task GetByMsel_ForAUnitMemberWithNoRole_Is200_WhileTheSameValueByIdIs403()
+    public async Task GetByMsel_ForAUnitMemberWithNoRole_Is403_LikeTheSameValueById()
     {
         var cell = await SeedCell();
         var actor = await Actor().InUnitOf(cell.Msel).SeedAsync();
 
-        var values = await GetValues(Client(actor), cell.Msel.Id);
+        var values = await Client(actor).GetAsync($"/api/msels/{cell.Msel.Id}/dataValues", Ct);
 
-        Assert.Equal(cell.Value.Id, Assert.Single(values).Id);
+        Assert.Equal(HttpStatusCode.Forbidden, values.StatusCode);
 
         var byId = await Client(actor).GetAsync($"/api/dataValues/{cell.Value.Id}", Ct);
 
@@ -343,13 +350,13 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     }
 
     /// <summary>
-    /// A member of one of the MSEL's teams reads a cell without holding any role, which is what makes the
-    /// grid visible to the people playing the exercise.
+    /// A member of one of the MSEL's teams reads a cell the Exercise View shows without holding any role,
+    /// which is what makes the view visible to the people playing the exercise.
     /// </summary>
     [Fact]
     public async Task Get_ForAMemberOfOneOfTheMselsTeams_Is200()
     {
-        var cell = await SeedCell();
+        var cell = await SeedCell(onExerciseView: true);
         var team = TestData.Team(cell.Msel.Id);
         await Seed(team);
         var actor = await Actor().OnTeam(team).SeedAsync();
@@ -357,6 +364,66 @@ public class DataValueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var value = await GetValue(Client(actor), cell.Value.Id);
 
         Assert.Equal(cell.Value.Id, value.Id);
+    }
+
+    /// <summary>A participant is refused a cell whose Data Field is kept off the Exercise View.</summary>
+    [Fact]
+    public async Task Get_ForAMemberOfOneOfTheMselsTeams_OfAFieldKeptOffTheExerciseView_Is403()
+    {
+        var cell = await SeedCell(onExerciseView: false);
+        var team = TestData.Team(cell.Msel.Id);
+        await Seed(team);
+        var actor = await Actor().OnTeam(team).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/dataValues/{cell.Value.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>A participant is refused a cell of a hidden event, even on a field the Exercise View shows.</summary>
+    [Fact]
+    public async Task Get_ForAMemberOfOneOfTheMselsTeams_OfAHiddenEvent_Is403()
+    {
+        var cell = await SeedCell(onExerciseView: true, isHidden: true);
+        var team = TestData.Team(cell.Msel.Id);
+        await Seed(team);
+        var actor = await Actor().OnTeam(team).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/dataValues/{cell.Value.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>
+    /// Get by MSEL sends a participant only the cells the Exercise View shows: those of shown events on
+    /// shown Data Fields. A contributor holding Viewer is sent all four.
+    /// </summary>
+    [Fact]
+    public async Task GetByMsel_ForAMemberOfOneOfTheMselsTeams_SendsOnlyTheCellsTheExerciseViewShows()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var shownField = TestData.DataField(mselId: msel.Id);
+        shownField.OnExerciseView = true;
+        var keptOffField = TestData.DataField(mselId: msel.Id);
+        var shownEvent = TestData.ScenarioEvent(msel.Id);
+        var hiddenEvent = TestData.ScenarioEvent(msel.Id, deltaSeconds: 60);
+        hiddenEvent.IsHidden = true;
+        await Seed(shownField, keptOffField, shownEvent, hiddenEvent);
+        await Seed(
+            TestData.DataValue(shownField.Id, shownEvent.Id, "shown"),
+            TestData.DataValue(keptOffField.Id, shownEvent.Id, "controller note"),
+            TestData.DataValue(shownField.Id, hiddenEvent.Id, "later inject"),
+            TestData.DataValue(keptOffField.Id, hiddenEvent.Id, "later note"));
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+        var participant = await Actor().OnTeam(team).SeedAsync();
+        var contributor = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
+
+        var values = await GetValues(Client(participant), msel.Id);
+
+        Assert.Equal(["shown"], values.Select(x => x.Value));
+        Assert.Equal(4, (await GetValues(Client(contributor), msel.Id)).Count());
     }
 
     [Fact]

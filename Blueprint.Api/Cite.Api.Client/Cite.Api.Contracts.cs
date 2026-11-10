@@ -171,7 +171,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated Action values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Action> UpdateActionAsync(System.Guid id, Action body);
+        System.Threading.Tasks.Task<Action> UpdateActionAsync(System.Guid id, UpdateActionRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -186,7 +186,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated Action values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Action> UpdateActionAsync(System.Guid id, Action body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<Action> UpdateActionAsync(System.Guid id, UpdateActionRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes an Action
@@ -377,7 +377,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated Duty values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Duty> UpdateDutyAsync(System.Guid id, Duty body);
+        System.Threading.Tasks.Task<Duty> UpdateDutyAsync(System.Guid id, UpdateDutyRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -392,7 +392,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated Duty values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Duty> UpdateDutyAsync(System.Guid id, Duty body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<Duty> UpdateDutyAsync(System.Guid id, UpdateDutyRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes a Duty
@@ -609,7 +609,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated Evaluation values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Evaluation> UpdateEvaluationAsync(System.Guid id, Evaluation body);
+        System.Threading.Tasks.Task<Evaluation> UpdateEvaluationAsync(System.Guid id, UpdateEvaluationRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -625,7 +625,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated Evaluation values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Evaluation> UpdateEvaluationAsync(System.Guid id, Evaluation body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<Evaluation> UpdateEvaluationAsync(System.Guid id, UpdateEvaluationRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes an Evaluation
@@ -792,7 +792,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated EvaluationMembership values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<EvaluationMembership> UpdateEvaluationMembershipAsync(System.Guid id, EvaluationMembership body);
+        System.Threading.Tasks.Task<EvaluationMembership> UpdateEvaluationMembershipAsync(System.Guid id, UpdateEvaluationMembershipRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -805,7 +805,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated EvaluationMembership values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<EvaluationMembership> UpdateEvaluationMembershipAsync(System.Guid id, EvaluationMembership body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<EvaluationMembership> UpdateEvaluationMembershipAsync(System.Guid id, UpdateEvaluationMembershipRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Delete a Evaluation Membership.
@@ -1179,7 +1179,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated Move values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Move> UpdateMoveAsync(System.Guid id, Move body);
+        System.Threading.Tasks.Task<Move> UpdateMoveAsync(System.Guid id, UpdateMoveRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -1195,7 +1195,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated Move values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Move> UpdateMoveAsync(System.Guid id, Move body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<Move> UpdateMoveAsync(System.Guid id, UpdateMoveRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes a  Move
@@ -1360,7 +1360,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated ScoringCategory values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<ScoringCategory> UpdateScoringCategoryAsync(System.Guid id, ScoringCategory body);
+        System.Threading.Tasks.Task<ScoringCategory> UpdateScoringCategoryAsync(System.Guid id, UpdateScoringCategoryRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -1376,7 +1376,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated ScoringCategory values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<ScoringCategory> UpdateScoringCategoryAsync(System.Guid id, ScoringCategory body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<ScoringCategory> UpdateScoringCategoryAsync(System.Guid id, UpdateScoringCategoryRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes a  ScoringCategory
@@ -1436,28 +1436,28 @@ namespace Cite.Api.Client
         /// Creates a new ScoringModel
         /// </summary>
         /// <remarks>
-        /// Creates a new ScoringModel with the attributes specified
+        /// Creates a new ScoringModel with the attributes specified, and the categories and options sent with it as new rows of it
         /// <br/>&lt;para /&gt;
         /// <br/>Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
         /// <param name="body">The data used to create the ScoringModel</param>
         /// <returns>Created</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<ScoringModel> CreateScoringModelAsync(ScoringModel body);
+        System.Threading.Tasks.Task<ScoringModel> CreateScoringModelAsync(CreateScoringModelRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
         /// Creates a new ScoringModel
         /// </summary>
         /// <remarks>
-        /// Creates a new ScoringModel with the attributes specified
+        /// Creates a new ScoringModel with the attributes specified, and the categories and options sent with it as new rows of it
         /// <br/>&lt;para /&gt;
         /// <br/>Accessible only to a ContentDeveloper or an Administrator
         /// </remarks>
         /// <param name="body">The data used to create the ScoringModel</param>
         /// <returns>Created</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<ScoringModel> CreateScoringModelAsync(ScoringModel body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<ScoringModel> CreateScoringModelAsync(CreateScoringModelRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets a specific ScoringModel by id
@@ -1495,7 +1495,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated ScoringModel values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<ScoringModel> UpdateScoringModelAsync(System.Guid id, ScoringModel body);
+        System.Threading.Tasks.Task<ScoringModel> UpdateScoringModelAsync(System.Guid id, UpdateScoringModelRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -1511,7 +1511,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated ScoringModel values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<ScoringModel> UpdateScoringModelAsync(System.Guid id, ScoringModel body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<ScoringModel> UpdateScoringModelAsync(System.Guid id, UpdateScoringModelRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes a  ScoringModel
@@ -1842,7 +1842,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated ScoringOption values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<ScoringOption> UpdateScoringOptionAsync(System.Guid id, ScoringOption body);
+        System.Threading.Tasks.Task<ScoringOption> UpdateScoringOptionAsync(System.Guid id, UpdateScoringOptionRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -1858,7 +1858,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated ScoringOption values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<ScoringOption> UpdateScoringOptionAsync(System.Guid id, ScoringOption body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<ScoringOption> UpdateScoringOptionAsync(System.Guid id, UpdateScoringOptionRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes a  ScoringOption
@@ -2042,7 +2042,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated Submission values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Submission> UpdateSubmissionAsync(System.Guid id, Submission body);
+        System.Threading.Tasks.Task<Submission> UpdateSubmissionAsync(System.Guid id, UpdateSubmissionRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -2058,7 +2058,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated Submission values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Submission> UpdateSubmissionAsync(System.Guid id, Submission body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<Submission> UpdateSubmissionAsync(System.Guid id, UpdateSubmissionRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes a  Submission
@@ -2174,7 +2174,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated SubmissionComment values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Submission> ChangeSubmissionCommentAsync(System.Guid submissionId, System.Guid submissionCommentId, SubmissionComment body);
+        System.Threading.Tasks.Task<Submission> ChangeSubmissionCommentAsync(System.Guid submissionId, System.Guid submissionCommentId, UpdateSubmissionCommentRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -2189,7 +2189,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated SubmissionComment values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Submission> ChangeSubmissionCommentAsync(System.Guid submissionId, System.Guid submissionCommentId, SubmissionComment body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<Submission> ChangeSubmissionCommentAsync(System.Guid submissionId, System.Guid submissionCommentId, UpdateSubmissionCommentRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes a  SubmissionComment
@@ -2275,7 +2275,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated SubmissionCategory values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<SubmissionCategory> UpdateSubmissionCategoryAsync(System.Guid id, SubmissionCategory body);
+        System.Threading.Tasks.Task<SubmissionCategory> UpdateSubmissionCategoryAsync(System.Guid id, UpdateSubmissionCategoryRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -2291,7 +2291,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated SubmissionCategory values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<SubmissionCategory> UpdateSubmissionCategoryAsync(System.Guid id, SubmissionCategory body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<SubmissionCategory> UpdateSubmissionCategoryAsync(System.Guid id, UpdateSubmissionCategoryRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes a  SubmissionCategory
@@ -2406,7 +2406,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated SubmissionComment values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<SubmissionComment> UpdateSubmissionCommentAsync(System.Guid id, SubmissionComment body);
+        System.Threading.Tasks.Task<SubmissionComment> UpdateSubmissionCommentAsync(System.Guid id, UpdateSubmissionCommentRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -2422,7 +2422,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated SubmissionComment values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<SubmissionComment> UpdateSubmissionCommentAsync(System.Guid id, SubmissionComment body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<SubmissionComment> UpdateSubmissionCommentAsync(System.Guid id, UpdateSubmissionCommentRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes a  SubmissionComment
@@ -2537,7 +2537,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated SubmissionOption values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<SubmissionOption> UpdateSubmissionOptionAsync(System.Guid id, SubmissionOption body);
+        System.Threading.Tasks.Task<SubmissionOption> UpdateSubmissionOptionAsync(System.Guid id, UpdateSubmissionOptionRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -2553,7 +2553,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated SubmissionOption values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<SubmissionOption> UpdateSubmissionOptionAsync(System.Guid id, SubmissionOption body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<SubmissionOption> UpdateSubmissionOptionAsync(System.Guid id, UpdateSubmissionOptionRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes a  SubmissionOption
@@ -2836,7 +2836,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated Team values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Team> UpdateTeamAsync(System.Guid id, Team body);
+        System.Threading.Tasks.Task<Team> UpdateTeamAsync(System.Guid id, UpdateTeamRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -2851,7 +2851,7 @@ namespace Cite.Api.Client
         /// <param name="body">The updated Team values</param>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Team> UpdateTeamAsync(System.Guid id, Team body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<Team> UpdateTeamAsync(System.Guid id, UpdateTeamRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Deletes a Team
@@ -2891,7 +2891,7 @@ namespace Cite.Api.Client
         /// <param name="body">The data to create the Team with</param>
         /// <returns>Created</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Team> CreateTeamAsync(Team body);
+        System.Threading.Tasks.Task<Team> CreateTeamAsync(CreateTeamRequest body);
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -2905,7 +2905,7 @@ namespace Cite.Api.Client
         /// <param name="body">The data to create the Team with</param>
         /// <returns>Created</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
-        System.Threading.Tasks.Task<Team> CreateTeamAsync(Team body, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task<Team> CreateTeamAsync(CreateTeamRequest body, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
         /// Get a single TeamMembership.
@@ -3329,6 +3329,52 @@ namespace Cite.Api.Client
         System.Threading.Tasks.Task DeleteUserAsync(System.Guid id, System.Threading.CancellationToken cancellationToken);
 
         /// <summary>
+        /// Logs xAPI viewed statement for Dashboard by Evaluation id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ViewedEvaluationDashboardAsync(System.Guid evaluationId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI viewed statement for Dashboard by Evaluation id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ViewedEvaluationDashboardAsync(System.Guid evaluationId, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Logs xAPI viewed statement for Scoresheet by Evaluation id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ViewedEvaluationScoresheetAsync(System.Guid evaluationId);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Logs xAPI viewed statement for Scoresheet by Evaluation id
+        /// </summary>
+        /// <remarks>
+        /// Returns status
+        /// </remarks>
+        /// <param name="evaluationId">The id of the Evaluation</param>
+        /// <returns>OK</returns>
+        /// <exception cref="ApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task ViewedEvaluationScoresheetAsync(System.Guid evaluationId, System.Threading.CancellationToken cancellationToken);
+
+        /// <summary>
         /// Logs xAPI observed statement for Dashboard by Evaluation id and Team id
         /// </summary>
         /// <remarks>
@@ -3619,6 +3665,159 @@ namespace Cite.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("memberType")]
         [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<MemberTypes>))]
         public MemberTypes MemberType { get; set; }
+
+    }
+
+    /// <summary>
+    /// A category created with its scoring model. It has no ID and no ScoringModelId: it is a new row of the model
+    /// <br/>it is sent in, and the server gives it its ID.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class CreateScoringCategoryRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("displayOrder")]
+        public int DisplayOrder { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("description")]
+        public string Description { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("calculationEquation")]
+        public string CalculationEquation { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("isModifierRequired")]
+        public bool IsModifierRequired { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("scoringWeight")]
+        public double ScoringWeight { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("moveNumberFirstDisplay")]
+        public int MoveNumberFirstDisplay { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("moveNumberLastDisplay")]
+        public int MoveNumberLastDisplay { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("scoringOptionSelection")]
+        [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<ScoringOptionSelection>))]
+        public ScoringOptionSelection ScoringOptionSelection { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("scoringOptions")]
+        public System.Collections.Generic.ICollection<CreateScoringOptionRequest> ScoringOptions { get; set; }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class CreateScoringModelRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("description")]
+        public string Description { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("calculationEquation")]
+        public string CalculationEquation { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("status")]
+        [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<ItemStatus>))]
+        public ItemStatus Status { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("hideScoresOnScoreSheet")]
+        public bool HideScoresOnScoreSheet { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("displayCommentTextBoxes")]
+        public bool DisplayCommentTextBoxes { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("displayScoringModelByMoveNumber")]
+        public bool DisplayScoringModelByMoveNumber { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("showPastSituationDescriptions")]
+        public bool ShowPastSituationDescriptions { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("useSubmit")]
+        public bool UseSubmit { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("useUserScore")]
+        public bool UseUserScore { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("useTeamScore")]
+        public bool UseTeamScore { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("useTeamAverageScore")]
+        public bool UseTeamAverageScore { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("useTypeAverageScore")]
+        public bool UseTypeAverageScore { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("useOfficialScore")]
+        public bool UseOfficialScore { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("rightSideDisplay")]
+        [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<RightSideDisplay>))]
+        public RightSideDisplay RightSideDisplay { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("rightSideHtmlBlock")]
+        public string RightSideHtmlBlock { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("rightSideEmbeddedUrl")]
+        public string RightSideEmbeddedUrl { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("severityLevels")]
+        public System.Collections.Generic.ICollection<SeverityLevel> SeverityLevels { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("id")]
+        public System.Guid Id { get; set; }
+
+        /// <summary>
+        /// New categories of the new model, each with its new options. They name no IDs and no parents, so a
+        /// <br/>create can only add rows to the model it creates.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonPropertyName("scoringCategories")]
+        public System.Collections.Generic.ICollection<CreateScoringCategoryRequest> ScoringCategories { get; set; }
+
+    }
+
+    /// <summary>
+    /// An option created with its category. It has no ID and no ScoringCategoryId: it is a new row of the category
+    /// <br/>it is sent in, and the server gives it its ID.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class CreateScoringOptionRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("displayOrder")]
+        public int DisplayOrder { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("description")]
+        public string Description { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("isModifier")]
+        public bool IsModifier { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("value")]
+        public double Value { get; set; }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class CreateTeamRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("name")]
+        public string Name { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("shortName")]
+        public string ShortName { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("teamTypeId")]
+        public System.Guid TeamTypeId { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("hideScoresheet")]
+        public bool HideScoresheet { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("id")]
+        public System.Guid Id { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("evaluationId")]
+        public System.Guid? EvaluationId { get; set; }
 
     }
 
@@ -5019,6 +5218,13 @@ namespace Cite.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("calculationEquation")]
         public string CalculationEquation { get; set; }
 
+        /// <summary>
+        /// The category has a calculation equation, so it is scored. Read only: set from the equation
+        /// <br/>before it is redacted, so callers who cannot see the equation can still tell scored categories apart.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonPropertyName("isScored")]
+        public bool IsScored { get; set; }
+
         [System.Text.Json.Serialization.JsonPropertyName("isModifierRequired")]
         public bool IsModifierRequired { get; set; }
 
@@ -5121,6 +5327,9 @@ namespace Cite.Api.Client
         [System.Text.Json.Serialization.JsonPropertyName("scoringModelPermissions")]
         // TODO(system.text.json): Add ItemConverterType with enum converter when supported
         public System.Collections.Generic.ICollection<ScoringModelPermission> ScoringModelPermissions { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("severityLevels")]
+        public System.Collections.Generic.ICollection<SeverityLevel> SeverityLevels { get; set; }
 
     }
 
@@ -5255,6 +5464,27 @@ namespace Cite.Api.Client
 
         [System.Runtime.Serialization.EnumMember(Value = @"Level2")]
         Level2 = 2,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SeverityLevel
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("name")]
+        [System.ComponentModel.DataAnnotations.Required]
+        public string Name { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("minimumScore")]
+        public double MinimumScore { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("color")]
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.RegularExpression(@"^#[0-9a-fA-F]{6}$")]
+        public string Color { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("description")]
+        public string Description { get; set; }
 
     }
 
@@ -5560,7 +5790,7 @@ namespace Cite.Api.Client
         public System.Guid? UserId { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("roleId")]
-        public System.Guid? RoleId { get; set; }
+        public System.Guid RoleId { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("role")]
         public TeamRole Role { get; set; }
@@ -6234,6 +6464,286 @@ namespace Cite.Api.Client
 
         [System.Text.Json.Serialization.JsonPropertyName("count")]
         public string Count { get; set; }
+
+    }
+
+    /// <summary>
+    /// Fields editable on an existing action. It has no evaluation or team, so an edit cannot move the action. Whether it is checked changes only through check and uncheck.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateActionRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("moveNumber")]
+        public int MoveNumber { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("injectNumber")]
+        public int InjectNumber { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("actionNumber")]
+        public int ActionNumber { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("description")]
+        public string Description { get; set; }
+
+    }
+
+    /// <summary>
+    /// The only field editable on an existing duty. It has no evaluation or team, so an edit cannot move the duty.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateDutyRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("name")]
+        public string Name { get; set; }
+
+    }
+
+    /// <summary>
+    /// Fields editable on an existing evaluation membership. It has no EvaluationId, so a request
+    /// <br/>cannot name a different evaluation than the one the membership belongs to.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateEvaluationMembershipRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("roleId")]
+        public System.Guid RoleId { get; set; }
+
+    }
+
+    /// <summary>
+    /// Fields editable on an existing evaluation. It has no ScoringModelId, so an edit cannot point the
+    /// <br/>evaluation at another evaluation's scoring model, and no teams, moves or submissions.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateEvaluationRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("description")]
+        public string Description { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("status")]
+        [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<ItemStatus>))]
+        public ItemStatus Status { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("currentMoveNumber")]
+        public int CurrentMoveNumber { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("situationTime")]
+        public System.DateTimeOffset SituationTime { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("situationDescription")]
+        public string SituationDescription { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("galleryExhibitId")]
+        public System.Guid? GalleryExhibitId { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("showAdvanceButton")]
+        public bool ShowAdvanceButton { get; set; }
+
+    }
+
+    /// <summary>
+    /// Fields editable on an existing move. It has no EvaluationId, so an edit cannot move the move to another evaluation.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateMoveRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("description")]
+        public string Description { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("moveNumber")]
+        public int MoveNumber { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("situationTime")]
+        public System.DateTimeOffset SituationTime { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("situationDescription")]
+        public string SituationDescription { get; set; }
+
+    }
+
+    /// <summary>
+    /// Fields editable on an existing scoring category. It has no ScoringModelId and no options, so an edit cannot move the category or rewrite options.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateScoringCategoryRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("displayOrder")]
+        public int DisplayOrder { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("description")]
+        public string Description { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("calculationEquation")]
+        public string CalculationEquation { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("isModifierRequired")]
+        public bool IsModifierRequired { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("scoringWeight")]
+        public double ScoringWeight { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("moveNumberFirstDisplay")]
+        public int MoveNumberFirstDisplay { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("moveNumberLastDisplay")]
+        public int MoveNumberLastDisplay { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("scoringOptionSelection")]
+        [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<ScoringOptionSelection>))]
+        public ScoringOptionSelection ScoringOptionSelection { get; set; }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateScoringModelRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("description")]
+        public string Description { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("calculationEquation")]
+        public string CalculationEquation { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("status")]
+        [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<ItemStatus>))]
+        public ItemStatus Status { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("hideScoresOnScoreSheet")]
+        public bool HideScoresOnScoreSheet { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("displayCommentTextBoxes")]
+        public bool DisplayCommentTextBoxes { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("displayScoringModelByMoveNumber")]
+        public bool DisplayScoringModelByMoveNumber { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("showPastSituationDescriptions")]
+        public bool ShowPastSituationDescriptions { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("useSubmit")]
+        public bool UseSubmit { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("useUserScore")]
+        public bool UseUserScore { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("useTeamScore")]
+        public bool UseTeamScore { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("useTeamAverageScore")]
+        public bool UseTeamAverageScore { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("useTypeAverageScore")]
+        public bool UseTypeAverageScore { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("useOfficialScore")]
+        public bool UseOfficialScore { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("rightSideDisplay")]
+        [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<RightSideDisplay>))]
+        public RightSideDisplay RightSideDisplay { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("rightSideHtmlBlock")]
+        public string RightSideHtmlBlock { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("rightSideEmbeddedUrl")]
+        public string RightSideEmbeddedUrl { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("severityLevels")]
+        public System.Collections.Generic.ICollection<SeverityLevel> SeverityLevels { get; set; }
+
+    }
+
+    /// <summary>
+    /// Fields editable on an existing scoring option. It has no ScoringCategoryId, so an edit cannot move the option to another category.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateScoringOptionRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("displayOrder")]
+        public int DisplayOrder { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("description")]
+        public string Description { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("isModifier")]
+        public bool IsModifier { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("value")]
+        public double Value { get; set; }
+
+    }
+
+    /// <summary>
+    /// Fields editable on an existing submission category: none. The score is computed from the selected options, and the category cannot move to another submission. The type is kept so the endpoint stays.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateSubmissionCategoryRequest
+    {
+
+    }
+
+    /// <summary>
+    /// The only field editable on an existing submission comment. It has no SubmissionOptionId, so a
+    /// <br/>request cannot move the comment to another option or submission.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateSubmissionCommentRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("comment")]
+        public string Comment { get; set; }
+
+    }
+
+    /// <summary>
+    /// The only field editable on an existing submission option. It is applied as a selection, so the category's exclusivity and the submission's score are kept, and is required, so a request that leaves it out cannot clear the category.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateSubmissionOptionRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("isSelected")]
+        public bool IsSelected { get; set; }
+
+    }
+
+    /// <summary>
+    /// The only field a caller can change on an existing submission. The score, the owner and the
+    /// <br/>scoresheet are kept by the server, so a request cannot set them or move the submission.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateSubmissionRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("status")]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<ItemStatus>))]
+        public ItemStatus Status { get; set; }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UpdateTeamRequest
+    {
+
+        [System.Text.Json.Serialization.JsonPropertyName("name")]
+        public string Name { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("shortName")]
+        public string ShortName { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("teamTypeId")]
+        public System.Guid TeamTypeId { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("hideScoresheet")]
+        public bool HideScoresheet { get; set; }
 
     }
 

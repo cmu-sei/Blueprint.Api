@@ -48,14 +48,16 @@ namespace Blueprint.Api.Controllers
         /// <summary>
         /// Gets a specific ProficiencyScale by id
         /// </summary>
+        /// <remarks>
+        /// Readable by any authenticated user, like a single competency framework: the Assessor View loads its
+        /// framework's default scale to offer the rating levels, and an Evaluator rarely has
+        /// ViewCompetencyFrameworks. The list of every scale still wants it.
+        /// </remarks>
         [HttpGet("proficiencyScales/{id}")]
         [ProducesResponseType(typeof(ProficiencyScale), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "getProficiencyScale")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewCompetencyFrameworks], ct))
-                throw new ForbiddenException();
-
             var item = await _proficiencyScaleService.GetAsync(id, ct);
 
             if (item == null)

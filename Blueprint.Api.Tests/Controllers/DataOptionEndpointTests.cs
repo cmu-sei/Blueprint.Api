@@ -116,7 +116,8 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
     /// <remarks>
     /// A team member holding no MSEL role at all satisfies <c>MselViewRequirement</c>, which is the
-    /// loosest of the read paths in the graph and the one the exercise participants themselves use.
+    /// loosest of the read paths in the graph and the one the exercise participants themselves use. Such a
+    /// participant is sent only the options of fields on the Exercise View, so this field is on it.
     /// </remarks>
     [Fact]
     public async Task GetByMsel_ForABareTeamMember_Is200()
@@ -128,6 +129,7 @@ public class DataOptionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         await Seed(team);
 
         var field = TestData.DataField(mselId: msel.Id);
+        field.OnExerciseView = true;
         await Seed(field);
         await Seed(TestData.DataOption(field.Id, "visible"));
 

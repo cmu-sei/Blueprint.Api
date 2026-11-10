@@ -60,13 +60,16 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), mselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
+            // a participant is sent only the events the Exercise View shows
+            var isLimited = await MselParticipantScope.IsLimitedAsync(_user.GetId(), mselId, hasSystemPermission, _context);
             var scenarioEvents = await _context.ScenarioEvents
-                .Where(i => i.MselId == mselId)
+                .Where(i => i.MselId == mselId && (!isLimited || !i.IsHidden))
                 .Include(e => e.SteamfitterTask)
                 .OrderBy(se => se.DeltaSeconds)
                 .ThenBy(se => se.GroupOrder)
                 .ToListAsync(ct);
-            return _mapper.Map<IEnumerable<ScenarioEvent>>(scenarioEvents);
+            var list = _mapper.Map<IEnumerable<ScenarioEvent>>(scenarioEvents);
+            return isLimited ? list.Select(MselParticipantScope.Trim).ToList() : list;
         }
 
         public async Task<ViewModels.ScenarioEvent> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -81,6 +84,20 @@ namespace Blueprint.Api.Services
 
             if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
+
+            // a participant is shown neither a hidden event nor the cells of a Data Field kept off the Exercise View
+            if (await MselParticipantScope.IsLimitedAsync(_user.GetId(), item.MselId, hasSystemPermission, _context))
+            {
+                if (!MselParticipantScope.Shows(item))
+                    throw new ForbiddenException();
+                var shownFieldIds = await _context.DataFields
+                    .Where(df => df.MselId == item.MselId && df.OnExerciseView)
+                    .Select(df => df.Id)
+                    .ToListAsync(ct);
+                var scenarioEvent = _mapper.Map<ViewModels.ScenarioEvent>(item);
+                scenarioEvent.DataValues = scenarioEvent.DataValues.Where(dv => shownFieldIds.Contains(dv.DataFieldId)).ToList();
+                return MselParticipantScope.Trim(scenarioEvent);
+            }
 
             return _mapper.Map<ViewModels.ScenarioEvent>(item);
         }

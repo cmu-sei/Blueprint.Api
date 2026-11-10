@@ -5,6 +5,7 @@ using Blueprint.Api.Infrastructure.Options;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using IdentityModel.Client;
 
@@ -41,7 +42,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             }
         }
 
-        public static async Task<TokenResponse> RequestTokenAsync(ResourceOwnerAuthorizationOptions authorizationOptions, HttpClient httpClient)
+        public static async Task<TokenResponse> RequestTokenAsync(ResourceOwnerAuthorizationOptions authorizationOptions, HttpClient httpClient, CancellationToken ct = default)
         {
             var disco = await httpClient.GetDiscoveryDocumentAsync(
                 new DiscoveryDocumentRequest
@@ -52,10 +53,13 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         ValidateIssuerName = authorizationOptions.ValidateDiscoveryDocument,
                         ValidateEndpoints = authorizationOptions.ValidateDiscoveryDocument,
                     },
-                }
+                },
+                ct
             );
 
-            if (disco.IsError) throw new Exception(disco.Error);
+            // IdentityModel turns a transport failure, a timeout included, into an error response; keep it as
+            // the inner exception so a caller can tell a timeout from a refusal
+            if (disco.IsError) throw new Exception(disco.Error, disco.Exception);
 
             PasswordTokenRequest request = new PasswordTokenRequest
             {
@@ -67,7 +71,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 UserName = authorizationOptions.UserName
             };
 
-            return await httpClient.RequestPasswordTokenAsync(request);
+            return await httpClient.RequestPasswordTokenAsync(request, ct);
         }
 
     }

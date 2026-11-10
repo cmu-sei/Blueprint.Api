@@ -17,11 +17,13 @@ namespace Blueprint.Api.Controllers
     public class MselScoringModelController : BaseController
     {
         private readonly IMselScoringModelService _mselScoringModelService;
+        private readonly IMselService _mselService;
         private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public MselScoringModelController(IMselScoringModelService mselScoringModelService, IBlueprintAuthorizationService authorizationService)
+        public MselScoringModelController(IMselScoringModelService mselScoringModelService, IMselService mselService, IBlueprintAuthorizationService authorizationService)
         {
             _mselScoringModelService = mselScoringModelService;
+            _mselService = mselService;
             _authorizationService = authorizationService;
         }
 
@@ -51,7 +53,8 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Stores the scoring model as the Msel's own, in place of any it had, and stops the Msel linking a CITE
-        /// scoring model. Categories and options are kept in the order sent. Not while the Msel is pushed.
+        /// scoring model. Categories and options are kept in the order sent. Open to EditMsels, the Msel's owner and
+        /// its editors. Not while the Msel is pushed.
         /// </remarks>
         /// <param name="id">The id of the Msel</param>
         /// <param name="scoringModel">The scoring model</param>
@@ -105,6 +108,27 @@ namespace Blueprint.Api.Controllers
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
             var stored = await _mselScoringModelService.CopyFromCiteAsync(id, scoringModelId, hasSystemPermission, ct);
             return Ok(stored);
+        }
+
+        /// <summary>
+        /// Links a CITE scoring model to a Msel
+        /// </summary>
+        /// <remarks>
+        /// Sets the CITE scoring model the push builds the Msel's evaluation from, or clears it when none is sent.
+        /// The caller must be able to view the model in full in CITE. Open to EditMsels, the Msel's owner and its
+        /// editors, as its own scoring model is. Not while the Msel is pushed, nor while it authors its own model.
+        /// </remarks>
+        /// <param name="id">The id of the Msel</param>
+        /// <param name="link">The CITE scoring model to link</param>
+        /// <param name="ct"></param>
+        [HttpPut("msels/{id}/scoringmodel/link")]
+        [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "linkMselScoringModel")]
+        public async Task<IActionResult> Link(Guid id, [FromBody] MselScoringModelLink link, CancellationToken ct)
+        {
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            await _mselScoringModelService.LinkAsync(id, link.CiteScoringModelId, hasSystemPermission, ct);
+            return Ok(await _mselService.GetAsync(id, true, ct));
         }
 
         /// <summary>

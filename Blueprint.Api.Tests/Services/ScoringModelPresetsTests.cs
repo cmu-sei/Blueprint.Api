@@ -71,7 +71,7 @@ public class ScoringModelPresetsTests
         Assert.Equal(display.ToString(), cite.RightSideDisplay.ToString());
         Assert.Equal(selection.ToString(), cite.ScoringCategories.First().ScoringOptionSelection.ToString());
         Assert.Equal(CiteClient.ItemStatus.Active, cite.Status);
-        var back = CiteScoringModelConverter.FromCite(cite);
+        var back = CiteScoringModelConverter.FromCite(AsCreatedInCite(cite));
         Assert.Equal(display, back.RightSideDisplay);
         Assert.Equal(selection, back.Categories.First().ScoringOptionSelection);
     }
@@ -82,7 +82,7 @@ public class ScoringModelPresetsTests
     {
         foreach (var preset in new[] { ScoringModelPresets.MissionImpact(), ScoringModelPresets.Likelihood(), ScoringModelPresets.Nciss() })
         {
-            var back = CiteScoringModelConverter.FromCite(CiteScoringModelConverter.ToCite(preset));
+            var back = CiteScoringModelConverter.FromCite(AsCreatedInCite(CiteScoringModelConverter.ToCite(preset)));
 
             Assert.Equal(preset.Description, back.Description);
             Assert.Equal(preset.CalculationEquation, back.CalculationEquation);
@@ -101,6 +101,10 @@ public class ScoringModelPresetsTests
 
         Assert.Empty(back.Categories);
     }
+
+    // CITE answers a create with the model it stored, the request's fields under the same names
+    private static CiteClient.ScoringModel AsCreatedInCite(CiteClient.CreateScoringModelRequest request) =>
+        System.Text.Json.JsonSerializer.Deserialize<CiteClient.ScoringModel>(System.Text.Json.JsonSerializer.Serialize(request));
 
     private static string[] QuestionsHeadings(int count) => Enumerable.Repeat(ScoringModelPresets.QuestionsHeading, count).ToArray();
 }

@@ -14,7 +14,7 @@ namespace Blueprint.Api.Data.Models
 {
     // A CITE scoring model the MSEL authors itself. The fields are CITE's ScoringModel, field for field;
     // the push creates it in CITE for the MSEL's evaluation. A MSEL has at most one.
-    public class MselScoringModelEntity : BaseEntity
+    public class MselScoringModelEntity : BaseEntity, IScoringModelFields
     {
         [Key]
         public Guid MselId { get; set; }
@@ -39,7 +39,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<MselScoringCategoryEntity> Categories { get; set; } = new HashSet<MselScoringCategoryEntity>();
     }
 
-    public class MselScoringCategoryEntity : BaseEntity
+    public class MselScoringCategoryEntity : BaseEntity, IScoringCategoryFields
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -56,7 +56,7 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<MselScoringOptionEntity> Options { get; set; } = new HashSet<MselScoringOptionEntity>();
     }
 
-    public class MselScoringOptionEntity : BaseEntity
+    public class MselScoringOptionEntity : BaseEntity, IScoringOptionFields
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]

@@ -167,6 +167,35 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.False(copy.IsTemplate);
     }
 
+    /// <summary>A copy, and so an event launched from a template, hides names from its assessors as the original does.</summary>
+    [Fact]
+    public async Task Copy_KeepsHidingNamesOnTheAssessorView()
+    {
+        var msel = TestData.Msel();
+        msel.HideNamesOnAssessorView = true;
+        await Seed(msel);
+        var actor = await Copier().SeedAsync();
+
+        var copy = await Copy(Client(actor), msel.Id);
+
+        Assert.True(copy.HideNamesOnAssessorView);
+    }
+
+    /// <summary>A copy, and so an event launched from a template, starts its Steamfitter scenario as the original does.</summary>
+    [Fact]
+    public async Task Copy_KeepsWhenTheSteamfitterScenarioStarts()
+    {
+        var msel = TestData.Msel();
+        msel.UseSteamfitter = true;
+        msel.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.OnPush;
+        await Seed(msel);
+        var actor = await Copier().SeedAsync();
+
+        var copy = await Copy(Client(actor), msel.Id);
+
+        Assert.Equal(SteamfitterScenarioStartMode.OnPush, copy.SteamfitterScenarioStartMode);
+    }
+
     /// <summary>
     /// The copy is not deployed anywhere, so every pointer at a thing in another application is dropped.
     /// Keeping one would make two MSELs claim the same Player view, and tearing either down would take
@@ -592,6 +621,25 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         var applicationTeam = Assert.Single(application.PlayerApplicationTeams);
         Assert.Equal(newTeamId, applicationTeam.TeamId);
         Assert.Equal(application.Id, applicationTeam.PlayerApplicationId);
+    }
+
+    /// <summary>The copy takes the MSEL's applications only; the system-wide templates stay where they are,
+    /// one each.</summary>
+    [Fact]
+    public async Task Copy_LeavesThePlayerApplicationTemplatesOutAndAlone()
+    {
+        var graph = await SeedGraph();
+        var template = TestData.PlayerApplicationTemplate();
+        await Seed(template);
+        var actor = await Copier().SeedAsync();
+
+        var copy = await Copy(Client(actor), graph.Msel.Id);
+
+        await using var db = NewContext();
+        var copied = await db.PlayerApplications.Where(x => x.MselId == copy.Id).ToListAsync(Ct);
+        Assert.False(Assert.Single(copied).IsTemplate);
+        var templates = await db.PlayerApplications.Where(x => x.MselId == null).ToListAsync(Ct);
+        Assert.Equal(template.Id, Assert.Single(templates).Id);
     }
 
     [Fact]

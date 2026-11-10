@@ -297,6 +297,22 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
         Assert.DoesNotContain("Pushing Exhibit Scenario to Gallery", Statuses(harness, msel.Id));
     }
 
+    /// <summary>The push sends the MSEL's own applications. A template names no MSEL, so it is never one of
+    /// them and never reaches Player.</summary>
+    [Fact]
+    public async Task Push_SendsTheMselsApplicationsAndNoTemplate()
+    {
+        var msel = await SeedPushableMsel();
+        await Seed(TestData.PlayerApplicationTemplate("A template"));
+        var harness = Harness();
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var application = Assert.Single(harness.Handler.Sent, x => x.Path.EndsWith("/applications"));
+        Assert.Equal("Console", Body(application.Body)["name"].GetString());
+    }
+
     /// <summary>A MSEL team named Admin takes the place of Player's own: the view is created without one, and
     /// that team alone gets the role Player gives its Admin team.</summary>
     [Fact]
@@ -528,8 +544,224 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
     }
 
     // ---------------------------------------------------------------------------------------------
+    // A MSEL's own scoring model
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A MSEL with its own scoring model creates it in CITE, makes the evaluation from it, then deletes it: CITE
+    /// copied it into the evaluation, and the pull deletes that copy with the evaluation.
+    /// </summary>
+    [Fact]
+    public async Task Push_OfAMselWithItsOwnScoringModel_CreatesItForTheEvaluationThenDeletesIt()
+    {
+        var msel = await SeedPushableMsel(m => m.CiteScoringModelId = null);
+        await Seed(TestData.MselScoringModel(msel.Id, "Harbor Questions"));
+        var harness = Harness(ScoringModels);
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var cite = harness.Handler.Sent.Where(x => x.Path.StartsWith("cite/api/scoringmodels") || x.Path == "cite/api/evaluations").ToList();
+        Assert.Equal(
+            [
+                (System.Net.Http.HttpMethod.Post, "cite/api/scoringmodels"),
+                (System.Net.Http.HttpMethod.Post, "cite/api/evaluations"),
+                (System.Net.Http.HttpMethod.Delete, $"cite/api/scoringmodels/{UploadedScoringModelId}")
+            ],
+            cite.Select(x => (x.Method, x.Path)));
+        Assert.Equal("Harbor Questions", Body(cite[0].Body)["description"].GetString());
+        Assert.Equal(UploadedScoringModelId.ToString(), Body(cite[1].Body)["scoringModelId"].GetString());
+        Assert.Contains("Pushing Scoring Model to CITE", Statuses(harness, msel.Id));
+    }
+
+    /// <summary>A linked model is pushed as before: nothing is created in CITE or deleted from it.</summary>
+    [Fact]
+    public async Task Push_OfAMselLinkingACiteScoringModel_CreatesNoScoringModel()
+    {
+        var msel = await SeedPushableMsel();
+        var harness = Harness(ScoringModels);
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.DoesNotContain(harness.Handler.Paths, x => x.StartsWith("cite/api/scoringmodels"));
+        var evaluation = harness.Handler.Sent.Single(x => x.Path == "cite/api/evaluations");
+        Assert.Equal(msel.CiteScoringModelId.ToString(), Body(evaluation.Body)["scoringModelId"].GetString());
+        Assert.DoesNotContain("Pushing Scoring Model to CITE", Statuses(harness, msel.Id));
+    }
+
+    /// <summary>A model CITE will not delete is left there unused, which does not fail the push.</summary>
+    [Fact]
+    public async Task Push_WhenCiteRefusesToDeleteTheModel_StillDeploys()
+    {
+        var msel = await SeedPushableMsel(m => m.CiteScoringModelId = null);
+        await Seed(TestData.MselScoringModel(msel.Id));
+        var harness = Harness(x => ScoringModels(x.Answers($"DELETE cite/api/scoringmodels/{UploadedScoringModelId}", HttpStatusCode.Forbidden)));
+
+        await harness.PushAsync(msel.Id);
+
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+        Assert.Equal(MselItemStatus.Deployed, deployed.Status);
+    }
+
+    /// <summary>An evaluation CITE refuses fails the push, and the model made for it is deleted all the same.</summary>
+    [Fact]
+    public async Task Push_WhenTheEvaluationFails_DeletesTheModelMadeForIt()
+    {
+        var msel = await SeedPushableMsel(m => m.CiteScoringModelId = null);
+        await Seed(TestData.MselScoringModel(msel.Id));
+        var harness = Harness(x => ScoringModels(x.AnswersJson("POST cite/api/evaluations", "no", HttpStatusCode.InternalServerError)));
+
+        await harness.PushAsync(msel.Id);
+
+        var failed = await harness.WaitForError(msel.Id, Ct);
+        Assert.StartsWith("ERROR: CITE - begin processing failed", failed.IntegrationStatus);
+        Assert.Contains(harness.Handler.Sent, x => x.Method == System.Net.Http.HttpMethod.Delete && x.Path == $"cite/api/scoringmodels/{UploadedScoringModelId}");
+    }
+
+    /// <summary>A model CITE refuses to create fails the push before an evaluation is asked for.</summary>
+    [Fact]
+    public async Task Push_WhenCiteRefusesTheModel_CreatesNoEvaluation()
+    {
+        var msel = await SeedPushableMsel(m => m.CiteScoringModelId = null);
+        await Seed(TestData.MselScoringModel(msel.Id));
+        var harness = Harness(x => x.AnswersJson("POST cite/api/scoringmodels", "no", HttpStatusCode.Forbidden));
+
+        await harness.PushAsync(msel.Id);
+
+        await harness.WaitForError(msel.Id, Ct);
+        Assert.DoesNotContain(harness.Handler.Sent, x => x.Method != System.Net.Http.HttpMethod.Get && x.Path == "cite/api/evaluations");
+    }
+
+    private static readonly Guid UploadedScoringModelId = Guid.Parse("12121212-1212-1212-1212-121212121212");
+
+    /// <summary>CITE creating a scoring model, and deleting it.</summary>
+    private static SiblingApiHandler ScoringModels(SiblingApiHandler handler) =>
+        handler
+            .AnswersJson("POST cite/api/scoringmodels", $$"""{"id":"{{UploadedScoringModelId}}","description":"m"}""", HttpStatusCode.Created)
+            .Answers($"DELETE cite/api/scoringmodels/{UploadedScoringModelId}", HttpStatusCode.NoContent);
+    // ---------------------------------------------------------------------------------------------
+    // Starting the Steamfitter scenario
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>A MSEL that does not ask for it leaves the scenario for a facilitator to start, as every
+    /// push did before the setting existed.</summary>
+    [Fact]
+    public async Task Push_OfAScenarioStartedManually_NeitherReadsNorStartsIt()
+    {
+        var msel = await SeedPushableMsel();
+        var harness = Harness(Scenario("ready"));
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.DoesNotContain(harness.Handler.Sent, IsAScenarioRead);
+        Assert.DoesNotContain(harness.Handler.Sent, IsAStart);
+    }
+
+    /// <remarks>
+    /// Last, after the Player applications: the scenario then starts only once everything a facilitator
+    /// needs exists, and a Caster retry that finishes the push reaches the same step.
+    /// </remarks>
+    [Fact]
+    public async Task Push_ToStartOnThePush_StartsTheScenarioAsItsLastStep()
+    {
+        var msel = await SeedPushableMsel(x => x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.OnPush);
+        var harness = Harness(Scenario("ready"));
+
+        await harness.PushAsync(msel.Id);
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+
+        var last = harness.Handler.Sent.Last(x => !x.Path.StartsWith("realms/"));
+        Assert.Equal(System.Net.Http.HttpMethod.Put, last.Method);
+        Assert.Equal($"steamfitter/api/scenarios/{deployed.SteamfitterScenarioId}/start", last.Path);
+        Assert.Equal("Starting Scenario in Steamfitter", Statuses(harness, msel.Id).Last());
+        Assert.Null(deployed.IntegrationStatus);
+    }
+
+    [Fact]
+    public async Task Push_ToStartAtAStartTimeStillToCome_LeavesTheScenarioReady()
+    {
+        var msel = await SeedPushableMsel(x =>
+        {
+            x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.AtStartTime;
+            x.StartTime = DateTime.UtcNow.AddHours(1);
+        });
+        var harness = Harness(Scenario("ready"));
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.DoesNotContain(harness.Handler.Sent, IsAStart);
+    }
+
+    /// <summary>A start time already past, as a launch from an invitation always has, starts the scenario
+    /// with the push rather than waiting for <c>SteamfitterStartService</c>.</summary>
+    [Fact]
+    public async Task Push_ToStartAtAStartTimeAlreadyPast_StartsTheScenario()
+    {
+        var msel = await SeedPushableMsel(x =>
+        {
+            x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.AtStartTime;
+            x.StartTime = DateTime.UtcNow.AddMinutes(-5);
+        });
+        var harness = Harness(Scenario("ready"));
+
+        await harness.PushAsync(msel.Id);
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.Contains(harness.Handler.Sent, x => IsAStart(x) && x.Path.Contains(deployed.SteamfitterScenarioId.ToString()));
+    }
+
+    /// <summary>Starting a scenario again would reset its start date, so one already running is left be.</summary>
+    [Fact]
+    public async Task Push_ToStartOnThePush_OfAScenarioAlreadyActive_DoesNotStartItAgain()
+    {
+        var msel = await SeedPushableMsel(x => x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.OnPush);
+        var harness = Harness(Scenario("active"));
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.Contains(harness.Handler.Sent, IsAScenarioRead);
+        Assert.DoesNotContain(harness.Handler.Sent, IsAStart);
+    }
+
+    /// <remarks>
+    /// Everything was created, and a facilitator can still start the scenario in Steamfitter, so the push
+    /// finishes. The failure is announced as it happens and then cleared like any other status: a status
+    /// left on a deployed MSEL would hold the MSEL Info page and the launch page on it.
+    /// </remarks>
+    [Fact]
+    public async Task Push_WhenTheScenarioCannotBeStarted_StillDeploysTheMsel()
+    {
+        var msel = await SeedPushableMsel(x => x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.OnPush);
+        var harness = Harness(x => Scenario("ready")(x.Answers("PUT steamfitter/api/scenarios/*/start", HttpStatusCode.Forbidden)));
+
+        await harness.PushAsync(msel.Id);
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.Equal(MselItemStatus.Deployed, deployed.Status);
+        Assert.Null(deployed.IntegrationStatus);
+        Assert.Contains(Statuses(harness, msel.Id), x => x.StartsWith("Steamfitter Scenario was not started - "));
+        Assert.DoesNotContain(Statuses(harness, msel.Id), x => x.StartsWith("ERROR"));
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>Steamfitter answering a read of the pushed scenario with <paramref name="status"/>, and a start.</summary>
+    private static Func<SiblingApiHandler, SiblingApiHandler> Scenario(string status) => x => x
+        .AnswersJson("GET steamfitter/api/scenarios/*", $$"""{"id":"{{StubId}}","name":"s","status":"{{status}}"}""")
+        .AnswersJson("PUT steamfitter/api/scenarios/*/start", $$"""{"id":"{{StubId}}","name":"s","status":"active"}""");
+
+    private static bool IsAScenarioRead(SentRequest x) =>
+        x.Method == System.Net.Http.HttpMethod.Get && x.Path.StartsWith("steamfitter/api/scenarios/");
+
+    private static bool IsAStart(SentRequest x) =>
+        x.Method == System.Net.Http.HttpMethod.Put && x.Path.StartsWith("steamfitter/api/scenarios/") && x.Path.EndsWith("/start");
+
 
     private static readonly Guid StubId = Guid.Parse("99999999-9999-9999-9999-999999999999");
 

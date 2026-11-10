@@ -8,6 +8,9 @@ namespace Blueprint.Api.Infrastructure.Exceptions
     public interface IApiException
     {
         HttpStatusCode GetStatusCode();
+
+        /// <summary>The problem type the error answers with, for a client that handles this problem its own way.</summary>
+        string ProblemType => null;
     }
 }
 

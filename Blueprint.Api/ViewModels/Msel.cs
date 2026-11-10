@@ -34,6 +34,7 @@ namespace Blueprint.Api.ViewModels
         public bool UseSteamfitter { get; set; }
         public Guid? SteamfitterScenarioId { get; set; }
         public IntegrationType SteamfitterIntegrationType { get; set; }
+        public SteamfitterScenarioStartMode SteamfitterScenarioStartMode { get; set; }
         public bool UseCaster { get; set; }
         public Guid? CasterDirectoryId { get; set; }
         public Guid? CasterWorkspaceId { get; set; }
@@ -63,6 +64,7 @@ namespace Blueprint.Api.ViewModels
         public bool ShowMoveOnAssessorView { get; set; }
         public bool ShowGroupOnAssessorView { get; set; }
         public bool ShowIntegrationTargetOnAssessorView { get; set; }
+        public bool HideNamesOnAssessorView { get; set; }
         public virtual ICollection<Move> Moves { get; set; } = new HashSet<Move>();
         public virtual ICollection<DataField> DataFields { get; set; } = new HashSet<DataField>();
         public virtual ICollection<ScenarioEvent> ScenarioEvents { get; set; } = new HashSet<ScenarioEvent>();

@@ -57,13 +57,9 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(teamUserEntity);
-            var teamUser = await _db.TeamUsers.Include(tu => tu.User).SingleOrDefaultAsync(tu => tu.Id == teamUserEntity.Id, cancellationToken);
-            teamUser.Team.Msel = null;  // prevent object cycle
-            teamUser.Team.CiteActions = null;  // prevent object cycle
-            teamUser.Team.CiteDuties = null;  // prevent object cycle
-            teamUser.Team.UserTeamRoles = null;  // prevent object cycle
-            teamUser.Team.TeamUsers = null;  // prevent object cycle
-            teamUser.User.TeamUsers = null;  // prevent object cycle
+            // the view model, not the entity: the entity's navigations reach whatever the request has loaded, a drafted MSEL
+            // with its teams' competency trees, which serializes past SignalR's 2 GB message limit and drops the connection
+            var teamUser = _mapper.Map<ViewModels.TeamUser>(teamUserEntity);
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -124,7 +120,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
 
             foreach (var groupId in groupIds)
             {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.TeamUserDeleted, notification.Entity, cancellationToken));
+                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.TeamUserDeleted, _mapper.Map<ViewModels.TeamUser>(notification.Entity), cancellationToken));
             }
 
             await Task.WhenAll(tasks);

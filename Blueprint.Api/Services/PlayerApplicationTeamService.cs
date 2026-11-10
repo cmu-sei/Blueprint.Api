@@ -71,6 +71,9 @@ namespace Blueprint.Api.Services
         public async Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByPlayerApplicationAsync(Guid playerApplicationId, bool hasSystemPermission, CancellationToken ct)
         {
             var playerApplication = await _context.PlayerApplications.FirstOrDefaultAsync(c => c.Id == playerApplicationId, ct);
+            // a template belongs to no MSEL, so it is on no team
+            if (playerApplication != null && !playerApplication.MselId.HasValue)
+                return new List<PlayerApplicationTeam>();
             if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context)))
             {
                 var mselCheck = await _context.Msels.FindAsync(playerApplication.MselId);

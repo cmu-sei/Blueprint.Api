@@ -994,7 +994,13 @@ namespace Blueprint.Api.Services
             }
         }
 
-        private static Dictionary<Guid, int[]> GetMovesAndGroups(
+        /// <summary>
+        /// Each scenario event's move number and group, as the Steamfitter tasks use them: an event belongs to the
+        /// last move (by number) whose start it has reached, so an event at the start shared by two moves, or past a
+        /// move with no events, lands in the right move. The move is its number, which is what CITE's move change
+        /// uses, not its place in the list. -1 is an event before the first move.
+        /// </summary>
+        public static Dictionary<Guid, int[]> GetMovesAndGroups(
             List<ScenarioEventEntity> sortedScenarioEvents,
             List<MoveEntity> sortedMoves)
         {
@@ -1010,7 +1016,10 @@ namespace Blueprint.Api.Services
                     var scenarioEvent = sortedScenarioEvents[index];
                     if (moveIndex < sortedMoves.Count - 1 && scenarioEvent.DeltaSeconds >= sortedMoves[moveIndex + 1].DeltaSeconds)
                     {
-                        moveIndex++;
+                        while (moveIndex < sortedMoves.Count - 1 && scenarioEvent.DeltaSeconds >= sortedMoves[moveIndex + 1].DeltaSeconds)
+                        {
+                            moveIndex++;
+                        }
                         groupIndex = 0;
                         groupSeconds = scenarioEvent.DeltaSeconds;
                     }
@@ -1019,8 +1028,9 @@ namespace Blueprint.Api.Services
                         groupIndex++;
                         groupSeconds = scenarioEvent.DeltaSeconds;
                     }
-                    var moveNumber = moveIndex < 0 || sortedMoves.Count == 0 ? -1 : sortedMoves[moveIndex].MoveNumber;
-                    movesAndGroups[scenarioEvent.Id] = [moveIndex, groupIndex];
+                    // with no moves every event is in move 0, as before
+                    var moveNumber = sortedMoves.Count == 0 ? 0 : moveIndex < 0 ? -1 : sortedMoves[moveIndex].MoveNumber;
+                    movesAndGroups[scenarioEvent.Id] = [moveNumber, groupIndex];
                 }
             }
             return movesAndGroups;

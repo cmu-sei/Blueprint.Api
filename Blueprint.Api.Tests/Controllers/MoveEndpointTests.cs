@@ -407,9 +407,10 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.NotNull(await Stored(id));
     }
 
-    /// <summary>Create with a move number the MSEL already uses is answered with a 500.</summary>
+    /// <summary>Each move in a MSEL has its own number, so a create with a number the MSEL already uses is
+    /// refused with a 400 naming it, and nothing is stored.</summary>
     [Fact]
-    public async Task Create_WithAMoveNumberTheMselAlreadyUses_Is500()
+    public async Task Create_WithAMoveNumberTheMselAlreadyUses_Is400NamingTheNumber()
     {
         var msel = await SeedMsel();
         await SeedMove(msel, moveNumber: 2);
@@ -417,9 +418,23 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Post(Client(actor), Body(msel.Id, moveNumber: 2));
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
-        Assert.Contains("MoveService.CreateAsync", failure.Detail);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(MoveNumberTaken(2), await Title(response));
+        Assert.Equal(1, await CountOn(msel.Id));
+    }
+
+    /// <summary>Two creates with one number at once: the one that loses the race to the unique index gets
+    /// the same 400 as the check before the save, not a 500.</summary>
+    [Fact]
+    public async Task Create_ThatLosesARaceForTheMoveNumber_Is400NamingTheNumber()
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await WhileAnotherSaveHoldsTheNumber(msel, 2, () => Post(Client(actor), Body(msel.Id, moveNumber: 2)));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(MoveNumberTaken(2), await Title(response));
         Assert.Equal(1, await CountOn(msel.Id));
     }
 
@@ -717,9 +732,9 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal("after", (await Stored(move.Id)).Description);
     }
 
-    // Same case as Create_WithAMoveNumberTheMselAlreadyUses_Is500.
+    // Same case as Create_WithAMoveNumberTheMselAlreadyUses_Is400NamingTheNumber.
     [Fact]
-    public async Task Update_ToAMoveNumberTheMselAlreadyUses_Is500()
+    public async Task Update_ToAMoveNumberTheMselAlreadyUses_Is400NamingTheNumber()
     {
         var msel = await SeedMsel();
         var move = await SeedMove(msel, moveNumber: 1);
@@ -728,10 +743,53 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var response = await Put(Client(actor), move.Id, BodyFor(move) with { MoveNumber = 2 });
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", failure.Title);
-        Assert.Contains("MoveService.UpdateAsync", failure.Detail);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(MoveNumberTaken(2), await Title(response));
         Assert.Equal(1, (await Stored(move.Id)).MoveNumber);
+    }
+
+    // Same case as Create_ThatLosesARaceForTheMoveNumber_Is400NamingTheNumber.
+    [Fact]
+    public async Task Update_ThatLosesARaceForTheMoveNumber_Is400NamingTheNumber()
+    {
+        var msel = await SeedMsel();
+        var move = await SeedMove(msel, moveNumber: 1);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await WhileAnotherSaveHoldsTheNumber(msel, 2, () => Put(Client(actor), move.Id, BodyFor(move) with { MoveNumber = 2 }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(MoveNumberTaken(2), await Title(response));
+        Assert.Equal(1, (await Stored(move.Id)).MoveNumber);
+    }
+
+    /// <summary>A move is not compared with itself, so an edit that keeps its number is fine.</summary>
+    [Fact]
+    public async Task Update_KeepingItsOwnMoveNumber_Is200()
+    {
+        var msel = await SeedMsel();
+        var move = await SeedMove(msel, moveNumber: 2);
+        await SeedMove(msel, moveNumber: 3);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), move.Id, BodyFor(move) with { Description = "after" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("after", (await Stored(move.Id)).Description);
+    }
+
+    [Fact]
+    public async Task Update_ToAMoveNumberAnotherMselUses_Is200()
+    {
+        var msel = await SeedMsel();
+        var move = await SeedMove(msel, moveNumber: 1);
+        await SeedMove(await SeedMsel(), moveNumber: 2);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), move.Id, BodyFor(move) with { MoveNumber = 2 });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, (await Stored(move.Id)).MoveNumber);
     }
 
     [Fact]
@@ -1097,6 +1155,38 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         await using var context = NewContext();
 
         return await context.Moves.CountAsync(x => x.MselId == mselId, Ct);
+    }
+
+    private static string MoveNumberTaken(int moveNumber) =>
+        $"Move {moveNumber} already exists in this MSEL. Each move needs its own number.";
+
+    /// <summary>
+    /// Sends <paramref name="request"/> while another transaction holds an uncommitted move with this number,
+    /// so the request's own check sees no such move and its save waits on the unique index. Once the request
+    /// is waiting, the other transaction commits and the request's save is refused by the index.
+    /// </summary>
+    private async Task<HttpResponseMessage> WhileAnotherSaveHoldsTheNumber(
+        MselEntity msel, int moveNumber, Func<Task<HttpResponseMessage>> request)
+    {
+        await using var holder = NewContext();
+        await using var transaction = await holder.Database.BeginTransactionAsync(Ct);
+        holder.Moves.Add(TestData.Move(msel.Id, moveNumber));
+        await holder.SaveChangesAsync(Ct);
+
+        var sent = request();
+        await WaitUntil(async () => sent.IsCompleted || await ASaveIsWaitingOnALock(), "the request's save to wait on the held move number");
+        await transaction.CommitAsync(Ct);
+
+        return await sent;
+    }
+
+    private async Task<bool> ASaveIsWaitingOnALock()
+    {
+        await using var context = NewContext();
+
+        return await context.Database
+            .SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'")
+            .SingleAsync(Ct) > 0;
     }
 
     private static StringContent EmptyJson() =>

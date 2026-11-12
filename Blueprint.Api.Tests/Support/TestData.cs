@@ -236,9 +236,9 @@ public static class TestData
     /// <c>DeltaSeconds</c> is what everything orders and groups by; <c>MoveNumber</c> is what CITE, Gallery
     /// and Steamfitter are told. The two are independent and may disagree - a move 2 starting before move 1
     /// is accepted - but they are not both unconstrained: <c>MoveEntityConfiguration</c> declares
-    /// <c>(MselId, MoveNumber)</c> unique, so one MSEL cannot hold two move zeroes and a second one is a
-    /// 500 (see <c>MoveEndpointTests.Create_WithAMoveNumberTheMselAlreadyUses_Is500</c>). Seed distinct
-    /// numbers per MSEL.
+    /// <c>(MselId, MoveNumber)</c> unique, so one MSEL cannot hold two move zeroes; the API refuses a second
+    /// one with a 400 (see <c>MoveEndpointTests.Create_WithAMoveNumberTheMselAlreadyUses_Is400NamingTheNumber</c>)
+    /// and a direct save throws. Seed distinct numbers per MSEL.
     /// </remarks>
     public static MoveEntity Move(
         Guid mselId,

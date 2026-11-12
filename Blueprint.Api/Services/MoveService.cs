@@ -9,6 +9,7 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
@@ -78,8 +79,9 @@ namespace Blueprint.Api.Services
             var moveEntity = move.ToEntity();
             moveEntity.Id = move.Id != Guid.Empty ? move.Id : Guid.NewGuid();
             moveEntity.CreatedBy = _user.GetId();
+            await ValidateMoveNumberAsync(moveEntity.MselId, null, moveEntity.MoveNumber, ct);
             _context.Moves.Add(moveEntity);
-            await _context.SaveChangesAsync(ct);
+            await SaveMoveAsync(moveEntity.MoveNumber, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(moveEntity.MselId, moveEntity.CreatedBy, DateTime.UtcNow, _context, ct);
             var created = await GetAsync(moveEntity.Id, true, ct);
@@ -103,10 +105,12 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
+            if (move.MoveNumber != moveToUpdate.MoveNumber)
+                await ValidateMoveNumberAsync(moveToUpdate.MselId, moveToUpdate.Id, move.MoveNumber, ct);
             move.ApplyTo(moveToUpdate);
             moveToUpdate.ModifiedBy = _user.GetId();
             _context.Moves.Update(moveToUpdate);
-            await _context.SaveChangesAsync(ct);
+            await SaveMoveAsync(moveToUpdate.MoveNumber, ct);
             // update the MSEL modified info
             await ServiceUtilities.SetMselModifiedAsync(moveToUpdate.MselId, moveToUpdate.ModifiedBy, DateTime.UtcNow, _context, ct);
             var updated = await GetAsync(moveToUpdate.Id, true, ct);
@@ -114,6 +118,33 @@ namespace Blueprint.Api.Services
             await _context.Database.CommitTransactionAsync(ct);
 
             return updated;
+        }
+
+        // the unique index on a move's MSEL and number, which a second move with the same number breaks
+        private const string MoveNumberIndex = "IX_moves_msel_id_move_number";
+
+        private static string MoveNumberTaken(int moveNumber) =>
+            $"Move {moveNumber} already exists in this MSEL. Each move needs its own number.";
+
+        // each move in a MSEL has its own number, so a number another of its moves has is refused
+        private async Task ValidateMoveNumberAsync(Guid mselId, Guid? moveId, int moveNumber, CancellationToken ct)
+        {
+            if (await _context.Moves.AnyAsync(m => m.MselId == mselId && m.MoveNumber == moveNumber && m.Id != moveId, ct))
+                throw new BadRequestException(MoveNumberTaken(moveNumber));
+        }
+
+        // a request that took the number after ValidateMoveNumberAsync looked is refused the same way
+        private async Task SaveMoveAsync(int moveNumber, CancellationToken ct)
+        {
+            try
+            {
+                await _context.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+                { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: MoveNumberIndex })
+            {
+                throw new BadRequestException(MoveNumberTaken(moveNumber));
+            }
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)

@@ -1232,7 +1232,7 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     {
         await using var context = NewContext();
 
-        return await new ScenarioEventService(context, null, null, null).GetMovesAndInjects(mselId, Ct);
+        return await new ScenarioEventService(context, null, null).GetMovesAndInjects(mselId, Ct);
     }
 
     private async Task<MoveEntity> Stored(Guid id)

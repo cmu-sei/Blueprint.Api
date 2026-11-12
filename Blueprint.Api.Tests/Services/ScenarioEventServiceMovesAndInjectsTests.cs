@@ -258,7 +258,7 @@ public class ScenarioEventServiceMovesAndInjectsTests(DatabaseFixture fixture) :
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>The service over the test's own context, with <c>null</c> for everything else: the method reads only <c>_context</c>.</summary>
-    private ScenarioEventService Service() => new(Db, null, null, null);
+    private ScenarioEventService Service() => new(Db, null, null);
 
     private async Task<ScenarioEventEntity> SeedEvent(Guid mselId, int deltaSeconds)
     {

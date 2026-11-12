@@ -22,10 +22,9 @@
       Restore-time warnings stay warnings. None of these can be acted on from a project file here, so
       promoting them would only make them invisible by blocking every build:
 
-      - NU1901-NU1904 are the NuGet audit. The one remaining hit is AutoMapper 13, which is pinned
-        deliberately, because version 15+ requires a commercial license; MediatR 12 is pinned for
-        the same reason. Vulnerable transitive packages are raised by the security pins at the end
-        of Directory.Packages.props.
+      - NU1901-NU1904 are the NuGet audit. MediatR 12 is pinned deliberately, because version 13+
+        requires a commercial license. Vulnerable transitive packages are raised by the security pins
+        at the end of Directory.Packages.props.
       - NU1510 names three PackageReferences the framework already provides
         (Microsoft.Extensions.Logging, System.Net.Http, System.Text.RegularExpressions). Removing
         them is a real cleanup, but it changes what the application restores, so it does not belong

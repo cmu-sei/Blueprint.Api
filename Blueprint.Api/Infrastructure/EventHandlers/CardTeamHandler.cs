@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
@@ -15,24 +14,22 @@ using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class CardTeamHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly ICardTeamService _CardTeamService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public CardTeamHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICardTeamService CardTeamService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _CardTeamService = CardTeamService;
             _mainHub = mainHub;
         }
@@ -58,7 +55,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = await GetGroups(CardTeamEntity);
-            var CardTeam = _mapper.Map<ViewModels.CardTeam>(CardTeamEntity);
+            var CardTeam = CardTeamEntity.ToCardTeam();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -74,9 +71,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public CardTeamCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICardTeamService CardTeamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CardTeamService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, CardTeamService, mainHub) { }
 
         public async Task Handle(EntityCreated<CardTeamEntity> notification, CancellationToken cancellationToken)
         {
@@ -88,9 +84,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public CardTeamUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICardTeamService CardTeamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CardTeamService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, CardTeamService, mainHub) { }
 
         public async Task Handle(EntityUpdated<CardTeamEntity> notification, CancellationToken cancellationToken)
         {
@@ -106,9 +101,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public CardTeamDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICardTeamService CardTeamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CardTeamService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, CardTeamService, mainHub)
         {
         }
 

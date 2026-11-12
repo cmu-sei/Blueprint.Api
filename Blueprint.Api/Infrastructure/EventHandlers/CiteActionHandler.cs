@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
@@ -15,24 +14,22 @@ using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class CiteActionHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly ICiteActionService _CiteActionService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public CiteActionHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICiteActionService CiteActionService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _CiteActionService = CiteActionService;
             _mainHub = mainHub;
         }
@@ -58,7 +55,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 .Include(ca => ca.Team)
                 .SingleOrDefaultAsync(ca => ca.Id == citeActionEntity.Id, cancellationToken);
             citeActionEntity.Msel = null;
-            var CiteAction = _mapper.Map<ViewModels.CiteAction>(citeActionEntity);
+            var CiteAction = citeActionEntity.ToCiteAction();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -74,9 +71,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public CiteActionCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICiteActionService citeActionService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, citeActionService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, citeActionService, mainHub) { }
 
         public async Task Handle(EntityCreated<CiteActionEntity> notification, CancellationToken cancellationToken)
         {
@@ -88,9 +84,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public CiteActionUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICiteActionService citeActionService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, citeActionService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, citeActionService, mainHub) { }
 
         public async Task Handle(EntityUpdated<CiteActionEntity> notification, CancellationToken cancellationToken)
         {
@@ -106,9 +101,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public CiteActionDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICiteActionService citeActionService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, citeActionService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, citeActionService, mainHub)
         {
         }
 

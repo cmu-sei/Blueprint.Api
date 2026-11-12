@@ -19,7 +19,6 @@ using Blueprint.Api.Infrastructure.EventHandlers;
 using Crucible.Common.EntityEvents.Extensions;
 using Blueprint.Api.Data;
 using Blueprint.Api.Infrastructure.JsonConverters;
-using Blueprint.Api.Infrastructure.Mapping;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Services;
 using System;
@@ -34,7 +33,6 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.JsonWebTokens;
-using AutoMapper.Internal;
 using Crucible.Common.ServiceDefaults;
 
 namespace Blueprint.Api;
@@ -280,12 +278,6 @@ public class Startup
         ApplyPolicies(services);
 
         services.AddTransient<SanitizerInterceptor>();
-        services.AddAutoMapper(cfg =>
-        {
-            cfg.Internal().ForAllPropertyMaps(
-                pm => pm.SourceType != null && Nullable.GetUnderlyingType(pm.SourceType) == pm.DestinationType,
-                (pm, c) => c.MapFrom<object, object, object, object>(new IgnoreNullSourceValues(), pm.SourceMember.Name));
-        }, typeof(Startup));
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Startup>());
         services
             .Configure<ResourceOwnerAuthorizationOptions>(Configuration.GetSection("ResourceOwnerAuthorization"))

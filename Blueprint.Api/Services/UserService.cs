@@ -8,8 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -19,6 +17,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
 using DocumentFormat.OpenXml.Office2010.Excel;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -39,15 +38,13 @@ namespace Blueprint.Api.Services
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
         private readonly IUserClaimsService _userClaimsService;
-        private readonly IMapper _mapper;
         private readonly ILogger<IUserService> _logger;
 
-        public UserService(BlueprintContext context, IPrincipal user, IUserClaimsService userClaimsService, ILogger<IUserService> logger, IMapper mapper)
+        public UserService(BlueprintContext context, IPrincipal user, IUserClaimsService userClaimsService, ILogger<IUserService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
             _userClaimsService = userClaimsService;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -59,13 +56,13 @@ namespace Blueprint.Api.Services
             {
                 return await _context.Users
                     .Where(u => u.Id == _user.GetId())
-                    .ProjectTo<ViewModels.User>(_mapper.ConfigurationProvider, dest => dest.Permissions)
+                    .ProjectToUser()
                     .ToArrayAsync(ct);
             }
             else
             {
                 return await _context.Users
-                    .ProjectTo<ViewModels.User>(_mapper.ConfigurationProvider, dest => dest.Permissions)
+                    .ProjectToUser()
                     .ToArrayAsync(ct);
             }
         }
@@ -76,7 +73,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var item = await _context.Users
-                .ProjectTo<ViewModels.User>(_mapper.ConfigurationProvider, dest => dest.Permissions)
+                .ProjectToUser()
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
             return item;
         }
@@ -106,7 +103,7 @@ namespace Blueprint.Api.Services
                 .Select(tu => tu.User)
                 .ToListAsync(ct);
             var items = unitUsers.Union(teamUsers);
-            return _mapper.Map<IEnumerable<User>>(items);
+            return items.Select(x => x.ToUser()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, bool hasSystemPermission, CancellationToken ct)
@@ -126,7 +123,7 @@ namespace Blueprint.Api.Services
                 .Select(tu => tu.User)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<User>>(items);
+            return items.Select(x => x.ToUser()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.User>> GetByUnitAsync(Guid unitId, CancellationToken ct)
@@ -136,13 +133,13 @@ namespace Blueprint.Api.Services
                 .Select(tu => tu.User)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<User>>(items);
+            return items.Select(x => x.ToUser()).ToList();
         }
 
         public async Task<ViewModels.User> CreateAsync(ViewModels.User user, CancellationToken ct)
         {
             user.CreatedBy = _user.GetId();
-            var userEntity = _mapper.Map<UserEntity>(user);
+            var userEntity = user.ToEntity();
 
             _context.Users.Add(userEntity);
             await _context.SaveChangesAsync(ct);
@@ -164,7 +161,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<User>();
 
             user.ModifiedBy = _user.GetId();
-            _mapper.Map(user, userToUpdate);
+            user.ApplyTo(userToUpdate);
 
             _context.Users.Update(userToUpdate);
             await _context.SaveChangesAsync(ct);

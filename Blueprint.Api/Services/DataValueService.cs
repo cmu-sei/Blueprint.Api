@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
@@ -17,6 +16,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -33,18 +33,15 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly IXApiService _xApiService;
 
         public DataValueService(
             BlueprintContext context,
             IPrincipal user,
-            IMapper mapper,
             IXApiService xApiService)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _xApiService = xApiService;
         }
 
@@ -66,7 +63,7 @@ namespace Blueprint.Api.Services
                     (!isLimited || dv.DataField.OnExerciseView))
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<DataValue>>(dataValueEntities).ToList();;
+            return dataValueEntities.Select(x => x.ToDataValue()).ToList();;
         }
 
         public async Task<ViewModels.DataValue> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -89,7 +86,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            return _mapper.Map<DataValue>(item);
+            return item.ToDataValue();
         }
 
         public async Task<ViewModels.DataValue> CreateAsync(ViewModels.DataValueCreate dataValue, bool hasMselPermission, bool hasDataFieldPermission, CancellationToken ct)
@@ -111,7 +108,7 @@ namespace Blueprint.Api.Services
             if (!await _context.ScenarioEvents.AnyAsync(se => se.Id == dataValue.ScenarioEventId && se.MselId == mselId, ct))
                 throw new EntityNotFoundException<ScenarioEvent>($"ScenarioEvent {dataValue.ScenarioEventId} was not found in MSEL {mselId}.");
 
-            var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
+            var dataValueEntity = dataValue.ToEntity();
             dataValueEntity.Id = dataValue.Id != Guid.Empty ? dataValue.Id : Guid.NewGuid();
             dataValueEntity.CreatedBy = _user.GetId();
 
@@ -158,7 +155,7 @@ namespace Blueprint.Api.Services
             }
 
             var oldValue = dataValueToUpdate.Value;
-            _mapper.Map(dataValue, dataValueToUpdate);
+            dataValue.ApplyTo(dataValueToUpdate);
             dataValueToUpdate.ModifiedBy = _user.GetId();
 
             _context.DataValues.Update(dataValueToUpdate);

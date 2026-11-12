@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -17,6 +16,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -33,14 +33,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<IMselCompetencyService> _logger;
 
-        public MselCompetencyService(BlueprintContext context, IPrincipal user, ILogger<IMselCompetencyService> logger, IMapper mapper)
+        public MselCompetencyService(BlueprintContext context, IPrincipal user, ILogger<IMselCompetencyService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -62,7 +60,7 @@ namespace Blueprint.Api.Services
                 .AsSplitQuery()
                 .ToListAsync(ct);
 
-            var result = _mapper.Map<IEnumerable<MselCompetency>>(items).ToList();
+            var result = items.Select(x => x.ToMselCompetency()).ToList();
 
             // Populate RelatedIdNumbers on each competency
             var idNumberMap = items
@@ -100,7 +98,7 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
-            var result = _mapper.Map<MselCompetency>(item);
+            var result = item.ToMselCompetency();
 
             // Populate RelatedIdNumbers — resolve IDs within same MSEL pool
             var poolItems = await _context.MselCompetencies
@@ -138,7 +136,7 @@ namespace Blueprint.Api.Services
             if (await _context.MselCompetencies.AnyAsync(mc => mc.CompetencyId == competency.Id && mc.MselId == msel.Id, ct))
                 throw new ArgumentException("MSEL Competency already exists.");
 
-            var entity = _mapper.Map<MselCompetencyEntity>(mselCompetency);
+            var entity = mselCompetency.ToEntity();
             entity.Id = entity.Id != Guid.Empty ? entity.Id : Guid.NewGuid();
 
             _context.MselCompetencies.Add(entity);

@@ -7,13 +7,13 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
+using Blueprint.Api.Infrastructure.Mappings;
 using Blueprint.Api.ViewModels;
 using Cite.Api.Client;
 
@@ -37,14 +37,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ICiteApiClient _citeApiClient;
 
-        public MselScoringModelService(BlueprintContext context, IPrincipal user, IMapper mapper, ICiteApiClient citeApiClient)
+        public MselScoringModelService(BlueprintContext context, IPrincipal user, ICiteApiClient citeApiClient)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _citeApiClient = citeApiClient;
         }
 
@@ -59,7 +57,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             var model = await LoadAsync(mselId, ct);
-            return model == null ? null : _mapper.Map<MselScoringModel>(model);
+            return model?.ToMselScoringModel();
         }
 
         public async Task<MselScoringModel> ReplaceAsync(Guid mselId, MselScoringModel scoringModel, bool hasSystemPermission, CancellationToken ct)
@@ -192,7 +190,7 @@ namespace Blueprint.Api.Services
             msel.ModifiedBy = userId;
             await _context.SaveChangesAsync(ct);
 
-            return _mapper.Map<MselScoringModel>(await LoadAsync(msel.Id, ct));
+            return (await LoadAsync(msel.Id, ct))?.ToMselScoringModel();
         }
 
         /// <summary>

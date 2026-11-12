@@ -12,7 +12,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
@@ -21,6 +20,7 @@ using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Player.Api.Client;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -36,7 +36,6 @@ namespace Blueprint.Api.Services
         private readonly IPlayerApiClient _playerApiClient;
         private readonly BlueprintContext _context;
         private readonly IAuthorizationService _authorizationService;
-        private readonly IMapper _mapper;
         private readonly ClaimsPrincipal _user;
         private readonly IHubContext<MainHub> _hubContext;
         private readonly IAddApplicationQueue _addApplicationQueue;
@@ -49,8 +48,7 @@ namespace Blueprint.Api.Services
             IUserClaimsService claimsService,
             BlueprintContext context,
             IHubContext<MainHub> hubContext,
-            IAddApplicationQueue addApplicationQueue,
-            IMapper mapper)
+            IAddApplicationQueue addApplicationQueue)
 
         {
             _playerApiClient = playerApiClient;
@@ -59,7 +57,6 @@ namespace Blueprint.Api.Services
             _hubContext = hubContext;
             _authorizationService = authorizationService;
             _addApplicationQueue = addApplicationQueue;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ApplicationTemplate>> GetApplicationTemplatesAsync(CancellationToken ct)

@@ -185,6 +185,52 @@ public class IntegrationSteamfitterExtensionsTests
             TimeSpan.FromSeconds(1));
     }
 
+    /// <summary>
+    /// A MSEL with no duration has no end. Steamfitter ends an active scenario once its end date passes, so
+    /// an end equal to the start would end it within a minute of being started.
+    /// </summary>
+    [Fact]
+    public async Task CreateScenario_WithNoDuration_SendsAnEndFarPastTheStart()
+    {
+        var start = DateTime.UtcNow.AddDays(7);
+        var msel = Msel();
+        msel.StartTime = start;
+        msel.DurationSeconds = 0;
+
+        var handler = Scenarios();
+
+        await IntegrationSteamfitterExtensions.CreateScenarioAsync(msel, Client(handler), null, Ct);
+
+        var form = Body(Assert.Single(handler.Sent).Body);
+
+        Assert.Equal(start, form["startDate"].GetDateTimeOffset().UtcDateTime, TimeSpan.FromSeconds(1));
+        Assert.Equal(
+            start.AddYears(100),
+            form["endDate"].GetDateTimeOffset().UtcDateTime,
+            TimeSpan.FromSeconds(1));
+    }
+
+    /// <summary>A MSEL with no duration whose start is already past runs from now with no end in sight.</summary>
+    [Fact]
+    public async Task CreateScenario_WithNoDurationAndAStartAlreadyPast_SendsAnEndFarPastNow()
+    {
+        var msel = Msel();
+        msel.StartTime = DateTime.UtcNow.AddDays(-7);
+        msel.DurationSeconds = 0;
+
+        var handler = Scenarios();
+
+        await IntegrationSteamfitterExtensions.CreateScenarioAsync(msel, Client(handler), null, Ct);
+
+        var form = Body(Assert.Single(handler.Sent).Body);
+        var startDate = form["startDate"].GetDateTimeOffset().UtcDateTime;
+
+        Assert.Equal(
+            startDate.AddYears(100),
+            form["endDate"].GetDateTimeOffset().UtcDateTime,
+            TimeSpan.FromSeconds(1));
+    }
+
     [Fact]
     public async Task CreateScenario_ReturnsWhatSteamfitterAnswered()
     {

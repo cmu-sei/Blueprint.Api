@@ -1491,6 +1491,7 @@ namespace Blueprint.Api.Services
             var moves = await _context.Moves
                 .Where(m => m.MselId == mselId)
                 .OrderBy(m => m.DeltaSeconds)
+                .ThenBy(m => m.MoveNumber)
                 .ToListAsync(ct);
 
             // Load cards for GUID-to-name resolution
@@ -2524,6 +2525,9 @@ namespace Blueprint.Api.Services
             }
             if (nameInUse)
                 AddChange(result, "name", $"A MSEL named \"{fileName}\" already exists, so this one was named \"{mselEntity.Name}\".");
+            // a file from before every move had its own start time is imported as it is, and the planner told
+            foreach (var problem in MoveOrder.FindProblems(mselEntity.Moves))
+                AddChange(result, "moves", $"{problem} Each move must start after the move before it; fix the start times on the Moves tab before pushing.");
 
             // Integrations stay as the file had them; pushing creates content in each app that is on.
             if (mselEntity.UsePlayer) AddChange(result, "usePlayer", "Player integration is on.");

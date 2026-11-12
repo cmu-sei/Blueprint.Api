@@ -132,16 +132,20 @@ public class ScenarioEventServiceMovesAndInjectsTests(DatabaseFixture fixture) :
         Assert.Equal(6, answer[inSecond.Id][0]);
     }
 
-    /// <summary>A MSEL with scenario events and no moves throws <c>IndexOutOfRangeException</c>.</summary>
+    /// <summary>A MSEL with scenario events and no moves puts every event in move 0, counting the injects
+    /// by time, as the Steamfitter push does, instead of throwing <c>IndexOutOfRangeException</c>.</summary>
     [Fact]
-    public async Task GetMovesAndInjects_WithNoMoves_Throws()
+    public async Task GetMovesAndInjects_WithNoMoves_PutsEveryEventInMoveZero()
     {
         var msel = TestData.Msel();
         await Seed(msel);
-        await SeedEvent(msel.Id, 0);
+        var first = await SeedEvent(msel.Id, 0);
+        var second = await SeedEvent(msel.Id, 60);
 
-        await Assert.ThrowsAsync<IndexOutOfRangeException>(() =>
-            Service().GetMovesAndInjects(msel.Id, Ct));
+        var answer = await Service().GetMovesAndInjects(msel.Id, Ct);
+
+        Assert.Equal([0, 0], answer[first.Id]);
+        Assert.Equal([0, 1], answer[second.Id]);
     }
 
     /// <summary>An event earlier than the first move is reported in the first move, at inject 0.</summary>
@@ -216,6 +220,41 @@ public class ScenarioEventServiceMovesAndInjectsTests(DatabaseFixture fixture) :
 
         Assert.Equal(2, answer[early.Id][0]);
         Assert.Equal(1, answer[late.Id][0]);
+    }
+
+    /// <summary>
+    /// Two moves sharing a start time: an event at that time is in the higher-numbered move, as Blueprint's own
+    /// event list shows it, whichever order the moves were saved in. Ordering by time alone left the tie to the
+    /// database, so Gallery could get an article as Move 0 that Blueprint listed under Move 1 and show it before
+    /// the exhibit reached Move 1.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetMovesAndInjects_ForMovesSharingAStartTime_PutsTheEventInTheHigherNumberedMove(bool lowerFirst)
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var move0 = TestData.Move(msel.Id, moveNumber: 0, deltaSeconds: 0);
+        var move1 = TestData.Move(msel.Id, moveNumber: 1, deltaSeconds: 0);
+        if (lowerFirst)
+        {
+            await Seed(move0);
+            await Seed(move1);
+        }
+        else
+        {
+            await Seed(move1);
+            await Seed(move0);
+        }
+
+        var atStart = await SeedEvent(msel.Id, 0);
+        var later = await SeedEvent(msel.Id, 60);
+
+        var answer = await Service().GetMovesAndInjects(msel.Id, Ct);
+
+        Assert.Equal([1, 0], answer[atStart.Id]);
+        Assert.Equal([1, 1], answer[later.Id]);
     }
 
     // ---------------------------------------------------------------------------------------------

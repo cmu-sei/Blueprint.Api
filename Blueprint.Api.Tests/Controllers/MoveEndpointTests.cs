@@ -435,6 +435,84 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
+    /// <summary>Every move starts after the move numbered before it, so a new move at an existing move's
+    /// start time is refused with a 400 naming that move, and nothing is stored.</summary>
+    [Fact]
+    public async Task Create_AtAStartTimeAnotherMoveHas_Is400NamingThatMove()
+    {
+        var msel = await SeedMsel();
+        await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        await SeedMove(msel, moveNumber: 1, deltaSeconds: 600);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Post(Client(actor), Body(msel.Id, moveNumber: 2, deltaSeconds: 600));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("Move 2 can't start at the same time as Move 1. Each move must start after the move before it.",
+            await Title(response));
+        Assert.Equal(2, await CountOn(msel.Id));
+    }
+
+    [Fact]
+    public async Task Create_StartingBeforeTheMoveNumberedBeforeIt_Is400NamingThatMove()
+    {
+        var msel = await SeedMsel();
+        await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        await SeedMove(msel, moveNumber: 1, deltaSeconds: 600);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Post(Client(actor), Body(msel.Id, moveNumber: 2, deltaSeconds: 300));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("Move 2 must start after Move 1. Each move must start after the move before it.", await Title(response));
+        Assert.Equal(2, await CountOn(msel.Id));
+    }
+
+    /// <summary>A move added between two others must start between them; one starting at or after the next
+    /// move's start names that next move.</summary>
+    [Theory]
+    [InlineData(600, "Move 1 can't start at the same time as Move 2. Each move must start after the move before it.")]
+    [InlineData(900, "Move 1 must start before Move 2. Each move must start after the move before it.")]
+    public async Task Create_NotBeforeTheMoveNumberedAfterIt_Is400NamingThatMove(int deltaSeconds, string expected)
+    {
+        var msel = await SeedMsel();
+        await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        await SeedMove(msel, moveNumber: 2, deltaSeconds: 600);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Post(Client(actor), Body(msel.Id, moveNumber: 1, deltaSeconds: deltaSeconds));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(expected, await Title(response));
+    }
+
+    [Fact]
+    public async Task Create_StrictlyBetweenTheMovesAroundIt_Is201()
+    {
+        var msel = await SeedMsel();
+        await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        await SeedMove(msel, moveNumber: 2, deltaSeconds: 600);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Post(Client(actor), Body(msel.Id, moveNumber: 1, deltaSeconds: 300));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    /// <summary>Only the MSEL's own moves count: another MSEL's move at the same number and start is no conflict.</summary>
+    [Fact]
+    public async Task Create_AtAnotherMselsMovesStartTime_Is201()
+    {
+        var msel = await SeedMsel();
+        await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        await SeedMove(await SeedMsel(), moveNumber: 1, deltaSeconds: 600);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Post(Client(actor), Body(msel.Id, moveNumber: 1, deltaSeconds: 600));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
     /// <summary>Create for a MSEL that is not there is refused to a caller without EditMsels: a missing MSEL grants no ownership.</summary>
     [Fact]
     public async Task Create_ForAMselThatIsNotThere_Is403()
@@ -735,6 +813,85 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     [Fact]
+    public async Task Update_ToAStartTimeAnotherMoveHas_Is400NamingThatMoveAndLeavesTheMoveAlone()
+    {
+        var msel = await SeedMsel();
+        await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        var move = await SeedMove(msel, moveNumber: 1, deltaSeconds: 600);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), move.Id, BodyFor(move) with { DeltaSeconds = 0 });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("Move 1 can't start at the same time as Move 0. Each move must start after the move before it.",
+            await Title(response));
+        Assert.Equal(600, (await Stored(move.Id)).DeltaSeconds);
+    }
+
+    /// <summary>Renumbering a move past another without moving its start puts it out of order, so it is refused.</summary>
+    [Fact]
+    public async Task Update_ToANumberThatPutsItOutOfOrder_Is400()
+    {
+        var msel = await SeedMsel();
+        var move = await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        await SeedMove(msel, moveNumber: 1, deltaSeconds: 600);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), move.Id, BodyFor(move) with { MoveNumber = 2 });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("Move 2 must start after Move 1. Each move must start after the move before it.", await Title(response));
+        Assert.Equal(0, (await Stored(move.Id)).MoveNumber);
+    }
+
+    /// <summary>A move is not compared with itself, so keeping its own start while changing it is fine.</summary>
+    [Fact]
+    public async Task Update_ToANewStartBetweenTheMovesAroundIt_Is200()
+    {
+        var msel = await SeedMsel();
+        await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        var move = await SeedMove(msel, moveNumber: 1, deltaSeconds: 600);
+        await SeedMove(msel, moveNumber: 2, deltaSeconds: 1200);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), move.Id, BodyFor(move) with { DeltaSeconds = 900 });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(900, (await Stored(move.Id)).DeltaSeconds);
+    }
+
+    /// <summary>A MSEL saved before the rule can already have two moves at one start. Editing only such a
+    /// move's text is allowed, so the planner is not stuck; the start is checked once it changes.</summary>
+    [Fact]
+    public async Task Update_OfAMoveThatAlreadySharesItsStart_KeepingTheStart_Is200()
+    {
+        var msel = await SeedMsel();
+        await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        var move = await SeedMove(msel, moveNumber: 1, deltaSeconds: 0);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), move.Id, BodyFor(move) with { Description = "after" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("after", (await Stored(move.Id)).Description);
+    }
+
+    /// <summary>The fix for a shared start: give the higher-numbered move a later one.</summary>
+    [Fact]
+    public async Task Update_OfAMoveThatAlreadySharesItsStart_ToALaterStart_Is200()
+    {
+        var msel = await SeedMsel();
+        await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        var move = await SeedMove(msel, moveNumber: 1, deltaSeconds: 0);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), move.Id, BodyFor(move) with { DeltaSeconds = 600 });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(600, (await Stored(move.Id)).DeltaSeconds);
+    }
+
+    [Fact]
     public async Task Update_MarksTheMselModifiedAndBroadcastsWhatChanged()
     {
         var msel = await SeedMsel();
@@ -887,9 +1044,9 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(1, (await MovesAndInjects(msel.Id))[scenarioEvent.Id][0]);
     }
 
-    /// <summary>Delete of the only move makes the move lookup throw for every scenario event.</summary>
+    /// <summary>Delete of the only move puts every scenario event in move 0.</summary>
     [Fact]
-    public async Task Delete_OfTheOnlyMove_MakesTheMoveLookupThrowForEveryScenarioEvent()
+    public async Task Delete_OfTheOnlyMove_PutsEveryScenarioEventInMoveZero()
     {
         var msel = await SeedMsel();
         var move = await SeedMove(msel, moveNumber: 1, deltaSeconds: 0);
@@ -899,7 +1056,8 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).DeleteAsync(Move(move.Id), Ct);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        await Assert.ThrowsAsync<IndexOutOfRangeException>(() => MovesAndInjects(msel.Id));
+        var movesAndInjects = await MovesAndInjects(msel.Id);
+        Assert.Equal([0, 0], Assert.Single(movesAndInjects.Values));
     }
 
     /// <remarks>

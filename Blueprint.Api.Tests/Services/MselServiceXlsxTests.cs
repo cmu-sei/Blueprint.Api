@@ -249,6 +249,32 @@ public class MselServiceXlsxTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     /// <summary>
+    /// Two moves sharing a start time: the export puts an event at that time in the higher-numbered move, as
+    /// Blueprint's event list does, whichever order the moves were saved in.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Download_ForMovesSharingAStartTime_WritesTheHigherNumberedMove(bool lowerFirst)
+    {
+        var msel = await SeedSheet(["Target"], m =>
+        {
+            m.ShowMoveOnScenarioEventList = true;
+            m.MoveDisplayOrder = 8;
+        });
+        var move0 = TestData.Move(msel.Id, moveNumber: 0, deltaSeconds: 0, createdBy: msel.CreatedBy);
+        var move1 = TestData.Move(msel.Id, moveNumber: 1, deltaSeconds: 0, createdBy: msel.CreatedBy);
+        await Seed(lowerFirst ? move0 : move1);
+        await Seed(lowerFirst ? move1 : move0);
+        await SeedEvent(msel, 0, "at start");
+        var actor = await Author();
+
+        var sheet = Read(await Download(Client(actor), msel.Id));
+
+        Assert.Equal("1", sheet.Text(0, "Move"));
+    }
+
+    /// <summary>
     /// A Data Field of a system column's name wins, and the system column is not written.
     /// </summary>
     /// <remarks>

@@ -1174,8 +1174,23 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         await holder.SaveChangesAsync(Ct);
 
         var sent = request();
-        await WaitUntil(async () => sent.IsCompleted || await ASaveIsWaitingOnALock(), "the request's save to wait on the held move number");
-        await transaction.CommitAsync(Ct);
+        var committed = false;
+        try
+        {
+            await WaitUntil(async () => sent.IsCompleted || await ASaveIsWaitingOnALock(), "the request's save to wait on the held move number");
+            await transaction.CommitAsync(Ct);
+            committed = true;
+        }
+        finally
+        {
+            // a wait that timed out still lets the request finish, by releasing the held number, and
+            // observes it, so no request is left running against the test's database
+            if (!committed)
+            {
+                await transaction.RollbackAsync(System.Threading.CancellationToken.None);
+                try { await sent; } catch { }
+            }
+        }
 
         return await sent;
     }

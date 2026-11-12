@@ -93,6 +93,22 @@ public class MselCopySiteTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(0, await ReadBack(db => db.PlayerApplicationTeams.CountAsync(Ct)));
     }
 
+    /// <summary>An export never has two moves with one number, so a file that does is refused whole, by
+    /// the same unique index MoveService checks.</summary>
+    [Fact]
+    public async Task Import_answers_two_moves_with_one_number_with_a_readable_error_and_saves_no_copy()
+    {
+        var msel = TestData.Msel();
+        msel.Moves.Add(TestData.Move(msel.Id, moveNumber: 2, deltaSeconds: 0));
+        msel.Moves.Add(TestData.Move(msel.Id, moveNumber: 2, deltaSeconds: 600));
+
+        var response = await Import(msel);
+
+        await ImportError(response, "the file has the same row twice in moves (IX_moves_msel_id_move_number)");
+        Assert.Equal(0, await ReadBack(db => db.Msels.CountAsync(Ct)));
+        Assert.Equal(0, await ReadBack(db => db.Moves.CountAsync(Ct)));
+    }
+
     [Fact]
     public async Task Launch_answers_a_submitter_role_without_membership_with_a_server_error_and_saves_no_copy()
     {

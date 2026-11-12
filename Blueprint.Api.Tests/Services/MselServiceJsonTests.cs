@@ -1164,6 +1164,49 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     /// <summary>
+    /// A file from before every move had its own start time is still imported, moves and all, as an
+    /// interactive edit could not save it; the report names each pair of moves to fix.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfMovesSharingAStartOrOutOfOrder_ImportsThemAndReportsEachPair()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            m.Moves.Add(TestData.Move(m.Id, moveNumber: 0, deltaSeconds: 0));
+            m.Moves.Add(TestData.Move(m.Id, moveNumber: 1, deltaSeconds: 0));
+            m.Moves.Add(TestData.Move(m.Id, moveNumber: 2, deltaSeconds: 1200));
+            m.Moves.Add(TestData.Move(m.Id, moveNumber: 3, deltaSeconds: 600));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.Equal(4, result.Imported.Moves);
+        Assert.Equal(
+            [
+                "Move 0 and Move 1 start at the same time. Each move must start after the move before it; fix the start times on the Moves tab before pushing.",
+                "Move 3 starts before Move 2. Each move must start after the move before it; fix the start times on the Moves tab before pushing."
+            ],
+            result.Changes.Where(c => c.Field == "moves").Select(c => c.Message));
+        Assert.Equal(4, await ReadBack(rb => rb.Moves.CountAsync(mv => mv.MselId == result.Msel.Id, Ct)));
+    }
+
+    [Fact]
+    public async Task Import_OfMovesInStartTimeOrder_ReportsNothingAboutThem()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = Exported(m =>
+        {
+            m.Moves.Add(TestData.Move(m.Id, moveNumber: 0, deltaSeconds: 0));
+            m.Moves.Add(TestData.Move(m.Id, moveNumber: 1, deltaSeconds: 600));
+        });
+
+        var result = await Import(Client(actor), file);
+
+        Assert.DoesNotContain(result.Changes, c => c.Field == "moves");
+    }
+
+    /// <summary>
     /// Team members are never imported (see <see cref="Upload_CarriesTheTeamsButNotTheirMembership"/>);
     /// the report says how many were left behind so the planner knows to add them before pushing.
     /// </summary>

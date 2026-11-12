@@ -40,5 +40,25 @@ namespace Blueprint.Api.Services
                     : $"Move {moveNumber} must start before Move {after.MoveNumber}. {Rule}";
             return null;
         }
+
+        /// <summary>
+        /// Each pair of consecutive moves (by number) that share a start time or are out of order, for a
+        /// MSEL saved before the rule, e.g. an imported one.
+        /// </summary>
+        public static List<string> FindProblems(IEnumerable<MoveEntity> moves)
+        {
+            var byNumber = moves.OrderBy(m => m.MoveNumber).ToList();
+            var problems = new List<string>();
+            for (var i = 1; i < byNumber.Count; i++)
+            {
+                var previous = byNumber[i - 1];
+                var move = byNumber[i];
+                if (move.DeltaSeconds == previous.DeltaSeconds)
+                    problems.Add($"Move {previous.MoveNumber} and Move {move.MoveNumber} start at the same time.");
+                else if (move.DeltaSeconds < previous.DeltaSeconds)
+                    problems.Add($"Move {move.MoveNumber} starts before Move {previous.MoveNumber}.");
+            }
+            return problems;
+        }
     }
 }

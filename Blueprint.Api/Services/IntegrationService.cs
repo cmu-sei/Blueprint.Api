@@ -996,9 +996,10 @@ namespace Blueprint.Api.Services
 
         /// <summary>
         /// Each scenario event's move number and group, as the Steamfitter tasks use them: an event belongs to the
-        /// last move (by number) whose start it has reached, so an event at the start shared by two moves, or past a
-        /// move with no events, lands in the right move. The move is its number, which is what CITE's move change
-        /// uses, not its place in the list. -1 is an event before the first move.
+        /// last move (by number) whose start it has reached, so an event past a move with no events lands in the right
+        /// move, and one at a start two moves share (a MSEL saved before each move needed its own) in the higher.
+        /// The move is its number, which is what CITE's move change uses, not its place in the list. -1 is an event
+        /// before the first move.
         /// </summary>
         public static Dictionary<Guid, int[]> GetMovesAndGroups(
             List<ScenarioEventEntity> sortedScenarioEvents,

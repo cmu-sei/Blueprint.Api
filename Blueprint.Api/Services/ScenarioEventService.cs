@@ -749,7 +749,8 @@ namespace Blueprint.Api.Services
             var movesAndInjects= new Dictionary<Guid, int[]>();
             // order scenario events and moves by DeltaSeconds
             var scenarioEvents = await _context.ScenarioEvents.Where(se => se.MselId == mselId).OrderBy(se => se.DeltaSeconds).ToArrayAsync(ct);
-            // moves sharing a start time are ordered by number, so an event at that time goes to the higher-numbered
+            // each move starts after the one before it, but a MSEL saved before that was required can have moves
+            // sharing a start time; they are ordered by number, so an event at that time goes to the higher-numbered
             // move, as Blueprint shows it
             var moves = await _context.Moves.Where(se => se.MselId == mselId).OrderBy(m => m.DeltaSeconds).ThenBy(m => m.MoveNumber).ToArrayAsync(ct);
             var m = 0;  // move index

@@ -74,12 +74,13 @@ namespace Blueprint.Api.Services
                 ! await MoveEditorRequirement.IsMet(_user.GetId(), move.MselId, _context))
                 throw new ForbiddenException();
 
+            await ValidateMoveNumberAsync(move.MselId, null, move.MoveNumber, ct);
+
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
             var moveEntity = move.ToEntity();
             moveEntity.Id = move.Id != Guid.Empty ? move.Id : Guid.NewGuid();
             moveEntity.CreatedBy = _user.GetId();
-            await ValidateMoveNumberAsync(moveEntity.MselId, null, moveEntity.MoveNumber, ct);
             _context.Moves.Add(moveEntity);
             await SaveMoveAsync(moveEntity.MoveNumber, ct);
             // update the MSEL modified info
@@ -103,10 +104,11 @@ namespace Blueprint.Api.Services
                 !( await MoveEditorRequirement.IsMet(_user.GetId(), moveToUpdate.MselId, _context)))
                 throw new ForbiddenException();
 
-            // start a transaction, because we may also update other data fields
-            await _context.Database.BeginTransactionAsync(ct);
             if (move.MoveNumber != moveToUpdate.MoveNumber)
                 await ValidateMoveNumberAsync(moveToUpdate.MselId, moveToUpdate.Id, move.MoveNumber, ct);
+
+            // start a transaction, because we may also update other data fields
+            await _context.Database.BeginTransactionAsync(ct);
             move.ApplyTo(moveToUpdate);
             moveToUpdate.ModifiedBy = _user.GetId();
             _context.Moves.Update(moveToUpdate);

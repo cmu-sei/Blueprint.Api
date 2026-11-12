@@ -87,7 +87,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 Name = msel.Name,
                 Description = msel.Description,
                 StartDate = startDate,
-                EndDate = startDate.AddSeconds(msel.DurationSeconds),
+                EndDate = ScenarioEndDate(startDate, msel.DurationSeconds),
                 ViewId = msel.PlayerViewId,
                 View = msel.Name
             };
@@ -95,6 +95,13 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
             return newScenario;
         }
+
+        // A MSEL with no duration has no end, but Steamfitter needs an end date and ends an active Scenario
+        // once it has passed. An end equal to the start would end the Scenario within a minute of its start,
+        // so a MSEL with no duration is given an end as far off as the one Steamfitter gives a Scenario of its
+        // own that has no end.
+        public static DateTime ScenarioEndDate(DateTime startDate, int durationSeconds) =>
+            durationSeconds > 0 ? startDate.AddSeconds(durationSeconds) : startDate.AddYears(100);
 
         // Whether the push starts the Scenario itself: always when it is to start on the push, and when it is
         // to start at the MSEL start time once that time has come. Otherwise SteamfitterStartService starts it.

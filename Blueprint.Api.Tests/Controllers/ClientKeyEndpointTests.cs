@@ -117,7 +117,7 @@ public class ClientKeyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             "api/catalog/{0}/injects" => Pair(TestData.Inject(type.Id), new { injectTypeId = type.Id, name = "new inject" }),
             "api/injectTypes" => Pair(TestData.InjectType(), new { name = "new type" }),
             "api/invitations" => Pair(TestData.Invitation(msel.Id, team.Id), new { mselId = msel.Id, teamId = team.Id }),
-            "api/moves" => Pair(TestData.Move(msel.Id), new { mselId = msel.Id, moveNumber = 1 }),
+            "api/moves" => Pair(TestData.Move(msel.Id), new { mselId = msel.Id, moveNumber = 1, deltaSeconds = 60 }),
             "api/mselcompetencies" => Pair(TestData.MselCompetency(msel.Id, competency.Id), new { mselId = msel.Id, competencyId = otherCompetency.Id }),
             "api/mselpages" => Pair(TestData.MselPage(msel.Id), new { mselId = msel.Id, name = "new page" }),
             "api/msels" => Pair(TestData.Msel(), new { name = "new msel" }),

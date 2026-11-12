@@ -76,6 +76,8 @@ namespace Blueprint.Api.Services
                 ! await MoveEditorRequirement.IsMet(_user.GetId(), move.MselId, _context))
                 throw new ForbiddenException();
 
+            await ValidateStartAsync(move.MselId, null, move.MoveNumber, move.DeltaSeconds, ct);
+
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
             var moveEntity = _mapper.Map<MoveEntity>(move);
@@ -103,6 +105,11 @@ namespace Blueprint.Api.Services
                 !( await MselOwnerRequirement.IsMet(_user.GetId(), moveToUpdate.MselId, _context)) &&
                 !( await MoveEditorRequirement.IsMet(_user.GetId(), moveToUpdate.MselId, _context)))
                 throw new ForbiddenException();
+
+            // only a change to the number or start is checked, so a move that already shares its start can
+            // still have its text edited until the planner fixes the start
+            if (move.MoveNumber != moveToUpdate.MoveNumber || move.DeltaSeconds != moveToUpdate.DeltaSeconds)
+                await ValidateStartAsync(moveToUpdate.MselId, moveToUpdate.Id, move.MoveNumber, move.DeltaSeconds, ct);
 
             // start a transaction, because we may also update other data fields
             await _context.Database.BeginTransactionAsync(ct);
@@ -141,6 +148,18 @@ namespace Blueprint.Api.Services
             await _context.Database.CommitTransactionAsync(ct);
 
             return true;
+        }
+
+        // a move must start strictly after the move numbered before it and before the one numbered after it
+        private async Task ValidateStartAsync(Guid mselId, Guid? moveId, int moveNumber, int deltaSeconds, CancellationToken ct)
+        {
+            var otherMoves = await _context.Moves
+                .AsNoTracking()
+                .Where(m => m.MselId == mselId && m.Id != moveId)
+                .ToListAsync(ct);
+            var conflict = MoveOrder.FindConflict(moveNumber, deltaSeconds, otherMoves);
+            if (conflict != null)
+                throw new BadRequestException(conflict);
         }
 
     }

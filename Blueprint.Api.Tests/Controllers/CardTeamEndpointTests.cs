@@ -580,7 +580,7 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     }
 
     // ---------------------------------------------------------------------------------------------
-    // PUT cardteams/{id}
+    // PUT teamcards/{id}
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
@@ -602,17 +602,52 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.True(stored.CanPostArticles);
     }
 
-    /// <summary>Update at the route the other seven imply is answered with a 405.</summary>
+    /// <summary>
+    /// The update first shipped at <c>cardteams/{id}</c>, the one route the other seven do not share;
+    /// clients generated from that document still use it, so it still updates the row.
+    /// </summary>
     [Fact]
-    public async Task Update_AtTheRouteTheOtherSevenImply_Is405()
+    public async Task Update_AtTheFormerRoute_StillUpdatesTheRow()
     {
         var msel = await SeedMsel();
         var row = await SeedCardTeam(msel);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var response = await Client(actor).PutAsJsonAsync(TeamCard(row.Id), BodyFor(row), Ct);
+        var response = await Client(actor).PutAsJsonAsync(FormerCardTeam(row.Id), BodyFor(row) with { IsShownOnWall = true }, Ct);
 
-        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True((await Stored(row.Id)).IsShownOnWall);
+    }
+
+    /// <summary>The update at the former route still wants <c>EditMsels</c>.</summary>
+    [Fact]
+    public async Task Update_AtTheFormerRoute_WithoutEditMsels_Is403()
+    {
+        var msel = await SeedMsel();
+        var row = await SeedCardTeam(msel);
+        var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(owner).PutAsJsonAsync(FormerCardTeam(row.Id), BodyFor(row) with { IsShownOnWall = true }, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.False((await Stored(row.Id)).IsShownOnWall);
+    }
+
+    /// <summary>
+    /// The API document names the update at the route the other seven share (routes are lowercased), once,
+    /// so a generated client or a script reading the document is not sent to the former route.
+    /// </summary>
+    [Fact]
+    public async Task TheApiDocument_PublishesTheUpdateAtTheSharedRouteOnly()
+    {
+        var response = await Client().GetAsync("/swagger/v1/swagger.json", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+        var paths = document.RootElement.GetProperty("paths");
+        Assert.True(paths.GetProperty("/api/teamcards/{id}").TryGetProperty("put", out var put));
+        Assert.Equal("updateCardTeam", put.GetProperty("operationId").GetString());
+        Assert.False(paths.TryGetProperty("/api/cardteams/{id}", out _));
     }
 
     /// <summary>
@@ -840,6 +875,7 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     [InlineData("GET", "cards/00000000-0000-0000-0000-000000000001/teamcards")]
     [InlineData("GET", "teamcards/00000000-0000-0000-0000-000000000001")]
     [InlineData("POST", "teamcards")]
+    [InlineData("PUT", "teamcards/00000000-0000-0000-0000-000000000001")]
     [InlineData("PUT", "cardteams/00000000-0000-0000-0000-000000000001")]
     [InlineData("DELETE", "teamcards/00000000-0000-0000-0000-000000000001")]
     [InlineData("DELETE", "teams/00000000-0000-0000-0000-000000000001/cards/00000000-0000-0000-0000-000000000002")]
@@ -863,11 +899,8 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
     private static string TeamCard(Guid id) => $"{TeamCards}/{id}";
 
-    /// <summary>
-    /// The update route, spelled the way <c>CardTeamController.cs:144</c> spells it and no other route in the
-    /// controller does.
-    /// </summary>
-    private static string CardTeam(Guid id) => $"/api/cardteams/{id}";
+    /// <summary>The route the update was first published under, still accepted for older clients.</summary>
+    private static string FormerCardTeam(Guid id) => $"/api/cardteams/{id}";
 
     private static string TeamCardsOfMsel(Guid mselId) => $"/api/msels/{mselId}/teamcards";
 
@@ -959,7 +992,7 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         client.PostAsJsonAsync(TeamCards, body, Ct);
 
     private Task<HttpResponseMessage> Put(HttpClient client, Guid id, CardTeamBody body) =>
-        client.PutAsJsonAsync(CardTeam(id), body, Ct);
+        client.PutAsJsonAsync(TeamCard(id), body, Ct);
 
     private async Task<List<ViewModels.CardTeam>> GetByMsel(HttpClient client, Guid mselId)
     {

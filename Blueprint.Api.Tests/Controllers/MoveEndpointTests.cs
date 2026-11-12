@@ -1044,9 +1044,9 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(1, (await MovesAndInjects(msel.Id))[scenarioEvent.Id][0]);
     }
 
-    /// <summary>Delete of the only move makes the move lookup throw for every scenario event.</summary>
+    /// <summary>Delete of the only move puts every scenario event in move 0.</summary>
     [Fact]
-    public async Task Delete_OfTheOnlyMove_MakesTheMoveLookupThrowForEveryScenarioEvent()
+    public async Task Delete_OfTheOnlyMove_PutsEveryScenarioEventInMoveZero()
     {
         var msel = await SeedMsel();
         var move = await SeedMove(msel, moveNumber: 1, deltaSeconds: 0);
@@ -1056,7 +1056,8 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).DeleteAsync(Move(move.Id), Ct);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        await Assert.ThrowsAsync<IndexOutOfRangeException>(() => MovesAndInjects(msel.Id));
+        var movesAndInjects = await MovesAndInjects(msel.Id);
+        Assert.Equal([0, 0], Assert.Single(movesAndInjects.Values));
     }
 
     /// <remarks>

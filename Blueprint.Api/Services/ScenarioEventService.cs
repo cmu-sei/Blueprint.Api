@@ -773,9 +773,10 @@ namespace Blueprint.Api.Services
                     }
                     inject = 0;  // start with inject 0 for this new move
                 }
+                // with no moves every event is in move 0, as the Steamfitter push puts it
                 var moveNumber = moves.Length > m ? moves[m].MoveNumber : 0;
                 deltaSeconds = scenarioEvents[s].DeltaSeconds;
-                movesAndInjects.Add(scenarioEvents[s].Id, new int[] {moves[m].MoveNumber, inject});
+                movesAndInjects.Add(scenarioEvents[s].Id, new int[] {moveNumber, inject});
             }
 
             return movesAndInjects;

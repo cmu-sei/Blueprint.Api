@@ -132,16 +132,20 @@ public class ScenarioEventServiceMovesAndInjectsTests(DatabaseFixture fixture) :
         Assert.Equal(6, answer[inSecond.Id][0]);
     }
 
-    /// <summary>A MSEL with scenario events and no moves throws <c>IndexOutOfRangeException</c>.</summary>
+    /// <summary>A MSEL with scenario events and no moves puts every event in move 0, counting the injects
+    /// by time, as the Steamfitter push does, instead of throwing <c>IndexOutOfRangeException</c>.</summary>
     [Fact]
-    public async Task GetMovesAndInjects_WithNoMoves_Throws()
+    public async Task GetMovesAndInjects_WithNoMoves_PutsEveryEventInMoveZero()
     {
         var msel = TestData.Msel();
         await Seed(msel);
-        await SeedEvent(msel.Id, 0);
+        var first = await SeedEvent(msel.Id, 0);
+        var second = await SeedEvent(msel.Id, 60);
 
-        await Assert.ThrowsAsync<IndexOutOfRangeException>(() =>
-            Service().GetMovesAndInjects(msel.Id, Ct));
+        var answer = await Service().GetMovesAndInjects(msel.Id, Ct);
+
+        Assert.Equal([0, 0], answer[first.Id]);
+        Assert.Equal([0, 1], answer[second.Id]);
     }
 
     /// <summary>An event earlier than the first move is reported in the first move, at inject 0.</summary>

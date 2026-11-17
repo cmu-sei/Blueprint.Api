@@ -31,10 +31,10 @@ namespace Blueprint.Api.Services
     }
 
     /// <summary>
-    /// A MSEL's technique pool - the techniques its Technique and DefensiveTechnique columns offer. The pool
-    /// has two families, told apart by the release's IsDefensive: the attack techniques (ATT&amp;CK, ATLAS) and the
-    /// defensive ones (D3FEND). Each family is pinned to one release: techniques from another release of the same
-    /// family are refused until that family is upgraded to it, while the other family is left alone.
+    /// A MSEL's technique pool - the techniques its Technique and DefensiveTechnique columns offer. The pool can
+    /// hold techniques of several domains (enterprise-attack, mobile-attack, ATLAS, capec, d3fend, ...). Each
+    /// domain is pinned to one release: techniques from another release of the same domain are refused until that
+    /// domain is upgraded to it, while the other domains are left alone.
     /// </summary>
     /// <remarks>Reads follow the MSEL's view rule and writes its Owner role, as the competency pool does.</remarks>
     public class MselTechniqueService : IMselTechniqueService
@@ -104,14 +104,14 @@ namespace Blueprint.Api.Services
             if (await _context.MselTechniques.AnyAsync(m => m.MselId == msel.Id && m.TechniqueId == technique.Id, ct))
                 throw new ConflictException($"{technique.ExternalId} is already in this MSEL's techniques.");
 
-            var isDefensive = IsDefensive(technique.TechniqueRelease);
-            var pinned = await InFamily(_context.MselTechniques.Where(m => m.MselId == msel.Id), isDefensive)
+            var domain = technique.TechniqueRelease.Domain;
+            var pinned = await InDomain(_context.MselTechniques.Where(m => m.MselId == msel.Id), domain)
                 .Where(m => m.Technique.TechniqueReleaseId != technique.TechniqueReleaseId)
                 .Select(m => m.Technique.TechniqueRelease)
                 .FirstOrDefaultAsync(ct);
             if (pinned != null)
                 throw new ConflictException(
-                    $"This MSEL's {FamilyName(isDefensive)} techniques are from {pinned.Domain} {pinned.Version}. " +
+                    $"This MSEL's {domain} techniques are from {pinned.Version}. " +
                     $"Upgrade them to {technique.TechniqueRelease.Version} before adding techniques from it.");
 
             var entity = new MselTechniqueEntity(msel.Id, technique.Id)
@@ -144,9 +144,9 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// Moves one family of the MSEL's pool to another release of that family, matching techniques by their
+        /// Moves one domain of the MSEL's pool to another release of that domain, matching techniques by their
         /// external id. A technique the new release no longer has is dropped and reported; cells that name it keep
-        /// their text. The other family is not touched.
+        /// their text. The other domains are not touched.
         /// </summary>
         public async Task<MselTechniqueUpgrade> UpgradeAsync(Guid mselId, Guid techniqueReleaseId, bool hasSystemPermission, CancellationToken ct)
         {
@@ -161,7 +161,7 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
                 throw new ForbiddenException();
 
-            var current = await InFamily(_context.MselTechniques.Where(m => m.MselId == mselId), IsDefensive(release))
+            var current = await InDomain(_context.MselTechniques.Where(m => m.MselId == mselId), release.Domain)
                 .Include(m => m.Technique)
                 .ToListAsync(ct);
             var result = new MselTechniqueUpgrade { MselId = mselId, TechniqueReleaseId = techniqueReleaseId };
@@ -196,8 +196,8 @@ namespace Blueprint.Api.Services
             }
             await _context.SaveChangesAsync(ct);
 
-            _logger.LogWarning("MSEL {MselId} {Family} techniques upgraded to release {ReleaseId} by {UserId}: {Kept} kept, {Dropped} dropped",
-                mselId, FamilyName(IsDefensive(release)), techniqueReleaseId, _user.GetId(), result.Kept, result.Dropped.Count);
+            _logger.LogWarning("MSEL {MselId} {Domain} techniques upgraded to release {ReleaseId} by {UserId}: {Kept} kept, {Dropped} dropped",
+                mselId, release.Domain, techniqueReleaseId, _user.GetId(), result.Kept, result.Dropped.Count);
             return result;
         }
 
@@ -212,12 +212,8 @@ namespace Blueprint.Api.Services
             return true;
         }
 
-        private static bool IsDefensive(TechniqueReleaseEntity release) => release.IsDefensive;
-
-        private static string FamilyName(bool isDefensive) => isDefensive ? "defensive" : "attack";
-
-        /// <summary>The pool rows of one family, by the release's flag: defensive (D3FEND) or attack (everything else).</summary>
-        private static IQueryable<MselTechniqueEntity> InFamily(IQueryable<MselTechniqueEntity> pool, bool isDefensive) =>
-            pool.Where(m => m.Technique.TechniqueRelease.IsDefensive == isDefensive);
+        /// <summary>The pool rows of one domain: every release of a domain is a version of the same catalogue.</summary>
+        private static IQueryable<MselTechniqueEntity> InDomain(IQueryable<MselTechniqueEntity> pool, string domain) =>
+            pool.Where(m => m.Technique.TechniqueRelease.Domain == domain);
     }
 }

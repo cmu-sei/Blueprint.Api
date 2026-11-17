@@ -11,7 +11,7 @@ namespace Blueprint.Api.Data.Models
 {
     /// <summary>
     /// A technique in a MSEL's pool - the techniques its Technique and DefensiveTechnique columns offer. The
-    /// rows of a family (attack: ATT&amp;CK and ATLAS; defensive: D3FEND, told apart by the release's IsDefensive) are
+    /// pool can hold several domains (enterprise-attack, ATLAS, capec, d3fend, ...), and the rows of one domain are
     /// all from the same release.
     /// </summary>
     public class MselTechniqueEntity

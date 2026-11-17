@@ -35,6 +35,19 @@ namespace Blueprint.Api.Data.Models
         public string Name { get; set; }
         public string Description { get; set; }
         public DateTime? ReleaseDate { get; set; }
+        /// <summary>Who publishes the release (MITRE ATT&amp;CK, MITRE D3FEND); null for a release whose publisher is not known.</summary>
+        public string Source { get; set; }
+        /// <summary>The publisher's website for the framework.</summary>
+        public string SourceUrl { get; set; }
+        /// <summary>
+        /// The copyright and trademark notice the publisher's terms ask to be shown wherever the release's content is,
+        /// one line per sentence group. Null for a release that carries none, which then shows no notice.
+        /// </summary>
+        public string Notice { get; set; }
+        /// <summary>The publisher's terms of use for the release's content.</summary>
+        public string TermsUrl { get; set; }
+        /// <summary>What the release calls its groups of techniques: "Tactics" (the default) or "Categories" (CAPEC).</summary>
+        public string GroupLabel { get; set; } = "Tactics";
         public virtual ICollection<TechniqueTacticEntity> Tactics { get; set; } = new HashSet<TechniqueTacticEntity>();
         public virtual ICollection<TechniqueEntity> Techniques { get; set; } = new HashSet<TechniqueEntity>();
         /// <summary>The D3FEND "countered by" mappings imported onto a defensive release; empty for an attack release.</summary>

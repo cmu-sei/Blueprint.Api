@@ -239,6 +239,10 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         // TechniqueReleaseService / TechniqueReleaseController - writes want ManageCompetencyFrameworks; the reads
         // are open to any signed-in user and so have no row (see TechniqueEndpointTests).
         { "POST", "api/techniquereleases/import", "ManageCompetencyFrameworks", "@file" },
+        {
+            "PUT", "api/techniquereleases/{techniquerelease}", "ManageCompetencyFrameworks",
+            """{"source":"{unique}","sourceUrl":null,"notice":null,"termsUrl":null}"""
+        },
         { "POST", "api/techniquereleases/{techniquerelease}/countermeasures", "ManageCompetencyFrameworks", "@file" },
         { "DELETE", "api/techniquereleases/{techniquerelease}", "ManageCompetencyFrameworks", null },
 

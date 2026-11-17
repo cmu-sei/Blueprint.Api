@@ -27,12 +27,14 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<TechniqueTactic>> GetTacticsAsync(Guid id, CancellationToken ct);
         Task<IEnumerable<Technique>> GetTechniquesAsync(Guid id, CancellationToken ct);
         Task<TechniqueRelease> ImportAsync(FileForm form, string version, CancellationToken ct);
+        Task<TechniqueRelease> UpdateNoticeAsync(Guid id, TechniqueReleaseNotice notice, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     }
 
     /// <summary>
-    /// The technique framework releases (ATT&amp;CK, ATLAS, CAPEC, D3FEND) an administrator has uploaded. A release is never
-    /// edited: a newer version is imported alongside it, and MSELs move to it one at a time.
+    /// The technique framework releases (ATT&amp;CK, ATLAS, CAPEC, D3FEND) an administrator has uploaded. A release's
+    /// techniques are never edited: a newer version is imported alongside it, and MSELs move to it one at a time. Only
+    /// its publisher and notice fields can be changed, as a custom release has none until an administrator gives it some.
     /// </summary>
     public class TechniqueReleaseService : ITechniqueReleaseService
     {
@@ -111,6 +113,41 @@ namespace Blueprint.Api.Services
                 release.Domain, release.Version, _user.GetId(), release.Tactics.Count, release.Techniques.Count);
 
             return await GetAsync(release.Id, ct);
+        }
+
+        public async Task<TechniqueRelease> UpdateNoticeAsync(Guid id, TechniqueReleaseNotice notice, CancellationToken ct)
+        {
+            if (notice == null)
+                throw new BadRequestException("A notice is required.");
+
+            var release = await _context.TechniqueReleases.SingleOrDefaultAsync(r => r.Id == id, ct);
+            if (release == null)
+                throw new EntityNotFoundException<TechniqueRelease>();
+
+            var sourceUrl = Blank(notice.SourceUrl);
+            var termsUrl = Blank(notice.TermsUrl);
+            ThrowIfNotWebAddress(sourceUrl, "The source URL");
+            ThrowIfNotWebAddress(termsUrl, "The terms URL");
+
+            // Only the four notice fields: the id, domain, version, tactics and techniques are what MSELs are pinned to.
+            release.Source = Blank(notice.Source);
+            release.SourceUrl = sourceUrl;
+            release.Notice = Blank(notice.Notice);
+            release.TermsUrl = termsUrl;
+            release.ModifiedBy = _user.GetId();
+            await _context.SaveChangesAsync(ct);
+            _logger.LogWarning("Release {Domain} {Version} notice edited by {UserId}", release.Domain, release.Version, _user.GetId());
+
+            return await GetAsync(id, ct);
+        }
+
+        private static string Blank(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+        /// <summary>A link a client puts in an href: only http and https, never a script or data address.</summary>
+        private static void ThrowIfNotWebAddress(string url, string what)
+        {
+            if (url != null && !(Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)))
+                throw new BadRequestException($"{what} must be an http or https address.");
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

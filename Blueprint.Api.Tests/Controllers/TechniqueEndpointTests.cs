@@ -99,6 +99,148 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
+    /// <summary>Uploading the same file twice is a clean 409 naming the release, not a database error, and leaves one row.</summary>
+    [Fact]
+    public async Task Import_OfTheSameFileTwice_Is409_NamingTheRelease_AndKeepsOneRow()
+    {
+        var first = await Upload(RootClient, TechniqueBundles.Enterprise("1.0"));
+        var second = await Upload(RootClient, TechniqueBundles.Enterprise("1.0"));
+
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+        Assert.Contains("enterprise-attack 1.0 has already been imported", await second.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(1, await ReadBack(rb => rb.TechniqueReleases.CountAsync(r => r.Domain == "enterprise-attack" && r.Version == "1.0", Ct)));
+    }
+
+    /// <summary>A version typed with stray spaces is the same release, so it is refused the same way.</summary>
+    [Fact]
+    public async Task Import_OfTheSameVersionTypedWithSpaces_Is409()
+    {
+        await SeedRelease("1.0");
+        using var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(Encoding.UTF8.GetBytes(TechniqueBundles.Enterprise("1.0", includeVersion: false)));
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Add(file, "ToUpload", "enterprise-attack.json");
+
+        var response = await RootClient.PostAsync("api/techniquereleases/import?version=%201.0%20", content, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // A release's notice fields
+    // ---------------------------------------------------------------------------------------------
+
+    private static object Notice(string source = null, string sourceUrl = null, string notice = null, string termsUrl = null) =>
+        new { source, sourceUrl, notice, termsUrl };
+
+    /// <summary>The copyright year is the release's own year, not the year it was uploaded in.</summary>
+    [Fact]
+    public async Task Import_OfAMitreBundle_ShowsTheCopyrightYearOfTheReleaseDate()
+    {
+        var response = await Upload(RootClient, TechniqueBundles.Enterprise("1.0"));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var release = await Read<TechniqueRelease>(response);
+        Assert.Equal(2025, release.ReleaseDate.Value.Year);
+        Assert.StartsWith("© 2025 The MITRE Corporation.", release.Notice);
+    }
+
+    [Fact]
+    public async Task Update_ChangesTheFourNoticeFieldsOnly_AndLeavesTheMselPoolAlone()
+    {
+        var release = await SeedRelease("1.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var pooled = Technique(release, "T1059");
+        await Seed(new MselTechniqueEntity(msel.Id, pooled.Id) { Id = Guid.NewGuid() });
+        var admin = await Actor().WithSystemPermissions(SystemPermission.ManageCompetencyFrameworks).SeedAsync();
+
+        var response = await Client(admin).PutAsJsonAsync(
+            $"api/techniquereleases/{release.Id}",
+            Notice("  Acme Corp  ", "https://acme.example/ttp", "© Acme\nAcme is a mark of Acme Corp.", "https://acme.example/terms"), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var updated = await Read<TechniqueRelease>(response);
+        Assert.Equal("Acme Corp", updated.Source);
+        Assert.Equal("https://acme.example/ttp", updated.SourceUrl);
+        Assert.Equal("© Acme\nAcme is a mark of Acme Corp.", updated.Notice);
+        Assert.Equal("https://acme.example/terms", updated.TermsUrl);
+        // nothing else about the release moved
+        Assert.Equal(release.Id, updated.Id);
+        Assert.Equal("enterprise-attack", updated.Domain);
+        Assert.Equal("1.0", updated.Version);
+        Assert.Equal(release.Name, updated.Name);
+        Assert.Equal(release.Tactics.Count, updated.TacticCount);
+        Assert.Equal(release.Techniques.Count, updated.TechniqueCount);
+        var stored = await ReadBack(rb => rb.Techniques.Where(t => t.TechniqueReleaseId == release.Id).Select(t => t.ExternalId).ToListAsync(Ct));
+        Assert.Equal(release.Techniques.Select(t => t.ExternalId).Order(), stored.Order());
+        // and the MSEL's pool is the same row on the same technique
+        var pool = await Get<List<MselTechnique>>(RootClient, $"api/msels/{msel.Id}/mseltechniques");
+        Assert.Equal(pooled.Id, Assert.Single(pool).TechniqueId);
+    }
+
+    [Fact]
+    public async Task Update_WithBlankFields_ClearsThem()
+    {
+        var release = await SeedRelease("1.0");
+
+        var response = await RootClient.PutAsJsonAsync($"api/techniquereleases/{release.Id}", Notice("  ", "", null, " "), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var updated = await Read<TechniqueRelease>(response);
+        Assert.Null(updated.Source);
+        Assert.Null(updated.SourceUrl);
+        Assert.Null(updated.Notice);
+        Assert.Null(updated.TermsUrl);
+    }
+
+    [Fact]
+    public async Task Update_OfACustomRelease_GivesItANoticeItThenCarries()
+    {
+        var created = await Read<TechniqueRelease>(await Upload(RootClient, TechniqueBundles.Custom(), "acme.json"));
+        Assert.Null(created.Notice);
+
+        await RootClient.PutAsJsonAsync($"api/techniquereleases/{created.Id}", Notice("Acme", null, "© Acme Corp", null), Ct);
+
+        var releases = await Get<List<TechniqueRelease>>(RootClient, "api/techniquereleases");
+        Assert.Equal("© Acme Corp", releases.Single(r => r.Id == created.Id).Notice);
+    }
+
+    [Theory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("data:text/html,x")]
+    [InlineData("not a url")]
+    public async Task Update_WithATermsUrlThatIsNotAWebAddress_Is400_AndChangesNothing(string url)
+    {
+        var release = await SeedRelease("1.0");
+
+        var response = await RootClient.PutAsJsonAsync($"api/techniquereleases/{release.Id}", Notice("Acme", null, "© Acme", url), Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("MITRE ATT&CK", (await ReadBack(rb => rb.TechniqueReleases.SingleAsync(r => r.Id == release.Id, Ct))).Source);
+    }
+
+    [Fact]
+    public async Task Update_OfAMissingRelease_Is404()
+    {
+        var response = await RootClient.PutAsJsonAsync($"api/techniquereleases/{Guid.NewGuid()}", Notice("Acme"), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_WithoutManageCompetencyFrameworks_Is403_AndChangesNothing()
+    {
+        var release = await SeedRelease("1.0");
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels, SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/techniquereleases/{release.Id}", Notice("Acme", null, "© Acme", null), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("MITRE ATT&CK", (await ReadBack(rb => rb.TechniqueReleases.SingleAsync(r => r.Id == release.Id, Ct))).Source);
+    }
+
     [Fact]
     public async Task Import_OfAFileThatIsNotABundle_Is400()
     {
@@ -255,15 +397,14 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     }
 
     // ---------------------------------------------------------------------------------------------
-    // The pool's two families: attack (ATT&CK, ATLAS) and defensive (D3FEND)
+    // The pool pins one release per domain (enterprise-attack, capec, d3fend, ...), not one per family
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// The family is the release's flag, not its domain: a defensive release of any domain joins the defensive pool
-    /// beside the attack techniques, and pins only that family.
+    /// A defensive release of any domain joins the pool beside the attack techniques, and pins only its own domain.
     /// </summary>
     [Fact]
-    public async Task Create_OfATechniqueFromADefensiveReleaseOfAnotherDomain_Is201_InTheDefensiveFamily()
+    public async Task Create_OfATechniqueFromADefensiveReleaseOfAnotherDomain_Is201_BesideTheAttackTechniques()
     {
         var attack = await SeedRelease("1.0");
         var defensive = await SeedDefensiveRelease("other-defend", "2.0");
@@ -278,12 +419,12 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var added = (await Read<MselTechnique>(response)).Technique;
         Assert.Equal("other-defend", added.Domain);
         Assert.True(added.IsDefensive);
-        // the attack family is still pinned to its own release and takes another of its techniques
+        // the attack domain is still pinned to its own release and takes another of its techniques
         var second = await RootClient.PostAsJsonAsync("api/mseltechniques", Body(msel.Id, Technique(attack, "T1053").Id), Ct);
         Assert.Equal(HttpStatusCode.Created, second.StatusCode);
     }
 
-    /// <summary>A D3FEND release is the other family, so it does not pin the attack techniques, nor they it.</summary>
+    /// <summary>A D3FEND release is another domain, so it does not pin the attack techniques, nor they it.</summary>
     [Fact]
     public async Task Create_OfADefensiveTechnique_Is201_BesideTheTechniques()
     {
@@ -305,7 +446,7 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(["d3fend", "enterprise-attack"], pool.Select(m => m.Technique.Domain).Order());
     }
 
-    /// <summary>The defensive family is pinned to its own release, as the attack one is to its.</summary>
+    /// <summary>A domain is pinned to its own release whichever family it is in.</summary>
     [Fact]
     public async Task Create_OfADefensiveTechniqueFromAnotherD3fendRelease_Is409()
     {
@@ -319,10 +460,98 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             "api/mseltechniques", Body(msel.Id, Technique(second, "D3-FA").Id), Ct);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Contains("defensive techniques are from d3fend 1.6.0", await response.Content.ReadAsStringAsync(Ct));
+        Assert.Contains("d3fend techniques are from 1.6.0", await response.Content.ReadAsStringAsync(Ct));
     }
 
-    /// <summary>Upgrading to an attack release moves the attack techniques only; the D3FEND ones stay where they are.</summary>
+    /// <summary>
+    /// ATT&amp;CK, CAPEC and D3FEND sit side by side in one MSEL's pool: that is the point of pinning per domain, so
+    /// "exploit a public-facing application" (T1190) and "SQL Injection" (CAPEC-66) can be planned together.
+    /// </summary>
+    [Fact]
+    public async Task Create_OfTechniquesFromEnterpriseCapecAndD3fend_AllLandInOnePool()
+    {
+        var enterprise = await SeedRelease("1.0");
+        var capec = await SeedCapecRelease("3.9");
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        foreach (var technique in new[] { Technique(enterprise, "T1059"), Technique(capec, "CAPEC-66"), Technique(d3fend, "D3-CH") })
+        {
+            var response = await RootClient.PostAsJsonAsync("api/mseltechniques", Body(msel.Id, technique.Id), Ct);
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        }
+
+        var pool = await Get<List<MselTechnique>>(RootClient, $"api/msels/{msel.Id}/mseltechniques");
+        Assert.Equal(["capec", "d3fend", "enterprise-attack"], pool.Select(m => m.Technique.Domain).Order());
+    }
+
+    /// <summary>Two releases of one domain never mix, whichever other domains the MSEL holds.</summary>
+    [Fact]
+    public async Task Create_OfATechniqueFromAnotherReleaseOfADomain_Is409_NamingTheDomain_EvenWithOtherDomainsInThePool()
+    {
+        var first = await SeedRelease("1.0");
+        var second = await SeedRelease("2.0");
+        var capec = await SeedCapecRelease("3.9");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(
+            new MselTechniqueEntity(msel.Id, Technique(first, "T1059").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(capec, "CAPEC-66").Id) { Id = Guid.NewGuid() });
+
+        var refused = await RootClient.PostAsJsonAsync("api/mseltechniques", Body(msel.Id, Technique(second, "T1053").Id), Ct);
+        var other = await RootClient.PostAsJsonAsync("api/mseltechniques", Body(msel.Id, Technique(capec, "CAPEC-8").Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Contains("enterprise-attack techniques are from 1.0", await refused.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(HttpStatusCode.Created, other.StatusCode);
+    }
+
+    /// <summary>Upgrading one domain moves it alone: the CAPEC and D3FEND techniques keep their releases.</summary>
+    [Fact]
+    public async Task Upgrade_OfOneDomain_LeavesTheOtherDomainsAtTheirReleases()
+    {
+        var first = await SeedRelease("1.0");
+        var second = await SeedRelease("2.0");
+        var capec = await SeedCapecRelease("3.9");
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(
+            new MselTechniqueEntity(msel.Id, Technique(first, "T1059").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(capec, "CAPEC-66").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(d3fend, "D3-CH").Id) { Id = Guid.NewGuid() });
+
+        var response = await RootClient.PostAsync($"api/msels/{msel.Id}/techniques/upgrade/{second.Id}", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await Read<MselTechniqueUpgrade>(response);
+        Assert.Equal(1, result.Kept);
+        Assert.Empty(result.Dropped);
+        var pool = await ReadBack(rb => rb.MselTechniques.Where(m => m.MselId == msel.Id).Select(m => m.TechniqueId).ToListAsync(Ct));
+        Assert.Equal(
+            new[] { Technique(second, "T1059").Id, Technique(capec, "CAPEC-66").Id, Technique(d3fend, "D3-CH").Id }.Order(),
+            pool.Order());
+    }
+
+    /// <summary>A custom release is served with no publisher or notice, so a client shows none for it.</summary>
+    [Fact]
+    public async Task Import_OfACustomBundle_IsServedWithNoNotice_WhileAMitreOneCarriesIts()
+    {
+        var custom = await Upload(RootClient, TechniqueBundles.Custom(), "acme.json");
+        var mitre = await Upload(RootClient, TechniqueBundles.Enterprise("1.0"));
+
+        Assert.Equal(HttpStatusCode.Created, custom.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, mitre.StatusCode);
+        var releases = await Get<List<TechniqueRelease>>(RootClient, "api/techniquereleases");
+        var acme = releases.Single(r => r.Domain == "acme-ttp");
+        Assert.Null(acme.Notice);
+        Assert.Null(acme.Source);
+        Assert.Equal("Tactics", acme.GroupLabel);
+        Assert.Equal("MITRE ATT&CK", releases.Single(r => r.Domain == "enterprise-attack").Source);
+    }
+
+    /// <summary>Upgrading to an ATT&amp;CK release moves that domain only; the D3FEND ones stay where they are.</summary>
     [Fact]
     public async Task Upgrade_ToAnTechniqueRelease_LeavesTheDefensiveTechniquesAlone()
     {
@@ -425,6 +654,14 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     {
         var release = await StixTechniqueParser.ParseAsync(
             new MemoryStream(Encoding.UTF8.GetBytes(TechniqueBundles.Enterprise(version))), null, Ct);
+        await Seed(release);
+        return release;
+    }
+
+    private async Task<TechniqueReleaseEntity> SeedCapecRelease(string version)
+    {
+        var release = await StixTechniqueParser.ParseAsync(
+            new MemoryStream(Encoding.UTF8.GetBytes(CapecBundles.Capec(version))), null, Ct);
         await Seed(release);
         return release;
     }

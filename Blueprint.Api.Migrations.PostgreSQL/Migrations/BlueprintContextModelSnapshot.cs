@@ -2423,6 +2423,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("domain");
 
+                    b.Property<string>("GroupLabel")
+                        .HasColumnType("text")
+                        .HasColumnName("group_label");
+
                     b.Property<bool>("IsDefensive")
                         .HasColumnType("boolean")
                         .HasColumnName("is_defensive");
@@ -2435,9 +2439,25 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
+                    b.Property<string>("Notice")
+                        .HasColumnType("text")
+                        .HasColumnName("notice");
+
                     b.Property<DateTime?>("ReleaseDate")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("release_date");
+
+                    b.Property<string>("Source")
+                        .HasColumnType("text")
+                        .HasColumnName("source");
+
+                    b.Property<string>("SourceUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("source_url");
+
+                    b.Property<string>("TermsUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("terms_url");
 
                     b.Property<string>("Version")
                         .HasColumnType("text")

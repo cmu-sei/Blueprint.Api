@@ -328,4 +328,62 @@ public class StixTechniqueParserTests
         Assert.Equal("enterprise-attack", attack.Domain);
         Assert.Equal(["T1003", "T1053", "T1059", "T1059.001"], attack.Techniques.Select(t => t.ExternalId).Order());
     }
+
+    [Fact]
+    public async Task Parse_OfAnAttackBundle_NamesMitreAttackAsTheSourceWithItsNotice()
+    {
+        var release = await Parse(TechniqueBundles.Enterprise());
+
+        Assert.Equal("MITRE ATT&CK", release.Source);
+        Assert.Equal("https://attack.mitre.org/", release.SourceUrl);
+        Assert.Equal("https://attack.mitre.org/resources/legal-and-branding/terms-of-use/", release.TermsUrl);
+        Assert.Equal("Tactics", release.GroupLabel);
+        var lines = release.Notice.Split('\n');
+        Assert.StartsWith("© 2025 The MITRE Corporation.", lines[0]);
+        Assert.Equal("MITRE ATT&CK and ATT&CK are registered trademarks of The MITRE Corporation.", lines[1]);
+    }
+
+    [Fact]
+    public async Task Parse_OfAtlas_NamesMitreAtlasNotAttack()
+    {
+        var release = await Parse(TechniqueBundles.Atlas());
+
+        Assert.Equal("MITRE ATLAS", release.Source);
+        Assert.Contains("MITRE ATLAS™ is a trademark", release.Notice);
+        Assert.DoesNotContain("ATT&CK", release.Notice);
+    }
+
+    [Fact]
+    public async Task Parse_OfCapec_NamesMitreCapecAndLabelsItsGroupsCategories()
+    {
+        var release = await Parse(CapecBundles.Capec());
+
+        Assert.Equal("MITRE CAPEC", release.Source);
+        Assert.Equal("https://capec.mitre.org/about/termsofuse.html", release.TermsUrl);
+        Assert.Equal("Categories", release.GroupLabel);
+        Assert.Contains("MITRE CAPEC™ is a trademark", release.Notice);
+    }
+
+    /// <summary>A bundle that does not cite MITRE's catalogue is not MITRE's: no publisher, no notice, no terms.</summary>
+    [Fact]
+    public async Task Parse_OfACustomBundle_CarriesNoPublisherOrNotice()
+    {
+        var release = await Parse(TechniqueBundles.Custom());
+
+        Assert.Equal("acme-ttp", release.Domain);
+        Assert.Null(release.Source);
+        Assert.Null(release.SourceUrl);
+        Assert.Null(release.Notice);
+        Assert.Null(release.TermsUrl);
+        Assert.Equal("Tactics", release.GroupLabel);
+    }
+
+    /// <summary>The domain is no longer guessed as enterprise-attack: a bundle that names none is refused.</summary>
+    [Fact]
+    public async Task Parse_OfABundleThatNamesNoDomain_IsRefused()
+    {
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(TechniqueBundles.Custom(domain: null)));
+
+        Assert.Contains("name no domain", ex.Message);
+    }
 }

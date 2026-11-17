@@ -16,10 +16,31 @@ namespace Blueprint.Api.ViewModels
         public string Name { get; set; }
         public string Description { get; set; }
         public DateTime? ReleaseDate { get; set; }
+        /// <summary>Who publishes the release (MITRE ATT&amp;CK, MITRE D3FEND); null when it is not known.</summary>
+        public string Source { get; set; }
+        public string SourceUrl { get; set; }
+        /// <summary>The copyright and trademark notice to show with the release's content, one line per sentence group; null when it carries none.</summary>
+        public string Notice { get; set; }
+        public string TermsUrl { get; set; }
+        /// <summary>What the release calls its groups of techniques: "Tactics" or "Categories".</summary>
+        public string GroupLabel { get; set; }
         public int TacticCount { get; set; }
         public int TechniqueCount { get; set; }
         /// <summary>The D3FEND "countered by" mappings imported onto the release; 0 for an attack release.</summary>
         public int CountermeasureCount { get; set; }
+    }
+
+    /// <summary>The notice fields of a release an administrator may edit; nothing else about a release changes.</summary>
+    public class TechniqueReleaseNotice
+    {
+        /// <summary>Who publishes the release (e.g. "MITRE ATT&amp;CK"); blank for none.</summary>
+        public string Source { get; set; }
+        /// <summary>The publisher's website for the framework, an http or https address; blank for none.</summary>
+        public string SourceUrl { get; set; }
+        /// <summary>The copyright and trademark notice to show with the release's content, one line per sentence group; blank for none.</summary>
+        public string Notice { get; set; }
+        /// <summary>The publisher's terms of use, an http or https address; blank for none.</summary>
+        public string TermsUrl { get; set; }
     }
 
     public class TechniqueTactic

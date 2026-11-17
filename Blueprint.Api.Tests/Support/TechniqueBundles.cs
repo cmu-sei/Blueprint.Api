@@ -255,4 +255,39 @@ public static class TechniqueBundles
           ]
         }
         """;
+
+    /// <summary>
+    /// A bundle from some other publisher in the ATT&amp;CK data model: its own catalogue ("acme") and its own
+    /// domain, with no MITRE reference anywhere. <paramref name="domain"/> null leaves the domain unnamed.
+    /// </summary>
+    public static string Custom(string domain = "acme-ttp", string version = "1.0") => $$"""
+        {
+          "type": "bundle",
+          "id": "bundle--00000000-0000-4000-8000-000000000401",
+          "objects": [
+            {
+              "type": "x-mitre-collection",
+              "id": "x-mitre-collection--00000000-0000-4000-8000-000000000402",
+              "name": "Acme Techniques",
+              "x_mitre_version": "{{version}}",
+              "modified": "2026-01-01T00:00:00.000Z"
+            },
+            {
+              "type": "x-mitre-tactic",
+              "id": "x-mitre-tactic--00000000-0000-4000-8000-000000000410",
+              "name": "Entry",
+              "x_mitre_shortname": "entry",
+              "external_references": [ { "source_name": "acme", "external_id": "AT-1" } ]
+            },
+            {
+              "type": "attack-pattern",
+              "id": "attack-pattern--00000000-0000-4000-8000-000000000420",
+              "name": "Front Door",
+              {{(domain == null ? "" : $"\"x_mitre_domains\": [ \"{domain}\" ],")}}
+              "kill_chain_phases": [ { "kill_chain_name": "acme", "phase_name": "entry" } ],
+              "external_references": [ { "source_name": "acme", "external_id": "AT-100" } ]
+            }
+          ]
+        }
+        """;
 }

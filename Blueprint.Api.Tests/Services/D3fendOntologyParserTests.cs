@@ -142,4 +142,16 @@ public class D3fendOntologyParserTests
 
         Assert.Contains("no defensive tactics and techniques", ex.Message);
     }
+
+    [Fact]
+    public void Parse_NamesMitreD3fendAsTheSourceWithItsNotice()
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(D3fendOntologies.Ontology("1.6.0"));
+
+        var release = D3fendOntologyParser.Parse(document.RootElement, null);
+
+        Assert.Equal("MITRE D3FEND", release.Source);
+        Assert.Equal("https://d3fend.mitre.org/tou/", release.TermsUrl);
+        Assert.Contains("MITRE D3FEND™ is a trademark", release.Notice);
+    }
 }

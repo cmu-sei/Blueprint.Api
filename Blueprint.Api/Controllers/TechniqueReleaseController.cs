@@ -18,8 +18,8 @@ namespace Blueprint.Api.Controllers
 {
     /// <summary>
     /// Technique framework releases (MITRE ATT&amp;CK, ATLAS, CAPEC, D3FEND). Reads are open to any authenticated user, as
-    /// competency frameworks are: every MSEL with a technique column loads them. Import and delete are managed with
-    /// the competency frameworks.
+    /// competency frameworks are: every MSEL with a technique column loads them. Import, notice edits and delete are
+    /// managed with the competency frameworks.
     /// </summary>
     public class TechniqueReleaseController : BaseController
     {
@@ -142,6 +142,29 @@ namespace Blueprint.Api.Controllers
 
             var created = await _techniqueReleaseService.ImportAsync(form, version, ct);
             return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
+        }
+
+        /// <summary>
+        /// Edits a release's publisher and notice fields
+        /// </summary>
+        /// <remarks>
+        /// Changes the source, source URL, notice and terms URL only; the release's id, domain, version, tactics and
+        /// techniques stay as imported, so no MSEL's pool is affected. A blank field is cleared. The URLs must be http
+        /// or https addresses. A release shows the notice it carries: a custom release has none until it is given one.
+        /// </remarks>
+        /// <param name="id">The id of the release</param>
+        /// <param name="notice">The notice fields</param>
+        /// <param name="ct"></param>
+        [HttpPut("techniquereleases/{id}")]
+        [ProducesResponseType(typeof(TechniqueRelease), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "updateTechniqueRelease")]
+        public async Task<IActionResult> Update(Guid id, [FromBody] TechniqueReleaseNotice notice, CancellationToken ct)
+        {
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
+                throw new ForbiddenException();
+
+            var updated = await _techniqueReleaseService.UpdateNoticeAsync(id, notice, ct);
+            return Ok(updated);
         }
 
         /// <summary>

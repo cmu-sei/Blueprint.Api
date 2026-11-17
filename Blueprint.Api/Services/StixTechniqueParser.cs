@@ -124,7 +124,9 @@ namespace Blueprint.Api.Services
                 .Select(t => t.TryGetProperty("x_mitre_domains", out var d) && d.ValueKind == JsonValueKind.Array
                     ? d.EnumerateArray().Select(x => x.GetString()).FirstOrDefault()
                     : null)
-                .FirstOrDefault(d => !string.IsNullOrWhiteSpace(d)) ?? "enterprise-attack";
+                .FirstOrDefault(d => !string.IsNullOrWhiteSpace(d))
+                ?? throw new InvalidTechniqueBundleException(
+                    "The bundle's techniques name no domain (x_mitre_domains, such as enterprise-attack or ATLAS), so the release cannot be identified.");
 
             var release = new TechniqueReleaseEntity
             {
@@ -136,6 +138,11 @@ namespace Blueprint.Api.Services
                 Description = collection.HasValue ? GetString(collection.Value, "description") : null,
                 ReleaseDate = collection.HasValue ? GetDate(collection.Value, "modified") : null
             };
+            // Only a bundle that cites MITRE's own catalogue is MITRE's: any other carries no publisher or notice.
+            if (source == "mitre-atlas")
+                TechniqueFrameworkNotices.ForAtlas(release);
+            else if (source.StartsWith("mitre-", StringComparison.Ordinal) && source.EndsWith("attack", StringComparison.Ordinal))
+                TechniqueFrameworkNotices.ForAttack(release);
 
             // The matrix lists its tactics left to right; a tactic it leaves out goes at the end.
             var order = new Dictionary<string, int>();
@@ -263,6 +270,7 @@ namespace Blueprint.Api.Services
                     + "from broad categories down to specific patterns such as SQL Injection or Buffer Overflow.",
                 ReleaseDate = active.Select(p => GetDate(p, "modified")).Where(d => d.HasValue).Max()
             };
+            TechniqueFrameworkNotices.ForCapec(release);
 
             var byStixId = new Dictionary<string, JsonElement>();
             foreach (var pattern in active)

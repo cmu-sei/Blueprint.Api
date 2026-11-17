@@ -88,6 +88,7 @@ namespace Blueprint.Api.Services
                 Description = ontology.HasValue ? GetText(ontology.Value, "dcterms:description") : null,
                 ReleaseDate = ontology.HasValue ? GetDate(ontology.Value, "d3f:release-date") : null
             };
+            TechniqueFrameworkNotices.ForD3fend(release);
 
             // The site lists the tactics by d3f:display-order (Model is -1, Harden 0, ... Restore 5).
             var shortNames = new Dictionary<string, string>();

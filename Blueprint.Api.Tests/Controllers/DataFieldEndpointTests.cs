@@ -379,6 +379,23 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(name, (await Json(response)).GetProperty("dataType").GetString());
     }
 
+    /// <summary>The two technique types go out by name too, so a client tells the attack column from the defensive one.</summary>
+    [Theory]
+    [InlineData(DataFieldType.AttackTechnique, "AttackTechnique")]
+    [InlineData(DataFieldType.DefensiveTechnique, "DefensiveTechnique")]
+    public async Task Get_AnswersATechniqueTypeByItsName(DataFieldType dataType, string name)
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var field = TestData.DataField(mselId: msel.Id, dataType: dataType);
+        await Seed(field);
+        var actor = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"/api/dataFields/{field.Id}", Ct);
+
+        Assert.Equal(name, (await Json(response)).GetProperty("dataType").GetString());
+    }
+
     /// <summary>A row still holding the retired type 160 is read, and its type goes out as the number.</summary>
     [Fact]
     public async Task Get_ForAFieldOfTheRetiredType160_AnswersTheNumber()
@@ -423,6 +440,21 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     [InlineData(DataFieldType.IpAddress)]
     [InlineData(DataFieldType.Network)]
     public async Task Create_OfAnAddressField_StoresItsType(DataFieldType dataType)
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var created = await Read<DataField>(await Post(Client(actor), Body(msel.Id) with { DataType = dataType }));
+
+        Assert.Equal(dataType, created.DataType);
+        Assert.Equal(dataType, (await ReadBack(rb => rb.DataFields.SingleAsync(x => x.Id == created.Id, Ct))).DataType);
+    }
+
+    [Theory]
+    [InlineData(DataFieldType.AttackTechnique)]
+    [InlineData(DataFieldType.DefensiveTechnique)]
+    public async Task Create_OfATechniqueField_StoresItsType(DataFieldType dataType)
     {
         var msel = TestData.Msel();
         await Seed(msel);

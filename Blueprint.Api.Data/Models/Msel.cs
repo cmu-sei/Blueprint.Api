@@ -92,5 +92,6 @@ namespace Blueprint.Api.Data.Models
         public virtual ICollection<MselPageEntity> Pages { get; set; } = new HashSet<MselPageEntity>();
         public virtual ICollection<InvitationEntity> Invitations { get; set; } = new HashSet<InvitationEntity>();
         public virtual ICollection<MselCompetencyEntity> MselCompetencies { get; set; } = new HashSet<MselCompetencyEntity>();
+        public virtual ICollection<MselTechniqueEntity> MselTechniques { get; set; } = new HashSet<MselTechniqueEntity>();
     }
 }

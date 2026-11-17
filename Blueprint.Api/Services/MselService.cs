@@ -335,6 +335,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
+                .Include(m => m.MselTechniques)
                 .Include(m => m.Pages)
                 .Include(m => m.ScoringModel)
                 .ThenInclude(sm => sm.Categories)
@@ -479,6 +480,14 @@ namespace Blueprint.Api.Services
                 mselCompetency.MselId = mselEntity.Id;
                 mselCompetency.Msel = null;
                 mselCompetency.Competency = null;
+            }
+            // copy the MSEL's technique pool, attack and defensive
+            foreach (var mselTechnique in mselEntity.MselTechniques)
+            {
+                mselTechnique.Id = Guid.NewGuid();
+                mselTechnique.MselId = mselEntity.Id;
+                mselTechnique.Msel = null;
+                mselTechnique.Technique = null;
             }
             // copy Gallery Cards
             foreach (var card in mselEntity.Cards)
@@ -2186,6 +2195,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
+                .Include(m => m.MselTechniques)
                 .Include(m => m.Pages)
                 .Include(m => m.ScoringModel)
                 .ThenInclude(sm => sm.Categories)
@@ -2475,6 +2485,29 @@ namespace Blueprint.Api.Services
             {
                 mselEntity.CiteScoringModelId = null;
                 mselEntity.CiteScoringModelName = null;
+            }
+            // A technique's id is the same on every installation that imported its release, so the pool carries
+            // over wherever that release is loaded. Drop the rest rather than fail the import.
+            foreach (var mselTechnique in mselEntity.MselTechniques)
+            {
+                mselTechnique.Msel = null;
+                mselTechnique.Technique = null;
+            }
+            if (mselEntity.MselTechniques.Count > 0)
+            {
+                var fileTechniqueIds = mselEntity.MselTechniques.Select(t => t.TechniqueId).ToList();
+                var knownTechniqueIds = (await _context.Techniques
+                    .Where(t => fileTechniqueIds.Contains(t.Id))
+                    .Select(t => t.Id)
+                    .ToListAsync(ct)).ToHashSet();
+                var missingTechniques = fileTechniqueIds.Count(id => !knownTechniqueIds.Contains(id));
+                if (missingTechniques > 0)
+                {
+                    mselEntity.MselTechniques = mselEntity.MselTechniques
+                        .Where(t => knownTechniqueIds.Contains(t.TechniqueId))
+                        .ToList();
+                    AddChange(result, "techniques", $"{missingTechniques} techniques were not imported because their release is not loaded here. Import the release, then add them to the MSEL.");
+                }
             }
 
             // Validate and fix scoring model linkage if MSEL uses CITE integration.

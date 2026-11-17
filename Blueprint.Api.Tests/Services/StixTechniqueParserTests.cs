@@ -120,6 +120,153 @@ public class StixTechniqueParserTests
     }
 
     // ---------------------------------------------------------------------------------------------
+    // CAPEC: attack patterns grouped by their Meta patterns, with no tactics at all
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Parse_OfCapec_ReadsTheReleaseFromTheBundle()
+    {
+        var release = await Parse(CapecBundles.Capec());
+
+        Assert.Equal("capec", release.Domain);
+        Assert.False(release.IsDefensive);
+        Assert.Equal("3.9", release.Version);
+        Assert.Equal("MITRE CAPEC", release.Name);
+        Assert.Equal(new DateTime(2023, 1, 24, 0, 0, 0, DateTimeKind.Utc), release.ReleaseDate);
+    }
+
+    [Fact]
+    public async Task Parse_OfCapec_TakesTheVersionGiven_OverTheOneTheBundleCarries()
+    {
+        var release = await Parse(CapecBundles.Capec(), "4.0");
+
+        Assert.Equal("4.0", release.Version);
+    }
+
+    [Fact]
+    public async Task Parse_OfCapecThatDoesNotNameItsVersion_WithNoneGiven_IsRefused()
+    {
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(CapecBundles.Capec(includeVersion: false)));
+
+        Assert.Contains("version", ex.Message);
+        Assert.Equal("3.1", (await Parse(CapecBundles.Capec(includeVersion: false), "3.1")).Version);
+    }
+
+    [Fact]
+    public async Task Parse_OfCapec_MakesTheMetaPatternsTheGroups_InAlphabeticalOrder()
+    {
+        var release = await Parse(CapecBundles.Capec());
+
+        var groups = release.Tactics.OrderBy(t => t.DisplayOrder).ToList();
+        Assert.Equal(["CAPEC-123", "CAPEC-248"], groups.Select(g => g.ExternalId));
+        Assert.Equal(["Buffer Manipulation", "Command Injection"], groups.Select(g => g.Name));
+        Assert.Equal(["capec-123", "capec-248"], groups.Select(g => g.ShortName));
+        Assert.Equal("https://capec.mitre.org/data/definitions/248.html", groups[1].Url);
+        Assert.DoesNotContain(release.Techniques, t => t.ExternalId is "CAPEC-123" or "CAPEC-248");
+    }
+
+    [Fact]
+    public async Task Parse_OfCapec_SkipsDeprecatedAndObsoletePatterns()
+    {
+        var release = await Parse(CapecBundles.Capec());
+
+        Assert.Equal(["CAPEC-10", "CAPEC-100", "CAPEC-66", "CAPEC-8", "CAPEC-9"], release.Techniques.Select(t => t.ExternalId).Order());
+    }
+
+    [Fact]
+    public async Task Parse_OfCapec_MakesAStandardPatternATechnique_AndADetailedOneItsSubTechnique()
+    {
+        var release = await Parse(CapecBundles.Capec());
+        var overflow = release.Techniques.Single(t => t.ExternalId == "CAPEC-100");
+
+        Assert.Null(overflow.ParentId);
+        Assert.Null(release.Techniques.Single(t => t.ExternalId == "CAPEC-66").ParentId);
+        Assert.Equal(overflow.Id, release.Techniques.Single(t => t.ExternalId == "CAPEC-8").ParentId);
+        Assert.Equal(overflow.Id, release.Techniques.Single(t => t.ExternalId == "CAPEC-10").ParentId);
+    }
+
+    [Fact]
+    public async Task Parse_OfCapec_AttachesAPatternBelowASubTechniqueToTheTechniqueAboveBoth()
+    {
+        var release = await Parse(CapecBundles.Capec());
+
+        var local = release.Techniques.Single(t => t.ExternalId == "CAPEC-9");
+        Assert.Equal(release.Techniques.Single(t => t.ExternalId == "CAPEC-100").Id, local.ParentId);
+        Assert.Equal(local.Parent, release.Techniques.Single(t => t.ExternalId == "CAPEC-100"));
+    }
+
+    [Fact]
+    public async Task Parse_OfCapec_PutsEachPatternUnderTheMetaPatternAboveIt_ThroughAnyLevel()
+    {
+        var release = await Parse(CapecBundles.Capec());
+
+        Assert.Equal("capec-248", release.Techniques.Single(t => t.ExternalId == "CAPEC-66").Tactics);
+        Assert.Equal("capec-123", release.Techniques.Single(t => t.ExternalId == "CAPEC-100").Tactics);
+        Assert.Equal("capec-123", release.Techniques.Single(t => t.ExternalId == "CAPEC-8").Tactics);
+        Assert.Equal("capec-123", release.Techniques.Single(t => t.ExternalId == "CAPEC-9").Tactics);
+    }
+
+    [Fact]
+    public async Task Parse_OfCapec_CarriesTheDomainsOfAttack_TheWeaknesses_AndTheOwaspAndWascLinks()
+    {
+        var release = await Parse(CapecBundles.Capec());
+
+        var sql = release.Techniques.Single(t => t.ExternalId == "CAPEC-66");
+        Assert.Equal("https://capec.mitre.org/data/definitions/66.html", sql.Url);
+        Assert.Equal("Software", sql.Platforms);
+        Assert.Equal("CWE-89,CWE-1286", sql.Weaknesses);
+        Assert.Equal(
+            "WASC|WASC-19 SQL Injection|http://projects.webappsec.org/SQL-Injection\nOWASP|SQL Injection|https://owasp.org/www-community/attacks/SQL_Injection",
+            sql.ReferenceLinks);
+        Assert.Equal("Software,Hardware", release.Techniques.Single(t => t.ExternalId == "CAPEC-100").Platforms);
+        Assert.Equal("", release.Techniques.Single(t => t.ExternalId == "CAPEC-100").Weaknesses);
+        Assert.Null(release.Techniques.Single(t => t.ExternalId == "CAPEC-100").ReferenceLinks);
+    }
+
+    [Fact]
+    public async Task Parse_OfCapec_GivesIdsOfItsOwn_ThatDoNotChangeBetweenParses()
+    {
+        var first = await Parse(CapecBundles.Capec());
+        var again = await Parse(CapecBundles.Capec());
+        var other = await Parse(CapecBundles.Capec(), "4.0");
+
+        Assert.Equal(StixTechniqueParser.ReleaseId("capec", "3.9"), first.Id);
+        Assert.Equal(first.Techniques.Select(t => t.Id).Order(), again.Techniques.Select(t => t.Id).Order());
+        Assert.Empty(first.Techniques.Select(t => t.Id).Intersect(other.Techniques.Select(t => t.Id)));
+    }
+
+    [Fact]
+    public async Task Parse_OfAttackPatternsThatAreNotCapecAndHaveNoTactics_IsStillRefused()
+    {
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(CapecBundles.WithoutCapecIds(), "1.0"));
+
+        Assert.Contains("source", ex.Message);
+    }
+
+    [Fact]
+    public async Task Parse_OfCapecMixedWithAPatternThatIsNotCapec_IsRefused()
+    {
+        var mixed = CapecBundles.Capec().Replace(
+            "\"objects\": [",
+            "\"objects\": [ { \"type\": \"attack-pattern\", \"id\": \"attack-pattern--00000000-0000-4000-8000-000000000999\", \"name\": \"Stray\" },",
+            StringComparison.Ordinal);
+
+        await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(mixed));
+    }
+
+    [Fact]
+    public async Task Parse_OfCapecWhoseEveryPatternIsRetired_IsRefused()
+    {
+        var retired = CapecBundles.Capec()
+            .Replace("\"Stable\"", "\"Deprecated\"", StringComparison.Ordinal)
+            .Replace("\"Draft\"", "\"Obsolete\"", StringComparison.Ordinal);
+
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(retired));
+
+        Assert.Contains("no techniques", ex.Message);
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // ATLAS: the same data model under its own catalogue
     // ---------------------------------------------------------------------------------------------
 

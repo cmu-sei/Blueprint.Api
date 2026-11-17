@@ -36,6 +36,16 @@ public class ReleaseFileParserTests
     }
 
     [Fact]
+    public async Task Parse_OfACapecBundle_IsACapecRelease()
+    {
+        var release = await Parse(CapecBundles.Capec());
+
+        Assert.Equal("capec", release.Domain);
+        Assert.False(release.IsDefensive);
+        Assert.Equal(5, release.Techniques.Count);
+    }
+
+    [Fact]
     public async Task Parse_OfAJsonLdGraph_IsAD3fendRelease()
     {
         var release = await Parse(D3fendOntologies.Ontology());

@@ -2366,6 +2366,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("platforms");
 
+                    b.Property<string>("ReferenceLinks")
+                        .HasColumnType("text")
+                        .HasColumnName("reference_links");
+
                     b.Property<string>("StixId")
                         .HasColumnType("text")
                         .HasColumnName("stix_id");
@@ -2381,6 +2385,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<string>("Url")
                         .HasColumnType("text")
                         .HasColumnName("url");
+
+                    b.Property<string>("Weaknesses")
+                        .HasColumnType("text")
+                        .HasColumnName("weaknesses");
 
                     b.HasKey("Id");
 

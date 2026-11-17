@@ -12,7 +12,7 @@ namespace Blueprint.Api.Services
 {
     /// <summary>
     /// Reads an uploaded technique framework release, whichever of the two file formats it is in: a STIX 2.x
-    /// bundle (ATT&amp;CK, ATLAS) goes to <see cref="StixTechniqueParser"/>, the D3FEND JSON-LD ontology to
+    /// bundle (ATT&amp;CK, ATLAS, CAPEC) goes to <see cref="StixTechniqueParser"/>, the D3FEND JSON-LD ontology to
     /// <see cref="D3fendOntologyParser"/>.
     /// </summary>
     public static class ReleaseFileParser
@@ -30,7 +30,7 @@ namespace Blueprint.Api.Services
                     "The file is the D3FEND mappings, not a release. Import the D3FEND ontology (d3fend.json) first, then import the mappings onto that release.");
 
             throw new InvalidTechniqueBundleException(
-                "The file is neither a STIX bundle nor the D3FEND ontology. Upload a release bundle such as enterprise-attack.json or stix-atlas.json, or d3fend.json.");
+                "The file is neither a STIX bundle nor the D3FEND ontology. Upload a release bundle such as enterprise-attack.json, stix-atlas.json or stix-capec.json, or d3fend.json.");
         }
 
         /// <summary>The file as JSON, or a 400 naming what is wrong with it.</summary>

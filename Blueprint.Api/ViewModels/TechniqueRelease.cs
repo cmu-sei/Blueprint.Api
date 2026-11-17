@@ -51,5 +51,17 @@ namespace Blueprint.Api.ViewModels
         /// <summary>The short names of the tactics the technique serves, e.g. "execution".</summary>
         public List<string> Tactics { get; set; } = new List<string>();
         public List<string> Platforms { get; set; } = new List<string>();
+        /// <summary>The CWE ids a CAPEC pattern exploits, e.g. "CWE-89"; empty for the other frameworks.</summary>
+        public List<string> Weaknesses { get; set; } = new List<string>();
+        /// <summary>A CAPEC pattern's links to OWASP and WASC; empty for the other frameworks.</summary>
+        public List<TechniqueLink> ReferenceLinks { get; set; } = new List<TechniqueLink>();
+    }
+
+    /// <summary>A link from a technique to the same attack in another catalogue (OWASP Attacks, WASC).</summary>
+    public class TechniqueLink
+    {
+        public string Source { get; set; }
+        public string Label { get; set; }
+        public string Url { get; set; }
     }
 }

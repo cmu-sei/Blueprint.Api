@@ -31,7 +31,7 @@ namespace Blueprint.Api.Services
     }
 
     /// <summary>
-    /// The technique framework releases (ATT&amp;CK, ATLAS, D3FEND) an administrator has uploaded. A release is never
+    /// The technique framework releases (ATT&amp;CK, ATLAS, CAPEC, D3FEND) an administrator has uploaded. A release is never
     /// edited: a newer version is imported alongside it, and MSELs move to it one at a time.
     /// </summary>
     public class TechniqueReleaseService : ITechniqueReleaseService

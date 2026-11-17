@@ -31,6 +31,13 @@ namespace Blueprint.Api.Data.Models
         public string Tactics { get; set; }
         /// <summary>Comma-separated platforms, e.g. "Windows,Linux,macOS".</summary>
         public string Platforms { get; set; }
+        /// <summary>Comma-separated CWE ids a CAPEC pattern exploits, e.g. "CWE-89,CWE-1286"; null for the other frameworks.</summary>
+        public string Weaknesses { get; set; }
+        /// <summary>
+        /// A CAPEC pattern's links to OWASP and WASC, one per line as "source|label|url"; null for the other
+        /// frameworks.
+        /// </summary>
+        public string ReferenceLinks { get; set; }
     }
 
     public class TechniqueConfiguration : IEntityTypeConfiguration<TechniqueEntity>

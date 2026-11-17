@@ -24,7 +24,9 @@ namespace Blueprint.Api.Infrastructure.Mappings
                 .ForMember(t => t.IsDefensive, opt => opt.MapFrom(x => x.TechniqueRelease.IsDefensive))
                 .ForMember(t => t.IsSubTechnique, opt => opt.MapFrom(x => x.ParentId != null))
                 .ForMember(t => t.Tactics, opt => opt.MapFrom(x => SplitList(x.Tactics)))
-                .ForMember(t => t.Platforms, opt => opt.MapFrom(x => SplitList(x.Platforms)));
+                .ForMember(t => t.Platforms, opt => opt.MapFrom(x => SplitList(x.Platforms)))
+                .ForMember(t => t.Weaknesses, opt => opt.MapFrom(x => SplitList(x.Weaknesses)))
+                .ForMember(t => t.ReferenceLinks, opt => opt.MapFrom(x => SplitLinks(x.ReferenceLinks)));
 
             CreateMap<MselTechniqueEntity, MselTechnique>();
 
@@ -32,6 +34,16 @@ namespace Blueprint.Api.Infrastructure.Mappings
                 .ForMember(c => c.TechniqueReleaseId, opt => opt.MapFrom(x => x.ReleaseId))
                 .ForMember(c => c.InheritedFromParent, opt => opt.Ignore());
         }
+
+        /// <summary>The "source|label|url" lines <c>StixTechniqueParser</c> stores a CAPEC pattern's links as.</summary>
+        private static System.Collections.Generic.List<TechniqueLink> SplitLinks(string value) =>
+            string.IsNullOrEmpty(value)
+                ? []
+                : value.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(line => line.Split('|'))
+                    .Where(parts => parts.Length == 3)
+                    .Select(parts => new TechniqueLink { Source = parts[0], Label = parts[1], Url = parts[2] })
+                    .ToList();
 
         private static System.Collections.Generic.List<string> SplitList(string value) =>
             string.IsNullOrEmpty(value)

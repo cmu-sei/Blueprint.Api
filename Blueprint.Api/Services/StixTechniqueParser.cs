@@ -50,7 +50,7 @@ namespace Blueprint.Api.Services
         public static TechniqueReleaseEntity Parse(JsonElement root, string version)
         {
             if (!CanParse(root))
-                throw new InvalidTechniqueBundleException("The file is not a STIX bundle. Upload a release bundle such as enterprise-attack.json or stix-atlas.json.");
+                throw new InvalidTechniqueBundleException("The file is not a STIX bundle. Upload a release bundle such as enterprise-attack.json, stix-atlas.json or stix-capec.json.");
 
             return ParseObjects(root.GetProperty("objects"), version);
         }
@@ -86,6 +86,11 @@ namespace Blueprint.Api.Services
 
             if (techniques.Count == 0)
                 throw new InvalidTechniqueBundleException("The bundle has no techniques.");
+
+            // CAPEC is the one catalogue in this data model with no tactics. It is told apart by every pattern
+            // carrying a CAPEC id and abstraction level, so a bundle of unidentified patterns is still refused.
+            if (tactics.Count == 0 && techniques.All(IsCapecPattern))
+                return ParseCapec(techniques, version);
 
             version = string.IsNullOrWhiteSpace(version)
                 ? (collection.HasValue ? GetString(collection.Value, "x_mitre_version") : null)
@@ -206,6 +211,228 @@ namespace Blueprint.Api.Services
             }
 
             return release;
+        }
+
+        /// <summary>The CAPEC release's domain; its patterns' own catalogue is "capec".</summary>
+        public const string CapecDomain = "capec";
+
+        private const string CapecSource = "capec";
+
+        private static bool IsCapecPattern(JsonElement item) =>
+            GetString(item, "x_capec_abstraction") != null
+            && GetReferences(item).Any(r =>
+                GetString(r, "source_name") == CapecSource
+                && (GetString(r, "external_id") ?? "").StartsWith("CAPEC-", StringComparison.Ordinal));
+
+        /// <summary>
+        /// Reads a CAPEC bundle (stix-capec.json) into a release. CAPEC has no tactics, so its Meta-level patterns
+        /// (Injection, Buffer Manipulation, Brute Force) are the release's groups, standing where tactics do for
+        /// ATT&amp;CK. The Standard patterns under them are its techniques, and a Detailed pattern is a
+        /// sub-technique of the Standard one it refines (SQL Injection under Command Injection). Deprecated and
+        /// obsolete patterns are skipped; CAPEC marks them with a status, not the STIX revoked flag.
+        /// </summary>
+        private static TechniqueReleaseEntity ParseCapec(List<JsonElement> patterns, string version)
+        {
+            var active = patterns
+                .Where(p => GetString(p, "x_capec_status") is not ("Deprecated" or "Obsolete"))
+                .Where(p => GetString(p, "id") != null)
+                .ToList();
+            if (active.Count == 0)
+                throw new InvalidTechniqueBundleException("The bundle has no techniques.");
+
+            version = string.IsNullOrWhiteSpace(version)
+                ? active
+                    .Select(p => GetString(p, "x_capec_version"))
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .GroupBy(v => v)
+                    .OrderByDescending(g => g.Count())
+                    .Select(g => g.Key)
+                    .FirstOrDefault()
+                : version.Trim();
+            if (string.IsNullOrWhiteSpace(version))
+                throw new InvalidTechniqueBundleException("The bundle does not name its version. Enter the version and upload it again.");
+
+            var release = new TechniqueReleaseEntity
+            {
+                Id = ReleaseId(CapecDomain, version),
+                Domain = CapecDomain,
+                IsDefensive = false,
+                Version = version,
+                Name = "MITRE CAPEC",
+                Description = "Common Attack Pattern Enumeration and Classification: how attackers exploit weaknesses, "
+                    + "from broad categories down to specific patterns such as SQL Injection or Buffer Overflow.",
+                ReleaseDate = active.Select(p => GetDate(p, "modified")).Where(d => d.HasValue).Max()
+            };
+
+            var byStixId = new Dictionary<string, JsonElement>();
+            foreach (var pattern in active)
+                byStixId.TryAdd(GetString(pattern, "id"), pattern);
+
+            bool IsMeta(JsonElement p) => GetString(p, "x_capec_abstraction") == "Meta";
+            IEnumerable<JsonElement> Parents(JsonElement p) =>
+                GetStrings(p, "x_capec_child_of_refs")
+                    .Where(id => id != null && byStixId.ContainsKey(id))
+                    .Select(id => byStixId[id]);
+
+            // The groups: Meta patterns, alphabetically, since CAPEC gives them no order.
+            var groups = active
+                .Where(IsMeta)
+                .Select(p => (Pattern: p, Id: GetCapecReference(p)))
+                .Where(g => g.Id.ExternalId != null)
+                .OrderBy(g => GetString(g.Pattern, "name"), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(g => g.Id.ExternalId, StringComparer.Ordinal)
+                .ToList();
+            var shortNames = new Dictionary<string, string>();
+            foreach (var (pattern, id) in groups)
+            {
+                var stixId = GetString(pattern, "id");
+                var shortName = id.ExternalId.ToLowerInvariant();
+                shortNames[stixId] = shortName;
+                release.Tactics.Add(new TechniqueTacticEntity
+                {
+                    Id = ObjectId(CapecDomain, version, stixId),
+                    TechniqueReleaseId = release.Id,
+                    StixId = stixId,
+                    ExternalId = id.ExternalId,
+                    ShortName = shortName,
+                    Name = GetString(pattern, "name"),
+                    Description = GetString(pattern, "description"),
+                    Url = id.Url,
+                    DisplayOrder = release.Tactics.Count
+                });
+            }
+
+            // A pattern's parent technique is the first non-Meta pattern it is a child of; the release's techniques
+            // are the ones without one. Parents are followed to the top, so a pattern three levels down is still a
+            // sub-technique of the Standard pattern, not of a sub-technique.
+            JsonElement? TechniqueParent(JsonElement p) =>
+                Parents(p).Where(x => !IsMeta(x) && GetString(x, "id") != GetString(p, "id"))
+                    .Select(x => (JsonElement?)x).FirstOrDefault();
+            JsonElement Root(JsonElement p)
+            {
+                var seen = new HashSet<string> { GetString(p, "id") };
+                var current = p;
+                while (TechniqueParent(current) is { } parent && seen.Add(GetString(parent, "id")))
+                    current = parent;
+                return current;
+            }
+
+            // The Meta patterns above a pattern, reached through any chain of parents.
+            HashSet<string> Groups(JsonElement p)
+            {
+                var found = new HashSet<string>();
+                var seen = new HashSet<string>();
+                var stack = new Stack<JsonElement>();
+                stack.Push(p);
+                while (stack.Count > 0)
+                {
+                    var current = stack.Pop();
+                    foreach (var parent in Parents(current))
+                    {
+                        var id = GetString(parent, "id");
+                        if (IsMeta(parent))
+                            found.Add(id);
+                        else if (seen.Add(id))
+                            stack.Push(parent);
+                    }
+                }
+                return found;
+            }
+
+            var byExternalId = new Dictionary<string, TechniqueEntity>(StringComparer.OrdinalIgnoreCase);
+            var parentOf = new List<(TechniqueEntity Sub, string RootStixId)>();
+            foreach (var pattern in active.Where(p => !IsMeta(p)))
+            {
+                var (externalId, url) = GetCapecReference(pattern);
+                var stixId = GetString(pattern, "id");
+                if (externalId == null || byExternalId.ContainsKey(externalId))
+                    continue;
+
+                var root = Root(pattern);
+                var rootStixId = GetString(root, "id");
+                var memberOf = Groups(pattern);
+                if (rootStixId != stixId)
+                    memberOf.UnionWith(Groups(root));
+
+                var entity = new TechniqueEntity
+                {
+                    Id = ObjectId(CapecDomain, version, stixId),
+                    TechniqueReleaseId = release.Id,
+                    StixId = stixId,
+                    ExternalId = externalId,
+                    Name = GetString(pattern, "name"),
+                    Description = GetString(pattern, "description"),
+                    Url = url,
+                    Tactics = string.Join(",", groups
+                        .Select(g => GetString(g.Pattern, "id"))
+                        .Where(memberOf.Contains)
+                        .Select(g => shortNames[g])),
+                    // CAPEC names the domains of attack (Software, Hardware, Social Engineering) where ATT&CK
+                    // names platforms, and the pool shows the one column for both.
+                    Platforms = string.Join(",", GetStrings(pattern, "x_capec_domains")),
+                    Weaknesses = string.Join(",", GetReferences(pattern)
+                        .Where(r => GetString(r, "source_name") == "cwe")
+                        .Select(r => GetString(r, "external_id"))
+                        .Where(id => !string.IsNullOrWhiteSpace(id))
+                        .Distinct()),
+                    ReferenceLinks = CapecLinks(pattern)
+                };
+                byExternalId[externalId] = entity;
+                release.Techniques.Add(entity);
+                if (rootStixId != stixId)
+                    parentOf.Add((entity, rootStixId));
+            }
+
+            var byStix = release.Techniques.ToDictionary(t => t.StixId);
+            foreach (var (sub, rootStixId) in parentOf)
+            {
+                if (byStix.TryGetValue(rootStixId, out var parent))
+                {
+                    // Set the navigation as well as the key so EF inserts the parent first.
+                    sub.ParentId = parent.Id;
+                    sub.Parent = parent;
+                }
+            }
+
+            if (release.Techniques.Count == 0)
+                throw new InvalidTechniqueBundleException("The bundle has no techniques.");
+
+            return release;
+        }
+
+        private static (string ExternalId, string Url) GetCapecReference(JsonElement item)
+        {
+            foreach (var reference in GetReferences(item))
+            {
+                var id = GetString(reference, "external_id");
+                if (GetString(reference, "source_name") == CapecSource && id != null && id.StartsWith("CAPEC-", StringComparison.Ordinal))
+                    return (id, GetString(reference, "url"));
+            }
+
+            return (null, null);
+        }
+
+        /// <summary>The pattern's OWASP and WASC references, one "source|label|url" line each; null when it has none.</summary>
+        private static string CapecLinks(JsonElement pattern)
+        {
+            static string Clean(string value) => (value ?? "").Replace('|', ' ').Replace('\r', ' ').Replace('\n', ' ').Trim();
+
+            var lines = new List<string>();
+            foreach (var reference in GetReferences(pattern))
+            {
+                var source = GetString(reference, "source_name");
+                var url = GetString(reference, "url");
+                if (string.IsNullOrWhiteSpace(url) || source is not ("OWASP Attacks" or "WASC"))
+                    continue;
+
+                var label = GetString(reference, "description");
+                var id = GetString(reference, "external_id");
+                if (source == "WASC" && !string.IsNullOrWhiteSpace(id))
+                    label = $"WASC-{id} {label}";
+                lines.Add($"{(source == "WASC" ? "WASC" : "OWASP")}|{Clean(label)}|{Clean(url)}");
+            }
+
+            return lines.Count == 0 ? null : string.Join("\n", lines.Distinct());
         }
 
         public static Guid ReleaseId(string domain, string version) =>

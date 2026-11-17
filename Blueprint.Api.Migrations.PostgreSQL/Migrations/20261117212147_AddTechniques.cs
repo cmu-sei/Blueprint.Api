@@ -70,7 +70,9 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     url = table.Column<string>(type: "text", nullable: true),
                     parent_id = table.Column<Guid>(type: "uuid", nullable: true),
                     tactics = table.Column<string>(type: "text", nullable: true),
-                    platforms = table.Column<string>(type: "text", nullable: true)
+                    platforms = table.Column<string>(type: "text", nullable: true),
+                    weaknesses = table.Column<string>(type: "text", nullable: true),
+                    reference_links = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
                 {

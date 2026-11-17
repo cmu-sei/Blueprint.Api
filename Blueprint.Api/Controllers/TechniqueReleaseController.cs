@@ -17,7 +17,7 @@ using Swashbuckle.AspNetCore.Annotations;
 namespace Blueprint.Api.Controllers
 {
     /// <summary>
-    /// Technique framework releases (MITRE ATT&amp;CK, ATLAS, D3FEND). Reads are open to any authenticated user, as
+    /// Technique framework releases (MITRE ATT&amp;CK, ATLAS, CAPEC, D3FEND). Reads are open to any authenticated user, as
     /// competency frameworks are: every MSEL with a technique column loads them. Import and delete are managed with
     /// the competency frameworks.
     /// </summary>
@@ -121,8 +121,10 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Accepts enterprise-attack.json, mobile-attack.json or ics-attack.json from the mitre-attack/attack-stix-data
         /// repository, or stix-atlas.json from the mitre-atlas/atlas-data releases, which becomes a release of the
-        /// ATLAS domain. Revoked and deprecated objects are skipped. Also accepts d3fend.json (JSON-LD) from the
-        /// D3FEND Ontology Resources page, which becomes a defensive release of the d3fend domain. The version is read
+        /// ATLAS domain, or stix-capec.json from the mitre/cti repository (capec/2.1), which becomes a release of the
+        /// CAPEC domain, its Meta patterns standing as the groups tactics are in the others. Revoked and deprecated
+        /// objects (and, for CAPEC, deprecated and obsolete ones) are skipped. Also accepts d3fend.json (JSON-LD) from
+        /// the D3FEND Ontology Resources page, which becomes a defensive release of the d3fend domain. The version is read
         /// from the file; give one only for an older file that does not name it.
         /// </remarks>
         /// <param name="form">The bundle or ontology</param>

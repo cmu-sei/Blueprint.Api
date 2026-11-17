@@ -8,28 +8,28 @@ using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Infrastructure.Mappings
 {
-    public class AttackProfile : AutoMapper.Profile
+    public class TechniqueProfile : AutoMapper.Profile
     {
-        public AttackProfile()
+        public TechniqueProfile()
         {
-            CreateMap<AttackReleaseEntity, AttackRelease>()
+            CreateMap<TechniqueReleaseEntity, TechniqueRelease>()
                 .ForMember(r => r.TacticCount, opt => opt.MapFrom(x => x.Tactics.Count))
                 .ForMember(r => r.TechniqueCount, opt => opt.MapFrom(x => x.Techniques.Count))
                 .ForMember(r => r.CountermeasureCount, opt => opt.MapFrom(x => x.Countermeasures.Count));
 
-            CreateMap<AttackTacticEntity, AttackTactic>();
+            CreateMap<TechniqueTacticEntity, TechniqueTactic>();
 
-            CreateMap<AttackTechniqueEntity, AttackTechnique>()
-                .ForMember(t => t.Domain, opt => opt.MapFrom(x => x.AttackRelease.Domain))
-                .ForMember(t => t.IsDefensive, opt => opt.MapFrom(x => x.AttackRelease.IsDefensive))
+            CreateMap<TechniqueEntity, Technique>()
+                .ForMember(t => t.Domain, opt => opt.MapFrom(x => x.TechniqueRelease.Domain))
+                .ForMember(t => t.IsDefensive, opt => opt.MapFrom(x => x.TechniqueRelease.IsDefensive))
                 .ForMember(t => t.IsSubTechnique, opt => opt.MapFrom(x => x.ParentId != null))
                 .ForMember(t => t.Tactics, opt => opt.MapFrom(x => SplitList(x.Tactics)))
                 .ForMember(t => t.Platforms, opt => opt.MapFrom(x => SplitList(x.Platforms)));
 
-            CreateMap<MselAttackTechniqueEntity, MselAttackTechnique>();
+            CreateMap<MselTechniqueEntity, MselTechnique>();
 
-            CreateMap<AttackTechniqueCountermeasureEntity, AttackTechniqueCountermeasure>()
-                .ForMember(c => c.AttackReleaseId, opt => opt.MapFrom(x => x.ReleaseId))
+            CreateMap<TechniqueCountermeasureEntity, TechniqueCountermeasure>()
+                .ForMember(c => c.TechniqueReleaseId, opt => opt.MapFrom(x => x.ReleaseId))
                 .ForMember(c => c.InheritedFromParent, opt => opt.Ignore());
         }
 

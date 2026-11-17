@@ -23,10 +23,10 @@ namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary>
 /// The D3FEND "countered by" mappings: imported onto a D3FEND release from d3fend-full-mappings.json
-/// (<c>AttackReleaseController</c>), then read per offensive technique and for a MSEL's whole attack pool.
+/// (<c>TechniqueReleaseController</c>), then read per offensive technique and for a MSEL's whole attack pool.
 /// </summary>
 /// <remarks>401 and 403 for these routes live in <see cref="RouteAuthorizationTests"/>.</remarks>
-public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
+public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
 {
     // ---------------------------------------------------------------------------------------------
@@ -42,14 +42,14 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         var response = await Upload(Client(actor), d3fend.Id, D3fendMappings.Standard());
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var result = await Read<AttackTechniqueCountermeasureImport>(response);
-        Assert.Equal(d3fend.Id, result.AttackReleaseId);
+        var result = await Read<TechniqueCountermeasureImport>(response);
+        Assert.Equal(d3fend.Id, result.TechniqueReleaseId);
         Assert.Equal(9, result.RowsRead);
         Assert.Equal(5, result.PairsStored);
         // Network Traffic Filtering is not a technique of this release
         Assert.Equal(1, result.PairsSkipped);
         Assert.Equal(4, result.OffensiveTechniqueCount);
-        var stored = await ReadBack(rb => rb.AttackTechniqueCountermeasures
+        var stored = await ReadBack(rb => rb.TechniqueCountermeasures
             .Where(c => c.ReleaseId == d3fend.Id)
             .Include(c => c.DefensiveTechnique)
             .ToListAsync(Ct));
@@ -65,7 +65,7 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         var d3fend = await SeedD3fendRelease("1.6.0");
         await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
 
-        var release = await Get<AttackRelease>(RootClient, $"api/attackreleases/{d3fend.Id}");
+        var release = await Get<TechniqueRelease>(RootClient, $"api/techniquereleases/{d3fend.Id}");
 
         Assert.Equal(5, release.CountermeasureCount);
     }
@@ -83,8 +83,8 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         var response = await Upload(RootClient, d3fend.Id, smaller);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.Equal(1, (await Read<AttackTechniqueCountermeasureImport>(response)).PairsStored);
-        var stored = await ReadBack(rb => rb.AttackTechniqueCountermeasures.Where(c => c.ReleaseId == d3fend.Id).Select(c => c.OffensiveExternalId).ToListAsync(Ct));
+        Assert.Equal(1, (await Read<TechniqueCountermeasureImport>(response)).PairsStored);
+        var stored = await ReadBack(rb => rb.TechniqueCountermeasures.Where(c => c.ReleaseId == d3fend.Id).Select(c => c.OffensiveExternalId).ToListAsync(Ct));
         Assert.Equal(["T1059"], stored);
     }
 
@@ -97,7 +97,7 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("d3fend-full-mappings.json", await response.Content.ReadAsStringAsync(Ct));
-        Assert.False(await ReadBack(rb => rb.AttackTechniqueCountermeasures.AnyAsync(c => c.ReleaseId == d3fend.Id, Ct)));
+        Assert.False(await ReadBack(rb => rb.TechniqueCountermeasures.AnyAsync(c => c.ReleaseId == d3fend.Id, Ct)));
     }
 
     /// <summary>The import rule is "the release is defensive", not "its domain is d3fend".</summary>
@@ -111,18 +111,18 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         await Seed(defensive);
         var msel = TestData.Msel();
         await Seed(msel);
-        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
 
         var response = await Upload(RootClient, defensive.Id, D3fendMappings.Standard());
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/attacktechniques/countermeasures");
-        Assert.Equal(defensive.Id, result.AttackReleaseId);
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
+        Assert.Equal(defensive.Id, result.TechniqueReleaseId);
         Assert.Equal(["D3-FA"], Assert.Single(result.Techniques).Countermeasures.Select(c => c.DefensiveTechnique.ExternalId));
     }
 
     [Fact]
-    public async Task Import_OntoAnAttackRelease_Is400()
+    public async Task Import_OntoAnTechniqueRelease_Is400()
     {
         var attack = await SeedRelease("1.0");
 
@@ -149,7 +149,7 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         file.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         content.Add(file, "ToUpload", "d3fend-full-mappings.json");
 
-        var response = await RootClient.PostAsync("api/attackreleases/import", content, Ct);
+        var response = await RootClient.PostAsync("api/techniquereleases/import", content, Ct);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("import the mappings onto that release", await response.Content.ReadAsStringAsync(Ct));
@@ -161,10 +161,10 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         var d3fend = await SeedD3fendRelease("1.6.0");
         await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
 
-        var response = await RootClient.DeleteAsync($"api/attackreleases/{d3fend.Id}", Ct);
+        var response = await RootClient.DeleteAsync($"api/techniquereleases/{d3fend.Id}", Ct);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.False(await ReadBack(rb => rb.AttackTechniqueCountermeasures.AnyAsync(c => c.ReleaseId == d3fend.Id, Ct)));
+        Assert.False(await ReadBack(rb => rb.TechniqueCountermeasures.AnyAsync(c => c.ReleaseId == d3fend.Id, Ct)));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -179,13 +179,13 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
         var actor = await Actor().SeedAsync();
 
-        var list = await Get<List<AttackTechniqueCountermeasure>>(Client(actor), $"api/attackreleases/{d3fend.Id}/countermeasures?offensiveId=T1003.005");
+        var list = await Get<List<TechniqueCountermeasure>>(Client(actor), $"api/techniquereleases/{d3fend.Id}/countermeasures?offensiveId=T1003.005");
 
         Assert.Equal(["D3-CH", "D3-CBAN"], list.Select(c => c.DefensiveTechnique.ExternalId));
         Assert.Equal([3, 1], list.Select(c => c.Weight));
         Assert.All(list, c => Assert.False(c.InheritedFromParent));
         Assert.All(list, c => Assert.Equal("T1003.005", c.OffensiveExternalId));
-        Assert.All(list, c => Assert.Equal(d3fend.Id, c.AttackReleaseId));
+        Assert.All(list, c => Assert.Equal(d3fend.Id, c.TechniqueReleaseId));
         var hardening = list[0];
         Assert.Equal(Technique(d3fend, "D3-CH").Id, hardening.DefensiveTechniqueId);
         Assert.Equal("d3fend", hardening.DefensiveTechnique.Domain);
@@ -202,7 +202,7 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         var d3fend = await SeedD3fendRelease("1.6.0");
         await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
 
-        var list = await Get<List<AttackTechniqueCountermeasure>>(RootClient, $"api/attackreleases/{d3fend.Id}/countermeasures?offensiveId=T1059.001");
+        var list = await Get<List<TechniqueCountermeasure>>(RootClient, $"api/techniquereleases/{d3fend.Id}/countermeasures?offensiveId=T1059.001");
 
         var analysis = Assert.Single(list);
         Assert.Equal("D3-FA", analysis.DefensiveTechnique.ExternalId);
@@ -216,9 +216,9 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         var d3fend = await SeedD3fendRelease("1.6.0");
         await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
 
-        Assert.Empty(await Get<List<AttackTechniqueCountermeasure>>(RootClient, $"api/attackreleases/{d3fend.Id}/countermeasures?offensiveId=T1053"));
+        Assert.Empty(await Get<List<TechniqueCountermeasure>>(RootClient, $"api/techniquereleases/{d3fend.Id}/countermeasures?offensiveId=T1053"));
         // a technique, not a sub-technique: there is no parent to fall back to
-        Assert.Empty(await Get<List<AttackTechniqueCountermeasure>>(RootClient, $"api/attackreleases/{d3fend.Id}/countermeasures?offensiveId=AML.T0000"));
+        Assert.Empty(await Get<List<TechniqueCountermeasure>>(RootClient, $"api/techniquereleases/{d3fend.Id}/countermeasures?offensiveId=AML.T0000"));
     }
 
     [Fact]
@@ -227,7 +227,7 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         var d3fend = await SeedD3fendRelease("1.6.0");
         await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
 
-        var list = await Get<List<AttackTechniqueCountermeasure>>(RootClient, $"api/attackreleases/{d3fend.Id}/countermeasures");
+        var list = await Get<List<TechniqueCountermeasure>>(RootClient, $"api/techniquereleases/{d3fend.Id}/countermeasures");
 
         Assert.Equal(["T0800", "T1003", "T1003.005", "T1003.005", "T1059"], list.Select(c => c.OffensiveExternalId));
         Assert.Equal(["D3-CH", "D3-CBAN"], list.Where(c => c.OffensiveExternalId == "T1003.005").Select(c => c.DefensiveTechnique.ExternalId));
@@ -236,7 +236,7 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
     [Fact]
     public async Task GetByRelease_OfAReleaseThatIsNotThere_Is404()
     {
-        var response = await RootClient.GetAsync($"api/attackreleases/{Guid.NewGuid()}/countermeasures?offensiveId=T1003", Ct);
+        var response = await RootClient.GetAsync($"api/techniquereleases/{Guid.NewGuid()}/countermeasures?offensiveId=T1003", Ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -257,25 +257,25 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         var msel = TestData.Msel();
         await Seed(msel);
         await Seed(
-            new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1003").Id) { Id = Guid.NewGuid() },
-            new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1059.001").Id) { Id = Guid.NewGuid() },
-            new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1053").Id) { Id = Guid.NewGuid() },
-            new MselAttackTechniqueEntity(msel.Id, Technique(pinned, "D3-CH").Id) { Id = Guid.NewGuid() });
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1003").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1059.001").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1053").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(pinned, "D3-CH").Id) { Id = Guid.NewGuid() });
         var viewer = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
 
-        var result = await Get<MselCountermeasures>(Client(viewer), $"api/msels/{msel.Id}/attacktechniques/countermeasures");
+        var result = await Get<MselCountermeasures>(Client(viewer), $"api/msels/{msel.Id}/techniques/countermeasures");
 
         Assert.Equal(msel.Id, result.MselId);
-        Assert.Equal(pinned.Id, result.AttackReleaseId);
+        Assert.Equal(pinned.Id, result.TechniqueReleaseId);
         Assert.True(result.HasMappings);
         Assert.Equal(["T1003", "T1053", "T1059.001"], result.Techniques.Select(t => t.OffensiveExternalId));
         var dumping = result.Techniques[0];
-        Assert.Equal(Technique(attack, "T1003").Id, dumping.AttackTechniqueId);
+        Assert.Equal(Technique(attack, "T1003").Id, dumping.TechniqueId);
         Assert.Null(dumping.InheritedFrom);
         var hardening = Assert.Single(dumping.Countermeasures);
         Assert.Equal("D3-CH", hardening.DefensiveTechnique.ExternalId);
         Assert.False(hardening.InheritedFromParent);
-        Assert.Equal(pinned.Id, hardening.AttackReleaseId);
+        Assert.Equal(pinned.Id, hardening.TechniqueReleaseId);
         Assert.Equal(Technique(pinned, "D3-CH").Id, hardening.DefensiveTechniqueId);
         Assert.Equal("hardens Credential; T1003 may access Credential", hardening.Rationale);
         Assert.Empty(result.Techniques[1].Countermeasures);
@@ -295,11 +295,11 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         await Upload(RootClient, withMappings.Id, D3fendMappings.Standard());
         var msel = TestData.Msel();
         await Seed(msel);
-        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
 
-        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/attacktechniques/countermeasures");
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
 
-        Assert.Equal(withMappings.Id, result.AttackReleaseId);
+        Assert.Equal(withMappings.Id, result.TechniqueReleaseId);
         Assert.True(result.HasMappings);
         Assert.Equal(["D3-FA"], Assert.Single(result.Techniques).Countermeasures.Select(c => c.DefensiveTechnique.ExternalId));
     }
@@ -315,12 +315,12 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         var msel = TestData.Msel();
         await Seed(msel);
         await Seed(
-            new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() },
-            new MselAttackTechniqueEntity(msel.Id, Technique(pinned, "D3-CH").Id) { Id = Guid.NewGuid() });
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(pinned, "D3-CH").Id) { Id = Guid.NewGuid() });
 
-        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/attacktechniques/countermeasures");
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
 
-        Assert.Equal(pinned.Id, result.AttackReleaseId);
+        Assert.Equal(pinned.Id, result.TechniqueReleaseId);
         Assert.False(result.HasMappings);
         Assert.Empty(Assert.Single(result.Techniques).Countermeasures);
     }
@@ -331,11 +331,11 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         var attack = await SeedRelease("1.0");
         var msel = TestData.Msel();
         await Seed(msel);
-        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
 
-        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/attacktechniques/countermeasures");
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
 
-        Assert.Null(result.AttackReleaseId);
+        Assert.Null(result.TechniqueReleaseId);
         Assert.False(result.HasMappings);
         Assert.Equal("T1059", Assert.Single(result.Techniques).OffensiveExternalId);
     }
@@ -347,22 +347,22 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         await Seed(msel);
         var stranger = await Actor().SeedAsync();
 
-        var response = await Client(stranger).GetAsync($"api/msels/{msel.Id}/attacktechniques/countermeasures", Ct);
+        var response = await Client(stranger).GetAsync($"api/msels/{msel.Id}/techniques/countermeasures", Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------
 
-    private async Task<AttackReleaseEntity> SeedRelease(string version)
+    private async Task<TechniqueReleaseEntity> SeedRelease(string version)
     {
-        var release = await AttackStixParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(AttackBundles.Enterprise(version))), null, Ct);
+        var release = await StixTechniqueParser.ParseAsync(
+            new MemoryStream(Encoding.UTF8.GetBytes(TechniqueBundles.Enterprise(version))), null, Ct);
         await Seed(release);
         return release;
     }
 
-    private async Task<AttackReleaseEntity> SeedD3fendRelease(string version)
+    private async Task<TechniqueReleaseEntity> SeedD3fendRelease(string version)
     {
         var release = await D3fendOntologyParser.ParseAsync(
             new MemoryStream(Encoding.UTF8.GetBytes(D3fendOntologies.Ontology(version))), null, Ct);
@@ -370,7 +370,7 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         return release;
     }
 
-    private static AttackTechniqueEntity Technique(AttackReleaseEntity release, string externalId) =>
+    private static TechniqueEntity Technique(TechniqueReleaseEntity release, string externalId) =>
         release.Techniques.Single(t => t.ExternalId == externalId);
 
     /// <remarks>Awaited inside the <c>using</c>: <c>TestServer</c> reads the body during <c>SendAsync</c>.</remarks>
@@ -381,7 +381,7 @@ public class AttackCountermeasureEndpointTests(DatabaseFixture fixture, Blueprin
         file.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         content.Add(file, "ToUpload", "d3fend-full-mappings.json");
 
-        return await client.PostAsync($"api/attackreleases/{releaseId}/countermeasures", content, Ct);
+        return await client.PostAsync($"api/techniquereleases/{releaseId}/countermeasures", content, Ct);
     }
 
     private async Task<T> Get<T>(HttpClient client, string url)

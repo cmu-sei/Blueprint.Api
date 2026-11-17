@@ -15,13 +15,13 @@ namespace Blueprint.Api.Tests.Services;
 /// <summary><c>ReleaseFileParser</c> - which parser an uploaded file goes to, by its shape rather than its name.</summary>
 public class ReleaseFileParserTests
 {
-    private static async Task<AttackReleaseEntity> Parse(string json) =>
+    private static async Task<TechniqueReleaseEntity> Parse(string json) =>
         await ReleaseFileParser.ParseAsync(new MemoryStream(Encoding.UTF8.GetBytes(json)), null, TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task Parse_OfAStixBundle_IsAnAttackRelease()
+    public async Task Parse_OfAStixBundle_IsAnTechniqueRelease()
     {
-        var release = await Parse(AttackBundles.Enterprise("1.0"));
+        var release = await Parse(TechniqueBundles.Enterprise("1.0"));
 
         Assert.Equal("enterprise-attack", release.Domain);
         Assert.Equal(4, release.Techniques.Count);
@@ -30,7 +30,7 @@ public class ReleaseFileParserTests
     [Fact]
     public async Task Parse_OfAnAtlasBundle_IsAnAtlasRelease()
     {
-        var release = await Parse(AttackBundles.Atlas());
+        var release = await Parse(TechniqueBundles.Atlas());
 
         Assert.Equal("ATLAS", release.Domain);
     }
@@ -51,7 +51,7 @@ public class ReleaseFileParserTests
     [InlineData("""[]""")]
     public async Task Parse_OfNeitherShape_IsRefusedNamingBothFormats(string json)
     {
-        var ex = await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse(json));
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(json));
 
         Assert.Contains("STIX bundle", ex.Message);
         Assert.Contains("D3FEND ontology", ex.Message);
@@ -60,7 +60,7 @@ public class ReleaseFileParserTests
     [Fact]
     public async Task Parse_OfSomethingThatIsNotJson_IsRefused()
     {
-        var ex = await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse("not json"));
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse("not json"));
 
         Assert.Contains("not valid JSON", ex.Message);
     }

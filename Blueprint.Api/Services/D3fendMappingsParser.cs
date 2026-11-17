@@ -90,7 +90,7 @@ namespace Blueprint.Api.Services
             }
             catch (JsonException ex)
             {
-                throw new InvalidAttackBundleException($"The file is not valid JSON: {ex.Message}");
+                throw new InvalidTechniqueBundleException($"The file is not valid JSON: {ex.Message}");
             }
             finally
             {
@@ -122,7 +122,7 @@ namespace Blueprint.Api.Services
                         continue;
                     }
                     if (reader.TokenType != JsonTokenType.StartObject)
-                        throw new InvalidAttackBundleException("The file is not the D3FEND mappings: results.bindings holds something other than result rows.");
+                        throw new InvalidTechniqueBundleException("The file is not the D3FEND mappings: results.bindings holds something other than result rows.");
 
                     var start = (int)reader.TokenStartIndex;
                     if (!reader.TrySkip())
@@ -209,15 +209,15 @@ namespace Blueprint.Api.Services
             public Result Finish()
             {
                 if (!SawBindings)
-                    throw new InvalidAttackBundleException(
+                    throw new InvalidTechniqueBundleException(
                         "The file is not the D3FEND mappings. Upload d3fend-full-mappings.json for the release, from https://d3fend.mitre.org/ontologies/d3fend/<version>/d3fend-full-mappings.json.");
                 if (_vars != null && RequiredVars.Any(v => !_vars.Contains(v)))
-                    throw new InvalidAttackBundleException(
+                    throw new InvalidTechniqueBundleException(
                         "The file is SPARQL results, but not the D3FEND mappings: its variables lack off_tech_id and def_tech.");
                 if (_rowsRead == 0)
-                    throw new InvalidAttackBundleException("The mappings file has no result rows.");
+                    throw new InvalidTechniqueBundleException("The mappings file has no result rows.");
                 if (_pairs.Count == 0)
-                    throw new InvalidAttackBundleException("No row in the file names an offensive technique id and a defensive technique.");
+                    throw new InvalidTechniqueBundleException("No row in the file names an offensive technique id and a defensive technique.");
 
                 var pairs = _pairs
                     .OrderBy(p => p.Value.Order)

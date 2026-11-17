@@ -22,12 +22,12 @@ using Xunit;
 namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary>
-/// <c>AttackReleaseController</c> and <c>MselAttackTechniqueController</c> - the ATT&amp;CK, ATLAS and D3FEND
-/// releases an administrator imports, and the per-MSEL technique pool that AttackTechnique and DefensiveTechnique
+/// <c>TechniqueReleaseController</c> and <c>MselTechniqueController</c> - the ATT&amp;CK, ATLAS and D3FEND
+/// releases an administrator imports, and the per-MSEL technique pool that Technique and DefensiveTechnique
 /// columns pick from. Also the two ways a pool leaves its MSEL: copy, and JSON export to another installation.
 /// </summary>
 /// <remarks>401 and 403 for these routes live in <see cref="RouteAuthorizationTests"/>.</remarks>
-public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
+public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
 {
     // ---------------------------------------------------------------------------------------------
@@ -39,30 +39,30 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageCompetencyFrameworks).SeedAsync();
 
-        var response = await Upload(Client(actor), AttackBundles.Enterprise("1.0"));
+        var response = await Upload(Client(actor), TechniqueBundles.Enterprise("1.0"));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var release = await Read<AttackRelease>(response);
-        Assert.Equal(AttackStixParser.ReleaseId("enterprise-attack", "1.0"), release.Id);
+        var release = await Read<TechniqueRelease>(response);
+        Assert.Equal(StixTechniqueParser.ReleaseId("enterprise-attack", "1.0"), release.Id);
         Assert.False(release.IsDefensive);
         Assert.Equal(2, release.TacticCount);
         Assert.Equal(4, release.TechniqueCount);
-        Assert.Equal(4, await ReadBack(rb => rb.AttackTechniques.CountAsync(t => t.AttackReleaseId == release.Id, Ct)));
+        Assert.Equal(4, await ReadBack(rb => rb.Techniques.CountAsync(t => t.TechniqueReleaseId == release.Id, Ct)));
     }
 
     /// <summary>ATLAS shares ATT&amp;CK's data model, so the same endpoint imports it as a release of its own domain.</summary>
     [Fact]
     public async Task Import_OfAnAtlasBundle_Is201_AsAnAtlasRelease()
     {
-        var response = await Upload(RootClient, AttackBundles.Atlas(), "stix-atlas.json");
+        var response = await Upload(RootClient, TechniqueBundles.Atlas(), "stix-atlas.json");
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var release = await Read<AttackRelease>(response);
-        Assert.Equal(AttackStixParser.ReleaseId("ATLAS", "2026.10"), release.Id);
+        var release = await Read<TechniqueRelease>(response);
+        Assert.Equal(StixTechniqueParser.ReleaseId("ATLAS", "2026.10"), release.Id);
         Assert.Equal("ATLAS", release.Domain);
         Assert.Equal(2, release.TacticCount);
         Assert.Equal(3, release.TechniqueCount);
-        var ids = await ReadBack(rb => rb.AttackTechniques.Where(t => t.AttackReleaseId == release.Id).Select(t => t.ExternalId).ToListAsync(Ct));
+        var ids = await ReadBack(rb => rb.Techniques.Where(t => t.TechniqueReleaseId == release.Id).Select(t => t.ExternalId).ToListAsync(Ct));
         Assert.Equal(["AML.T0000", "AML.T0000.000", "AML.T0040"], ids.Order());
     }
 
@@ -73,14 +73,14 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var response = await Upload(RootClient, D3fendOntologies.Ontology(), "d3fend.json");
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var release = await Read<AttackRelease>(response);
-        Assert.Equal(AttackStixParser.ReleaseId("d3fend", "1.6.0"), release.Id);
+        var release = await Read<TechniqueRelease>(response);
+        Assert.Equal(StixTechniqueParser.ReleaseId("d3fend", "1.6.0"), release.Id);
         Assert.Equal("d3fend", release.Domain);
         Assert.True(release.IsDefensive);
         Assert.Equal("MITRE D3FEND", release.Name);
         Assert.Equal(2, release.TacticCount);
         Assert.Equal(3, release.TechniqueCount);
-        var techniques = await Get<List<AttackTechnique>>(RootClient, $"api/attackreleases/{release.Id}/techniques");
+        var techniques = await Get<List<Technique>>(RootClient, $"api/techniquereleases/{release.Id}/techniques");
         var cban = techniques.Single(t => t.ExternalId == "D3-CBAN");
         Assert.True(cban.IsSubTechnique);
         Assert.Equal(techniques.Single(t => t.ExternalId == "D3-CH").Id, cban.ParentId);
@@ -94,7 +94,7 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     {
         await SeedRelease("1.0");
 
-        var response = await Upload(RootClient, AttackBundles.Enterprise("1.0"));
+        var response = await Upload(RootClient, TechniqueBundles.Enterprise("1.0"));
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
@@ -114,8 +114,8 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var release = await SeedRelease("1.0");
         var actor = await Actor().SeedAsync();
 
-        var techniques = await Get<List<AttackTechnique>>(Client(actor), $"api/attackreleases/{release.Id}/techniques");
-        var tactics = await Get<List<AttackTactic>>(Client(actor), $"api/attackreleases/{release.Id}/tactics");
+        var techniques = await Get<List<Technique>>(Client(actor), $"api/techniquereleases/{release.Id}/techniques");
+        var tactics = await Get<List<TechniqueTactic>>(Client(actor), $"api/techniquereleases/{release.Id}/tactics");
 
         var powershell = techniques.Single(t => t.ExternalId == "T1059.001");
         Assert.True(powershell.IsSubTechnique);
@@ -130,10 +130,10 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     {
         var release = await SeedRelease("1.0");
 
-        var response = await RootClient.DeleteAsync($"api/attackreleases/{release.Id}", Ct);
+        var response = await RootClient.DeleteAsync($"api/techniquereleases/{release.Id}", Ct);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.False(await ReadBack(rb => rb.AttackTechniques.AnyAsync(t => t.AttackReleaseId == release.Id, Ct)));
+        Assert.False(await ReadBack(rb => rb.Techniques.AnyAsync(t => t.TechniqueReleaseId == release.Id, Ct)));
     }
 
     [Fact]
@@ -142,12 +142,12 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var release = await SeedRelease("1.0");
         var msel = TestData.Msel();
         await Seed(msel);
-        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(release, "T1059").Id) { Id = Guid.NewGuid() });
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(release, "T1059").Id) { Id = Guid.NewGuid() });
 
-        var response = await RootClient.DeleteAsync($"api/attackreleases/{release.Id}", Ct);
+        var response = await RootClient.DeleteAsync($"api/techniquereleases/{release.Id}", Ct);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.True(await ReadBack(rb => rb.AttackReleases.AnyAsync(r => r.Id == release.Id, Ct)));
+        Assert.True(await ReadBack(rb => rb.TechniqueReleases.AnyAsync(r => r.Id == release.Id, Ct)));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -164,11 +164,11 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var viewer = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
 
         var response = await Client(owner).PostAsJsonAsync(
-            "api/mselattacktechniques", Body(msel.Id, Technique(release, "T1059.001").Id), Ct);
+            "api/mseltechniques", Body(msel.Id, Technique(release, "T1059.001").Id), Ct);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var pool = await Get<List<MselAttackTechnique>>(Client(viewer), $"api/msels/{msel.Id}/mselattacktechniques");
-        Assert.Equal("T1059.001", Assert.Single(pool).AttackTechnique.ExternalId);
+        var pool = await Get<List<MselTechnique>>(Client(viewer), $"api/msels/{msel.Id}/mseltechniques");
+        Assert.Equal("T1059.001", Assert.Single(pool).Technique.ExternalId);
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var editor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
 
         var response = await Client(editor).PostAsJsonAsync(
-            "api/mselattacktechniques", Body(msel.Id, Technique(release, "T1059").Id), Ct);
+            "api/mseltechniques", Body(msel.Id, Technique(release, "T1059").Id), Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -193,13 +193,13 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var second = await SeedRelease("2.0");
         var msel = TestData.Msel();
         await Seed(msel);
-        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(first, "T1059").Id) { Id = Guid.NewGuid() });
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(first, "T1059").Id) { Id = Guid.NewGuid() });
 
         var response = await RootClient.PostAsJsonAsync(
-            "api/mselattacktechniques", Body(msel.Id, Technique(second, "T1053").Id), Ct);
+            "api/mseltechniques", Body(msel.Id, Technique(second, "T1053").Id), Ct);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal(1, await ReadBack(rb => rb.MselAttackTechniques.CountAsync(m => m.MselId == msel.Id, Ct)));
+        Assert.Equal(1, await ReadBack(rb => rb.MselTechniques.CountAsync(m => m.MselId == msel.Id, Ct)));
     }
 
     [Fact]
@@ -208,10 +208,10 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var release = await SeedRelease("1.0");
         var msel = TestData.Msel();
         await Seed(msel);
-        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(release, "T1059").Id) { Id = Guid.NewGuid() });
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(release, "T1059").Id) { Id = Guid.NewGuid() });
 
         var response = await RootClient.PostAsJsonAsync(
-            "api/mselattacktechniques", Body(msel.Id, Technique(release, "T1059").Id), Ct);
+            "api/mseltechniques", Body(msel.Id, Technique(release, "T1059").Id), Ct);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
@@ -223,13 +223,13 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var msel = TestData.Msel();
         await Seed(msel);
         var technique = Technique(release, "T1059");
-        await Seed(new MselAttackTechniqueEntity(msel.Id, technique.Id) { Id = Guid.NewGuid() });
+        await Seed(new MselTechniqueEntity(msel.Id, technique.Id) { Id = Guid.NewGuid() });
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        var response = await Client(owner).DeleteAsync($"api/msels/{msel.Id}/attacktechniques/{technique.Id}", Ct);
+        var response = await Client(owner).DeleteAsync($"api/msels/{msel.Id}/techniques/{technique.Id}", Ct);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.False(await ReadBack(rb => rb.MselAttackTechniques.AnyAsync(m => m.MselId == msel.Id, Ct)));
+        Assert.False(await ReadBack(rb => rb.MselTechniques.AnyAsync(m => m.MselId == msel.Id, Ct)));
     }
 
     [Fact]
@@ -240,17 +240,17 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var msel = TestData.Msel();
         await Seed(msel);
         await Seed(
-            new MselAttackTechniqueEntity(msel.Id, Technique(first, "T1059").Id) { Id = Guid.NewGuid() },
-            new MselAttackTechniqueEntity(msel.Id, Technique(first, "T1003").Id) { Id = Guid.NewGuid() });
+            new MselTechniqueEntity(msel.Id, Technique(first, "T1059").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(first, "T1003").Id) { Id = Guid.NewGuid() });
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        var response = await Client(owner).PostAsync($"api/msels/{msel.Id}/attacktechniques/upgrade/{second.Id}", null, Ct);
+        var response = await Client(owner).PostAsync($"api/msels/{msel.Id}/techniques/upgrade/{second.Id}", null, Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await Read<MselAttackTechniqueUpgrade>(response);
+        var result = await Read<MselTechniqueUpgrade>(response);
         Assert.Equal(1, result.Kept);
         Assert.Equal(["T1003"], result.Dropped);
-        var pool = await ReadBack(rb => rb.MselAttackTechniques.Where(m => m.MselId == msel.Id).Select(m => m.AttackTechniqueId).ToListAsync(Ct));
+        var pool = await ReadBack(rb => rb.MselTechniques.Where(m => m.MselId == msel.Id).Select(m => m.TechniqueId).ToListAsync(Ct));
         Assert.Equal([Technique(second, "T1059").Id], pool);
     }
 
@@ -269,40 +269,40 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var defensive = await SeedDefensiveRelease("other-defend", "2.0");
         var msel = TestData.Msel();
         await Seed(msel);
-        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
 
         var response = await RootClient.PostAsJsonAsync(
-            "api/mselattacktechniques", Body(msel.Id, Technique(defensive, "D3-CH").Id), Ct);
+            "api/mseltechniques", Body(msel.Id, Technique(defensive, "D3-CH").Id), Ct);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var added = (await Read<MselAttackTechnique>(response)).AttackTechnique;
+        var added = (await Read<MselTechnique>(response)).Technique;
         Assert.Equal("other-defend", added.Domain);
         Assert.True(added.IsDefensive);
         // the attack family is still pinned to its own release and takes another of its techniques
-        var second = await RootClient.PostAsJsonAsync("api/mselattacktechniques", Body(msel.Id, Technique(attack, "T1053").Id), Ct);
+        var second = await RootClient.PostAsJsonAsync("api/mseltechniques", Body(msel.Id, Technique(attack, "T1053").Id), Ct);
         Assert.Equal(HttpStatusCode.Created, second.StatusCode);
     }
 
     /// <summary>A D3FEND release is the other family, so it does not pin the attack techniques, nor they it.</summary>
     [Fact]
-    public async Task Create_OfADefensiveTechnique_Is201_BesideTheAttackTechniques()
+    public async Task Create_OfADefensiveTechnique_Is201_BesideTheTechniques()
     {
         var attack = await SeedRelease("1.0");
         var d3fend = await SeedD3fendRelease("1.6.0");
         var msel = TestData.Msel();
         await Seed(msel);
-        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
 
         var response = await RootClient.PostAsJsonAsync(
-            "api/mselattacktechniques", Body(msel.Id, Technique(d3fend, "D3-CH").Id), Ct);
+            "api/mseltechniques", Body(msel.Id, Technique(d3fend, "D3-CH").Id), Ct);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var added = (await Read<MselAttackTechnique>(response)).AttackTechnique;
+        var added = (await Read<MselTechnique>(response)).Technique;
         Assert.Equal("d3fend", added.Domain);
         Assert.True(added.IsDefensive);
-        var pool = await Get<List<MselAttackTechnique>>(RootClient, $"api/msels/{msel.Id}/mselattacktechniques");
-        Assert.Equal(["D3-CH", "T1059"], pool.Select(m => m.AttackTechnique.ExternalId).Order());
-        Assert.Equal(["d3fend", "enterprise-attack"], pool.Select(m => m.AttackTechnique.Domain).Order());
+        var pool = await Get<List<MselTechnique>>(RootClient, $"api/msels/{msel.Id}/mseltechniques");
+        Assert.Equal(["D3-CH", "T1059"], pool.Select(m => m.Technique.ExternalId).Order());
+        Assert.Equal(["d3fend", "enterprise-attack"], pool.Select(m => m.Technique.Domain).Order());
     }
 
     /// <summary>The defensive family is pinned to its own release, as the attack one is to its.</summary>
@@ -313,10 +313,10 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var second = await SeedD3fendRelease("1.7.0");
         var msel = TestData.Msel();
         await Seed(msel);
-        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(first, "D3-CH").Id) { Id = Guid.NewGuid() });
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(first, "D3-CH").Id) { Id = Guid.NewGuid() });
 
         var response = await RootClient.PostAsJsonAsync(
-            "api/mselattacktechniques", Body(msel.Id, Technique(second, "D3-FA").Id), Ct);
+            "api/mseltechniques", Body(msel.Id, Technique(second, "D3-FA").Id), Ct);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Contains("defensive techniques are from d3fend 1.6.0", await response.Content.ReadAsStringAsync(Ct));
@@ -324,7 +324,7 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
 
     /// <summary>Upgrading to an attack release moves the attack techniques only; the D3FEND ones stay where they are.</summary>
     [Fact]
-    public async Task Upgrade_ToAnAttackRelease_LeavesTheDefensiveTechniquesAlone()
+    public async Task Upgrade_ToAnTechniqueRelease_LeavesTheDefensiveTechniquesAlone()
     {
         var first = await SeedRelease("1.0");
         var second = await SeedRelease("2.0");
@@ -332,17 +332,17 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var msel = TestData.Msel();
         await Seed(msel);
         await Seed(
-            new MselAttackTechniqueEntity(msel.Id, Technique(first, "T1059").Id) { Id = Guid.NewGuid() },
-            new MselAttackTechniqueEntity(msel.Id, Technique(first, "T1003").Id) { Id = Guid.NewGuid() },
-            new MselAttackTechniqueEntity(msel.Id, Technique(d3fend, "D3-CH").Id) { Id = Guid.NewGuid() });
+            new MselTechniqueEntity(msel.Id, Technique(first, "T1059").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(first, "T1003").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(d3fend, "D3-CH").Id) { Id = Guid.NewGuid() });
 
-        var response = await RootClient.PostAsync($"api/msels/{msel.Id}/attacktechniques/upgrade/{second.Id}", null, Ct);
+        var response = await RootClient.PostAsync($"api/msels/{msel.Id}/techniques/upgrade/{second.Id}", null, Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await Read<MselAttackTechniqueUpgrade>(response);
+        var result = await Read<MselTechniqueUpgrade>(response);
         Assert.Equal(1, result.Kept);
         Assert.Equal(["T1003"], result.Dropped);
-        var pool = await ReadBack(rb => rb.MselAttackTechniques.Where(m => m.MselId == msel.Id).Select(m => m.AttackTechniqueId).ToListAsync(Ct));
+        var pool = await ReadBack(rb => rb.MselTechniques.Where(m => m.MselId == msel.Id).Select(m => m.TechniqueId).ToListAsync(Ct));
         Assert.Equal(new[] { Technique(second, "T1059").Id, Technique(d3fend, "D3-CH").Id }.Order(), pool.Order());
     }
 
@@ -355,17 +355,17 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var msel = TestData.Msel();
         await Seed(msel);
         await Seed(
-            new MselAttackTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() },
-            new MselAttackTechniqueEntity(msel.Id, Technique(first, "D3-CH").Id) { Id = Guid.NewGuid() },
-            new MselAttackTechniqueEntity(msel.Id, Technique(first, "D3-CBAN").Id) { Id = Guid.NewGuid() });
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(first, "D3-CH").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(first, "D3-CBAN").Id) { Id = Guid.NewGuid() });
 
-        var response = await RootClient.PostAsync($"api/msels/{msel.Id}/attacktechniques/upgrade/{second.Id}", null, Ct);
+        var response = await RootClient.PostAsync($"api/msels/{msel.Id}/techniques/upgrade/{second.Id}", null, Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await Read<MselAttackTechniqueUpgrade>(response);
+        var result = await Read<MselTechniqueUpgrade>(response);
         Assert.Equal(2, result.Kept);
         Assert.Empty(result.Dropped);
-        var pool = await ReadBack(rb => rb.MselAttackTechniques.Where(m => m.MselId == msel.Id).Select(m => m.AttackTechniqueId).ToListAsync(Ct));
+        var pool = await ReadBack(rb => rb.MselTechniques.Where(m => m.MselId == msel.Id).Select(m => m.TechniqueId).ToListAsync(Ct));
         Assert.Equal(new[] { Technique(attack, "T1059").Id, Technique(second, "D3-CBAN").Id, Technique(second, "D3-CH").Id }.Order(), pool.Order());
     }
 
@@ -379,7 +379,7 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var release = await SeedRelease("1.0");
         var msel = TestData.Msel();
         await Seed(msel);
-        await Seed(new MselAttackTechniqueEntity(msel.Id, Technique(release, "T1059").Id) { Id = Guid.NewGuid() });
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(release, "T1059").Id) { Id = Guid.NewGuid() });
 
         var response = await RootClient.PostAsync($"api/msels/{msel.Id}/copy", null, Ct);
 
@@ -387,7 +387,7 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var copy = await Read<Msel>(response);
         Assert.Equal(
             Technique(release, "T1059").Id,
-            await ReadBack(rb => rb.MselAttackTechniques.Where(m => m.MselId == copy.Id).Select(m => m.AttackTechniqueId).SingleAsync(Ct)));
+            await ReadBack(rb => rb.MselTechniques.Where(m => m.MselId == copy.Id).Select(m => m.TechniqueId).SingleAsync(Ct)));
     }
 
     [Fact]
@@ -399,8 +399,8 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var kept = Technique(release, "T1059");
         var lost = Technique(release, "T1053");
         await Seed(
-            new MselAttackTechniqueEntity(msel.Id, kept.Id) { Id = Guid.NewGuid() },
-            new MselAttackTechniqueEntity(msel.Id, lost.Id) { Id = Guid.NewGuid() });
+            new MselTechniqueEntity(msel.Id, kept.Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, lost.Id) { Id = Guid.NewGuid() });
         var exported = await (await RootClient.GetAsync($"api/msels/{msel.Id}/json", Ct)).Content.ReadAsStringAsync(Ct);
         // A release that another installation has and this one does not: an id nothing here matches.
         var file = exported.Replace(lost.Id.ToString(), Guid.NewGuid().ToString());
@@ -413,23 +413,23 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await Read<MselImportResult>(response);
-        Assert.Contains(result.Changes, c => c.Field == "attackTechniques" && c.Message.StartsWith("1 technique"));
+        Assert.Contains(result.Changes, c => c.Field == "techniques" && c.Message.StartsWith("1 technique"));
         Assert.Equal(
             kept.Id,
-            await ReadBack(rb => rb.MselAttackTechniques.Where(m => m.MselId == result.Msel.Id).Select(m => m.AttackTechniqueId).SingleAsync(Ct)));
+            await ReadBack(rb => rb.MselTechniques.Where(m => m.MselId == result.Msel.Id).Select(m => m.TechniqueId).SingleAsync(Ct)));
     }
 
     // ---------------------------------------------------------------------------------------------
 
-    private async Task<AttackReleaseEntity> SeedRelease(string version)
+    private async Task<TechniqueReleaseEntity> SeedRelease(string version)
     {
-        var release = await AttackStixParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(AttackBundles.Enterprise(version))), null, Ct);
+        var release = await StixTechniqueParser.ParseAsync(
+            new MemoryStream(Encoding.UTF8.GetBytes(TechniqueBundles.Enterprise(version))), null, Ct);
         await Seed(release);
         return release;
     }
 
-    private async Task<AttackReleaseEntity> SeedD3fendRelease(string version)
+    private async Task<TechniqueReleaseEntity> SeedD3fendRelease(string version)
     {
         var release = await D3fendOntologyParser.ParseAsync(
             new MemoryStream(Encoding.UTF8.GetBytes(D3fendOntologies.Ontology(version))), null, Ct);
@@ -438,7 +438,7 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     }
 
     /// <summary>A defensive release of a domain that is not d3fend, as a future framework's parser would make.</summary>
-    private async Task<AttackReleaseEntity> SeedDefensiveRelease(string domain, string version)
+    private async Task<TechniqueReleaseEntity> SeedDefensiveRelease(string domain, string version)
     {
         var release = await D3fendOntologyParser.ParseAsync(
             new MemoryStream(Encoding.UTF8.GetBytes(D3fendOntologies.Ontology(version))), null, Ct);
@@ -448,10 +448,10 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         return release;
     }
 
-    private static AttackTechniqueEntity Technique(AttackReleaseEntity release, string externalId) =>
+    private static TechniqueEntity Technique(TechniqueReleaseEntity release, string externalId) =>
         release.Techniques.Single(t => t.ExternalId == externalId);
 
-    private static object Body(Guid mselId, Guid attackTechniqueId) => new { mselId, attackTechniqueId };
+    private static object Body(Guid mselId, Guid techniqueId) => new { mselId, techniqueId };
 
     /// <remarks>Awaited inside the <c>using</c>: <c>TestServer</c> reads the body during <c>SendAsync</c>.</remarks>
     private async Task<HttpResponseMessage> Upload(HttpClient client, string json, string fileName = "enterprise-attack.json")
@@ -461,7 +461,7 @@ public class AttackEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         file.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         content.Add(file, "ToUpload", fileName);
 
-        return await client.PostAsync("api/attackreleases/import", content, Ct);
+        return await client.PostAsync("api/techniquereleases/import", content, Ct);
     }
 
     private async Task<T> Get<T>(HttpClient client, string url)

@@ -10,13 +10,13 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Blueprint.Api.Data.Models
 {
     /// <summary>An ATT&amp;CK tactic (TA0002 Execution) - the column a technique sits under in the matrix.</summary>
-    public class AttackTacticEntity
+    public class TechniqueTacticEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.None)]
         public Guid Id { get; set; }
-        public Guid AttackReleaseId { get; set; }
-        public AttackReleaseEntity AttackRelease { get; set; }
+        public Guid TechniqueReleaseId { get; set; }
+        public TechniqueReleaseEntity TechniqueRelease { get; set; }
         public string StixId { get; set; }
         public string ExternalId { get; set; }
         /// <summary>The kill chain phase name techniques use to point at this tactic, e.g. "execution".</summary>
@@ -28,16 +28,16 @@ namespace Blueprint.Api.Data.Models
         public int DisplayOrder { get; set; }
     }
 
-    public class AttackTacticConfiguration : IEntityTypeConfiguration<AttackTacticEntity>
+    public class TechniqueTacticConfiguration : IEntityTypeConfiguration<TechniqueTacticEntity>
     {
-        public void Configure(EntityTypeBuilder<AttackTacticEntity> builder)
+        public void Configure(EntityTypeBuilder<TechniqueTacticEntity> builder)
         {
-            builder.HasIndex(x => new { x.AttackReleaseId, x.ExternalId }).IsUnique();
+            builder.HasIndex(x => new { x.TechniqueReleaseId, x.ExternalId }).IsUnique();
 
             builder
-                .HasOne(x => x.AttackRelease)
+                .HasOne(x => x.TechniqueRelease)
                 .WithMany(x => x.Tactics)
-                .HasForeignKey(x => x.AttackReleaseId)
+                .HasForeignKey(x => x.TechniqueReleaseId)
                 .OnDelete(DeleteBehavior.Cascade);
         }
     }

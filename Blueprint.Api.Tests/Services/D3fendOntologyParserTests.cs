@@ -17,7 +17,7 @@ namespace Blueprint.Api.Tests.Services;
 /// <summary><c>D3fendOntologyParser</c> - the D3FEND JSON-LD ontology into a release, its tactics and its techniques.</summary>
 public class D3fendOntologyParserTests
 {
-    private static async Task<AttackReleaseEntity> Parse(string json, string version = null) =>
+    private static async Task<TechniqueReleaseEntity> Parse(string json, string version = null) =>
         await D3fendOntologyParser.ParseAsync(new MemoryStream(Encoding.UTF8.GetBytes(json)), version, TestContext.Current.CancellationToken);
 
     [Fact]
@@ -31,7 +31,7 @@ public class D3fendOntologyParserTests
         Assert.Equal("MITRE D3FEND", release.Name);
         Assert.Equal("Test D3FEND ontology", release.Description);
         Assert.Equal(new DateTime(2026, 8, 31, 0, 12, 0, DateTimeKind.Utc), release.ReleaseDate);
-        Assert.Equal(AttackStixParser.ReleaseId("d3fend", "1.6.0"), release.Id);
+        Assert.Equal(StixTechniqueParser.ReleaseId("d3fend", "1.6.0"), release.Id);
     }
 
     /// <summary>The analytic techniques carry d3fend-ids too, but only the countermeasures are techniques here.</summary>
@@ -98,8 +98,8 @@ public class D3fendOntologyParserTests
         var first = await Parse(D3fendOntologies.Ontology("1.6.0"));
         var again = await Parse(D3fendOntologies.Ontology("1.6.0"));
         var next = await Parse(D3fendOntologies.Ontology("1.7.0"));
-        var attack = await AttackStixParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(AttackBundles.Enterprise("1.6.0"))), null, TestContext.Current.CancellationToken);
+        var attack = await StixTechniqueParser.ParseAsync(
+            new MemoryStream(Encoding.UTF8.GetBytes(TechniqueBundles.Enterprise("1.6.0"))), null, TestContext.Current.CancellationToken);
 
         Assert.Equal(first.Id, again.Id);
         Assert.Equal(
@@ -123,7 +123,7 @@ public class D3fendOntologyParserTests
     [Fact]
     public async Task Parse_OfAnOntologyThatDoesNotNameItsVersion_WithNoneGiven_IsRefused()
     {
-        var ex = await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse(D3fendOntologies.Ontology(includeVersion: false)));
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(D3fendOntologies.Ontology(includeVersion: false)));
 
         Assert.Contains("version", ex.Message);
     }
@@ -133,12 +133,12 @@ public class D3fendOntologyParserTests
     [InlineData("""{"type":"bundle","objects":[]}""")]
     [InlineData("""{"@graph":{}}""")]
     public async Task Parse_OfSomethingThatIsNotTheOntology_IsRefused(string json) =>
-        await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse(json));
+        await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(json));
 
     [Fact]
     public async Task Parse_OfAGraphWithoutDefensiveTechniques_IsRefused()
     {
-        var ex = await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse(D3fendOntologies.WithoutTechniques()));
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(D3fendOntologies.WithoutTechniques()));
 
         Assert.Contains("no defensive tactics and techniques", ex.Message);
     }

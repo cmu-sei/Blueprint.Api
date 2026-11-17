@@ -6,19 +6,19 @@ using System.Collections.Generic;
 
 namespace Blueprint.Api.ViewModels
 {
-    public class MselAttackTechnique
+    public class MselTechnique
     {
         public Guid Id { get; set; }
         public Guid MselId { get; set; }
-        public Guid AttackTechniqueId { get; set; }
-        public AttackTechnique AttackTechnique { get; set; }
+        public Guid TechniqueId { get; set; }
+        public Technique Technique { get; set; }
     }
 
     /// <summary>What moving a MSEL's technique pool to another ATT&amp;CK release kept and dropped.</summary>
-    public class MselAttackTechniqueUpgrade
+    public class MselTechniqueUpgrade
     {
         public Guid MselId { get; set; }
-        public Guid AttackReleaseId { get; set; }
+        public Guid TechniqueReleaseId { get; set; }
         public int Kept { get; set; }
         /// <summary>The technique ids (T1059.001) the new release no longer has, revoked or deprecated.</summary>
         public List<string> Dropped { get; set; } = new List<string>();

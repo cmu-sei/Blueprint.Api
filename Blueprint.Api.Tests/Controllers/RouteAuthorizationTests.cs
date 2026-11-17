@@ -34,8 +34,8 @@ namespace Blueprint.Api.Tests.Controllers;
 /// <c>{citeaction}</c>, <c>{citeduty}</c>, <c>{playerapplication}</c>,
 /// <c>{sparePlayerApplication}</c>, <c>{playerapplicationteam}</c>, <c>{mselpage}</c>,
 /// <c>{competency}</c>, <c>{spareCompetency}</c>, <c>{mselcompetency}</c>, <c>{teamcompetency}</c>,
-/// <c>{proficiencyscale}</c>, <c>{proficiencylevel}</c>, <c>{attackrelease}</c>, <c>{attacktechnique}</c>,
-/// <c>{spareAttackTechnique}</c>, <c>{mselattacktechnique}</c>, and <c>{unique}</c> for a name that has to clear
+/// <c>{proficiencyscale}</c>, <c>{proficiencylevel}</c>, <c>{techniquerelease}</c>, <c>{technique}</c>,
+/// <c>{spareTechnique}</c>, <c>{mseltechnique}</c>, and <c>{unique}</c> for a name that has to clear
 /// a unique index.
 /// So a row exercises the real object rather than an id nothing matches, and the 403 it asserts is the
 /// permission check answering rather than a 404 arriving first. The spares exist so a row that creates a
@@ -224,23 +224,23 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         { "DELETE", "api/mselcompetencies/{mselcompetency}", "ManageMsels", null },
         { "DELETE", "api/msels/{msel}/competencies/{competency}", "ManageMsels", null },
 
-        // MselAttackTechniqueService / MselAttackTechniqueController - the ATT&CK twin of the above.
-        { "GET", "api/msels/{msel}/mselattacktechniques", "ViewMsels", null },
-        { "GET", "api/mselattacktechniques/{mselattacktechnique}", "ViewMsels", null },
-        { "GET", "api/msels/{msel}/attacktechniques/countermeasures", "ViewMsels", null },
+        // MselTechniqueService / MselTechniqueController - the ATT&CK twin of the above.
+        { "GET", "api/msels/{msel}/mseltechniques", "ViewMsels", null },
+        { "GET", "api/mseltechniques/{mseltechnique}", "ViewMsels", null },
+        { "GET", "api/msels/{msel}/techniques/countermeasures", "ViewMsels", null },
         {
-            "POST", "api/mselattacktechniques", "ManageMsels",
-            """{"mselId":"{msel}","attackTechniqueId":"{spareAttackTechnique}"}"""
+            "POST", "api/mseltechniques", "ManageMsels",
+            """{"mselId":"{msel}","techniqueId":"{spareTechnique}"}"""
         },
-        { "DELETE", "api/mselattacktechniques/{mselattacktechnique}", "ManageMsels", null },
-        { "DELETE", "api/msels/{msel}/attacktechniques/{attacktechnique}", "ManageMsels", null },
-        { "POST", "api/msels/{msel}/attacktechniques/upgrade/{attackrelease}", "ManageMsels", null },
+        { "DELETE", "api/mseltechniques/{mseltechnique}", "ManageMsels", null },
+        { "DELETE", "api/msels/{msel}/techniques/{technique}", "ManageMsels", null },
+        { "POST", "api/msels/{msel}/techniques/upgrade/{techniquerelease}", "ManageMsels", null },
 
-        // AttackReleaseService / AttackReleaseController - writes want ManageCompetencyFrameworks; the reads
-        // are open to any signed-in user and so have no row (see AttackEndpointTests).
-        { "POST", "api/attackreleases/import", "ManageCompetencyFrameworks", "@file" },
-        { "POST", "api/attackreleases/{attackrelease}/countermeasures", "ManageCompetencyFrameworks", "@file" },
-        { "DELETE", "api/attackreleases/{attackrelease}", "ManageCompetencyFrameworks", null },
+        // TechniqueReleaseService / TechniqueReleaseController - writes want ManageCompetencyFrameworks; the reads
+        // are open to any signed-in user and so have no row (see TechniqueEndpointTests).
+        { "POST", "api/techniquereleases/import", "ManageCompetencyFrameworks", "@file" },
+        { "POST", "api/techniquereleases/{techniquerelease}/countermeasures", "ManageCompetencyFrameworks", "@file" },
+        { "DELETE", "api/techniquereleases/{techniquerelease}", "ManageCompetencyFrameworks", null },
 
         // TeamCompetencyService / TeamCompetencyController - the twin of the above, one level down.
         { "GET", "api/teams/{team}/teamcompetencies", "ViewMsels", null },
@@ -477,13 +477,13 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             catalogInject, catalogUnit, mselCompetency, teamCompetency, playerApplicationTeam);
 
         // A version of its own, so its derived ids clear the unique indexes of any other release.
-        var attackRelease = await AttackStixParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(AttackBundles.Enterprise())), $"test-{Guid.NewGuid()}", Ct);
-        await Seed(attackRelease);
-        var attackTechnique = attackRelease.Techniques.Single(t => t.ExternalId == "T1059");
-        var spareAttackTechnique = attackRelease.Techniques.Single(t => t.ExternalId == "T1053");
-        var mselAttackTechnique = new Blueprint.Api.Data.Models.MselAttackTechniqueEntity(msel.Id, attackTechnique.Id) { Id = Guid.NewGuid() };
-        await Seed(mselAttackTechnique);
+        var techniqueRelease = await StixTechniqueParser.ParseAsync(
+            new MemoryStream(Encoding.UTF8.GetBytes(TechniqueBundles.Enterprise())), $"test-{Guid.NewGuid()}", Ct);
+        await Seed(techniqueRelease);
+        var technique = techniqueRelease.Techniques.Single(t => t.ExternalId == "T1059");
+        var spareTechnique = techniqueRelease.Techniques.Single(t => t.ExternalId == "T1053");
+        var mselTechnique = new Blueprint.Api.Data.Models.MselTechniqueEntity(msel.Id, technique.Id) { Id = Guid.NewGuid() };
+        await Seed(mselTechnique);
 
         return new Dictionary<string, string>
         {
@@ -511,10 +511,10 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             ["spareCompetency"] = spareCompetency.Id.ToString(),
             ["mselcompetency"] = mselCompetency.Id.ToString(),
             ["teamcompetency"] = teamCompetency.Id.ToString(),
-            ["attackrelease"] = attackRelease.Id.ToString(),
-            ["attacktechnique"] = attackTechnique.Id.ToString(),
-            ["spareAttackTechnique"] = spareAttackTechnique.Id.ToString(),
-            ["mselattacktechnique"] = mselAttackTechnique.Id.ToString(),
+            ["techniquerelease"] = techniqueRelease.Id.ToString(),
+            ["technique"] = technique.Id.ToString(),
+            ["spareTechnique"] = spareTechnique.Id.ToString(),
+            ["mseltechnique"] = mselTechnique.Id.ToString(),
             ["proficiencyscale"] = proficiencyScale.Id.ToString(),
             ["proficiencylevel"] = proficiencyLevel.Id.ToString(),
             ["unique"] = $"row-{Guid.NewGuid()}"

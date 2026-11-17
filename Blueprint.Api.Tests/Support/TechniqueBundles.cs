@@ -8,7 +8,7 @@ namespace Blueprint.Api.Tests.Support;
 /// with a sub-technique, a revoked technique and a deprecated one; and the shape of stix-atlas.json, cut down
 /// the same way.
 /// </summary>
-public static class AttackBundles
+public static class TechniqueBundles
 {
     /// <summary>
     /// The ATLAS bundle keeps the ATT&amp;CK data model but is its own catalogue: "mitre-atlas" references and

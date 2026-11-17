@@ -20,13 +20,13 @@ using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Services
 {
-    public interface IAttackReleaseService
+    public interface ITechniqueReleaseService
     {
-        Task<IEnumerable<AttackRelease>> GetAsync(CancellationToken ct);
-        Task<AttackRelease> GetAsync(Guid id, CancellationToken ct);
-        Task<IEnumerable<AttackTactic>> GetTacticsAsync(Guid id, CancellationToken ct);
-        Task<IEnumerable<AttackTechnique>> GetTechniquesAsync(Guid id, CancellationToken ct);
-        Task<AttackRelease> ImportAsync(FileForm form, string version, CancellationToken ct);
+        Task<IEnumerable<TechniqueRelease>> GetAsync(CancellationToken ct);
+        Task<TechniqueRelease> GetAsync(Guid id, CancellationToken ct);
+        Task<IEnumerable<TechniqueTactic>> GetTacticsAsync(Guid id, CancellationToken ct);
+        Task<IEnumerable<Technique>> GetTechniquesAsync(Guid id, CancellationToken ct);
+        Task<TechniqueRelease> ImportAsync(FileForm form, string version, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     }
 
@@ -34,14 +34,14 @@ namespace Blueprint.Api.Services
     /// The technique framework releases (ATT&amp;CK, ATLAS, D3FEND) an administrator has uploaded. A release is never
     /// edited: a newer version is imported alongside it, and MSELs move to it one at a time.
     /// </summary>
-    public class AttackReleaseService : IAttackReleaseService
+    public class TechniqueReleaseService : ITechniqueReleaseService
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
-        private readonly ILogger<IAttackReleaseService> _logger;
+        private readonly ILogger<ITechniqueReleaseService> _logger;
 
-        public AttackReleaseService(BlueprintContext context, IPrincipal user, ILogger<IAttackReleaseService> logger, IMapper mapper)
+        public TechniqueReleaseService(BlueprintContext context, IPrincipal user, ILogger<ITechniqueReleaseService> logger, IMapper mapper)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
@@ -49,63 +49,63 @@ namespace Blueprint.Api.Services
             _logger = logger;
         }
 
-        public async Task<IEnumerable<AttackRelease>> GetAsync(CancellationToken ct)
+        public async Task<IEnumerable<TechniqueRelease>> GetAsync(CancellationToken ct)
         {
-            return await _context.AttackReleases
+            return await _context.TechniqueReleases
                 .OrderBy(r => r.Domain)
                 .ThenByDescending(r => r.ReleaseDate)
-                .ProjectTo<AttackRelease>(_mapper.ConfigurationProvider)
+                .ProjectTo<TechniqueRelease>(_mapper.ConfigurationProvider)
                 .ToListAsync(ct);
         }
 
-        public async Task<AttackRelease> GetAsync(Guid id, CancellationToken ct)
+        public async Task<TechniqueRelease> GetAsync(Guid id, CancellationToken ct)
         {
-            var release = await _context.AttackReleases
+            var release = await _context.TechniqueReleases
                 .Where(r => r.Id == id)
-                .ProjectTo<AttackRelease>(_mapper.ConfigurationProvider)
+                .ProjectTo<TechniqueRelease>(_mapper.ConfigurationProvider)
                 .SingleOrDefaultAsync(ct);
             if (release == null)
-                throw new EntityNotFoundException<AttackRelease>();
+                throw new EntityNotFoundException<TechniqueRelease>();
 
             return release;
         }
 
-        public async Task<IEnumerable<AttackTactic>> GetTacticsAsync(Guid id, CancellationToken ct)
+        public async Task<IEnumerable<TechniqueTactic>> GetTacticsAsync(Guid id, CancellationToken ct)
         {
             await ThrowIfMissingAsync(id, ct);
 
-            var tactics = await _context.AttackTactics
-                .Where(t => t.AttackReleaseId == id)
+            var tactics = await _context.TechniqueTactics
+                .Where(t => t.TechniqueReleaseId == id)
                 .OrderBy(t => t.DisplayOrder)
                 .ToListAsync(ct);
-            return _mapper.Map<IEnumerable<AttackTactic>>(tactics);
+            return _mapper.Map<IEnumerable<TechniqueTactic>>(tactics);
         }
 
-        public async Task<IEnumerable<AttackTechnique>> GetTechniquesAsync(Guid id, CancellationToken ct)
+        public async Task<IEnumerable<Technique>> GetTechniquesAsync(Guid id, CancellationToken ct)
         {
             await ThrowIfMissingAsync(id, ct);
 
-            var techniques = await _context.AttackTechniques
-                .Where(t => t.AttackReleaseId == id)
-                .Include(t => t.AttackRelease)
+            var techniques = await _context.Techniques
+                .Where(t => t.TechniqueReleaseId == id)
+                .Include(t => t.TechniqueRelease)
                 .OrderBy(t => t.ExternalId)
                 .ToListAsync(ct);
-            return _mapper.Map<IEnumerable<AttackTechnique>>(techniques);
+            return _mapper.Map<IEnumerable<Technique>>(techniques);
         }
 
-        public async Task<AttackRelease> ImportAsync(FileForm form, string version, CancellationToken ct)
+        public async Task<TechniqueRelease> ImportAsync(FileForm form, string version, CancellationToken ct)
         {
-            AttackReleaseEntity release;
+            TechniqueReleaseEntity release;
             using (var stream = form.ToUpload.OpenReadStream())
             {
                 release = await ReleaseFileParser.ParseAsync(stream, version, ct);
             }
 
-            if (await _context.AttackReleases.AnyAsync(r => r.Domain == release.Domain && r.Version == release.Version, ct))
+            if (await _context.TechniqueReleases.AnyAsync(r => r.Domain == release.Domain && r.Version == release.Version, ct))
                 throw new ConflictException($"{release.Domain} {release.Version} has already been imported.");
 
             release.CreatedBy = _user.GetId();
-            _context.AttackReleases.Add(release);
+            _context.TechniqueReleases.Add(release);
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning("Release {Domain} {Version} imported by {UserId}: {Tactics} tactics, {Techniques} techniques",
                 release.Domain, release.Version, _user.GetId(), release.Tactics.Count, release.Techniques.Count);
@@ -115,19 +115,19 @@ namespace Blueprint.Api.Services
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
         {
-            var release = await _context.AttackReleases.SingleOrDefaultAsync(r => r.Id == id, ct);
+            var release = await _context.TechniqueReleases.SingleOrDefaultAsync(r => r.Id == id, ct);
             if (release == null)
-                throw new EntityNotFoundException<AttackRelease>();
+                throw new EntityNotFoundException<TechniqueRelease>();
 
-            var mselsUsingIt = await _context.MselAttackTechniques
-                .Where(m => m.AttackTechnique.AttackReleaseId == id)
+            var mselsUsingIt = await _context.MselTechniques
+                .Where(m => m.Technique.TechniqueReleaseId == id)
                 .Select(m => m.MselId)
                 .Distinct()
                 .CountAsync(ct);
             if (mselsUsingIt > 0)
                 throw new ConflictException($"{release.Domain} {release.Version} is used by {mselsUsingIt} MSEL(s). Upgrade or clear their techniques before deleting it.");
 
-            _context.AttackReleases.Remove(release);
+            _context.TechniqueReleases.Remove(release);
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning("Release {Domain} {Version} deleted by {UserId}", release.Domain, release.Version, _user.GetId());
             return true;
@@ -135,8 +135,8 @@ namespace Blueprint.Api.Services
 
         private async Task ThrowIfMissingAsync(Guid id, CancellationToken ct)
         {
-            if (!await _context.AttackReleases.AnyAsync(r => r.Id == id, ct))
-                throw new EntityNotFoundException<AttackRelease>();
+            if (!await _context.TechniqueReleases.AnyAsync(r => r.Id == id, ct))
+                throw new EntityNotFoundException<TechniqueRelease>();
         }
     }
 }

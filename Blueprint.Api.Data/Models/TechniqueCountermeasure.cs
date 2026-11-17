@@ -20,7 +20,7 @@ namespace Blueprint.Api.Data.Models
     /// path (the defensive technique hardens a Credential; T1003.005 accesses an Encrypted Credential), so a row
     /// here is the pair with the number of distinct paths as its weight and the most common path as its rationale.
     /// </remarks>
-    public class AttackTechniqueCountermeasureEntity
+    public class TechniqueCountermeasureEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -28,14 +28,14 @@ namespace Blueprint.Api.Data.Models
 
         /// <summary>The D3FEND release the mappings file belongs to.</summary>
         public Guid ReleaseId { get; set; }
-        public AttackReleaseEntity Release { get; set; }
+        public TechniqueReleaseEntity Release { get; set; }
 
         /// <summary>The offensive technique's id (T1003.005), as the mappings file gives it.</summary>
         public string OffensiveExternalId { get; set; }
 
         /// <summary>The D3FEND technique that counters it, in the same release.</summary>
         public Guid DefensiveTechniqueId { get; set; }
-        public AttackTechniqueEntity DefensiveTechnique { get; set; }
+        public TechniqueEntity DefensiveTechnique { get; set; }
 
         /// <summary>The D3FEND tactic the mapping is filed under (Harden, Detect, ...), as labelled in the file.</summary>
         public string DefensiveTactic { get; set; }
@@ -47,9 +47,9 @@ namespace Blueprint.Api.Data.Models
         public int Weight { get; set; }
     }
 
-    public class AttackTechniqueCountermeasureConfiguration : IEntityTypeConfiguration<AttackTechniqueCountermeasureEntity>
+    public class TechniqueCountermeasureConfiguration : IEntityTypeConfiguration<TechniqueCountermeasureEntity>
     {
-        public void Configure(EntityTypeBuilder<AttackTechniqueCountermeasureEntity> builder)
+        public void Configure(EntityTypeBuilder<TechniqueCountermeasureEntity> builder)
         {
             builder.HasIndex(x => new { x.ReleaseId, x.OffensiveExternalId, x.DefensiveTechniqueId }).IsUnique();
 

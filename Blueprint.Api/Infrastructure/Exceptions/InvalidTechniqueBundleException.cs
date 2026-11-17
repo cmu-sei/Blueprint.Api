@@ -7,9 +7,9 @@ using System.Net;
 namespace Blueprint.Api.Infrastructure.Exceptions
 {
     /// <summary>Thrown when an uploaded file is neither a STIX 2.x bundle nor the D3FEND ontology Blueprint can read.</summary>
-    public class InvalidAttackBundleException : Exception, IApiException
+    public class InvalidTechniqueBundleException : Exception, IApiException
     {
-        public InvalidAttackBundleException(string message)
+        public InvalidTechniqueBundleException(string message)
             : base(message)
         {
         }

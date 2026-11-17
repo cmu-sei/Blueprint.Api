@@ -317,7 +317,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
-                .Include(m => m.MselAttackTechniques)
+                .Include(m => m.MselTechniques)
                 .Include(m => m.Pages)
                 .Include(m => m.ScoringModel)
                 .ThenInclude(sm => sm.Categories)
@@ -462,12 +462,12 @@ namespace Blueprint.Api.Services
                 mselCompetency.Competency = null;
             }
             // copy the MSEL's technique pool, attack and defensive
-            foreach (var mselAttackTechnique in mselEntity.MselAttackTechniques)
+            foreach (var mselTechnique in mselEntity.MselTechniques)
             {
-                mselAttackTechnique.Id = Guid.NewGuid();
-                mselAttackTechnique.MselId = mselEntity.Id;
-                mselAttackTechnique.Msel = null;
-                mselAttackTechnique.AttackTechnique = null;
+                mselTechnique.Id = Guid.NewGuid();
+                mselTechnique.MselId = mselEntity.Id;
+                mselTechnique.Msel = null;
+                mselTechnique.Technique = null;
             }
             // copy Gallery Cards
             foreach (var card in mselEntity.Cards)
@@ -2170,7 +2170,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
-                .Include(m => m.MselAttackTechniques)
+                .Include(m => m.MselTechniques)
                 .Include(m => m.Pages)
                 .Include(m => m.ScoringModel)
                 .ThenInclude(sm => sm.Categories)
@@ -2331,25 +2331,25 @@ namespace Blueprint.Api.Services
             }
             // A technique's id is the same on every installation that imported its release, so the pool carries
             // over wherever that release is loaded. Drop the rest rather than fail the import.
-            foreach (var mselAttackTechnique in mselEntity.MselAttackTechniques)
+            foreach (var mselTechnique in mselEntity.MselTechniques)
             {
-                mselAttackTechnique.Msel = null;
-                mselAttackTechnique.AttackTechnique = null;
+                mselTechnique.Msel = null;
+                mselTechnique.Technique = null;
             }
-            if (mselEntity.MselAttackTechniques.Count > 0)
+            if (mselEntity.MselTechniques.Count > 0)
             {
-                var fileTechniqueIds = mselEntity.MselAttackTechniques.Select(t => t.AttackTechniqueId).ToList();
-                var knownTechniqueIds = (await _context.AttackTechniques
+                var fileTechniqueIds = mselEntity.MselTechniques.Select(t => t.TechniqueId).ToList();
+                var knownTechniqueIds = (await _context.Techniques
                     .Where(t => fileTechniqueIds.Contains(t.Id))
                     .Select(t => t.Id)
                     .ToListAsync(ct)).ToHashSet();
                 var missingTechniques = fileTechniqueIds.Count(id => !knownTechniqueIds.Contains(id));
                 if (missingTechniques > 0)
                 {
-                    mselEntity.MselAttackTechniques = mselEntity.MselAttackTechniques
-                        .Where(t => knownTechniqueIds.Contains(t.AttackTechniqueId))
+                    mselEntity.MselTechniques = mselEntity.MselTechniques
+                        .Where(t => knownTechniqueIds.Contains(t.TechniqueId))
                         .ToList();
-                    AddChange(result, "attackTechniques", $"{missingTechniques} techniques were not imported because their release is not loaded here. Import the release, then add them to the MSEL.");
+                    AddChange(result, "techniques", $"{missingTechniques} techniques were not imported because their release is not loaded here. Import the release, then add them to the MSEL.");
                 }
             }
 

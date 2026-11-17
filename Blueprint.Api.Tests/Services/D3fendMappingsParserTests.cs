@@ -103,7 +103,7 @@ public class D3fendMappingsParserTests
     [Fact]
     public async Task Parse_RejectsAStixBundle_NamingTheFileWanted()
     {
-        var ex = await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse(AttackBundles.Enterprise()));
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(TechniqueBundles.Enterprise()));
 
         Assert.Contains("d3fend-full-mappings.json", ex.Message);
         Assert.Contains("https://d3fend.mitre.org/ontologies/d3fend/<version>/d3fend-full-mappings.json", ex.Message);
@@ -112,7 +112,7 @@ public class D3fendMappingsParserTests
     [Fact]
     public async Task Parse_RejectsSparqlResultsOfAnotherQuery()
     {
-        var ex = await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse(D3fendMappings.OtherSparqlResults()));
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(D3fendMappings.OtherSparqlResults()));
 
         Assert.Contains("off_tech_id", ex.Message);
     }
@@ -120,7 +120,7 @@ public class D3fendMappingsParserTests
     [Fact]
     public async Task Parse_RejectsAFileThatIsNotJson()
     {
-        var ex = await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse("off_tech_id,def_tech\nT1003,CredentialHardening"));
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse("off_tech_id,def_tech\nT1003,CredentialHardening"));
 
         Assert.StartsWith("The file is not valid JSON", ex.Message);
     }
@@ -128,7 +128,7 @@ public class D3fendMappingsParserTests
     [Fact]
     public async Task Parse_RejectsAMappingsFileWithNoRows()
     {
-        await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse(D3fendMappings.File()));
+        await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(D3fendMappings.File()));
     }
 
     private static D3fendMappingsParser.Pair Pair(D3fendMappingsParser.Result result, string offensiveId, string defensiveClass) =>

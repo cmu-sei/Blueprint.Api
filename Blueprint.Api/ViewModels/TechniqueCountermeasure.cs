@@ -7,15 +7,15 @@ using System.Collections.Generic;
 namespace Blueprint.Api.ViewModels
 {
     /// <summary>A D3FEND "countered by" mapping: the offensive technique id and the D3FEND technique that counters it.</summary>
-    public class AttackTechniqueCountermeasure
+    public class TechniqueCountermeasure
     {
         public Guid Id { get; set; }
         /// <summary>The D3FEND release the mapping belongs to.</summary>
-        public Guid AttackReleaseId { get; set; }
+        public Guid TechniqueReleaseId { get; set; }
         /// <summary>The offensive technique's id (T1003.005), whichever release of its framework the MSEL uses.</summary>
         public string OffensiveExternalId { get; set; }
         public Guid DefensiveTechniqueId { get; set; }
-        public AttackTechnique DefensiveTechnique { get; set; }
+        public Technique DefensiveTechnique { get; set; }
         /// <summary>The D3FEND tactic label the mapping is filed under: Model, Harden, Detect, Isolate, Deceive, Evict or Restore.</summary>
         public string DefensiveTactic { get; set; }
         /// <summary>The most common artifact path behind the pair, e.g. "hardens Credential; T1003.005 accesses Encrypted Credential".</summary>
@@ -27,9 +27,9 @@ namespace Blueprint.Api.ViewModels
     }
 
     /// <summary>What importing a d3fend-full-mappings.json onto a D3FEND release read and kept.</summary>
-    public class AttackTechniqueCountermeasureImport
+    public class TechniqueCountermeasureImport
     {
-        public Guid AttackReleaseId { get; set; }
+        public Guid TechniqueReleaseId { get; set; }
         /// <summary>The result rows in the file, one per artifact path per queried technique.</summary>
         public int RowsRead { get; set; }
         /// <summary>The distinct (offensive id, D3FEND technique) pairs stored.</summary>
@@ -48,7 +48,7 @@ namespace Blueprint.Api.ViewModels
         /// The D3FEND release the mappings come from: the one the MSEL's defensive techniques are pinned to, else the
         /// newest with mappings imported. Null when no D3FEND release has mappings.
         /// </summary>
-        public Guid? AttackReleaseId { get; set; }
+        public Guid? TechniqueReleaseId { get; set; }
         /// <summary>True when that release has mappings imported; false when the pinned release has none yet.</summary>
         public bool HasMappings { get; set; }
         public List<MselTechniqueCountermeasures> Techniques { get; set; } = new List<MselTechniqueCountermeasures>();
@@ -57,10 +57,10 @@ namespace Blueprint.Api.ViewModels
     /// <summary>The countermeasures of one pooled attack technique, ranked by weight.</summary>
     public class MselTechniqueCountermeasures
     {
-        public Guid AttackTechniqueId { get; set; }
+        public Guid TechniqueId { get; set; }
         public string OffensiveExternalId { get; set; }
         /// <summary>The parent technique's id when the technique has no mappings of its own and these are inherited; else null.</summary>
         public string InheritedFrom { get; set; }
-        public List<AttackTechniqueCountermeasure> Countermeasures { get; set; } = new List<AttackTechniqueCountermeasure>();
+        public List<TechniqueCountermeasure> Countermeasures { get; set; } = new List<TechniqueCountermeasure>();
     }
 }

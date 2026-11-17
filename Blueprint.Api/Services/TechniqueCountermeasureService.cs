@@ -20,10 +20,10 @@ using Blueprint.Api.ViewModels;
 
 namespace Blueprint.Api.Services
 {
-    public interface IAttackTechniqueCountermeasureService
+    public interface ITechniqueCountermeasureService
     {
-        Task<AttackTechniqueCountermeasureImport> ImportAsync(Guid releaseId, FileForm form, CancellationToken ct);
-        Task<IEnumerable<AttackTechniqueCountermeasure>> GetByReleaseAsync(Guid releaseId, string offensiveId, CancellationToken ct);
+        Task<TechniqueCountermeasureImport> ImportAsync(Guid releaseId, FileForm form, CancellationToken ct);
+        Task<IEnumerable<TechniqueCountermeasure>> GetByReleaseAsync(Guid releaseId, string offensiveId, CancellationToken ct);
         Task<MselCountermeasures> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
     }
 
@@ -32,14 +32,14 @@ namespace Blueprint.Api.Services
     /// onto a D3FEND release from its d3fend-full-mappings.json and keyed by the offensive technique's id, so one
     /// import serves every ATT&amp;CK release a MSEL might plan against.
     /// </summary>
-    public class AttackTechniqueCountermeasureService : IAttackTechniqueCountermeasureService
+    public class TechniqueCountermeasureService : ITechniqueCountermeasureService
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
         private readonly IMapper _mapper;
-        private readonly ILogger<IAttackTechniqueCountermeasureService> _logger;
+        private readonly ILogger<ITechniqueCountermeasureService> _logger;
 
-        public AttackTechniqueCountermeasureService(BlueprintContext context, IPrincipal user, ILogger<IAttackTechniqueCountermeasureService> logger, IMapper mapper)
+        public TechniqueCountermeasureService(BlueprintContext context, IPrincipal user, ILogger<ITechniqueCountermeasureService> logger, IMapper mapper)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
@@ -51,13 +51,13 @@ namespace Blueprint.Api.Services
         /// Replaces the release's mappings with the file's. A pair whose D3FEND class is not a defensive technique
         /// of the release is skipped and counted, so a mappings file from a neighbouring version still imports.
         /// </summary>
-        public async Task<AttackTechniqueCountermeasureImport> ImportAsync(Guid releaseId, FileForm form, CancellationToken ct)
+        public async Task<TechniqueCountermeasureImport> ImportAsync(Guid releaseId, FileForm form, CancellationToken ct)
         {
-            var release = await _context.AttackReleases.SingleOrDefaultAsync(r => r.Id == releaseId, ct);
+            var release = await _context.TechniqueReleases.SingleOrDefaultAsync(r => r.Id == releaseId, ct);
             if (release == null)
-                throw new EntityNotFoundException<AttackRelease>();
+                throw new EntityNotFoundException<TechniqueRelease>();
             if (!release.IsDefensive)
-                throw new InvalidAttackBundleException($"{release.Name} {release.Version} is not a defensive release. The mappings are imported onto the D3FEND release they belong to.");
+                throw new InvalidTechniqueBundleException($"{release.Name} {release.Version} is not a defensive release. The mappings are imported onto the D3FEND release they belong to.");
 
             D3fendMappingsParser.Result parsed;
             using (var stream = form.ToUpload.OpenReadStream())
@@ -66,14 +66,14 @@ namespace Blueprint.Api.Services
             }
 
             // The mappings name a technique by its class IRI; the release knows it by the ontology id, d3f:<class>.
-            var techniquesByClass = (await _context.AttackTechniques
-                    .Where(t => t.AttackReleaseId == releaseId)
+            var techniquesByClass = (await _context.Techniques
+                    .Where(t => t.TechniqueReleaseId == releaseId)
                     .Select(t => new { t.Id, t.StixId })
                     .ToListAsync(ct))
                 .GroupBy(t => LocalName(t.StixId))
                 .ToDictionary(g => g.Key, g => g.First().Id);
 
-            var rows = new List<AttackTechniqueCountermeasureEntity>();
+            var rows = new List<TechniqueCountermeasureEntity>();
             var skipped = 0;
             foreach (var pair in parsed.Pairs)
             {
@@ -82,7 +82,7 @@ namespace Blueprint.Api.Services
                     skipped++;
                     continue;
                 }
-                rows.Add(new AttackTechniqueCountermeasureEntity
+                rows.Add(new TechniqueCountermeasureEntity
                 {
                     Id = Guid.NewGuid(),
                     ReleaseId = releaseId,
@@ -95,13 +95,13 @@ namespace Blueprint.Api.Services
             }
 
             // One SaveChanges, so a re-import either replaces the old rows or leaves them.
-            _context.AttackTechniqueCountermeasures.RemoveRange(_context.AttackTechniqueCountermeasures.Where(c => c.ReleaseId == releaseId));
-            _context.AttackTechniqueCountermeasures.AddRange(rows);
+            _context.TechniqueCountermeasures.RemoveRange(_context.TechniqueCountermeasures.Where(c => c.ReleaseId == releaseId));
+            _context.TechniqueCountermeasures.AddRange(rows);
             await _context.SaveChangesAsync(ct);
 
-            var result = new AttackTechniqueCountermeasureImport
+            var result = new TechniqueCountermeasureImport
             {
-                AttackReleaseId = releaseId,
+                TechniqueReleaseId = releaseId,
                 RowsRead = parsed.RowsRead,
                 PairsStored = rows.Count,
                 PairsSkipped = skipped,
@@ -117,10 +117,10 @@ namespace Blueprint.Api.Services
         /// sub-technique with no mappings of its own is answered with its parent's, flagged as inherited, since
         /// D3FEND maps many techniques only at the parent.
         /// </summary>
-        public async Task<IEnumerable<AttackTechniqueCountermeasure>> GetByReleaseAsync(Guid releaseId, string offensiveId, CancellationToken ct)
+        public async Task<IEnumerable<TechniqueCountermeasure>> GetByReleaseAsync(Guid releaseId, string offensiveId, CancellationToken ct)
         {
-            if (!await _context.AttackReleases.AnyAsync(r => r.Id == releaseId, ct))
-                throw new EntityNotFoundException<AttackRelease>();
+            if (!await _context.TechniqueReleases.AnyAsync(r => r.Id == releaseId, ct))
+                throw new EntityNotFoundException<TechniqueRelease>();
 
             offensiveId = offensiveId?.Trim();
             if (string.IsNullOrEmpty(offensiveId))
@@ -130,7 +130,7 @@ namespace Blueprint.Api.Services
                     .ThenByDescending(c => c.Weight)
                     .ThenBy(c => c.DefensiveTechnique.ExternalId)
                     .ToListAsync(ct);
-                return _mapper.Map<IEnumerable<AttackTechniqueCountermeasure>>(all);
+                return _mapper.Map<IEnumerable<TechniqueCountermeasure>>(all);
             }
 
             var own = await Mappings(releaseId).Where(c => c.OffensiveExternalId == offensiveId).ToListAsync(ct);
@@ -159,52 +159,52 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), msel.Id, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
-            var pool = await _context.MselAttackTechniques
+            var pool = await _context.MselTechniques
                 .Where(m => m.MselId == mselId)
-                .Select(m => new { m.AttackTechniqueId, m.AttackTechnique.ExternalId, m.AttackTechnique.AttackReleaseId, m.AttackTechnique.AttackRelease.IsDefensive })
+                .Select(m => new { m.TechniqueId, m.Technique.ExternalId, m.Technique.TechniqueReleaseId, m.Technique.TechniqueRelease.IsDefensive })
                 .ToListAsync(ct);
-            var attackTechniques = pool
+            var techniques = pool
                 .Where(t => !t.IsDefensive)
                 .OrderBy(t => t.ExternalId)
                 .ToList();
 
             var result = new MselCountermeasures { MselId = mselId };
-            var pinned = pool.FirstOrDefault(t => t.IsDefensive)?.AttackReleaseId;
+            var pinned = pool.FirstOrDefault(t => t.IsDefensive)?.TechniqueReleaseId;
             if (pinned != null)
             {
-                result.AttackReleaseId = pinned;
-                result.HasMappings = await _context.AttackTechniqueCountermeasures.AnyAsync(c => c.ReleaseId == pinned, ct);
+                result.TechniqueReleaseId = pinned;
+                result.HasMappings = await _context.TechniqueCountermeasures.AnyAsync(c => c.ReleaseId == pinned, ct);
             }
             else
             {
-                var newest = await _context.AttackReleases
+                var newest = await _context.TechniqueReleases
                     .Where(r => r.IsDefensive && r.Countermeasures.Any())
                     .OrderByDescending(r => r.ReleaseDate)
                     .ThenByDescending(r => r.Version)
                     .Select(r => (Guid?)r.Id)
                     .FirstOrDefaultAsync(ct);
-                result.AttackReleaseId = newest;
+                result.TechniqueReleaseId = newest;
                 result.HasMappings = newest != null;
             }
 
-            var byOffensiveId = new Dictionary<string, List<AttackTechniqueCountermeasureEntity>>();
-            if (result.HasMappings && attackTechniques.Count > 0)
+            var byOffensiveId = new Dictionary<string, List<TechniqueCountermeasureEntity>>();
+            if (result.HasMappings && techniques.Count > 0)
             {
                 // the techniques' own ids and their parents', for the ones with no mappings of their own
-                var ids = attackTechniques
+                var ids = techniques
                     .SelectMany(t => new[] { t.ExternalId, ParentExternalId(t.ExternalId) })
                     .Where(id => id != null)
                     .Distinct()
                     .ToList();
-                var rows = await Mappings(result.AttackReleaseId.Value)
+                var rows = await Mappings(result.TechniqueReleaseId.Value)
                     .Where(c => ids.Contains(c.OffensiveExternalId))
                     .ToListAsync(ct);
                 byOffensiveId = rows.GroupBy(c => c.OffensiveExternalId).ToDictionary(g => g.Key, g => g.ToList());
             }
 
-            foreach (var technique in attackTechniques)
+            foreach (var technique in techniques)
             {
-                var group = new MselTechniqueCountermeasures { AttackTechniqueId = technique.AttackTechniqueId, OffensiveExternalId = technique.ExternalId };
+                var group = new MselTechniqueCountermeasures { TechniqueId = technique.TechniqueId, OffensiveExternalId = technique.ExternalId };
                 if (byOffensiveId.TryGetValue(technique.ExternalId, out var own))
                 {
                     group.Countermeasures = Rank(own, inherited: false).ToList();
@@ -238,17 +238,17 @@ namespace Blueprint.Api.Services
             return externalId[(dot + 1)..].All(char.IsAsciiDigit) ? externalId[..dot] : null;
         }
 
-        private IQueryable<AttackTechniqueCountermeasureEntity> Mappings(Guid releaseId) =>
-            _context.AttackTechniqueCountermeasures
+        private IQueryable<TechniqueCountermeasureEntity> Mappings(Guid releaseId) =>
+            _context.TechniqueCountermeasures
                 .Where(c => c.ReleaseId == releaseId)
                 .Include(c => c.DefensiveTechnique)
-                .ThenInclude(t => t.AttackRelease);
+                .ThenInclude(t => t.TechniqueRelease);
 
         /// <summary>Strongest first; ties by the D3FEND id, so the order is stable.</summary>
-        private IEnumerable<AttackTechniqueCountermeasure> Rank(IEnumerable<AttackTechniqueCountermeasureEntity> rows, bool inherited)
+        private IEnumerable<TechniqueCountermeasure> Rank(IEnumerable<TechniqueCountermeasureEntity> rows, bool inherited)
         {
             var ranked = rows.OrderByDescending(c => c.Weight).ThenBy(c => c.DefensiveTechnique.ExternalId).ToList();
-            var mapped = _mapper.Map<List<AttackTechniqueCountermeasure>>(ranked);
+            var mapped = _mapper.Map<List<TechniqueCountermeasure>>(ranked);
             foreach (var item in mapped)
                 item.InheritedFromParent = inherited;
             return mapped;

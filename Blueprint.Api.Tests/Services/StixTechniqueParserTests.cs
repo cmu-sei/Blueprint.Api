@@ -14,16 +14,16 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Services;
 
-/// <summary><c>AttackStixParser</c> - an ATT&amp;CK STIX bundle into a release, its tactics and its techniques.</summary>
-public class AttackStixParserTests
+/// <summary><c>StixTechniqueParser</c> - an ATT&amp;CK STIX bundle into a release, its tactics and its techniques.</summary>
+public class StixTechniqueParserTests
 {
-    private static async Task<AttackReleaseEntity> Parse(string json, string version = null) =>
-        await AttackStixParser.ParseAsync(new MemoryStream(Encoding.UTF8.GetBytes(json)), version, TestContext.Current.CancellationToken);
+    private static async Task<TechniqueReleaseEntity> Parse(string json, string version = null) =>
+        await StixTechniqueParser.ParseAsync(new MemoryStream(Encoding.UTF8.GetBytes(json)), version, TestContext.Current.CancellationToken);
 
     [Fact]
     public async Task Parse_ReadsTheReleaseFromTheCollection()
     {
-        var release = await Parse(AttackBundles.Enterprise("1.0"));
+        var release = await Parse(TechniqueBundles.Enterprise("1.0"));
 
         Assert.Equal("enterprise-attack", release.Domain);
         Assert.False(release.IsDefensive);
@@ -35,7 +35,7 @@ public class AttackStixParserTests
     [Fact]
     public async Task Parse_SkipsRevokedAndDeprecatedTechniques()
     {
-        var release = await Parse(AttackBundles.Enterprise());
+        var release = await Parse(TechniqueBundles.Enterprise());
 
         Assert.Equal(["T1003", "T1053", "T1059", "T1059.001"], release.Techniques.Select(t => t.ExternalId).Order());
     }
@@ -43,7 +43,7 @@ public class AttackStixParserTests
     [Fact]
     public async Task Parse_OrdersTacticsAsTheMatrixDoes()
     {
-        var release = await Parse(AttackBundles.Enterprise());
+        var release = await Parse(TechniqueBundles.Enterprise());
 
         Assert.Equal(["persistence", "execution"], release.Tactics.OrderBy(t => t.DisplayOrder).Select(t => t.ShortName));
     }
@@ -51,7 +51,7 @@ public class AttackStixParserTests
     [Fact]
     public async Task Parse_LinksASubTechniqueToItsParent_AndKeepsEveryTactic()
     {
-        var release = await Parse(AttackBundles.Enterprise());
+        var release = await Parse(TechniqueBundles.Enterprise());
         var parent = release.Techniques.Single(t => t.ExternalId == "T1059");
         var child = release.Techniques.Single(t => t.ExternalId == "T1059.001");
         var scheduled = release.Techniques.Single(t => t.ExternalId == "T1053");
@@ -67,9 +67,9 @@ public class AttackStixParserTests
     [Fact]
     public async Task Parse_GivesTheSameReleaseTheSameIds_AndAnotherVersionOtherIds()
     {
-        var first = await Parse(AttackBundles.Enterprise("1.0"));
-        var again = await Parse(AttackBundles.Enterprise("1.0"));
-        var next = await Parse(AttackBundles.Enterprise("2.0"));
+        var first = await Parse(TechniqueBundles.Enterprise("1.0"));
+        var again = await Parse(TechniqueBundles.Enterprise("1.0"));
+        var next = await Parse(TechniqueBundles.Enterprise("2.0"));
 
         Assert.Equal(first.Id, again.Id);
         Assert.Equal(
@@ -86,12 +86,12 @@ public class AttackStixParserTests
     public void CreateNameBasedGuid_MatchesTheRfcTestVector() =>
         Assert.Equal(
             new Guid("2ed6657d-e927-568b-95e1-2665a8aea6a2"),
-            AttackStixParser.CreateNameBasedGuid(new Guid("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), "www.example.com"));
+            StixTechniqueParser.CreateNameBasedGuid(new Guid("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), "www.example.com"));
 
     [Fact]
     public async Task Parse_OfABundleThatDoesNotNameItsVersion_TakesTheOneGiven()
     {
-        var release = await Parse(AttackBundles.Enterprise(includeVersion: false), "8.2");
+        var release = await Parse(TechniqueBundles.Enterprise(includeVersion: false), "8.2");
 
         Assert.Equal("8.2", release.Version);
     }
@@ -99,7 +99,7 @@ public class AttackStixParserTests
     [Fact]
     public async Task Parse_OfABundleThatDoesNotNameItsVersion_WithNoneGiven_IsRefused()
     {
-        var ex = await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse(AttackBundles.Enterprise(includeVersion: false)));
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(TechniqueBundles.Enterprise(includeVersion: false)));
 
         Assert.Contains("version", ex.Message);
     }
@@ -109,12 +109,12 @@ public class AttackStixParserTests
     [InlineData("""{"type":"report"}""")]
     [InlineData("""{"type":"bundle","objects":[]}""")]
     public async Task Parse_OfSomethingThatIsNotAnAttackBundle_IsRefused(string json) =>
-        await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse(json));
+        await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(json));
 
     [Fact]
     public async Task Parse_OfABundleWhoseTacticsNameNoSource_IsRefused()
     {
-        var ex = await Assert.ThrowsAsync<InvalidAttackBundleException>(() => Parse(AttackBundles.WithoutASource(), "1.0"));
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(TechniqueBundles.WithoutASource(), "1.0"));
 
         Assert.Contains("source", ex.Message);
     }
@@ -126,13 +126,13 @@ public class AttackStixParserTests
     [Fact]
     public async Task Parse_OfAtlas_ReadsTheReleaseFromTheCollection()
     {
-        var release = await Parse(AttackBundles.Atlas());
+        var release = await Parse(TechniqueBundles.Atlas());
 
         Assert.Equal("ATLAS", release.Domain);
         Assert.False(release.IsDefensive);
         Assert.Equal("2026.10", release.Version);
         Assert.Equal("ATLAS", release.Name);
-        Assert.Equal(AttackStixParser.ReleaseId("ATLAS", "2026.10"), release.Id);
+        Assert.Equal(StixTechniqueParser.ReleaseId("ATLAS", "2026.10"), release.Id);
         Assert.Equal(new DateTime(2026, 10, 28, 0, 0, 0, DateTimeKind.Utc), release.ReleaseDate);
     }
 
@@ -140,7 +140,7 @@ public class AttackStixParserTests
     [Fact]
     public async Task Parse_OfAtlas_IdentifiesTacticsAndTechniquesByTheirAtlasReference()
     {
-        var release = await Parse(AttackBundles.Atlas());
+        var release = await Parse(TechniqueBundles.Atlas());
 
         Assert.Equal(["AML.TA0002", "AML.TA0000"], release.Tactics.OrderBy(t => t.DisplayOrder).Select(t => t.ExternalId));
         Assert.Equal("https://atlas.mitre.org/tactics/AML.TA0002", release.Tactics.Single(t => t.ExternalId == "AML.TA0002").Url);
@@ -152,7 +152,7 @@ public class AttackStixParserTests
     [Fact]
     public async Task Parse_OfAtlas_LinksASubTechniqueToItsParent_AndMatchesTheAtlasKillChain()
     {
-        var release = await Parse(AttackBundles.Atlas());
+        var release = await Parse(TechniqueBundles.Atlas());
         var parent = release.Techniques.Single(t => t.ExternalId == "AML.T0000");
         var child = release.Techniques.Single(t => t.ExternalId == "AML.T0000.000");
         var access = release.Techniques.Single(t => t.ExternalId == "AML.T0040");
@@ -169,9 +169,9 @@ public class AttackStixParserTests
     [Fact]
     public async Task Parse_OfAtlas_GivesIdsOfItsOwn_ApartFromAttack()
     {
-        var atlas = await Parse(AttackBundles.Atlas());
-        var again = await Parse(AttackBundles.Atlas());
-        var attack = await Parse(AttackBundles.Enterprise("1.0"));
+        var atlas = await Parse(TechniqueBundles.Atlas());
+        var again = await Parse(TechniqueBundles.Atlas());
+        var attack = await Parse(TechniqueBundles.Enterprise("1.0"));
 
         Assert.Equal(atlas.Id, again.Id);
         Assert.Equal(

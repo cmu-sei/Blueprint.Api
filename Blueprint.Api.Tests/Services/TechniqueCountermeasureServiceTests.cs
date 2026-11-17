@@ -6,8 +6,8 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Services;
 
-/// <summary><c>AttackTechniqueCountermeasureService.ParentExternalId</c> - the technique a sub-technique falls back to.</summary>
-public class AttackTechniqueCountermeasureServiceTests
+/// <summary><c>TechniqueCountermeasureService.ParentExternalId</c> - the technique a sub-technique falls back to.</summary>
+public class TechniqueCountermeasureServiceTests
 {
     [Theory]
     [InlineData("T1003.005", "T1003")]
@@ -22,6 +22,6 @@ public class AttackTechniqueCountermeasureServiceTests
     [InlineData(null, null)]
     public void ParentExternalId_IsTheIdBeforeANumericLastPart(string externalId, string expected)
     {
-        Assert.Equal(expected, AttackTechniqueCountermeasureService.ParentExternalId(externalId));
+        Assert.Equal(expected, TechniqueCountermeasureService.ParentExternalId(externalId));
     }
 }

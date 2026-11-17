@@ -10,18 +10,18 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Blueprint.Api.Data.Models
 {
     /// <summary>
-    /// A technique in a MSEL's pool - the techniques its AttackTechnique and DefensiveTechnique columns offer. The
+    /// A technique in a MSEL's pool - the techniques its Technique and DefensiveTechnique columns offer. The
     /// rows of a family (attack: ATT&amp;CK and ATLAS; defensive: D3FEND, told apart by the release's IsDefensive) are
     /// all from the same release.
     /// </summary>
-    public class MselAttackTechniqueEntity
+    public class MselTechniqueEntity
     {
-        public MselAttackTechniqueEntity() { }
+        public MselTechniqueEntity() { }
 
-        public MselAttackTechniqueEntity(Guid mselId, Guid attackTechniqueId)
+        public MselTechniqueEntity(Guid mselId, Guid techniqueId)
         {
             MselId = mselId;
-            AttackTechniqueId = attackTechniqueId;
+            TechniqueId = techniqueId;
         }
 
         [Key]
@@ -31,26 +31,26 @@ namespace Blueprint.Api.Data.Models
         public Guid MselId { get; set; }
         public MselEntity Msel { get; set; }
 
-        public Guid AttackTechniqueId { get; set; }
-        public AttackTechniqueEntity AttackTechnique { get; set; }
+        public Guid TechniqueId { get; set; }
+        public TechniqueEntity Technique { get; set; }
     }
 
-    public class MselAttackTechniqueConfiguration : IEntityTypeConfiguration<MselAttackTechniqueEntity>
+    public class MselTechniqueConfiguration : IEntityTypeConfiguration<MselTechniqueEntity>
     {
-        public void Configure(EntityTypeBuilder<MselAttackTechniqueEntity> builder)
+        public void Configure(EntityTypeBuilder<MselTechniqueEntity> builder)
         {
-            builder.HasIndex(x => new { x.MselId, x.AttackTechniqueId }).IsUnique();
+            builder.HasIndex(x => new { x.MselId, x.TechniqueId }).IsUnique();
 
             builder
                 .HasOne(u => u.Msel)
-                .WithMany(p => p.MselAttackTechniques)
+                .WithMany(p => p.MselTechniques)
                 .HasForeignKey(x => x.MselId)
                 .OnDelete(DeleteBehavior.Cascade);
             // A release in use by a MSEL can't be deleted out from under it.
             builder
-                .HasOne(u => u.AttackTechnique)
+                .HasOne(u => u.Technique)
                 .WithMany()
-                .HasForeignKey(x => x.AttackTechniqueId)
+                .HasForeignKey(x => x.TechniqueId)
                 .OnDelete(DeleteBehavior.Restrict);
         }
     }

@@ -20,7 +20,7 @@ namespace Blueprint.Api.Data.Models
     /// has the same ids on every installation and a MSEL exported from one Blueprint links its techniques on
     /// another.
     /// </remarks>
-    public class AttackReleaseEntity : BaseEntity
+    public class TechniqueReleaseEntity : BaseEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.None)]
@@ -35,15 +35,15 @@ namespace Blueprint.Api.Data.Models
         public string Name { get; set; }
         public string Description { get; set; }
         public DateTime? ReleaseDate { get; set; }
-        public virtual ICollection<AttackTacticEntity> Tactics { get; set; } = new HashSet<AttackTacticEntity>();
-        public virtual ICollection<AttackTechniqueEntity> Techniques { get; set; } = new HashSet<AttackTechniqueEntity>();
+        public virtual ICollection<TechniqueTacticEntity> Tactics { get; set; } = new HashSet<TechniqueTacticEntity>();
+        public virtual ICollection<TechniqueEntity> Techniques { get; set; } = new HashSet<TechniqueEntity>();
         /// <summary>The D3FEND "countered by" mappings imported onto a defensive release; empty for an attack release.</summary>
-        public virtual ICollection<AttackTechniqueCountermeasureEntity> Countermeasures { get; set; } = new HashSet<AttackTechniqueCountermeasureEntity>();
+        public virtual ICollection<TechniqueCountermeasureEntity> Countermeasures { get; set; } = new HashSet<TechniqueCountermeasureEntity>();
     }
 
-    public class AttackReleaseConfiguration : IEntityTypeConfiguration<AttackReleaseEntity>
+    public class TechniqueReleaseConfiguration : IEntityTypeConfiguration<TechniqueReleaseEntity>
     {
-        public void Configure(EntityTypeBuilder<AttackReleaseEntity> builder)
+        public void Configure(EntityTypeBuilder<TechniqueReleaseEntity> builder)
         {
             builder.HasIndex(x => new { x.Domain, x.Version }).IsUnique();
         }

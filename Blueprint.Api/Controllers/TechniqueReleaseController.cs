@@ -21,21 +21,21 @@ namespace Blueprint.Api.Controllers
     /// competency frameworks are: every MSEL with a technique column loads them. Import and delete are managed with
     /// the competency frameworks.
     /// </summary>
-    public class AttackReleaseController : BaseController
+    public class TechniqueReleaseController : BaseController
     {
         // enterprise-attack.json is about 50 MB and grows with each release.
         private const long MaxBundleBytes = 256L * 1024 * 1024;
 
-        private readonly IAttackReleaseService _attackReleaseService;
-        private readonly IAttackTechniqueCountermeasureService _countermeasureService;
+        private readonly ITechniqueReleaseService _techniqueReleaseService;
+        private readonly ITechniqueCountermeasureService _countermeasureService;
         private readonly IBlueprintAuthorizationService _authorizationService;
 
-        public AttackReleaseController(
-            IAttackReleaseService attackReleaseService,
-            IAttackTechniqueCountermeasureService countermeasureService,
+        public TechniqueReleaseController(
+            ITechniqueReleaseService techniqueReleaseService,
+            ITechniqueCountermeasureService countermeasureService,
             IBlueprintAuthorizationService authorizationService)
         {
-            _attackReleaseService = attackReleaseService;
+            _techniqueReleaseService = techniqueReleaseService;
             _countermeasureService = countermeasureService;
             _authorizationService = authorizationService;
         }
@@ -44,12 +44,12 @@ namespace Blueprint.Api.Controllers
         /// Gets all imported technique framework releases
         /// </summary>
         /// <param name="ct"></param>
-        [HttpGet("attackreleases")]
-        [ProducesResponseType(typeof(IEnumerable<AttackRelease>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getAttackReleases")]
+        [HttpGet("techniquereleases")]
+        [ProducesResponseType(typeof(IEnumerable<TechniqueRelease>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getTechniqueReleases")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
-            var list = await _attackReleaseService.GetAsync(ct);
+            var list = await _techniqueReleaseService.GetAsync(ct);
             return Ok(list);
         }
 
@@ -58,12 +58,12 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <param name="id">The id of the release</param>
         /// <param name="ct"></param>
-        [HttpGet("attackreleases/{id}")]
-        [ProducesResponseType(typeof(AttackRelease), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getAttackRelease")]
+        [HttpGet("techniquereleases/{id}")]
+        [ProducesResponseType(typeof(TechniqueRelease), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getTechniqueRelease")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var release = await _attackReleaseService.GetAsync(id, ct);
+            var release = await _techniqueReleaseService.GetAsync(id, ct);
             return Ok(release);
         }
 
@@ -72,12 +72,12 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <param name="id">The id of the release</param>
         /// <param name="ct"></param>
-        [HttpGet("attackreleases/{id}/tactics")]
-        [ProducesResponseType(typeof(IEnumerable<AttackTactic>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getAttackTactics")]
+        [HttpGet("techniquereleases/{id}/tactics")]
+        [ProducesResponseType(typeof(IEnumerable<TechniqueTactic>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getTechniqueTactics")]
         public async Task<IActionResult> GetTactics(Guid id, CancellationToken ct)
         {
-            var list = await _attackReleaseService.GetTacticsAsync(id, ct);
+            var list = await _techniqueReleaseService.GetTacticsAsync(id, ct);
             return Ok(list);
         }
 
@@ -86,12 +86,12 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <param name="id">The id of the release</param>
         /// <param name="ct"></param>
-        [HttpGet("attackreleases/{id}/techniques")]
-        [ProducesResponseType(typeof(IEnumerable<AttackTechnique>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getAttackTechniques")]
+        [HttpGet("techniquereleases/{id}/techniques")]
+        [ProducesResponseType(typeof(IEnumerable<Technique>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getTechniques")]
         public async Task<IActionResult> GetTechniques(Guid id, CancellationToken ct)
         {
-            var list = await _attackReleaseService.GetTechniquesAsync(id, ct);
+            var list = await _techniqueReleaseService.GetTechniquesAsync(id, ct);
             return Ok(list);
         }
 
@@ -106,9 +106,9 @@ namespace Blueprint.Api.Controllers
         /// <param name="id">The id of the D3FEND release</param>
         /// <param name="offensiveId">The offensive technique's id, e.g. T1003.005</param>
         /// <param name="ct"></param>
-        [HttpGet("attackreleases/{id}/countermeasures")]
-        [ProducesResponseType(typeof(IEnumerable<AttackTechniqueCountermeasure>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getAttackTechniqueCountermeasures")]
+        [HttpGet("techniquereleases/{id}/countermeasures")]
+        [ProducesResponseType(typeof(IEnumerable<TechniqueCountermeasure>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getTechniqueCountermeasures")]
         public async Task<IActionResult> GetCountermeasures(Guid id, [FromQuery] string offensiveId, CancellationToken ct)
         {
             var list = await _countermeasureService.GetByReleaseAsync(id, offensiveId, ct);
@@ -128,17 +128,17 @@ namespace Blueprint.Api.Controllers
         /// <param name="form">The bundle or ontology</param>
         /// <param name="version">The release version (e.g. "17.1"), if the file does not say</param>
         /// <param name="ct"></param>
-        [HttpPost("attackreleases/import")]
+        [HttpPost("techniquereleases/import")]
         [RequestSizeLimit(MaxBundleBytes)]
         [RequestFormLimits(MultipartBodyLengthLimit = MaxBundleBytes)]
-        [ProducesResponseType(typeof(AttackRelease), (int)HttpStatusCode.Created)]
-        [SwaggerOperation(OperationId = "importAttackRelease")]
+        [ProducesResponseType(typeof(TechniqueRelease), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "importTechniqueRelease")]
         public async Task<IActionResult> Import([FromForm] FileForm form, [FromQuery] string version, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
                 throw new ForbiddenException();
 
-            var created = await _attackReleaseService.ImportAsync(form, version, ct);
+            var created = await _techniqueReleaseService.ImportAsync(form, version, ct);
             return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
         }
 
@@ -156,11 +156,11 @@ namespace Blueprint.Api.Controllers
         /// <param name="id">The id of the D3FEND release</param>
         /// <param name="form">The mappings file</param>
         /// <param name="ct"></param>
-        [HttpPost("attackreleases/{id}/countermeasures")]
+        [HttpPost("techniquereleases/{id}/countermeasures")]
         [RequestSizeLimit(MaxBundleBytes)]
         [RequestFormLimits(MultipartBodyLengthLimit = MaxBundleBytes)]
-        [ProducesResponseType(typeof(AttackTechniqueCountermeasureImport), (int)HttpStatusCode.Created)]
-        [SwaggerOperation(OperationId = "importAttackTechniqueCountermeasures")]
+        [ProducesResponseType(typeof(TechniqueCountermeasureImport), (int)HttpStatusCode.Created)]
+        [SwaggerOperation(OperationId = "importTechniqueCountermeasures")]
         public async Task<IActionResult> ImportCountermeasures(Guid id, [FromForm] FileForm form, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
@@ -178,15 +178,15 @@ namespace Blueprint.Api.Controllers
         /// </remarks>
         /// <param name="id">The id of the release</param>
         /// <param name="ct"></param>
-        [HttpDelete("attackreleases/{id}")]
+        [HttpDelete("techniquereleases/{id}")]
         [ProducesResponseType((int)HttpStatusCode.NoContent)]
-        [SwaggerOperation(OperationId = "deleteAttackRelease")]
+        [SwaggerOperation(OperationId = "deleteTechniqueRelease")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
                 throw new ForbiddenException();
 
-            await _attackReleaseService.DeleteAsync(id, ct);
+            await _techniqueReleaseService.DeleteAsync(id, ct);
             return NoContent();
         }
     }

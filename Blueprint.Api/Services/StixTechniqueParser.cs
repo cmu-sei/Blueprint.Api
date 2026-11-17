@@ -17,7 +17,7 @@ namespace Blueprint.Api.Services
 {
     /// <summary>
     /// Reads a MITRE ATT&amp;CK STIX 2.x bundle (enterprise-attack.json, mobile-attack.json, ics-attack.json), or a
-    /// MITRE ATLAS one (stix-atlas.json) in the same data model, into an <see cref="AttackReleaseEntity"/> with its
+    /// MITRE ATLAS one (stix-atlas.json) in the same data model, into an <see cref="TechniqueReleaseEntity"/> with its
     /// tactics and techniques.
     /// </summary>
     /// <remarks>
@@ -29,12 +29,12 @@ namespace Blueprint.Api.Services
     /// parent is found from its id (T1059.001 belongs to T1059, AML.T0000.000 to AML.T0000) rather than from
     /// the subtechnique-of relationships, which say the same thing.
     /// </remarks>
-    public static class AttackStixParser
+    public static class StixTechniqueParser
     {
         /// <summary>The UUIDv5 namespace every ATT&amp;CK id in Blueprint is derived in.</summary>
         public static readonly Guid IdNamespace = new("08e51b67-7c2e-4e26-85f4-1e8067551015");
 
-        public static async Task<AttackReleaseEntity> ParseAsync(Stream stream, string version, CancellationToken ct)
+        public static async Task<TechniqueReleaseEntity> ParseAsync(Stream stream, string version, CancellationToken ct)
         {
             using var document = await ReleaseFileParser.ReadAsync(stream, ct);
             return Parse(document.RootElement, version);
@@ -47,15 +47,15 @@ namespace Blueprint.Api.Services
             && root.TryGetProperty("objects", out var objects)
             && objects.ValueKind == JsonValueKind.Array;
 
-        public static AttackReleaseEntity Parse(JsonElement root, string version)
+        public static TechniqueReleaseEntity Parse(JsonElement root, string version)
         {
             if (!CanParse(root))
-                throw new InvalidAttackBundleException("The file is not a STIX bundle. Upload a release bundle such as enterprise-attack.json or stix-atlas.json.");
+                throw new InvalidTechniqueBundleException("The file is not a STIX bundle. Upload a release bundle such as enterprise-attack.json or stix-atlas.json.");
 
             return ParseObjects(root.GetProperty("objects"), version);
         }
 
-        private static AttackReleaseEntity ParseObjects(JsonElement objects, string version)
+        private static TechniqueReleaseEntity ParseObjects(JsonElement objects, string version)
         {
             JsonElement? collection = null;
             JsonElement? matrix = null;
@@ -85,13 +85,13 @@ namespace Blueprint.Api.Services
             }
 
             if (techniques.Count == 0)
-                throw new InvalidAttackBundleException("The bundle has no techniques.");
+                throw new InvalidTechniqueBundleException("The bundle has no techniques.");
 
             version = string.IsNullOrWhiteSpace(version)
                 ? (collection.HasValue ? GetString(collection.Value, "x_mitre_version") : null)
                 : version.Trim();
             if (string.IsNullOrWhiteSpace(version))
-                throw new InvalidAttackBundleException("The bundle does not name its version. Enter the version and upload it again.");
+                throw new InvalidTechniqueBundleException("The bundle does not name its version. Enter the version and upload it again.");
 
             // The bundle's own catalogue is the reference source its tactics share. ATLAS tactics also cite the
             // ATT&CK tactic they correspond to, but not every one of them does, so the most common source wins.
@@ -102,7 +102,7 @@ namespace Blueprint.Api.Services
                 .OrderByDescending(g => g.Count())
                 .Select(g => g.Key)
                 .FirstOrDefault()
-                ?? throw new InvalidAttackBundleException(
+                ?? throw new InvalidTechniqueBundleException(
                     "The bundle's tactics carry no external reference naming their source (such as mitre-attack or mitre-atlas), so its techniques cannot be identified.");
 
             // Techniques name their tactics through kill chain phases. The chain is named for the domain
@@ -121,7 +121,7 @@ namespace Blueprint.Api.Services
                     : null)
                 .FirstOrDefault(d => !string.IsNullOrWhiteSpace(d)) ?? "enterprise-attack";
 
-            var release = new AttackReleaseEntity
+            var release = new TechniqueReleaseEntity
             {
                 Id = ReleaseId(domain, version),
                 Domain = domain,
@@ -147,10 +147,10 @@ namespace Blueprint.Api.Services
                 if (externalId == null || stixId == null)
                     continue;
 
-                release.Tactics.Add(new AttackTacticEntity
+                release.Tactics.Add(new TechniqueTacticEntity
                 {
                     Id = ObjectId(domain, version, stixId),
-                    AttackReleaseId = release.Id,
+                    TechniqueReleaseId = release.Id,
                     StixId = stixId,
                     ExternalId = externalId,
                     ShortName = GetString(tactic, "x_mitre_shortname"),
@@ -161,8 +161,8 @@ namespace Blueprint.Api.Services
                 });
             }
 
-            var byExternalId = new Dictionary<string, AttackTechniqueEntity>(StringComparer.OrdinalIgnoreCase);
-            var subTechniques = new List<AttackTechniqueEntity>();
+            var byExternalId = new Dictionary<string, TechniqueEntity>(StringComparer.OrdinalIgnoreCase);
+            var subTechniques = new List<TechniqueEntity>();
             foreach (var technique in techniques)
             {
                 var (externalId, url) = GetReference(technique, source);
@@ -175,10 +175,10 @@ namespace Blueprint.Api.Services
                     .Select(p => GetString(p, "phase_name"))
                     .Where(p => p != null);
 
-                var entity = new AttackTechniqueEntity
+                var entity = new TechniqueEntity
                 {
                     Id = ObjectId(domain, version, stixId),
-                    AttackReleaseId = release.Id,
+                    TechniqueReleaseId = release.Id,
                     StixId = stixId,
                     ExternalId = externalId,
                     Name = GetString(technique, "name"),

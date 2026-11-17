@@ -14,7 +14,7 @@ using Blueprint.Api.Infrastructure.Exceptions;
 namespace Blueprint.Api.Services
 {
     /// <summary>
-    /// Reads the MITRE D3FEND ontology (d3fend.json, JSON-LD) into an <see cref="AttackReleaseEntity"/> of the
+    /// Reads the MITRE D3FEND ontology (d3fend.json, JSON-LD) into an <see cref="TechniqueReleaseEntity"/> of the
     /// "d3fend" domain, flagged defensive, with the seven defensive tactics and the defensive techniques.
     /// </summary>
     /// <remarks>
@@ -35,7 +35,7 @@ namespace Blueprint.Api.Services
         private const string TacticType = "d3f:DefensiveTactic";
         private const string TechniqueClass = "d3f:DefensiveTechnique";
 
-        public static async Task<AttackReleaseEntity> ParseAsync(Stream stream, string version, CancellationToken ct)
+        public static async Task<TechniqueReleaseEntity> ParseAsync(Stream stream, string version, CancellationToken ct)
         {
             using var document = await ReleaseFileParser.ReadAsync(stream, ct);
             return Parse(document.RootElement, version);
@@ -47,10 +47,10 @@ namespace Blueprint.Api.Services
             && root.TryGetProperty("@graph", out var graph)
             && graph.ValueKind == JsonValueKind.Array;
 
-        public static AttackReleaseEntity Parse(JsonElement root, string version)
+        public static TechniqueReleaseEntity Parse(JsonElement root, string version)
         {
             if (!CanParse(root))
-                throw new InvalidAttackBundleException("The file is not the D3FEND ontology. Upload d3fend.json from the D3FEND Ontology Resources page.");
+                throw new InvalidTechniqueBundleException("The file is not the D3FEND ontology. Upload d3fend.json from the D3FEND Ontology Resources page.");
 
             var nodes = new Dictionary<string, JsonElement>();
             JsonElement? ontology = null;
@@ -70,17 +70,17 @@ namespace Blueprint.Api.Services
                 .Where(n => GetText(n, "d3f:d3fend-id") != null && DescendsFrom(n, TechniqueClass, nodes))
                 .ToList();
             if (tactics.Count == 0 || techniques.Count == 0)
-                throw new InvalidAttackBundleException("The ontology has no defensive tactics and techniques.");
+                throw new InvalidTechniqueBundleException("The ontology has no defensive tactics and techniques.");
 
             version = string.IsNullOrWhiteSpace(version)
                 ? (ontology.HasValue ? GetText(ontology.Value, "owl:versionInfo") : null)
                 : version.Trim();
             if (string.IsNullOrWhiteSpace(version))
-                throw new InvalidAttackBundleException("The ontology does not name its version. Enter the version and upload it again.");
+                throw new InvalidTechniqueBundleException("The ontology does not name its version. Enter the version and upload it again.");
 
-            var release = new AttackReleaseEntity
+            var release = new TechniqueReleaseEntity
             {
-                Id = AttackStixParser.ReleaseId(Domain, version),
+                Id = StixTechniqueParser.ReleaseId(Domain, version),
                 Domain = Domain,
                 IsDefensive = true,
                 Version = version,
@@ -97,10 +97,10 @@ namespace Blueprint.Api.Services
                 var id = GetString(tactic, "@id");
                 var shortName = LocalName(id).ToLowerInvariant();
                 shortNames[id] = shortName;
-                release.Tactics.Add(new AttackTacticEntity
+                release.Tactics.Add(new TechniqueTacticEntity
                 {
-                    Id = AttackStixParser.ObjectId(Domain, version, id),
-                    AttackReleaseId = release.Id,
+                    Id = StixTechniqueParser.ObjectId(Domain, version, id),
+                    TechniqueReleaseId = release.Id,
                     StixId = id,
                     // D3FEND gives its tactics no id of their own, so the class id stands in.
                     ExternalId = id,
@@ -117,7 +117,7 @@ namespace Blueprint.Api.Services
                 ? GetText(techniqueClass, "d3f:display-baseurl") ?? "/technique/"
                 : "/technique/";
 
-            var byNodeId = new Dictionary<string, AttackTechniqueEntity>();
+            var byNodeId = new Dictionary<string, TechniqueEntity>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var technique in techniques)
             {
@@ -126,10 +126,10 @@ namespace Blueprint.Api.Services
                 if (!seen.Add(externalId))
                     continue;
 
-                var entity = new AttackTechniqueEntity
+                var entity = new TechniqueEntity
                 {
-                    Id = AttackStixParser.ObjectId(Domain, version, id),
-                    AttackReleaseId = release.Id,
+                    Id = StixTechniqueParser.ObjectId(Domain, version, id),
+                    TechniqueReleaseId = release.Id,
                     StixId = id,
                     ExternalId = externalId,
                     Name = GetText(technique, "rdfs:label") ?? LocalName(id),

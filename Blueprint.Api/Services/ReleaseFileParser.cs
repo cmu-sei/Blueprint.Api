@@ -12,24 +12,24 @@ namespace Blueprint.Api.Services
 {
     /// <summary>
     /// Reads an uploaded technique framework release, whichever of the two file formats it is in: a STIX 2.x
-    /// bundle (ATT&amp;CK, ATLAS) goes to <see cref="AttackStixParser"/>, the D3FEND JSON-LD ontology to
+    /// bundle (ATT&amp;CK, ATLAS) goes to <see cref="StixTechniqueParser"/>, the D3FEND JSON-LD ontology to
     /// <see cref="D3fendOntologyParser"/>.
     /// </summary>
     public static class ReleaseFileParser
     {
-        public static async Task<AttackReleaseEntity> ParseAsync(Stream stream, string version, CancellationToken ct)
+        public static async Task<TechniqueReleaseEntity> ParseAsync(Stream stream, string version, CancellationToken ct)
         {
             using var document = await ReadAsync(stream, ct);
             var root = document.RootElement;
             if (D3fendOntologyParser.CanParse(root))
                 return D3fendOntologyParser.Parse(root, version);
-            if (AttackStixParser.CanParse(root))
-                return AttackStixParser.Parse(root, version);
+            if (StixTechniqueParser.CanParse(root))
+                return StixTechniqueParser.Parse(root, version);
             if (D3fendMappingsParser.LooksLikeSparqlResults(root))
-                throw new InvalidAttackBundleException(
+                throw new InvalidTechniqueBundleException(
                     "The file is the D3FEND mappings, not a release. Import the D3FEND ontology (d3fend.json) first, then import the mappings onto that release.");
 
-            throw new InvalidAttackBundleException(
+            throw new InvalidTechniqueBundleException(
                 "The file is neither a STIX bundle nor the D3FEND ontology. Upload a release bundle such as enterprise-attack.json or stix-atlas.json, or d3fend.json.");
         }
 
@@ -42,7 +42,7 @@ namespace Blueprint.Api.Services
             }
             catch (JsonException ex)
             {
-                throw new InvalidAttackBundleException($"The file is not valid JSON: {ex.Message}");
+                throw new InvalidTechniqueBundleException($"The file is not valid JSON: {ex.Message}");
             }
         }
     }

@@ -6,7 +6,7 @@ using System.Collections.Generic;
 
 namespace Blueprint.Api.ViewModels
 {
-    public class AttackRelease : Base
+    public class TechniqueRelease : Base
     {
         public Guid Id { get; set; }
         public string Domain { get; set; }
@@ -22,10 +22,10 @@ namespace Blueprint.Api.ViewModels
         public int CountermeasureCount { get; set; }
     }
 
-    public class AttackTactic
+    public class TechniqueTactic
     {
         public Guid Id { get; set; }
-        public Guid AttackReleaseId { get; set; }
+        public Guid TechniqueReleaseId { get; set; }
         public string ExternalId { get; set; }
         public string ShortName { get; set; }
         public string Name { get; set; }
@@ -34,10 +34,10 @@ namespace Blueprint.Api.ViewModels
         public int DisplayOrder { get; set; }
     }
 
-    public class AttackTechnique
+    public class Technique
     {
         public Guid Id { get; set; }
-        public Guid AttackReleaseId { get; set; }
+        public Guid TechniqueReleaseId { get; set; }
         /// <summary>The release's domain (enterprise-attack, ATLAS, d3fend).</summary>
         public string Domain { get; set; }
         /// <summary>Whether the technique is a defence (its release is defensive) rather than an attack.</summary>

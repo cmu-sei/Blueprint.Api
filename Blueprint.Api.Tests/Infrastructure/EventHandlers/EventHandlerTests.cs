@@ -477,10 +477,6 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         Assert.Equal(
             new[]
             {
-                "TechniqueReleaseEntity",
-                "TechniqueTacticEntity",
-                "TechniqueCountermeasureEntity",
-                "TechniqueEntity",
                 "CatalogInjectEntity",
                 "CatalogUnitEntity",
                 "CompetencyEntity",
@@ -488,7 +484,6 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
                 "CompetencyRelationshipEntity",
                 "DataOptionEntity",
                 "InvitationEntity",
-                "MselTechniqueEntity",
                 "MselCompetencyEntity",
                 "MselImageEntity",
                 "MselPageEntity",
@@ -496,12 +491,17 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
                 "MselScoringModelEntity",
                 "MselScoringOptionEntity",
                 "MselTeamEntity",
+                "MselTechniqueEntity",
                 "MselUnitEntity",
                 "PermissionEntity",
                 "ProficiencyLevelEntity",
                 "ProficiencyScaleEntity",
                 "SteamfitterTaskEntity",
                 "TeamCompetencyEntity",
+                "TechniqueCountermeasureEntity",
+                "TechniqueEntity",
+                "TechniqueReleaseEntity",
+                "TechniqueTacticEntity",
                 "UserPermissionEntity",
                 "UserTeamRoleEntity",
                 "XApiQueuedStatementEntity"

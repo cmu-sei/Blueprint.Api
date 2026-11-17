@@ -2776,6 +2776,18 @@ namespace Blueprint.Api.Services
                 $"Competencies that are not in this Blueprint were removed from Competency data fields: {string.Join(" and ", removed)}.");
         }
 
+        // Moves and events can be saved out of order while a MSEL is edited, but a push needs them valid.
+        private async Task ValidateMovesAsync(Guid mselId, CancellationToken ct)
+        {
+            var moves = await _context.Moves.AsNoTracking().Where(m => m.MselId == mselId).ToListAsync(ct);
+            var eventStarts = await _context.ScenarioEvents.AsNoTracking()
+                .Where(e => e.MselId == mselId).Select(e => e.DeltaSeconds).ToListAsync(ct);
+            var problems = MoveOrder.FindPushProblems(moves, eventStarts);
+            if (problems.Count > 0)
+                throw new ConflictException(
+                    $"Fix the moves before pushing. {string.Join(" ", problems)} Each move must start after the move before it, and every scenario event must start in a move.");
+        }
+
         public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
@@ -2797,6 +2809,7 @@ namespace Blueprint.Api.Services
                 // also covers a directory that arrived by copy rather than through UpdateAsync
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
             }
+            await ValidateMovesAsync(mselId, ct);
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
@@ -3207,6 +3220,8 @@ namespace Blueprint.Api.Services
             var template = await _context.Msels.AsNoTracking().SingleAsync(m => m.Id == mselId, ct);
             if (template.UseCaster)
                 await ValidateCasterSetupAsync(template, ct);
+            // the launch pushes, so a template with moves out of order fails here for the planner to fix, not later for the participant
+            await ValidateMovesAsync(mselId, ct);
 
             // clone the template MSEL
             var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct);

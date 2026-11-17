@@ -8,39 +8,13 @@ using Blueprint.Api.Data.Models;
 namespace Blueprint.Api.Services
 {
     /// <summary>
-    /// Every move starts strictly after the move numbered before it. A move number the MSEL already uses
-    /// is left to the database's unique index.
+    /// Every move starts strictly after the move numbered before it, and every scenario event starts at or after
+    /// the first move. Saving moves and events that break this is allowed, because a MSEL changes a lot while it
+    /// is edited; pushing integrations is refused until it holds. A move number the MSEL already uses is left to
+    /// the database's unique index.
     /// </summary>
     public static class MoveOrder
     {
-        private const string Rule = "Each move must start after the move before it.";
-
-        /// <summary>
-        /// Why a move with this number and start can't sit among the MSEL's other moves, or null if it can.
-        /// The conflict named is the closest one by move number.
-        /// </summary>
-        public static string FindConflict(int moveNumber, int deltaSeconds, IEnumerable<MoveEntity> otherMoves)
-        {
-            var others = otherMoves.Where(m => m.MoveNumber != moveNumber).ToList();
-            var before = others
-                .Where(m => m.MoveNumber < moveNumber && m.DeltaSeconds >= deltaSeconds)
-                .OrderByDescending(m => m.MoveNumber)
-                .FirstOrDefault();
-            if (before != null)
-                return before.DeltaSeconds == deltaSeconds
-                    ? $"Move {moveNumber} can't start at the same time as Move {before.MoveNumber}. {Rule}"
-                    : $"Move {moveNumber} must start after Move {before.MoveNumber}. {Rule}";
-            var after = others
-                .Where(m => m.MoveNumber > moveNumber && m.DeltaSeconds <= deltaSeconds)
-                .OrderBy(m => m.MoveNumber)
-                .FirstOrDefault();
-            if (after != null)
-                return after.DeltaSeconds == deltaSeconds
-                    ? $"Move {moveNumber} can't start at the same time as Move {after.MoveNumber}. {Rule}"
-                    : $"Move {moveNumber} must start before Move {after.MoveNumber}. {Rule}";
-            return null;
-        }
-
         /// <summary>
         /// Each pair of consecutive moves (by number) that share a start time or are out of order, for a
         /// MSEL saved before the rule, e.g. an imported one.
@@ -57,6 +31,26 @@ namespace Blueprint.Api.Services
                     problems.Add($"Move {previous.MoveNumber} and Move {move.MoveNumber} start at the same time.");
                 else if (move.DeltaSeconds < previous.DeltaSeconds)
                     problems.Add($"Move {move.MoveNumber} starts before Move {previous.MoveNumber}.");
+            }
+            return problems;
+        }
+
+        /// <summary>
+        /// Everything that stops a push: the move order problems, plus each scenario event that starts before
+        /// the first move, so it belongs to no move. A MSEL with no moves has none of either.
+        /// </summary>
+        public static List<string> FindPushProblems(IEnumerable<MoveEntity> moves, IEnumerable<int> eventDeltaSeconds)
+        {
+            var moveList = moves.ToList();
+            var problems = FindProblems(moveList);
+            if (moveList.Count > 0)
+            {
+                var first = moveList.OrderBy(m => m.MoveNumber).First();
+                var early = eventDeltaSeconds.Count(d => d < first.DeltaSeconds);
+                if (early > 0)
+                    problems.Add(early == 1
+                        ? $"1 scenario event starts before Move {first.MoveNumber}, so it is in no move."
+                        : $"{early} scenario events start before Move {first.MoveNumber}, so they are in no move.");
             }
             return problems;
         }

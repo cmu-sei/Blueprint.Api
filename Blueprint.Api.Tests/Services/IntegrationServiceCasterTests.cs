@@ -226,6 +226,126 @@ public class IntegrationServiceCasterTests(DatabaseFixture fixture) : DatabaseTe
     }
 
     // ---------------------------------------------------------------------------------------------
+    // Push of a MSEL that carries only a copy of its directory
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A MSEL with no directory, carrying a copy of one from another Caster, has the copy imported as a new
+    /// project first: the chain of directories, the shared files above, and the archive into the last. The
+    /// workspace is then created in the directory the import made, which the MSEL now links.
+    /// </summary>
+    [Fact]
+    public async Task Push_OfAMselWithOnlyACopy_ImportsItAsANewProjectAndDeploysThere()
+    {
+        var msel = await SeedCopyOnlyMsel();
+        var harness = PushHarness(ImportRules);
+
+        await harness.PushAsync(msel.Id);
+
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.Equal(DirectoryId, deployed.CasterDirectoryId);
+        Assert.Equal(
+            ["Pushing Player Applications", "Caster - importing directory", "Caster - creating workspace"],
+            Statuses(harness, msel.Id).SkipWhile(x => x != "Pushing Player Applications").Take(3));
+        var sent = harness.Handler.Sent.ToList();
+        Assert.Equal("Topology", Body(Assert.Single(sent, x => x.Method == HttpMethod.Post && x.Path == "caster/api/projects").Body)["name"].GetString());
+        var directories = sent.Where(x => x.Method == HttpMethod.Post && x.Path == "caster/api/directories").Select(x => Body(x.Body)).ToList();
+        Assert.Equal(["Root", "Range"], directories.Select(d => d["name"].GetString()));
+        Assert.Equal(JsonValueKind.Null, directories[0]["parentId"].ValueKind);
+        Assert.Equal(ImportedRootId.ToString(), directories[1]["parentId"].GetString());
+        Assert.Equal(ImportedProjectId.ToString(), directories[1]["projectId"].GetString());
+        var providers = Body(sent.First(x => x.Method == HttpMethod.Post && x.Path == "caster/api/files").Body);
+        Assert.Equal("providers.tf", providers["name"].GetString());
+        Assert.Equal(ImportedRootId.ToString(), providers["directoryId"].GetString());
+        var import = Assert.Single(sent, x => x.Path == $"caster/api/directories/{DirectoryId}/actions/import");
+        Assert.Contains("export.zip", import.Body);
+        Assert.True(
+            sent.FindIndex(x => x.Path == $"caster/api/directories/{DirectoryId}/actions/import") < sent.FindIndex(x => x.Path == "caster/api/workspaces"),
+            "The directory has to be imported before the workspace is created in it.");
+        Assert.Equal(DirectoryId.ToString(), Body(Assert.Single(sent, x => x.Path == "caster/api/workspaces").Body)["directoryId"].GetString());
+    }
+
+    /// <summary>The directory the import made is announced with the workspace and run, so an open MSEL page links to it.</summary>
+    [Fact]
+    public async Task Push_OfAMselWithOnlyACopy_AnnouncesTheImportedDirectory()
+    {
+        var msel = await SeedCopyOnlyMsel();
+        var harness = PushHarness(ImportRules);
+
+        await harness.PushAsync(msel.Id);
+        await harness.WaitForDeployment(msel.Id, Ct);
+
+        var announced = harness.Hub.ToGroup(msel.Id).First(x => x.Method == MainHubMethods.CasterIdsUpdated);
+        Assert.Equal(DirectoryId, announced.Arguments[3]);
+    }
+
+    /// <summary>
+    /// An import Caster refuses part way deletes the project it made, so nothing is left half imported, and the
+    /// push stops at its Caster step with no directory, so Retry Caster imports again.
+    /// </summary>
+    [Fact]
+    public async Task Push_WhoseImportCasterRefuses_DeletesTheProjectAndReportsTheCasterStep()
+    {
+        var msel = await SeedCopyOnlyMsel();
+        var harness = PushHarness(x => ImportRules(x.Answers($"POST caster/api/directories/{DirectoryId}/actions/import", HttpStatusCode.BadRequest)));
+
+        await harness.PushAsync(msel.Id);
+
+        var failed = await harness.WaitForError(msel.Id, Ct);
+
+        Assert.StartsWith("ERROR: Caster - importing directory failed - ", failed.IntegrationStatus);
+        Assert.Null(failed.CasterDirectoryId);
+        Assert.Null(failed.CasterWorkspaceId);
+        Assert.Contains(harness.Handler.Sent, x => x.Method == HttpMethod.Delete && x.Path == $"caster/api/projects/{ImportedProjectId}");
+        Assert.DoesNotContain(harness.Handler.Paths, x => x == "caster/api/workspaces");
+    }
+
+    /// <summary>A retry of a push that failed importing the copy imports it, and finishes the push.</summary>
+    [Fact]
+    public async Task RetryCaster_OfAPushWhoseImportFailed_ImportsTheCopyAndDeploys()
+    {
+        var msel = await SeedCopyOnlyMsel(m =>
+        {
+            m.Status = MselItemStatus.Pushing;
+            m.PlayerViewId = PlayerViewId;
+            m.IntegrationStatus = "ERROR: Caster - importing directory failed - Caster answered 400";
+        });
+        var harness = PushHarness(ImportRules);
+
+        await RetryAsync(harness, msel.Id);
+
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.Equal(["Retrying Caster", "Caster - importing directory", "Caster - creating workspace"], Statuses(harness, msel.Id).Take(3));
+        Assert.Equal(DirectoryId, deployed.CasterDirectoryId);
+    }
+
+    private static readonly Guid ImportedProjectId = Guid.Parse("cccccccc-0000-0000-0000-000000000005");
+    private static readonly Guid ImportedRootId = Guid.Parse("cccccccc-0000-0000-0000-000000000006");
+
+    /// <summary>Caster creates the project, its root directory, then the directory the archive goes into, and imports it.</summary>
+    private static SiblingApiHandler ImportRules(SiblingApiHandler handler) => handler
+        .AnswersJson("POST caster/api/projects", $$"""{"id":"{{ImportedProjectId}}","name":"Topology"}""", HttpStatusCode.Created)
+        .AnswersJson("POST caster/api/directories", $$"""{"id":"{{ImportedRootId}}","name":"Root","projectId":"{{ImportedProjectId}}"}""", HttpStatusCode.Created, once: true)
+        .AnswersJson("POST caster/api/directories", $$"""{"id":"{{DirectoryId}}","name":"Range","projectId":"{{ImportedProjectId}}","parentId":"{{ImportedRootId}}"}""", HttpStatusCode.Created)
+        .AnswersJson($"POST caster/api/directories/{DirectoryId}/actions/import", """{"lockedFiles":[]}""")
+        .Answers($"DELETE caster/api/projects/{ImportedProjectId}", HttpStatusCode.NoContent);
+
+    /// <summary>A MSEL ready to push to Player and Caster with no directory, carrying a copy of one.</summary>
+    private async Task<MselEntity> SeedCopyOnlyMsel(Action<MselEntity> adjust = null)
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        msel.UsePlayer = true;
+        msel.UseCaster = true;
+        adjust?.Invoke(msel);
+        await Seed(msel);
+        await Seed(TestData.MselCasterExport(msel.Id));
+
+        return msel;
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Retry Caster
     // ---------------------------------------------------------------------------------------------
 

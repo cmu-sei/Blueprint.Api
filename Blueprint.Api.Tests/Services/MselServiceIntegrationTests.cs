@@ -396,6 +396,21 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         AssertNothingEnqueued();
     }
 
+    /// <summary>A MSEL with no directory but a copy of one is pushed, and the push imports the copy; there is no directory to ask Caster about.</summary>
+    [Fact]
+    public async Task Push_OfACasterMselWithOnlyACopyOfADirectory_IsQueuedWithoutAskingCaster()
+    {
+        var msel = await SeedCasterMsel(m => m.CasterDirectoryId = null);
+        await Seed(TestData.MselCasterExport(msel.Id));
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(Enqueued(msel.Id).IsPush);
+        Assert.Empty(Factory.Caster.ReceivedCalls());
+    }
+
     [Fact]
     public async Task Push_OfACasterMselWhoseTeamsShareAVariable_Is409NamingThem()
     {
@@ -656,6 +671,39 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations/caster/retry", null, Ct);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        AssertNothingEnqueued();
+    }
+
+    /// <summary>A push that failed importing the MSEL's copy of a directory has no directory yet, and the retry imports the copy.</summary>
+    [Fact]
+    public async Task RetryCaster_OfAPushWhoseImportFailed_EnqueuesACasterOnlyPush()
+    {
+        var msel = await SeedFailedCasterPush(m =>
+        {
+            m.CasterDirectoryId = null;
+            m.CasterWorkspaceId = null;
+            m.IntegrationStatus = "ERROR: Caster - importing directory failed - Caster answered 400";
+        });
+        await Seed(TestData.MselCasterExport(msel.Id));
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations/caster/retry", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(Enqueued(msel.Id).CasterOnly);
+    }
+
+    [Fact]
+    public async Task RetryCaster_OfAMselWithNeitherADirectoryNorACopy_Is409()
+    {
+        var msel = await SeedFailedCasterPush(m => m.CasterDirectoryId = null);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations/caster/retry", null, Ct);
+
+        Assert.Equal(
+            "Only a push that failed at its Caster step can retry Caster.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
         AssertNothingEnqueued();
     }
 

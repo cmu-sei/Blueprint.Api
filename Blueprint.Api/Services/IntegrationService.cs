@@ -293,6 +293,7 @@ namespace Blueprint.Api.Services
                         .Include(m => m.CiteActions)
                         .Include(m => m.CiteDuties)
                         .Include(m => m.ScoringModel).ThenInclude(sm => sm.Categories).ThenInclude(c => c.Options)
+                        .Include(m => m.CasterExport).ThenInclude(e => e.Directories).ThenInclude(d => d.Files)
                         .Include(m => m.Teams).ThenInclude(t => t.TeamUsers).ThenInclude(tu => tu.User)
                         .Include(m => m.Teams).ThenInclude(t => t.UserTeamRoles)
                         .Include(m => m.UserMselRoles)
@@ -656,6 +657,21 @@ namespace Blueprint.Api.Services
                 return SendIntegrationStatusAsync(blueprintContext, msel.Id, status, ct);
             };
 
+            // A MSEL with no directory carries a copy of one, from another Caster: import it as a new project
+            // first, and record the directory at once, so later pushes, and a retry, deploy the same one.
+            // Neither is cancelled, for the same reason as the workspace below.
+            if (msel.CasterDirectoryId == null)
+            {
+                if (msel.CasterExport == null)
+                    throw new System.Exception("The MSEL has no Caster directory, and no copy of one to import.");
+                await sendStatus("Caster - importing directory");
+                var imported = await CasterExportService.ImportToCasterAsync(msel.CasterExport, await casterClientSource.GetAsync(ct), _logger, CancellationToken.None);
+                if (imported.LockedFiles.Count > 0)
+                    _logger.LogWarning("Caster did not import the locked files {LockedFiles} into directory {DirectoryId} for MSEL {MselId}", string.Join(", ", imported.LockedFiles), imported.DirectoryId, msel.Id);
+                msel.CasterDirectoryId = imported.DirectoryId;
+                await SaveCasterIdsAsync(blueprintContext, msel, ct);
+            }
+
             // a retry picks up the workspace the failed push made, and terraform plans against what it built
             var workspace = msel.CasterWorkspaceId == null
                 ? null
@@ -710,19 +726,21 @@ namespace Blueprint.Api.Services
         private async STT.Task SaveCasterIdsAsync(BlueprintContext blueprintContext, MselEntity msel, CancellationToken ct)
         {
             var mselId = msel.Id;
+            var directoryId = msel.CasterDirectoryId;
             var workspaceId = msel.CasterWorkspaceId;
             var runId = msel.CasterRunId;
             await blueprintContext.Msels
                 .Where(m => m.Id == mselId)
                 .ExecuteUpdateAsync(s => s
+                    .SetProperty(m => m.CasterDirectoryId, directoryId)
                     .SetProperty(m => m.CasterWorkspaceId, workspaceId)
                     .SetProperty(m => m.CasterRunId, runId),
                     CancellationToken.None);
 
             await _mainHub.Clients.Group(mselId.ToString())
-                .SendAsync(MainHubMethods.CasterIdsUpdated, mselId, workspaceId, runId, ct);
+                .SendAsync(MainHubMethods.CasterIdsUpdated, mselId, workspaceId, runId, directoryId, ct);
             await _mainHub.Clients.Group(MainHub.ADMIN_DATA_GROUP)
-                .SendAsync(MainHubMethods.CasterIdsUpdated, mselId, workspaceId, runId, ct);
+                .SendAsync(MainHubMethods.CasterIdsUpdated, mselId, workspaceId, runId, directoryId, ct);
         }
 
         /// <summary>

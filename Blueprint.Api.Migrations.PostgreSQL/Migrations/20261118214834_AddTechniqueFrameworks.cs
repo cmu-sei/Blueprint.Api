@@ -9,17 +9,39 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     /// <inheritdoc />
-    public partial class AddTechniques : Migration
+    public partial class AddTechniqueFrameworks : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.CreateTable(
+                name: "technique_frameworks",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false, defaultValueSql: "uuid_generate_v4()"),
+                    name = table.Column<string>(type: "text", nullable: true),
+                    description = table.Column<string>(type: "text", nullable: true),
+                    domain = table.Column<string>(type: "text", nullable: true),
+                    is_defensive = table.Column<bool>(type: "boolean", nullable: false),
+                    format = table.Column<int>(type: "integer", nullable: false),
+                    settings = table.Column<string>(type: "text", nullable: true),
+                    date_created = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    date_modified = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    created_by = table.Column<Guid>(type: "uuid", nullable: false),
+                    modified_by = table.Column<Guid>(type: "uuid", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_technique_frameworks", x => x.id);
+                });
+
             migrationBuilder.CreateTable(
                 name: "technique_releases",
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
                     domain = table.Column<string>(type: "text", nullable: true),
+                    technique_framework_id = table.Column<Guid>(type: "uuid", nullable: true),
                     is_defensive = table.Column<bool>(type: "boolean", nullable: false),
                     version = table.Column<string>(type: "text", nullable: true),
                     name = table.Column<string>(type: "text", nullable: true),
@@ -38,6 +60,12 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_technique_releases", x => x.id);
+                    table.ForeignKey(
+                        name: "FK_technique_releases_technique_frameworks_technique_framework~",
+                        column: x => x.technique_framework_id,
+                        principalTable: "technique_frameworks",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.SetNull);
                 });
 
             migrationBuilder.CreateTable(
@@ -175,10 +203,21 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_technique_frameworks_domain",
+                table: "technique_frameworks",
+                column: "domain",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_technique_releases_domain_version",
                 table: "technique_releases",
                 columns: new[] { "domain", "version" },
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_technique_releases_technique_framework_id",
+                table: "technique_releases",
+                column: "technique_framework_id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_technique_tactics_technique_release_id_external_id",
@@ -215,6 +254,9 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
             migrationBuilder.DropTable(
                 name: "technique_releases");
+
+            migrationBuilder.DropTable(
+                name: "technique_frameworks");
         }
     }
 }

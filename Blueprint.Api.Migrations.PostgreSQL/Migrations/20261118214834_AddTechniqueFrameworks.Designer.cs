@@ -16,7 +16,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 {
     [DbContext(typeof(BlueprintContext))]
-    [Migration("20261118165529_AddTechniqueFrameworks")]
+    [Migration("20261118214834_AddTechniqueFrameworks")]
     partial class AddTechniqueFrameworks
     {
         /// <inheritdoc />

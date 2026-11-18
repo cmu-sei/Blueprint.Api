@@ -13,6 +13,7 @@ using System.Net.Http;
 using System.Threading;
 using STT = System.Threading.Tasks;
 using Blueprint.Api.Infrastructure.Extensions;
+using Blueprint.Api.Automation;
 using Blueprint.Api.Data;
 using Cite.Api.Client;
 using Gallery.Api.Client;
@@ -197,7 +198,10 @@ namespace Blueprint.Api.Services
                 using (var finalScope = _scopeFactory.CreateScope())
                 using (var finalContext = finalScope.ServiceProvider.GetRequiredService<BlueprintContext>())
                 {
+                    await AutomationRunControl.CancelAllAsync(finalContext, finalScope.ServiceProvider.GetService<AutomationRunRegistry>(), mselId,
+                        "The MSEL's push was cancelled.", DateTime.UtcNow, freshCt);
                     var finalMsel = await finalContext.Msels.FindAsync(new object[] { mselId }, freshCt);
+                    AutomationDeployment.End(finalMsel);
                     finalMsel.PlayerViewId = null;
                     finalMsel.GalleryExhibitId = null;
                     finalMsel.GalleryCollectionId = null;
@@ -451,6 +455,7 @@ namespace Blueprint.Api.Services
                                 var finalMsel = await finalContext.Msels.FindAsync(new object[] { msel.Id }, ct);
                                 finalMsel.Status = Data.Enumerations.MselItemStatus.Deployed;
                                 finalMsel.IntegrationStatus = null;
+                                await AutomationDeployment.StartAsync(finalContext, finalMsel, DateTime.UtcNow, ct);
                                 await finalContext.SaveChangesAsync(ct);
                             }
                         }
@@ -611,7 +616,10 @@ namespace Blueprint.Api.Services
             using (var finalScope = _scopeFactory.CreateScope())
             using (var finalContext = finalScope.ServiceProvider.GetRequiredService<BlueprintContext>())
             {
+                await AutomationRunControl.CancelAllAsync(finalContext, finalScope.ServiceProvider.GetService<AutomationRunRegistry>(), mselId,
+                    "The MSEL's integrations were removed.", DateTime.UtcNow, ct);
                 var finalMsel = await finalContext.Msels.FindAsync(new object[] { mselId }, ct);
+                AutomationDeployment.End(finalMsel);
                 finalMsel.PlayerViewId = null;
                 finalMsel.GalleryExhibitId = null;
                 finalMsel.GalleryCollectionId = null;

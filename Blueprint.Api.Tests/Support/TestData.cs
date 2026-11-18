@@ -478,6 +478,38 @@ public static class TestData
     }
 
     /// <summary>
+    /// An automation task of a scenario event: a Player notification by default, which needs no VM, triggered by hand.
+    /// </summary>
+    public static AutomationTaskEntity AutomationTask(
+        Guid mselId,
+        Guid scenarioEventId,
+        Data.Enumerations.AutomationAction action = Data.Enumerations.AutomationAction.player_notification,
+        Data.Enumerations.AutomationTrigger trigger = Data.Enumerations.AutomationTrigger.Manual,
+        Guid? triggerTaskId = null,
+        int displayOrder = 0,
+        Guid? createdBy = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new AutomationTaskEntity
+        {
+            Id = id,
+            MselId = mselId,
+            ScenarioEventId = scenarioEventId,
+            DisplayOrder = displayOrder,
+            Name = $"task-{id}",
+            Description = "Seeded by TestData.AutomationTask",
+            Action = action,
+            ActionParameters = new() { ["Text"] = "Seeded" },
+            TriggerCondition = trigger,
+            TriggerTaskId = triggerTaskId,
+            Iterations = 1,
+            Enabled = true,
+            CreatedBy = createdBy ?? Guid.NewGuid()
+        };
+    }
+
+    /// <summary>
     /// One cell: the value of <paramref name="dataFieldId"/> on <paramref name="scenarioEventId"/>.
     /// </summary>
     /// <remarks>

@@ -35,5 +35,16 @@ namespace Blueprint.Api.Automation
             services.AddSingleton<IAutomationActionRunner, AutomationActionRunner>();
             return services;
         }
+
+        /// <summary>What runs automation tasks: the dispatcher, its scheduler and the executor of a run.</summary>
+        public static IServiceCollection AddAutomationEngine(this IServiceCollection services)
+        {
+            services.AddSingleton<AutomationRunRegistry>();
+            services.AddScoped<AutomationScheduler>();
+            services.AddScoped<IAutomationRunExecutor, AutomationRunExecutor>();
+            services.AddScoped<IAutomationRunControl, AutomationRunControl>();
+            services.AddHostedService<AutomationDispatcher>();
+            return services;
+        }
     }
 }

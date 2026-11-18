@@ -32,6 +32,14 @@ namespace Blueprint.Api.Hubs
         public const string ROLE_GROUP = "AdminRoleGroup";
         public const string USER_GROUP = "AdminUserGroup";
 
+        /// <summary>
+        /// The group a MSEL's automation runs and results go to: those who may watch its Facilitator View
+        /// (<see cref="MselFacilitatorViewRequirement"/>) or view every MSEL. A run's output can hold what a guest
+        /// printed, so it is narrower than the MSEL's own group.
+        /// </summary>
+        public static string FacilitationGroup(Guid mselId) => FacilitationGroup(mselId.ToString());
+        public static string FacilitationGroup(string mselId) => mselId + "-facilitation";
+
         public MainHub(
             ITeamService teamService,
             IMselService mselService,
@@ -112,6 +120,7 @@ namespace Blueprint.Api.Hubs
             foreach (var id in idList)
             {
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, id.ToString());
+                await Groups.RemoveFromGroupAsync(Context.ConnectionId, FacilitationGroup(id));
             }
             // join the selected MSEL
             if (args.Count() == 1)
@@ -120,6 +129,11 @@ namespace Blueprint.Api.Hubs
                 if (idList.Contains(mselId))
                 {
                     await Groups.AddToGroupAsync(Context.ConnectionId, mselId);
+                    if (await _blueprintAuthorizationService.AuthorizeAsync([SystemPermission.ViewMsels], _ct) ||
+                        await MselFacilitatorViewRequirement.IsMet(Guid.Parse(userId), args[0], _context))
+                    {
+                        await Groups.AddToGroupAsync(Context.ConnectionId, FacilitationGroup(mselId));
+                    }
 
                     // track connection and broadcast arrival
                     _hubCache.Connections[Context.ConnectionId] = new CachedConnection
@@ -316,6 +330,15 @@ namespace Blueprint.Api.Hubs
         public const string ScenarioEventCreated = "ScenarioEventCreated";
         public const string ScenarioEventUpdated = "ScenarioEventUpdated";
         public const string ScenarioEventDeleted = "ScenarioEventDeleted";
+        public const string AutomationTaskCreated = "AutomationTaskCreated";
+        public const string AutomationTaskUpdated = "AutomationTaskUpdated";
+        public const string AutomationTaskDeleted = "AutomationTaskDeleted";
+        public const string AutomationRunCreated = "AutomationRunCreated";
+        public const string AutomationRunUpdated = "AutomationRunUpdated";
+        public const string AutomationRunDeleted = "AutomationRunDeleted";
+        public const string AutomationResultCreated = "AutomationResultCreated";
+        public const string AutomationResultUpdated = "AutomationResultUpdated";
+        public const string AutomationResultDeleted = "AutomationResultDeleted";
         public const string TeamCreated = "TeamCreated";
         public const string TeamUpdated = "TeamUpdated";
         public const string TeamDeleted = "TeamDeleted";

@@ -272,6 +272,7 @@ public class Startup
         services.AddScoped<ILmtService, LmtService>();
         services.AddHttpClient();
         services.AddAutomationActions(Configuration);
+        services.AddAutomationEngine();
 
         // Register xAPI Background Service
         services.AddHostedService<Services.XApiBackgroundService>();

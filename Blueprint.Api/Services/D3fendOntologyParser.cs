@@ -88,7 +88,17 @@ namespace Blueprint.Api.Services
                 Description = ontology.HasValue ? GetText(ontology.Value, "dcterms:description") : null,
                 ReleaseDate = ontology.HasValue ? GetDate(ontology.Value, "d3f:release-date") : null
             };
-            TechniqueFrameworkNotices.ForD3fend(release);
+            // what the ontology itself says: its title names the publisher's framework, and its comment carries the
+            // trademark and copyright statement and points at the terms of use
+            if (ontology.HasValue)
+            {
+                var title = GetText(ontology.Value, "dcterms:title");
+                release.Source = title?.Split(" - ", 2)[0].Trim();
+                var comment = GetText(ontology.Value, "rdfs:comment");
+                if (comment != null && (comment.Contains("Copyright", StringComparison.OrdinalIgnoreCase)
+                    || comment.Contains("trademark", StringComparison.OrdinalIgnoreCase)))
+                    release.Notice = comment.Trim();
+            }
 
             // The site lists the tactics by d3f:display-order (Model is -1, Harden 0, ... Restore 5).
             var shortNames = new Dictionary<string, string>();

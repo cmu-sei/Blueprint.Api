@@ -21,9 +21,16 @@ public static class TechniqueBundles
           "id": "bundle--00000000-0000-4000-8000-000000000101",
           "objects": [
             {
+              "type": "identity",
+              "spec_version": "2.1",
+              "id": "identity--00000000-0000-4000-8000-000000000104",
+              "name": "MITRE ATLAS"
+            },
+            {
               "type": "x-mitre-collection",
               "spec_version": "2.1",
               "id": "x-mitre-collection--00000000-0000-4000-8000-000000000102",
+              "created_by_ref": "identity--00000000-0000-4000-8000-000000000104",
               "name": "ATLAS",
               "description": "Test ATLAS collection",
               "x_mitre_version": "{{version}}",
@@ -147,8 +154,25 @@ public static class TechniqueBundles
           "id": "bundle--00000000-0000-4000-8000-000000000001",
           "objects": [
             {
+              "type": "marking-definition",
+              "spec_version": "2.1",
+              "id": "marking-definition--00000000-0000-4000-8000-000000000005",
+              "created": "2017-06-01T00:00:00.000Z",
+              "definition_type": "statement",
+              "definition": { "statement": "Copyright 2015-2025, The MITRE Corporation. MITRE ATT&CK and ATT&CK are registered trademarks of The MITRE Corporation." }
+            },
+            {
+              "type": "identity",
+              "spec_version": "2.1",
+              "id": "identity--00000000-0000-4000-8000-000000000006",
+              "name": "The MITRE Corporation",
+              "identity_class": "organization"
+            },
+            {
               "type": "x-mitre-collection",
               "id": "x-mitre-collection--00000000-0000-4000-8000-000000000002",
+              "created_by_ref": "identity--00000000-0000-4000-8000-000000000006",
+              "object_marking_refs": [ "marking-definition--00000000-0000-4000-8000-000000000005" ],
               "name": "Enterprise ATT&CK",
               "description": "Test enterprise collection",
               {{(includeVersion ? $"\"x_mitre_version\": \"{version}\"," : "")}}

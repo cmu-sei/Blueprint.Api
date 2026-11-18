@@ -359,6 +359,36 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
         Assert.Equal(["D3-FA"], Assert.Single(result.Techniques).Countermeasures.Select(c => c.DefensiveTechnique.ExternalId));
     }
 
+    /// <summary>
+    /// Each pooled defensive release falls back to the parent on its own: one release's direct mapping of a
+    /// sub-technique does not hide another's mapping of its parent.
+    /// </summary>
+    [Fact]
+    public async Task GetByMsel_PoolingTwoDefensiveReleases_InheritsFromTheOneWithoutADirectMapping()
+    {
+        var attack = await SeedRelease("1.0");
+        var direct = await SeedD3fendRelease("1.6.0");
+        var parentOnly = await SeedD3fendRelease("1.7.0");
+        await Upload(RootClient, direct.Id, D3fendMappings.File(
+            D3fendMappings.Row("T1059.001", "PowerShell", "T1059", "enterprise", "CredentialHardening", "Credential Hardening", "Harden",
+                "hardens", "Credential", "accesses", "Credential")));
+        await Upload(RootClient, parentOnly.Id, D3fendMappings.Standard());
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1059.001").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(direct, "D3-CH").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(parentOnly, "D3-FA").Id) { Id = Guid.NewGuid() });
+
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
+
+        var group = Assert.Single(result.Techniques);
+        Assert.Equal("T1059", group.InheritedFrom);
+        Assert.Equal(
+            [("D3-CH", false), ("D3-FA", true)],
+            group.Countermeasures.Select(c => (c.DefensiveTechnique.ExternalId, c.InheritedFromParent)));
+    }
+
     /// <summary>A release with no date is not taken for the newest: Postgres would sort its null first.</summary>
     [Fact]
     public async Task GetByMsel_WithoutDefensiveTechniques_PrefersADatedReleaseToAnUndatedOne()

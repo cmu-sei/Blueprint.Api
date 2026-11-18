@@ -59,7 +59,7 @@ namespace Blueprint.Api.ViewModels
     {
         public Guid TechniqueId { get; set; }
         public string OffensiveExternalId { get; set; }
-        /// <summary>The parent technique's id when the technique has no mappings of its own and these are inherited; else null.</summary>
+        /// <summary>The parent technique's id when some of these are inherited from it, from a release with no mappings of the technique's own; else null.</summary>
         public string InheritedFrom { get; set; }
         public List<TechniqueCountermeasure> Countermeasures { get; set; } = new List<TechniqueCountermeasure>();
     }

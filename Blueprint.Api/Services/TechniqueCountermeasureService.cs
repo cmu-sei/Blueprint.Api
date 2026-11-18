@@ -141,10 +141,12 @@ namespace Blueprint.Api.Services
             if (own.Count > 0)
                 return Rank(own, inherited: false);
 
-            // the parent an attack release imported the technique under
+            // the parent an attack release imported the technique under, the newest release's when they differ
             var parentId = await _context.Techniques
                 .Where(t => t.ExternalId == offensiveId && !t.TechniqueRelease.IsDefensive && t.ParentId != null)
-                .OrderBy(t => t.TechniqueReleaseId)
+                .OrderByDescending(t => t.TechniqueRelease.ReleaseDate.HasValue)
+                .ThenByDescending(t => t.TechniqueRelease.ReleaseDate)
+                .ThenByDescending(t => t.TechniqueRelease.Version)
                 .Select(t => t.Parent.ExternalId)
                 .FirstOrDefaultAsync(ct);
             if (parentId == null)
@@ -197,7 +199,8 @@ namespace Blueprint.Api.Services
             result.HasMappings = releases.Count > 0;
             result.TechniqueReleaseId = result.HasMappings ? releases[0] : pooled.OrderBy(id => id).Cast<Guid?>().FirstOrDefault();
 
-            var byOffensiveId = new Dictionary<string, List<TechniqueCountermeasureEntity>>();
+            // by release, then offensive id: each release falls back to the parent on its own
+            var byRelease = new Dictionary<(Guid, string), List<TechniqueCountermeasureEntity>>();
             if (result.HasMappings && techniques.Count > 0)
             {
                 // the techniques' ids and their parents', for those with no mappings of their own
@@ -209,25 +212,24 @@ namespace Blueprint.Api.Services
                 var rows = await Mappings(releases)
                     .Where(c => ids.Contains(c.OffensiveExternalId))
                     .ToListAsync(ct);
-                byOffensiveId = rows.GroupBy(c => c.OffensiveExternalId).ToDictionary(g => g.Key, g => g.ToList());
+                byRelease = rows.GroupBy(c => (c.ReleaseId, c.OffensiveExternalId)).ToDictionary(g => g.Key, g => g.ToList());
             }
 
             foreach (var technique in techniques)
             {
                 var group = new MselTechniqueCountermeasures { TechniqueId = technique.TechniqueId, OffensiveExternalId = technique.ExternalId };
-                if (byOffensiveId.TryGetValue(technique.ExternalId, out var own))
+                var own = new List<TechniqueCountermeasureEntity>();
+                var inherited = new List<TechniqueCountermeasureEntity>();
+                foreach (var releaseId in releases)
                 {
-                    group.Countermeasures = Rank(own, inherited: false).ToList();
+                    if (byRelease.TryGetValue((releaseId, technique.ExternalId), out var rows))
+                        own.AddRange(rows);
+                    else if (technique.ParentExternalId != null && byRelease.TryGetValue((releaseId, technique.ParentExternalId), out var parents))
+                        inherited.AddRange(parents);
                 }
-                else
-                {
-                    var parentId = technique.ParentExternalId;
-                    if (parentId != null && byOffensiveId.TryGetValue(parentId, out var parents))
-                    {
-                        group.InheritedFrom = parentId;
-                        group.Countermeasures = Rank(parents, inherited: true).ToList();
-                    }
-                }
+                if (inherited.Count > 0)
+                    group.InheritedFrom = technique.ParentExternalId;
+                group.Countermeasures = Rank(own, inherited: false).Concat(Rank(inherited, inherited: true)).ToList();
                 result.Techniques.Add(group);
             }
 

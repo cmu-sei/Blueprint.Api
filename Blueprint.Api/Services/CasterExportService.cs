@@ -127,10 +127,18 @@ namespace Blueprint.Api.Services
             var msel = await GetEditableMselAsync(mselId, hasSystemPermission, ct);
             var result = await ImportAndLinkAsync(msel, ct);
             // the link bypassed the change tracker, so save the MSEL once more for its MselUpdated broadcast, which
-            // an open MSEL page uses to show the new directory
+            // an open MSEL page uses to show the new directory. The import itself is done, so a failure here is logged
+            // rather than reported as a failed import.
             msel.ModifiedBy = _user.GetId();
             _context.Entry(msel).Property(m => m.ModifiedBy).IsModified = true;
-            await _context.SaveChangesAsync(CancellationToken.None);
+            try
+            {
+                await _context.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogWarning(ex, "MSEL {MselId} was linked to its imported Caster directory, but could not be saved again to notify open pages", mselId);
+            }
             return result;
         }
 

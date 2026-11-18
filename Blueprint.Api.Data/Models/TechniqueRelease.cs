@@ -24,7 +24,7 @@ namespace Blueprint.Api.Data.Models
         [DatabaseGenerated(DatabaseGeneratedOption.None)]
         public Guid Id { get; set; }
         public string Domain { get; set; }
-        /// <summary>The framework the release was read as; null for a release imported before frameworks were defined.</summary>
+        /// <summary>The framework the release was read as; null once an administrator unlinks it.</summary>
         public Guid? TechniqueFrameworkId { get; set; }
         public TechniqueFrameworkEntity TechniqueFramework { get; set; }
         /// <summary>

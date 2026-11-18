@@ -33,9 +33,7 @@ namespace Blueprint.Api.Data.Models
         public string Platforms { get; set; }
         /// <summary>Comma-separated ids of the weaknesses the technique exploits; null when the framework gives none.</summary>
         public string Weaknesses { get; set; }
-        /// <summary>
-        /// Links to other catalogues, one per line as "source|label|url"; null when the framework gives none.
-        /// </summary>
+        /// <summary>Links to other catalogues, as a JSON array of source, label and url; null when the framework gives none.</summary>
         public string ReferenceLinks { get; set; }
     }
 

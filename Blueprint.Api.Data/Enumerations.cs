@@ -68,8 +68,8 @@ namespace Blueprint.Api.Data.Enumerations
         Competency = 170,    // competencies (e.g., NICE Framework tasks) for tracking and xAPI logging
         IpAddress = 180,    // a single IPv4 or IPv6 address
         Network = 190,    // an IPv4 or IPv6 network in CIDR form (10.1.0.0/24)
-        AttackTechnique = 200,    // MITRE ATT&CK techniques from the MSEL's attack technique pool (T1059.001)
-        DefensiveTechnique = 201    // MITRE D3FEND techniques from the MSEL's defensive technique pool (D3-CH)
+        AttackTechnique = 200,    // A technique from the MSEL's attack technique pool
+        DefensiveTechnique = 201    // A technique from the MSEL's defensive technique pool
     }
 
     public enum MselRole

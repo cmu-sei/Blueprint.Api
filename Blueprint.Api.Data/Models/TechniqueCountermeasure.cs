@@ -10,15 +10,12 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Blueprint.Api.Data.Models
 {
     /// <summary>
-    /// One "countered by" mapping from a defensive framework: an offensive technique (T1003.005, T0800, EX-0001.01)
-    /// and the defensive technique that counters it, from the mappings file imported onto a release.
+    /// One "countered by" mapping: an offensive technique and the defensive technique that counters it.
     /// </summary>
     /// <remarks>
-    /// The offensive side is the technique's id, not a key: the mappings name offensive techniques by id across
-    /// every domain and version, and a MSEL's attack release may be any of them. The defensive side is the
-    /// technique in the release the mappings file was imported onto. The file lists the same pair once per artifact
-    /// path (the defensive technique hardens a Credential; T1003.005 accesses an Encrypted Credential), so a row
-    /// here is the pair with the number of distinct paths as its weight and the most common path as its rationale.
+    /// The offensive side is an id, not a key, because the mappings cover every domain and version a MSEL's attack
+    /// release may be. The defensive side is the technique in the release the mappings were imported onto. A row is
+    /// the pair with its number of distinct artifact paths as the weight and the most common path as the rationale.
     /// </remarks>
     public class TechniqueCountermeasureEntity
     {

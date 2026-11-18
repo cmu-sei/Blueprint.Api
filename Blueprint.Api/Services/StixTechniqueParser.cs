@@ -16,21 +16,17 @@ using Blueprint.Api.Infrastructure.Exceptions;
 namespace Blueprint.Api.Services
 {
     /// <summary>
-    /// Reads a STIX 2.x bundle in the ATT&amp;CK data model (also used by ATLAS) into an
-    /// <see cref="TechniqueReleaseEntity"/> with its tactics and techniques; a CAPEC bundle is read as well.
+    /// Reads a STIX 2.x bundle in the ATT&amp;CK data model (which ATLAS shares), or a CAPEC bundle, into a
+    /// <see cref="TechniqueReleaseEntity"/>.
     /// </summary>
     /// <remarks>
-    /// Only what a planner picks from is read: the collection (name and version), the matrix (tactic order),
-    /// tactics and techniques. Revoked and deprecated objects are skipped, as are groups, software, mitigations
-    /// and data sources. Objects are identified by the external reference of the bundle's own catalogue
-    /// ("mitre-attack", "mitre-atlas"); any other reference, such as the technique another catalogue's is adapted
-    /// from, is a cross-reference and ignored. A sub-technique's
-    /// parent is found from its id (T1059.001 belongs to T1059, AML.T0000.000 to AML.T0000) rather than from
-    /// the subtechnique-of relationships, which say the same thing.
+    /// Only the collection, matrix, tactics and techniques are read; revoked and deprecated objects are skipped.
+    /// Objects are identified by the external reference of the bundle's own catalogue, and any other reference is
+    /// a cross-reference and ignored. A sub-technique's parent is found from its id, not from relationships.
     /// </remarks>
     public static class StixTechniqueParser
     {
-        /// <summary>The UUIDv5 namespace every technique id in Blueprint is derived in.</summary>
+        /// <summary>The UUIDv5 namespace technique ids are derived in.</summary>
         public static readonly Guid IdNamespace = new("08e51b67-7c2e-4e26-85f4-1e8067551015");
 
         public static async Task<TechniqueReleaseEntity> ParseAsync(Stream stream, string version, CancellationToken ct)
@@ -39,7 +35,7 @@ namespace Blueprint.Api.Services
             return Parse(document.RootElement, version);
         }
 
-        /// <summary>True when the JSON is a STIX bundle with its objects, the shape of a release bundle.</summary>
+        /// <summary>True when the JSON is a STIX bundle with its objects.</summary>
         public static bool CanParse(JsonElement root) =>
             root.ValueKind == JsonValueKind.Object
             && GetString(root, "type") == "bundle"
@@ -60,7 +56,7 @@ namespace Blueprint.Api.Services
             JsonElement? matrix = null;
             var tactics = new List<JsonElement>();
             var techniques = new List<JsonElement>();
-            // what the bundle itself says about who publishes it and how it may be reproduced
+            // the publisher and notice, as the bundle states them
             var statements = new Dictionary<string, string>();
             var publishers = new Dictionary<string, string>();
 
@@ -101,8 +97,7 @@ namespace Blueprint.Api.Services
             if (techniques.Count == 0)
                 throw new InvalidTechniqueBundleException("The bundle has no techniques.");
 
-            // CAPEC is the one catalogue read here with no tactics. It is told apart by every pattern
-            // carrying a CAPEC id and abstraction level, so a bundle of unidentified patterns is still refused.
+            // CAPEC has no tactics; every pattern carrying a CAPEC id and abstraction level identifies it.
             if (tactics.Count == 0 && techniques.All(IsCapecPattern))
                 return ParseCapec(techniques, version, statements, publishers);
 
@@ -112,8 +107,7 @@ namespace Blueprint.Api.Services
             if (string.IsNullOrWhiteSpace(version))
                 throw new InvalidTechniqueBundleException("The bundle does not name its version. Enter the version and upload it again.");
 
-            // The bundle's own catalogue is the reference source its tactics share. Tactics may also cite the
-            // tactic of another catalogue they correspond to, but not every one does, so the most common source wins.
+            // The reference source most tactics share is the bundle's own catalogue; others are cross-references.
             var source = tactics
                 .SelectMany(t => GetReferences(t).Select(r => GetString(r, "source_name")))
                 .Where(s => !string.IsNullOrWhiteSpace(s))
@@ -124,8 +118,7 @@ namespace Blueprint.Api.Services
                 ?? throw new InvalidTechniqueBundleException(
                     "The bundle's tactics carry no external reference naming their source (such as mitre-attack or mitre-atlas), so its techniques cannot be identified.");
 
-            // Techniques name their tactics through kill chain phases. The chain is named for the domain
-            // (such as mitre-attack or mitre-atlas), so take the one the bundle uses.
+            // Techniques name their tactics through kill chain phases; take the chain the bundle uses.
             var killChain = techniques
                 .SelectMany(t => GetPhases(t).Select(p => GetString(p, "kill_chain_name")))
                 .Where(k => !string.IsNullOrWhiteSpace(k))
@@ -215,7 +208,7 @@ namespace Blueprint.Api.Services
                     subTechniques.Add(entity);
             }
 
-            // A sub-technique's id is its parent's plus a last ".NNN" segment: T1059.001, AML.T0000.000.
+            // A sub-technique's id is its parent's plus a last ".NNN" segment.
             foreach (var technique in subTechniques)
             {
                 var dot = technique.ExternalId.LastIndexOf('.');
@@ -230,14 +223,13 @@ namespace Blueprint.Api.Services
             return release;
         }
 
-        /// <summary>The CAPEC release's domain; its patterns' own catalogue is "capec".</summary>
+        /// <summary>The domain of a CAPEC release.</summary>
         public const string CapecDomain = "capec";
 
         /// <summary>
-        /// Takes the publisher and the notice from what the bundle itself says: the name of the identity that created
-        /// the collection (or, with no collection, the techniques), and the statement marking the collection or its
-        /// techniques carry, or the bundle's only statement. Nothing is written here that the file does not say, so a
-        /// bundle with no statement carries no notice, and no terms address is set because the files give none.
+        /// Takes the publisher from the identity that created the collection (or the techniques) and the notice from the
+        /// statement marking them, or the bundle's only statement. Nothing the file does not say is written, so a bundle
+        /// with no statement carries no notice.
         /// </summary>
         private static void ApplyPublisher(TechniqueReleaseEntity release, JsonElement? collection, List<JsonElement> techniques,
             Dictionary<string, string> statements, Dictionary<string, string> publishers)
@@ -268,11 +260,9 @@ namespace Blueprint.Api.Services
                 && (GetString(r, "external_id") ?? "").StartsWith("CAPEC-", StringComparison.Ordinal));
 
         /// <summary>
-        /// Reads a CAPEC bundle (stix-capec.json) into a release. CAPEC has no tactics, so its Meta-level patterns
-        /// (Injection, Buffer Manipulation, Brute Force) are the release's groups, standing where tactics do in
-        /// the other releases. The Standard patterns under them are its techniques, and a Detailed pattern is a
-        /// sub-technique of the Standard one it refines (SQL Injection under Command Injection). Deprecated and
-        /// obsolete patterns are skipped; CAPEC marks them with a status, not the STIX revoked flag.
+        /// Reads a CAPEC bundle. Its Meta patterns are the release's groups, Standard patterns are techniques and
+        /// Detailed patterns are sub-techniques of the Standard one they refine. Deprecated and obsolete patterns are
+        /// skipped; CAPEC marks them with a status, not the STIX revoked flag.
         /// </summary>
         private static TechniqueReleaseEntity ParseCapec(List<JsonElement> patterns, string version,
             Dictionary<string, string> statements, Dictionary<string, string> publishers)
@@ -320,7 +310,7 @@ namespace Blueprint.Api.Services
                     .Where(id => id != null && byStixId.ContainsKey(id))
                     .Select(id => byStixId[id]);
 
-            // The groups: Meta patterns, alphabetically, since CAPEC gives them no order.
+            // The groups: Meta patterns, alphabetically, as CAPEC gives them no order.
             var groups = active
                 .Where(IsMeta)
                 .Select(p => (Pattern: p, Id: GetCapecReference(p)))
@@ -348,9 +338,8 @@ namespace Blueprint.Api.Services
                 });
             }
 
-            // A pattern's parent technique is the first non-Meta pattern it is a child of; the release's techniques
-            // are the ones without one. Parents are followed to the top, so a pattern three levels down is still a
-            // sub-technique of the Standard pattern, not of a sub-technique.
+            // A pattern's parent is the first non-Meta pattern it is a child of, followed to the top, so a pattern
+            // three levels down is still a sub-technique of the top one.
             JsonElement? TechniqueParent(JsonElement p) =>
                 Parents(p).Where(x => !IsMeta(x) && GetString(x, "id") != GetString(p, "id"))
                     .Select(x => (JsonElement?)x).FirstOrDefault();
@@ -413,8 +402,7 @@ namespace Blueprint.Api.Services
                         .Select(g => GetString(g.Pattern, "id"))
                         .Where(memberOf.Contains)
                         .Select(g => shortNames[g])),
-                    // CAPEC names the domains of attack (Software, Hardware, Social Engineering) where the other
-                    // releases name platforms, and the pool shows the one column for both.
+                    // CAPEC's domains of attack stand where the other releases have platforms.
                     Platforms = string.Join(",", GetStrings(pattern, "x_capec_domains")),
                     Weaknesses = string.Join(",", GetReferences(pattern)
                         .Where(r => GetString(r, "source_name") == "cwe")
@@ -458,7 +446,7 @@ namespace Blueprint.Api.Services
             return (null, null);
         }
 
-        /// <summary>The pattern's OWASP and WASC references, one "source|label|url" line each; null when it has none.</summary>
+        /// <summary>The pattern's references to other catalogues, one "source|label|url" line each; null when it has none.</summary>
         private static string CapecLinks(JsonElement pattern)
         {
             static string Clean(string value) => (value ?? "").Replace('|', ' ').Replace('\r', ' ').Replace('\n', ' ').Trim();

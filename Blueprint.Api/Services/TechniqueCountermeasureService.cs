@@ -28,9 +28,8 @@ namespace Blueprint.Api.Services
     }
 
     /// <summary>
-    /// The "countered by" mappings: which defensive techniques counter an offensive technique. They are imported
-    /// onto a defensive release from its mappings file and keyed by the offensive technique's id, so one
-    /// import serves every attack release a MSEL might plan against.
+    /// The "countered by" mappings: which defensive techniques counter an offensive technique. They are keyed by
+    /// the offensive technique's id, so one import serves every attack release.
     /// </summary>
     public class TechniqueCountermeasureService : ITechniqueCountermeasureService
     {
@@ -48,8 +47,8 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// Replaces the release's mappings with the file's. A pair whose defensive class is not a defensive technique
-        /// of the release is skipped and counted, so a mappings file from a neighbouring version still imports.
+        /// Replaces the release's mappings with the file's. A pair whose defensive class is not a technique of the
+        /// release is skipped and counted, so a file from a neighbouring version still imports.
         /// </summary>
         public async Task<TechniqueCountermeasureImport> ImportAsync(Guid releaseId, FileForm form, CancellationToken ct)
         {
@@ -65,7 +64,7 @@ namespace Blueprint.Api.Services
                 parsed = await D3fendMappingsParser.ParseAsync(stream, ct);
             }
 
-            // The mappings name a technique by its class IRI; the release knows it by the ontology id, d3f:<class>.
+            // the mappings name a technique by class IRI; the release knows it as d3f:<class>
             var techniquesByClass = (await _context.Techniques
                     .Where(t => t.TechniqueReleaseId == releaseId)
                     .Select(t => new { t.Id, t.StixId })
@@ -94,7 +93,7 @@ namespace Blueprint.Api.Services
                 });
             }
 
-            // One SaveChanges, so a re-import either replaces the old rows or leaves them.
+            // one SaveChanges, so a re-import either replaces the old rows or leaves them
             _context.TechniqueCountermeasures.RemoveRange(_context.TechniqueCountermeasures.Where(c => c.ReleaseId == releaseId));
             _context.TechniqueCountermeasures.AddRange(rows);
             await _context.SaveChangesAsync(ct);
@@ -113,9 +112,8 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// A release's mappings: all of them, or the countermeasures of one offensive technique ranked by weight. A
-        /// sub-technique with no mappings of its own is answered with its parent's, flagged as inherited, since
-        /// the mappings name many techniques only at the parent.
+        /// A release's mappings: all of them, or one offensive technique's ranked by weight. A sub-technique with
+        /// none of its own gets its parent's, flagged as inherited.
         /// </summary>
         public async Task<IEnumerable<TechniqueCountermeasure>> GetByReleaseAsync(Guid releaseId, string offensiveId, CancellationToken ct)
         {
@@ -146,9 +144,8 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// The countermeasures of every attack technique in a MSEL's pool, from the defensive release the MSEL's
-        /// defensive techniques are pinned to, else the newest one with mappings. Every pooled attack
-        /// technique gets a group, empty when nothing counters it, so the client can say so per technique.
+        /// The countermeasures of every attack technique in a MSEL's pool, from the defensive release it is pinned
+        /// to, else the newest with mappings. Each pooled technique gets a group, empty when nothing counters it.
         /// </summary>
         public async Task<MselCountermeasures> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
@@ -190,7 +187,7 @@ namespace Blueprint.Api.Services
             var byOffensiveId = new Dictionary<string, List<TechniqueCountermeasureEntity>>();
             if (result.HasMappings && techniques.Count > 0)
             {
-                // the techniques' own ids and their parents', for the ones with no mappings of their own
+                // the techniques' ids and their parents', for those with no mappings of their own
                 var ids = techniques
                     .SelectMany(t => new[] { t.ExternalId, ParentExternalId(t.ExternalId) })
                     .Where(id => id != null)
@@ -225,8 +222,7 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// The parent technique's id of a sub-technique: T1003 for T1003.005, AML.T0000 for AML.T0000.000, EX-0001 for
-        /// SPARTA's EX-0001.01. Null for a technique (T1003, AML.T0000, T0800), whose last dotted part is not a number.
+        /// The parent id of a sub-technique id such as T1003.005 (T1003); null when the last dotted part is not a number.
         /// </summary>
         public static string ParentExternalId(string externalId)
         {
@@ -244,7 +240,7 @@ namespace Blueprint.Api.Services
                 .Include(c => c.DefensiveTechnique)
                 .ThenInclude(t => t.TechniqueRelease);
 
-        /// <summary>Strongest first; ties by the defensive technique's id, so the order is stable.</summary>
+        /// <summary>Strongest first; ties by the defensive technique's id.</summary>
         private IEnumerable<TechniqueCountermeasure> Rank(IEnumerable<TechniqueCountermeasureEntity> rows, bool inherited)
         {
             var ranked = rows.OrderByDescending(c => c.Weight).ThenBy(c => c.DefensiveTechnique.ExternalId).ToList();
@@ -254,7 +250,7 @@ namespace Blueprint.Api.Services
             return mapped;
         }
 
-        /// <summary>"CredentialHardening" from "d3f:CredentialHardening" or a full IRI.</summary>
+        /// <summary>The class's local name from a prefixed or full IRI.</summary>
         private static string LocalName(string id)
         {
             if (string.IsNullOrEmpty(id))

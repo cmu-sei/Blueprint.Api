@@ -34,8 +34,7 @@ namespace Blueprint.Api.Data.Models
         /// <summary>Comma-separated CWE ids the technique exploits, e.g. "CWE-89,CWE-1286"; null when the framework gives none.</summary>
         public string Weaknesses { get; set; }
         /// <summary>
-        /// Links to the same attack in other catalogues, one per line as "source|label|url"; null when the
-        /// framework gives none.
+        /// Links to other catalogues, one per line as "source|label|url"; null when the framework gives none.
         /// </summary>
         public string ReferenceLinks { get; set; }
     }
@@ -51,8 +50,7 @@ namespace Blueprint.Api.Data.Models
                 .WithMany(x => x.Techniques)
                 .HasForeignKey(x => x.TechniqueReleaseId)
                 .OnDelete(DeleteBehavior.Cascade);
-            // NO ACTION rather than RESTRICT: PostgreSQL checks it at the end of the statement, so the release's
-            // cascade can take a technique and its sub-techniques together.
+            // NO ACTION, not RESTRICT, so the release's cascade can take a technique and its sub-techniques together
             builder
                 .HasOne(x => x.Parent)
                 .WithMany(x => x.SubTechniques)

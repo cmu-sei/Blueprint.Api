@@ -11,9 +11,8 @@ using Blueprint.Api.Infrastructure.Exceptions;
 namespace Blueprint.Api.Services
 {
     /// <summary>
-    /// Reads an uploaded technique framework release, whichever of the two file formats it is in: a STIX 2.x
-    /// bundle goes to <see cref="StixTechniqueParser"/>, the JSON-LD ontology to
-    /// <see cref="D3fendOntologyParser"/>.
+    /// Reads an uploaded release: a STIX 2.x bundle goes to <see cref="StixTechniqueParser"/>, the JSON-LD
+    /// ontology to <see cref="D3fendOntologyParser"/>.
     /// </summary>
     public static class ReleaseFileParser
     {

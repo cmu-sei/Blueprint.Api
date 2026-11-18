@@ -45,8 +45,8 @@ namespace Blueprint.Api.ViewModels
     {
         public Guid MselId { get; set; }
         /// <summary>
-        /// The defensive release the mappings come from: the one the MSEL's defensive techniques are pinned to, else the
-        /// newest with mappings imported. Null when no defensive release has mappings.
+        /// The defensive release the mappings come from: the one the MSEL is pinned to, else the newest with mappings.
+        /// Null when none has mappings.
         /// </summary>
         public Guid? TechniqueReleaseId { get; set; }
         /// <summary>True when that release has mappings imported; false when the pinned release has none yet.</summary>

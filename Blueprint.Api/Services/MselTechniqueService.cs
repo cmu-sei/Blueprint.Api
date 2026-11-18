@@ -31,10 +31,8 @@ namespace Blueprint.Api.Services
     }
 
     /// <summary>
-    /// A MSEL's technique pool - the techniques its Technique and DefensiveTechnique columns offer. The pool can
-    /// hold techniques of several domains (one per imported framework). Each
-    /// domain is pinned to one release: techniques from another release of the same domain are refused until that
-    /// domain is upgraded to it, while the other domains are left alone.
+    /// A MSEL's technique pool, which its technique columns offer. Each domain in the pool is pinned to one
+    /// release: techniques from another release of that domain are refused until the domain is upgraded.
     /// </summary>
     /// <remarks>Reads follow the MSEL's view rule and writes its Owner role, as the competency pool does.</remarks>
     public class MselTechniqueService : IMselTechniqueService
@@ -144,9 +142,8 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// Moves one domain of the MSEL's pool to another release of that domain, matching techniques by their
-        /// external id. A technique the new release no longer has is dropped and reported; cells that name it keep
-        /// their text. The other domains are not touched.
+        /// Moves one domain of the pool to another release, matching techniques by external id. A technique the new
+        /// release lacks is dropped and reported; cells that name it keep their text.
         /// </summary>
         public async Task<MselTechniqueUpgrade> UpgradeAsync(Guid mselId, Guid techniqueReleaseId, bool hasSystemPermission, CancellationToken ct)
         {
@@ -180,7 +177,7 @@ namespace Blueprint.Api.Services
                 .Select(m => m.TechniqueId)
                 .ToHashSet();
 
-            // One SaveChanges, so the removes and adds land together.
+            // one SaveChanges, so the removes and adds land together
             _context.MselTechniques.RemoveRange(moving);
             foreach (var item in moving.OrderBy(m => m.Technique.ExternalId))
             {
@@ -212,7 +209,7 @@ namespace Blueprint.Api.Services
             return true;
         }
 
-        /// <summary>The pool rows of one domain: every release of a domain is a version of the same catalogue.</summary>
+        /// <summary>The pool rows of one domain.</summary>
         private static IQueryable<MselTechniqueEntity> InDomain(IQueryable<MselTechniqueEntity> pool, string domain) =>
             pool.Where(m => m.Technique.TechniqueRelease.Domain == domain);
     }

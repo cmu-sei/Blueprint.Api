@@ -18,13 +18,11 @@ namespace Blueprint.Api.Services
     /// "d3fend" domain, with its defensive tactics and techniques.
     /// </summary>
     /// <remarks>
-    /// The ontology is a flat <c>@graph</c> of classes. A defensive technique is a class with a
-    /// <c>d3f:d3fend-id</c> (D3-CH) under <c>d3f:DefensiveTechnique</c> through <c>rdfs:subClassOf</c>; the graph also
-    /// gives d3fend-ids to analytic techniques (D3A-*), which are not countermeasures and are skipped. A technique's
-    /// parent is its direct superclass when that is a technique too, so its technique levels become the same
-    /// technique/sub-technique tree the STIX releases have. Only a top-level technique names the tactic it
-    /// <c>d3f:enables</c>; a sub-technique's tactics are found by walking up to one that does. Ids are derived from
-    /// the version and the class id, as the STIX parser's are, so a re-import is the same release.
+    /// The ontology is a flat <c>@graph</c> of classes. A defensive technique is a class with a <c>d3f:d3fend-id</c>
+    /// under <c>d3f:DefensiveTechnique</c>; analytic techniques (D3A-*) are not countermeasures and are skipped. A
+    /// technique's parent is its direct superclass when that is a technique too. Only a top-level technique names the
+    /// tactic it <c>d3f:enables</c>, so a sub-technique's tactics come from the nearest ancestor that does. Ids are
+    /// derived from the version and class id, so a re-import is the same release.
     /// </remarks>
     public static class D3fendOntologyParser
     {
@@ -88,8 +86,7 @@ namespace Blueprint.Api.Services
                 Description = ontology.HasValue ? GetText(ontology.Value, "dcterms:description") : null,
                 ReleaseDate = ontology.HasValue ? GetDate(ontology.Value, "d3f:release-date") : null
             };
-            // what the ontology itself says: its title names the publisher's framework, and its comment carries the
-            // trademark and copyright statement and points at the terms of use
+            // the publisher and notice, as the ontology's title and comment state them
             if (ontology.HasValue)
             {
                 var title = GetText(ontology.Value, "dcterms:title");
@@ -100,7 +97,7 @@ namespace Blueprint.Api.Services
                     release.Notice = comment.Trim();
             }
 
-            // The site lists the tactics by d3f:display-order (Model is -1, Harden 0, ... Restore 5).
+            // Tactics are ordered by d3f:display-order.
             var shortNames = new Dictionary<string, string>();
             var position = 0;
             foreach (var tactic in tactics.OrderBy(t => GetInt(t, "d3f:display-order") ?? int.MaxValue).ThenBy(t => GetText(t, "rdfs:label")))
@@ -113,7 +110,7 @@ namespace Blueprint.Api.Services
                     Id = StixTechniqueParser.ObjectId(Domain, version, id),
                     TechniqueReleaseId = release.Id,
                     StixId = id,
-                    // The ontology gives its tactics no id of their own, so the class id stands in.
+                    // Tactics have no id of their own, so the class id stands in.
                     ExternalId = id,
                     ShortName = shortName,
                     Name = GetText(tactic, "rdfs:label") ?? LocalName(id),
@@ -123,7 +120,7 @@ namespace Blueprint.Api.Services
                 });
             }
 
-            // The technique pages hang off the path d3f:DefensiveTechnique declares, /technique/ today.
+            // Technique pages hang off the path d3f:DefensiveTechnique declares.
             var techniquePath = nodes.TryGetValue(TechniqueClass, out var techniqueClass)
                 ? GetText(techniqueClass, "d3f:display-baseurl") ?? "/technique/"
                 : "/technique/";
@@ -210,20 +207,20 @@ namespace Blueprint.Api.Services
             return false;
         }
 
-        /// <summary>The named superclasses of a class; the anonymous restrictions ("_:b0063") are not classes a technique can belong to.</summary>
+        /// <summary>The named superclasses of a class; anonymous restrictions are skipped.</summary>
         private static IEnumerable<string> SuperClasses(JsonElement node) =>
             GetIds(node, "rdfs:subClassOf").Where(id => !id.StartsWith("_:", StringComparison.Ordinal));
 
         private static bool HasType(JsonElement node, string type) =>
             node.TryGetProperty("@type", out var value) && Values(value).Any(v => v.ValueKind == JsonValueKind.String && v.GetString() == type);
 
-        /// <summary>The <c>@id</c>s a property points at, whether it holds one <c>{"@id": ...}</c> or a list of them.</summary>
+        /// <summary>The <c>@id</c>s a property points at, whether it holds one or a list.</summary>
         private static IEnumerable<string> GetIds(JsonElement node, string property) =>
             node.TryGetProperty(property, out var value)
                 ? Values(value).Select(v => GetString(v, "@id")).Where(id => id != null)
                 : [];
 
-        /// <summary>A JSON-LD value: one item or a list; a literal is a string or a <c>{"@value": ...}</c> object.</summary>
+        /// <summary>A JSON-LD value: one item or a list; a literal is a string or a <c>@value</c> object.</summary>
         private static IEnumerable<JsonElement> Values(JsonElement value) =>
             value.ValueKind == JsonValueKind.Array ? value.EnumerateArray() : [value];
 

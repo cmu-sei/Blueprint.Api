@@ -17,13 +17,12 @@ using Swashbuckle.AspNetCore.Annotations;
 namespace Blueprint.Api.Controllers
 {
     /// <summary>
-    /// Technique framework releases. Reads are open to any authenticated user, as
-    /// competency frameworks are: every MSEL with a technique column loads them. Import, notice edits and delete are
-    /// managed with the competency frameworks.
+    /// Technique framework releases. Reads are open to any authenticated user; import, notice edits and delete
+    /// are managed with the competency frameworks.
     /// </summary>
     public class TechniqueReleaseController : BaseController
     {
-        // A full ATT&CK enterprise bundle is about 50 MB and grows with each release.
+        // a full enterprise bundle is about 50 MB and grows with each release
         private const long MaxBundleBytes = 256L * 1024 * 1024;
 
         private readonly ITechniqueReleaseService _techniqueReleaseService;
@@ -99,8 +98,8 @@ namespace Blueprint.Api.Controllers
         /// Gets the "countered by" mappings of a defensive release
         /// </summary>
         /// <remarks>
-        /// With <c>offensiveId</c>, the countermeasures of that technique (T1003.005) ranked by weight; a sub-technique
-        /// with none of its own is answered with its parent technique's, each flagged <c>inheritedFromParent</c>.
+        /// With <c>offensiveId</c>, the countermeasures of that technique ranked by weight; a sub-technique with none
+        /// of its own gets its parent's, each flagged <c>inheritedFromParent</c>.
         /// Without it, every mapping of the release.
         /// </remarks>
         /// <param name="id">The id of the defensive release</param>
@@ -119,10 +118,9 @@ namespace Blueprint.Api.Controllers
         /// Imports a release from its STIX 2.x bundle or a defensive ontology
         /// </summary>
         /// <remarks>
-        /// Accepts a STIX 2.x bundle in the ATT&amp;CK data model (the domain comes from the file), a CAPEC bundle, whose
-        /// Meta patterns stand as the groups tactics are in the others, or a defensive ontology in JSON-LD, which becomes
-        /// a defensive release. Revoked, deprecated and obsolete objects are skipped. The version is read from the file;
-        /// give one only for an older file that does not name it.
+        /// Accepts a STIX 2.x bundle, a CAPEC bundle or a defensive ontology in JSON-LD. Revoked, deprecated and
+        /// obsolete objects are skipped. The version is read from the file; give one only for a file that does not
+        /// name it.
         /// </remarks>
         /// <param name="form">The bundle or ontology</param>
         /// <param name="version">The release version (e.g. "17.1"), if the file does not say</param>
@@ -145,9 +143,8 @@ namespace Blueprint.Api.Controllers
         /// Edits a release's publisher and notice fields
         /// </summary>
         /// <remarks>
-        /// Changes the source, source URL, notice and terms URL only; the release's id, domain, version, tactics and
-        /// techniques stay as imported, so no MSEL's pool is affected. A blank field is cleared. The URLs must be http
-        /// or https addresses. A release shows the notice it carries: a custom release has none until it is given one.
+        /// Changes only the source, source URL, notice and terms URL, so no MSEL's pool is affected. A blank field is
+        /// cleared. The URLs must be http or https addresses.
         /// </remarks>
         /// <param name="id">The id of the release</param>
         /// <param name="notice">The notice fields</param>
@@ -168,11 +165,10 @@ namespace Blueprint.Api.Controllers
         /// Imports the "countered by" mappings onto a defensive release
         /// </summary>
         /// <remarks>
-        /// Accepts the mappings file for the release's version. Its rows are aggregated to one row per
-        /// (offensive technique id, defensive technique), weighted by the number of distinct
-        /// artifact paths between them; a pair whose defensive class is not a technique of this release is skipped and
-        /// counted. Importing again replaces the release's mappings. Refused with a 400 on a release that is not
-        /// defensive or a file that is not SPARQL results JSON.
+        /// Rows are aggregated to one per (offensive id, defensive technique), weighted by distinct artifact paths; a
+        /// pair whose defensive class is not a technique of this release is skipped and counted. Importing again
+        /// replaces the release's mappings. Refused with a 400 on a release that is not defensive or a file that is
+        /// not SPARQL results JSON.
         /// </remarks>
         /// <param name="id">The id of the defensive release</param>
         /// <param name="form">The mappings file</param>

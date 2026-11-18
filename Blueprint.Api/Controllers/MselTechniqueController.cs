@@ -51,10 +51,10 @@ namespace Blueprint.Api.Controllers
         /// Gets the countermeasures of every attack technique in a MSEL's pool
         /// </summary>
         /// <remarks>
-        /// From the defensive release the MSEL's defensive techniques are pinned to, else the newest one with
-        /// mappings imported; <c>techniqueReleaseId</c> names it and <c>hasMappings</c> says whether it has any. Each
-        /// pooled attack technique gets a group ranked by weight, empty when nothing counters it; a sub-technique with
-        /// no mappings of its own gets its parent's, with <c>inheritedFrom</c> naming the parent.
+        /// From the defensive release the MSEL is pinned to, else the newest with mappings; <c>techniqueReleaseId</c>
+        /// names it and <c>hasMappings</c> says whether it has any. Each pooled attack technique gets a group ranked by
+        /// weight, empty when nothing counters it; a sub-technique with none of its own gets its parent's, with
+        /// <c>inheritedFrom</c> naming the parent.
         /// </remarks>
         /// <param name="mselId">The id of the Msel</param>
         /// <param name="ct"></param>
@@ -138,9 +138,9 @@ namespace Blueprint.Api.Controllers
         /// Moves one domain of a MSEL's technique pool to another release
         /// </summary>
         /// <remarks>
-        /// The release's domain says which techniques move; the other
-        /// domains stay. Techniques are matched by their external id (T1059, AML.T0051, D3-CH). Ones the new release no
-        /// longer has are dropped and listed in the response; inject cells that name them keep their text.
+        /// The release's domain says which techniques move; the other domains stay. Techniques are matched by
+        /// external id. Ones the new release lacks are dropped and listed in the response; inject cells that name
+        /// them keep their text.
         /// </remarks>
         /// <param name="mselId">ID of a msel.</param>
         /// <param name="techniqueReleaseId">ID of the release to move to.</param>

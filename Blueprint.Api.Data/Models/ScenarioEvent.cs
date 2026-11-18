@@ -31,6 +31,7 @@ namespace Blueprint.Api.Data.Models
         public string Information { get; set; }
         public Guid? SteamfitterTaskId { get; set; }
         public SteamfitterTaskEntity SteamfitterTask { get; set; }
+        public virtual ICollection<AutomationTaskEntity> AutomationTasks { get; set; } = new HashSet<AutomationTaskEntity>();
     }
 
     public class ScenarioEventEntityConfiguration : IEntityTypeConfiguration<ScenarioEventEntity>

@@ -149,6 +149,40 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.True(imported.HideNamesOnAssessorView);
     }
 
+    [Fact]
+    public async Task Download_ThenUpload_KeepsTheFacilitatorViewsColumns()
+    {
+        var msel = TestData.Msel();
+        msel.ShowGroupOnFacilitatorView = false;
+        msel.ShowIntegrationTargetOnFacilitatorView = true;
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, SystemPermission.CreateMsels).SeedAsync();
+        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
+        var file = (await ReadExport(response)).GetRawText();
+
+        var imported = await Upload(Client(actor), file);
+
+        Assert.False(imported.ShowGroupOnFacilitatorView);
+        Assert.True(imported.ShowIntegrationTargetOnFacilitatorView);
+    }
+
+    /// <summary>A file from before the Facilitator View existed imports showing its move, group and time columns.</summary>
+    [Fact]
+    public async Task Upload_OfAFileWithoutTheFacilitatorViewsColumns_ShowsMoveGroupAndTime()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(Exported(m => m.ShowMoveOnFacilitatorView = false)).AsObject();
+        foreach (var flag in new[] { "ShowMoveOnFacilitatorView", "ShowGroupOnFacilitatorView", "ShowTimeOnFacilitatorView", "ShowIntegrationTargetOnFacilitatorView" })
+            file.Remove(flag);
+
+        var imported = await Upload(Client(actor), file.ToJsonString());
+
+        Assert.True(imported.ShowMoveOnFacilitatorView);
+        Assert.True(imported.ShowGroupOnFacilitatorView);
+        Assert.True(imported.ShowTimeOnFacilitatorView);
+        Assert.False(imported.ShowIntegrationTargetOnFacilitatorView);
+    }
+
     /// <summary>A file from before the setting existed imports with names shown, as every MSEL had them.</summary>
     [Fact]
     public async Task Upload_OfAFileWithoutHideNamesOnTheAssessorView_ShowsTheNames()

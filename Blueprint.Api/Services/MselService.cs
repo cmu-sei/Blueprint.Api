@@ -349,6 +349,12 @@ namespace Blueprint.Api.Services
             mselEntity.CasterWorkspaceId = null;
             mselEntity.CasterRunId = null;
             mselEntity.Status = MselItemStatus.Pending;
+            // a copy has not been deployed, so it is at no move and its automation has no runs
+            mselEntity.DeploymentId = null;
+            mselEntity.CurrentMoveNumber = null;
+            mselEntity.CurrentGroupNumber = null;
+            mselEntity.CurrentGroupStartedAt = null;
+            mselEntity.AutomationPaused = false;
             // copy DataFields
             foreach (var dataField in mselEntity.DataFields)
             {
@@ -1198,6 +1204,7 @@ namespace Blueprint.Api.Services
                             IsChosenFromList = false,
                             OnScenarioEventList = true,
                             OnExerciseView = true,
+                            OnFacilitatorView = true,
                             CellMetadata = ServiceUtilities.CellMetadata(cellColor, cellTint, "bold", cellDataType),
                             ColumnMetadata = columnMetadata
                         };

@@ -181,6 +181,50 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.True(copy.HideNamesOnAssessorView);
     }
 
+    /// <summary>A copy shows the original's columns on the Facilitator View.</summary>
+    [Fact]
+    public async Task Copy_KeepsTheFacilitatorViewsColumns()
+    {
+        var msel = TestData.Msel();
+        msel.ShowMoveOnFacilitatorView = false;
+        msel.ShowIntegrationTargetOnFacilitatorView = true;
+        await Seed(msel);
+        var field = TestData.DataField(mselId: msel.Id);
+        field.OnFacilitatorView = true;
+        await Seed(field);
+        var actor = await Copier().SeedAsync();
+
+        var copy = await Copy(Client(actor), msel.Id);
+
+        Assert.False(copy.ShowMoveOnFacilitatorView);
+        Assert.True(copy.ShowIntegrationTargetOnFacilitatorView);
+        Assert.True(copy.ShowTimeOnFacilitatorView);
+        Assert.True(await ReadBack(db => db.DataFields.Where(x => x.MselId == copy.Id).Select(x => x.OnFacilitatorView).SingleAsync(Ct)));
+    }
+
+    /// <summary>A copy of a deployed MSEL has not been deployed: it is at no move, and its automation is not paused.</summary>
+    [Fact]
+    public async Task Copy_OfADeployedMsel_LeavesItsDeploymentBehind()
+    {
+        var msel = TestData.Msel();
+        msel.DeploymentId = Guid.NewGuid();
+        msel.CurrentMoveNumber = 2;
+        msel.CurrentGroupNumber = 1;
+        msel.CurrentGroupStartedAt = DateTime.UtcNow;
+        msel.AutomationPaused = true;
+        await Seed(msel);
+        var actor = await Copier().SeedAsync();
+
+        var copy = await Copy(Client(actor), msel.Id);
+
+        var stored = await ReadBack(db => db.Msels.SingleAsync(x => x.Id == copy.Id, Ct));
+        Assert.Null(stored.DeploymentId);
+        Assert.Null(stored.CurrentMoveNumber);
+        Assert.Null(stored.CurrentGroupNumber);
+        Assert.Null(stored.CurrentGroupStartedAt);
+        Assert.False(stored.AutomationPaused);
+    }
+
     /// <summary>A copy, and so an event launched from a template, starts its Steamfitter scenario as the original does.</summary>
     [Fact]
     public async Task Copy_KeepsWhenTheSteamfitterScenarioStarts()

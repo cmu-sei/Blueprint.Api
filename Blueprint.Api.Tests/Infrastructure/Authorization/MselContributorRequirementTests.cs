@@ -26,6 +26,7 @@ public class MselContributorRequirementTests(DatabaseFixture fixture) : Database
     [InlineData(MselRole.Approver)]
     [InlineData(MselRole.MoveEditor)]
     [InlineData(MselRole.Evaluator)]
+    [InlineData(MselRole.Facilitator)]
     [InlineData(MselRole.Viewer)]
     public async Task IsMet_ForAUnitMemberHoldingAContributorRole_IsTrue(MselRole role)
     {

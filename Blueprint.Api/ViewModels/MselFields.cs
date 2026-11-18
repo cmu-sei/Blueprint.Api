@@ -72,6 +72,10 @@ namespace Blueprint.Api.ViewModels
         /// ViewMsels still see the names. The statements in the LRS are unchanged.
         /// </summary>
         public bool HideNamesOnAssessorView { get; set; }
+        public bool ShowTimeOnFacilitatorView { get; set; } = true;
+        public bool ShowMoveOnFacilitatorView { get; set; } = true;
+        public bool ShowGroupOnFacilitatorView { get; set; } = true;
+        public bool ShowIntegrationTargetOnFacilitatorView { get; set; }
         public string HeaderRowMetadata { get; set; }
         // IEEE 2881 (LMT) metadata fields
         public string EducationalLevel { get; set; }

@@ -26,6 +26,18 @@ Permissions can be applied to Users by grouping them into Roles. System Roles ar
 
 A User can be assigned a Role in the Users section of the Administration area.
 
+- MSEL Roles - On a MSEL's Contributors tab, a member of one of the MSEL's Units can be given one or more roles on that MSEL:
+
+  - Owner - Everything below, plus pushing and pulling integrations and managing the MSEL itself.
+  - Editor - Edits the MSEL's scenario events, including their automation tasks, and tests those tasks against a Player view the User can see. Watches the Facilitator View read-only.
+  - Approver - Edits like an Editor and approves Status values. Watches the Facilitator View read-only.
+  - Move Editor - Edits the MSEL's moves.
+  - Evaluator - Rates teams on the Assessor View.
+  - Facilitator - Runs the deployed MSEL from the Facilitator View: starts its moves and groups, pauses its scheduled automation, and runs, reruns and cancels its automation tasks.
+  - Viewer - Reads the MSEL.
+
+  The MSEL's creator holds every MSEL Role. A User on one of the MSEL's Teams without a MSEL Role is a participant and sees only its Exercise View.
+
 Roles can also optionally be integrated with your Identity Provider. See Identity Provider Integration below.
 
 # Seed Data

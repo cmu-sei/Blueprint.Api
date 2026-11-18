@@ -14,7 +14,7 @@ namespace Blueprint.Api.ViewModels
         public Technique Technique { get; set; }
     }
 
-    /// <summary>What moving a MSEL's technique pool to another ATT&amp;CK release kept and dropped.</summary>
+    /// <summary>What moving a MSEL's technique pool to another release kept and dropped.</summary>
     public class MselTechniqueUpgrade
     {
         public Guid MselId { get; set; }

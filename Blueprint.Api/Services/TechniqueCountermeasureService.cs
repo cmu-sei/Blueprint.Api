@@ -28,9 +28,9 @@ namespace Blueprint.Api.Services
     }
 
     /// <summary>
-    /// The D3FEND "countered by" mappings: which D3FEND techniques counter an offensive technique. They are imported
-    /// onto a D3FEND release from its d3fend-full-mappings.json and keyed by the offensive technique's id, so one
-    /// import serves every ATT&amp;CK release a MSEL might plan against.
+    /// The "countered by" mappings: which defensive techniques counter an offensive technique. They are imported
+    /// onto a defensive release from its mappings file and keyed by the offensive technique's id, so one
+    /// import serves every attack release a MSEL might plan against.
     /// </summary>
     public class TechniqueCountermeasureService : ITechniqueCountermeasureService
     {
@@ -48,7 +48,7 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// Replaces the release's mappings with the file's. A pair whose D3FEND class is not a defensive technique
+        /// Replaces the release's mappings with the file's. A pair whose defensive class is not a defensive technique
         /// of the release is skipped and counted, so a mappings file from a neighbouring version still imports.
         /// </summary>
         public async Task<TechniqueCountermeasureImport> ImportAsync(Guid releaseId, FileForm form, CancellationToken ct)
@@ -115,7 +115,7 @@ namespace Blueprint.Api.Services
         /// <summary>
         /// A release's mappings: all of them, or the countermeasures of one offensive technique ranked by weight. A
         /// sub-technique with no mappings of its own is answered with its parent's, flagged as inherited, since
-        /// D3FEND maps many techniques only at the parent.
+        /// the mappings name many techniques only at the parent.
         /// </summary>
         public async Task<IEnumerable<TechniqueCountermeasure>> GetByReleaseAsync(Guid releaseId, string offensiveId, CancellationToken ct)
         {
@@ -146,8 +146,8 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// The countermeasures of every attack technique in a MSEL's pool, from the D3FEND release the MSEL's
-        /// defensive techniques are pinned to, else the newest D3FEND release with mappings. Every pooled attack
+        /// The countermeasures of every attack technique in a MSEL's pool, from the defensive release the MSEL's
+        /// defensive techniques are pinned to, else the newest one with mappings. Every pooled attack
         /// technique gets a group, empty when nothing counters it, so the client can say so per technique.
         /// </summary>
         public async Task<MselCountermeasures> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -244,7 +244,7 @@ namespace Blueprint.Api.Services
                 .Include(c => c.DefensiveTechnique)
                 .ThenInclude(t => t.TechniqueRelease);
 
-        /// <summary>Strongest first; ties by the D3FEND id, so the order is stable.</summary>
+        /// <summary>Strongest first; ties by the defensive technique's id, so the order is stable.</summary>
         private IEnumerable<TechniqueCountermeasure> Rank(IEnumerable<TechniqueCountermeasureEntity> rows, bool inherited)
         {
             var ranked = rows.OrderByDescending(c => c.Weight).ThenBy(c => c.DefensiveTechnique.ExternalId).ToList();

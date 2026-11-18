@@ -32,7 +32,7 @@ namespace Blueprint.Api.Services
 
     /// <summary>
     /// A MSEL's technique pool - the techniques its Technique and DefensiveTechnique columns offer. The pool can
-    /// hold techniques of several domains (enterprise-attack, mobile-attack, ATLAS, capec, d3fend, ...). Each
+    /// hold techniques of several domains (one per imported framework). Each
     /// domain is pinned to one release: techniques from another release of the same domain are refused until that
     /// domain is upgraded to it, while the other domains are left alone.
     /// </summary>

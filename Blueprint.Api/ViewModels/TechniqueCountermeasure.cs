@@ -6,17 +6,17 @@ using System.Collections.Generic;
 
 namespace Blueprint.Api.ViewModels
 {
-    /// <summary>A D3FEND "countered by" mapping: the offensive technique id and the D3FEND technique that counters it.</summary>
+    /// <summary>A "countered by" mapping: the offensive technique id and the defensive technique that counters it.</summary>
     public class TechniqueCountermeasure
     {
         public Guid Id { get; set; }
-        /// <summary>The D3FEND release the mapping belongs to.</summary>
+        /// <summary>The defensive release the mapping belongs to.</summary>
         public Guid TechniqueReleaseId { get; set; }
         /// <summary>The offensive technique's id (T1003.005), whichever release of its framework the MSEL uses.</summary>
         public string OffensiveExternalId { get; set; }
         public Guid DefensiveTechniqueId { get; set; }
         public Technique DefensiveTechnique { get; set; }
-        /// <summary>The D3FEND tactic label the mapping is filed under: Model, Harden, Detect, Isolate, Deceive, Evict or Restore.</summary>
+        /// <summary>The defensive tactic label the mapping is filed under: Model, Harden, Detect, Isolate, Deceive, Evict or Restore.</summary>
         public string DefensiveTactic { get; set; }
         /// <summary>The most common artifact path behind the pair, e.g. "hardens Credential; T1003.005 accesses Encrypted Credential".</summary>
         public string Rationale { get; set; }
@@ -26,27 +26,27 @@ namespace Blueprint.Api.ViewModels
         public bool InheritedFromParent { get; set; }
     }
 
-    /// <summary>What importing a d3fend-full-mappings.json onto a D3FEND release read and kept.</summary>
+    /// <summary>What importing a mappings file onto a defensive release read and kept.</summary>
     public class TechniqueCountermeasureImport
     {
         public Guid TechniqueReleaseId { get; set; }
         /// <summary>The result rows in the file, one per artifact path per queried technique.</summary>
         public int RowsRead { get; set; }
-        /// <summary>The distinct (offensive id, D3FEND technique) pairs stored.</summary>
+        /// <summary>The distinct (offensive id, defensive technique) pairs stored.</summary>
         public int PairsStored { get; set; }
-        /// <summary>Pairs whose D3FEND class is not a defensive technique in this release, so they were left out.</summary>
+        /// <summary>Pairs whose defensive class is not a defensive technique in this release, so they were left out.</summary>
         public int PairsSkipped { get; set; }
         /// <summary>The distinct offensive technique ids the stored pairs cover.</summary>
         public int OffensiveTechniqueCount { get; set; }
     }
 
-    /// <summary>The countermeasures of every attack technique in a MSEL's pool, from one D3FEND release.</summary>
+    /// <summary>The countermeasures of every attack technique in a MSEL's pool, from one defensive release.</summary>
     public class MselCountermeasures
     {
         public Guid MselId { get; set; }
         /// <summary>
-        /// The D3FEND release the mappings come from: the one the MSEL's defensive techniques are pinned to, else the
-        /// newest with mappings imported. Null when no D3FEND release has mappings.
+        /// The defensive release the mappings come from: the one the MSEL's defensive techniques are pinned to, else the
+        /// newest with mappings imported. Null when no defensive release has mappings.
         /// </summary>
         public Guid? TechniqueReleaseId { get; set; }
         /// <summary>True when that release has mappings imported; false when the pinned release has none yet.</summary>

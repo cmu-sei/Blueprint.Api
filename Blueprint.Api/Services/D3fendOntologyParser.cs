@@ -14,15 +14,15 @@ using Blueprint.Api.Infrastructure.Exceptions;
 namespace Blueprint.Api.Services
 {
     /// <summary>
-    /// Reads the MITRE D3FEND ontology (d3fend.json, JSON-LD) into an <see cref="TechniqueReleaseEntity"/> of the
-    /// "d3fend" domain, flagged defensive, with the seven defensive tactics and the defensive techniques.
+    /// Reads the D3FEND ontology (d3fend.json, JSON-LD) into a defensive <see cref="TechniqueReleaseEntity"/> of the
+    /// "d3fend" domain, with its defensive tactics and techniques.
     /// </summary>
     /// <remarks>
     /// The ontology is a flat <c>@graph</c> of classes. A defensive technique is a class with a
     /// <c>d3f:d3fend-id</c> (D3-CH) under <c>d3f:DefensiveTechnique</c> through <c>rdfs:subClassOf</c>; the graph also
     /// gives d3fend-ids to analytic techniques (D3A-*), which are not countermeasures and are skipped. A technique's
-    /// parent is its direct superclass when that is a technique too, so D3FEND's technique levels become the same
-    /// technique/sub-technique tree ATT&amp;CK's do. Only a top-level technique names the tactic it
+    /// parent is its direct superclass when that is a technique too, so its technique levels become the same
+    /// technique/sub-technique tree the STIX releases have. Only a top-level technique names the tactic it
     /// <c>d3f:enables</c>; a sub-technique's tactics are found by walking up to one that does. Ids are derived from
     /// the version and the class id, as the STIX parser's are, so a re-import is the same release.
     /// </remarks>
@@ -113,7 +113,7 @@ namespace Blueprint.Api.Services
                     Id = StixTechniqueParser.ObjectId(Domain, version, id),
                     TechniqueReleaseId = release.Id,
                     StixId = id,
-                    // D3FEND gives its tactics no id of their own, so the class id stands in.
+                    // The ontology gives its tactics no id of their own, so the class id stands in.
                     ExternalId = id,
                     ShortName = shortName,
                     Name = GetText(tactic, "rdfs:label") ?? LocalName(id),

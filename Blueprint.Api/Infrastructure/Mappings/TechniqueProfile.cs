@@ -35,7 +35,7 @@ namespace Blueprint.Api.Infrastructure.Mappings
                 .ForMember(c => c.InheritedFromParent, opt => opt.Ignore());
         }
 
-        /// <summary>The "source|label|url" lines <c>StixTechniqueParser</c> stores a CAPEC pattern's links as.</summary>
+        /// <summary>The "source|label|url" lines <c>StixTechniqueParser</c> stores a technique's links as.</summary>
         private static System.Collections.Generic.List<TechniqueLink> SplitLinks(string value) =>
             string.IsNullOrEmpty(value)
                 ? []

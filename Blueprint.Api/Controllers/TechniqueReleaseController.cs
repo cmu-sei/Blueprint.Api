@@ -17,13 +17,13 @@ using Swashbuckle.AspNetCore.Annotations;
 namespace Blueprint.Api.Controllers
 {
     /// <summary>
-    /// Technique framework releases (MITRE ATT&amp;CK, ATLAS, CAPEC, D3FEND). Reads are open to any authenticated user, as
+    /// Technique framework releases. Reads are open to any authenticated user, as
     /// competency frameworks are: every MSEL with a technique column loads them. Import, notice edits and delete are
     /// managed with the competency frameworks.
     /// </summary>
     public class TechniqueReleaseController : BaseController
     {
-        // enterprise-attack.json is about 50 MB and grows with each release.
+        // A full ATT&CK enterprise bundle is about 50 MB and grows with each release.
         private const long MaxBundleBytes = 256L * 1024 * 1024;
 
         private readonly ITechniqueReleaseService _techniqueReleaseService;
@@ -96,14 +96,14 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets the D3FEND "countered by" mappings of a D3FEND release
+        /// Gets the "countered by" mappings of a defensive release
         /// </summary>
         /// <remarks>
         /// With <c>offensiveId</c>, the countermeasures of that technique (T1003.005) ranked by weight; a sub-technique
         /// with none of its own is answered with its parent technique's, each flagged <c>inheritedFromParent</c>.
         /// Without it, every mapping of the release.
         /// </remarks>
-        /// <param name="id">The id of the D3FEND release</param>
+        /// <param name="id">The id of the defensive release</param>
         /// <param name="offensiveId">The offensive technique's id, e.g. T1003.005</param>
         /// <param name="ct"></param>
         [HttpGet("techniquereleases/{id}/countermeasures")]
@@ -116,16 +116,13 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Imports a release from its STIX 2.x bundle or the D3FEND ontology
+        /// Imports a release from its STIX 2.x bundle or a defensive ontology
         /// </summary>
         /// <remarks>
-        /// Accepts enterprise-attack.json, mobile-attack.json or ics-attack.json from the mitre-attack/attack-stix-data
-        /// repository, or stix-atlas.json from the mitre-atlas/atlas-data releases, which becomes a release of the
-        /// ATLAS domain, or stix-capec.json from the mitre/cti repository (capec/2.1), which becomes a release of the
-        /// CAPEC domain, its Meta patterns standing as the groups tactics are in the others. Revoked and deprecated
-        /// objects (and, for CAPEC, deprecated and obsolete ones) are skipped. Also accepts d3fend.json (JSON-LD) from
-        /// the D3FEND Ontology Resources page, which becomes a defensive release of the d3fend domain. The version is read
-        /// from the file; give one only for an older file that does not name it.
+        /// Accepts a STIX 2.x bundle in the ATT&amp;CK data model (the domain comes from the file), a CAPEC bundle, whose
+        /// Meta patterns stand as the groups tactics are in the others, or a defensive ontology in JSON-LD, which becomes
+        /// a defensive release. Revoked, deprecated and obsolete objects are skipped. The version is read from the file;
+        /// give one only for an older file that does not name it.
         /// </remarks>
         /// <param name="form">The bundle or ontology</param>
         /// <param name="version">The release version (e.g. "17.1"), if the file does not say</param>
@@ -168,17 +165,16 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Imports the D3FEND "countered by" mappings onto a D3FEND release
+        /// Imports the "countered by" mappings onto a defensive release
         /// </summary>
         /// <remarks>
-        /// Accepts d3fend-full-mappings.json for the release's version, from
-        /// https://d3fend.mitre.org/ontologies/d3fend/&lt;version&gt;/d3fend-full-mappings.json. The file's rows are
-        /// aggregated to one row per (offensive technique id, D3FEND technique), weighted by the number of distinct
-        /// artifact paths between them; a pair whose D3FEND class is not a technique of this release is skipped and
+        /// Accepts the mappings file for the release's version. Its rows are aggregated to one row per
+        /// (offensive technique id, defensive technique), weighted by the number of distinct
+        /// artifact paths between them; a pair whose defensive class is not a technique of this release is skipped and
         /// counted. Importing again replaces the release's mappings. Refused with a 400 on a release that is not
         /// defensive or a file that is not SPARQL results JSON.
         /// </remarks>
-        /// <param name="id">The id of the D3FEND release</param>
+        /// <param name="id">The id of the defensive release</param>
         /// <param name="form">The mappings file</param>
         /// <param name="ct"></param>
         [HttpPost("techniquereleases/{id}/countermeasures")]

@@ -32,7 +32,7 @@ namespace Blueprint.Api.Services
     }
 
     /// <summary>
-    /// The technique framework releases (ATT&amp;CK, ATLAS, CAPEC, D3FEND) an administrator has uploaded. A release's
+    /// The technique framework releases an administrator has uploaded. A release's
     /// techniques are never edited: a newer version is imported alongside it, and MSELs move to it one at a time. Only
     /// its publisher and notice fields can be changed, as a custom release has none until an administrator gives it some.
     /// </summary>

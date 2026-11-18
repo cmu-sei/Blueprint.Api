@@ -14,8 +14,8 @@ using Blueprint.Api.Infrastructure.Exceptions;
 namespace Blueprint.Api.Services
 {
     /// <summary>
-    /// Reads MITRE D3FEND's d3fend-full-mappings.json - the "countered by" mappings between offensive techniques
-    /// (ATT&amp;CK Enterprise and ICS, SPARTA) and D3FEND techniques - into one row per (offensive id, D3FEND class).
+    /// Reads d3fend-full-mappings.json (SPARQL results JSON), the "countered by" mappings between offensive and
+    /// defensive techniques, into one row per (offensive id, defensive class).
     /// </summary>
     /// <remarks>
     /// The file is SPARQL results JSON: a <c>head.vars</c> list and a <c>results.bindings</c> array of rows, each

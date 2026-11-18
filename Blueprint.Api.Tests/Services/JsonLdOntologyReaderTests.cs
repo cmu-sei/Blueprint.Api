@@ -186,25 +186,30 @@ public class JsonLdOntologyReaderTests
     }
 
     [Fact]
-    public void Read_TakesTheNoticeFromTheOntologyPropertyTheDefinitionNames()
+    public void Read_TakesThePublisherAndNoticeFromTheOntologyPropertiesTheDefinitionNames()
     {
         var release = Read(D3fendOntologies.Ontology("1.6.0"), TechniqueFrameworks.D3fend());
 
-        Assert.Equal("D3FEND™", release.Source);
+        Assert.Equal("The MITRE Corporation", release.Source);
         Assert.Contains("D3FEND™ and the D3FEND logo are trademarks of The MITRE Corporation.", release.Notice);
         Assert.Contains("Copyright 2022 The MITRE Corporation.", release.Notice);
         Assert.Null(release.TermsUrl);
     }
 
-    /// <summary>A definition that names no notice property gives the release no notice.</summary>
+    /// <summary>
+    /// A definition that names no publisher or notice property gives the release neither: the title is not taken
+    /// for the publisher.
+    /// </summary>
     [Fact]
-    public void Read_WithADefinitionThatNamesNoNoticeProperty_CarriesNone()
+    public void Read_WithADefinitionThatNamesNoPublisherOrNoticeProperty_CarriesNeither()
     {
         var framework = TechniqueFrameworks.D3fend();
+        framework.Settings.JsonLd.PublisherProperty = null;
         framework.Settings.JsonLd.NoticeProperty = null;
 
         var release = Read(D3fendOntologies.Ontology("1.6.0"), framework);
 
+        Assert.Null(release.Source);
         Assert.Null(release.Notice);
     }
 }

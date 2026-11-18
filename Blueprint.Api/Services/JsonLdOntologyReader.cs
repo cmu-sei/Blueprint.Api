@@ -101,11 +101,11 @@ namespace Blueprint.Api.Services
                 Description = (ontology.HasValue ? GetText(ontology.Value, "dcterms:description") : null) ?? framework.Description,
                 ReleaseDate = ontology.HasValue && !string.IsNullOrWhiteSpace(options.ReleaseDateProperty) ? GetDate(ontology.Value, options.ReleaseDateProperty) : null
             };
-            // the publisher and notice, as the ontology's title and notice property state them
+            // the publisher and notice, from the ontology properties the definition names
             if (ontology.HasValue)
             {
-                var title = GetText(ontology.Value, "dcterms:title");
-                release.Source = title?.Split(" - ", 2)[0].Trim();
+                if (!string.IsNullOrWhiteSpace(options.PublisherProperty))
+                    release.Source = GetText(ontology.Value, options.PublisherProperty)?.Trim();
                 if (!string.IsNullOrWhiteSpace(options.NoticeProperty))
                     release.Notice = GetText(ontology.Value, options.NoticeProperty)?.Trim();
             }

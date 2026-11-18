@@ -109,6 +109,7 @@ public static class TechniqueFrameworks
                 DisplayOrderProperty = "d3f:display-order",
                 DefinitionProperty = "d3f:definition",
                 ReleaseDateProperty = "d3f:release-date",
+                PublisherProperty = "dcterms:publisher",
                 NoticeProperty = "rdfs:comment"
             },
             Mappings = D3fendMappings(),

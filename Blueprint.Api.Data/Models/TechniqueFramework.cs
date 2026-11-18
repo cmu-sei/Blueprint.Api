@@ -153,6 +153,8 @@ namespace Blueprint.Api.Data.Models
         public string DefinitionProperty { get; set; }
         /// <summary>The ontology property holding the release date.</summary>
         public string ReleaseDateProperty { get; set; }
+        /// <summary>The ontology property naming the publisher; blank for none.</summary>
+        public string PublisherProperty { get; set; }
         /// <summary>The ontology property holding the copyright and terms notice; blank for none.</summary>
         public string NoticeProperty { get; set; }
     }

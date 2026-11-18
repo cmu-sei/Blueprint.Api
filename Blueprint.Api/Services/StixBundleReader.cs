@@ -426,7 +426,7 @@ namespace Blueprint.Api.Services
             var links = new List<ViewModels.TechniqueLink>();
             foreach (var reference in GetReferences(technique))
             {
-                var url = GetString(reference, "url");
+                var url = TechniqueFrameworkDefaults.WebAddress(GetString(reference, "url"));
                 var source = sources.FirstOrDefault(s => s.Source == GetString(reference, "source_name"));
                 if (source == null || string.IsNullOrWhiteSpace(url))
                     continue;
@@ -462,7 +462,7 @@ namespace Blueprint.Api.Services
                 var id = GetString(reference, "external_id");
                 if (GetString(reference, "source_name") == source && id != null
                     && (string.IsNullOrEmpty(prefix) || id.StartsWith(prefix, StringComparison.Ordinal)))
-                    return (id, GetString(reference, "url"));
+                    return (id, TechniqueFrameworkDefaults.WebAddress(GetString(reference, "url")));
             }
 
             return (null, null);

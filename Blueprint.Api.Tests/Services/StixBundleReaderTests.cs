@@ -249,6 +249,22 @@ public class StixBundleReaderTests
         Assert.Equal("capec-123", release.Techniques.Single(t => t.ExternalId == "CAPEC-9").Tactics);
     }
 
+    /// <summary>A file's links go into an href, so one that is not a web address is dropped rather than stored.</summary>
+    [Fact]
+    public async Task Parse_DropsALinkThatIsNotAWebAddress()
+    {
+        var json = CapecBundles.Capec()
+            .Replace("https://owasp.org/www-community/attacks/SQL_Injection", "javascript:alert(1)")
+            .Replace("https://capec.mitre.org/data/definitions/66.html", "data:text/html,hi");
+
+        var release = await Parse(json);
+
+        var sql = release.Techniques.Single(t => t.ExternalId == "CAPEC-66");
+        Assert.DoesNotContain("javascript:", sql.ReferenceLinks);
+        Assert.Contains("http://projects.webappsec.org/SQL-Injection", sql.ReferenceLinks);
+        Assert.DoesNotContain("data:", sql.Url ?? "");
+    }
+
     [Fact]
     public async Task Parse_OfCapec_CarriesTheDomainsOfAttack_TheWeaknesses_AndTheOwaspAndWascLinks()
     {

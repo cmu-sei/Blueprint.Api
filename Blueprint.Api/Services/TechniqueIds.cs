@@ -55,6 +55,18 @@ namespace Blueprint.Api.Services
                 : template.Replace("{id}", Uri.EscapeDataString(id ?? ""), StringComparison.Ordinal)
                     .Replace("{sourceId}", sourceId ?? "", StringComparison.Ordinal);
 
+        /// <summary>
+        /// A file's link, if it is an http or https address; null otherwise. Links go into an href, so a script or data
+        /// address in an imported file is dropped, as the framework and notice endpoints refuse one.
+        /// </summary>
+        public static string WebAddress(string url)
+        {
+            url = url?.Trim();
+            return Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+                ? url
+                : null;
+        }
+
         private static string Blank(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 }

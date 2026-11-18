@@ -230,6 +230,20 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
         Assert.True(analysis.InheritedFromParent);
     }
 
+    /// <summary>The newest attack release decides: where it makes the technique top-level, nothing is inherited.</summary>
+    [Fact]
+    public async Task GetByRelease_ForATechniqueTheNewestAttackReleaseMakesTopLevel_InheritsNothing()
+    {
+        await SeedRelease("1.0");
+        var newer = await TechniqueFrameworks.ReadAsync(TechniqueBundles.Enterprise("2.0").Replace("\"subtechnique-of\"", "\"related-to\""));
+        newer.ReleaseDate = DateTime.UtcNow;
+        await Seed(newer);
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+
+        Assert.Empty(await Get<List<TechniqueCountermeasure>>(RootClient, $"api/techniquereleases/{d3fend.Id}/countermeasures?offensiveId=T1059.001"));
+    }
+
     /// <summary>The parent is the one imported, not read from the id: with no attack release holding T1059.001 there is none.</summary>
     [Fact]
     public async Task GetByRelease_ForASubTechniqueNoAttackReleaseHolds_IsEmpty()
@@ -372,7 +386,12 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
         await Upload(RootClient, direct.Id, D3fendMappings.File(
             D3fendMappings.Row("T1059.001", "PowerShell", "T1059", "enterprise", "CredentialHardening", "Credential Hardening", "Harden",
                 "hardens", "Credential", "accesses", "Credential")));
-        await Upload(RootClient, parentOnly.Id, D3fendMappings.Standard());
+        // two paths to File Analysis, so the parent's mapping outweighs the direct one
+        await Upload(RootClient, parentOnly.Id, D3fendMappings.File(
+            D3fendMappings.Row("T1059", "Command and Scripting Interpreter", null, "enterprise", "FileAnalysis", "File Analysis", "Detect",
+                "analyzes", "File", "executes", "Script"),
+            D3fendMappings.Row("T1059", "Command and Scripting Interpreter", null, "enterprise", "FileAnalysis", "File Analysis", "Detect",
+                "analyzes", "File", "creates", "Executable File")));
         var msel = TestData.Msel();
         await Seed(msel);
         await Seed(
@@ -384,9 +403,10 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
 
         var group = Assert.Single(result.Techniques);
         Assert.Equal("T1059", group.InheritedFrom);
+        // ranked together by weight, the inherited mapping first
         Assert.Equal(
-            [("D3-CH", false), ("D3-FA", true)],
-            group.Countermeasures.Select(c => (c.DefensiveTechnique.ExternalId, c.InheritedFromParent)));
+            [("D3-FA", true, 2), ("D3-CH", false, 1)],
+            group.Countermeasures.Select(c => (c.DefensiveTechnique.ExternalId, c.InheritedFromParent, c.Weight)));
     }
 
     /// <summary>A release with no date is not taken for the newest: Postgres would sort its null first.</summary>

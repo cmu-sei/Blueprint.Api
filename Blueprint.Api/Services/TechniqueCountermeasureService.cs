@@ -141,9 +141,9 @@ namespace Blueprint.Api.Services
             if (own.Count > 0)
                 return Rank(own, inherited: false);
 
-            // the parent an attack release imported the technique under, the newest release's when they differ
+            // the parent the newest attack release holding the technique imported it under; none if it is top-level there
             var parentId = await _context.Techniques
-                .Where(t => t.ExternalId == offensiveId && !t.TechniqueRelease.IsDefensive && t.ParentId != null)
+                .Where(t => t.ExternalId == offensiveId && !t.TechniqueRelease.IsDefensive)
                 .OrderByDescending(t => t.TechniqueRelease.ReleaseDate.HasValue)
                 .ThenByDescending(t => t.TechniqueRelease.ReleaseDate)
                 .ThenByDescending(t => t.TechniqueRelease.Version)
@@ -229,7 +229,7 @@ namespace Blueprint.Api.Services
                 }
                 if (inherited.Count > 0)
                     group.InheritedFrom = technique.ParentExternalId;
-                group.Countermeasures = Rank(own, inherited: false).Concat(Rank(inherited, inherited: true)).ToList();
+                group.Countermeasures = Rank(own.Select(c => (c, false)).Concat(inherited.Select(c => (c, true)))).ToList();
                 result.Techniques.Add(group);
             }
 
@@ -245,13 +245,20 @@ namespace Blueprint.Api.Services
                 .ThenInclude(t => t.TechniqueRelease);
 
         /// <summary>Strongest first; ties by the defensive technique's id.</summary>
-        private IEnumerable<TechniqueCountermeasure> Rank(IEnumerable<TechniqueCountermeasureEntity> rows, bool inherited)
-        {
-            var ranked = rows.OrderByDescending(c => c.Weight).ThenBy(c => c.DefensiveTechnique.ExternalId).ToList();
-            var mapped = ranked.Select(c => c.ToTechniqueCountermeasure()).ToList();
-            foreach (var item in mapped)
-                item.InheritedFromParent = inherited;
-            return mapped;
-        }
+        private static IEnumerable<TechniqueCountermeasure> Rank(IEnumerable<TechniqueCountermeasureEntity> rows, bool inherited) =>
+            Rank(rows.Select(c => (c, inherited)));
+
+        /// <summary>Strongest first, whether a row is the technique's own or inherited; ties by the defensive technique's id.</summary>
+        private static IEnumerable<TechniqueCountermeasure> Rank(IEnumerable<(TechniqueCountermeasureEntity Row, bool Inherited)> rows) =>
+            rows
+                .OrderByDescending(r => r.Row.Weight)
+                .ThenBy(r => r.Row.DefensiveTechnique.ExternalId)
+                .Select(r =>
+                {
+                    var item = r.Row.ToTechniqueCountermeasure();
+                    item.InheritedFromParent = r.Inherited;
+                    return item;
+                })
+                .ToList();
     }
 }

@@ -768,6 +768,34 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             await ReadBack(rb => rb.MselTechniques.Where(m => m.MselId == result.Msel.Id).Select(m => m.TechniqueId).SingleAsync(Ct)));
     }
 
+    /// <summary>A file naming techniques of two releases of one domain keeps the release most of them are from.</summary>
+    [Fact]
+    public async Task JsonImport_OfTechniquesFromTwoReleasesOfADomain_KeepsTheReleaseMostAreFrom()
+    {
+        var first = await SeedRelease("1.0");
+        var second = await SeedRelease("2.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(
+            new MselTechniqueEntity(msel.Id, Technique(second, "T1059").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(second, "T1059.001").Id) { Id = Guid.NewGuid() },
+            // a pool the add check would refuse, as a file edited by hand could name it
+            new MselTechniqueEntity(msel.Id, Technique(first, "T1053").Id) { Id = Guid.NewGuid() });
+        var file = await (await RootClient.GetAsync($"api/msels/{msel.Id}/json", Ct)).Content.ReadAsStringAsync(Ct);
+
+        using var content = new MultipartFormDataContent();
+        var upload = new ByteArrayContent(Encoding.UTF8.GetBytes(file));
+        upload.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Add(upload, "ToUpload", "msel.json");
+        var response = await RootClient.PostAsync("api/msels/json/import", content, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await Read<MselImportResult>(response);
+        Assert.Contains(result.Changes, c => c.Field == "techniques" && c.Message.StartsWith("1 enterprise-attack technique"));
+        var pool = await ReadBack(rb => rb.MselTechniques.Where(m => m.MselId == result.Msel.Id).Select(m => m.TechniqueId).ToListAsync(Ct));
+        Assert.Equal(new[] { Technique(second, "T1059").Id, Technique(second, "T1059.001").Id }.Order(), pool.Order());
+    }
+
     // ---------------------------------------------------------------------------------------------
 
     private bool _frameworksSeeded;

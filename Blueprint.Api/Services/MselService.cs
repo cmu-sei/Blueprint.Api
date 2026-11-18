@@ -2337,10 +2337,11 @@ namespace Blueprint.Api.Services
             if (mselEntity.MselTechniques.Count > 0)
             {
                 var fileTechniqueIds = mselEntity.MselTechniques.Select(t => t.TechniqueId).ToList();
-                var knownTechniqueIds = (await _context.Techniques
+                var known = await _context.Techniques
                     .Where(t => fileTechniqueIds.Contains(t.Id))
-                    .Select(t => t.Id)
-                    .ToListAsync(ct)).ToHashSet();
+                    .Select(t => new { t.Id, t.TechniqueReleaseId, t.TechniqueRelease.Domain, t.TechniqueRelease.Version, t.TechniqueRelease.ReleaseDate })
+                    .ToListAsync(ct);
+                var knownTechniqueIds = known.Select(t => t.Id).ToHashSet();
                 var missingTechniques = fileTechniqueIds.Count(id => !knownTechniqueIds.Contains(id));
                 if (missingTechniques > 0)
                 {
@@ -2348,6 +2349,21 @@ namespace Blueprint.Api.Services
                         .Where(t => knownTechniqueIds.Contains(t.TechniqueId))
                         .ToList();
                     AddChange(result, "techniques", $"{missingTechniques} techniques were not imported because their release is not loaded here. Import the release, then add them to the MSEL.");
+                }
+
+                // A pool holds one release per domain, as adding to it checks. A file naming techniques of two keeps
+                // the release most of them are from (the newer on a tie) and drops the rest.
+                foreach (var domain in known.GroupBy(t => t.Domain).Where(g => g.Select(t => t.TechniqueReleaseId).Distinct().Count() > 1))
+                {
+                    var keep = domain
+                        .GroupBy(t => t.TechniqueReleaseId)
+                        .OrderByDescending(g => g.Count())
+                        .ThenByDescending(g => g.First().ReleaseDate.HasValue)
+                        .ThenByDescending(g => g.First().ReleaseDate)
+                        .First();
+                    var dropped = domain.Where(t => t.TechniqueReleaseId != keep.Key).Select(t => t.Id).ToHashSet();
+                    mselEntity.MselTechniques = mselEntity.MselTechniques.Where(t => !dropped.Contains(t.TechniqueId)).ToList();
+                    AddChange(result, "techniques", $"{dropped.Count} {domain.Key} techniques were not imported because they are from another release than the MSEL's other {domain.Key} techniques ({keep.First().Version}).");
                 }
             }
 

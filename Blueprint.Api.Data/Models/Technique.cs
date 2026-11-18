@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Blueprint.Api.Data.Models
 {
-    /// <summary>A technique or sub-technique (T1059, T1059.001) in one release.</summary>
+    /// <summary>A technique or sub-technique in one release.</summary>
     public class TechniqueEntity
     {
         [Key]
@@ -31,7 +31,7 @@ namespace Blueprint.Api.Data.Models
         public string Tactics { get; set; }
         /// <summary>Comma-separated platforms, e.g. "Windows,Linux,macOS".</summary>
         public string Platforms { get; set; }
-        /// <summary>Comma-separated CWE ids the technique exploits, e.g. "CWE-89,CWE-1286"; null when the framework gives none.</summary>
+        /// <summary>Comma-separated ids of the weaknesses the technique exploits; null when the framework gives none.</summary>
         public string Weaknesses { get; set; }
         /// <summary>
         /// Links to other catalogues, one per line as "source|label|url"; null when the framework gives none.

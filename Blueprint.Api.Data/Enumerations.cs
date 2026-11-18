@@ -210,4 +210,11 @@ namespace Blueprint.Api.Data.Enumerations
         None = 40
     }
 
+    /// <summary>The file format a technique framework's releases are published in.</summary>
+    public enum TechniqueFileFormat
+    {
+        StixBundle = 0,
+        JsonLdOntology = 1
+    }
+
 }

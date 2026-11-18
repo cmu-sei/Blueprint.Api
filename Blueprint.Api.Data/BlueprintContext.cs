@@ -73,6 +73,7 @@ namespace Blueprint.Api.Data
         public DbSet<CompetencyRelationshipEntity> CompetencyRelationships { get; set; }
         public DbSet<MselCompetencyEntity> MselCompetencies { get; set; }
         public DbSet<TeamCompetencyEntity> TeamCompetencies { get; set; }
+        public DbSet<TechniqueFrameworkEntity> TechniqueFrameworks { get; set; }
         public DbSet<TechniqueReleaseEntity> TechniqueReleases { get; set; }
         public DbSet<TechniqueTacticEntity> TechniqueTactics { get; set; }
         public DbSet<TechniqueEntity> Techniques { get; set; }

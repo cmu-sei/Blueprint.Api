@@ -24,6 +24,9 @@ namespace Blueprint.Api.Data.Models
         [DatabaseGenerated(DatabaseGeneratedOption.None)]
         public Guid Id { get; set; }
         public string Domain { get; set; }
+        /// <summary>The framework the release was read as; null for a release imported before frameworks were defined.</summary>
+        public Guid? TechniqueFrameworkId { get; set; }
+        public TechniqueFrameworkEntity TechniqueFramework { get; set; }
         /// <summary>
         /// Whether the release's techniques are defences rather than attacks; a MSEL pools the two apart.
         /// </summary>
@@ -46,7 +49,7 @@ namespace Blueprint.Api.Data.Models
         public string GroupLabel { get; set; } = "Tactics";
         public virtual ICollection<TechniqueTacticEntity> Tactics { get; set; } = new HashSet<TechniqueTacticEntity>();
         public virtual ICollection<TechniqueEntity> Techniques { get; set; } = new HashSet<TechniqueEntity>();
-        /// <summary>The "countered by" mappings imported onto a defensive release; empty for an attack release.</summary>
+        /// <summary>The mappings imported onto the release; empty when none have been.</summary>
         public virtual ICollection<TechniqueCountermeasureEntity> Countermeasures { get; set; } = new HashSet<TechniqueCountermeasureEntity>();
     }
 
@@ -55,6 +58,12 @@ namespace Blueprint.Api.Data.Models
         public void Configure(EntityTypeBuilder<TechniqueReleaseEntity> builder)
         {
             builder.HasIndex(x => new { x.Domain, x.Version }).IsUnique();
+
+            builder
+                .HasOne(x => x.TechniqueFramework)
+                .WithMany(x => x.Releases)
+                .HasForeignKey(x => x.TechniqueFrameworkId)
+                .OnDelete(DeleteBehavior.SetNull);
         }
     }
 }

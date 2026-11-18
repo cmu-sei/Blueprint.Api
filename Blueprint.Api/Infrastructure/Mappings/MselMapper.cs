@@ -25,6 +25,7 @@ namespace Blueprint.Api.Infrastructure.Mappings;
 [UseStaticMapper(typeof(MselPageMapper))]
 [UseStaticMapper(typeof(InvitationMapper))]
 [UseStaticMapper(typeof(MselCompetencyMapper))]
+[UseStaticMapper(typeof(TechniqueMapper))]
 public static partial class MselMapper
 {
     /// <remarks>

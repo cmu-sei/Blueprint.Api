@@ -220,6 +220,49 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         AssertNothingEnqueued();
     }
 
+    /// <summary>Moves and events can be saved out of order, but a push is a 409 naming each problem and
+    /// nothing is marked or queued.</summary>
+    [Theory]
+    [InlineData(0, 0, 0, "Move 0 and Move 1 start at the same time.")]
+    [InlineData(600, 0, 700, "Move 1 starts before Move 0.")]
+    [InlineData(0, 600, -5, "1 scenario event starts before Move 0, so it is in no move.")]
+    public async Task Push_WhenTheMovesOrEventsAreOutOfOrder_Is409AndNamesTheProblem(
+        int firstStart, int secondStart, int eventStart, string expected)
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        await Seed(msel);
+        await Seed(TestData.Move(msel.Id, moveNumber: 0, deltaSeconds: firstStart));
+        await Seed(TestData.Move(msel.Id, moveNumber: 1, deltaSeconds: secondStart));
+        await Seed(TestData.ScenarioEvent(msel.Id, deltaSeconds: eventStart));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        var title = (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.StartsWith("Fix the moves before pushing.", title);
+        Assert.Contains(expected, title);
+        Assert.Equal(
+            MselItemStatus.Approved,
+            (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).Status);
+        AssertNothingEnqueued();
+    }
+
+    /// <summary>Moves in order, with every event in a move, push.</summary>
+    [Fact]
+    public async Task Push_WhenTheMovesAreInOrderAndEveryEventIsInAMove_Is200()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        await Seed(msel);
+        await Seed(TestData.Move(msel.Id, moveNumber: 0, deltaSeconds: 0));
+        await Seed(TestData.Move(msel.Id, moveNumber: 1, deltaSeconds: 600));
+        await Seed(TestData.ScenarioEvent(msel.Id, deltaSeconds: 700));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     /// <summary>Push when a user is on two CITE teams is a 409 that names them, for the planner to fix.</summary>
     [Fact]
     public async Task Push_WhenAUserIsOnTwoCiteTeams_Is409AndNamesThem()

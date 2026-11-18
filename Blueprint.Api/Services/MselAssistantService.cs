@@ -36,11 +36,11 @@ namespace Blueprint.Api.Services
     /// Which kinds of change the planner may make on this MSEL, by the rules of the services that make them. A change
     /// the planner may not make is left out of a proposal with the reason, rather than failing when applied.
     /// </summary>
-    public record MselAssistAccess(bool Teams, bool OrganizationsAndCards, bool Competencies, bool Moves, bool AddInjects, bool EditInjects, bool Columns, bool Integrations, bool Pages)
+    public record MselAssistAccess(bool Teams, bool OrganizationsAndCards, bool Competencies, bool Moves, bool AddInjects, bool EditInjects, bool Columns, bool Integrations, bool Pages, bool Techniques = false)
     {
-        public bool Any => Teams || OrganizationsAndCards || Competencies || Moves || AddInjects || EditInjects || Columns || Integrations || Pages;
+        public bool Any => Teams || OrganizationsAndCards || Competencies || Moves || AddInjects || EditInjects || Columns || Integrations || Pages || Techniques;
 
-        public static readonly MselAssistAccess All = new(true, true, true, true, true, true, true, true, true);
+        public static readonly MselAssistAccess All = new(true, true, true, true, true, true, true, true, true, true);
 
         /// <summary>Why the planner may not make a change of this kind, or null when they may</summary>
         public string Refusal(string op) => op switch
@@ -55,6 +55,7 @@ namespace Blueprint.Api.Services
             MselAssistRules.ColumnAdd or MselAssistRules.ColumnUpdate when !Columns => "only the MSEL's owner or an editor can change its columns",
             MselAssistRules.IntegrationAdd when !Integrations => "only the MSEL's owner can change its integrations",
             MselAssistRules.PageAdd or MselAssistRules.PageUpdate when !Pages => "only the MSEL's owner can change its pages",
+            MselAssistRules.TechniqueAdd when !Techniques => "only the MSEL's owner can change its techniques",
             _ => null
         };
 
@@ -71,6 +72,7 @@ namespace Blueprint.Api.Services
             if (Columns) parts.Add("inject columns");
             if (Integrations) parts.Add("integrations (turning one on)");
             if (Pages) parts.Add("pages");
+            if (Techniques) parts.Add("techniques (adding them)");
             return string.Join(", ", parts);
         }
     }
@@ -94,12 +96,18 @@ scenario's actors: the agencies, companies, media outlets and threat actors that
 on the participants' Gallery wall; a card's move and inject numbers say when it first appears. Competencies are framework work roles
 and tasks (DCWF or NICE) linked to the MSEL as a whole or to a team.
 You can propose these changes: add or edit a team, an organization or a Gallery card; add or remove a competency on the MSEL or a team;
-add or edit a move; add an inject or edit an existing one; add an inject column or edit one; turn on an integration; add a page or edit one.
+add or edit a move; add an inject or edit an existing one; add an inject column or edit one; turn on an integration; add a page or edit one;
+add a technique to the MSEL's techniques.
 Rules:
 - Answer only by calling the tool. Put a short reply to the planner in reply: what you propose and why, in plain words.
 - Change only what the planner asked for, plus what that needs (a new team named in the request must exist before a competency is put on it).
 - If the request is ambiguous in a way that changes the result, ask one short question and propose no changes.
-- If the planner asks for something you cannot change (deleting injects, moves, columns or pages, turning an integration off, users), say so in reply.
+- If the planner asks for something you cannot change (deleting injects, moves, columns, pages or techniques, turning an integration off, users), say so in reply.
+- Techniques come from the technique releases listed with the MSEL; the MSEL takes each domain's techniques from one release, the one
+  marked, or the newest when none is. Add a technique (technique.add, its id exactly as its release lists it, and the release's
+  domain) before an inject names it. An AttackTechnique or DefensiveTechnique column holds ids of the MSEL's techniques of that kind,
+  separated by "", "": ids only, no names. To turn a text column that names techniques into one, change its type to AttackTechnique
+  or DefensiveTechnique: Blueprint reads the id at the start of each item, adds those techniques and keeps only the ids.
 - Pages are the MSEL's documents, such as the read-in, the exercise overview and the facilitator guide. For an edit, write the
   page's whole new content in HTML, changing what the planner asked and keeping the rest as it is: its headings, order, tables and
   wording. Use section, h2, h3, h4, p, ul, ol, li, strong, em and table with border=""1"" cellpadding=""6"" cellspacing=""0"" only;
@@ -152,9 +160,11 @@ Rules:
             IAiUsageContext usage,
             IDataFieldService dataFieldService,
             Cite.Api.Client.ICiteApiClient citeApiClient,
-            IMselPageService mselPageService)
+            IMselPageService mselPageService,
+            IMselTechniqueService mselTechniqueService)
         {
             _mselPageService = mselPageService;
+            _mselTechniqueService = mselTechniqueService;
             _usage = usage;
             _dataFieldService = dataFieldService;
             _citeApiClient = citeApiClient;
@@ -175,6 +185,7 @@ Rules:
         private readonly IDataFieldService _dataFieldService;
         private readonly Cite.Api.Client.ICiteApiClient _citeApiClient;
         private readonly IMselPageService _mselPageService;
+        private readonly IMselTechniqueService _mselTechniqueService;
 
         public async Task<MselAssistResult> AskAsync(Guid mselId, MselAssistRequest request, MselAssistPermissions permissions, CancellationToken ct)
         {
@@ -203,6 +214,7 @@ Rules:
                 Question = GetString(input, "question")
             };
             await AddCompetenciesAsync(state, proposed, ct);
+            await AddTechniquesAsync(state, proposed, ct);
             result.Changes = MselAssistRules.Review(state, proposed, access, result.Warnings);
             if (!string.IsNullOrWhiteSpace(result.Question))
                 result.Changes.Clear();
@@ -218,6 +230,7 @@ Rules:
             // checked again against the MSEL as it is now, as it may have changed since the proposal
             var state = await LoadStateAsync(mselId, ct);
             await AddCompetenciesAsync(state, changes, ct);
+            await AddTechniquesAsync(state, changes, ct);
             foreach (var (change, problem) in MselAssistRules.ReviewEach(state, changes, access, new List<string>()))
             {
                 var outcome = new MselChangeResult { Label = change.Label };
@@ -232,7 +245,7 @@ Rules:
                     await ApplyChangeAsync(mselId, change, state, permissions, ct);
                     outcome.Applied = true;
                 }
-                catch (Exception ex) when (ex is ForbiddenException or ArgumentException or InvalidOperationException or DbUpdateException
+                catch (Exception ex) when (ex is ForbiddenException or ArgumentException or InvalidOperationException or DbUpdateException or ConflictException
                     || ex.GetType().Name.StartsWith("EntityNotFoundException"))
                 {
                     outcome.Error = ex is ForbiddenException ? "You do not have permission to make this change." : ex.Message;
@@ -367,9 +380,13 @@ Rules:
                     }, permissions.EditMsels, ct);
                     break;
                 }
+                case MselAssistRules.TechniqueAdd:
+                    await _mselTechniqueService.CreateAsync(new ViewModels.MselTechnique { MselId = mselId, TechniqueId = change.TechniqueId.Value }, permissions.ManageMsels, ct);
+                    break;
                 case MselAssistRules.ColumnAdd:
                 {
                     var order = state.Msel.DataFields.Select(f => f.DisplayOrder).DefaultIfEmpty(0).Max() + 1;
+                    var techniques = MselAssistRules.IsTechniqueType(change.DataType);
                     await _dataFieldService.CreateAsync(new DataFieldCreate
                     {
                         Id = Guid.NewGuid(),
@@ -382,6 +399,9 @@ Rules:
                         OnExerciseView = change.OnExerciseView ?? false,
                         IsShownOnDefaultTab = true,
                         IsChosenFromList = change.Options?.Count > 0,
+                        // a technique column offers the MSEL's techniques, several at a time, as the Data Fields tab sets one up
+                        IsMultiSelect = techniques,
+                        IsFacilitationField = techniques,
                         DataOptions = Options(change.Options),
                         GalleryArticleParameter = change.GalleryParameter
                     }, permissions.EditMsels, false, ct);
@@ -393,7 +413,9 @@ Rules:
                     var field = await _context.DataFields.AsNoTracking().Include(f => f.DataOptions)
                         .SingleAsync(f => f.MselId == mselId && f.Name == change.Target, ct);
                     // the options that stay keep their ids, so the values chosen from them stay chosen
-                    var options = change.Options == null
+                    var converting = change.Conversion != null;
+                    var options = converting ? new List<DataFieldOption>()
+                        : change.Options == null
                         ? field.DataOptions.Select(o => new DataFieldOption { Id = o.Id, OptionName = o.OptionName, OptionValue = o.OptionValue, OptionDescription = o.OptionDescription, DisplayOrder = o.DisplayOrder }).ToList()
                         : Options(change.Options, field.DataOptions);
                     await _dataFieldService.UpdateAsync(field.Id, new DataFieldEdit
@@ -405,7 +427,7 @@ Rules:
                         OnScenarioEventList = change.OnEventList ?? field.OnScenarioEventList,
                         OnExerciseView = change.OnExerciseView ?? field.OnExerciseView,
                         IsChosenFromList = options.Count > 0,
-                        IsMultiSelect = field.IsMultiSelect,
+                        IsMultiSelect = converting || field.IsMultiSelect,
                         DataOptions = options,
                         CellMetadata = field.CellMetadata,
                         ColumnMetadata = field.ColumnMetadata,
@@ -413,9 +435,11 @@ Rules:
                         IsOnlyShownToOwners = field.IsOnlyShownToOwners,
                         GalleryArticleParameter = change.GalleryParameter ?? field.GalleryArticleParameter,
                         IsInformationField = field.IsInformationField,
-                        IsFacilitationField = field.IsFacilitationField,
+                        IsFacilitationField = converting || field.IsFacilitationField,
                         IsAssessorVisible = field.IsAssessorVisible
                     }, permissions.EditMsels, false, ct);
+                    if (converting)
+                        await ConvertToTechniquesAsync(mselId, field.Id, change.Conversion, permissions, ct);
                     await ReloadColumnsAsync(state, mselId, ct);
                     break;
                 }
@@ -499,6 +523,32 @@ Rules:
                     break;
                 }
             }
+        }
+
+        // a text column turned into a technique column: its techniques join the MSEL's, then each inject's text becomes their ids
+        private async Task ConvertToTechniquesAsync(Guid mselId, Guid fieldId, TechniqueColumnConversion conversion, MselAssistPermissions permissions, CancellationToken ct)
+        {
+            var pooled = await _context.MselTechniques.Where(m => m.MselId == mselId).Select(m => m.TechniqueId).ToListAsync(ct);
+            foreach (var techniqueId in conversion.TechniquesToAdd.Except(pooled))
+                await _mselTechniqueService.CreateAsync(new ViewModels.MselTechnique { MselId = mselId, TechniqueId = techniqueId }, permissions.ManageMsels, ct);
+            var values = await _context.DataValues
+                .Where(v => v.DataFieldId == fieldId && v.ScenarioEventId != null && conversion.Values.Keys.Contains(v.ScenarioEventId.Value))
+                .ToListAsync(ct);
+            foreach (var value in values)
+                value.Value = conversion.Values[value.ScenarioEventId.Value];
+            await _context.SaveChangesAsync(ct);
+        }
+
+        // looks up the techniques the changes name, in every release Blueprint has, so the review can check them
+        private async Task AddTechniquesAsync(MselAssistState state, List<MselChange> changes, CancellationToken ct)
+        {
+            var wanted = MselAssistRules.TechniqueIdsNamed(state, changes).Select(id => id.ToUpper()).Distinct().ToList();
+            if (wanted.Count == 0)
+                return;
+            state.Techniques.AddRange(await _context.Techniques.AsNoTracking()
+                .Include(t => t.TechniqueRelease)
+                .Where(t => wanted.Contains(t.ExternalId.ToUpper()))
+                .ToListAsync(ct));
         }
 
         // an integration turned on, with what it works with: Gallery's article columns, CITE's team types and scoring model
@@ -592,7 +642,8 @@ Rules:
                 EditInjects: permissions.EditMsels || owner || editor || approver,
                 Columns: permissions.EditMsels || owner || editor,
                 Integrations: permissions.EditMsels || owner,
-                Pages: permissions.EditMsels || owner);
+                Pages: permissions.EditMsels || owner,
+                Techniques: permissions.ManageMsels || owner);
             if (!access.Any)
                 throw new ForbiddenException();
             return access;
@@ -610,9 +661,13 @@ Rules:
                 .Include(m => m.DataFields).ThenInclude(f => f.DataOptions)
                 .Include(m => m.ScenarioEvents).ThenInclude(e => e.DataValues)
                 .Include(m => m.Pages)
+                .Include(m => m.MselTechniques).ThenInclude(mt => mt.Technique).ThenInclude(t => t.TechniqueRelease)
                 .AsSplitQuery()
                 .SingleAsync(m => m.Id == mselId, ct);
-            var state = new MselAssistState(msel);
+            var state = new MselAssistState(msel)
+            {
+                Releases = await _context.TechniqueReleases.AsNoTracking().ToListAsync(ct)
+            };
             foreach (var competency in msel.MselCompetencies.Select(mc => mc.Competency)
                 .Concat(msel.Teams.SelectMany(t => t.TeamCompetencies).Select(tc => tc.Competency)))
                 state.Competencies.TryAdd(competency.IdNumber.ToLowerInvariant(), competency);
@@ -695,6 +750,19 @@ Rules:
                 sb.AppendLine($"- {card.Name} (move {card.Move}, inject {card.Inject}): {card.Description}");
 
             sb.AppendLine().AppendLine("MSEL competencies: " + string.Join(", ", msel.MselCompetencies.Select(mc => $"{mc.Competency.IdNumber} {mc.Competency.ShortName}")));
+
+            if (state.Releases.Count > 0)
+            {
+                var pins = MselAssistRules.PinnedReleases(msel);
+                sb.AppendLine().AppendLine("Technique releases Blueprint has (name and version, domain, attack or defensive):");
+                foreach (var release in state.Releases.OrderBy(r => r.IsDefensive).ThenBy(r => r.Domain).ThenByDescending(r => r.ReleaseDate))
+                    sb.AppendLine($"- {release.Name} {release.Version}, domain {release.Domain}, {(release.IsDefensive ? "defensive" : "attack")}" +
+                        (pins.TryGetValue(release.Domain, out var pinned) && pinned == release.Id ? $" (this MSEL's {release.Domain} techniques come from it)" : ""));
+                var pool = msel.MselTechniques.Select(m => m.Technique).OrderBy(t => t.TechniqueRelease.IsDefensive).ThenBy(t => t.ExternalId).ToList();
+                sb.AppendLine("MSEL techniques (id, name, domain):" + (pool.Count == 0 ? " none" : ""));
+                foreach (var technique in pool)
+                    sb.AppendLine($"- {technique.ExternalId} {technique.Name} ({technique.TechniqueRelease.Domain}, {(technique.TechniqueRelease.IsDefensive ? "defensive" : "attack")})");
+            }
 
             var fields = MselDraftRules.DraftedFields(msel).ToList();
             sb.AppendLine().AppendLine("Inject columns (name, type: what to write):");
@@ -789,6 +857,8 @@ Rules:
                             ["integration"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselAssistRules.Integrations.Select(t => (JsonNode)t).ToArray()), ["description"] = "The integration to turn on." },
                             ["preset"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(MselDraftRules.MissionImpact, MselDraftRules.Likelihood, MselDraftRules.Nciss), ["description"] = "For CITE, the scoring model to author; leave out to let the planner choose." },
                             ["content"] = new JsonObject { ["type"] = "string", ["description"] = "A page's whole content, in HTML." },
+                            ["technique"] = new JsonObject { ["type"] = "string", ["description"] = "For a technique add, the technique's id exactly as its release lists it." },
+                            ["domain"] = new JsonObject { ["type"] = "string", ["description"] = "For a technique add, the domain of the release it is from, as listed." },
                             ["allCanView"] = new JsonObject { ["type"] = "boolean", ["description"] = "Whether participants may see a page, as they do the read-in; controllers only when false." },
                             ["values"] = new JsonObject
                             {
@@ -828,6 +898,12 @@ Rules:
         public List<(string Reference, ScenarioEventEntity Inject)> Injects { get; }
 
         public Dictionary<string, CompetencyEntity> Competencies { get; } = new Dictionary<string, CompetencyEntity>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The technique releases Blueprint has</summary>
+        public List<TechniqueReleaseEntity> Releases { get; set; } = new List<TechniqueReleaseEntity>();
+
+        /// <summary>The techniques the changes name, found in those releases, each with its release</summary>
+        public List<TechniqueEntity> Techniques { get; } = new List<TechniqueEntity>();
     }
 
     /// <summary>
@@ -854,7 +930,8 @@ Rules:
         public const string IntegrationAdd = "integration.add";
         public const string PageAdd = "page.add";
         public const string PageUpdate = "page.update";
-        public static readonly string[] Ops = [TeamAdd, TeamUpdate, OrganizationAdd, OrganizationUpdate, CardAdd, CardUpdate, CompetencyAdd, CompetencyRemove, MoveAdd, MoveUpdate, InjectAdd, InjectUpdate, ColumnAdd, ColumnUpdate, IntegrationAdd, PageAdd, PageUpdate];
+        public const string TechniqueAdd = "technique.add";
+        public static readonly string[] Ops = [TeamAdd, TeamUpdate, OrganizationAdd, OrganizationUpdate, CardAdd, CardUpdate, CompetencyAdd, CompetencyRemove, MoveAdd, MoveUpdate, InjectAdd, InjectUpdate, ColumnAdd, ColumnUpdate, IntegrationAdd, PageAdd, PageUpdate, TechniqueAdd];
         /// <summary>How much of a page the model is shown; a longer page is shown cut short and cannot be edited here</summary>
         public const int MaxPageShown = 12000;
         public static readonly string[] Integrations = ["Player", "Gallery", "Cite", "Steamfitter", "Caster"];
@@ -892,7 +969,190 @@ Rules:
         public static readonly string[] ColumnTypes = [nameof(DataFieldType.String), nameof(DataFieldType.Html), nameof(DataFieldType.Integer),
             nameof(DataFieldType.Double), nameof(DataFieldType.Boolean), nameof(DataFieldType.DateTime), nameof(DataFieldType.Url),
             nameof(DataFieldType.Organization), nameof(DataFieldType.Team), nameof(DataFieldType.TeamsMultiple), nameof(DataFieldType.SourceType),
-            nameof(DataFieldType.IpAddress), nameof(DataFieldType.Network)];
+            nameof(DataFieldType.IpAddress), nameof(DataFieldType.Network), nameof(DataFieldType.AttackTechnique), nameof(DataFieldType.DefensiveTechnique)];
+
+        public static bool IsTechniqueType(DataFieldType type) => type is DataFieldType.AttackTechnique or DataFieldType.DefensiveTechnique;
+
+        public static bool IsTechniqueType(string type) => Enum.TryParse<DataFieldType>(type, out var parsed) && IsTechniqueType(parsed);
+
+        /// <summary>The release each domain of the MSEL's techniques comes from</summary>
+        public static Dictionary<string, Guid> PinnedReleases(MselEntity msel)
+        {
+            var pins = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+            foreach (var technique in msel.MselTechniques.Select(m => m.Technique).Where(t => t?.TechniqueRelease != null))
+                pins.TryAdd(technique.TechniqueRelease.Domain, technique.TechniqueReleaseId);
+            return pins;
+        }
+
+        /// <summary>
+        /// The technique ids a value names: the first word of each item, the items separated by semicolons or new lines
+        /// when the value has them, else by commas, so "T1, T2" and "T1 Name: Detail; T2 Name" both read as two ids.
+        /// </summary>
+        public static List<string> TechniqueIds(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return new List<string>();
+            var separators = value.IndexOfAny([';', '\n']) >= 0 ? new[] { ';', '\n' } : new[] { ',' };
+            return value.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(item => item.Split((char[])null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim('(', ')', ':', ',', '.'))
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        /// <summary>Every technique id the changes name, for looking them up before the review</summary>
+        public static IEnumerable<string> TechniqueIdsNamed(MselAssistState state, IEnumerable<MselChange> changes)
+        {
+            var msel = state.Msel;
+            var techniqueColumns = msel.DataFields.Where(f => IsTechniqueType(f.DataType)).Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var change in changes ?? Enumerable.Empty<MselChange>())
+            {
+                var op = change?.Op?.Trim().ToLowerInvariant();
+                if (op == TechniqueAdd && !string.IsNullOrWhiteSpace(change.Technique))
+                    yield return change.Technique.Trim();
+                if ((op == ColumnAdd || op == ColumnUpdate) && IsTechniqueType(ColumnType(change.DataType)))
+                {
+                    var name = Text(change.Name) ?? Text(change.Target);
+                    if (name != null)
+                        techniqueColumns.Add(name);
+                    var field = op == ColumnUpdate ? msel.DataFields.FirstOrDefault(f => f.Name.Equals(Text(change.Target), StringComparison.OrdinalIgnoreCase)) : null;
+                    if (field != null && !IsTechniqueType(field.DataType))
+                        foreach (var cell in msel.ScenarioEvents.SelectMany(e => e.DataValues).Where(v => v.DataFieldId == field.Id))
+                            foreach (var id in TechniqueIds(DataValueDraftService.StripHtml(cell.Value)))
+                                yield return id;
+                }
+                if (change?.Values != null)
+                    foreach (var (name, value) in change.Values)
+                        if (techniqueColumns.Contains(name))
+                            foreach (var id in TechniqueIds(value))
+                                yield return id;
+            }
+        }
+
+        // the MSEL's techniques as the changes before this one leave them, and where an id is found
+        private sealed class TechniquePool
+        {
+            private readonly MselAssistState _state;
+            private readonly Dictionary<string, Guid> _pins;
+            private readonly List<TechniqueEntity> _pooled;
+
+            public TechniquePool(MselAssistState state)
+            {
+                _state = state;
+                _pins = PinnedReleases(state.Msel);
+                _pooled = state.Msel.MselTechniques.Select(m => m.Technique).Where(t => t?.TechniqueRelease != null).ToList();
+            }
+
+            public bool Holds(TechniqueEntity technique) => _pooled.Any(p => p.Id == technique.Id);
+
+            public void Add(TechniqueEntity technique)
+            {
+                if (Holds(technique))
+                    return;
+                _pooled.Add(technique);
+                _pins.TryAdd(technique.TechniqueRelease.Domain, technique.TechniqueReleaseId);
+            }
+
+            /// <summary>The MSEL's technique of a kind with an id, or null</summary>
+            public TechniqueEntity Pooled(string id, bool defensive) =>
+                _pooled.FirstOrDefault(p => p.TechniqueRelease.IsDefensive == defensive && p.ExternalId.Equals(id, StringComparison.OrdinalIgnoreCase));
+
+            /// <summary>
+            /// The technique an id names: in the release the MSEL takes that domain from, else the newest release that has it,
+            /// preferring a domain the MSEL already uses; or why there is none.
+            /// </summary>
+            public (TechniqueEntity Technique, string Problem) Find(string id, string domain, bool? defensive)
+            {
+                if (id == null)
+                    return (null, "it names no technique");
+                if (domain != null && !_state.Releases.Any(r => r.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase))
+                    && !_pooled.Any(p => p.TechniqueRelease.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase)))
+                    return (null, $"Blueprint has no {domain} technique release");
+                var candidates = _state.Techniques.Concat(_pooled)
+                    .Where(t => t.TechniqueRelease != null && t.ExternalId.Equals(id, StringComparison.OrdinalIgnoreCase)
+                        && (domain == null || t.TechniqueRelease.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase))
+                        && (defensive == null || t.TechniqueRelease.IsDefensive == defensive))
+                    .DistinctBy(t => t.Id)
+                    .ToList();
+                if (candidates.Count == 0)
+                    return (null, $"Blueprint has no technique {id}" + (domain == null ? "" : $" in {domain}"));
+                string problem = null;
+                foreach (var inDomain in candidates.GroupBy(t => t.TechniqueRelease.Domain, StringComparer.OrdinalIgnoreCase).OrderByDescending(g => _pins.ContainsKey(g.Key)))
+                {
+                    if (!_pins.TryGetValue(inDomain.Key, out var releaseId))
+                        return (inDomain.OrderByDescending(t => t.TechniqueRelease.ReleaseDate ?? DateTime.MinValue).ThenByDescending(t => t.TechniqueRelease.DateCreated).First(), null);
+                    var pinned = inDomain.FirstOrDefault(t => t.TechniqueReleaseId == releaseId);
+                    if (pinned != null)
+                        return (pinned, null);
+                    var release = _state.Releases.FirstOrDefault(r => r.Id == releaseId) ?? _pooled.First(p => p.TechniqueReleaseId == releaseId).TechniqueRelease;
+                    problem ??= $"{id} is not in {release.Name} {release.Version}, the release this MSEL's {inDomain.Key} techniques come from";
+                }
+                return (null, problem);
+            }
+        }
+
+        // a technique column's value as the ids of the MSEL's techniques of its kind; an id it does not have is left out
+        private static void TechniqueValues(MselChange change, Dictionary<string, DataFieldEntity> fields, TechniquePool pool, string where, List<string> warnings)
+        {
+            foreach (var name in change.Values.Keys.ToList())
+            {
+                var field = fields.GetValueOrDefault(name);
+                var value = change.Values[name];
+                if (field == null || value == null || !IsTechniqueType(field.DataType))
+                    continue;
+                var defensive = field.DataType == DataFieldType.DefensiveTechnique;
+                var ids = TechniqueIds(value);
+                var kept = ids.Select(id => pool.Pooled(id, defensive)?.ExternalId).Where(id => id != null).Distinct().ToList();
+                var missing = ids.Where(id => pool.Pooled(id, defensive) == null).ToList();
+                if (missing.Count > 0)
+                    warnings.Add($"Left out {string.Join(", ", missing)} from {name}{where}: not in the MSEL's {(defensive ? "defensive" : "attack")} techniques.");
+                if (kept.Count > 0)
+                    change.Values[name] = string.Join(", ", kept);
+                else
+                    change.Values.Remove(name);
+            }
+        }
+
+        // what turning a text column into a technique column does to each inject's value, worked out on the change
+        private static string ConvertToTechniques(MselChange change, DataFieldEntity field, MselAssistState state, TechniquePool pool)
+        {
+            var defensive = change.DataType == nameof(DataFieldType.DefensiveTechnique);
+            var conversion = new TechniqueColumnConversion();
+            var found = new HashSet<Guid>();
+            var missing = new List<string>();
+            var injects = 0;
+            foreach (var (_, inject) in state.Injects)
+            {
+                var text = inject.DataValues.FirstOrDefault(v => v.DataFieldId == field.Id)?.Value;
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+                var kept = new List<string>();
+                foreach (var id in TechniqueIds(DataValueDraftService.StripHtml(text)))
+                {
+                    var (technique, _) = pool.Find(id, null, defensive);
+                    if (technique == null)
+                    {
+                        missing.Add(id);
+                        continue;
+                    }
+                    if (!pool.Holds(technique))
+                        conversion.TechniquesToAdd.Add(technique.Id);
+                    pool.Add(technique);
+                    found.Add(technique.Id);
+                    if (!kept.Contains(technique.ExternalId))
+                        kept.Add(technique.ExternalId);
+                }
+                conversion.Values[inject.Id] = kept.Count > 0 ? string.Join(", ", kept) : null;
+                if (kept.Count > 0)
+                    injects++;
+            }
+            change.Conversion = conversion;
+            var label = $", reading the technique ids on {injects} injects: {found.Count} techniques, {conversion.TechniquesToAdd.Count} of them added to the MSEL's techniques";
+            var unknown = missing.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (unknown.Count > 0)
+                label += $"; not found, so dropped: {string.Join(", ", unknown.Take(10))}" + (unknown.Count > 10 ? $" and {unknown.Count - 10} more" : "");
+            return label;
+        }
 
         public static List<MselChange> Review(MselAssistState state, IEnumerable<MselChange> proposed, List<string> warnings) =>
             Review(state, proposed, MselAssistAccess.All, warnings);
@@ -933,6 +1193,7 @@ Rules:
             var links = msel.MselCompetencies.Select(mc => "|" + mc.Competency.IdNumber)
                 .Concat(msel.Teams.SelectMany(t => t.TeamCompetencies.Select(tc => t.ShortName + "|" + tc.Competency.IdNumber)))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var pool = new TechniquePool(state);
             var reviewed = new List<(MselChange, string)>();
 
             foreach (var raw in proposed ?? Enumerable.Empty<MselChange>())
@@ -1018,6 +1279,7 @@ Rules:
                     {
                         change.EventType = EventTypeOrDefault(change.EventType) ?? nameof(Data.Enumerations.EventType.Inject);
                         change.Values = CleanValues(change.Values, fields, teams, organizations, warnings);
+                        TechniqueValues(change, fields, pool, "", warnings);
                         change.Label = $"Add {Kind(change.EventType)} at {Time(change.Minutes ?? 0)}: {Title(change.Values)}";
                         problem = change.Minutes == null || change.Minutes < 0 ? "a new inject needs a time"
                             : change.Values.Count == 0 ? "a new inject needs values" : null;
@@ -1028,6 +1290,7 @@ Rules:
                         var target = state.Injects.FirstOrDefault(i =>
                             change.ScenarioEventId.HasValue ? i.Inject.Id == change.ScenarioEventId : string.Equals(i.Reference, change.Target, StringComparison.OrdinalIgnoreCase));
                         change.Values = CleanValues(change.Values, fields, teams, organizations, warnings);
+                        TechniqueValues(change, fields, pool, $" on {target.Reference ?? change.Target}", warnings);
                         change.Minutes = change.Minutes.HasValue ? Math.Max(0, change.Minutes.Value) : null;
                         change.EventType = change.EventType == null ? null : EventTypeOrDefault(change.EventType);
                         if (target.Inject == null)
@@ -1098,9 +1361,18 @@ Rules:
                         if (change.OnEventList != null) parts.Add(change.OnEventList.Value ? "on the event list" : "off the event list");
                         change.Label = $"Edit column {field.Name}" + (parts.Count > 0 ? ": " + string.Join(", ", parts) : "");
                         var type = change.DataType ?? field.DataType.ToString();
+                        // a column of technique names becomes one of technique ids
+                        var converting = change.DataType != null && IsTechniqueType(change.DataType) && !IsTechniqueType(field.DataType);
                         problem = parts.Count == 0 ? "it changes nothing"
                             : change.Options?.Count > 0 && type != nameof(DataFieldType.String) ? "only a text column can be chosen from a list"
+                            : converting && field.DataType is not (DataFieldType.String or DataFieldType.Html) ? "only a text column can become a technique column"
+                            : converting && access.Refusal(TechniqueAdd) != null ? "turning it into a technique column adds techniques to the MSEL, which only its owner can do"
                             : null;
+                        if (problem == null && converting)
+                        {
+                            change.Options = null;
+                            change.Label += ConvertToTechniques(change, field, state, pool);
+                        }
                         if (problem == null && change.Name != null)
                         {
                             if (!columns.Add(change.Name))
@@ -1203,6 +1475,27 @@ Rules:
                                 change.Label += $" (set it up on its tab)";
                                 break;
                         }
+                        break;
+                    }
+                    case TechniqueAdd:
+                    {
+                        change.TechniqueId = null;
+                        change.Label = $"Add technique {change.Technique}";
+                        var (technique, why) = pool.Find(change.Technique, change.Domain, null);
+                        if (technique == null)
+                        {
+                            problem = why;
+                            break;
+                        }
+                        var release = technique.TechniqueRelease;
+                        change.Technique = technique.ExternalId;
+                        change.Domain = release.Domain;
+                        change.TechniqueId = technique.Id;
+                        change.Label = $"Add technique {technique.ExternalId} ({technique.Name}) from {release.Name} {release.Version}";
+                        problem = pool.Holds(technique) ? $"{technique.ExternalId} is already in the MSEL's techniques" : null;
+                        // the injects after it in this proposal may name it
+                        if (problem == null && access.Refusal(change.Op) == null)
+                            pool.Add(technique);
                         break;
                     }
                     default:
@@ -1385,7 +1678,9 @@ Rules:
             Integration = Text(change?.Integration),
             Preset = Text(change?.Preset),
             Content = Text(change?.Content),
-            AllCanView = change?.AllCanView
+            AllCanView = change?.AllCanView,
+            Technique = Text(change?.Technique),
+            Domain = Text(change?.Domain)
         };
 
         private static string Text(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

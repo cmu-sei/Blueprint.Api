@@ -1372,6 +1372,8 @@ Answer only by calling the tool.";
                 DataFieldType.Team => "The short name of one team",
                 DataFieldType.TeamsMultiple => "Team short names separated by \", \", or ALL",
                 DataFieldType.Url => "A URL on a fictional domain",
+                DataFieldType.AttackTechnique => "Ids of the MSEL's attack techniques, separated by \", \"",
+                DataFieldType.DefensiveTechnique => "Ids of the MSEL's defensive techniques, separated by \", \"",
                 _ => "Plain text"
             };
             if (!string.IsNullOrWhiteSpace(field.Description))

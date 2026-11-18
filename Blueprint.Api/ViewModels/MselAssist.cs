@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license, please see LICENSE.md in the project root for license information or contact permission@sei.cmu.edu for full terms.
 
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace Blueprint.Api.ViewModels
 {
@@ -46,8 +47,8 @@ namespace Blueprint.Api.ViewModels
     public class MselChange
     {
         /// <summary>team.add, team.update, organization.add, organization.update, card.add, card.update, competency.add,
-        /// competency.remove, move.add, move.update, inject.add, inject.update, column.add, column.update, integration.add, page.add or
-        /// page.update</summary>
+        /// competency.remove, move.add, move.update, inject.add, inject.update, column.add, column.update, integration.add, page.add,
+        /// page.update or technique.add</summary>
         public string Op { get; set; }
         public string Target { get; set; }
         public string ShortName { get; set; }
@@ -74,7 +75,7 @@ namespace Blueprint.Api.ViewModels
         public Dictionary<string, string> Values { get; set; }
 
         /// <summary>A column's type: String, Html, Integer, Double, Boolean, DateTime, Url, Organization, Team, TeamsMultiple,
-        /// SourceType, IpAddress or Network; a list is a String with options</summary>
+        /// SourceType, IpAddress, Network, AttackTechnique or DefensiveTechnique; a list is a String with options</summary>
         public string DataType { get; set; }
 
         /// <summary>A column's choices, in order; a column with options is chosen from a list. For an edit, the whole new list.</summary>
@@ -101,11 +102,34 @@ namespace Blueprint.Api.ViewModels
         /// <summary>Whether every MSEL user, participants too, may see a page</summary>
         public bool? AllCanView { get; set; }
 
+        /// <summary>A technique's id, as its release lists it</summary>
+        public string Technique { get; set; }
+
+        /// <summary>The domain of the release a technique is from</summary>
+        public string Domain { get; set; }
+
+        /// <summary>The technique an add puts in the MSEL's techniques, set by the server from Technique and Domain</summary>
+        public System.Guid? TechniqueId { get; set; }
+
+        /// <summary>
+        /// For a column turned into a technique column: each inject's new value, and the techniques to add so the
+        /// values name pooled ones. Worked out by the server when the change is checked; never sent or read.
+        /// </summary>
+        [JsonIgnore]
+        public TechniqueColumnConversion Conversion { get; set; }
+
         /// <summary>The inject an edit changes, set by the server from Target so a later apply finds the same one</summary>
         public System.Guid? ScenarioEventId { get; set; }
 
         /// <summary>The change as the planner reads it, written by the server</summary>
         public string Label { get; set; }
+    }
+
+    /// <summary>A text column's values as technique ids, by inject, and the techniques they need added to the MSEL</summary>
+    public class TechniqueColumnConversion
+    {
+        public Dictionary<System.Guid, string> Values { get; } = new Dictionary<System.Guid, string>();
+        public List<System.Guid> TechniquesToAdd { get; } = new List<System.Guid>();
     }
 
     public class MselAssistApply

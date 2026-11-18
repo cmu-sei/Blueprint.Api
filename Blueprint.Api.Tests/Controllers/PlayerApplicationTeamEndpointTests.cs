@@ -315,8 +315,96 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
     }
 
     // ---------------------------------------------------------------------------------------------
-    // PUT playerApplicationteams/{id}
+    // PUT teamplayerApplications/{id}
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Moving an application to another place in its team's order shifts the team's other applications
+    /// to make room, so a team's order is changed in place rather than by removing and re-adding the row.
+    /// </summary>
+    [Fact]
+    public async Task Update_MovesTheApplicationInItsTeamsOrder()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var graph = await SeedGraph();
+        var second = TestData.PlayerApplication(graph.Msel.Id, "second");
+        var third = TestData.PlayerApplication(graph.Msel.Id, "third");
+        await Seed(second, third);
+        var secondRow = TestData.PlayerApplicationTeam(second.Id, graph.Team.Id, 2);
+        var thirdRow = TestData.PlayerApplicationTeam(third.Id, graph.Team.Id, 3);
+        await Seed(secondRow, thirdRow);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/teamplayerApplications/{thirdRow.Id}", new { displayOrder = 1 }, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var answered = await response.Content.ReadFromJsonAsync<ViewModels.PlayerApplicationTeam>(JsonOptions, Ct);
+        Assert.Equal(thirdRow.Id, answered.Id);
+        Assert.Equal(1, answered.DisplayOrder);
+        var order = await ReadBack(db => db.PlayerApplicationTeams
+            .Where(x => x.TeamId == graph.Team.Id)
+            .OrderBy(x => x.DisplayOrder)
+            .Select(x => new { x.Id, x.DisplayOrder })
+            .ToListAsync(Ct));
+        Assert.Equal([thirdRow.Id, graph.Row.Id, secondRow.Id], order.Select(x => x.Id));
+        Assert.Equal([1, 2, 3], order.Select(x => x.DisplayOrder));
+    }
+
+    /// <summary>
+    /// The update first shipped at <c>playerApplicationteams/{id}</c>, the one route the other operations
+    /// do not share; clients generated from that document still use it, so it still updates the row.
+    /// </summary>
+    [Fact]
+    public async Task Update_AtTheFormerRoute_StillUpdatesTheRow()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var graph = await SeedGraph();
+        var second = TestData.PlayerApplication(graph.Msel.Id, "second");
+        await Seed(second);
+        await Seed(TestData.PlayerApplicationTeam(second.Id, graph.Team.Id, 2));
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/playerApplicationteams/{graph.Row.Id}", new { displayOrder = 2 }, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, (await ReadBack(db => db.PlayerApplicationTeams.SingleAsync(x => x.Id == graph.Row.Id, Ct))).DisplayOrder);
+    }
+
+    /// <summary>The update at either route wants <c>EditMsels</c>, like every other write.</summary>
+    [Theory]
+    [InlineData("teamplayerApplications")]
+    [InlineData("playerApplicationteams")]
+    public async Task Update_WithoutEditMsels_Is403AndLeavesTheOrderAlone(string route)
+    {
+        var graph = await SeedGraph();
+        var second = TestData.PlayerApplication(graph.Msel.Id, "second");
+        await Seed(second);
+        await Seed(TestData.PlayerApplicationTeam(second.Id, graph.Team.Id, 2));
+        var owner = await Actor().OnMsel(graph.Msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(owner).PutAsJsonAsync(
+            $"api/{route}/{graph.Row.Id}", new { displayOrder = 2 }, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, (await ReadBack(db => db.PlayerApplicationTeams.SingleAsync(x => x.Id == graph.Row.Id, Ct))).DisplayOrder);
+    }
+
+    /// <summary>
+    /// The API document names the update at the route the other operations share, once (routes are lowercased), so a generated
+    /// client or a script reading the document is not sent to the former route.
+    /// </summary>
+    [Fact]
+    public async Task TheApiDocument_PublishesTheUpdateAtTheSharedRouteOnly()
+    {
+        var response = await Client().GetAsync("/swagger/v1/swagger.json", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+        var paths = document.RootElement.GetProperty("paths");
+        Assert.True(paths.GetProperty("/api/teamplayerapplications/{id}").TryGetProperty("put", out var put));
+        Assert.Equal("updatePlayerApplicationTeam", put.GetProperty("operationId").GetString());
+        Assert.False(paths.TryGetProperty("/api/playerapplicationteams/{id}", out _));
+    }
 
     /// <summary>
     /// The edit request carries only the display order, so a body naming another application or team
@@ -334,7 +422,7 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         await Seed(other, otherTeam);
 
         var response = await Client(actor).PutAsJsonAsync(
-            $"api/playerApplicationteams/{graph.Row.Id}",
+            $"api/teamplayerApplications/{graph.Row.Id}",
             Body(other.Id, otherTeam.Id) with { id = graph.Row.Id, displayOrder = 1 },
             Ct);
 
@@ -360,7 +448,7 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         await Seed(emptyTeam);
 
         var response = await Client(actor).PutAsJsonAsync(
-            $"api/playerApplicationteams/{graph.Row.Id}",
+            $"api/teamplayerApplications/{graph.Row.Id}",
             Body(graph.Application.Id, emptyTeam.Id) with { id = graph.Row.Id, displayOrder = 2 },
             Ct);
 
@@ -376,7 +464,7 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         var graph = await SeedGraph();
 
         var response = await Client(actor).PutAsJsonAsync(
-            $"api/playerApplicationteams/{graph.Row.Id}",
+            $"api/teamplayerApplications/{graph.Row.Id}",
             Body(graph.Application.Id, graph.Team.Id) with { id = graph.Row.Id },
             Ct);
 
@@ -391,7 +479,7 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         var id = Guid.NewGuid();
 
         var response = await Client(actor).PutAsJsonAsync(
-            $"api/playerApplicationteams/{id}",
+            $"api/teamplayerApplications/{id}",
             Body(graph.Application.Id, graph.Team.Id) with { id = id, displayOrder = 1 },
             Ct);
 

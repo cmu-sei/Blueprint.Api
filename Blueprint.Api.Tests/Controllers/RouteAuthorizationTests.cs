@@ -188,7 +188,7 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             """{"playerApplicationId":"{sparePlayerApplication}","teamId":"{team}","displayOrder":1}"""
         },
         {
-            "PUT", "api/playerApplicationteams/{playerapplicationteam}", "EditMsels",
+            "PUT", "api/teamplayerApplications/{playerapplicationteam}", "EditMsels",
             """{"id":"{playerapplicationteam}","playerApplicationId":"{playerapplication}","teamId":"{team}","displayOrder":1}"""
         },
         { "DELETE", "api/teamplayerApplications/{playerapplicationteam}", "EditMsels", null },

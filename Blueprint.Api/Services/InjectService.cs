@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -17,6 +16,7 @@ using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -34,18 +34,15 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly DatabaseOptions _options;
 
         public InjectService(
             BlueprintContext context,
             IPrincipal user,
-            IMapper mapper,
             DatabaseOptions options)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _options = options;
         }
 
@@ -60,7 +57,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.Inject.DataValues)
                 .Select(m => m.Inject)
                 .ToListAsync(ct);
-            return _mapper.Map<IEnumerable<Injectm>>(injects);
+            return injects.Select(x => x.ToInjectm()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.Injectm>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct)
@@ -69,7 +66,7 @@ namespace Blueprint.Api.Services
                 .Where(i => i.InjectTypeId == injectTypeId)
                 .Include(m => m.DataValues)
                 .ToListAsync(ct);
-            return _mapper.Map<IEnumerable<Injectm>>(injects);
+            return injects.Select(x => x.ToInjectm()).ToList();
         }
 
         public async Task<ViewModels.Injectm> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -86,7 +83,7 @@ namespace Blueprint.Api.Services
                 !(await CatalogViewRequirement.ViewableInjectIdsAsync(_user.GetId(), [id], _context, ct)).Contains(id))
                 throw new ForbiddenException();
 
-            return _mapper.Map<ViewModels.Injectm>(item);
+            return item.ToInjectm();
         }
 
         public async Task<ViewModels.Injectm> CreateAsync(Guid catalogId, Injectm inject, CancellationToken ct)
@@ -119,7 +116,7 @@ namespace Blueprint.Api.Services
                 completeDataValues.Add(dataValue);
             }
             inject.DataValues = completeDataValues;
-            var injectEntity = _mapper.Map<InjectEntity>(inject);
+            var injectEntity = inject.ToEntity();
             _context.Injects.Add(injectEntity);
             await _context.SaveChangesAsync(ct);
             var catalogInject = new CatalogInjectEntity(catalogId, inject.Id);
@@ -130,7 +127,7 @@ namespace Blueprint.Api.Services
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
 
-            return  _mapper.Map<ViewModels.Injectm>(injectEntity);
+            return  injectEntity.ToInjectm();
         }
 
         public async Task<ViewModels.Injectm> UpdateAsync(Guid id, ViewModels.Injectm inject, CancellationToken ct)
@@ -144,7 +141,7 @@ namespace Blueprint.Api.Services
             await _context.Database.BeginTransactionAsync();
             // update this inject
             inject.ModifiedBy = _user.GetId();
-            _mapper.Map(inject, injectToUpdate);
+            inject.ApplyTo(injectToUpdate);
             _context.Injects.Update(injectToUpdate);
             await _context.SaveChangesAsync(ct);
             // get the DataField IDs for this Catalog
@@ -163,7 +160,7 @@ namespace Blueprint.Api.Services
                 {
                     dataValue.Id = Guid.NewGuid();
                     dataValue.CreatedBy = (Guid)inject.ModifiedBy;
-                    var dataValueEntity = _mapper.Map<DataValueEntity>(dataValue);
+                    var dataValueEntity = dataValue.ToEntity();
                     _context.DataValues.Add(dataValueEntity);
                 }
                 else if (dataValue != null && dataValue.Value != dataValueToUpdate.Value)

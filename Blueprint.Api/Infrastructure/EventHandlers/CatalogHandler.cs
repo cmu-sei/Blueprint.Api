@@ -6,7 +6,6 @@ using System.Data;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -16,24 +15,22 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class CatalogHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly ICatalogService _CatalogService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public CatalogHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICatalogService CatalogService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _CatalogService = CatalogService;
             _mainHub = mainHub;
         }
@@ -57,7 +54,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = await GetGroups(CatalogEntity);
-            var Catalog = _mapper.Map<ViewModels.Catalog>(CatalogEntity);
+            var Catalog = CatalogEntity.ToCatalog();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -73,9 +70,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public CatalogCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICatalogService CatalogService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CatalogService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, CatalogService, mainHub) { }
 
         public async Task Handle(EntityCreated<CatalogEntity> notification, CancellationToken cancellationToken)
         {
@@ -87,9 +83,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public CatalogUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICatalogService CatalogService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CatalogService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, CatalogService, mainHub) { }
 
         public async Task Handle(EntityUpdated<CatalogEntity> notification, CancellationToken cancellationToken)
         {
@@ -105,9 +100,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public CatalogDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICatalogService CatalogService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, CatalogService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, CatalogService, mainHub)
         {
         }
 

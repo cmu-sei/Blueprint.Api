@@ -38,7 +38,7 @@ namespace Blueprint.Api.Tests.Support;
 /// Hosts <c>Blueprint.Api</c> in process, once per test class, with the sibling-API clients substituted.
 /// Everything between the HTTP request and the five sibling Crucible APIs is the production wiring: routing,
 /// model binding, the MVC-wide authorization filter, the claims transformer, the controllers, the services,
-/// the static requirement helpers, AutoMapper, MediatR, the entity-event interceptor and EF Core against real
+/// the static requirement helpers, the mappings, MediatR, the entity-event interceptor and EF Core against real
 /// PostgreSQL.
 /// </summary>
 /// <remarks>

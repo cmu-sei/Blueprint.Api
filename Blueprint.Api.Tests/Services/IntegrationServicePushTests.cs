@@ -362,9 +362,9 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
     // The move number every application is told
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Push names steamfitter tasks from the move index.</summary>
+    /// <summary>Push names Steamfitter tasks from the move's number, here a MSEL numbering its moves from 1.</summary>
     [Fact]
-    public async Task Push_NamesSteamfitterTasksFromTheMoveIndexRatherThanTheMoveNumber()
+    public async Task Push_NamesSteamfitterTasksFromTheMoveNumber()
     {
         var msel = await SeedPushableMsel();
         var harness = Harness();
@@ -377,8 +377,8 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
             .Select(x => Body(x.Body)["name"].GetString())
             .ToList();
 
-        Assert.Contains("00-00 notify", names);
-        Assert.DoesNotContain("01-00 notify", names);
+        Assert.Contains("01-00 notify", names);
+        Assert.DoesNotContain("00-00 notify", names);
     }
 
     /// <summary>The Gallery article carries the move and inject the real move service computes from the timeline.</summary>
@@ -419,9 +419,13 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
         Assert.Equal(expected, article["status"].GetString());
     }
 
-    /// <summary>The CITE and Gallery move-change urls carry the move index.</summary>
+    /// <summary>
+    /// The CITE and Gallery move-change urls carry the move's number: the CITE evaluation's moves and the Gallery
+    /// articles are numbered by it, so the move index sent CITE to a move it did not have and left Gallery short
+    /// of the article's move.
+    /// </summary>
     [Fact]
-    public async Task Push_TellsCiteAndGalleryToAdvanceToTheMoveIndexRatherThanTheMoveNumber()
+    public async Task Push_TellsCiteAndGalleryToAdvanceToTheMoveNumber()
     {
         var msel = await SeedPushableMsel();
         var harness = Harness();
@@ -437,10 +441,10 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
             .ToList();
 
         Assert.Contains(
-            $"{IntegrationServiceHarness.CiteApiUrl}api/evaluations/{deployed.CiteEvaluationId}/move/0",
+            $"{IntegrationServiceHarness.CiteApiUrl}api/evaluations/{deployed.CiteEvaluationId}/move/1",
             urls);
         Assert.Contains(
-            $"{IntegrationServiceHarness.GalleryApiUrl}api/exhibits/{deployed.GalleryExhibitId}/move/0/inject/0",
+            $"{IntegrationServiceHarness.GalleryApiUrl}api/exhibits/{deployed.GalleryExhibitId}/move/1/inject/0",
             urls);
     }
 

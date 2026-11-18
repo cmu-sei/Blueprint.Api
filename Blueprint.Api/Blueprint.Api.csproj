@@ -16,7 +16,6 @@
     <Folder Include="wwwroot\" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="AutoMapper" />
     <PackageReference Include="MediatR" />
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" />
     <PackageReference Include="Microsoft.Build" />
@@ -52,6 +51,8 @@
     <PackageReference Include="Crucible.Common.ServiceDefaults"/>
     <PackageReference Include="TinCanStandard" />
     <PackageReference Include="Newtonsoft.Json" />
+    <!-- A source generator: the mappings are generated at build time, so nothing ships at runtime. -->
+    <PackageReference Include="Riok.Mapperly" ExcludeAssets="runtime" PrivateAssets="all" />
   </ItemGroup>
   <!-- Security pins for vulnerable transitive dependencies; see Directory.Packages.props. -->
   <ItemGroup>

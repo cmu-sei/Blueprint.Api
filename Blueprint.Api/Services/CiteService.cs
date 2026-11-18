@@ -1,7 +1,6 @@
 // Copyright 2023 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
-using AutoMapper;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Hubs;
 using Microsoft.AspNetCore.Authorization;
@@ -31,7 +30,6 @@ namespace Blueprint.Api.Services
         private readonly ClaimsPrincipal _user;
         private readonly IAuthorizationService _authorizationService;
         private readonly BlueprintContext _context;
-        protected readonly IMapper _mapper;
         private readonly ILogger<CiteService> _logger;
         private readonly IMselService _mselService;
         private readonly IHubContext<MainHub> _hubContext;
@@ -40,7 +38,6 @@ namespace Blueprint.Api.Services
             ICiteApiClient citeApiClient,
             IPrincipal user,
             BlueprintContext mselContext,
-            IMapper mapper,
             IAuthorizationService authorizationService,
             ILogger<CiteService> logger,
             ResourceOwnerAuthorizationOptions resourceOwnerAuthorizationOptions,
@@ -52,7 +49,6 @@ namespace Blueprint.Api.Services
             _user = user as ClaimsPrincipal;
             _authorizationService = authorizationService;
             _context = mselContext;
-            _mapper = mapper;
             _logger = logger;
             _mselService = mselService;
             _hubContext = hubContext;

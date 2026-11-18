@@ -415,6 +415,26 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     /// <summary>
+    /// A copy (and so a launch by invitation) takes the moves as they are, even two that share a start from
+    /// before every move had its own: refusing would stop a launch the participant can't fix. The Moves tab
+    /// flags the shared start on the copy, and the push still puts its events in the higher-numbered move.
+    /// </summary>
+    [Fact]
+    public async Task Copy_OfMovesSharingAStart_CopiesThemAsTheyAre()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(TestData.Move(msel.Id, moveNumber: 0, deltaSeconds: 0));
+        await Seed(TestData.Move(msel.Id, moveNumber: 1, deltaSeconds: 0));
+        var actor = await Copier().SeedAsync();
+
+        var copy = await Copy(Client(actor), msel.Id);
+
+        var moves = await ReadBack(db => db.Moves.Where(x => x.MselId == copy.Id).OrderBy(x => x.MoveNumber).ToListAsync(Ct));
+        Assert.Equal([(0, 0), (1, 0)], moves.Select(x => (x.MoveNumber, x.DeltaSeconds)));
+    }
+
+    /// <summary>
     /// The scenario events come last on purpose: their data values point at the copied data fields, whose
     /// new ids only exist because the data field loop ran first.
     /// </summary>

@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
@@ -15,24 +14,22 @@ using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class PlayerApplicationTeamHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly IPlayerApplicationTeamService _PlayerApplicationTeamService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public PlayerApplicationTeamHandler(
             BlueprintContext db,
-            IMapper mapper,
             IPlayerApplicationTeamService PlayerApplicationTeamService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _PlayerApplicationTeamService = PlayerApplicationTeamService;
             _mainHub = mainHub;
         }
@@ -59,7 +56,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = await GetGroups(PlayerApplicationTeamEntity);
-            var PlayerApplicationTeam = _mapper.Map<ViewModels.PlayerApplicationTeam>(PlayerApplicationTeamEntity);
+            var PlayerApplicationTeam = PlayerApplicationTeamEntity.ToPlayerApplicationTeam();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -75,9 +72,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public PlayerApplicationTeamCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IPlayerApplicationTeamService PlayerApplicationTeamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, PlayerApplicationTeamService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, PlayerApplicationTeamService, mainHub) { }
 
         public async Task Handle(EntityCreated<PlayerApplicationTeamEntity> notification, CancellationToken cancellationToken)
         {
@@ -89,9 +85,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public PlayerApplicationTeamUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IPlayerApplicationTeamService PlayerApplicationTeamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, PlayerApplicationTeamService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, PlayerApplicationTeamService, mainHub) { }
 
         public async Task Handle(EntityUpdated<PlayerApplicationTeamEntity> notification, CancellationToken cancellationToken)
         {
@@ -107,9 +102,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public PlayerApplicationTeamDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IPlayerApplicationTeamService PlayerApplicationTeamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, PlayerApplicationTeamService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, PlayerApplicationTeamService, mainHub)
         {
         }
 

@@ -230,6 +230,39 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal("headline", Assert.Single(await StoredFields(created.Id)).Name);
     }
 
+    /// <summary>Each option sent with a nested field is created once, by the service.</summary>
+    [Fact]
+    public async Task Create_WithAFieldCarryingOptions_CreatesEachOptionOnce()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageInjectTypes).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(InjectTypes, new
+        {
+            name = "a type with a field and two options",
+            description = "posted by the test",
+            dataFields = new[]
+            {
+                new
+                {
+                    name = "status",
+                    dataType = DataFieldType.Status,
+                    displayOrder = 1,
+                    dataOptions = new[]
+                    {
+                        new { optionName = "Open", optionValue = "open", displayOrder = 1 },
+                        new { optionName = "Closed", optionValue = "closed", displayOrder = 2 }
+                    }
+                }
+            }
+        }, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var field = Assert.Single(await StoredFields((await Read<ViewModels.InjectType>(response)).Id));
+        await using var context = NewContext();
+        var options = await context.DataOptions.AsNoTracking().Where(x => x.DataFieldId == field.Id).ToListAsync(Ct);
+        Assert.Equal(["closed", "open"], options.Select(x => x.OptionValue).Order());
+    }
+
     /// <summary>
     /// A nested field always becomes a new field of the new type: one naming an MSEL's field by id and
     /// MSEL creates a copy here and leaves the MSEL's column where it is.

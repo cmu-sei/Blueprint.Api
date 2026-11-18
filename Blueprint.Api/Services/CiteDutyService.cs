@@ -12,7 +12,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
@@ -21,6 +20,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -40,16 +40,13 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
         public CiteDutyService(
             BlueprintContext context,
-            IPrincipal user,
-            IMapper mapper)
+            IPrincipal user)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.CiteDuty>> GetTemplatesAsync(CancellationToken ct)
@@ -58,7 +55,7 @@ namespace Blueprint.Api.Services
                 .Where(citeDuty => citeDuty.IsTemplate && citeDuty.MselId == null)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<CiteDuty>>(citeDutyEntities).ToList();;
+            return citeDutyEntities.Select(x => x.ToCiteDuty()).ToList();;
         }
 
         public async Task<IEnumerable<ViewModels.CiteDuty>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -79,7 +76,7 @@ namespace Blueprint.Api.Services
                 .Include(cr => cr.Team)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<CiteDuty>>(citeDutyEntities).ToList();;
+            return citeDutyEntities.Select(x => x.ToCiteDuty()).ToList();;
         }
 
         public async Task<ViewModels.CiteDuty> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -99,7 +96,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            return _mapper.Map<CiteDuty>(item);
+            return item.ToCiteDuty();
         }
 
         public async Task<ViewModels.CiteDuty> CreateAsync(ViewModels.CiteDutyCreate citeDuty, bool hasMselPermission, bool hasCiteDutyPermission, CancellationToken ct)
@@ -125,7 +122,7 @@ namespace Blueprint.Api.Services
             if (citeDuty.TeamId.HasValue)
                 await ServiceUtilities.EnsureTeamIsInMselAsync(citeDuty.TeamId.Value, citeDuty.MselId, _context, ct);
 
-            var citeDutyEntity = _mapper.Map<CiteDutyEntity>(citeDuty);
+            var citeDutyEntity = citeDuty.ToEntity();
             citeDutyEntity.Id = citeDuty.Id != Guid.Empty ? citeDuty.Id : Guid.NewGuid();
             citeDutyEntity.CreatedBy = _user.GetId();
 
@@ -162,7 +159,7 @@ namespace Blueprint.Api.Services
             if (citeDuty.TeamId.HasValue)
                 await ServiceUtilities.EnsureTeamIsInMselAsync(citeDuty.TeamId.Value, citeDutyToUpdate.MselId, _context, ct);
 
-            _mapper.Map(citeDuty, citeDutyToUpdate);
+            citeDuty.ApplyTo(citeDutyToUpdate);
             citeDutyToUpdate.ModifiedBy = _user.GetId();
 
             _context.CiteDuties.Update(citeDutyToUpdate);
@@ -206,7 +203,7 @@ namespace Blueprint.Api.Services
             var citeDutyEntities = await _context.CiteDuties
                 .Where(cd => idList.Contains(cd.Id) && cd.MselId == null)
                 .ToListAsync(ct);
-            var citeDuties = _mapper.Map<IEnumerable<ViewModels.CiteDuty>>(citeDutyEntities).ToList();
+            var citeDuties = citeDutyEntities.Select(x => x.ToCiteDuty()).ToList();
             // Strip team navigation; templates have no team and the property pulls in extra context.
             foreach (var cd in citeDuties)
             {
@@ -251,9 +248,9 @@ namespace Blueprint.Api.Services
                 item.DateCreated = DateTime.UtcNow;
                 item.ModifiedBy = null;
                 item.DateModified = null;
-                var entity = _mapper.Map<CiteDutyEntity>(item);
+                var entity = item.ToEntity();
                 _context.CiteDuties.Add(entity);
-                created.Add(_mapper.Map<ViewModels.CiteDuty>(entity));
+                created.Add(entity.ToCiteDuty());
             }
             await _context.SaveChangesAsync(ct);
 

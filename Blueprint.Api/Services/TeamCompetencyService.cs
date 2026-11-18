@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -17,6 +16,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -34,14 +34,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<ITeamCompetencyService> _logger;
 
-        public TeamCompetencyService(BlueprintContext context, IPrincipal user, ILogger<ITeamCompetencyService> logger, IMapper mapper)
+        public TeamCompetencyService(BlueprintContext context, IPrincipal user, ILogger<ITeamCompetencyService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -59,7 +57,7 @@ namespace Blueprint.Api.Services
                 .Include(tc => tc.Competency)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<TeamCompetency>>(items);
+            return items.Select(x => x.ToTeamCompetency()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.TeamCompetency>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -81,7 +79,7 @@ namespace Blueprint.Api.Services
                 .Include(tc => tc.Competency)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<TeamCompetency>>(items);
+            return items.Select(x => x.ToTeamCompetency()).ToList();
         }
 
         public async Task<ViewModels.TeamCompetency> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -97,7 +95,7 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.Team.MselId, _context)))
                 throw new ForbiddenException();
 
-            return _mapper.Map<TeamCompetency>(item);
+            return item.ToTeamCompetency();
         }
 
         public async Task<ViewModels.TeamCompetency> CreateAsync(ViewModels.TeamCompetency teamCompetency, bool hasSystemPermission, CancellationToken ct)
@@ -116,7 +114,7 @@ namespace Blueprint.Api.Services
             if (await _context.TeamCompetencies.AnyAsync(tc => tc.TeamId == team.Id && tc.CompetencyId == competency.Id, ct))
                 throw new ArgumentException("Team Competency already exists.");
 
-            var entity = _mapper.Map<TeamCompetencyEntity>(teamCompetency);
+            var entity = teamCompetency.ToEntity();
             entity.Id = entity.Id != Guid.Empty ? entity.Id : Guid.NewGuid();
 
             _context.TeamCompetencies.Add(entity);

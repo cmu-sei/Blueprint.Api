@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
@@ -15,24 +14,22 @@ using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class TeamUserHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly ITeamUserService _TeamUserService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public TeamUserHandler(
             BlueprintContext db,
-            IMapper mapper,
             ITeamUserService TeamUserService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _TeamUserService = TeamUserService;
             _mainHub = mainHub;
         }
@@ -59,7 +56,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             var groupIds = GetGroups(teamUserEntity);
             // the view model, not the entity: the entity's navigations reach whatever the request has loaded, a drafted MSEL
             // with its teams' competency trees, which serializes past SignalR's 2 GB message limit and drops the connection
-            var teamUser = _mapper.Map<ViewModels.TeamUser>(teamUserEntity);
+            var teamUser = teamUserEntity.ToTeamUser();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -75,9 +72,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public TeamUserCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ITeamUserService teamUserService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, teamUserService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, teamUserService, mainHub) { }
 
         public async Task Handle(EntityCreated<TeamUserEntity> notification, CancellationToken cancellationToken)
         {
@@ -89,9 +85,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public TeamUserUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ITeamUserService teamUserService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, teamUserService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, teamUserService, mainHub) { }
 
         public async Task Handle(EntityUpdated<TeamUserEntity> notification, CancellationToken cancellationToken)
         {
@@ -107,9 +102,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public TeamUserDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ITeamUserService teamUserService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, teamUserService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, teamUserService, mainHub)
         {
         }
 
@@ -120,7 +114,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
 
             foreach (var groupId in groupIds)
             {
-                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.TeamUserDeleted, _mapper.Map<ViewModels.TeamUser>(notification.Entity), cancellationToken));
+                tasks.Add(_mainHub.Clients.Group(groupId).SendAsync(MainHubMethods.TeamUserDeleted, notification.Entity.ToTeamUser(), cancellationToken));
             }
 
             await Task.WhenAll(tasks);

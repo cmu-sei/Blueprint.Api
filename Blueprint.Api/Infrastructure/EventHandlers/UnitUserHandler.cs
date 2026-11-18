@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
@@ -15,24 +14,22 @@ using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class UnitUserHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly IUnitUserService _unitUserService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public UnitUserHandler(
             BlueprintContext db,
-            IMapper mapper,
             IUnitUserService unitUserService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _unitUserService = unitUserService;
             _mainHub = mainHub;
         }
@@ -72,7 +69,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             // a row gone by now, removed by a later request, has nothing to tell
             if (row == null)
                 return;
-            var unitUser = _mapper.Map<ViewModels.UnitUser>(row);
+            var unitUser = row.ToUnitUser();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -88,9 +85,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public UnitUserCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IUnitUserService unitUserService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, unitUserService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, unitUserService, mainHub) { }
 
         public async Task Handle(EntityCreated<UnitUserEntity> notification, CancellationToken cancellationToken)
         {
@@ -102,9 +98,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public UnitUserUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IUnitUserService unitUserService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, unitUserService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, unitUserService, mainHub) { }
 
         public async Task Handle(EntityUpdated<UnitUserEntity> notification, CancellationToken cancellationToken)
         {
@@ -120,9 +115,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public UnitUserDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IUnitUserService unitUserService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, unitUserService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, unitUserService, mainHub)
         {
         }
 

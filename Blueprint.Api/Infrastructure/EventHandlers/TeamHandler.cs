@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
@@ -14,24 +13,22 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class TeamHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly ITeamService _TeamService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public TeamHandler(
             BlueprintContext db,
-            IMapper mapper,
             ITeamService TeamService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _TeamService = TeamService;
             _mainHub = mainHub;
         }
@@ -56,7 +53,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(teamEntity);
-            var team = _mapper.Map<ViewModels.Team>(teamEntity);
+            var team = teamEntity.ToTeam();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -72,9 +69,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public TeamCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ITeamService teamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, teamService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, teamService, mainHub) { }
 
         public async Task Handle(EntityCreated<TeamEntity> notification, CancellationToken cancellationToken)
         {
@@ -86,9 +82,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public TeamUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ITeamService teamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, teamService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, teamService, mainHub) { }
 
         public async Task Handle(EntityUpdated<TeamEntity> notification, CancellationToken cancellationToken)
         {
@@ -104,9 +99,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public TeamDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ITeamService teamService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, teamService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, teamService, mainHub)
         {
         }
 

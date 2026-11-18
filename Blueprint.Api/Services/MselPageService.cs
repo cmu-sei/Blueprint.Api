@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -16,6 +15,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -32,13 +32,11 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
-        public MselPageService(BlueprintContext context, IPrincipal user, IMapper mapper)
+        public MselPageService(BlueprintContext context, IPrincipal user)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.MselPage>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -56,7 +54,7 @@ namespace Blueprint.Api.Services
                 .Where(tc => tc.MselId == mselId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<MselPage>>(items);
+            return items.Select(x => x.ToMselPage()).ToList();
         }
 
         public async Task<ViewModels.MselPage> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -82,7 +80,7 @@ namespace Blueprint.Api.Services
             var item = await _context.MselPages
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
-            return _mapper.Map<MselPage>(item);
+            return item.ToMselPage();
         }
 
         public async Task<ViewModels.MselPage> CreateAsync(ViewModels.MselPageCreate mselPage, bool hasSystemPermission, CancellationToken ct)
@@ -95,7 +93,7 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
                 throw new ForbiddenException();
 
-            var mselPageEntity = _mapper.Map<MselPageEntity>(mselPage);
+            var mselPageEntity = mselPage.ToEntity();
             mselPageEntity.Id = mselPageEntity.Id != Guid.Empty ? mselPageEntity.Id : Guid.NewGuid();
 
             _context.MselPages.Add(mselPageEntity);
@@ -114,7 +112,7 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselPageToUpdate.MselId, _context)))
                 throw new ForbiddenException();
 
-            _mapper.Map(mselPage, mselPageToUpdate);
+            mselPage.ApplyTo(mselPageToUpdate);
 
             _context.MselPages.Update(mselPageToUpdate);
             await _context.SaveChangesAsync(ct);

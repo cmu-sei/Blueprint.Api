@@ -8,12 +8,12 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -34,35 +34,32 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
         public GroupService(
             BlueprintContext context,
-            IPrincipal user,
-            IMapper mapper)
+            IPrincipal user)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<Group>> GetAsync(CancellationToken ct)
         {
             var items = await _context.Groups.ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Group>>(items);
+            return items.Select(x => x.ToGroup()).ToList();
         }
 
         public async Task<Group> GetAsync(Guid id, CancellationToken ct)
         {
             var item = await _context.Groups.SingleOrDefaultAsync(o => o.Id == id, ct);
 
-            return _mapper.Map<Group>(item);
+            return item.ToGroup();
         }
 
         public async Task<Group> CreateAsync(Group group, CancellationToken ct)
         {
-            var groupEntity = _mapper.Map<GroupEntity>(group);
+            var groupEntity = group.ToEntity();
             _context.Groups.Add(groupEntity);
             await _context.SaveChangesAsync(ct);
             group = await GetAsync(groupEntity.Id, ct);
@@ -76,9 +73,9 @@ namespace Blueprint.Api.Services
             if (groupToUpdate == null)
                 throw new EntityNotFoundException<Group>();
 
-            _mapper.Map(group, groupToUpdate);
+            group.ApplyTo(groupToUpdate);
             await _context.SaveChangesAsync(ct);
-            var updatedGroup = _mapper.Map<Group>(groupToUpdate);
+            var updatedGroup = groupToUpdate.ToGroup();
 
             return updatedGroup;
         }
@@ -97,19 +94,19 @@ namespace Blueprint.Api.Services
         {
             var items = await _context.GroupMemberships.Where(m => m.GroupId == groupId).ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<GroupMembership>>(items);
+            return items.Select(x => x.ToGroupMembership()).ToList();
         }
 
         public async Task<GroupMembership> GetMembershipAsync(Guid id, CancellationToken ct)
         {
             var item = await _context.GroupMemberships.SingleOrDefaultAsync(o => o.Id == id, ct);
 
-            return _mapper.Map<GroupMembership>(item);
+            return item.ToGroupMembership();
         }
 
         public async Task<GroupMembership> CreateMembershipAsync(GroupMembership groupMembership, CancellationToken ct)
         {
-            var groupMembershipEntity = _mapper.Map<GroupMembershipEntity>(groupMembership);
+            var groupMembershipEntity = groupMembership.ToEntity();
             _context.GroupMemberships.Add(groupMembershipEntity);
             await _context.SaveChangesAsync(ct);
             groupMembership = await GetMembershipAsync(groupMembershipEntity.Id, ct);

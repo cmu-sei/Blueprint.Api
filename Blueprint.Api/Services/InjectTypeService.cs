@@ -12,13 +12,13 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -38,13 +38,11 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
-        public InjectTypeService(BlueprintContext context, IPrincipal user, IMapper mapper)
+        public InjectTypeService(BlueprintContext context, IPrincipal user)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.InjectType>> GetAsync(CancellationToken ct)
@@ -52,7 +50,7 @@ namespace Blueprint.Api.Services
             var items = await _context.InjectTypes
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<InjectType>>(items);
+            return items.Select(x => x.ToInjectType()).ToList();
         }
 
         public async Task<ViewModels.InjectType> GetAsync(Guid id, CancellationToken ct)
@@ -60,13 +58,13 @@ namespace Blueprint.Api.Services
             var item = await _context.InjectTypes
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
-            return _mapper.Map<InjectType>(item);
+            return item.ToInjectType();
         }
 
         public async Task<ViewModels.InjectType> CreateAsync(ViewModels.InjectTypeCreate injectType, CancellationToken ct)
         {
             var userId = _user.GetId();
-            var injectTypeEntity = _mapper.Map<InjectTypeEntity>(injectType);
+            var injectTypeEntity = injectType.ToEntity();
             injectTypeEntity.Id = injectType.Id != Guid.Empty ? injectType.Id : Guid.NewGuid();
             injectTypeEntity.CreatedBy = userId;
             _context.InjectTypes.Add(injectTypeEntity);
@@ -74,14 +72,14 @@ namespace Blueprint.Api.Services
             // the fields sent with a new inject type are always new fields of it
             foreach (var dataField in injectType.DataFields ?? [])
             {
-                var dataFieldEntity = _mapper.Map<DataFieldEntity>(dataField);
+                var dataFieldEntity = dataField.ToEntity();
                 dataFieldEntity.Id = Guid.NewGuid();
                 dataFieldEntity.InjectTypeId = injectTypeEntity.Id;
                 dataFieldEntity.CreatedBy = userId;
                 _context.DataFields.Add(dataFieldEntity);
                 foreach (var dataOption in dataField.DataOptions ?? [])
                 {
-                    var dataOptionEntity = _mapper.Map<DataOptionEntity>(dataOption);
+                    var dataOptionEntity = dataOption.ToEntity();
                     dataOptionEntity.Id = Guid.NewGuid();
                     dataOptionEntity.DataFieldId = dataFieldEntity.Id;
                     dataOptionEntity.CreatedBy = userId;
@@ -100,13 +98,13 @@ namespace Blueprint.Api.Services
             if (injectTypeToUpdate == null)
                 throw new EntityNotFoundException<InjectType>();
 
-            _mapper.Map(injectType, injectTypeToUpdate);
+            injectType.ApplyTo(injectTypeToUpdate);
             injectTypeToUpdate.ModifiedBy = _user.GetId();
 
             _context.InjectTypes.Update(injectTypeToUpdate);
             await _context.SaveChangesAsync(ct);
 
-            return _mapper.Map<InjectType>(injectTypeToUpdate);
+            return injectTypeToUpdate.ToInjectType();
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
@@ -131,7 +129,7 @@ namespace Blueprint.Api.Services
                     .ThenInclude(df => df.DataOptions)
                 .AsSplitQuery()
                 .ToListAsync(ct);
-            var injectTypes = _mapper.Map<IEnumerable<ViewModels.InjectType>>(injectTypeEntities).ToList();
+            var injectTypes = injectTypeEntities.Select(x => x.ToInjectType()).ToList();
 
             var json = JsonSerializer.Serialize(injectTypes, new JsonSerializerOptions
             {
@@ -173,7 +171,7 @@ namespace Blueprint.Api.Services
                 item.DateCreated = dateNow;
                 item.ModifiedBy = null;
                 item.DateModified = null;
-                var entity = _mapper.Map<InjectTypeEntity>(item);
+                var entity = item.ToEntity();
                 _context.InjectTypes.Add(entity);
 
                 foreach (var df in incomingDataFields)
@@ -189,7 +187,7 @@ namespace Blueprint.Api.Services
                     df.ModifiedBy = null;
                     df.DateModified = null;
                     df.DataOptions = new HashSet<ViewModels.DataOption>();
-                    var dataFieldEntity = _mapper.Map<DataFieldEntity>(df);
+                    var dataFieldEntity = df.ToEntity();
                     _context.DataFields.Add(dataFieldEntity);
 
                     foreach (var opt in incomingOptions)
@@ -208,7 +206,7 @@ namespace Blueprint.Api.Services
                     }
                 }
 
-                created.Add(_mapper.Map<ViewModels.InjectType>(entity));
+                created.Add(entity.ToInjectType());
             }
             await _context.SaveChangesAsync(ct);
 

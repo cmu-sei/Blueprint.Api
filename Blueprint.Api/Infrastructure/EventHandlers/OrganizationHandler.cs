@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
@@ -14,24 +13,22 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class OrganizationHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly IOrganizationService _organizationService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public OrganizationHandler(
             BlueprintContext db,
-            IMapper mapper,
             IOrganizationService organizationService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _organizationService = organizationService;
             _mainHub = mainHub;
         }
@@ -53,7 +50,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(organizationEntity);
-            var organization = _mapper.Map<ViewModels.Organization>(organizationEntity);
+            var organization = organizationEntity.ToOrganization();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -69,9 +66,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public OrganizationCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IOrganizationService organizationService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, organizationService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, organizationService, mainHub) { }
 
         public async Task Handle(EntityCreated<OrganizationEntity> notification, CancellationToken cancellationToken)
         {
@@ -83,9 +79,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public OrganizationUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IOrganizationService organizationService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, organizationService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, organizationService, mainHub) { }
 
         public async Task Handle(EntityUpdated<OrganizationEntity> notification, CancellationToken cancellationToken)
         {
@@ -101,9 +96,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public OrganizationDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IOrganizationService organizationService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, organizationService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, organizationService, mainHub)
         {
         }
 

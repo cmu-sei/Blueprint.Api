@@ -12,7 +12,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
@@ -21,6 +20,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -42,18 +42,15 @@ namespace Blueprint.Api.Services
         private readonly BlueprintContext _context;
         private readonly IPlayerService _playerService;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
         public PlayerApplicationService(
             BlueprintContext context,
             IPlayerService playerService,
-            IPrincipal user,
-            IMapper mapper)
+            IPrincipal user)
         {
             _context = context;
             _playerService = playerService;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.PlayerApplication>> GetTemplatesAsync(CancellationToken ct)
@@ -62,7 +59,7 @@ namespace Blueprint.Api.Services
                 .Where(playerApplication => playerApplication.IsTemplate && playerApplication.MselId == null)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<PlayerApplication>>(playerApplicationEntities).ToList();
+            return playerApplicationEntities.Select(x => x.ToPlayerApplication()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.PlayerApplication>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -78,7 +75,7 @@ namespace Blueprint.Api.Services
                 .Where(playerApplication => playerApplication.MselId == mselId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<PlayerApplication>>(playerApplicationEntities).ToList();;
+            return playerApplicationEntities.Select(x => x.ToPlayerApplication()).ToList();;
         }
 
         public async Task<ViewModels.PlayerApplication> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -95,7 +92,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            return _mapper.Map<PlayerApplication>(item);
+            return item.ToPlayerApplication();
         }
 
         public async Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, bool hasPlayerApplicationPermission, CancellationToken ct)
@@ -117,7 +114,7 @@ namespace Blueprint.Api.Services
                 playerApplication.IsTemplate = true;
             }
 
-            var playerApplicationEntity = _mapper.Map<PlayerApplicationEntity>(playerApplication);
+            var playerApplicationEntity = playerApplication.ToEntity();
             playerApplicationEntity.Id = playerApplication.Id != Guid.Empty ? playerApplication.Id : Guid.NewGuid();
             playerApplicationEntity.CreatedBy = _user.GetId();
 
@@ -160,7 +157,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            _mapper.Map(playerApplication, playerApplicationToUpdate);
+            playerApplication.ApplyTo(playerApplicationToUpdate);
             playerApplicationToUpdate.ModifiedBy = _user.GetId();
 
             _context.PlayerApplications.Update(playerApplicationToUpdate);
@@ -200,7 +197,7 @@ namespace Blueprint.Api.Services
             var playerApplicationEntities = await _context.PlayerApplications
                 .Where(pa => idList.Contains(pa.Id) && pa.MselId == null)
                 .ToListAsync(ct);
-            var playerApplications = _mapper.Map<IEnumerable<ViewModels.PlayerApplication>>(playerApplicationEntities).ToList();
+            var playerApplications = playerApplicationEntities.Select(x => x.ToPlayerApplication()).ToList();
 
             var json = JsonSerializer.Serialize(playerApplications, new JsonSerializerOptions
             {
@@ -238,9 +235,9 @@ namespace Blueprint.Api.Services
                 item.DateCreated = DateTime.UtcNow;
                 item.ModifiedBy = null;
                 item.DateModified = null;
-                var entity = _mapper.Map<PlayerApplicationEntity>(item);
+                var entity = item.ToEntity();
                 _context.PlayerApplications.Add(entity);
-                created.Add(_mapper.Map<ViewModels.PlayerApplication>(entity));
+                created.Add(entity.ToPlayerApplication());
             }
             await _context.SaveChangesAsync(ct);
 

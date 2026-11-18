@@ -211,10 +211,14 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
         Assert.Equal("hardens Credential; T1003.005 accesses Encrypted Credential", hardening.Rationale);
     }
 
-    /// <summary>D3FEND maps many techniques only at the parent, so a sub-technique with none of its own is answered with the parent's.</summary>
+    /// <summary>
+    /// D3FEND maps many techniques only at the parent, so a sub-technique with none of its own is answered with the
+    /// parent an attack release imported it under.
+    /// </summary>
     [Fact]
     public async Task GetByRelease_ForASubTechniqueWithoutMappings_AnswersWithItsParents_Flagged()
     {
+        await SeedRelease("1.0");
         var d3fend = await SeedD3fendRelease("1.6.0");
         await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
 
@@ -224,6 +228,16 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
         Assert.Equal("D3-FA", analysis.DefensiveTechnique.ExternalId);
         Assert.Equal("T1059", analysis.OffensiveExternalId);
         Assert.True(analysis.InheritedFromParent);
+    }
+
+    /// <summary>The parent is the one imported, not read from the id: with no attack release holding T1059.001 there is none.</summary>
+    [Fact]
+    public async Task GetByRelease_ForASubTechniqueNoAttackReleaseHolds_IsEmpty()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+
+        Assert.Empty(await Get<List<TechniqueCountermeasure>>(RootClient, $"api/techniquereleases/{d3fend.Id}/countermeasures?offensiveId=T1059.001"));
     }
 
     [Fact]
@@ -318,6 +332,52 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
         Assert.Equal(withMappings.Id, result.TechniqueReleaseId);
         Assert.True(result.HasMappings);
         Assert.Equal(["D3-FA"], Assert.Single(result.Techniques).Countermeasures.Select(c => c.DefensiveTechnique.ExternalId));
+    }
+
+    /// <summary>
+    /// A MSEL pooling defensive techniques from two releases reads the mappings of each that has them, whichever
+    /// the pool lists first.
+    /// </summary>
+    [Fact]
+    public async Task GetByMsel_PoolingTwoDefensiveReleases_ReadsTheOneWithMappings()
+    {
+        var attack = await SeedRelease("1.0");
+        var withMappings = await SeedD3fendRelease("1.6.0");
+        var without = await SeedD3fendRelease("1.7.0");
+        await Upload(RootClient, withMappings.Id, D3fendMappings.Standard());
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(without, "D3-CH").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(withMappings, "D3-FA").Id) { Id = Guid.NewGuid() });
+
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
+
+        Assert.Equal(withMappings.Id, result.TechniqueReleaseId);
+        Assert.True(result.HasMappings);
+        Assert.Equal(["D3-FA"], Assert.Single(result.Techniques).Countermeasures.Select(c => c.DefensiveTechnique.ExternalId));
+    }
+
+    /// <summary>A release with no date is not taken for the newest: Postgres would sort its null first.</summary>
+    [Fact]
+    public async Task GetByMsel_WithoutDefensiveTechniques_PrefersADatedReleaseToAnUndatedOne()
+    {
+        var attack = await SeedRelease("1.0");
+        await SeedFrameworks();
+        var undated = await TechniqueFrameworks.ReadAsync(D3fendOntologies.Ontology("1.7.0"));
+        undated.ReleaseDate = null;
+        await Seed(undated);
+        var dated = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, undated.Id, D3fendMappings.Standard());
+        await Upload(RootClient, dated.Id, D3fendMappings.Standard());
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
+
+        Assert.Equal(dated.Id, result.TechniqueReleaseId);
     }
 
     /// <summary>A pinned release without mappings is still the one named, so the client can say which release wants them.</summary>

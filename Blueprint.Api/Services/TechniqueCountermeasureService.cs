@@ -141,7 +141,12 @@ namespace Blueprint.Api.Services
             if (own.Count > 0)
                 return Rank(own, inherited: false);
 
-            var parentId = ParentExternalId(offensiveId);
+            // the parent an attack release imported the technique under
+            var parentId = await _context.Techniques
+                .Where(t => t.ExternalId == offensiveId && !t.TechniqueRelease.IsDefensive && t.ParentId != null)
+                .OrderBy(t => t.TechniqueReleaseId)
+                .Select(t => t.Parent.ExternalId)
+                .FirstOrDefaultAsync(ct);
             if (parentId == null)
                 return [];
 
@@ -150,8 +155,9 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// The countermeasures of every attack technique in a MSEL's pool, from the defensive release it is pinned
-        /// to, else the newest with mappings. Each pooled technique gets a group, empty when nothing counters it.
+        /// The countermeasures of every attack technique in a MSEL's pool, from each defensive release it pools that
+        /// has mappings, else the newest release with mappings. Each pooled technique gets a group, empty when nothing
+        /// counters it. The release named is the newest one read, or the first pooled one when none has mappings.
         /// </summary>
         public async Task<MselCountermeasures> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
@@ -164,7 +170,14 @@ namespace Blueprint.Api.Services
 
             var pool = await _context.MselTechniques
                 .Where(m => m.MselId == mselId)
-                .Select(m => new { m.TechniqueId, m.Technique.ExternalId, m.Technique.TechniqueReleaseId, m.Technique.TechniqueRelease.IsDefensive })
+                .Select(m => new
+                {
+                    m.TechniqueId,
+                    m.Technique.ExternalId,
+                    ParentExternalId = m.Technique.Parent.ExternalId,
+                    m.Technique.TechniqueReleaseId,
+                    m.Technique.TechniqueRelease.IsDefensive
+                })
                 .ToListAsync(ct);
             var techniques = pool
                 .Where(t => !t.IsDefensive)
@@ -172,34 +185,28 @@ namespace Blueprint.Api.Services
                 .ToList();
 
             var result = new MselCountermeasures { MselId = mselId };
-            var pinned = pool.FirstOrDefault(t => t.IsDefensive)?.TechniqueReleaseId;
-            if (pinned != null)
-            {
-                result.TechniqueReleaseId = pinned;
-                result.HasMappings = await _context.TechniqueCountermeasures.AnyAsync(c => c.ReleaseId == pinned, ct);
-            }
-            else
-            {
-                var newest = await _context.TechniqueReleases
-                    .Where(r => r.IsDefensive && r.Countermeasures.Any())
-                    .OrderByDescending(r => r.ReleaseDate)
-                    .ThenByDescending(r => r.Version)
-                    .Select(r => (Guid?)r.Id)
-                    .FirstOrDefaultAsync(ct);
-                result.TechniqueReleaseId = newest;
-                result.HasMappings = newest != null;
-            }
+            var pooled = pool.Where(t => t.IsDefensive).Select(t => t.TechniqueReleaseId).Distinct().ToList();
+            // newest first; an undated release after the dated ones, as Postgres would otherwise put nulls first
+            var withMappings = _context.TechniqueReleases
+                .Where(r => r.IsDefensive && r.Countermeasures.Any() && (pooled.Count == 0 || pooled.Contains(r.Id)))
+                .OrderByDescending(r => r.ReleaseDate.HasValue)
+                .ThenByDescending(r => r.ReleaseDate)
+                .ThenByDescending(r => r.Version)
+                .Select(r => r.Id);
+            var releases = await (pooled.Count == 0 ? withMappings.Take(1) : withMappings).ToListAsync(ct);
+            result.HasMappings = releases.Count > 0;
+            result.TechniqueReleaseId = result.HasMappings ? releases[0] : pooled.OrderBy(id => id).Cast<Guid?>().FirstOrDefault();
 
             var byOffensiveId = new Dictionary<string, List<TechniqueCountermeasureEntity>>();
             if (result.HasMappings && techniques.Count > 0)
             {
                 // the techniques' ids and their parents', for those with no mappings of their own
                 var ids = techniques
-                    .SelectMany(t => new[] { t.ExternalId, ParentExternalId(t.ExternalId) })
+                    .SelectMany(t => new[] { t.ExternalId, t.ParentExternalId })
                     .Where(id => id != null)
                     .Distinct()
                     .ToList();
-                var rows = await Mappings(result.TechniqueReleaseId.Value)
+                var rows = await Mappings(releases)
                     .Where(c => ids.Contains(c.OffensiveExternalId))
                     .ToListAsync(ct);
                 byOffensiveId = rows.GroupBy(c => c.OffensiveExternalId).ToDictionary(g => g.Key, g => g.ToList());
@@ -214,7 +221,7 @@ namespace Blueprint.Api.Services
                 }
                 else
                 {
-                    var parentId = ParentExternalId(technique.ExternalId);
+                    var parentId = technique.ParentExternalId;
                     if (parentId != null && byOffensiveId.TryGetValue(parentId, out var parents))
                     {
                         group.InheritedFrom = parentId;
@@ -227,22 +234,11 @@ namespace Blueprint.Api.Services
             return result;
         }
 
-        /// <summary>
-        /// The parent of a dotted sub-technique id, the id without its last part; null when that part is not a number.
-        /// </summary>
-        public static string ParentExternalId(string externalId)
-        {
-            if (string.IsNullOrEmpty(externalId))
-                return null;
-            var dot = externalId.LastIndexOf('.');
-            if (dot <= 0 || dot == externalId.Length - 1)
-                return null;
-            return externalId[(dot + 1)..].All(char.IsAsciiDigit) ? externalId[..dot] : null;
-        }
+        private IQueryable<TechniqueCountermeasureEntity> Mappings(Guid releaseId) => Mappings([releaseId]);
 
-        private IQueryable<TechniqueCountermeasureEntity> Mappings(Guid releaseId) =>
+        private IQueryable<TechniqueCountermeasureEntity> Mappings(List<Guid> releaseIds) =>
             _context.TechniqueCountermeasures
-                .Where(c => c.ReleaseId == releaseId)
+                .Where(c => releaseIds.Contains(c.ReleaseId))
                 .Include(c => c.DefensiveTechnique)
                 .ThenInclude(t => t.TechniqueRelease);
 

@@ -117,8 +117,9 @@ public class UniqueIndexEndpointTests(DatabaseFixture fixture, BlueprintAppFacto
         Assert.Equal(2, await ReadBack(rb => rb.CatalogUnits.CountAsync(Ct)));
     }
 
+    /// <summary>MoveService checks the number before the save, so this index is answered with a 400 naming it.</summary>
     [Fact]
-    public async Task Update_answers_an_existing_move_number_with_a_server_error_and_keeps_the_move()
+    public async Task Update_answers_an_existing_move_number_with_a_bad_request_naming_it_and_keeps_the_move()
     {
         var msel = TestData.Msel();
         var original = TestData.Move(msel.Id, 1);
@@ -127,7 +128,8 @@ public class UniqueIndexEndpointTests(DatabaseFixture fixture, BlueprintAppFacto
 
         var response = await RootClient.PutAsJsonAsync($"api/moves/{original.Id}", new { moveNumber = 2 }, Ct);
 
-        await SaveError(response, "MoveService.UpdateAsync");
+        var error = await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.BadRequest, response);
+        Assert.Equal("Move 2 already exists in this MSEL. Each move needs its own number.", error.Title);
         Assert.Equal(1, await ReadBack(rb => rb.Moves.Where(x => x.Id == original.Id).Select(x => x.MoveNumber).SingleAsync(Ct)));
         Assert.Equal(2, await ReadBack(rb => rb.Moves.CountAsync(Ct)));
     }

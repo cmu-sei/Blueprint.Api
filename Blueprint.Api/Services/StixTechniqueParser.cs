@@ -61,6 +61,9 @@ namespace Blueprint.Api.Services
             JsonElement? matrix = null;
             var tactics = new List<JsonElement>();
             var techniques = new List<JsonElement>();
+            // what the bundle itself says about who publishes it and how it may be reproduced
+            var statements = new Dictionary<string, string>();
+            var publishers = new Dictionary<string, string>();
 
             foreach (var item in objects.EnumerateArray())
             {
@@ -69,6 +72,18 @@ namespace Blueprint.Api.Services
 
                 switch (GetString(item, "type"))
                 {
+                    case "marking-definition":
+                        if (GetString(item, "definition_type") == "statement"
+                            && item.TryGetProperty("definition", out var definition)
+                            && GetString(definition, "statement") is { } statement
+                            && !string.IsNullOrWhiteSpace(statement)
+                            && GetString(item, "id") is { } markingId)
+                            statements.TryAdd(markingId, statement.Trim());
+                        break;
+                    case "identity":
+                        if (GetString(item, "id") is { } identityId && GetString(item, "name") is { } identityName)
+                            publishers.TryAdd(identityId, identityName);
+                        break;
                     case "x-mitre-collection":
                         collection ??= item;
                         break;
@@ -90,7 +105,7 @@ namespace Blueprint.Api.Services
             // CAPEC is the one catalogue in this data model with no tactics. It is told apart by every pattern
             // carrying a CAPEC id and abstraction level, so a bundle of unidentified patterns is still refused.
             if (tactics.Count == 0 && techniques.All(IsCapecPattern))
-                return ParseCapec(techniques, version);
+                return ParseCapec(techniques, version, statements, publishers);
 
             version = string.IsNullOrWhiteSpace(version)
                 ? (collection.HasValue ? GetString(collection.Value, "x_mitre_version") : null)
@@ -138,11 +153,7 @@ namespace Blueprint.Api.Services
                 Description = collection.HasValue ? GetString(collection.Value, "description") : null,
                 ReleaseDate = collection.HasValue ? GetDate(collection.Value, "modified") : null
             };
-            // Only a bundle that cites MITRE's own catalogue is MITRE's: any other carries no publisher or notice.
-            if (source == "mitre-atlas")
-                TechniqueFrameworkNotices.ForAtlas(release);
-            else if (source.StartsWith("mitre-", StringComparison.Ordinal) && source.EndsWith("attack", StringComparison.Ordinal))
-                TechniqueFrameworkNotices.ForAttack(release);
+            ApplyPublisher(release, collection, techniques, statements, publishers);
 
             // The matrix lists its tactics left to right; a tactic it leaves out goes at the end.
             var order = new Dictionary<string, int>();
@@ -223,6 +234,32 @@ namespace Blueprint.Api.Services
         /// <summary>The CAPEC release's domain; its patterns' own catalogue is "capec".</summary>
         public const string CapecDomain = "capec";
 
+        /// <summary>
+        /// Takes the publisher and the notice from what the bundle itself says: the name of the identity that created
+        /// the collection (or, with no collection, the techniques), and the statement marking the collection or its
+        /// techniques carry, or the bundle's only statement. Nothing is written here that the file does not say, so a
+        /// bundle with no statement (ATLAS) carries no notice, and no terms address is set because the files give none.
+        /// </summary>
+        private static void ApplyPublisher(TechniqueReleaseEntity release, JsonElement? collection, List<JsonElement> techniques,
+            Dictionary<string, string> statements, Dictionary<string, string> publishers)
+        {
+            var carriers = new List<JsonElement>();
+            if (collection.HasValue)
+                carriers.Add(collection.Value);
+            carriers.AddRange(techniques);
+
+            var creator = carriers.Select(c => GetString(c, "created_by_ref")).FirstOrDefault(id => id != null && publishers.ContainsKey(id));
+            release.Source = creator != null ? publishers[creator] : null;
+
+            var marking = carriers
+                .SelectMany(c => GetStrings(c, "object_marking_refs"))
+                .FirstOrDefault(id => id != null && statements.ContainsKey(id));
+            if (marking != null)
+                release.Notice = statements[marking];
+            else if (statements.Count == 1)
+                release.Notice = statements.Values.First();
+        }
+
         private const string CapecSource = "capec";
 
         private static bool IsCapecPattern(JsonElement item) =>
@@ -238,7 +275,8 @@ namespace Blueprint.Api.Services
         /// sub-technique of the Standard one it refines (SQL Injection under Command Injection). Deprecated and
         /// obsolete patterns are skipped; CAPEC marks them with a status, not the STIX revoked flag.
         /// </summary>
-        private static TechniqueReleaseEntity ParseCapec(List<JsonElement> patterns, string version)
+        private static TechniqueReleaseEntity ParseCapec(List<JsonElement> patterns, string version,
+            Dictionary<string, string> statements, Dictionary<string, string> publishers)
         {
             var active = patterns
                 .Where(p => GetString(p, "x_capec_status") is not ("Deprecated" or "Obsolete"))
@@ -270,7 +308,8 @@ namespace Blueprint.Api.Services
                     + "from broad categories down to specific patterns such as SQL Injection or Buffer Overflow.",
                 ReleaseDate = active.Select(p => GetDate(p, "modified")).Where(d => d.HasValue).Max()
             };
-            TechniqueFrameworkNotices.ForCapec(release);
+            ApplyPublisher(release, null, active, statements, publishers);
+            release.GroupLabel = "Categories";
 
             var byStixId = new Dictionary<string, JsonElement>();
             foreach (var pattern in active)

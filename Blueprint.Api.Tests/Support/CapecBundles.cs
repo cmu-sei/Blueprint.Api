@@ -37,7 +37,7 @@ public static class CapecBundles
               "id": "marking-definition--00000000-0000-4000-8000-000000000202",
               "created": "2023-01-30T20:40:28.791035Z",
               "definition_type": "statement",
-              "definition": { "statement": "CAPEC is a trademark of The MITRE Corporation." }
+              "definition": { "statement": "CAPEC is sponsored by US-CERT in the office of Cybersecurity and Communications at the U.S. Department of Homeland Security. Copyright © 2007 - 2023, The MITRE Corporation. CAPEC and the CAPEC logo are trademarks of The MITRE Corporation." }
             },
             {
               "type": "identity",
@@ -128,6 +128,8 @@ public static class CapecBundles
               "type": "attack-pattern",
               "spec_version": "2.1",
               "id": "{{id}}",
+              "created_by_ref": "identity--00000000-0000-4000-8000-000000000203",
+              "object_marking_refs": [ "marking-definition--00000000-0000-4000-8000-000000000202" ],
               "created": "2020-01-01T00:00:00Z",
               "modified": "{{modified}}",
               "name": "{{name}}",

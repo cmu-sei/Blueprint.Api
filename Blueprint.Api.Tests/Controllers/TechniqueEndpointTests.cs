@@ -134,16 +134,16 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     private static object Notice(string source = null, string sourceUrl = null, string notice = null, string termsUrl = null) =>
         new { source, sourceUrl, notice, termsUrl };
 
-    /// <summary>The copyright year is the release's own year, not the year it was uploaded in.</summary>
+    /// <summary>The notice is the statement the file carries, whatever year that names, not one the server writes.</summary>
     [Fact]
-    public async Task Import_OfAMitreBundle_ShowsTheCopyrightYearOfTheReleaseDate()
+    public async Task Import_OfAMitreBundle_ShowsTheStatementTheFileCarries()
     {
         var response = await Upload(RootClient, TechniqueBundles.Enterprise("1.0"));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var release = await Read<TechniqueRelease>(response);
         Assert.Equal(2025, release.ReleaseDate.Value.Year);
-        Assert.StartsWith("© 2025 The MITRE Corporation.", release.Notice);
+        Assert.StartsWith("Copyright 2015-2025, The MITRE Corporation.", release.Notice);
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var response = await RootClient.PutAsJsonAsync($"api/techniquereleases/{release.Id}", Notice("Acme", null, "© Acme", url), Ct);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal("MITRE ATT&CK", (await ReadBack(rb => rb.TechniqueReleases.SingleAsync(r => r.Id == release.Id, Ct))).Source);
+        Assert.Equal("The MITRE Corporation", (await ReadBack(rb => rb.TechniqueReleases.SingleAsync(r => r.Id == release.Id, Ct))).Source);
     }
 
     [Fact]
@@ -238,7 +238,7 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var response = await Client(actor).PutAsJsonAsync($"api/techniquereleases/{release.Id}", Notice("Acme", null, "© Acme", null), Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Equal("MITRE ATT&CK", (await ReadBack(rb => rb.TechniqueReleases.SingleAsync(r => r.Id == release.Id, Ct))).Source);
+        Assert.Equal("The MITRE Corporation", (await ReadBack(rb => rb.TechniqueReleases.SingleAsync(r => r.Id == release.Id, Ct))).Source);
     }
 
     [Fact]
@@ -548,7 +548,7 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Null(acme.Notice);
         Assert.Null(acme.Source);
         Assert.Equal("Tactics", acme.GroupLabel);
-        Assert.Equal("MITRE ATT&CK", releases.Single(r => r.Domain == "enterprise-attack").Source);
+        Assert.Equal("The MITRE Corporation", releases.Single(r => r.Domain == "enterprise-attack").Source);
     }
 
     /// <summary>Upgrading to an ATT&amp;CK release moves that domain only; the D3FEND ones stay where they are.</summary>

@@ -144,14 +144,26 @@ public class D3fendOntologyParserTests
     }
 
     [Fact]
-    public void Parse_NamesMitreD3fendAsTheSourceWithItsNotice()
+    public void Parse_TakesTheNoticeFromTheOntologyComment()
     {
         using var document = System.Text.Json.JsonDocument.Parse(D3fendOntologies.Ontology("1.6.0"));
 
         var release = D3fendOntologyParser.Parse(document.RootElement, null);
 
-        Assert.Equal("MITRE D3FEND", release.Source);
-        Assert.Equal("https://d3fend.mitre.org/tou/", release.TermsUrl);
-        Assert.Contains("MITRE D3FEND™ is a trademark", release.Notice);
+        Assert.Equal("D3FEND™", release.Source);
+        Assert.Contains("D3FEND™ and the D3FEND logo are trademarks of The MITRE Corporation.", release.Notice);
+        Assert.Contains("Copyright 2022 The MITRE Corporation.", release.Notice);
+        Assert.Null(release.TermsUrl);
+    }
+
+    /// <summary>An ontology whose comment states no copyright or trademark gives no notice.</summary>
+    [Fact]
+    public void Parse_OfAnOntologyWhoseCommentStatesNoNotice_CarriesNone()
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(D3fendOntologies.Ontology("1.6.0").Replace("trademarks", "marks").Replace("Copyright", "Rights"));
+
+        var release = D3fendOntologyParser.Parse(document.RootElement, null);
+
+        Assert.Null(release.Notice);
     }
 }

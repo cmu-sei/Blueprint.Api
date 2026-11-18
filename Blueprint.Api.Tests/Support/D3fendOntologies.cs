@@ -31,9 +31,9 @@ public static class D3fendOntologies
               "@type": "owl:Ontology",
               "d3f:release-date": { "@type": "xsd:dateTime", "@value": "2026-08-31T00:12:00+00:00" },
               "dcterms:description": "Test D3FEND ontology",
-              "dcterms:title": "D3FEND - A knowledge graph of cybersecurity countermeasures",
+              "dcterms:title": "D3FEND™ - A knowledge graph of cybersecurity countermeasures",
               {{(includeVersion ? $"\"owl:versionInfo\": \"{version}\"," : "")}}
-              "rdfs:comment": "Test comment"
+              "rdfs:comment": "Use of the D3FEND Knowledge Graph, and the associated references from this ontology are subject to the Terms of Use. D3FEND™ and the D3FEND logo are trademarks of The MITRE Corporation. Copyright 2022 The MITRE Corporation."
             },
             { "@id": "_:b0001", "@type": "owl:Restriction", "owl:onProperty": { "@id": "d3f:enables" }, "owl:someValuesFrom": { "@id": "d3f:DefensiveTactic" } },
             {

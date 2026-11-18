@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -17,6 +16,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -32,14 +32,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<IUserTeamRoleService> _logger;
 
-        public UserTeamRoleService(BlueprintContext context, IPrincipal user, ILogger<IUserTeamRoleService> logger, IMapper mapper)
+        public UserTeamRoleService(BlueprintContext context, IPrincipal user, ILogger<IUserTeamRoleService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -53,7 +51,7 @@ namespace Blueprint.Api.Services
                 .Where(umr => umr.Team.MselId == mselId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<UserTeamRole>>(items);
+            return items.Select(x => x.ToUserTeamRole()).ToList();
         }
 
         public async Task<ViewModels.UserTeamRole> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -66,7 +64,7 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.Team.MselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
-            return _mapper.Map<UserTeamRole>(item);
+            return item.ToUserTeamRole();
         }
 
         public async Task<ViewModels.UserTeamRole> CreateAsync(ViewModels.UserTeamRole userTeamRole, bool hasSystemPermission, CancellationToken ct)
@@ -82,7 +80,7 @@ namespace Blueprint.Api.Services
             await _context.Database.BeginTransactionAsync();
             userTeamRole.Id = userTeamRole.Id != Guid.Empty ? userTeamRole.Id : Guid.NewGuid();
             userTeamRole.CreatedBy = _user.GetId();
-            var userTeamRoleEntity = _mapper.Map<UserTeamRoleEntity>(userTeamRole);
+            var userTeamRoleEntity = userTeamRole.ToEntity();
 
             _context.UserTeamRoles.Add(userTeamRoleEntity);
             await _context.SaveChangesAsync(ct);

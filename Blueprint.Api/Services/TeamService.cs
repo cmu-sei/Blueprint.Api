@@ -8,8 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -18,6 +16,7 @@ using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -37,14 +36,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<ITeamService> _logger;
 
-        public TeamService(BlueprintContext context, IPrincipal team, ILogger<ITeamService> logger, IMapper mapper)
+        public TeamService(BlueprintContext context, IPrincipal team, ILogger<ITeamService> logger)
         {
             _context = context;
             _user = team as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -54,7 +51,7 @@ namespace Blueprint.Api.Services
                 .Include(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
-            return _mapper.Map<Team>(item);
+            return item.ToTeam();
         }
 
         public async Task<IEnumerable<ViewModels.Team>> GetMineAsync(CancellationToken ct)
@@ -65,7 +62,7 @@ namespace Blueprint.Api.Services
                 .Select(x => x.Team)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Team>>(items);
+            return items.Select(x => x.ToTeam()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.Team>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -86,7 +83,7 @@ namespace Blueprint.Api.Services
                 .ThenInclude(tu => tu.User)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Team>>(items);
+            return items.Select(x => x.ToTeam()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.Team>> GetByUserAsync(Guid userId, CancellationToken ct)
@@ -96,7 +93,7 @@ namespace Blueprint.Api.Services
                 .Select(x => x.Team)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<Team>>(items);
+            return items.Select(x => x.ToTeam()).ToList();
         }
 
         public async Task<ViewModels.Team> CreateAsync(ViewModels.TeamCreate team, bool hasSystemPermission, CancellationToken ct)
@@ -108,7 +105,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             team.CasterTeamVariable = NormalizeCasterTeamVariable(team.CasterTeamVariable);
-            var teamEntity = _mapper.Map<TeamEntity>(team);
+            var teamEntity = team.ToEntity();
             teamEntity.Id = team.Id != Guid.Empty ? team.Id : Guid.NewGuid();
             teamEntity.CreatedBy = _user.GetId();
 
@@ -173,7 +170,7 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             team.CasterTeamVariable = NormalizeCasterTeamVariable(team.CasterTeamVariable);
-            _mapper.Map(team, teamToUpdate);
+            team.ApplyTo(teamToUpdate);
             teamToUpdate.ModifiedBy = _user.GetId();
 
             _context.Teams.Update(teamToUpdate);

@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -17,6 +16,7 @@ using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
 using System.IO;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -36,13 +36,11 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
 
-        public PlayerApplicationTeamService(BlueprintContext context, IPrincipal team, IMapper mapper)
+        public PlayerApplicationTeamService(BlueprintContext context, IPrincipal team)
         {
             _context = context;
             _user = team as ClaimsPrincipal;
-            _mapper = mapper;
         }
 
         public async Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetAsync(CancellationToken ct)
@@ -50,7 +48,7 @@ namespace Blueprint.Api.Services
             var items = await _context.PlayerApplicationTeams
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<PlayerApplicationTeam>>(items);
+            return items.Select(x => x.ToPlayerApplicationTeam()).ToList();
         }
 
         public async Task<ViewModels.PlayerApplicationTeam> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -65,7 +63,7 @@ namespace Blueprint.Api.Services
                     throw new ForbiddenException();
             }
 
-            return _mapper.Map<PlayerApplicationTeam>(item);
+            return item.ToPlayerApplicationTeam();
         }
 
         public async Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByPlayerApplicationAsync(Guid playerApplicationId, bool hasSystemPermission, CancellationToken ct)
@@ -84,7 +82,7 @@ namespace Blueprint.Api.Services
                 .Where(et => et.PlayerApplicationId == playerApplicationId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<PlayerApplicationTeam>>(items);
+            return items.Select(x => x.ToPlayerApplicationTeam()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.PlayerApplicationTeam>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -103,7 +101,7 @@ namespace Blueprint.Api.Services
                 .Where(et => playerApplicationIds.Contains(et.PlayerApplicationId))
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<PlayerApplicationTeam>>(items);
+            return items.Select(x => x.ToPlayerApplicationTeam()).ToList();
         }
 
         public async Task<ViewModels.PlayerApplicationTeam> CreateAsync(ViewModels.PlayerApplicationTeamCreate playerApplicationTeam, CancellationToken ct)
@@ -121,7 +119,7 @@ namespace Blueprint.Api.Services
                 playerApplicationTeam.DisplayOrder = itemList.Count + 1;
             }
             // create the new item
-            var playerApplicationTeamEntity = _mapper.Map<PlayerApplicationTeamEntity>(playerApplicationTeam);
+            var playerApplicationTeamEntity = playerApplicationTeam.ToEntity();
             playerApplicationTeamEntity.Id = playerApplicationTeamEntity.Id != Guid.Empty ? playerApplicationTeamEntity.Id : Guid.NewGuid();
             // save the new item
             _context.PlayerApplicationTeams.Add(playerApplicationTeamEntity);
@@ -143,7 +141,7 @@ namespace Blueprint.Api.Services
             if (playerApplicationTeam.DisplayOrder > itemList.Count + 1 || playerApplicationTeam.DisplayOrder < 1)
                 throw new InvalidDataException("The requested display order is not valid");
 
-            _mapper.Map(playerApplicationTeam, playerApplicationTeamToUpdate);
+            playerApplicationTeam.ApplyTo(playerApplicationTeamToUpdate);
 
             _context.PlayerApplicationTeams.Update(playerApplicationTeamToUpdate);
             await _context.SaveChangesAsync(ct);

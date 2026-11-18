@@ -619,11 +619,13 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        await Client(actor).PostAsJsonAsync("/api/organizations", NewBody(mselId: msel.Id), Ct);
+        var created = await Read<ViewModels.Organization>(
+            await Client(actor).PostAsJsonAsync("/api/organizations", NewBody(mselId: msel.Id), Ct));
 
         Assert.Equal(
             [msel.Id.ToString(), MainHub.ADMIN_DATA_GROUP],
             Hub.Recipients(MainHubMethods.OrganizationCreated, msel.Id));
+        Assert.Equal(created.Id, Assert.IsType<ViewModels.Organization>(Hub.Of(MainHubMethods.OrganizationCreated, msel.Id)[0].Payload).Id);
     }
 
     /// <summary>Create a template also broadcasts to an empty group name.</summary>

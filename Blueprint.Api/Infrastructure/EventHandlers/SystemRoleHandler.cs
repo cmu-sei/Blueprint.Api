@@ -3,31 +3,28 @@
 
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class SystemRoleCreatedSignalRHandler : INotificationHandler<EntityCreated<SystemRoleEntity>>
     {
         private readonly IHubContext<MainHub> _mainHub;
-        private readonly IMapper _mapper;
 
         public SystemRoleCreatedSignalRHandler(
-            IHubContext<MainHub> mainHub,
-            IMapper mapper)
+            IHubContext<MainHub> mainHub)
         {
             _mainHub = mainHub;
-            _mapper = mapper;
         }
 
         public async Task Handle(EntityCreated<SystemRoleEntity> notification, CancellationToken cancellationToken)
         {
-            var systemRole = _mapper.Map<ViewModels.SystemRole>(notification.Entity);
+            var systemRole = notification.Entity.ToSystemRole();
             await _mainHub.Clients
                 .Groups(MainHub.ROLE_GROUP)
                 .SendAsync(MainHubMethods.SystemRoleCreated, systemRole, cancellationToken);
@@ -37,19 +34,16 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     public class SystemRoleUpdatedSignalRHandler : INotificationHandler<EntityUpdated<SystemRoleEntity>>
     {
         private readonly IHubContext<MainHub> _mainHub;
-        private readonly IMapper _mapper;
 
         public SystemRoleUpdatedSignalRHandler(
-            IHubContext<MainHub> mainHub,
-            IMapper mapper)
+            IHubContext<MainHub> mainHub)
         {
             _mainHub = mainHub;
-            _mapper = mapper;
         }
 
         public async Task Handle(EntityUpdated<SystemRoleEntity> notification, CancellationToken cancellationToken)
         {
-            var systemRole = _mapper.Map<ViewModels.SystemRole>(notification.Entity);
+            var systemRole = notification.Entity.ToSystemRole();
             await _mainHub.Clients
                 .Groups(MainHub.ROLE_GROUP)
                 .SendAsync(MainHubMethods.SystemRoleUpdated, systemRole, cancellationToken);

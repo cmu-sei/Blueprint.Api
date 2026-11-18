@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -17,6 +16,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -33,14 +33,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<IUserMselRoleService> _logger;
 
-        public UserMselRoleService(BlueprintContext context, IPrincipal user, ILogger<IUserMselRoleService> logger, IMapper mapper)
+        public UserMselRoleService(BlueprintContext context, IPrincipal user, ILogger<IUserMselRoleService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -54,7 +52,7 @@ namespace Blueprint.Api.Services
                 .Where(umr => umr.MselId == mselId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<UserMselRole>>(items);
+            return items.Select(x => x.ToUserMselRole()).ToList();
         }
 
         public async Task<ViewModels.UserMselRole> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -66,7 +64,7 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
-            return _mapper.Map<UserMselRole>(item);
+            return item.ToUserMselRole();
         }
 
         public async Task<ViewModels.UserMselRole> CreateAsync(ViewModels.UserMselRole userMselRole, bool hasSystemPermission, CancellationToken ct)
@@ -79,7 +77,7 @@ namespace Blueprint.Api.Services
             await _context.Database.BeginTransactionAsync();
             userMselRole.Id = userMselRole.Id != Guid.Empty ? userMselRole.Id : Guid.NewGuid();
             userMselRole.CreatedBy = _user.GetId();
-            var userMselRoleEntity = _mapper.Map<UserMselRoleEntity>(userMselRole);
+            var userMselRoleEntity = userMselRole.ToEntity();
 
             _context.UserMselRoles.Add(userMselRoleEntity);
             await _context.SaveChangesAsync(ct);
@@ -151,7 +149,7 @@ namespace Blueprint.Api.Services
             }
             await _context.SaveChangesAsync(ct);
             await ServiceUtilities.SetMselModifiedAsync(mselId, _user.GetId(), DateTime.UtcNow, _context, ct);
-            return _mapper.Map<IEnumerable<UserMselRole>>(rows);
+            return rows.Select(x => x.ToUserMselRole()).ToList();
         }
 
     }

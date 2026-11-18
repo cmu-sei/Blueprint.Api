@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
@@ -14,24 +13,22 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class UserMselRoleHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly IUserMselRoleService _userMselRoleService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public UserMselRoleHandler(
             BlueprintContext db,
-            IMapper mapper,
             IUserMselRoleService userMselRoleService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _userMselRoleService = userMselRoleService;
             _mainHub = mainHub;
         }
@@ -53,7 +50,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
             CancellationToken cancellationToken)
         {
             var groupIds = GetGroups(userMselRoleEntity);
-            var userMselRole = _mapper.Map<ViewModels.UserMselRole>(userMselRoleEntity);
+            var userMselRole = userMselRoleEntity.ToUserMselRole();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -69,9 +66,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public UserMselRoleCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IUserMselRoleService userMselRoleService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, userMselRoleService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, userMselRoleService, mainHub) { }
 
         public async Task Handle(EntityCreated<UserMselRoleEntity> notification, CancellationToken cancellationToken)
         {
@@ -83,9 +79,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public UserMselRoleUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IUserMselRoleService userMselRoleService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, userMselRoleService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, userMselRoleService, mainHub) { }
 
         public async Task Handle(EntityUpdated<UserMselRoleEntity> notification, CancellationToken cancellationToken)
         {
@@ -101,9 +96,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public UserMselRoleDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IUserMselRoleService userMselRoleService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, userMselRoleService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, userMselRoleService, mainHub)
         {
         }
 

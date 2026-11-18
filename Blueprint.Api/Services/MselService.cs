@@ -15,7 +15,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -33,6 +32,7 @@ using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Packaging;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -69,7 +69,6 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<MselService> _logger;
         private readonly ClientOptions _clientOptions;
         private readonly IScenarioEventService _scenarioEventService;
@@ -91,7 +90,6 @@ namespace Blueprint.Api.Services
             IJoinQueue joinQueue,
             IPrincipal user,
             ILogger<MselService> logger,
-            IMapper mapper,
             IXApiService xApiService,
             ICiteApiClient citeApiClient,
             ICasterService casterService)
@@ -100,7 +98,6 @@ namespace Blueprint.Api.Services
             _clientOptions = clientOptions;
             _scenarioEventService = scenarioEventService;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
             _integrationQueue = integrationQueue;
             _integrationService = integrationService;
@@ -157,7 +154,7 @@ namespace Blueprint.Api.Services
                 msels = _context.Msels;
             }
 
-            return _mapper.Map<IEnumerable<Msel>>(await msels.ToListAsync());
+            return (await msels.ToListAsync()).Select(x => x.ToMsel()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMineAsync(bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -203,7 +200,7 @@ namespace Blueprint.Api.Services
             {
                 mselList = mselList.Where(m => !m.IsTemplate).ToList();
             }
-            var result = _mapper.Map<IEnumerable<Msel>>(mselList).ToList();
+            var result = mselList.Select(x => x.ToMsel()).ToList();
             foreach (var m in result) EnsureCreatorOwnerRole(m);
             return result;
         }
@@ -233,7 +230,7 @@ namespace Blueprint.Api.Services
                 .SingleOrDefaultAsync(sm => sm.Id == id, ct);
             if (mselEntity == null)
                 throw new EntityNotFoundException<MselEntity>("MSEL not found " + id);
-            var msel = _mapper.Map<Msel>(mselEntity);
+            var msel = mselEntity.ToMsel();
             EnsureCreatorOwnerRole(msel);
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
@@ -256,7 +253,7 @@ namespace Blueprint.Api.Services
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
 
             // the integration IDs and status are not part of the request, so a new MSEL starts with none
-            var mselEntity = _mapper.Map<MselEntity>(msel);
+            var mselEntity = msel.ToEntity();
             mselEntity.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
             mselEntity.CreatedBy = _user.GetId();
 
@@ -279,7 +276,7 @@ namespace Blueprint.Api.Services
 
             // the copy carries the MSEL's own scoring model, which a contributor may read
             var newMselEntity = await privateMselCopyAsync(mselId, null, ct);
-            var msel = _mapper.Map<Msel>(newMselEntity);
+            var msel = newMselEntity.ToMsel();
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
             {
@@ -664,7 +661,7 @@ namespace Blueprint.Api.Services
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
 
             // okay to update this msel
-            _mapper.Map(msel, mselToUpdate);
+            msel.ApplyTo(mselToUpdate);
             mselToUpdate.CiteScoringModelName = msel.CiteScoringModelId == null ? null : linkedName;
             mselToUpdate.ModifiedBy = _user.GetId();
 
@@ -774,7 +771,7 @@ namespace Blueprint.Api.Services
         {
             var mselEntity = await createMselFromXlsxFile(form.ToUpload, null, ct);
 
-            return _mapper.Map<Msel>(mselEntity);
+            return mselEntity.ToMsel();
         }
 
         public async Task<Msel> ReplaceAsync(MselFileForm form, Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -798,7 +795,7 @@ namespace Blueprint.Api.Services
             mselEntity = await createMselFromXlsxFile(form.ToUpload, mselEntity, ct);
             await _context.Database.CommitTransactionAsync(ct);
 
-            return _mapper.Map<Msel>(mselEntity);
+            return mselEntity.ToMsel();
         }
 
         public async Task<Tuple<MemoryStream, string>> DownloadXlsxAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -1503,6 +1500,7 @@ namespace Blueprint.Api.Services
             var moves = await _context.Moves
                 .Where(m => m.MselId == mselId)
                 .OrderBy(m => m.DeltaSeconds)
+                .ThenBy(m => m.MoveNumber)
                 .ToListAsync(ct);
 
             // Load cards for GUID-to-name resolution
@@ -2560,6 +2558,9 @@ namespace Blueprint.Api.Services
             }
             if (nameInUse)
                 AddChange(result, "name", $"A MSEL named \"{fileName}\" already exists, so this one was named \"{mselEntity.Name}\".");
+            // a file from before every move had its own start time is imported as it is, and the planner told
+            foreach (var problem in MoveOrder.FindProblems(mselEntity.Moves))
+                AddChange(result, "moves", $"{problem} Each move must start after the move before it; fix the start times on the Moves tab before pushing.");
 
             // Integrations stay as the file had them; pushing creates content in each app that is on.
             if (mselEntity.UsePlayer) AddChange(result, "usePlayer", "Player integration is on.");
@@ -2580,7 +2581,7 @@ namespace Blueprint.Api.Services
                 DataFields = mselEntity.DataFields.Count,
                 Pages = mselEntity.Pages.Count
             };
-            result.Msel = _mapper.Map<Msel>(mselEntity);
+            result.Msel = mselEntity.ToMsel();
             return result;
         }
 
@@ -2808,6 +2809,18 @@ namespace Blueprint.Api.Services
                 $"Competencies that are not in this Blueprint were removed from Competency data fields: {string.Join(" and ", removed)}.");
         }
 
+        // Moves and events can be saved out of order while a MSEL is edited, but a push needs them valid.
+        private async Task ValidateMovesAsync(Guid mselId, CancellationToken ct)
+        {
+            var moves = await _context.Moves.AsNoTracking().Where(m => m.MselId == mselId).ToListAsync(ct);
+            var eventStarts = await _context.ScenarioEvents.AsNoTracking()
+                .Where(e => e.MselId == mselId).Select(e => e.DeltaSeconds).ToListAsync(ct);
+            var problems = MoveOrder.FindPushProblems(moves, eventStarts);
+            if (problems.Count > 0)
+                throw new ConflictException(
+                    $"Fix the moves before pushing. {string.Join(" ", problems)} Each move must start after the move before it, and every scenario event must start in a move.");
+        }
+
         public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
@@ -2829,6 +2842,7 @@ namespace Blueprint.Api.Services
                 // also covers a directory that arrived by copy rather than through UpdateAsync
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
             }
+            await ValidateMovesAsync(mselId, ct);
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
@@ -2844,7 +2858,7 @@ namespace Blueprint.Api.Services
                 await _xApiService.ExerciseStartedAsync(msel, ct);
             }
 
-            return _mapper.Map<ViewModels.Msel>(msel);
+            return msel.ToMsel();
         }
 
         /// <summary>
@@ -2876,7 +2890,7 @@ namespace Blueprint.Api.Services
             msel.IntegrationStatus = "Retrying Caster";
             _integrationQueue.Add(new IntegrationInformation { MselId = mselId, PlayerViewId = null, IsPush = true, CasterOnly = true, FinalStatus = MselItemStatus.Deployed, UserId = _user.GetId() });
 
-            return _mapper.Map<ViewModels.Msel>(msel);
+            return msel.ToMsel();
         }
 
         // the start of the status a push leaves when its Caster step fails
@@ -2903,7 +2917,7 @@ namespace Blueprint.Api.Services
                 await _xApiService.ExerciseStoppedAsync(msel, ct);
             }
 
-            return _mapper.Map<ViewModels.Msel>(msel);
+            return msel.ToMsel();
         }
 
         public async Task CancelIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -2923,7 +2937,7 @@ namespace Blueprint.Api.Services
             msel.Status = MselItemStatus.Archived;
             await _context.SaveChangesAsync(ct);
 
-            return _mapper.Map<ViewModels.Msel>(msel);
+            return msel.ToMsel();
         }
 
         // Checks a Caster MSEL without calling Caster, so an invitee with no Caster access can run them too.
@@ -3005,7 +3019,7 @@ namespace Blueprint.Api.Services
             // Only return MSELs where the user is already on a team
             var mselList = teamMselList.OrderByDescending(m => m.DateCreated);
 
-            return _mapper.Map<IEnumerable<Msel>>(mselList);
+            return mselList.Select(x => x.ToMsel()).ToList();
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetMyLaunchInvitationMselsAsync(CancellationToken ct)
@@ -3239,6 +3253,8 @@ namespace Blueprint.Api.Services
             var template = await _context.Msels.AsNoTracking().SingleAsync(m => m.Id == mselId, ct);
             if (template.UseCaster)
                 await ValidateCasterSetupAsync(template, ct);
+            // the launch pushes, so a template with moves out of order fails here for the planner to fix, not later for the participant
+            await ValidateMovesAsync(mselId, ct);
 
             // clone the template MSEL
             var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct);
@@ -3255,7 +3271,7 @@ namespace Blueprint.Api.Services
             // add the launch data to the launch queue
             _integrationQueue.Add(new IntegrationInformation { MselId = mselEntity.Id, PlayerViewId = playerViewId, IsPush = true, UserId = _user.GetId() });
             // get the MSEL to return with the new Player View ID
-            var launchedMsel = _mapper.Map<Msel>(mselEntity);
+            var launchedMsel = mselEntity.ToMsel();
             launchedMsel.PlayerViewId = playerViewId;
 
             return launchedMsel;

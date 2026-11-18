@@ -528,11 +528,12 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         var team = await SeedTeam(msel);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        await Post(Client(actor), Body(card.Id, team.Id));
+        var created = await Read<ViewModels.CardTeam>(await Post(Client(actor), Body(card.Id, team.Id)));
 
         Assert.Equal(
             [msel.Id.ToString(), MainHub.ADMIN_DATA_GROUP],
             Hub.Recipients(MainHubMethods.CardTeamCreated, msel.Id));
+        Assert.Equal(created.Id, Assert.IsType<ViewModels.CardTeam>(Hub.Of(MainHubMethods.CardTeamCreated, msel.Id)[0].Payload).Id);
     }
 
     /// <remarks>

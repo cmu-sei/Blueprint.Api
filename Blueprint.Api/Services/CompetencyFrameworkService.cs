@@ -11,7 +11,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
@@ -20,6 +19,7 @@ using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -47,7 +47,6 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ICompetencyFrameworkImportProgressService _importProgress;
 
         /// <summary>
@@ -60,12 +59,10 @@ namespace Blueprint.Api.Services
         public CompetencyFrameworkService(
             BlueprintContext context,
             IPrincipal user,
-            IMapper mapper,
             ICompetencyFrameworkImportProgressService importProgress)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _importProgress = importProgress;
         }
 
@@ -87,7 +84,7 @@ namespace Blueprint.Api.Services
                 .AsNoTracking()
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<ViewModels.CompetencyFramework>>(items);
+            return items.Select(x => x.ToCompetencyFramework()).ToList();
         }
 
         public async Task<ViewModels.CompetencyFramework> GetAsync(Guid id, CancellationToken ct)
@@ -102,7 +99,7 @@ namespace Blueprint.Api.Services
             if (framework == null)
                 throw new EntityNotFoundException<ViewModels.CompetencyFramework>();
 
-            var result = _mapper.Map<ViewModels.CompetencyFramework>(framework);
+            var result = framework.ToCompetencyFramework();
 
             // Populate RelatedIdNumbers on each competency view model
             var idNumberMap = framework.Competencies.ToDictionary(c => c.Id, c => c.IdNumber);
@@ -286,7 +283,7 @@ namespace Blueprint.Api.Services
         public async Task<ViewModels.CompetencyFramework> CreateAsync(ViewModels.CompetencyFramework framework, CancellationToken ct)
         {
             var userId = _user.GetId();
-            var entity = _mapper.Map<CompetencyFrameworkEntity>(framework);
+            var entity = framework.ToEntity();
             entity.Id = Guid.NewGuid();
             entity.IdNumber = NormalizeIdNumber(entity.IdNumber);
             entity.CreatedBy = userId;
@@ -1712,7 +1709,7 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<ViewModels.CompetencyFramework>();
 
             var userId = _user.GetId();
-            var entity = _mapper.Map<CompetencyEntity>(competency);
+            var entity = competency.ToEntity();
             entity.Id = Guid.NewGuid();
             entity.CompetencyFrameworkId = frameworkId;
             entity.IdNumber = NormalizeIdNumber(entity.IdNumber);
@@ -1763,7 +1760,7 @@ namespace Blueprint.Api.Services
                 }
             }
 
-            return _mapper.Map<ViewModels.Competency>(entity);
+            return entity.ToCompetency();
         }
 
         public async Task<ViewModels.Competency> UpdateCompetencyAsync(Guid competencyId, ViewModels.Competency competency, CancellationToken ct)
@@ -1855,7 +1852,7 @@ namespace Blueprint.Api.Services
                 throw TranslateDbUpdateException(ex, "saving competency", competencyIdNumber: entity.IdNumber);
             }
 
-            return _mapper.Map<ViewModels.Competency>(entity);
+            return entity.ToCompetency();
         }
 
         public async Task<bool> DeleteCompetencyAsync(Guid competencyId, CancellationToken ct)

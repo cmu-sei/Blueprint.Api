@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
@@ -15,24 +14,22 @@ using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class CiteDutyHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly ICiteDutyService _citeDutyService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public CiteDutyHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICiteDutyService citeDutyService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _citeDutyService = citeDutyService;
             _mainHub = mainHub;
         }
@@ -58,7 +55,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 .Include(cr => cr.Team)
                 .SingleOrDefaultAsync(cr => cr.Id == citeDutyEntity.Id, cancellationToken);
             citeDutyEntity.Msel = null;
-            var citeDuty = _mapper.Map<ViewModels.CiteDuty>(citeDutyEntity);
+            var citeDuty = citeDutyEntity.ToCiteDuty();
             var tasks = new List<Task>();
 
             foreach (var groupId in groupIds)
@@ -74,9 +71,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public CiteDutyCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICiteDutyService citeDutyService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, citeDutyService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, citeDutyService, mainHub) { }
 
         public async Task Handle(EntityCreated<CiteDutyEntity> notification, CancellationToken cancellationToken)
         {
@@ -88,9 +84,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public CiteDutyUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICiteDutyService citeDutyService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, citeDutyService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, citeDutyService, mainHub) { }
 
         public async Task Handle(EntityUpdated<CiteDutyEntity> notification, CancellationToken cancellationToken)
         {
@@ -106,9 +101,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public CiteDutyDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             ICiteDutyService citeDutyService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, citeDutyService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, citeDutyService, mainHub)
         {
         }
 

@@ -19,7 +19,6 @@ using Blueprint.Api.Infrastructure.EventHandlers;
 using Crucible.Common.EntityEvents.Extensions;
 using Blueprint.Api.Data;
 using Blueprint.Api.Infrastructure.JsonConverters;
-using Blueprint.Api.Infrastructure.Mapping;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Services;
 using System;
@@ -32,9 +31,9 @@ using System.Linq;
 using System.Security.Principal;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.JsonWebTokens;
-using AutoMapper.Internal;
 using Crucible.Common.ServiceDefaults;
 
 namespace Blueprint.Api;
@@ -146,6 +145,14 @@ public class Startup
                 options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
                 options.PayloadSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
             });
+
+        // Start every broadcast without waiting for it, so a client that is not taking messages cannot
+        // hold up the write that caused it. Registered for MainHub itself, which takes precedence over
+        // AddSignalR's open-generic default. Wraps the in-memory manager: a single instance only.
+        services.AddSingleton<HubLifetimeManager<Hubs.MainHub>>(sp => new Hubs.NonBlockingHubLifetimeManager<Hubs.MainHub>(
+            ActivatorUtilities.CreateInstance<DefaultHubLifetimeManager<Hubs.MainHub>>(sp),
+            sp.GetRequiredService<IHostApplicationLifetime>(),
+            sp.GetRequiredService<ILogger<Hubs.NonBlockingHubLifetimeManager<Hubs.MainHub>>>()));
 
         services.AddMvc(options =>
         {
@@ -284,12 +291,6 @@ public class Startup
         ApplyPolicies(services);
 
         services.AddTransient<SanitizerInterceptor>();
-        services.AddAutoMapper(cfg =>
-        {
-            cfg.Internal().ForAllPropertyMaps(
-                pm => pm.SourceType != null && Nullable.GetUnderlyingType(pm.SourceType) == pm.DestinationType,
-                (pm, c) => c.MapFrom<object, object, object, object>(new IgnoreNullSourceValues(), pm.SourceMember.Name));
-        }, typeof(Startup));
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Startup>());
         services
             .Configure<ResourceOwnerAuthorizationOptions>(Configuration.GetSection("ResourceOwnerAuthorization"))

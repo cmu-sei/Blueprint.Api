@@ -546,6 +546,7 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(
             new[] { MainHub.ADMIN_DATA_GROUP, created.Id.ToString(), msel.Id.ToString() }.Order(),
             Hub.Recipients(MainHubMethods.TeamCreated, created.Id, msel.Id).Order());
+        Assert.Equal(created.Id, Assert.IsType<ViewModels.Team>(Hub.Of(MainHubMethods.TeamCreated, created.Id, msel.Id)[0].Payload).Id);
     }
 
     /// <summary>The Caster topology team a team is mapped to is stored trimmed.</summary>

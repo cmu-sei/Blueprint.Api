@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Blueprint.Api.Data;
@@ -18,24 +17,22 @@ using Blueprint.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.ViewModels;
 using Crucible.Common.EntityEvents.Events;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
 {
     public class BaseMselHandler
     {
         protected readonly BlueprintContext _db;
-        protected readonly IMapper _mapper;
         protected readonly IMselService _mselService;
         protected readonly IHubContext<MainHub> _mainHub;
 
         public BaseMselHandler(
             BlueprintContext db,
-            IMapper mapper,
             IMselService mselService,
             IHubContext<MainHub> mainHub)
         {
             _db = db;
-            _mapper = mapper;
             _mselService = mselService;
             _mainHub = mainHub;
         }
@@ -67,7 +64,7 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 .Include(m => m.UserMselRoles.Where(r => r.UserId == userId))
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(sm => sm.Id == mselEntity.Id, cancellationToken);
-            var msel = _mapper.Map<Msel>(mselEntity);
+            var msel = mselEntity.ToMsel();
             if (msel != null)
             {
                 if (msel.UseGallery)
@@ -92,9 +89,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public MselCreatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IMselService mselService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, mselService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, mselService, mainHub) { }
 
         public async Task Handle(EntityCreated<MselEntity> notification, CancellationToken cancellationToken)
         {
@@ -106,9 +102,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public MselUpdatedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IMselService mselService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, mselService, mainHub) { }
+            IHubContext<MainHub> mainHub) : base(db, mselService, mainHub) { }
 
         public async Task Handle(EntityUpdated<MselEntity> notification, CancellationToken cancellationToken)
         {
@@ -124,9 +119,8 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
     {
         public MselDeletedSignalRHandler(
             BlueprintContext db,
-            IMapper mapper,
             IMselService mselService,
-            IHubContext<MainHub> mainHub) : base(db, mapper, mselService, mainHub)
+            IHubContext<MainHub> mainHub) : base(db, mselService, mainHub)
         {
         }
 

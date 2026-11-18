@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -17,6 +16,7 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -34,14 +34,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<ICatalogInjectService> _logger;
 
-        public CatalogInjectService(BlueprintContext context, IPrincipal user, ILogger<ICatalogInjectService> logger, IMapper mapper)
+        public CatalogInjectService(BlueprintContext context, IPrincipal user, ILogger<ICatalogInjectService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -62,7 +60,7 @@ namespace Blueprint.Api.Services
                 .AsSplitQuery()
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<CatalogInject>>(items);
+            return items.Select(x => x.ToCatalogInject()).ToList();
         }
 
         public async Task<ViewModels.CatalogInject> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
@@ -79,13 +77,13 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !await CatalogViewRequirement.IsMet(_user.GetId(), item.CatalogId, _context))
                 throw new ForbiddenException();
 
-            return _mapper.Map<CatalogInject>(item);
+            return item.ToCatalogInject();
         }
 
         public async Task<ViewModels.CatalogInject> CreateAsync(ViewModels.CatalogInject catalogInject, CancellationToken ct)
         {
             catalogInject.Id = catalogInject.Id != Guid.Empty ? catalogInject.Id : Guid.NewGuid();
-            var catalogInjectEntity = _mapper.Map<CatalogInjectEntity>(catalogInject);
+            var catalogInjectEntity = catalogInject.ToEntity();
 
             _context.CatalogInjects.Add(catalogInjectEntity);
             await _context.SaveChangesAsync(ct);
@@ -104,7 +102,7 @@ namespace Blueprint.Api.Services
             foreach (var catalogInject in catalogInjects)
             {
                 catalogInject.Id = catalogInject.Id != Guid.Empty ? catalogInject.Id : Guid.NewGuid();
-                var catalogInjectEntity = _mapper.Map<CatalogInjectEntity>(catalogInject);
+                var catalogInjectEntity = catalogInject.ToEntity();
 
                 _context.CatalogInjects.Add(catalogInjectEntity);
                 await _context.SaveChangesAsync(ct);

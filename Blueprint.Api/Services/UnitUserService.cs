@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
@@ -16,6 +15,7 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
+using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
 {
@@ -32,14 +32,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<IUnitUserService> _logger;
 
-        public UnitUserService(BlueprintContext context, IPrincipal user, ILogger<IUnitUserService> logger, IMapper mapper)
+        public UnitUserService(BlueprintContext context, IPrincipal user, ILogger<IUnitUserService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -48,7 +46,7 @@ namespace Blueprint.Api.Services
             var items = await _context.UnitUsers
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<UnitUser>>(items);
+            return items.Select(x => x.ToUnitUser()).ToList();
         }
 
         public async Task<ViewModels.UnitUser> GetAsync(Guid id, CancellationToken ct)
@@ -57,7 +55,7 @@ namespace Blueprint.Api.Services
                 .Include(tu => tu.User)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
-            return _mapper.Map<UnitUser>(item);
+            return item.ToUnitUser();
         }
 
         public async Task<ViewModels.UnitUser> CreateAsync(ViewModels.UnitUser unitUser, CancellationToken ct)
@@ -68,7 +66,7 @@ namespace Blueprint.Api.Services
             // okay to add this UnitUser
             unitUser.Id = unitUser.Id != Guid.Empty ? unitUser.Id : Guid.NewGuid();
             unitUser.CreatedBy = _user.GetId();
-            var unitUserEntity = _mapper.Map<UnitUserEntity>(unitUser);
+            var unitUserEntity = unitUser.ToEntity();
 
             _context.UnitUsers.Add(unitUserEntity);
             await _context.SaveChangesAsync(ct);

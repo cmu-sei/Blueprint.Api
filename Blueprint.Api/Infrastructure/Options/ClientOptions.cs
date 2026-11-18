@@ -13,6 +13,8 @@ namespace Blueprint.Api.Infrastructure.Options
         public string CiteApiUrl { get; set; }
         public string GalleryApiUrl { get; set; }
         public string PlayerApiUrl { get; set; }
+        // the Player VM API, which automation tasks' VM actions go through
+        public string PlayerVmApiUrl { get; set; }
         public string SteamfitterApiUrl { get; set; }
         public string CasterApiUrl { get; set; }
 

@@ -46,6 +46,9 @@
     <PackageReference Include="IdentityServer4.AccessTokenValidation" />
     <PackageReference Include="caster.api.client" />
     <PackageReference Include="Player.Api.Client" />
+    <PackageReference Include="Player.Vm.Api.Client" />
+    <PackageReference Include="SSH.NET" />
+    <PackageReference Include="MailKit" />
     <PackageReference Include="steamfitter.api.client" />
     <PackageReference Include="HtmlSanitizer" />
     <PackageReference Include="Crucible.Common.ServiceDefaults"/>
@@ -64,6 +67,11 @@
   <ItemGroup>
     <ProjectReference Include="..\Blueprint.Api.Data\Blueprint.Api.Data.csproj" />
     <ProjectReference Include="..\Blueprint.Api.Migrations.PostgreSQL\Blueprint.Api.Migrations.PostgreSQL.csproj" />
+  </ItemGroup>
+  <!-- The automation action catalog is read from the assembly, not shipped as a loose file. -->
+  <ItemGroup>
+    <Content Remove="Automation\automationActions.json" />
+    <EmbeddedResource Include="Automation\automationActions.json" />
   </ItemGroup>
   <ItemGroup>
     <Content Update="appsettings.json">

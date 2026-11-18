@@ -21,6 +21,7 @@ using Blueprint.Api.Data;
 using Blueprint.Api.Infrastructure.JsonConverters;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Services;
+using Blueprint.Api.Automation;
 using System;
 using Blueprint.Api.Infrastructure;
 using Blueprint.Api.Infrastructure.Authorization;
@@ -270,6 +271,7 @@ public class Startup
         services.AddScoped<IXApiQueueService, XApiQueueService>();
         services.AddScoped<ILmtService, LmtService>();
         services.AddHttpClient();
+        services.AddAutomationActions(Configuration);
 
         // Register xAPI Background Service
         services.AddHostedService<Services.XApiBackgroundService>();

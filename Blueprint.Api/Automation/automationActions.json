@@ -1,0 +1,306 @@
+{
+  "actions": [
+    {
+      "action": "player_notification",
+      "category": "Blueprint",
+      "display": "Send a Player notification",
+      "description": "Shows a notification to everyone in the MSEL's Player view.",
+      "requiresVm": false,
+      "requires": ["playerView"],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Text", "display": "Notification text", "inputType": "textArea", "required": true }
+      ]
+    },
+    {
+      "action": "cite_situation_update",
+      "category": "Blueprint",
+      "display": "Update the CITE situation",
+      "description": "Sets the situation time and description of the MSEL's CITE evaluation.",
+      "requiresVm": false,
+      "requires": ["cite"],
+      "testMode": "dryRun",
+      "parameters": [
+        { "key": "SituationTime", "display": "Situation time", "inputType": "datetime", "required": true },
+        { "key": "SituationDescription", "display": "Situation description", "inputType": "html", "required": true }
+      ]
+    },
+    {
+      "action": "cite_move_set",
+      "category": "Blueprint",
+      "display": "Set the CITE move",
+      "description": "Moves the MSEL's CITE evaluation to a move. Starting a move on the Facilitator View does this for you.",
+      "requiresVm": false,
+      "requires": ["cite"],
+      "testMode": "dryRun",
+      "parameters": [
+        { "key": "MoveNumber", "display": "Move number", "inputType": "number", "required": true }
+      ]
+    },
+    {
+      "action": "gallery_move_inject_set",
+      "category": "Blueprint",
+      "display": "Set the Gallery move and inject",
+      "description": "Moves the MSEL's Gallery exhibit to a move and inject, which shows the articles up to it. Starting a move or group on the Facilitator View does this for you.",
+      "requiresVm": false,
+      "requires": ["gallery"],
+      "testMode": "dryRun",
+      "parameters": [
+        { "key": "MoveNumber", "display": "Move number", "inputType": "number", "required": true },
+        { "key": "InjectNumber", "display": "Inject number", "inputType": "number", "required": true }
+      ]
+    },
+    {
+      "action": "vm_hw_power_on",
+      "category": "VM",
+      "display": "Power on",
+      "description": "Powers on each VM the mask matches.",
+      "requiresVm": true,
+      "requires": ["playerView"],
+      "testMode": "live",
+      "parameters": []
+    },
+    {
+      "action": "vm_hw_power_off",
+      "category": "VM",
+      "display": "Power off",
+      "description": "Powers off each VM the mask matches.",
+      "requiresVm": true,
+      "requires": ["playerView"],
+      "testMode": "live",
+      "parameters": []
+    },
+    {
+      "action": "vm_snapshot_create",
+      "category": "VM",
+      "display": "Create a snapshot",
+      "requiresVm": true,
+      "requires": ["playerView"],
+      "testMode": "live",
+      "parameters": [
+        { "key": "SnapshotName", "display": "Snapshot name", "inputType": "text", "required": true },
+        { "key": "Description", "display": "Description", "inputType": "text" },
+        { "key": "IncludeRam", "display": "Include memory", "inputType": "checkbox", "default": "false" }
+      ]
+    },
+    {
+      "action": "vm_snapshot_revert",
+      "category": "VM",
+      "display": "Revert to a snapshot",
+      "requiresVm": true,
+      "requires": ["playerView"],
+      "testMode": "live",
+      "parameters": [
+        { "key": "SnapshotName", "display": "Snapshot name or id", "inputType": "text", "required": true }
+      ]
+    },
+    {
+      "action": "vm_snapshot_delete",
+      "category": "VM",
+      "display": "Delete a snapshot",
+      "requiresVm": true,
+      "requires": ["playerView"],
+      "testMode": "live",
+      "parameters": [
+        { "key": "SnapshotName", "display": "Snapshot name or id", "inputType": "text", "required": true }
+      ]
+    },
+    {
+      "action": "guest_process_run",
+      "category": "VM",
+      "display": "Run a command (guest)",
+      "description": "Runs a program in the guest and captures its output. A non-zero exit code fails the task.",
+      "requiresVm": true,
+      "requires": ["playerView"],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Username", "display": "Username", "inputType": "text", "hint": "vSphere guests only" },
+        { "key": "Password", "display": "Password", "inputType": "password", "secret": true, "hint": "vSphere guests only" },
+        { "key": "CommandText", "display": "Command", "inputType": "text", "required": true, "hint": "The program's full path, e.g. C:\\Windows\\System32\\cmd.exe or /bin/bash" },
+        { "key": "CommandArgs", "display": "Arguments", "inputType": "text" },
+        { "key": "CommandWorkDirectory", "display": "Working directory", "inputType": "text" },
+        { "key": "TimeoutSeconds", "display": "Timeout (s)", "inputType": "number" }
+      ]
+    },
+    {
+      "action": "guest_process_run_fast",
+      "category": "VM",
+      "display": "Start a command (guest, no output)",
+      "description": "Starts a program in the guest and returns its process id without waiting for it.",
+      "requiresVm": true,
+      "requires": ["playerView"],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Username", "display": "Username", "inputType": "text", "hint": "vSphere guests only" },
+        { "key": "Password", "display": "Password", "inputType": "password", "secret": true, "hint": "vSphere guests only" },
+        { "key": "CommandText", "display": "Command", "inputType": "text", "required": true },
+        { "key": "CommandArgs", "display": "Arguments", "inputType": "text" },
+        { "key": "CommandWorkDirectory", "display": "Working directory", "inputType": "text" }
+      ]
+    },
+    {
+      "action": "guest_file_read",
+      "category": "VM",
+      "display": "Read a file (guest)",
+      "requiresVm": true,
+      "requires": ["playerView"],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Username", "display": "Username", "inputType": "text", "hint": "vSphere guests only" },
+        { "key": "Password", "display": "Password", "inputType": "password", "secret": true, "hint": "vSphere guests only" },
+        { "key": "GuestFilePath", "display": "File path", "inputType": "text", "required": true }
+      ]
+    },
+    {
+      "action": "guest_file_upload_content",
+      "category": "VM",
+      "display": "Write a text file (guest)",
+      "requiresVm": true,
+      "requires": ["playerView"],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Username", "display": "Username", "inputType": "text", "hint": "vSphere guests only" },
+        { "key": "Password", "display": "Password", "inputType": "password", "secret": true, "hint": "vSphere guests only" },
+        { "key": "GuestFilePath", "display": "File path", "inputType": "text", "required": true },
+        { "key": "GuestFileContent", "display": "File content", "inputType": "file", "required": true, "hint": "Type the text, or load it from a file" }
+      ]
+    },
+    {
+      "action": "guest_file_upload_file",
+      "category": "VM",
+      "display": "Upload a server file (guest)",
+      "description": "Uploads a file from the directory the Blueprint API is configured to serve files from.",
+      "requiresVm": true,
+      "requires": ["playerView"],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Username", "display": "Username", "inputType": "text", "hint": "vSphere guests only" },
+        { "key": "Password", "display": "Password", "inputType": "password", "secret": true, "hint": "vSphere guests only" },
+        { "key": "GuestFilePath", "display": "Guest directory", "inputType": "text", "required": true },
+        { "key": "FilePath", "display": "Server file", "inputType": "text", "required": true, "hint": "A file name under Automation:Files:LocalDirectory" }
+      ]
+    },
+    {
+      "action": "core_remote",
+      "category": "SSH",
+      "display": "Run a remote command",
+      "requiresVm": false,
+      "requires": [],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Hosts", "display": "Hosts", "inputType": "text", "required": true, "hint": "Comma separated" },
+        { "key": "Port", "display": "Port", "inputType": "number", "default": "22" },
+        { "key": "Username", "display": "Username", "inputType": "text", "required": true },
+        { "key": "PrivateKey", "display": "Private key", "inputType": "password", "secret": true, "hint": "Leave empty to use the API's default key" },
+        { "key": "Cmd", "display": "Command", "inputType": "text", "required": true },
+        { "key": "Cwd", "display": "Working directory", "inputType": "text" },
+        { "key": "Env", "display": "Environment", "inputType": "text", "default": "{}", "hint": "KEY=value,KEY2=value2 or a JSON object" }
+      ]
+    },
+    {
+      "action": "linux_file_touch",
+      "category": "SSH",
+      "display": "Touch a file",
+      "requiresVm": false,
+      "requires": [],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Hosts", "display": "Hosts", "inputType": "text", "required": true, "hint": "Comma separated" },
+        { "key": "Port", "display": "Port", "inputType": "number", "default": "22" },
+        { "key": "Username", "display": "Username", "inputType": "text", "required": true },
+        { "key": "PrivateKey", "display": "Private key", "inputType": "password", "secret": true, "hint": "Leave empty to use the API's default key" },
+        { "key": "File", "display": "File", "inputType": "text", "required": true },
+        { "key": "Cwd", "display": "Working directory", "inputType": "text" },
+        { "key": "Env", "display": "Environment", "inputType": "text", "default": "{}" },
+        { "key": "Sudo", "display": "Use sudo", "inputType": "checkbox", "default": "false" }
+      ]
+    },
+    {
+      "action": "linux_rm",
+      "category": "SSH",
+      "display": "Remove files",
+      "requiresVm": false,
+      "requires": [],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Hosts", "display": "Hosts", "inputType": "text", "required": true, "hint": "Comma separated" },
+        { "key": "Port", "display": "Port", "inputType": "number", "default": "22" },
+        { "key": "Username", "display": "Username", "inputType": "text", "required": true },
+        { "key": "PrivateKey", "display": "Private key", "inputType": "password", "secret": true, "hint": "Leave empty to use the API's default key" },
+        { "key": "Target", "display": "Target", "inputType": "text", "required": true },
+        { "key": "Args", "display": "Arguments", "inputType": "text" },
+        { "key": "Cwd", "display": "Working directory", "inputType": "text" },
+        { "key": "Env", "display": "Environment", "inputType": "text", "default": "{}" },
+        { "key": "Sudo", "display": "Use sudo", "inputType": "checkbox", "default": "false" },
+        { "key": "Recursive", "display": "Recursive", "inputType": "checkbox", "default": "false" },
+        { "key": "Force", "display": "Force", "inputType": "checkbox", "default": "false" }
+      ]
+    },
+    {
+      "action": "send_email",
+      "category": "Email",
+      "display": "Send an email",
+      "requiresVm": false,
+      "requires": [],
+      "testMode": "live",
+      "parameters": [
+        { "key": "EmailFrom", "display": "From", "inputType": "text", "hint": "Leave empty for the API's default sender" },
+        { "key": "EmailTo", "display": "To", "inputType": "text", "required": true, "hint": "Comma separated" },
+        { "key": "EmailCC", "display": "CC", "inputType": "text" },
+        { "key": "Subject", "display": "Subject", "inputType": "text", "required": true },
+        { "key": "Message", "display": "Message", "inputType": "textArea", "required": true },
+        { "key": "Mime", "display": "Format", "inputType": "select", "default": "plain", "choices": [ { "key": "plain", "display": "Plain text" }, { "key": "html", "display": "HTML" } ] }
+      ]
+    },
+    {
+      "action": "http_get",
+      "category": "HTTP",
+      "display": "GET request",
+      "requiresVm": false,
+      "requires": [],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Url", "display": "URL", "inputType": "text", "required": true },
+        { "key": "Headers", "display": "Headers", "inputType": "textArea", "secret": true, "hint": "A JSON object of header names and values" }
+      ]
+    },
+    {
+      "action": "http_post",
+      "category": "HTTP",
+      "display": "POST request",
+      "requiresVm": false,
+      "requires": [],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Url", "display": "URL", "inputType": "text", "required": true },
+        { "key": "Body", "display": "Body", "inputType": "textArea" },
+        { "key": "Headers", "display": "Headers", "inputType": "textArea", "secret": true, "hint": "A JSON object of header names and values" }
+      ]
+    },
+    {
+      "action": "http_put",
+      "category": "HTTP",
+      "display": "PUT request",
+      "requiresVm": false,
+      "requires": [],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Url", "display": "URL", "inputType": "text", "required": true },
+        { "key": "Body", "display": "Body", "inputType": "textArea" },
+        { "key": "Headers", "display": "Headers", "inputType": "textArea", "secret": true, "hint": "A JSON object of header names and values" }
+      ]
+    },
+    {
+      "action": "http_delete",
+      "category": "HTTP",
+      "display": "DELETE request",
+      "requiresVm": false,
+      "requires": [],
+      "testMode": "live",
+      "parameters": [
+        { "key": "Url", "display": "URL", "inputType": "text", "required": true },
+        { "key": "Headers", "display": "Headers", "inputType": "textArea", "secret": true, "hint": "A JSON object of header names and values" }
+      ]
+    }
+  ]
+}

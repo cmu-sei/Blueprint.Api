@@ -104,13 +104,14 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
         Assert.Empty(failures);
     }
 
-    /// <summary>Two service types are registered twice.</summary>
+    /// <summary>Two service types are registered twice. The automation action handlers are many by design, and left out.</summary>
     [Fact]
     public void TwoServiceTypes_AreRegisteredTwice()
     {
         var duplicates = _factory.Registrations
             .Where(x => !x.IsKeyedService)
             .Where(x => IsBlueprints(x.ServiceType))
+            .Where(x => x.ServiceType != typeof(Blueprint.Api.Automation.IAutomationActionHandler))
             .GroupBy(x => x.ServiceType)
             .Where(x => x.Count() > 1)
             .Select(x => x.Key.Name)
@@ -118,6 +119,19 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
             .ToList();
 
         Assert.Equal(["BlueprintContext", "IInjectTypeService"], duplicates);
+    }
+
+    /// <summary>Each automation action handler is registered once, and the runner is handed all of them.</summary>
+    [Fact]
+    public void TheAutomationActionHandlers_AreRegisteredOnceEach()
+    {
+        var handlers = _factory.Registrations
+            .Where(x => x.ServiceType == typeof(Blueprint.Api.Automation.IAutomationActionHandler))
+            .Select(x => x.ImplementationType.Name)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(["BlueprintActionHandler", "EmailActionHandler", "HttpActionHandler", "SshActionHandler", "VmActionHandler"], handlers);
     }
 
     /// <summary>The duplicate registration resolves the same implementation.</summary>

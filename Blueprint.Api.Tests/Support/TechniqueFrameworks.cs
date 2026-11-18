@@ -158,6 +158,7 @@ public static class TechniqueFrameworks
         TacticType = "x-mitre-tactic",
         TacticShortNameProperty = "x_mitre_shortname",
         MatrixType = "x-mitre-matrix",
+        MatrixTacticRefsProperty = "tactic_refs",
         CollectionType = "x-mitre-collection",
         CollectionVersionProperty = "x_mitre_version",
         DomainsProperty = "x_mitre_domains",

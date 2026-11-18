@@ -230,7 +230,8 @@ namespace Blueprint.Api.Services
 
             // The matrix lists its tactics left to right; a tactic it leaves out goes at the end.
             var order = new Dictionary<string, int>();
-            if (bundle.Matrix.HasValue && bundle.Matrix.Value.TryGetProperty("tactic_refs", out var refs) && refs.ValueKind == JsonValueKind.Array)
+            if (bundle.Matrix.HasValue && Given(options.MatrixTacticRefsProperty)
+                && bundle.Matrix.Value.TryGetProperty(options.MatrixTacticRefsProperty, out var refs) && refs.ValueKind == JsonValueKind.Array)
             {
                 foreach (var tacticRef in refs.EnumerateArray())
                     order.TryAdd(tacticRef.GetString() ?? "", order.Count);

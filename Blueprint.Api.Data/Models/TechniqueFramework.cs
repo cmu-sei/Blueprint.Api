@@ -112,6 +112,8 @@ namespace Blueprint.Api.Data.Models
         public string TacticShortNameProperty { get; set; }
         /// <summary>The object type listing the tactics in order; blank for none, the tactics then in file order.</summary>
         public string MatrixType { get; set; }
+        /// <summary>The matrix property listing its tactics' STIX ids in order.</summary>
+        public string MatrixTacticRefsProperty { get; set; }
         /// <summary>The object type of the bundle's collection, which names the release; blank for none.</summary>
         public string CollectionType { get; set; }
         /// <summary>The collection property holding the release version.</summary>

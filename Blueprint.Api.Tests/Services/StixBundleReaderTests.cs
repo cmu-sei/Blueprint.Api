@@ -57,6 +57,19 @@ public class StixBundleReaderTests
         Assert.Equal(["persistence", "execution"], release.Tactics.OrderBy(t => t.DisplayOrder).Select(t => t.ShortName));
     }
 
+    /// <summary>The matrix's list of tactics is read from the property the definition names.</summary>
+    [Fact]
+    public void Read_OrdersTacticsByTheMatrixPropertyTheDefinitionNames()
+    {
+        var json = TechniqueBundles.Enterprise().Replace("\"tactic_refs\"", "\"x_acme_tactic_refs\"");
+        var framework = TechniqueFrameworks.Enterprise();
+        framework.Settings.Stix.MatrixTacticRefsProperty = "x_acme_tactic_refs";
+
+        var release = Read(json, null, framework);
+
+        Assert.Equal(["persistence", "execution"], release.Tactics.OrderBy(t => t.DisplayOrder).Select(t => t.ShortName));
+    }
+
     [Fact]
     public async Task Parse_LinksASubTechniqueToItsParent_AndKeepsEveryTactic()
     {

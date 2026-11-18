@@ -117,9 +117,12 @@ public class TechniqueFrameworkEndpointTests(DatabaseFixture fixture, BlueprintA
     [InlineData("""{"name":"X","domain":"x","format":"StixBundle","settings":{"match":{"property":"p"}}}""", "STIX bundle")]
     [InlineData("""{"name":"X","domain":"x","format":"JsonLdOntology","settings":{"match":{"property":"p"}}}""", "id property")]
     [InlineData("""{"name":"X","domain":"x","format":"StixBundle","settings":{"match":{"stixDomain":"x"},"stix":{"grouping":"Hierarchy"}}}""", "hierarchy")]
-    [InlineData("""{"name":"X","domain":"x","format":"StixBundle","settings":{"match":{"stixDomain":"x"},"termsUrl":"javascript:alert(1)"}}""", "terms URL")]
-    [InlineData("""{"name":"X","domain":"x","format":"StixBundle","settings":{"match":{"stixDomain":"x"},"techniqueUrlTemplate":"data:{id}"}}""", "technique URL template")]
-    [InlineData("""{"name":"X","domain":"x","format":"StixBundle","settings":{"match":{"stixDomain":"x"},"mappings":{"sourceIdVariable":"a"}}}""", "mapping definition")]
+    [InlineData("""{"name":"X","domain":"x","format":"StixBundle","settings":{"match":{"referenceSource":"x"},"stix":{"tacticType":"t","tacticShortNameProperty":"s"},"termsUrl":"javascript:alert(1)"}}""", "terms URL")]
+    [InlineData("""{"name":"X","domain":"x","format":"StixBundle","settings":{"match":{"referenceSource":"x"},"stix":{"tacticType":"t","tacticShortNameProperty":"s"},"techniqueUrlTemplate":"data:{id}"}}""", "technique URL template")]
+    [InlineData("""{"name":"X","domain":"x","format":"StixBundle","settings":{"match":{"referenceSource":"x"},"stix":{"tacticType":"t","tacticShortNameProperty":"s"},"mappings":{"sourceIdVariable":"a"}}}""", "mapping definition")]
+    [InlineData("""{"name":"X","domain":"x","format":"StixBundle","settings":{"match":{"referenceSource":"x"}}}""", "kill chain")]
+    [InlineData("""{"name":"X","domain":"x","format":"StixBundle","settings":{"match":{"stixDomain":"x"},"stix":{"tacticType":"t","tacticShortNameProperty":"s"}}}""", "domains property")]
+    [InlineData("""{"name":"X","domain":"x","format":"StixBundle","settings":{"match":{"collectionName":"x"},"stix":{"tacticType":"t","tacticShortNameProperty":"s"}}}""", "collection type")]
     public async Task Create_OfAnIncompleteDefinition_Is400_NamingWhatIsWrong(string body, string expected)
     {
         var response = await Post(body);

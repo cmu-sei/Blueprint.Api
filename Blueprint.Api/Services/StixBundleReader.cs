@@ -14,15 +14,14 @@ namespace Blueprint.Api.Services
     /// Reads a STIX 2.x bundle into a <see cref="TechniqueReleaseEntity"/>, as its framework definition says.
     /// </summary>
     /// <remarks>
-    /// Techniques are attack-pattern objects. They are grouped either by the bundle's x-mitre-tactic objects through
-    /// their kill chain phases, or, in a bundle with no tactics, by the top level of a pattern hierarchy. Revoked
-    /// and deprecated objects, and objects with a status the definition skips, are left out. An object's id comes
-    /// from the external reference the definition names; any other reference is a cross-reference.
+    /// Techniques are attack-pattern objects. They are grouped either by the bundle's tactic objects through their
+    /// kill chain phases, or, in a bundle with no tactics, by the top level of a pattern hierarchy. Revoked and
+    /// deprecated objects, and objects with a status the definition skips, are left out. An object's id comes from
+    /// the external reference the definition names; any other reference is a cross-reference. The object types and
+    /// properties beyond STIX's own are the definition's: the code names none.
     /// </remarks>
     public static class StixBundleReader
     {
-        private const string DefaultPlatformsProperty = "x_mitre_platforms";
-
         /// <summary>True when the JSON is a STIX bundle with its objects.</summary>
         public static bool CanRead(JsonElement root) =>
             root.ValueKind == JsonValueKind.Object
@@ -39,8 +38,10 @@ namespace Blueprint.Api.Services
             public string CollectionName { get; init; }
         }
 
-        public static Summary Summarize(JsonElement root)
+        /// <summary>The bundle as a framework's definition reads it, for its match conditions.</summary>
+        public static Summary Summarize(JsonElement root, StixFormatOptions options)
         {
+            options ??= new StixFormatOptions();
             var techniques = new List<JsonElement>();
             string collectionName = null;
             foreach (var item in root.GetProperty("objects").EnumerateArray())
@@ -48,13 +49,15 @@ namespace Blueprint.Api.Services
                 if (item.ValueKind != JsonValueKind.Object)
                     continue;
                 var type = GetString(item, "type");
-                if (type == "x-mitre-collection")
+                if (Given(options.CollectionType) && type == options.CollectionType)
                     collectionName ??= GetString(item, "name");
-                else if (type == "attack-pattern" && !IsRetired(item))
+                else if (type == "attack-pattern" && !IsRetired(item, options))
                     techniques.Add(item);
             }
 
-            var domain = MostCommon(techniques.Select(t => GetStrings(t, "x_mitre_domains").FirstOrDefault()));
+            var domain = Given(options.DomainsProperty)
+                ? MostCommon(techniques.Select(t => GetStrings(t, options.DomainsProperty).FirstOrDefault()))
+                : null;
             var firstReferences = techniques.Select(t => GetReferences(t).FirstOrDefault()).Where(r => r.ValueKind == JsonValueKind.Object).ToList();
             var source = MostCommon(firstReferences.Select(r => GetString(r, "source_name")));
             return new Summary
@@ -81,7 +84,7 @@ namespace Blueprint.Api.Services
                 throw new InvalidTechniqueBundleException("The bundle has no techniques.");
 
             version = string.IsNullOrWhiteSpace(version)
-                ? (bundle.Collection.HasValue ? GetString(bundle.Collection.Value, "x_mitre_version") : null)
+                ? (bundle.Collection.HasValue && Given(options.CollectionVersionProperty) ? GetString(bundle.Collection.Value, options.CollectionVersionProperty) : null)
                     ?? (string.IsNullOrWhiteSpace(options.VersionProperty)
                         ? null
                         : MostCommon(bundle.Techniques.Select(t => GetString(t, options.VersionProperty))))
@@ -123,6 +126,8 @@ namespace Blueprint.Api.Services
             public readonly List<JsonElement> Techniques = new();
             public readonly Dictionary<string, string> Statements = new();
             public readonly Dictionary<string, string> Publishers = new();
+            /// <summary>A sub-technique's STIX id to its technique's, from the definition's relationship type.</summary>
+            public readonly Dictionary<string, string> ParentOf = new();
         }
 
         private static Bundle Collect(JsonElement objects, StixFormatOptions options)
@@ -131,12 +136,29 @@ namespace Blueprint.Api.Services
             var skip = new HashSet<string>(options.SkipStatuses ?? [], StringComparer.OrdinalIgnoreCase);
             foreach (var item in objects.EnumerateArray())
             {
-                if (item.ValueKind != JsonValueKind.Object || IsRetired(item))
+                if (item.ValueKind != JsonValueKind.Object || IsRetired(item, options))
                     continue;
                 if (!string.IsNullOrWhiteSpace(options.StatusProperty) && GetString(item, options.StatusProperty) is { } status && skip.Contains(status))
                     continue;
 
-                switch (GetString(item, "type"))
+                var type = GetString(item, "type");
+                if (Given(options.CollectionType) && type == options.CollectionType)
+                {
+                    bundle.Collection ??= item;
+                    continue;
+                }
+                if (Given(options.MatrixType) && type == options.MatrixType)
+                {
+                    bundle.Matrix ??= item;
+                    continue;
+                }
+                if (Given(options.TacticType) && type == options.TacticType)
+                {
+                    bundle.Tactics.Add(item);
+                    continue;
+                }
+
+                switch (type)
                 {
                     case "marking-definition":
                         if (GetString(item, "definition_type") == "statement"
@@ -150,14 +172,12 @@ namespace Blueprint.Api.Services
                         if (GetString(item, "id") is { } identityId && GetString(item, "name") is { } identityName)
                             bundle.Publishers.TryAdd(identityId, identityName);
                         break;
-                    case "x-mitre-collection":
-                        bundle.Collection ??= item;
-                        break;
-                    case "x-mitre-matrix":
-                        bundle.Matrix ??= item;
-                        break;
-                    case "x-mitre-tactic":
-                        bundle.Tactics.Add(item);
+                    case "relationship":
+                        if (Given(options.SubTechniqueRelationship)
+                            && GetString(item, "relationship_type") == options.SubTechniqueRelationship
+                            && GetString(item, "source_ref") is { } child
+                            && GetString(item, "target_ref") is { } parentRef)
+                            bundle.ParentOf.TryAdd(child, parentRef);
                         break;
                     case "attack-pattern":
                         if (GetString(item, "id") != null)
@@ -194,6 +214,9 @@ namespace Blueprint.Api.Services
 
         private static void ReadKillChain(TechniqueReleaseEntity release, Bundle bundle, StixFormatOptions options, TechniqueFrameworkEntity framework)
         {
+            if (!Given(options.TacticType) || !Given(options.TacticShortNameProperty))
+                throw new InvalidTechniqueBundleException("The framework groups by kill chain but names no tactic type or tactic short name property.");
+
             // Without a configured source, the one most tactics share is the bundle's own catalogue.
             var source = string.IsNullOrWhiteSpace(options.IdSource)
                 ? MostCommon(bundle.Tactics.SelectMany(t => GetReferences(t).Select(r => GetString(r, "source_name"))))
@@ -226,7 +249,7 @@ namespace Blueprint.Api.Services
                     TechniqueReleaseId = release.Id,
                     StixId = stixId,
                     ExternalId = externalId,
-                    ShortName = GetString(tactic, "x_mitre_shortname"),
+                    ShortName = GetString(tactic, options.TacticShortNameProperty),
                     Name = GetString(tactic, "name"),
                     Description = GetString(tactic, "description"),
                     Url = url ?? TechniqueFrameworkDefaults.Link(settings.TacticUrlTemplate, externalId, stixId),
@@ -235,7 +258,6 @@ namespace Blueprint.Api.Services
             }
 
             var byExternalId = new Dictionary<string, TechniqueEntity>(StringComparer.OrdinalIgnoreCase);
-            var subTechniques = new List<TechniqueEntity>();
             foreach (var technique in bundle.Techniques)
             {
                 var (externalId, url) = GetReference(technique, source, options.IdPrefix);
@@ -252,15 +274,16 @@ namespace Blueprint.Api.Services
                 entity.Tactics = string.Join(",", phases.Distinct());
                 byExternalId[externalId] = entity;
                 release.Techniques.Add(entity);
-                if (technique.TryGetProperty("x_mitre_is_subtechnique", out var sub) && sub.ValueKind == JsonValueKind.True)
-                    subTechniques.Add(entity);
             }
 
-            // A sub-technique's id is its parent's plus a last dotted segment.
-            foreach (var technique in subTechniques)
+            // A sub-technique is the source of a relationship of the definition's type to its technique.
+            var byStixId = release.Techniques.Where(t => t.StixId != null).ToDictionary(t => t.StixId);
+            foreach (var technique in release.Techniques)
             {
-                var dot = technique.ExternalId.LastIndexOf('.');
-                if (dot > 0 && byExternalId.TryGetValue(technique.ExternalId[..dot], out var parent))
+                if (technique.StixId != null
+                    && bundle.ParentOf.TryGetValue(technique.StixId, out var parentStixId)
+                    && byStixId.TryGetValue(parentStixId, out var parent)
+                    && parent != technique)
                 {
                     // Set the navigation as well as the key so EF inserts the parent first.
                     technique.ParentId = parent.Id;
@@ -405,8 +428,7 @@ namespace Blueprint.Api.Services
                 Name = GetString(technique, "name"),
                 Description = GetString(technique, "description"),
                 Url = url ?? TechniqueFrameworkDefaults.Link(settings.TechniqueUrlTemplate, externalId, stixId),
-                Platforms = string.Join(",", GetStrings(technique,
-                    string.IsNullOrWhiteSpace(options.PlatformsProperty) ? DefaultPlatformsProperty : options.PlatformsProperty)),
+                Platforms = Given(options.PlatformsProperty) ? string.Join(",", GetStrings(technique, options.PlatformsProperty)) : "",
                 Weaknesses = string.IsNullOrWhiteSpace(options.WeaknessSource)
                     ? null
                     : string.Join(",", GetReferences(technique)
@@ -451,9 +473,12 @@ namespace Blueprint.Api.Services
                 .Select(g => g.Key)
                 .FirstOrDefault();
 
-        private static bool IsRetired(JsonElement item) =>
+        private static bool IsRetired(JsonElement item, StixFormatOptions options) =>
             (item.TryGetProperty("revoked", out var revoked) && revoked.ValueKind == JsonValueKind.True)
-            || (item.TryGetProperty("x_mitre_deprecated", out var deprecated) && deprecated.ValueKind == JsonValueKind.True);
+            || (Given(options.DeprecatedProperty)
+                && item.TryGetProperty(options.DeprecatedProperty, out var deprecated) && deprecated.ValueKind == JsonValueKind.True);
+
+        private static bool Given(string value) => !string.IsNullOrWhiteSpace(value);
 
         private static (string ExternalId, string Url) GetReference(JsonElement item, string source, string prefix)
         {

@@ -72,6 +72,58 @@ public class StixBundleReaderTests
         Assert.Equal("https://attack.mitre.org/techniques/T1059/001", child.Url);
     }
 
+    /// <summary>
+    /// The extension types and properties are the definition's: a bundle that names its tactics, collection and
+    /// domains differently is read once its definition names them.
+    /// </summary>
+    [Fact]
+    public void Read_TakesTheExtensionNamesFromTheDefinition()
+    {
+        var json = TechniqueBundles.Custom().Replace("x-mitre-", "x-acme-").Replace("x_mitre_", "x_acme_");
+        var framework = TechniqueFrameworks.Custom();
+        framework.Settings.Stix = new StixFormatOptions
+        {
+            IdSource = "acme",
+            TacticType = "x-acme-tactic",
+            TacticShortNameProperty = "x_acme_shortname",
+            CollectionType = "x-acme-collection",
+            CollectionVersionProperty = "x_acme_version",
+            DomainsProperty = "x_acme_domains"
+        };
+
+        var release = Read(json, null, framework);
+
+        Assert.Equal("1.0", release.Version);
+        Assert.Equal("Acme Techniques", release.Name);
+        Assert.Equal("entry", Assert.Single(release.Tactics).ShortName);
+        Assert.Equal("entry", Assert.Single(release.Techniques).Tactics);
+        Assert.Equal("acme-ttp", StixBundleReader.Summarize(JsonDocument.Parse(json).RootElement, framework.Settings.Stix).Domain);
+    }
+
+    /// <summary>A definition with the kill chain grouping but no tactic type cannot read the bundle's tactics, and says so.</summary>
+    [Fact]
+    public void Read_ByKillChainWithoutATacticType_Is400()
+    {
+        var framework = TechniqueFrameworks.Custom();
+        framework.Settings.Stix = new StixFormatOptions { IdSource = "acme" };
+
+        var error = Assert.Throws<InvalidTechniqueBundleException>(() => Read(TechniqueBundles.Custom(), "1.0", framework));
+
+        Assert.Contains("tactic type", error.Message);
+    }
+
+    /// <summary>A sub-technique's parent is the one its relationship names; a dotted id alone makes none.</summary>
+    [Fact]
+    public async Task Parse_WithoutTheSubTechniqueRelationship_LinksNoParent()
+    {
+        var json = TechniqueBundles.Enterprise().Replace("\"subtechnique-of\"", "\"related-to\"");
+
+        var release = await Parse(json);
+
+        Assert.All(release.Techniques, t => Assert.Null(t.ParentId));
+        Assert.Contains(release.Techniques, t => t.ExternalId == "T1059.001");
+    }
+
     /// <summary>The ids are what lets a MSEL exported from one Blueprint keep its techniques on another.</summary>
     [Fact]
     public async Task Parse_GivesTheSameReleaseTheSameIds_AndAnotherVersionOtherIds()

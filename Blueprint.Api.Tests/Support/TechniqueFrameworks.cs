@@ -37,7 +37,7 @@ public static class TechniqueFrameworks
         Settings = new TechniqueFrameworkSettings
         {
             Match = new TechniqueFrameworkMatch { StixDomain = "enterprise-attack" },
-            Stix = new StixFormatOptions { IdSource = "mitre-attack" },
+            Stix = KillChain("mitre-attack"),
             GroupLabel = "Tactics",
             TermsUrl = "https://attack.mitre.org/resources/legal-and-branding/terms-of-use/"
         }
@@ -52,7 +52,7 @@ public static class TechniqueFrameworks
         Settings = new TechniqueFrameworkSettings
         {
             Match = new TechniqueFrameworkMatch { StixDomain = "ATLAS" },
-            Stix = new StixFormatOptions { IdSource = "mitre-atlas" }
+            Stix = KillChain("mitre-atlas")
         }
     };
 
@@ -144,8 +144,26 @@ public static class TechniqueFrameworks
         Settings = new TechniqueFrameworkSettings
         {
             Match = new TechniqueFrameworkMatch { StixDomain = domain },
-            Stix = new StixFormatOptions { IdSource = "acme" }
+            Stix = KillChain("acme")
         }
+    };
+
+    /// <summary>
+    /// The STIX extension types and properties the test bundles use, as an administrator's definition names them:
+    /// the reader knows none of its own.
+    /// </summary>
+    public static StixFormatOptions KillChain(string idSource) => new()
+    {
+        IdSource = idSource,
+        TacticType = "x-mitre-tactic",
+        TacticShortNameProperty = "x_mitre_shortname",
+        MatrixType = "x-mitre-matrix",
+        CollectionType = "x-mitre-collection",
+        CollectionVersionProperty = "x_mitre_version",
+        DomainsProperty = "x_mitre_domains",
+        PlatformsProperty = "x_mitre_platforms",
+        SubTechniqueRelationship = "subtechnique-of",
+        DeprecatedProperty = "x_mitre_deprecated"
     };
 
     public static List<TechniqueFrameworkEntity> All() => [Enterprise(), Atlas(), Capec(), D3fend(), Custom()];

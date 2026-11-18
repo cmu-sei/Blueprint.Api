@@ -149,6 +149,12 @@ namespace Blueprint.Api.Services
                 if (stix.Grouping == StixGrouping.Hierarchy
                     && (!Given(stix.IdSource) || !Given(stix.AbstractionProperty) || !Given(stix.GroupAbstraction) || !Given(stix.ParentRefsProperty)))
                     throw new BadRequestException("Grouping by hierarchy needs an id source, abstraction property, group abstraction and parent refs property.");
+                if (stix.Grouping == StixGrouping.KillChain && (!Given(stix.TacticType) || !Given(stix.TacticShortNameProperty)))
+                    throw new BadRequestException("Grouping by kill chain needs a tactic type and a tactic short name property.");
+                if (Given(match.StixDomain) && !Given(stix.DomainsProperty))
+                    throw new BadRequestException("The domain match condition needs the domains property it is read from.");
+                if (Given(match.CollectionName) && !Given(stix.CollectionType))
+                    throw new BadRequestException("The collection name match condition needs the collection type it is read from.");
             }
             else
             {

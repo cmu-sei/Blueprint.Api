@@ -70,13 +70,13 @@ namespace Blueprint.Api.Data.Models
     /// </summary>
     public class TechniqueFrameworkMatch
     {
-        /// <summary>STIX: the domain most of the bundle's techniques name first in x_mitre_domains.</summary>
+        /// <summary>STIX: the domain most of the bundle's techniques name first in the definition's domains property.</summary>
         public string StixDomain { get; set; }
         /// <summary>STIX: the source most techniques' first external reference names, the bundle's own catalogue.</summary>
         public string ReferenceSource { get; set; }
         /// <summary>STIX: the start of the ids in that reference.</summary>
         public string IdPrefix { get; set; }
-        /// <summary>STIX: the name of the bundle's x-mitre-collection.</summary>
+        /// <summary>STIX: the name of the bundle's collection object, of the definition's collection type.</summary>
         public string CollectionName { get; set; }
         /// <summary>JSON-LD: a property some node of the graph carries.</summary>
         public string Property { get; set; }
@@ -93,7 +93,7 @@ namespace Blueprint.Api.Data.Models
     /// <summary>How a STIX bundle's techniques are grouped.</summary>
     public enum StixGrouping
     {
-        /// <summary>By the bundle's x-mitre-tactic objects, through each technique's kill chain phases.</summary>
+        /// <summary>By the bundle's tactic objects, through each technique's kill chain phases.</summary>
         KillChain = 0,
         /// <summary>By the top level of a pattern hierarchy, for a bundle with no tactics.</summary>
         Hierarchy = 1
@@ -106,6 +106,22 @@ namespace Blueprint.Api.Data.Models
         /// <summary>Only ids that start with this; blank for any.</summary>
         public string IdPrefix { get; set; }
         public StixGrouping Grouping { get; set; }
+        /// <summary>Kill chain: the object type of a tactic.</summary>
+        public string TacticType { get; set; }
+        /// <summary>Kill chain: the tactic property a technique's kill chain phase names match.</summary>
+        public string TacticShortNameProperty { get; set; }
+        /// <summary>The object type listing the tactics in order; blank for none, the tactics then in file order.</summary>
+        public string MatrixType { get; set; }
+        /// <summary>The object type of the bundle's collection, which names the release; blank for none.</summary>
+        public string CollectionType { get; set; }
+        /// <summary>The collection property holding the release version.</summary>
+        public string CollectionVersionProperty { get; set; }
+        /// <summary>The technique property listing its domains, read by the StixDomain match condition.</summary>
+        public string DomainsProperty { get; set; }
+        /// <summary>The relationship type from a sub-technique to its technique; blank for no sub-techniques.</summary>
+        public string SubTechniqueRelationship { get; set; }
+        /// <summary>A true/false property marking an object deprecated, beside the STIX revoked flag; blank for none.</summary>
+        public string DeprecatedProperty { get; set; }
         /// <summary>Hierarchy: the property naming a pattern's level of abstraction.</summary>
         public string AbstractionProperty { get; set; }
         /// <summary>Hierarchy: the level whose patterns are the groups.</summary>
@@ -118,7 +134,7 @@ namespace Blueprint.Api.Data.Models
         public List<string> SkipStatuses { get; set; } = new List<string>();
         /// <summary>A technique property holding the release version, for a bundle with no collection.</summary>
         public string VersionProperty { get; set; }
-        /// <summary>The technique property listing its platforms; blank for x_mitre_platforms.</summary>
+        /// <summary>The technique property listing its platforms; blank for none.</summary>
         public string PlatformsProperty { get; set; }
         /// <summary>The external reference source whose ids are the weaknesses a technique exploits; blank for none.</summary>
         public string WeaknessSource { get; set; }

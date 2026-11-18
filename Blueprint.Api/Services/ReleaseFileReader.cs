@@ -85,8 +85,8 @@ namespace Blueprint.Api.Services
 
             if (format == TechniqueFileFormat.StixBundle)
             {
-                var summary = StixBundleReader.Summarize(root);
-                return candidates.Where(f => Meets(f.Settings.Match, summary)).ToList();
+                // each definition names the types and properties its conditions are read from
+                return candidates.Where(f => Meets(f.Settings.Match, StixBundleReader.Summarize(root, f.Settings.Stix))).ToList();
             }
 
             var ontology = JsonLdOntologyReader.Summarize(root);

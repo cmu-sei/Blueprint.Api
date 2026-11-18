@@ -621,6 +621,49 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal(winner, await ReadBack(db => db.Msels.Where(m => m.Id == msel.Id).Select(m => m.CasterDirectoryId).SingleAsync(Ct)));
     }
 
+    /// <summary>
+    /// Caster has held a new directory's name to letters, digits, '-', '_' and '.' since 3.7.0, while one made before
+    /// keeps a name like "Basic Topology". The import gives such a directory a name Caster takes, and says so.
+    /// </summary>
+    [Theory]
+    [InlineData("Basic Topology", "Basic_Topology")]
+    [InlineData("Range (v2)", "Range__v2_")]
+    [InlineData("..", "_directory")]
+    [InlineData("__Workspaces__", "__Workspaces___directory")]
+    public async Task Import_OfADirectoryNamedAsCasterNoLongerTakes_RenamesItToFitAndWarns(string name, string imported)
+    {
+        var msel = await SeedMsel();
+        var copy = TestData.MselCasterExport(msel.Id);
+        copy.Directories.Single(d => d.Level == 1).Name = name;
+        await Seed(copy);
+        var created = ArrangeImport();
+
+        var result = await ReadAsync<MselCasterImportResult>(await RootClient.PostAsync($"{Route(msel)}/import", null, Ct), JsonOptions);
+
+        await Factory.Caster.Received(1).CreateDirectoryAsync(
+            Arg.Is<CreateDirectoryCommand>(c => c.ParentId == created.Root && c.Name == imported), Arg.Any<CancellationToken>());
+        await Factory.Caster.Received(1).CreateDirectoryAsync(
+            Arg.Is<CreateDirectoryCommand>(c => c.ParentId == null && c.Name == "Root"), Arg.Any<CancellationToken>());
+        Assert.Equal($"Caster no longer takes the directory name \"{name}\", so it was imported as \"{imported}\".", Assert.Single(result.Warnings));
+    }
+
+    /// <summary>A refusal passes on what Caster said was wrong, field by field, not only its status.</summary>
+    [Fact]
+    public async Task Import_ThatCasterRefusesAsInvalid_SaysWhatCasterRefused()
+    {
+        var msel = await SeedMsel(withCopy: true);
+        var created = ArrangeImport();
+        Factory.Caster.ImportDirectoryAsync(created.Target, Arg.Any<bool?>(), Arg.Any<FileParameter>(), Arg.Any<CancellationToken>())
+            .Throws(new ApiException("Caster answered 400.", 400,
+                """{"title":"One or more validation errors occurred.","status":400,"errors":{"Archive":["Archive must be a .zip, .tar.gz or .tgz file."]}}""",
+                new Dictionary<string, IEnumerable<string>>(), null));
+
+        var response = await RootClient.PostAsync($"{Route(msel)}/import", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("One or more validation errors occurred. Archive: Archive must be a .zip, .tar.gz or .tgz file.", await response.Content.ReadAsStringAsync(Ct));
+    }
+
     /// <summary>A caller Caster will not let create a project is a 403 that says which permission it takes.</summary>
     [Fact]
     public async Task Import_ByACallerCasterWillNotLetCreateAProject_Is403()

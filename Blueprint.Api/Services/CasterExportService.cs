@@ -192,10 +192,13 @@ namespace Blueprint.Api.Services
             link.OriginalValue = directoryId;
             link.IsModified = false;
 
+            foreach (var warning in imported.Warnings)
+                _logger.LogWarning("Importing the Caster copy of MSEL {MselId}: {Warning}", msel.Id, warning);
             return new MselCasterImportResult
             {
                 CasterDirectoryId = directoryId,
-                LockedFiles = imported.LockedFiles
+                LockedFiles = imported.LockedFiles,
+                Warnings = imported.Warnings
             };
         }
 
@@ -351,7 +354,7 @@ namespace Blueprint.Api.Services
             return (export, warnings);
         }
 
-        private record CasterImport(Guid ProjectId, Guid DirectoryId, List<string> LockedFiles);
+        private record CasterImport(Guid ProjectId, Guid DirectoryId, List<string> LockedFiles, List<string> Warnings);
 
         /// <summary>
         /// Recreates <paramref name="export"/> in Caster as a new project: the chain of directories with their
@@ -361,15 +364,19 @@ namespace Blueprint.Api.Services
         private static async Task<CasterImport> ImportToCasterAsync(MselCasterExportEntity export, ICasterApiClient casterApiClient, ILogger logger, CancellationToken ct)
         {
             Validate(export);
+            var warnings = new List<string>();
             var project = await casterApiClient.CreateProjectAsync(new CreateProjectCommand { Name = export.ProjectName }, ct);
             try
             {
                 Guid? parentId = null;
                 foreach (var level in export.Directories.OrderBy(d => d.Level))
                 {
+                    var name = CasterDirectoryName(level.Name);
+                    if (name != level.Name)
+                        warnings.Add($"Caster no longer takes the directory name \"{level.Name}\", so it was imported as \"{name}\".");
                     var directory = await casterApiClient.CreateDirectoryAsync(new CreateDirectoryCommand
                     {
-                        Name = level.Name,
+                        Name = name,
                         ProjectId = project.Id,
                         ParentId = parentId,
                         TerraformVersion = string.IsNullOrWhiteSpace(level.TerraformVersion) ? null : level.TerraformVersion,
@@ -392,13 +399,32 @@ namespace Blueprint.Api.Services
                 // Caster picks the archive's type by its file name, and reads nothing else from it
                 using var archive = new MemoryStream(export.Archive);
                 var result = await casterApiClient.ImportDirectoryAsync((Guid)parentId, false, new FileParameter(archive, "export.zip", "application/zip"), ct);
-                return new CasterImport(project.Id, (Guid)parentId, result?.LockedFiles?.ToList() ?? []);
+                return new CasterImport(project.Id, (Guid)parentId, result?.LockedFiles?.ToList() ?? [], warnings);
             }
             catch
             {
                 await DeleteProjectAsync(casterApiClient, project.Id, logger);
                 throw;
             }
+        }
+
+        private const int MaxDirectoryNameLength = 90;
+        private static readonly string[] _reservedDirectoryNames = [WorkspacesEntryName, "__Caster__"];
+
+        /// <summary>
+        /// <paramref name="name"/> as Caster takes a new directory's name: letters, digits, '-', '_' and '.', at most
+        /// 90 characters, not '.' or '..' and not a name Caster reserves for its archives. Caster has held new and
+        /// renamed directories to this since 3.7.0, but a directory made before keeps its name, so a copy of one can
+        /// carry a name Caster would now refuse. Anything else becomes '_'.
+        /// </summary>
+        internal static string CasterDirectoryName(string name)
+        {
+            var safe = new string((name ?? "").Trim().Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_').ToArray());
+            if (safe.Length > MaxDirectoryNameLength)
+                safe = safe[..MaxDirectoryNameLength];
+            if (safe.Length == 0 || safe is "." or ".." || _reservedDirectoryNames.Contains(safe))
+                safe = $"{safe}_directory".TrimStart('.');
+            return safe.Length > MaxDirectoryNameLength ? safe[..MaxDirectoryNameLength] : safe;
         }
 
         private static async Task DeleteProjectAsync(ICasterApiClient casterApiClient, Guid projectId, ILogger logger)
@@ -570,15 +596,31 @@ namespace Blueprint.Api.Services
             return entries;
         }
 
-        // Caster answers a refused request with a problem document; its title says what was wrong
+        // Caster answers a refused request with a problem document: its title, and for a validation failure the
+        // message of each field it refused, say what was wrong
         private static string CasterProblem(ApiException ex)
         {
             try
             {
                 using var problem = JsonDocument.Parse(ex.Response ?? "");
-                return problem.RootElement.ValueKind == JsonValueKind.Object && problem.RootElement.TryGetProperty("title", out var title)
-                    ? title.GetString()
-                    : "";
+                var root = problem.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                    return "";
+                var parts = new List<string>();
+                if (root.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+                    parts.Add(title.GetString());
+                if (root.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var field in errors.EnumerateObject())
+                    {
+                        if (field.Value.ValueKind != JsonValueKind.Array)
+                            continue;
+                        parts.AddRange(field.Value.EnumerateArray()
+                            .Where(m => m.ValueKind == JsonValueKind.String)
+                            .Select(m => $"{field.Name}: {m.GetString()}"));
+                    }
+                }
+                return string.Join(" ", parts);
             }
             catch (JsonException)
             {

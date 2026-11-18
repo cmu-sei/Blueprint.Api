@@ -64,5 +64,7 @@ namespace Blueprint.Api.ViewModels
         public Msel Msel { get; set; }
         public Guid CasterDirectoryId { get; set; }
         public List<string> LockedFiles { get; set; } = new List<string>();
+        /// <summary>What the import changed to fit Caster, such as a directory name Caster no longer takes.</summary>
+        public List<string> Warnings { get; set; } = new List<string>();
     }
 }

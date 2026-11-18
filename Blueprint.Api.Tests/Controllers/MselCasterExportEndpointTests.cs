@@ -16,6 +16,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Hubs;
 using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
 using Blueprint.Api.ViewModels;
@@ -575,6 +576,8 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
             Arg.Any<CancellationToken>());
         await Factory.Caster.Received(1).ImportDirectoryAsync(
             created.Target, false, Arg.Is<FileParameter>(f => f.FileName == "export.zip"), Arg.Any<CancellationToken>());
+        // an open MSEL page learns of the new directory
+        Assert.Contains(msel.Id.ToString(), Hub.Recipients(MainHubMethods.MselUpdated, msel.Id));
     }
 
     /// <summary>A failed import deletes the project it created, so nothing is left half imported and the MSEL stays unlinked.</summary>
@@ -848,6 +851,23 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
     }
 
     [Fact]
+    public async Task ImportFile_WithACopyThatExpandsPastTheLimitInAll_Is400()
+    {
+        var count = (int)(CasterExportService.MaxExpandedBytes / CasterExportService.MaxEntryBytes) + 1;
+        var file = FileOf(m =>
+        {
+            m.CasterExport = TestData.MselCasterExport(m.Id);
+            m.CasterExport.Archive = TestData.CasterArchive(
+                [.. Enumerable.Range(0, count).Select(i => ($"f{i}.tf", new string('0', CasterExportService.MaxEntryBytes)))]);
+        });
+
+        var response = await ImportFileResponse(file);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("expands to more than", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    [Fact]
     public async Task ImportFile_WithACopyHoldingTooManyFiles_Is400()
     {
         var file = FileOf(m =>
@@ -880,7 +900,78 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal(2, original.Count);
     }
 
+    /// <summary>
+    /// The caller owns a copy of the MSEL, so it carries the copy of the directory only for a caller who may read the
+    /// directory's files on this MSEL.
+    /// </summary>
+    [Theory]
+    [InlineData(MselRole.Viewer)]
+    [InlineData(MselRole.Approver)]
+    public async Task Copy_ByAContributorWhoMayNotReadTheFiles_LeavesTheCopyOut(MselRole role)
+    {
+        var msel = await SeedMsel(withCopy: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).OnMsel(msel, role).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/msels/{msel.Id}/copy", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var copy = await response.Content.ReadFromJsonAsync<Msel>(JsonOptions, Ct);
+        Assert.False(await HasCopy(copy.Id));
+        Assert.True(await HasCopy(msel.Id));
+    }
+
+    [Fact]
+    public async Task Copy_ByAnEditorOfTheMsel_CarriesTheCopy()
+    {
+        var msel = await SeedMsel(withCopy: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/msels/{msel.Id}/copy", null, Ct);
+
+        var copy = await response.Content.ReadFromJsonAsync<Msel>(JsonOptions, Ct);
+        Assert.True(await HasCopy(copy.Id));
+    }
+
+    /// <summary>A copy of the directory the MSEL linked before is not the topology of the one it links now, so it goes.</summary>
+    [Fact]
+    public async Task Update_ThatLinksAnotherDirectory_DeletesTheCopyOfTheOldOne()
+    {
+        var msel = await SeedMsel(withCopy: true, directoryId: Guid.NewGuid());
+        var other = Guid.NewGuid();
+        Factory.Caster.ShowsDirectory(other);
+
+        var response = await RootClient.PutAsJsonAsync($"api/msels/{msel.Id}", Edit(msel, other), JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(await HasCopy(msel.Id));
+    }
+
+    /// <summary>Clearing the directory, or saving other settings, keeps the copy: a push imports it.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Update_ThatKeepsOrClearsTheDirectory_KeepsTheCopy(bool clear)
+    {
+        var directoryId = Guid.NewGuid();
+        var msel = await SeedMsel(withCopy: true, directoryId: directoryId);
+
+        var response = await RootClient.PutAsJsonAsync($"api/msels/{msel.Id}", Edit(msel, clear ? null : directoryId), JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(await HasCopy(msel.Id));
+    }
+
     // ---------------------------------------------------------------------------------------------
+
+    private static Msel Edit(MselEntity entity, Guid? casterDirectoryId) => new()
+    {
+        Id = entity.Id,
+        Name = entity.Name,
+        Description = entity.Description,
+        Status = entity.Status,
+        UseCaster = entity.UseCaster,
+        CasterDirectoryId = casterDirectoryId
+    };
 
     private static string Route(MselEntity msel) => $"api/msels/{msel.Id}/caster/export";
 

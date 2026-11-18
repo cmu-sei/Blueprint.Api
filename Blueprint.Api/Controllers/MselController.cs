@@ -192,7 +192,8 @@ namespace Blueprint.Api.Controllers
                 throw new ForbiddenException();
 
             var hasViewMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var createdMsel = await _mselService.CopyAsync(id, hasViewMselsPermission, ct);
+            var hasEditMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var createdMsel = await _mselService.CopyAsync(id, hasViewMselsPermission, hasEditMselsPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdMsel.Id }, createdMsel);
         }
 

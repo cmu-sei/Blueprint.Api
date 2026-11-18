@@ -1238,6 +1238,23 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
             (await ReadBack(rb => rb.Teams.SingleAsync(t => t.MselId == launched.Id, Ct))).CasterTeamVariable);
     }
 
+    /// <summary>The launched MSEL deploys the template's directory, and its invitee may not read the template's files, so the copy stays behind.</summary>
+    [Fact]
+    public async Task Launch_OfACasterTemplateWithACopy_LeavesTheCopyBehind()
+    {
+        var template = await SeedTemplate(CasterSetup(Guid.NewGuid()));
+        await Seed(TestData.MselCasterExport(template.Id));
+        var team = await SeedTeam(template);
+        await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var launched = await Read<Msel>(await Launch(ClientWithEmail(actor, "a@example.test"), template.Id));
+
+        await using var db = NewContext();
+        Assert.False(await db.MselCasterExports.AnyAsync(e => e.MselId == launched.Id, Ct));
+        Assert.True(await db.MselCasterExports.AnyAsync(e => e.MselId == template.Id, Ct));
+    }
+
     /// <summary>A Caster template that cannot be pushed is refused before the invitation is used.</summary>
     [Fact]
     public async Task Launch_OfACasterTemplateWithoutPlayer_Is409AndSpendsNoSeat()

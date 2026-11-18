@@ -125,7 +125,13 @@ namespace Blueprint.Api.Services
         public async Task<MselCasterImportResult> ImportAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             var msel = await GetEditableMselAsync(mselId, hasSystemPermission, ct);
-            return await ImportAndLinkAsync(msel, ct);
+            var result = await ImportAndLinkAsync(msel, ct);
+            // the link bypassed the change tracker, so save the MSEL once more for its MselUpdated broadcast, which
+            // an open MSEL page uses to show the new directory
+            msel.ModifiedBy = _user.GetId();
+            _context.Entry(msel).Property(m => m.ModifiedBy).IsModified = true;
+            await _context.SaveChangesAsync(CancellationToken.None);
+            return result;
         }
 
         // A push of a MSEL with a copy and no directory imports the copy first, as the pusher. The push checks who
@@ -176,6 +182,7 @@ namespace Blueprint.Api.Services
             var link = _context.Entry(msel).Property(m => m.CasterDirectoryId);
             link.CurrentValue = directoryId;
             link.OriginalValue = directoryId;
+            link.IsModified = false;
 
             return new MselCasterImportResult
             {
@@ -326,7 +333,7 @@ namespace Blueprint.Api.Services
                 {
                     await _context.SaveChangesAsync(ct);
                 }
-                catch (DbUpdateException)
+                catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
                 {
                     throw new ConflictException("The MSEL's copy of its Caster directory was replaced by another copy at the same time. Try again.");
                 }

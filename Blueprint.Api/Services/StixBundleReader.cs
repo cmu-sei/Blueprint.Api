@@ -417,15 +417,13 @@ namespace Blueprint.Api.Services
                 ReferenceLinks = Links(technique, options.LinkSources)
             };
 
-        /// <summary>The technique's references to other catalogues, one "label|text|url" line each; null when it has none.</summary>
+        /// <summary>The technique's references to other catalogues, as a JSON array of links; null when it has none.</summary>
         private static string Links(JsonElement technique, List<TechniqueLinkSource> sources)
         {
             if (sources == null || sources.Count == 0)
                 return null;
 
-            static string Clean(string value) => (value ?? "").Replace('|', ' ').Replace('\r', ' ').Replace('\n', ' ').Trim();
-
-            var lines = new List<string>();
+            var links = new List<ViewModels.TechniqueLink>();
             foreach (var reference in GetReferences(technique))
             {
                 var url = GetString(reference, "url");
@@ -437,10 +435,12 @@ namespace Blueprint.Api.Services
                 var id = GetString(reference, "external_id");
                 if (!string.IsNullOrWhiteSpace(source.IdLabelPrefix) && !string.IsNullOrWhiteSpace(id))
                     text = $"{source.IdLabelPrefix}{id} {text}";
-                lines.Add($"{Clean(source.Label ?? source.Source)}|{Clean(text)}|{Clean(url)}");
+                var link = new ViewModels.TechniqueLink { Source = source.Label ?? source.Source, Label = text?.Trim(), Url = url.Trim() };
+                if (!links.Any(l => l.Source == link.Source && l.Label == link.Label && l.Url == link.Url))
+                    links.Add(link);
             }
 
-            return lines.Count == 0 ? null : string.Join("\n", lines.Distinct());
+            return links.Count == 0 ? null : JsonSerializer.Serialize(links, JsonSerializerOptions.Web);
         }
 
         private static string MostCommon(IEnumerable<string> values) =>

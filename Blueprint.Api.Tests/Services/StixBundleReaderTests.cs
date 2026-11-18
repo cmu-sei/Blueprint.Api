@@ -259,7 +259,7 @@ public class StixBundleReaderTests
         Assert.Equal("Software", sql.Platforms);
         Assert.Equal("CWE-89,CWE-1286", sql.Weaknesses);
         Assert.Equal(
-            "WASC|WASC-19 SQL Injection|http://projects.webappsec.org/SQL-Injection\nOWASP|SQL Injection|https://owasp.org/www-community/attacks/SQL_Injection",
+            """[{"source":"WASC","label":"WASC-19 SQL Injection","url":"http://projects.webappsec.org/SQL-Injection"},{"source":"OWASP","label":"SQL Injection","url":"https://owasp.org/www-community/attacks/SQL_Injection"}]""",
             sql.ReferenceLinks);
         Assert.Equal("Software,Hardware", release.Techniques.Single(t => t.ExternalId == "CAPEC-100").Platforms);
         Assert.Equal("", release.Techniques.Single(t => t.ExternalId == "CAPEC-100").Weaknesses);

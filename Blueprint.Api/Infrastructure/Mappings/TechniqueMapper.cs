@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.ViewModels;
 using Riok.Mapperly.Abstractions;
@@ -47,7 +48,7 @@ public static partial class TechniqueMapper
 
     /// <remarks>
     /// The domain and family are the release's, so a technique whose release is not loaded has none. The lists
-    /// are stored as text: comma-separated, and links as "source|label|url" lines.
+    /// are stored as text: comma-separated, and links as a JSON array.
     /// </remarks>
     [UserMapping(Default = true)]
     public static Technique ToTechnique(this TechniqueEntity source)
@@ -62,7 +63,7 @@ public static partial class TechniqueMapper
         target.Tactics = SplitList(source.Tactics);
         target.Platforms = SplitList(source.Platforms);
         target.Weaknesses = SplitList(source.Weaknesses);
-        target.ReferenceLinks = SplitLinks(source.ReferenceLinks);
+        target.ReferenceLinks = ReadLinks(source.ReferenceLinks);
         return target;
     }
 
@@ -84,15 +85,9 @@ public static partial class TechniqueMapper
     [MapperIgnoreTarget(nameof(TechniqueCountermeasure.InheritedFromParent))]
     public static partial TechniqueCountermeasure ToTechniqueCountermeasure(this TechniqueCountermeasureEntity source);
 
-    /// <summary>The "source|label|url" lines <c>StixBundleReader</c> stores a technique's links as.</summary>
-    private static List<TechniqueLink> SplitLinks(string value) =>
-        string.IsNullOrEmpty(value)
-            ? []
-            : value.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(line => line.Split('|'))
-                .Where(parts => parts.Length == 3)
-                .Select(parts => new TechniqueLink { Source = parts[0], Label = parts[1], Url = parts[2] })
-                .ToList();
+    /// <summary>The JSON array <c>StixBundleReader</c> stores a technique's links as.</summary>
+    private static List<TechniqueLink> ReadLinks(string value) =>
+        string.IsNullOrEmpty(value) ? [] : JsonSerializer.Deserialize<List<TechniqueLink>>(value, JsonSerializerOptions.Web) ?? [];
 
     private static List<string> SplitList(string value) =>
         string.IsNullOrEmpty(value)

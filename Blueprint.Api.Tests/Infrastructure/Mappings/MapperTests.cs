@@ -201,8 +201,8 @@ public class MapperTests
 
     /// <summary>
     /// A technique takes its domain and family from its release, which leaves them empty when the release is not
-    /// loaded; its stored lists are split, its links are read from "source|label|url" lines (a malformed line is
-    /// skipped), and it is a sub-technique when it has a parent. A pooled technique carries the same mapping.
+    /// loaded; its stored lists are split, its links are read from their JSON array, and it is a sub-technique when
+    /// it has a parent. A pooled technique carries the same mapping.
     /// </summary>
     [Fact]
     public void A_technique_reads_its_release_and_its_stored_lists()
@@ -212,7 +212,7 @@ public class MapperTests
         {
             Id = Guid.NewGuid(), TechniqueReleaseId = release.Id, TechniqueRelease = release, ExternalId = "EX-1.1",
             ParentId = Guid.NewGuid(), Tactics = "harden, detect", Platforms = "", Weaknesses = null,
-            ReferenceLinks = "Site|Example page|https://example.org/1\nnot a link\nOther|Second|https://example.org/2"
+            ReferenceLinks = """[{"source":"Site","label":"Example | page","url":"https://example.org/1"},{"source":"Other","label":"Second","url":"https://example.org/2"}]"""
         };
 
         var technique = entity.ToTechnique();
@@ -226,6 +226,7 @@ public class MapperTests
         Assert.Empty(technique.Platforms);
         Assert.Empty(technique.Weaknesses);
         Assert.Equal(["Site", "Other"], technique.ReferenceLinks.Select(l => l.Source));
+        Assert.Equal("Example | page", technique.ReferenceLinks[0].Label);
         Assert.Equal("https://example.org/2", technique.ReferenceLinks[1].Url);
         Assert.Equal("EX-1.1", pooled.Technique.ExternalId);
         Assert.Equal("defences", pooled.Technique.Domain);

@@ -606,6 +606,27 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.Created, other.StatusCode);
     }
 
+    /// <summary>
+    /// Two adds from different releases of one domain, sent together to an empty pool, take turns: one lands and the
+    /// other is refused, so the pool never mixes releases.
+    /// </summary>
+    [Fact]
+    public async Task Create_OfTechniquesFromTwoReleasesOfADomainAtOnce_AddsOne_AndRefusesTheOther()
+    {
+        var first = await SeedRelease("1.0");
+        var second = await SeedRelease("2.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+
+        var responses = await Task.WhenAll(
+            RootClient.PostAsJsonAsync("api/mseltechniques", Body(msel.Id, Technique(first, "T1059").Id), Ct),
+            RootClient.PostAsJsonAsync("api/mseltechniques", Body(msel.Id, Technique(second, "T1053").Id), Ct));
+
+        Assert.Equal([HttpStatusCode.Created, HttpStatusCode.Conflict], responses.Select(r => r.StatusCode).Order());
+        var pool = await Get<List<MselTechnique>>(RootClient, $"api/msels/{msel.Id}/mseltechniques");
+        Assert.Single(pool);
+    }
+
     /// <summary>Upgrading one domain moves it alone: the CAPEC and D3FEND techniques keep their releases.</summary>
     [Fact]
     public async Task Upgrade_OfOneDomain_LeavesTheOtherDomainsAtTheirReleases()

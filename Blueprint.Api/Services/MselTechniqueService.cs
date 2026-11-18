@@ -97,6 +97,7 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
                 throw new ForbiddenException();
 
+            await LockPoolAsync(msel.Id, ct);
             if (await _context.MselTechniques.AnyAsync(m => m.MselId == msel.Id && m.TechniqueId == technique.Id, ct))
                 throw new ConflictException($"{technique.ExternalId} is already in this MSEL's techniques.");
 
@@ -116,6 +117,7 @@ namespace Blueprint.Api.Services
             };
             _context.MselTechniques.Add(entity);
             await _context.SaveChangesAsync(ct);
+            await _context.Database.CommitTransactionAsync(ct);
             _logger.LogWarning("Technique {ExternalId} added to MSEL {MselId} by {UserId}", technique.ExternalId, msel.Id, _user.GetId());
             return await GetAsync(entity.Id, true, false, ct);
         }
@@ -156,6 +158,7 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), msel.Id, _context)))
                 throw new ForbiddenException();
 
+            await LockPoolAsync(mselId, ct);
             var current = await InDomain(_context.MselTechniques.Where(m => m.MselId == mselId), release.Domain)
                 .Include(m => m.Technique)
                 .ToListAsync(ct);
@@ -164,7 +167,10 @@ namespace Blueprint.Api.Services
             var moving = current.Where(m => m.Technique.TechniqueReleaseId != techniqueReleaseId).ToList();
             result.Kept = current.Count - moving.Count;
             if (moving.Count == 0)
+            {
+                await _context.Database.CommitTransactionAsync(ct);
                 return result;
+            }
 
             var externalIds = moving.Select(m => m.Technique.ExternalId).ToList();
             var replacements = await _context.Techniques
@@ -190,6 +196,7 @@ namespace Blueprint.Api.Services
                     _context.MselTechniques.Add(new MselTechniqueEntity(mselId, replacementId) { Id = Guid.NewGuid() });
             }
             await _context.SaveChangesAsync(ct);
+            await _context.Database.CommitTransactionAsync(ct);
 
             _logger.LogWarning("MSEL {MselId} {Domain} techniques upgraded to release {ReleaseId} by {UserId}: {Kept} kept, {Dropped} dropped",
                 mselId, release.Domain, techniqueReleaseId, _user.GetId(), result.Kept, result.Dropped.Count);
@@ -205,6 +212,16 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning("Technique {TechniqueId} removed from MSEL {MselId} by {UserId}", item.TechniqueId, item.MselId, _user.GetId());
             return true;
+        }
+
+        /// <summary>
+        /// Starts a transaction holding the MSEL's row, so two writes to its pool take turns: each checks the release
+        /// its domain is pinned to and saves before the other reads it. The row lock ends with the transaction.
+        /// </summary>
+        private async Task LockPoolAsync(Guid mselId, CancellationToken ct)
+        {
+            await _context.Database.BeginTransactionAsync(ct);
+            await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM msels WHERE id = {mselId} FOR UPDATE", ct);
         }
 
         /// <summary>The pool rows of one domain.</summary>

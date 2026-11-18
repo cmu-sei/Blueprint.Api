@@ -22,7 +22,7 @@ namespace Blueprint.Api.Controllers
     /// </summary>
     public class TechniqueReleaseController : BaseController
     {
-        // a full enterprise bundle is about 50 MB and grows with each release
+        // a large release file is tens of megabytes and grows with each release
         private const long MaxBundleBytes = 256L * 1024 * 1024;
 
         private readonly ITechniqueReleaseService _techniqueReleaseService;
@@ -95,15 +95,15 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets the "countered by" mappings of a defensive release
+        /// Gets the mappings imported onto a release
         /// </summary>
         /// <remarks>
         /// With <c>offensiveId</c>, the countermeasures of that technique ranked by weight; a sub-technique with none
         /// of its own gets its parent's, each flagged <c>inheritedFromParent</c>.
         /// Without it, every mapping of the release.
         /// </remarks>
-        /// <param name="id">The id of the defensive release</param>
-        /// <param name="offensiveId">The offensive technique's id, e.g. T1003.005</param>
+        /// <param name="id">The id of the release</param>
+        /// <param name="offensiveId">The source technique's id</param>
         /// <param name="ct"></param>
         [HttpGet("techniquereleases/{id}/countermeasures")]
         [ProducesResponseType(typeof(IEnumerable<TechniqueCountermeasure>), (int)HttpStatusCode.OK)]
@@ -115,36 +115,38 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Imports a release from its STIX 2.x bundle or a defensive ontology
+        /// Imports a release from a STIX 2.x bundle or a JSON-LD ontology
         /// </summary>
         /// <remarks>
-        /// Accepts a STIX 2.x bundle, a CAPEC bundle or a defensive ontology in JSON-LD. Revoked, deprecated and
-        /// obsolete objects are skipped. The version is read from the file; give one only for a file that does not
-        /// name it.
+        /// The file is read as the technique framework whose match conditions it meets; a 400 when none does or more
+        /// than one does. Give the framework to choose one. The version is read from the file; give one only for a
+        /// file that does not name it.
         /// </remarks>
         /// <param name="form">The bundle or ontology</param>
-        /// <param name="version">The release version (e.g. "17.1"), if the file does not say</param>
+        /// <param name="version">The release version, if the file does not say</param>
+        /// <param name="techniqueFrameworkId">The framework to read the file as, if more than one matches</param>
         /// <param name="ct"></param>
         [HttpPost("techniquereleases/import")]
         [RequestSizeLimit(MaxBundleBytes)]
         [RequestFormLimits(MultipartBodyLengthLimit = MaxBundleBytes)]
         [ProducesResponseType(typeof(TechniqueRelease), (int)HttpStatusCode.Created)]
         [SwaggerOperation(OperationId = "importTechniqueRelease")]
-        public async Task<IActionResult> Import([FromForm] FileForm form, [FromQuery] string version, CancellationToken ct)
+        public async Task<IActionResult> Import([FromForm] FileForm form, [FromQuery] string version, [FromQuery] Guid? techniqueFrameworkId, CancellationToken ct)
         {
             if (!await _authorizationService.AuthorizeAsync([SystemPermission.ManageCompetencyFrameworks], ct))
                 throw new ForbiddenException();
 
-            var created = await _techniqueReleaseService.ImportAsync(form, version, ct);
+            var created = await _techniqueReleaseService.ImportAsync(form, version, techniqueFrameworkId, ct);
             return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
         }
 
         /// <summary>
-        /// Edits a release's publisher and notice fields
+        /// Edits a release's framework and notice fields
         /// </summary>
         /// <remarks>
-        /// Changes only the source, source URL, notice and terms URL, so no MSEL's pool is affected. A blank field is
-        /// cleared. The URLs must be http or https addresses.
+        /// Changes only the framework, source, source URL, notice and terms URL, so no MSEL's pool is affected. A
+        /// blank field is cleared. The framework must be of the release's domain and family. The URLs must be http or
+        /// https addresses.
         /// </remarks>
         /// <param name="id">The id of the release</param>
         /// <param name="notice">The notice fields</param>
@@ -162,15 +164,15 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Imports the "countered by" mappings onto a defensive release
+        /// Imports a mappings file onto a release
         /// </summary>
         /// <remarks>
-        /// Rows are aggregated to one per (offensive id, defensive technique), weighted by distinct artifact paths; a
-        /// pair whose defensive class is not a technique of this release is skipped and counted. Importing again
-        /// replaces the release's mappings. Refused with a 400 on a release that is not defensive or a file that is
-        /// not SPARQL results JSON.
+        /// The file is read as the release's framework defines its mappings. Rows are aggregated to one per (source
+        /// id, target technique), weighted by distinct paths; a pair whose target is not a technique of this release
+        /// is skipped and counted. Importing again replaces the release's mappings. Refused with a 400 when the
+        /// release's framework defines no mappings or the file is not of their format.
         /// </remarks>
-        /// <param name="id">The id of the defensive release</param>
+        /// <param name="id">The id of the release</param>
         /// <param name="form">The mappings file</param>
         /// <param name="ct"></param>
         [HttpPost("techniquereleases/{id}/countermeasures")]

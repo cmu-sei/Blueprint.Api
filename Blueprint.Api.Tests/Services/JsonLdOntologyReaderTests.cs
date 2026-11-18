@@ -14,11 +14,19 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Services;
 
-/// <summary><c>D3fendOntologyParser</c> - the D3FEND JSON-LD ontology into a release, its tactics and its techniques.</summary>
-public class D3fendOntologyParserTests
+/// <summary>
+/// <c>JsonLdOntologyReader</c> - a JSON-LD ontology into a release, its tactics and its techniques, with the
+/// properties and classes the framework definition names. The fixture and definition are the test D3FEND ones.
+/// </summary>
+public class JsonLdOntologyReaderTests
 {
-    private static async Task<TechniqueReleaseEntity> Parse(string json, string version = null) =>
-        await D3fendOntologyParser.ParseAsync(new MemoryStream(Encoding.UTF8.GetBytes(json)), version, TestContext.Current.CancellationToken);
+    private static Task<TechniqueReleaseEntity> Parse(string json, string version = null) => TechniqueFrameworks.ReadAsync(json, version);
+
+    private static TechniqueReleaseEntity Read(string json, TechniqueFrameworkEntity framework)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        return JsonLdOntologyReader.Read(document.RootElement, null, framework);
+    }
 
     [Fact]
     public async Task Parse_ReadsTheReleaseFromTheOntologyNode()
@@ -31,7 +39,7 @@ public class D3fendOntologyParserTests
         Assert.Equal("MITRE D3FEND", release.Name);
         Assert.Equal("Test D3FEND ontology", release.Description);
         Assert.Equal(new DateTime(2026, 8, 31, 0, 12, 0, DateTimeKind.Utc), release.ReleaseDate);
-        Assert.Equal(StixTechniqueParser.ReleaseId("d3fend", "1.6.0"), release.Id);
+        Assert.Equal(TechniqueIds.ReleaseId("d3fend", "1.6.0"), release.Id);
     }
 
     /// <summary>The analytic techniques carry d3fend-ids too, but only the countermeasures are techniques here.</summary>
@@ -98,8 +106,7 @@ public class D3fendOntologyParserTests
         var first = await Parse(D3fendOntologies.Ontology("1.6.0"));
         var again = await Parse(D3fendOntologies.Ontology("1.6.0"));
         var next = await Parse(D3fendOntologies.Ontology("1.7.0"));
-        var attack = await StixTechniqueParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(TechniqueBundles.Enterprise("1.6.0"))), null, TestContext.Current.CancellationToken);
+        var attack = await TechniqueFrameworks.ReadAsync(TechniqueBundles.Enterprise("1.6.0"));
 
         Assert.Equal(first.Id, again.Id);
         Assert.Equal(
@@ -136,19 +143,52 @@ public class D3fendOntologyParserTests
         await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(json));
 
     [Fact]
-    public async Task Parse_OfAGraphWithoutDefensiveTechniques_IsRefused()
+    public void Read_OfAGraphWithoutTheFrameworksTechniques_IsRefused()
     {
-        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(D3fendOntologies.WithoutTechniques()));
+        var ex = Assert.Throws<InvalidTechniqueBundleException>(() => Read(D3fendOntologies.WithoutTechniques(), TechniqueFrameworks.D3fend()));
 
-        Assert.Contains("no defensive tactics and techniques", ex.Message);
+        Assert.Contains("no tactics and techniques", ex.Message);
+    }
+
+    /// <summary>The classes and properties come from the definition: name others and the same graph reads as nothing.</summary>
+    [Fact]
+    public void Read_WithADefinitionNamingOtherClasses_FindsNoTechniques()
+    {
+        var framework = TechniqueFrameworks.D3fend();
+        framework.Settings.JsonLd.TechniqueClass = "ex:SomeOtherClass";
+
+        Assert.Throws<InvalidTechniqueBundleException>(() => Read(D3fendOntologies.Ontology(), framework));
     }
 
     [Fact]
-    public void Parse_TakesTheNoticeFromTheOntologyComment()
+    public void Read_WithADefinitionThatLacksItsIdProperty_IsRefused()
     {
-        using var document = System.Text.Json.JsonDocument.Parse(D3fendOntologies.Ontology("1.6.0"));
+        var framework = TechniqueFrameworks.D3fend();
+        framework.Settings.JsonLd.IdProperty = null;
 
-        var release = D3fendOntologyParser.Parse(document.RootElement, null);
+        var ex = Assert.Throws<InvalidTechniqueBundleException>(() => Read(D3fendOntologies.Ontology(), framework));
+
+        Assert.Contains("id property", ex.Message);
+    }
+
+    /// <summary>With no URL templates there are no links: the reader knows no site of its own.</summary>
+    [Fact]
+    public void Read_WithNoUrlTemplates_LinksNothing()
+    {
+        var framework = TechniqueFrameworks.D3fend();
+        framework.Settings.TechniqueUrlTemplate = null;
+        framework.Settings.TacticUrlTemplate = null;
+
+        var release = Read(D3fendOntologies.Ontology(), framework);
+
+        Assert.All(release.Techniques, t => Assert.Null(t.Url));
+        Assert.All(release.Tactics, t => Assert.Null(t.Url));
+    }
+
+    [Fact]
+    public void Read_TakesTheNoticeFromTheOntologyPropertyTheDefinitionNames()
+    {
+        var release = Read(D3fendOntologies.Ontology("1.6.0"), TechniqueFrameworks.D3fend());
 
         Assert.Equal("D3FEND™", release.Source);
         Assert.Contains("D3FEND™ and the D3FEND logo are trademarks of The MITRE Corporation.", release.Notice);
@@ -156,13 +196,14 @@ public class D3fendOntologyParserTests
         Assert.Null(release.TermsUrl);
     }
 
-    /// <summary>An ontology whose comment states no copyright or trademark gives no notice.</summary>
+    /// <summary>A definition that names no notice property gives the release no notice.</summary>
     [Fact]
-    public void Parse_OfAnOntologyWhoseCommentStatesNoNotice_CarriesNone()
+    public void Read_WithADefinitionThatNamesNoNoticeProperty_CarriesNone()
     {
-        using var document = System.Text.Json.JsonDocument.Parse(D3fendOntologies.Ontology("1.6.0").Replace("trademarks", "marks").Replace("Copyright", "Rights"));
+        var framework = TechniqueFrameworks.D3fend();
+        framework.Settings.JsonLd.NoticeProperty = null;
 
-        var release = D3fendOntologyParser.Parse(document.RootElement, null);
+        var release = Read(D3fendOntologies.Ontology("1.6.0"), framework);
 
         Assert.Null(release.Notice);
     }

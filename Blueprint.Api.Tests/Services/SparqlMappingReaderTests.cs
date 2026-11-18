@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
@@ -12,11 +13,14 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Services;
 
-/// <summary><c>D3fendMappingsParser</c> - d3fend-full-mappings.json (SPARQL results) into weighted "countered by" pairs.</summary>
-public class D3fendMappingsParserTests
+/// <summary>
+/// <c>SparqlMappingReader</c> - a mappings file in SPARQL results JSON into weighted pairs, read with the variable
+/// names of a mapping definition. The fixture and definition are the test D3FEND ones.
+/// </summary>
+public class SparqlMappingReaderTests
 {
-    private static async Task<D3fendMappingsParser.Result> Parse(string json) =>
-        await D3fendMappingsParser.ParseAsync(new MemoryStream(Encoding.UTF8.GetBytes(json)), TestContext.Current.CancellationToken);
+    private static Task<SparqlMappingReader.Result> Parse(string json, TechniqueMappingDefinition definition = null) =>
+        SparqlMappingReader.ReadAsync(new MemoryStream(Encoding.UTF8.GetBytes(json)), definition ?? TechniqueFrameworks.D3fendMappings(), TestContext.Current.CancellationToken);
 
     [Fact]
     public async Task Parse_CountsEveryRow_AndAggregatesThemIntoPairs()
@@ -33,7 +37,7 @@ public class D3fendMappingsParserTests
                 ("T1003.005", "NetworkTrafficFiltering"),
                 ("T1059", "FileAnalysis"),
             ],
-            result.Pairs.Select(p => (p.OffensiveId, p.DefensiveClass)).Order());
+            result.Pairs.Select(p => (p.SourceId, p.Target)).Order());
     }
 
     /// <summary>The same path is listed once per query that inherits it; the weight counts paths, not rows.</summary>
@@ -63,7 +67,7 @@ public class D3fendMappingsParserTests
 
         var pair = Pair(result, "T1003.005", "NetworkTrafficFiltering");
         Assert.Equal("Isolate", pair.Tactic);
-        Assert.Equal("Network Traffic Filtering", pair.DefensiveLabel);
+        Assert.Equal("Network Traffic Filtering", pair.TargetLabel);
         Assert.Equal("Detect", Pair(result, "T1059", "FileAnalysis").Tactic);
     }
 
@@ -73,7 +77,7 @@ public class D3fendMappingsParserTests
     {
         var result = await Parse(D3fendMappings.Standard());
 
-        Assert.DoesNotContain(result.Pairs, p => p.OffensiveId == "T1059.001");
+        Assert.DoesNotContain(result.Pairs, p => p.SourceId == "T1059.001");
     }
 
     /// <summary>
@@ -101,12 +105,45 @@ public class D3fendMappingsParserTests
     }
 
     [Fact]
-    public async Task Parse_RejectsAStixBundle_NamingTheFileWanted()
+    public async Task Parse_RejectsAStixBundle()
     {
         var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(TechniqueBundles.Enterprise()));
 
-        Assert.Contains("d3fend-full-mappings.json", ex.Message);
-        Assert.Contains("https://d3fend.mitre.org/ontologies/d3fend/<version>/d3fend-full-mappings.json", ex.Message);
+        Assert.Contains("not a mappings file", ex.Message);
+    }
+
+    /// <summary>The variables come from the definition: name others and the same file has none of them.</summary>
+    [Fact]
+    public async Task Parse_WithADefinitionNamingOtherVariables_RejectsTheFile_NamingThem()
+    {
+        var definition = TechniqueFrameworks.D3fendMappings();
+        definition.SourceIdVariable = "subject";
+        definition.TargetVariable = "object";
+
+        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(D3fendMappings.Standard(), definition));
+
+        Assert.Contains("subject and object", ex.Message);
+    }
+
+    /// <summary>Matching by id keeps the target as the file gives it, rather than taking its local name.</summary>
+    [Fact]
+    public async Task Parse_MatchingTargetsById_KeepsTheTargetAsGiven()
+    {
+        var definition = TechniqueFrameworks.D3fendMappings();
+        definition.TargetMatch = MappingTargetMatch.ExternalId;
+
+        var result = await Parse(D3fendMappings.Standard(), definition);
+
+        Assert.All(result.Pairs, p => Assert.Contains("#", p.Target));
+    }
+
+    [Fact]
+    public async Task Parse_WithADefinitionThatNamesNoTargetVariable_IsRefused()
+    {
+        var definition = TechniqueFrameworks.D3fendMappings();
+        definition.TargetVariable = null;
+
+        await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(D3fendMappings.Standard(), definition));
     }
 
     [Fact]
@@ -131,6 +168,6 @@ public class D3fendMappingsParserTests
         await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(D3fendMappings.File()));
     }
 
-    private static D3fendMappingsParser.Pair Pair(D3fendMappingsParser.Result result, string offensiveId, string defensiveClass) =>
-        result.Pairs.Single(p => p.OffensiveId == offensiveId && p.DefensiveClass == defensiveClass);
+    private static SparqlMappingReader.Pair Pair(SparqlMappingReader.Result result, string sourceId, string target) =>
+        result.Pairs.Single(p => p.SourceId == sourceId && p.Target == target);
 }

@@ -10,6 +10,9 @@ namespace Blueprint.Api.ViewModels
     {
         public Guid Id { get; set; }
         public string Domain { get; set; }
+        /// <summary>The framework the release was read as; null for a release that has none.</summary>
+        public Guid? TechniqueFrameworkId { get; set; }
+        public string TechniqueFrameworkName { get; set; }
         /// <summary>Whether the release's techniques are defences rather than attacks.</summary>
         public bool IsDefensive { get; set; }
         public string Version { get; set; }
@@ -26,13 +29,27 @@ namespace Blueprint.Api.ViewModels
         public string GroupLabel { get; set; }
         public int TacticCount { get; set; }
         public int TechniqueCount { get; set; }
-        /// <summary>The "countered by" mappings imported onto the release; 0 for an attack release.</summary>
+        /// <summary>The mappings imported onto the release.</summary>
         public int CountermeasureCount { get; set; }
+        /// <summary>The framework's tactic names in the order they are shown; empty when it gives none.</summary>
+        public List<string> TacticOrder { get; set; } = new List<string>();
+        /// <summary>A weakness's page, with {id} and {fullId}; null when the framework gives none.</summary>
+        public string WeaknessUrlTemplate { get; set; }
+        /// <summary>How the framework's mappings read, as its definition words the relation; null when the framework has no mappings to import.</summary>
+        public string MappingRelation { get; set; }
+        /// <summary>Where the release's mappings file is downloaded from; null when the framework does not say.</summary>
+        public string MappingsDownloadUrl { get; set; }
+        public string MappingsDownloadHint { get; set; }
     }
 
-    /// <summary>The notice fields of a release an administrator may edit; nothing else about a release changes.</summary>
+    /// <summary>
+    /// What an administrator may edit on a release: its framework and its notice fields. Nothing else about a
+    /// release changes.
+    /// </summary>
     public class TechniqueReleaseNotice
     {
+        /// <summary>The framework the release belongs to, of the same domain and family; null for none.</summary>
+        public Guid? TechniqueFrameworkId { get; set; }
         /// <summary>Who publishes the release; blank for none.</summary>
         public string Source { get; set; }
         /// <summary>The publisher's website for the framework, an http or https address; blank for none.</summary>
@@ -72,7 +89,7 @@ namespace Blueprint.Api.ViewModels
         /// <summary>The short names of the tactics the technique serves, e.g. "execution".</summary>
         public List<string> Tactics { get; set; } = new List<string>();
         public List<string> Platforms { get; set; } = new List<string>();
-        /// <summary>The CWE ids the technique exploits, e.g. "CWE-89"; empty when the framework gives none.</summary>
+        /// <summary>The ids of the weaknesses the technique exploits; empty when the framework gives none.</summary>
         public List<string> Weaknesses { get; set; } = new List<string>();
         /// <summary>The technique's links to other catalogues; empty when the framework gives none.</summary>
         public List<TechniqueLink> ReferenceLinks { get; set; } = new List<TechniqueLink>();

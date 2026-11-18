@@ -224,7 +224,7 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         { "DELETE", "api/mselcompetencies/{mselcompetency}", "ManageMsels", null },
         { "DELETE", "api/msels/{msel}/competencies/{competency}", "ManageMsels", null },
 
-        // MselTechniqueService / MselTechniqueController - the ATT&CK twin of the above.
+        // MselTechniqueService / MselTechniqueController - the technique twin of the above.
         { "GET", "api/msels/{msel}/mseltechniques", "ViewMsels", null },
         { "GET", "api/mseltechniques/{mseltechnique}", "ViewMsels", null },
         { "GET", "api/msels/{msel}/techniques/countermeasures", "ViewMsels", null },
@@ -241,10 +241,22 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         { "POST", "api/techniquereleases/import", "ManageCompetencyFrameworks", "@file" },
         {
             "PUT", "api/techniquereleases/{techniquerelease}", "ManageCompetencyFrameworks",
-            """{"source":"{unique}","sourceUrl":null,"notice":null,"termsUrl":null}"""
+            """{"techniqueFrameworkId":"{techniqueframework}","source":"{unique}","sourceUrl":null,"notice":null,"termsUrl":null}"""
         },
         { "POST", "api/techniquereleases/{techniquerelease}/countermeasures", "ManageCompetencyFrameworks", "@file" },
         { "DELETE", "api/techniquereleases/{techniquerelease}", "ManageCompetencyFrameworks", null },
+
+        // TechniqueFrameworkService / TechniqueFrameworkController - the definitions releases are read with; the
+        // same split as the releases.
+        {
+            "POST", "api/techniqueframeworks", "ManageCompetencyFrameworks",
+            """{"name":"{unique}","domain":"{unique}","format":"StixBundle","settings":{"match":{"stixDomain":"{unique}"}}}"""
+        },
+        {
+            "PUT", "api/techniqueframeworks/{techniqueframework}", "ManageCompetencyFrameworks",
+            """{"name":"{unique}","domain":"{techniqueframeworkdomain}","format":"StixBundle","settings":{"match":{"stixDomain":"{unique}"}}}"""
+        },
+        { "DELETE", "api/techniqueframeworks/{techniqueframework}", "ManageCompetencyFrameworks", null },
 
         // TeamCompetencyService / TeamCompetencyController - the twin of the above, one level down.
         { "GET", "api/teams/{team}/teamcompetencies", "ViewMsels", null },
@@ -480,9 +492,13 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         await Seed(
             catalogInject, catalogUnit, mselCompetency, teamCompetency, playerApplicationTeam);
 
-        // A version of its own, so its derived ids clear the unique indexes of any other release.
-        var techniqueRelease = await StixTechniqueParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(TechniqueBundles.Enterprise())), $"test-{Guid.NewGuid()}", Ct);
+        // A framework and release of their own, so their ids and domain clear the unique indexes of any other.
+        var techniqueFramework = TechniqueFrameworks.Enterprise();
+        techniqueFramework.Id = Guid.NewGuid();
+        techniqueFramework.Domain = $"test-{Guid.NewGuid()}";
+        await Seed(techniqueFramework);
+        using var bundle = System.Text.Json.JsonDocument.Parse(TechniqueBundles.Enterprise());
+        var techniqueRelease = StixBundleReader.Read(bundle.RootElement, $"test-{Guid.NewGuid()}", techniqueFramework);
         await Seed(techniqueRelease);
         var technique = techniqueRelease.Techniques.Single(t => t.ExternalId == "T1059");
         var spareTechnique = techniqueRelease.Techniques.Single(t => t.ExternalId == "T1053");
@@ -516,6 +532,8 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             ["mselcompetency"] = mselCompetency.Id.ToString(),
             ["teamcompetency"] = teamCompetency.Id.ToString(),
             ["techniquerelease"] = techniqueRelease.Id.ToString(),
+            ["techniqueframework"] = techniqueFramework.Id.ToString(),
+            ["techniqueframeworkdomain"] = techniqueFramework.Domain,
             ["technique"] = technique.Id.ToString(),
             ["spareTechnique"] = spareTechnique.Id.ToString(),
             ["mseltechnique"] = mselTechnique.Id.ToString(),

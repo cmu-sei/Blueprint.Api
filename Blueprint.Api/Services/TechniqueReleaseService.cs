@@ -26,14 +26,14 @@ namespace Blueprint.Api.Services
         Task<TechniqueRelease> GetAsync(Guid id, CancellationToken ct);
         Task<IEnumerable<TechniqueTactic>> GetTacticsAsync(Guid id, CancellationToken ct);
         Task<IEnumerable<Technique>> GetTechniquesAsync(Guid id, CancellationToken ct);
-        Task<TechniqueRelease> ImportAsync(FileForm form, string version, CancellationToken ct);
+        Task<TechniqueRelease> ImportAsync(FileForm form, string version, Guid? techniqueFrameworkId, CancellationToken ct);
         Task<TechniqueRelease> UpdateNoticeAsync(Guid id, TechniqueReleaseNotice notice, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     }
 
     /// <summary>
     /// The releases an administrator has uploaded. Techniques are never edited: a newer version is imported
-    /// alongside, and MSELs move to it one at a time. Only the publisher and notice fields can be changed.
+    /// alongside, and MSELs move to it one at a time. Only the framework and the notice fields can be changed.
     /// </summary>
     public class TechniqueReleaseService : ITechniqueReleaseService
     {
@@ -52,11 +52,13 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<TechniqueRelease>> GetAsync(CancellationToken ct)
         {
-            return await _context.TechniqueReleases
+            var releases = await _context.TechniqueReleases
                 .OrderBy(r => r.Domain)
                 .ThenByDescending(r => r.ReleaseDate)
                 .ProjectTo<TechniqueRelease>(_mapper.ConfigurationProvider)
                 .ToListAsync(ct);
+            await AddFrameworkSettingsAsync(releases, ct);
+            return releases;
         }
 
         public async Task<TechniqueRelease> GetAsync(Guid id, CancellationToken ct)
@@ -68,7 +70,34 @@ namespace Blueprint.Api.Services
             if (release == null)
                 throw new EntityNotFoundException<TechniqueRelease>();
 
+            await AddFrameworkSettingsAsync([release], ct);
             return release;
+        }
+
+        /// <summary>What the releases show from their framework's settings, which the query does not reach.</summary>
+        private async Task AddFrameworkSettingsAsync(List<TechniqueRelease> releases, CancellationToken ct)
+        {
+            var ids = releases.Where(r => r.TechniqueFrameworkId.HasValue).Select(r => r.TechniqueFrameworkId.Value).Distinct().ToList();
+            if (ids.Count == 0)
+                return;
+
+            var settings = await _context.TechniqueFrameworks
+                .Where(f => ids.Contains(f.Id))
+                .ToDictionaryAsync(f => f.Id, f => f.Settings ?? new TechniqueFrameworkSettings(), ct);
+            foreach (var release in releases)
+            {
+                if (!release.TechniqueFrameworkId.HasValue || !settings.TryGetValue(release.TechniqueFrameworkId.Value, out var s))
+                    continue;
+
+                release.TacticOrder = s.TacticOrder ?? [];
+                release.WeaknessUrlTemplate = Blank(s.WeaknessUrlTemplate);
+                if (s.Mappings != null)
+                {
+                    release.MappingRelation = Blank(s.Mappings.Relation) ?? "mapped to";
+                    release.MappingsDownloadUrl = Blank(s.Mappings.DownloadUrlTemplate)?.Replace("{version}", Uri.EscapeDataString(release.Version ?? ""), StringComparison.Ordinal);
+                    release.MappingsDownloadHint = Blank(s.Mappings.DownloadHint);
+                }
+            }
         }
 
         public async Task<IEnumerable<TechniqueTactic>> GetTacticsAsync(Guid id, CancellationToken ct)
@@ -94,12 +123,14 @@ namespace Blueprint.Api.Services
             return _mapper.Map<IEnumerable<Technique>>(techniques);
         }
 
-        public async Task<TechniqueRelease> ImportAsync(FileForm form, string version, CancellationToken ct)
+        public async Task<TechniqueRelease> ImportAsync(FileForm form, string version, Guid? techniqueFrameworkId, CancellationToken ct)
         {
+            var frameworks = await _context.TechniqueFrameworks.ToListAsync(ct);
+
             TechniqueReleaseEntity release;
             using (var stream = form.ToUpload.OpenReadStream())
             {
-                release = await ReleaseFileParser.ParseAsync(stream, version, ct);
+                release = await ReleaseFileReader.ReadAsync(stream, version, frameworks, techniqueFrameworkId, ct);
             }
 
             if (await _context.TechniqueReleases.AnyAsync(r => r.Domain == release.Domain && r.Version == release.Version, ct))
@@ -128,14 +159,24 @@ namespace Blueprint.Api.Services
             ThrowIfNotWebAddress(sourceUrl, "The source URL");
             ThrowIfNotWebAddress(termsUrl, "The terms URL");
 
-            // only the notice fields; the rest is what MSELs are pinned to
+            if (notice.TechniqueFrameworkId.HasValue && notice.TechniqueFrameworkId != release.TechniqueFrameworkId)
+            {
+                var framework = await _context.TechniqueFrameworks.SingleOrDefaultAsync(f => f.Id == notice.TechniqueFrameworkId.Value, ct)
+                    ?? throw new EntityNotFoundException<TechniqueFramework>();
+                // the domain and family are what MSELs pin and pool by, so the framework must agree with them
+                if (framework.Domain != release.Domain || framework.IsDefensive != release.IsDefensive)
+                    throw new BadRequestException($"{framework.Name} is for {framework.Domain} {(framework.IsDefensive ? "defensive" : "attack")} techniques; this release is {release.Domain} {(release.IsDefensive ? "defensive" : "attack")}.");
+            }
+            release.TechniqueFrameworkId = notice.TechniqueFrameworkId;
+
+            // only the framework and notice fields; the rest is what MSELs are pinned to
             release.Source = Blank(notice.Source);
             release.SourceUrl = sourceUrl;
             release.Notice = Blank(notice.Notice);
             release.TermsUrl = termsUrl;
             release.ModifiedBy = _user.GetId();
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning("Release {Domain} {Version} notice edited by {UserId}", release.Domain, release.Version, _user.GetId());
+            _logger.LogWarning("Release {Domain} {Version} framework and notice edited by {UserId}", release.Domain, release.Version, _user.GetId());
 
             return await GetAsync(id, ct);
         }

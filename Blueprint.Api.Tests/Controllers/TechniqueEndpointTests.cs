@@ -22,9 +22,9 @@ using Xunit;
 namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary>
-/// <c>TechniqueReleaseController</c> and <c>MselTechniqueController</c> - the ATT&amp;CK, ATLAS and D3FEND
-/// releases an administrator imports, and the per-MSEL technique pool that Technique and DefensiveTechnique
-/// columns pick from. Also the two ways a pool leaves its MSEL: copy, and JSON export to another installation.
+/// <c>TechniqueReleaseController</c> and <c>MselTechniqueController</c> - the releases an administrator imports,
+/// read as the test framework definitions say, and the per-MSEL technique pool that Technique and
+/// DefensiveTechnique columns pick from. Also the two ways a pool leaves its MSEL: copy, and JSON export.
 /// </summary>
 /// <remarks>401 and 403 for these routes live in <see cref="RouteAuthorizationTests"/>.</remarks>
 public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
@@ -43,7 +43,7 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var release = await Read<TechniqueRelease>(response);
-        Assert.Equal(StixTechniqueParser.ReleaseId("enterprise-attack", "1.0"), release.Id);
+        Assert.Equal(TechniqueIds.ReleaseId("enterprise-attack", "1.0"), release.Id);
         Assert.False(release.IsDefensive);
         Assert.Equal(2, release.TacticCount);
         Assert.Equal(4, release.TechniqueCount);
@@ -58,7 +58,7 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var release = await Read<TechniqueRelease>(response);
-        Assert.Equal(StixTechniqueParser.ReleaseId("ATLAS", "2026.10"), release.Id);
+        Assert.Equal(TechniqueIds.ReleaseId("ATLAS", "2026.10"), release.Id);
         Assert.Equal("ATLAS", release.Domain);
         Assert.Equal(2, release.TacticCount);
         Assert.Equal(3, release.TechniqueCount);
@@ -74,7 +74,7 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var release = await Read<TechniqueRelease>(response);
-        Assert.Equal(StixTechniqueParser.ReleaseId("d3fend", "1.6.0"), release.Id);
+        Assert.Equal(TechniqueIds.ReleaseId("d3fend", "1.6.0"), release.Id);
         Assert.Equal("d3fend", release.Domain);
         Assert.True(release.IsDefensive);
         Assert.Equal("MITRE D3FEND", release.Name);
@@ -131,8 +131,8 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     // A release's notice fields
     // ---------------------------------------------------------------------------------------------
 
-    private static object Notice(string source = null, string sourceUrl = null, string notice = null, string termsUrl = null) =>
-        new { source, sourceUrl, notice, termsUrl };
+    private static object Notice(string source = null, string sourceUrl = null, string notice = null, string termsUrl = null, Guid? techniqueFrameworkId = null) =>
+        new { techniqueFrameworkId, source, sourceUrl, notice, termsUrl };
 
     /// <summary>The notice is the statement the file carries, whatever year that names, not one the server writes.</summary>
     [Fact]
@@ -158,7 +158,7 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
         var response = await Client(admin).PutAsJsonAsync(
             $"api/techniquereleases/{release.Id}",
-            Notice("  Acme Corp  ", "https://acme.example/ttp", "© Acme\nAcme is a mark of Acme Corp.", "https://acme.example/terms"), Ct);
+            Notice("  Acme Corp  ", "https://acme.example/ttp", "© Acme\nAcme is a mark of Acme Corp.", "https://acme.example/terms", TechniqueFrameworks.EnterpriseId), Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var updated = await Read<TechniqueRelease>(response);
@@ -168,6 +168,7 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal("https://acme.example/terms", updated.TermsUrl);
         // nothing else about the release moved
         Assert.Equal(release.Id, updated.Id);
+        Assert.Equal(TechniqueFrameworks.EnterpriseId, updated.TechniqueFrameworkId);
         Assert.Equal("enterprise-attack", updated.Domain);
         Assert.Equal("1.0", updated.Version);
         Assert.Equal(release.Name, updated.Name);
@@ -221,6 +222,55 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal("The MITRE Corporation", (await ReadBack(rb => rb.TechniqueReleases.SingleAsync(r => r.Id == release.Id, Ct))).Source);
     }
 
+    /// <summary>A release imported before frameworks can be given one, of its own domain and family.</summary>
+    [Fact]
+    public async Task Update_GivesAReleaseWithNoFrameworkOne_AndServesWhatTheFrameworkSays()
+    {
+        var release = await SeedD3fendRelease("1.6.0");
+        await ReadBack(async rb =>
+        {
+            var row = await rb.TechniqueReleases.SingleAsync(r => r.Id == release.Id, Ct);
+            row.TechniqueFrameworkId = null;
+            return await rb.SaveChangesAsync(Ct);
+        });
+        var before = await Get<TechniqueRelease>(RootClient, $"api/techniquereleases/{release.Id}");
+        Assert.Null(before.TechniqueFrameworkId);
+        Assert.Null(before.MappingRelation);
+        Assert.Empty(before.TacticOrder);
+
+        var response = await RootClient.PutAsJsonAsync($"api/techniquereleases/{release.Id}", Notice(techniqueFrameworkId: TechniqueFrameworks.D3fendId), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var updated = await Read<TechniqueRelease>(response);
+        Assert.Equal(TechniqueFrameworks.D3fendId, updated.TechniqueFrameworkId);
+        Assert.Equal("MITRE D3FEND", updated.TechniqueFrameworkName);
+        Assert.Equal("countered by", updated.MappingRelation);
+        Assert.Equal("https://d3fend.mitre.org/ontologies/d3fend/1.6.0/d3fend-full-mappings.json", updated.MappingsDownloadUrl);
+        Assert.Equal(["Model", "Harden", "Detect", "Isolate", "Deceive", "Evict", "Restore"], updated.TacticOrder);
+    }
+
+    /// <summary>The domain and family are what MSELs pin and pool by, so a framework of another one is refused.</summary>
+    [Fact]
+    public async Task Update_WithAFrameworkOfAnotherDomain_Is400_AndKeepsTheFramework()
+    {
+        var release = await SeedRelease("1.0");
+
+        var response = await RootClient.PutAsJsonAsync($"api/techniquereleases/{release.Id}", Notice(techniqueFrameworkId: TechniqueFrameworks.CapecId), Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(TechniqueFrameworks.EnterpriseId, (await ReadBack(rb => rb.TechniqueReleases.SingleAsync(r => r.Id == release.Id, Ct))).TechniqueFrameworkId);
+    }
+
+    [Fact]
+    public async Task Update_WithAFrameworkThatIsNotThere_Is404()
+    {
+        var release = await SeedRelease("1.0");
+
+        var response = await RootClient.PutAsJsonAsync($"api/techniquereleases/{release.Id}", Notice(techniqueFrameworkId: Guid.NewGuid()), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     [Fact]
     public async Task Update_OfAMissingRelease_Is404()
     {
@@ -247,6 +297,55 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var response = await Upload(RootClient, """{"type":"report"}""");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>Blueprint ships no framework, so with none defined nothing can be imported.</summary>
+    [Fact]
+    public async Task Import_WithNoFrameworkDefined_Is400_AskingForADefinition()
+    {
+        var response = await Upload(RootClient, TechniqueBundles.Enterprise("1.0"), seedFrameworks: false);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("No technique framework matches this file. Add or import a framework definition first.", await response.Content.ReadAsStringAsync(Ct));
+        Assert.False(await ReadBack(rb => rb.TechniqueReleases.AnyAsync(Ct)));
+    }
+
+    [Fact]
+    public async Task Import_OfAFileTwoFrameworksMatch_Is400_UntilOneIsChosen()
+    {
+        await SeedFrameworks();
+        var copy = TechniqueFrameworks.Enterprise();
+        copy.Id = Guid.NewGuid();
+        copy.Name = "Enterprise copy";
+        copy.Domain = "enterprise-copy";
+        await Seed(copy);
+
+        var ambiguous = await Upload(RootClient, TechniqueBundles.Enterprise("1.0"));
+        var chosen = await Upload(RootClient, TechniqueBundles.Enterprise("1.0"), frameworkId: copy.Id);
+
+        Assert.Equal(HttpStatusCode.BadRequest, ambiguous.StatusCode);
+        Assert.Contains("Enterprise copy", await ambiguous.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(HttpStatusCode.Created, chosen.StatusCode);
+        var release = await Read<TechniqueRelease>(chosen);
+        Assert.Equal("enterprise-copy", release.Domain);
+        Assert.Equal(copy.Id, release.TechniqueFrameworkId);
+        Assert.Equal("Enterprise copy", release.TechniqueFrameworkName);
+    }
+
+    /// <summary>A release keeps its techniques when its framework is deleted, and is served with no framework.</summary>
+    [Fact]
+    public async Task DeleteFramework_LeavesItsReleases_WithNoFramework()
+    {
+        var release = await SeedRelease("1.0");
+
+        var response = await RootClient.DeleteAsync($"api/techniqueframeworks/{TechniqueFrameworks.EnterpriseId}", Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var served = await Get<TechniqueRelease>(RootClient, $"api/techniquereleases/{release.Id}");
+        Assert.Null(served.TechniqueFrameworkId);
+        Assert.Equal(release.Techniques.Count, served.TechniqueCount);
+        var techniques = await Get<List<Technique>>(RootClient, $"api/techniquereleases/{release.Id}/techniques");
+        Assert.Equal(release.Techniques.Count, techniques.Count);
     }
 
     /// <summary>Releases are reference data every MSEL screen loads, so any signed-in user reads them.</summary>
@@ -650,36 +749,37 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
 
     // ---------------------------------------------------------------------------------------------
 
-    private async Task<TechniqueReleaseEntity> SeedRelease(string version)
+    private bool _frameworksSeeded;
+
+    private async Task SeedFrameworks()
     {
-        var release = await StixTechniqueParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(TechniqueBundles.Enterprise(version))), null, Ct);
+        if (_frameworksSeeded)
+            return;
+        await Seed(TechniqueFrameworks.All().ToArray<object>());
+        _frameworksSeeded = true;
+    }
+
+    private async Task<TechniqueReleaseEntity> SeedRelease(string version) => await SeedRead(TechniqueBundles.Enterprise(version));
+
+    private async Task<TechniqueReleaseEntity> SeedCapecRelease(string version) => await SeedRead(CapecBundles.Capec(version));
+
+    private async Task<TechniqueReleaseEntity> SeedD3fendRelease(string version) => await SeedRead(D3fendOntologies.Ontology(version));
+
+    private async Task<TechniqueReleaseEntity> SeedRead(string json)
+    {
+        await SeedFrameworks();
+        var release = await TechniqueFrameworks.ReadAsync(json);
         await Seed(release);
         return release;
     }
 
-    private async Task<TechniqueReleaseEntity> SeedCapecRelease(string version)
-    {
-        var release = await StixTechniqueParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(CapecBundles.Capec(version))), null, Ct);
-        await Seed(release);
-        return release;
-    }
-
-    private async Task<TechniqueReleaseEntity> SeedD3fendRelease(string version)
-    {
-        var release = await D3fendOntologyParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(D3fendOntologies.Ontology(version))), null, Ct);
-        await Seed(release);
-        return release;
-    }
-
-    /// <summary>A defensive release of a domain that is not d3fend, as a future framework's parser would make.</summary>
+    /// <summary>A defensive release of a domain that is not d3fend, as another defensive framework's would be.</summary>
     private async Task<TechniqueReleaseEntity> SeedDefensiveRelease(string domain, string version)
     {
-        var release = await D3fendOntologyParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(D3fendOntologies.Ontology(version))), null, Ct);
+        await SeedFrameworks();
+        var release = await TechniqueFrameworks.ReadAsync(D3fendOntologies.Ontology(version));
         release.Domain = domain;
+        release.TechniqueFrameworkId = null;
         Assert.True(release.IsDefensive);
         await Seed(release);
         return release;
@@ -691,14 +791,17 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     private static object Body(Guid mselId, Guid techniqueId) => new { mselId, techniqueId };
 
     /// <remarks>Awaited inside the <c>using</c>: <c>TestServer</c> reads the body during <c>SendAsync</c>.</remarks>
-    private async Task<HttpResponseMessage> Upload(HttpClient client, string json, string fileName = "enterprise-attack.json")
+    private async Task<HttpResponseMessage> Upload(HttpClient client, string json, string fileName = "enterprise-attack.json",
+        bool seedFrameworks = true, Guid? frameworkId = null)
     {
+        if (seedFrameworks)
+            await SeedFrameworks();
         using var content = new MultipartFormDataContent();
         var file = new ByteArrayContent(Encoding.UTF8.GetBytes(json));
         file.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         content.Add(file, "ToUpload", fileName);
 
-        return await client.PostAsync("api/techniquereleases/import", content, Ct);
+        return await client.PostAsync(frameworkId.HasValue ? $"api/techniquereleases/import?techniqueFrameworkId={frameworkId}" : "api/techniquereleases/import", content, Ct);
     }
 
     private async Task<T> Get<T>(HttpClient client, string url)

@@ -2486,6 +2486,62 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.ToTable("techniques");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueFrameworkEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<DateTime?>("DateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_modified");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Domain")
+                        .HasColumnType("text")
+                        .HasColumnName("domain");
+
+                    b.Property<int>("Format")
+                        .HasColumnType("integer")
+                        .HasColumnName("format");
+
+                    b.Property<bool>("IsDefensive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_defensive");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modified_by");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Settings")
+                        .HasColumnType("text")
+                        .HasColumnName("settings");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Domain")
+                        .IsUnique();
+
+                    b.ToTable("technique_frameworks");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueReleaseEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2544,6 +2600,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("source_url");
 
+                    b.Property<Guid?>("TechniqueFrameworkId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("technique_framework_id");
+
                     b.Property<string>("TermsUrl")
                         .HasColumnType("text")
                         .HasColumnName("terms_url");
@@ -2553,6 +2613,8 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnName("version");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TechniqueFrameworkId");
 
                     b.HasIndex("Domain", "Version")
                         .IsUnique();
@@ -3499,6 +3561,16 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("TechniqueRelease");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueReleaseEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.TechniqueFrameworkEntity", "TechniqueFramework")
+                        .WithMany("Releases")
+                        .HasForeignKey("TechniqueFrameworkId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("TechniqueFramework");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueTacticEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.TechniqueReleaseEntity", "TechniqueRelease")
@@ -3732,6 +3804,11 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
             modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueEntity", b =>
                 {
                     b.Navigation("SubTechniques");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueFrameworkEntity", b =>
+                {
+                    b.Navigation("Releases");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueReleaseEntity", b =>

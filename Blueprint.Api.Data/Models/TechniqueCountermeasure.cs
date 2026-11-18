@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Blueprint.Api.Data.Models
 {
     /// <summary>
-    /// One "countered by" mapping: an offensive technique and the defensive technique that counters it.
+    /// One mapping: a source technique, by id, and the technique of the release it maps to.
     /// </summary>
     /// <remarks>
     /// The offensive side is an id, not a key, because the mappings cover every domain and version a MSEL's attack
@@ -27,17 +27,17 @@ namespace Blueprint.Api.Data.Models
         public Guid ReleaseId { get; set; }
         public TechniqueReleaseEntity Release { get; set; }
 
-        /// <summary>The offensive technique's id (T1003.005), as the mappings file gives it.</summary>
+        /// <summary>The source technique's id, as the mappings file gives it.</summary>
         public string OffensiveExternalId { get; set; }
 
         /// <summary>The defensive technique that counters it, in the same release.</summary>
         public Guid DefensiveTechniqueId { get; set; }
         public TechniqueEntity DefensiveTechnique { get; set; }
 
-        /// <summary>The defensive tactic the mapping is filed under (Harden, Detect, ...), as labelled in the file.</summary>
+        /// <summary>The tactic the mapping is filed under, as labelled in the file.</summary>
         public string DefensiveTactic { get; set; }
 
-        /// <summary>Why, in a line: the most common artifact path, e.g. "hardens Credential; T1003.005 accesses Encrypted Credential".</summary>
+        /// <summary>Why, in a line: the most common path behind the pair, as the file words it.</summary>
         public string Rationale { get; set; }
 
         /// <summary>The number of distinct artifact paths that link the pair; more paths, a stronger countermeasure.</summary>

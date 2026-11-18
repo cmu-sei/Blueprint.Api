@@ -3,52 +3,65 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Exceptions;
 
 namespace Blueprint.Api.Services
 {
     /// <summary>
-    /// Reads the D3FEND ontology (d3fend.json, JSON-LD) into a defensive <see cref="TechniqueReleaseEntity"/> of the
-    /// "d3fend" domain, with its defensive tactics and techniques.
+    /// Reads a JSON-LD ontology into a <see cref="TechniqueReleaseEntity"/>, as its framework definition says.
     /// </summary>
     /// <remarks>
-    /// The ontology is a flat <c>@graph</c> of classes. A defensive technique is a class with a <c>d3f:d3fend-id</c>
-    /// under <c>d3f:DefensiveTechnique</c>; analytic techniques (D3A-*) are not countermeasures and are skipped. A
-    /// technique's parent is its direct superclass when that is a technique too. Only a top-level technique names the
-    /// tactic it <c>d3f:enables</c>, so a sub-technique's tactics come from the nearest ancestor that does. Ids are
-    /// derived from the version and class id, so a re-import is the same release.
+    /// The ontology is a flat <c>@graph</c> of classes. A technique is a class with the definition's id property
+    /// that descends from its technique class; a tactic is a node of its tactic type. A technique's parent is its
+    /// direct superclass when that is a technique too. A technique without tactics of its own takes those of the
+    /// nearest ancestor that names some.
     /// </remarks>
-    public static class D3fendOntologyParser
+    public static class JsonLdOntologyReader
     {
-        public const string Domain = "d3fend";
-        public const string ReleaseName = "MITRE D3FEND";
-        private const string SiteUrl = "https://d3fend.mitre.org";
         private const string OntologyType = "owl:Ontology";
-        private const string TacticType = "d3f:DefensiveTactic";
-        private const string TechniqueClass = "d3f:DefensiveTechnique";
 
-        public static async Task<TechniqueReleaseEntity> ParseAsync(Stream stream, string version, CancellationToken ct)
-        {
-            using var document = await ReleaseFileParser.ReadAsync(stream, ct);
-            return Parse(document.RootElement, version);
-        }
-
-        /// <summary>True when the JSON is a JSON-LD document with a <c>@graph</c>, the shape of d3fend.json.</summary>
-        public static bool CanParse(JsonElement root) =>
+        /// <summary>True when the JSON is a JSON-LD document with a <c>@graph</c>.</summary>
+        public static bool CanRead(JsonElement root) =>
             root.ValueKind == JsonValueKind.Object
             && root.TryGetProperty("@graph", out var graph)
             && graph.ValueKind == JsonValueKind.Array;
 
-        public static TechniqueReleaseEntity Parse(JsonElement root, string version)
+        /// <summary>What a framework's match conditions are checked against.</summary>
+        public sealed class Summary
         {
-            if (!CanParse(root))
-                throw new InvalidTechniqueBundleException("The file is not the D3FEND ontology. Upload d3fend.json from the D3FEND Ontology Resources page.");
+            public HashSet<string> Properties { get; init; } = new HashSet<string>();
+            public string Title { get; init; }
+        }
+
+        public static Summary Summarize(JsonElement root)
+        {
+            var properties = new HashSet<string>(StringComparer.Ordinal);
+            string title = null;
+            foreach (var node in root.GetProperty("@graph").EnumerateArray())
+            {
+                if (node.ValueKind != JsonValueKind.Object)
+                    continue;
+                foreach (var property in node.EnumerateObject())
+                    properties.Add(property.Name);
+                if (title == null && HasType(node, OntologyType))
+                    title = GetText(node, "dcterms:title");
+            }
+
+            return new Summary { Properties = properties, Title = title };
+        }
+
+        public static TechniqueReleaseEntity Read(JsonElement root, string version, TechniqueFrameworkEntity framework)
+        {
+            if (!CanRead(root))
+                throw new InvalidTechniqueBundleException("The file is not a JSON-LD ontology.");
+
+            var settings = framework.Settings ?? new TechniqueFrameworkSettings();
+            var options = settings.JsonLd ?? new JsonLdFormatOptions();
+            if (string.IsNullOrWhiteSpace(options.IdProperty) || string.IsNullOrWhiteSpace(options.TechniqueClass) || string.IsNullOrWhiteSpace(options.TacticType))
+                throw new InvalidTechniqueBundleException($"The {framework.Name} framework does not say which id property, technique class and tactic type to read.");
 
             var nodes = new Dictionary<string, JsonElement>();
             JsonElement? ontology = null;
@@ -63,12 +76,12 @@ namespace Blueprint.Api.Services
                     nodes.TryAdd(id, node);
             }
 
-            var tactics = nodes.Values.Where(n => HasType(n, TacticType)).ToList();
+            var tactics = nodes.Values.Where(n => HasType(n, options.TacticType)).ToList();
             var techniques = nodes.Values
-                .Where(n => GetText(n, "d3f:d3fend-id") != null && DescendsFrom(n, TechniqueClass, nodes))
+                .Where(n => GetText(n, options.IdProperty) != null && DescendsFrom(n, options.TechniqueClass, nodes))
                 .ToList();
             if (tactics.Count == 0 || techniques.Count == 0)
-                throw new InvalidTechniqueBundleException("The ontology has no defensive tactics and techniques.");
+                throw new InvalidTechniqueBundleException("The ontology has no tactics and techniques of the framework's types.");
 
             version = string.IsNullOrWhiteSpace(version)
                 ? (ontology.HasValue ? GetText(ontology.Value, "owl:versionInfo") : null)
@@ -76,74 +89,72 @@ namespace Blueprint.Api.Services
             if (string.IsNullOrWhiteSpace(version))
                 throw new InvalidTechniqueBundleException("The ontology does not name its version. Enter the version and upload it again.");
 
+            var domain = framework.Domain;
             var release = new TechniqueReleaseEntity
             {
-                Id = StixTechniqueParser.ReleaseId(Domain, version),
-                Domain = Domain,
-                IsDefensive = true,
+                Id = TechniqueIds.ReleaseId(domain, version),
+                Domain = domain,
+                IsDefensive = framework.IsDefensive,
+                TechniqueFrameworkId = framework.Id,
                 Version = version,
-                Name = ReleaseName,
-                Description = ontology.HasValue ? GetText(ontology.Value, "dcterms:description") : null,
-                ReleaseDate = ontology.HasValue ? GetDate(ontology.Value, "d3f:release-date") : null
+                Name = framework.Name,
+                Description = (ontology.HasValue ? GetText(ontology.Value, "dcterms:description") : null) ?? framework.Description,
+                ReleaseDate = ontology.HasValue && !string.IsNullOrWhiteSpace(options.ReleaseDateProperty) ? GetDate(ontology.Value, options.ReleaseDateProperty) : null
             };
-            // the publisher and notice, as the ontology's title and comment state them
+            // the publisher and notice, as the ontology's title and notice property state them
             if (ontology.HasValue)
             {
                 var title = GetText(ontology.Value, "dcterms:title");
                 release.Source = title?.Split(" - ", 2)[0].Trim();
-                var comment = GetText(ontology.Value, "rdfs:comment");
-                if (comment != null && (comment.Contains("Copyright", StringComparison.OrdinalIgnoreCase)
-                    || comment.Contains("trademark", StringComparison.OrdinalIgnoreCase)))
-                    release.Notice = comment.Trim();
+                if (!string.IsNullOrWhiteSpace(options.NoticeProperty))
+                    release.Notice = GetText(ontology.Value, options.NoticeProperty)?.Trim();
             }
+            TechniqueFrameworkDefaults.Apply(release, framework);
 
-            // Tactics are ordered by d3f:display-order.
             var shortNames = new Dictionary<string, string>();
             var position = 0;
-            foreach (var tactic in tactics.OrderBy(t => GetInt(t, "d3f:display-order") ?? int.MaxValue).ThenBy(t => GetText(t, "rdfs:label")))
+            var ordered = string.IsNullOrWhiteSpace(options.DisplayOrderProperty)
+                ? tactics.OrderBy(t => GetText(t, "rdfs:label"))
+                : tactics.OrderBy(t => GetInt(t, options.DisplayOrderProperty) ?? int.MaxValue).ThenBy(t => GetText(t, "rdfs:label"));
+            foreach (var tactic in ordered)
             {
                 var id = GetString(tactic, "@id");
                 var shortName = LocalName(id).ToLowerInvariant();
                 shortNames[id] = shortName;
                 release.Tactics.Add(new TechniqueTacticEntity
                 {
-                    Id = StixTechniqueParser.ObjectId(Domain, version, id),
+                    Id = TechniqueIds.ObjectId(domain, version, id),
                     TechniqueReleaseId = release.Id,
                     StixId = id,
                     // Tactics have no id of their own, so the class id stands in.
                     ExternalId = id,
                     ShortName = shortName,
                     Name = GetText(tactic, "rdfs:label") ?? LocalName(id),
-                    Description = GetText(tactic, "d3f:definition"),
-                    Url = $"{SiteUrl}/tactic/{id}/",
+                    Description = Definition(tactic, options),
+                    Url = TechniqueFrameworkDefaults.Link(settings.TacticUrlTemplate, id, id),
                     DisplayOrder = position++
                 });
             }
-
-            // Technique pages hang off the path d3f:DefensiveTechnique declares.
-            var techniquePath = nodes.TryGetValue(TechniqueClass, out var techniqueClass)
-                ? GetText(techniqueClass, "d3f:display-baseurl") ?? "/technique/"
-                : "/technique/";
 
             var byNodeId = new Dictionary<string, TechniqueEntity>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var technique in techniques)
             {
                 var id = GetString(technique, "@id");
-                var externalId = GetText(technique, "d3f:d3fend-id");
+                var externalId = GetText(technique, options.IdProperty);
                 if (!seen.Add(externalId))
                     continue;
 
                 var entity = new TechniqueEntity
                 {
-                    Id = StixTechniqueParser.ObjectId(Domain, version, id),
+                    Id = TechniqueIds.ObjectId(domain, version, id),
                     TechniqueReleaseId = release.Id,
                     StixId = id,
                     ExternalId = externalId,
                     Name = GetText(technique, "rdfs:label") ?? LocalName(id),
-                    Description = GetText(technique, "d3f:definition"),
-                    Url = $"{SiteUrl}{techniquePath}{id}/",
-                    Tactics = string.Join(",", EnabledTactics(technique, nodes).Select(t => shortNames.TryGetValue(t, out var s) ? s : null).Where(s => s != null).Distinct())
+                    Description = Definition(technique, options),
+                    Url = TechniqueFrameworkDefaults.Link(settings.TechniqueUrlTemplate, externalId, id),
+                    Tactics = string.Join(",", Tactics(technique, nodes, options).Select(t => shortNames.TryGetValue(t, out var s) ? s : null).Where(s => s != null).Distinct())
                 };
                 byNodeId[id] = entity;
                 release.Techniques.Add(entity);
@@ -163,20 +174,26 @@ namespace Blueprint.Api.Services
             return release;
         }
 
-        /// <summary>The tactics a technique enables, or failing that the nearest superclass that enables any.</summary>
-        private static IEnumerable<string> EnabledTactics(JsonElement technique, Dictionary<string, JsonElement> nodes)
+        private static string Definition(JsonElement node, JsonLdFormatOptions options) =>
+            string.IsNullOrWhiteSpace(options.DefinitionProperty) ? null : GetText(node, options.DefinitionProperty);
+
+        /// <summary>The tactics a technique names, or failing that those of the nearest superclass that names any.</summary>
+        private static IEnumerable<string> Tactics(JsonElement technique, Dictionary<string, JsonElement> nodes, JsonLdFormatOptions options)
         {
+            if (string.IsNullOrWhiteSpace(options.TacticRelation))
+                return [];
+
             var visited = new HashSet<string>();
             var queue = new Queue<JsonElement>();
             queue.Enqueue(technique);
             while (queue.Count > 0)
             {
                 var node = queue.Dequeue();
-                var enabled = GetIds(node, "d3f:enables")
-                    .Where(t => nodes.TryGetValue(t, out var tactic) && HasType(tactic, TacticType))
+                var named = GetIds(node, options.TacticRelation)
+                    .Where(t => nodes.TryGetValue(t, out var tactic) && HasType(tactic, options.TacticType))
                     .ToList();
-                if (enabled.Count > 0)
-                    return enabled;
+                if (named.Count > 0)
+                    return named;
 
                 foreach (var parent in SuperClasses(node))
                 {
@@ -269,7 +286,7 @@ namespace Blueprint.Api.Services
                 ? DateTime.SpecifyKind(date, DateTimeKind.Utc)
                 : null;
 
-        /// <summary>"CredentialHardening" from "d3f:CredentialHardening" or a full IRI.</summary>
+        /// <summary>The local name of a prefixed id or a full IRI.</summary>
         private static string LocalName(string id)
         {
             var cut = Math.Max(id.LastIndexOf('#'), Math.Max(id.LastIndexOf('/'), id.LastIndexOf(':')));

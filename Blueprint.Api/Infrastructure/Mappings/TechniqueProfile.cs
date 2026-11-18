@@ -15,7 +15,17 @@ namespace Blueprint.Api.Infrastructure.Mappings
             CreateMap<TechniqueReleaseEntity, TechniqueRelease>()
                 .ForMember(r => r.TacticCount, opt => opt.MapFrom(x => x.Tactics.Count))
                 .ForMember(r => r.TechniqueCount, opt => opt.MapFrom(x => x.Techniques.Count))
-                .ForMember(r => r.CountermeasureCount, opt => opt.MapFrom(x => x.Countermeasures.Count));
+                .ForMember(r => r.CountermeasureCount, opt => opt.MapFrom(x => x.Countermeasures.Count))
+                .ForMember(r => r.TechniqueFrameworkName, opt => opt.MapFrom(x => x.TechniqueFramework.Name))
+                // from the framework's settings, filled in after the query
+                .ForMember(r => r.TacticOrder, opt => opt.Ignore())
+                .ForMember(r => r.WeaknessUrlTemplate, opt => opt.Ignore())
+                .ForMember(r => r.MappingRelation, opt => opt.Ignore())
+                .ForMember(r => r.MappingsDownloadUrl, opt => opt.Ignore())
+                .ForMember(r => r.MappingsDownloadHint, opt => opt.Ignore());
+
+            CreateMap<TechniqueFrameworkEntity, TechniqueFramework>()
+                .ForMember(f => f.ReleaseCount, opt => opt.MapFrom(x => x.Releases.Count));
 
             CreateMap<TechniqueTacticEntity, TechniqueTactic>();
 
@@ -35,7 +45,7 @@ namespace Blueprint.Api.Infrastructure.Mappings
                 .ForMember(c => c.InheritedFromParent, opt => opt.Ignore());
         }
 
-        /// <summary>The "source|label|url" lines <c>StixTechniqueParser</c> stores a technique's links as.</summary>
+        /// <summary>The "source|label|url" lines <c>StixBundleReader</c> stores a technique's links as.</summary>
         private static System.Collections.Generic.List<TechniqueLink> SplitLinks(string value) =>
             string.IsNullOrEmpty(value)
                 ? []

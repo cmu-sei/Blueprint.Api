@@ -9,35 +9,39 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Exceptions;
 
 namespace Blueprint.Api.Services
 {
     /// <summary>
-    /// Reads d3fend-full-mappings.json (SPARQL results JSON), the "countered by" mappings between offensive and
-    /// defensive techniques, into one row per (offensive id, defensive class).
+    /// Reads a technique mappings file in SPARQL results JSON into one pair per (source id, target technique),
+    /// with the variable names its mapping definition gives.
     /// </summary>
     /// <remarks>
-    /// The file is SPARQL results JSON: a <c>head.vars</c> list and a <c>results.bindings</c> array of rows, each
-    /// row a map of variable name to <c>{"type", "value"}</c>. It is about 60 MB, with each pair repeated once per
-    /// artifact path, so it is read a buffer at a time through a <see cref="Utf8JsonReader"/> and never held whole.
-    /// A pair's weight is its number of distinct artifact paths and its rationale is the most common path.
+    /// The file is a <c>head.vars</c> list and a <c>results.bindings</c> array of rows, each row a map of variable
+    /// name to <c>{"type", "value"}</c>. Such files can be tens of megabytes with each pair repeated once per path,
+    /// so it is read a buffer at a time through a <see cref="Utf8JsonReader"/> and never held whole. A pair's
+    /// weight is its number of distinct paths and its rationale is the most common path.
     /// </remarks>
-    public static class D3fendMappingsParser
+    public static class SparqlMappingReader
     {
         private const int InitialBufferSize = 256 * 1024;
 
-        /// <summary>One aggregated "countered by" pair.</summary>
+        /// <summary>One aggregated pair.</summary>
         public sealed class Pair
         {
-            public string OffensiveId { get; init; }
-            /// <summary>The class's local name, such as "CredentialHardening".</summary>
-            public string DefensiveClass { get; init; }
-            public string DefensiveLabel { get; init; }
+            public string SourceId { get; init; }
+            /// <summary>The target technique as the definition matches it: its id, or the local name of its id in the file.</summary>
+            public string Target { get; init; }
+            public string TargetLabel { get; init; }
             public string Tactic { get; init; }
             public string Rationale { get; init; }
             public int Weight { get; init; }
         }
+
+        /// <summary>The local name of a full IRI or a prefixed one.</summary>
+        public static string LocalName(string iri) => Row.LocalName(iri);
 
         public sealed class Result
         {
@@ -51,9 +55,12 @@ namespace Blueprint.Api.Services
             && root.TryGetProperty("head", out var head) && head.ValueKind == JsonValueKind.Object
             && root.TryGetProperty("results", out var results) && results.ValueKind == JsonValueKind.Object;
 
-        public static async Task<Result> ParseAsync(Stream stream, CancellationToken ct)
+        public static async Task<Result> ReadAsync(Stream stream, TechniqueMappingDefinition definition, CancellationToken ct)
         {
-            var cursor = new Cursor();
+            if (string.IsNullOrWhiteSpace(definition?.SourceIdVariable) || string.IsNullOrWhiteSpace(definition.TargetVariable))
+                throw new InvalidTechniqueBundleException("The mapping definition does not name its source id and target variables.");
+
+            var cursor = new Cursor(definition);
             var state = new JsonReaderState(new JsonReaderOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
             var buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
             var filled = 0;
@@ -118,7 +125,7 @@ namespace Blueprint.Api.Services
                         continue;
                     }
                     if (reader.TokenType != JsonTokenType.StartObject)
-                        throw new InvalidTechniqueBundleException("The file is not the D3FEND mappings: results.bindings holds something other than result rows.");
+                        throw new InvalidTechniqueBundleException("The file is not a mappings file: results.bindings holds something other than result rows.");
 
                     var start = (int)reader.TokenStartIndex;
                     if (!reader.TrySkip())
@@ -163,7 +170,9 @@ namespace Blueprint.Api.Services
         /// <summary>The parse state across buffers, and the pairs aggregated so far.</summary>
         private sealed class Cursor
         {
-            private static readonly string[] RequiredVars = ["off_tech_id", "def_tech"];
+            private readonly TechniqueMappingDefinition _definition;
+
+            public Cursor(TechniqueMappingDefinition definition) => _definition = definition;
 
             public string TopLevel;
             public string Second;
@@ -171,7 +180,7 @@ namespace Blueprint.Api.Services
             public bool SawBindings;
             private List<string> _vars;
             private int _rowsRead;
-            private readonly Dictionary<(string Off, string Def), Accumulator> _pairs = new();
+            private readonly Dictionary<(string Source, string Target), Accumulator> _pairs = new();
 
             public void SetVars(ReadOnlySpan<byte> json)
             {
@@ -185,45 +194,45 @@ namespace Blueprint.Api.Services
             public void AddRow(ReadOnlySpan<byte> json)
             {
                 _rowsRead++;
-                var row = Row.Read(json);
-                if (string.IsNullOrEmpty(row.OffensiveId) || string.IsNullOrEmpty(row.DefensiveClass))
+                var row = Row.Read(json, _definition);
+                if (string.IsNullOrEmpty(row.SourceId) || string.IsNullOrEmpty(row.Target))
                     return;
 
-                var key = (row.OffensiveId, row.DefensiveClass);
+                var key = (row.SourceId, row.Target);
                 if (!_pairs.TryGetValue(key, out var pair))
                 {
-                    pair = new Accumulator { Order = _pairs.Count, DefensiveLabel = row.DefensiveLabel };
+                    pair = new Accumulator { Order = _pairs.Count, TargetLabel = row.TargetLabel };
                     _pairs[key] = pair;
                 }
-                pair.DefensiveLabel ??= row.DefensiveLabel;
+                pair.TargetLabel ??= row.TargetLabel;
                 if (row.Tactic != null)
                     pair.Tactics[row.Tactic] = pair.Tactics.GetValueOrDefault(row.Tactic) + 1;
-                var path = new ArtifactPath(row.DefensiveRelation, row.DefensiveArtifact, row.OffensiveRelation, row.OffensiveArtifact);
+                var path = new ArtifactPath(row.TargetRelation, row.TargetArtifact, row.SourceRelation, row.SourceArtifact);
                 pair.Paths[path] = pair.Paths.GetValueOrDefault(path) + 1;
             }
 
             public Result Finish()
             {
                 if (!SawBindings)
+                    throw new InvalidTechniqueBundleException("The file is not a mappings file: it has no results.bindings.");
+                var required = new[] { _definition.SourceIdVariable, _definition.TargetVariable };
+                if (_vars != null && required.Any(v => !_vars.Contains(v)))
                     throw new InvalidTechniqueBundleException(
-                        "The file is not the D3FEND mappings. Upload d3fend-full-mappings.json for the release, from https://d3fend.mitre.org/ontologies/d3fend/<version>/d3fend-full-mappings.json.");
-                if (_vars != null && RequiredVars.Any(v => !_vars.Contains(v)))
-                    throw new InvalidTechniqueBundleException(
-                        "The file is SPARQL results, but not the D3FEND mappings: its variables lack off_tech_id and def_tech.");
+                        $"The file is SPARQL results, but not the mappings the framework expects: its variables lack {string.Join(" and ", required)}.");
                 if (_rowsRead == 0)
                     throw new InvalidTechniqueBundleException("The mappings file has no result rows.");
                 if (_pairs.Count == 0)
-                    throw new InvalidTechniqueBundleException("No row in the file names an offensive technique id and a defensive technique.");
+                    throw new InvalidTechniqueBundleException("No row in the file names both a source technique id and a target technique.");
 
                 var pairs = _pairs
                     .OrderBy(p => p.Value.Order)
                     .Select(p => new Pair
                     {
-                        OffensiveId = p.Key.Off,
-                        DefensiveClass = p.Key.Def,
-                        DefensiveLabel = p.Value.DefensiveLabel,
+                        SourceId = p.Key.Source,
+                        Target = p.Key.Target,
+                        TargetLabel = p.Value.TargetLabel,
                         Tactic = MostCommon(p.Value.Tactics),
-                        Rationale = Rationale(p.Key.Off, MostCommon(p.Value.Paths)),
+                        Rationale = Rationale(p.Key.Source, MostCommon(p.Value.Paths)),
                         Weight = p.Value.Paths.Count
                     })
                     .ToList();
@@ -247,13 +256,13 @@ namespace Blueprint.Api.Services
             }
 
             /// <summary>The path as the file words it, or as much of it as the row gave.</summary>
-            private static string Rationale(string offensiveId, ArtifactPath path)
+            private static string Rationale(string sourceId, ArtifactPath path)
             {
-                var defensive = Join(Humanize(path.DefensiveRelation), path.DefensiveArtifact);
-                var offensive = Join(Humanize(path.OffensiveRelation), path.OffensiveArtifact);
-                if (offensive != null)
-                    offensive = $"{offensiveId} {offensive}";
-                return defensive != null && offensive != null ? $"{defensive}; {offensive}" : defensive ?? offensive;
+                var target = Join(Humanize(path.TargetRelation), path.TargetArtifact);
+                var source = Join(Humanize(path.SourceRelation), path.SourceArtifact);
+                if (source != null)
+                    source = $"{sourceId} {source}";
+                return target != null && source != null ? $"{target}; {source}" : target ?? source;
             }
 
             private static string Join(string a, string b) =>
@@ -266,27 +275,27 @@ namespace Blueprint.Api.Services
         private sealed class Accumulator
         {
             public int Order;
-            public string DefensiveLabel;
+            public string TargetLabel;
             public readonly Dictionary<string, int> Tactics = new();
             public readonly Dictionary<ArtifactPath, int> Paths = new();
         }
 
-        private readonly record struct ArtifactPath(string DefensiveRelation, string DefensiveArtifact, string OffensiveRelation, string OffensiveArtifact);
+        private readonly record struct ArtifactPath(string TargetRelation, string TargetArtifact, string SourceRelation, string SourceArtifact);
 
         /// <summary>The variables of one result row the mapping needs.</summary>
         private struct Row
         {
-            public string OffensiveId;
-            public string DefensiveClass;
-            public string DefensiveLabel;
+            public string SourceId;
+            public string Target;
+            public string TargetLabel;
             public string Tactic;
-            public string DefensiveRelation;
-            public string DefensiveArtifact;
-            public string OffensiveRelation;
-            public string OffensiveArtifact;
+            public string TargetRelation;
+            public string TargetArtifact;
+            public string SourceRelation;
+            public string SourceArtifact;
 
-            /// <summary>Reads a row, taking each variable's value.</summary>
-            public static Row Read(ReadOnlySpan<byte> json)
+            /// <summary>Reads a row, taking the value of each variable the definition names.</summary>
+            public static Row Read(ReadOnlySpan<byte> json, TechniqueMappingDefinition definition)
             {
                 var row = new Row();
                 var reader = new Utf8JsonReader(json, isFinalBlock: true, state: default);
@@ -297,17 +306,17 @@ namespace Blueprint.Api.Services
                     var name = reader.TokenType == JsonTokenType.PropertyName ? reader.GetString() : null;
                     reader.Read();
                     var value = BindingValue(ref reader);
-                    switch (name)
-                    {
-                        case "off_tech_id": row.OffensiveId = value?.Trim(); break;
-                        case "def_tech": row.DefensiveClass = LocalName(value); break;
-                        case "def_tech_label": row.DefensiveLabel = value; break;
-                        case "def_tactic_label": row.Tactic = value; break;
-                        case "def_artifact_rel_label": row.DefensiveRelation = value; break;
-                        case "def_artifact_label": row.DefensiveArtifact = value; break;
-                        case "off_artifact_rel_label": row.OffensiveRelation = value; break;
-                        case "off_artifact_label": row.OffensiveArtifact = value; break;
-                    }
+                    if (name == null)
+                        continue;
+                    if (name == definition.SourceIdVariable) row.SourceId = value?.Trim();
+                    if (name == definition.TargetVariable)
+                        row.Target = definition.TargetMatch == MappingTargetMatch.SourceIdLocalName ? LocalName(value) : value?.Trim();
+                    if (name == definition.TargetLabelVariable) row.TargetLabel = value;
+                    if (name == definition.TacticVariable) row.Tactic = value;
+                    if (name == definition.TargetRelationVariable) row.TargetRelation = value;
+                    if (name == definition.TargetArtifactVariable) row.TargetArtifact = value;
+                    if (name == definition.SourceRelationVariable) row.SourceRelation = value;
+                    if (name == definition.SourceArtifactVariable) row.SourceArtifact = value;
                 }
                 return row;
             }
@@ -336,8 +345,8 @@ namespace Blueprint.Api.Services
                 return value;
             }
 
-            /// <summary>The class's local name from a full IRI or a prefixed one.</summary>
-            private static string LocalName(string iri)
+            /// <summary>The local name of a full IRI or a prefixed one.</summary>
+            public static string LocalName(string iri)
             {
                 if (string.IsNullOrEmpty(iri))
                     return null;

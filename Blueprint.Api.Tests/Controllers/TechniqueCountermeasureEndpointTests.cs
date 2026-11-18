@@ -22,8 +22,8 @@ using Xunit;
 namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary>
-/// The D3FEND "countered by" mappings: imported onto a D3FEND release from d3fend-full-mappings.json
-/// (<c>TechniqueReleaseController</c>), then read per offensive technique and for a MSEL's whole attack pool.
+/// Technique mappings: imported onto a release whose framework defines them (<c>TechniqueReleaseController</c>),
+/// then read per source technique and for a MSEL's whole attack pool. The fixtures are the test D3FEND ones.
 /// </summary>
 /// <remarks>401 and 403 for these routes live in <see cref="RouteAuthorizationTests"/>.</remarks>
 public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
@@ -96,18 +96,22 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
         var response = await Upload(RootClient, d3fend.Id, """{"type":"bundle","objects":[]}""");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("d3fend-full-mappings.json", await response.Content.ReadAsStringAsync(Ct));
+        Assert.Contains("not a mappings file", await response.Content.ReadAsStringAsync(Ct));
         Assert.False(await ReadBack(rb => rb.TechniqueCountermeasures.AnyAsync(c => c.ReleaseId == d3fend.Id, Ct)));
     }
 
-    /// <summary>The import rule is "the release is defensive", not "its domain is d3fend".</summary>
+    /// <summary>The import rule is "the release's framework defines mappings", whatever its domain.</summary>
     [Fact]
-    public async Task Import_OntoADefensiveReleaseOfAnotherDomain_Is201_AndServesTheMsel()
+    public async Task Import_OntoAReleaseOfAnyFrameworkThatDefinesMappings_Is201_AndServesTheMsel()
     {
         var attack = await SeedRelease("1.0");
-        var defensive = await D3fendOntologyParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(D3fendOntologies.Ontology("2.0"))), null, Ct);
-        defensive.Domain = "other-defend";
+        var other = TechniqueFrameworks.D3fend();
+        other.Id = Guid.NewGuid();
+        other.Name = "Other defences";
+        other.Domain = "other-defend";
+        await Seed(other);
+        using var ontology = System.Text.Json.JsonDocument.Parse(D3fendOntologies.Ontology("2.0"));
+        var defensive = JsonLdOntologyReader.Read(ontology.RootElement, null, other);
         await Seed(defensive);
         var msel = TestData.Msel();
         await Seed(msel);
@@ -122,14 +126,26 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
     }
 
     [Fact]
-    public async Task Import_OntoAnTechniqueRelease_Is400()
+    public async Task Import_OntoAReleaseWhoseFrameworkDefinesNoMappings_Is400()
     {
         var attack = await SeedRelease("1.0");
 
         var response = await Upload(RootClient, attack.Id, D3fendMappings.Standard());
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("not a defensive release", await response.Content.ReadAsStringAsync(Ct));
+        Assert.Contains("framework defines no mappings to import", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    /// <summary>A release from before frameworks has no definition to read the file with until it is given one.</summary>
+    [Fact]
+    public async Task Import_OntoAReleaseWithNoFramework_Is400_AskingForOne()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0", withFramework: false);
+
+        var response = await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("has no technique framework", await response.Content.ReadAsStringAsync(Ct));
     }
 
     [Fact]
@@ -142,7 +158,7 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
 
     /// <summary>The mappings file is not a release; the release endpoint says where it goes.</summary>
     [Fact]
-    public async Task ImportRelease_OfTheMappingsFile_Is400_PointingAtTheD3fendRelease()
+    public async Task ImportRelease_OfTheMappingsFile_Is400_SayingToImportItOntoARelease()
     {
         using var content = new MultipartFormDataContent();
         var file = new ByteArrayContent(Encoding.UTF8.GetBytes(D3fendMappings.Standard()));
@@ -152,7 +168,7 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
         var response = await RootClient.PostAsync("api/techniquereleases/import", content, Ct);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("import the mappings onto that release", await response.Content.ReadAsStringAsync(Ct));
+        Assert.Contains("import the mappings onto it", await response.Content.ReadAsStringAsync(Ct));
     }
 
     [Fact]
@@ -354,18 +370,30 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
 
     // ---------------------------------------------------------------------------------------------
 
+    private bool _frameworksSeeded;
+
+    private async Task SeedFrameworks()
+    {
+        if (_frameworksSeeded)
+            return;
+        await Seed(TechniqueFrameworks.All().ToArray<object>());
+        _frameworksSeeded = true;
+    }
+
     private async Task<TechniqueReleaseEntity> SeedRelease(string version)
     {
-        var release = await StixTechniqueParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(TechniqueBundles.Enterprise(version))), null, Ct);
+        await SeedFrameworks();
+        var release = await TechniqueFrameworks.ReadAsync(TechniqueBundles.Enterprise(version));
         await Seed(release);
         return release;
     }
 
-    private async Task<TechniqueReleaseEntity> SeedD3fendRelease(string version)
+    private async Task<TechniqueReleaseEntity> SeedD3fendRelease(string version, bool withFramework = true)
     {
-        var release = await D3fendOntologyParser.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes(D3fendOntologies.Ontology(version))), null, Ct);
+        await SeedFrameworks();
+        var release = await TechniqueFrameworks.ReadAsync(D3fendOntologies.Ontology(version));
+        if (!withFramework)
+            release.TechniqueFrameworkId = null;
         await Seed(release);
         return release;
     }

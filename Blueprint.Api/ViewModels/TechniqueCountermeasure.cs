@@ -6,19 +6,19 @@ using System.Collections.Generic;
 
 namespace Blueprint.Api.ViewModels
 {
-    /// <summary>A "countered by" mapping: the offensive technique id and the defensive technique that counters it.</summary>
+    /// <summary>A mapping: the source technique id and the technique of the release it maps to.</summary>
     public class TechniqueCountermeasure
     {
         public Guid Id { get; set; }
         /// <summary>The defensive release the mapping belongs to.</summary>
         public Guid TechniqueReleaseId { get; set; }
-        /// <summary>The offensive technique's id (T1003.005), whichever release of its framework the MSEL uses.</summary>
+        /// <summary>The source technique's id, whichever release of its framework the MSEL uses.</summary>
         public string OffensiveExternalId { get; set; }
         public Guid DefensiveTechniqueId { get; set; }
         public Technique DefensiveTechnique { get; set; }
-        /// <summary>The defensive tactic label the mapping is filed under: Model, Harden, Detect, Isolate, Deceive, Evict or Restore.</summary>
+        /// <summary>The tactic label the mapping is filed under, as the file gives it.</summary>
         public string DefensiveTactic { get; set; }
-        /// <summary>The most common artifact path behind the pair, e.g. "hardens Credential; T1003.005 accesses Encrypted Credential".</summary>
+        /// <summary>The most common path behind the pair, as the file words it.</summary>
         public string Rationale { get; set; }
         /// <summary>The number of distinct artifact paths that link the pair; the list is ranked by it.</summary>
         public int Weight { get; set; }

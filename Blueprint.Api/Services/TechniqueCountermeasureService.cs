@@ -28,8 +28,9 @@ namespace Blueprint.Api.Services
     }
 
     /// <summary>
-    /// The "countered by" mappings: which defensive techniques counter an offensive technique. They are keyed by
-    /// the offensive technique's id, so one import serves every attack release.
+    /// Technique mappings, such as which defensive techniques counter an attack technique. A mapping joins a
+    /// source technique, by id so one import serves every release of its framework, to a target technique in the
+    /// release the mappings were imported onto.
     /// </summary>
     public class TechniqueCountermeasureService : ITechniqueCountermeasureService
     {
@@ -47,36 +48,43 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// Replaces the release's mappings with the file's. A pair whose defensive class is not a technique of the
-        /// release is skipped and counted, so a file from a neighbouring version still imports.
+        /// Replaces the release's mappings with the file's, read as the release's framework defines its mappings. A
+        /// pair whose target is not a technique of the release is skipped and counted, so a file from a neighbouring
+        /// version still imports.
         /// </summary>
         public async Task<TechniqueCountermeasureImport> ImportAsync(Guid releaseId, FileForm form, CancellationToken ct)
         {
-            var release = await _context.TechniqueReleases.SingleOrDefaultAsync(r => r.Id == releaseId, ct);
+            var release = await _context.TechniqueReleases
+                .Include(r => r.TechniqueFramework)
+                .SingleOrDefaultAsync(r => r.Id == releaseId, ct);
             if (release == null)
                 throw new EntityNotFoundException<TechniqueRelease>();
-            if (!release.IsDefensive)
-                throw new InvalidTechniqueBundleException($"{release.Name} {release.Version} is not a defensive release. The mappings are imported onto the D3FEND release they belong to.");
+            var definition = release.TechniqueFramework?.Settings?.Mappings;
+            if (definition == null)
+                throw new InvalidTechniqueBundleException(release.TechniqueFramework == null
+                    ? $"{release.Name} {release.Version} has no technique framework, so there is no mapping definition to read the file with. Set its framework first."
+                    : $"The {release.TechniqueFramework.Name} framework defines no mappings to import.");
 
-            D3fendMappingsParser.Result parsed;
+            SparqlMappingReader.Result parsed;
             using (var stream = form.ToUpload.OpenReadStream())
             {
-                parsed = await D3fendMappingsParser.ParseAsync(stream, ct);
+                parsed = await SparqlMappingReader.ReadAsync(stream, definition, ct);
             }
 
-            // the mappings name a technique by class IRI; the release knows it as d3f:<class>
-            var techniquesByClass = (await _context.Techniques
-                    .Where(t => t.TechniqueReleaseId == releaseId)
-                    .Select(t => new { t.Id, t.StixId })
-                    .ToListAsync(ct))
-                .GroupBy(t => LocalName(t.StixId))
-                .ToDictionary(g => g.Key, g => g.First().Id);
+            var techniques = await _context.Techniques
+                .Where(t => t.TechniqueReleaseId == releaseId)
+                .Select(t => new { t.Id, t.StixId, t.ExternalId })
+                .ToListAsync(ct);
+            var techniquesByTarget = techniques
+                .GroupBy(t => definition.TargetMatch == MappingTargetMatch.SourceIdLocalName ? SparqlMappingReader.LocalName(t.StixId) : t.ExternalId)
+                .Where(g => !string.IsNullOrEmpty(g.Key))
+                .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
 
             var rows = new List<TechniqueCountermeasureEntity>();
             var skipped = 0;
             foreach (var pair in parsed.Pairs)
             {
-                if (!techniquesByClass.TryGetValue(pair.DefensiveClass, out var techniqueId))
+                if (!techniquesByTarget.TryGetValue(pair.Target, out var techniqueId))
                 {
                     skipped++;
                     continue;
@@ -85,7 +93,7 @@ namespace Blueprint.Api.Services
                 {
                     Id = Guid.NewGuid(),
                     ReleaseId = releaseId,
-                    OffensiveExternalId = pair.OffensiveId,
+                    OffensiveExternalId = pair.SourceId,
                     DefensiveTechniqueId = techniqueId,
                     DefensiveTactic = pair.Tactic,
                     Rationale = pair.Rationale,
@@ -106,7 +114,7 @@ namespace Blueprint.Api.Services
                 PairsSkipped = skipped,
                 OffensiveTechniqueCount = rows.Select(r => r.OffensiveExternalId).Distinct().Count()
             };
-            _logger.LogWarning("D3FEND mappings imported onto {Domain} {Version} by {UserId}: {Rows} rows, {Pairs} pairs stored, {Skipped} skipped, {Offensive} offensive techniques",
+            _logger.LogWarning("Mappings imported onto {Domain} {Version} by {UserId}: {Rows} rows, {Pairs} pairs stored, {Skipped} skipped, {Sources} source techniques",
                 release.Domain, release.Version, _user.GetId(), result.RowsRead, result.PairsStored, result.PairsSkipped, result.OffensiveTechniqueCount);
             return result;
         }
@@ -222,7 +230,7 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// The parent id of a sub-technique id such as T1003.005 (T1003); null when the last dotted part is not a number.
+        /// The parent of a dotted sub-technique id, the id without its last part; null when that part is not a number.
         /// </summary>
         public static string ParentExternalId(string externalId)
         {
@@ -248,15 +256,6 @@ namespace Blueprint.Api.Services
             foreach (var item in mapped)
                 item.InheritedFromParent = inherited;
             return mapped;
-        }
-
-        /// <summary>The class's local name from a prefixed or full IRI.</summary>
-        private static string LocalName(string id)
-        {
-            if (string.IsNullOrEmpty(id))
-                return string.Empty;
-            var cut = Math.Max(id.LastIndexOf('#'), Math.Max(id.LastIndexOf('/'), id.LastIndexOf(':')));
-            return cut >= 0 ? id[(cut + 1)..] : id;
         }
     }
 }

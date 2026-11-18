@@ -20,7 +20,7 @@ namespace Blueprint.Api.ViewModels
         public Guid MselId { get; set; }
         public Guid TechniqueReleaseId { get; set; }
         public int Kept { get; set; }
-        /// <summary>The technique ids (T1059.001) the new release no longer has, revoked or deprecated.</summary>
+        /// <summary>The technique ids the new release no longer has, revoked or deprecated.</summary>
         public List<string> Dropped { get; set; } = new List<string>();
     }
 }

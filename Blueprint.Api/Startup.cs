@@ -213,6 +213,7 @@ public class Startup
         services.AddSingleton<ICompetencyFrameworkImportProgressService, CompetencyFrameworkImportProgressService>();
         services.AddScoped<IProficiencyScaleService, ProficiencyScaleService>();
         services.AddScoped<IProficiencyLevelService, ProficiencyLevelService>();
+        services.AddScoped<ITechniqueFrameworkService, TechniqueFrameworkService>();
         services.AddScoped<ITechniqueReleaseService, TechniqueReleaseService>();
         services.AddScoped<ITechniqueCountermeasureService, TechniqueCountermeasureService>();
         services.AddScoped<ICardService, CardService>();

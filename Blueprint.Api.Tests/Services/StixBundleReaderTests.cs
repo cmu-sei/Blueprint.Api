@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Exceptions;
@@ -14,11 +15,19 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Services;
 
-/// <summary><c>StixTechniqueParser</c> - an ATT&amp;CK STIX bundle into a release, its tactics and its techniques.</summary>
-public class StixTechniqueParserTests
+/// <summary>
+/// <c>StixBundleReader</c> - a STIX bundle into a release, its tactics and its techniques, as the framework the
+/// bundle matches defines them. The definitions are the test ones in <see cref="TechniqueFrameworks"/>.
+/// </summary>
+public class StixBundleReaderTests
 {
-    private static async Task<TechniqueReleaseEntity> Parse(string json, string version = null) =>
-        await StixTechniqueParser.ParseAsync(new MemoryStream(Encoding.UTF8.GetBytes(json)), version, TestContext.Current.CancellationToken);
+    private static Task<TechniqueReleaseEntity> Parse(string json, string version = null) => TechniqueFrameworks.ReadAsync(json, version);
+
+    private static TechniqueReleaseEntity Read(string json, string version, TechniqueFrameworkEntity framework)
+    {
+        using var document = JsonDocument.Parse(json);
+        return StixBundleReader.Read(document.RootElement, version, framework);
+    }
 
     [Fact]
     public async Task Parse_ReadsTheReleaseFromTheCollection()
@@ -86,7 +95,7 @@ public class StixTechniqueParserTests
     public void CreateNameBasedGuid_MatchesTheRfcTestVector() =>
         Assert.Equal(
             new Guid("2ed6657d-e927-568b-95e1-2665a8aea6a2"),
-            StixTechniqueParser.CreateNameBasedGuid(new Guid("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), "www.example.com"));
+            TechniqueIds.CreateNameBasedGuid(new Guid("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), "www.example.com"));
 
     [Fact]
     public async Task Parse_OfABundleThatDoesNotNameItsVersion_TakesTheOneGiven()
@@ -112,11 +121,45 @@ public class StixTechniqueParserTests
         await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(json));
 
     [Fact]
-    public async Task Parse_OfABundleWhoseTacticsNameNoSource_IsRefused()
+    public void Read_OfABundleWhoseTacticsNameNoSource_WithAFrameworkThatSetsNone_IsRefused()
     {
-        var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(TechniqueBundles.WithoutASource(), "1.0"));
+        var framework = TechniqueFrameworks.Enterprise();
+        framework.Settings.Stix.IdSource = null;
 
-        Assert.Contains("source", ex.Message);
+        var ex = Assert.Throws<InvalidTechniqueBundleException>(() => Read(TechniqueBundles.WithoutASource(), "1.0", framework));
+
+        Assert.Contains("id source", ex.Message);
+    }
+
+    /// <summary>With no id source set, the source most tactics name is the bundle's own catalogue.</summary>
+    [Fact]
+    public void Read_WithAFrameworkThatSetsNoIdSource_TakesTheOneMostTacticsName()
+    {
+        var framework = TechniqueFrameworks.Enterprise();
+        framework.Settings.Stix.IdSource = null;
+
+        var release = Read(TechniqueBundles.Enterprise("1.0"), null, framework);
+
+        Assert.Equal(4, release.Techniques.Count);
+    }
+
+    /// <summary>The framework, not the file, decides the domain the release is filed under, and fills what the file leaves out.</summary>
+    [Fact]
+    public void Read_FilesTheReleaseUnderItsFrameworksDomain_AndTakesItsDefaults()
+    {
+        var framework = TechniqueFrameworks.Custom();
+        framework.Domain = "another-domain";
+        framework.Settings.SourceUrl = "https://example.org/site";
+        framework.Settings.TechniqueUrlTemplate = "https://example.org/t/{id}";
+
+        var release = Read(TechniqueBundles.Custom(), null, framework);
+
+        Assert.Equal("another-domain", release.Domain);
+        Assert.Equal(TechniqueIds.ReleaseId("another-domain", "1.0"), release.Id);
+        Assert.Equal(framework.Id, release.TechniqueFrameworkId);
+        Assert.Equal("https://example.org/site", release.SourceUrl);
+        // the bundle's techniques carry no URL, so the framework's template makes one
+        Assert.All(release.Techniques, t => Assert.StartsWith("https://example.org/t/", t.Url));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -230,28 +273,32 @@ public class StixTechniqueParserTests
         var again = await Parse(CapecBundles.Capec());
         var other = await Parse(CapecBundles.Capec(), "4.0");
 
-        Assert.Equal(StixTechniqueParser.ReleaseId("capec", "3.9"), first.Id);
+        Assert.Equal(TechniqueIds.ReleaseId("capec", "3.9"), first.Id);
         Assert.Equal(first.Techniques.Select(t => t.Id).Order(), again.Techniques.Select(t => t.Id).Order());
         Assert.Empty(first.Techniques.Select(t => t.Id).Intersect(other.Techniques.Select(t => t.Id)));
     }
 
     [Fact]
-    public async Task Parse_OfAttackPatternsThatAreNotCapecAndHaveNoTactics_IsStillRefused()
+    public async Task Parse_OfAttackPatternsOfAnotherCatalogueWithNoTactics_MatchesNoFramework()
     {
         var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(CapecBundles.WithoutCapecIds(), "1.0"));
 
-        Assert.Contains("source", ex.Message);
+        Assert.Equal(ReleaseFileReader.NoFrameworkMessage, ex.Message);
     }
 
+    /// <summary>A pattern without an id from the framework's source is left out; the rest still import.</summary>
     [Fact]
-    public async Task Parse_OfCapecMixedWithAPatternThatIsNotCapec_IsRefused()
+    public async Task Parse_OfCapecMixedWithAPatternThatIsNotCapec_LeavesThatPatternOut()
     {
         var mixed = CapecBundles.Capec().Replace(
             "\"objects\": [",
             "\"objects\": [ { \"type\": \"attack-pattern\", \"id\": \"attack-pattern--00000000-0000-4000-8000-000000000999\", \"name\": \"Stray\" },",
             StringComparison.Ordinal);
 
-        await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(mixed));
+        var release = await Parse(mixed);
+
+        Assert.Equal("capec", release.Domain);
+        Assert.DoesNotContain(release.Techniques, t => t.Name == "Stray");
     }
 
     [Fact]
@@ -279,7 +326,7 @@ public class StixTechniqueParserTests
         Assert.False(release.IsDefensive);
         Assert.Equal("2026.10", release.Version);
         Assert.Equal("ATLAS", release.Name);
-        Assert.Equal(StixTechniqueParser.ReleaseId("ATLAS", "2026.10"), release.Id);
+        Assert.Equal(TechniqueIds.ReleaseId("ATLAS", "2026.10"), release.Id);
         Assert.Equal(new DateTime(2026, 10, 28, 0, 0, 0, DateTimeKind.Utc), release.ReleaseDate);
     }
 
@@ -340,7 +387,8 @@ public class StixTechniqueParserTests
             "Copyright 2015-2025, The MITRE Corporation. MITRE ATT&CK and ATT&CK are registered trademarks of The MITRE Corporation.",
             release.Notice);
         Assert.Null(release.SourceUrl);
-        Assert.Null(release.TermsUrl);
+        // the file names no terms, so the framework's are given
+        Assert.Equal("https://attack.mitre.org/resources/legal-and-branding/terms-of-use/", release.TermsUrl);
         Assert.Equal("Tactics", release.GroupLabel);
     }
 
@@ -380,12 +428,12 @@ public class StixTechniqueParserTests
         Assert.Equal("Tactics", release.GroupLabel);
     }
 
-    /// <summary>The domain is no longer guessed as enterprise-attack: a bundle that names none is refused.</summary>
+    /// <summary>The domain is never guessed: a bundle that names none matches no framework that asks for one.</summary>
     [Fact]
-    public async Task Parse_OfABundleThatNamesNoDomain_IsRefused()
+    public async Task Parse_OfABundleThatNamesNoDomain_MatchesNoFramework()
     {
         var ex = await Assert.ThrowsAsync<InvalidTechniqueBundleException>(() => Parse(TechniqueBundles.Custom(domain: null)));
 
-        Assert.Contains("name no domain", ex.Message);
+        Assert.Equal(ReleaseFileReader.NoFrameworkMessage, ex.Message);
     }
 }

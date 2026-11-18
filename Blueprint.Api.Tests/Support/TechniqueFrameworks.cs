@@ -125,7 +125,6 @@ public static class TechniqueFrameworks
         SourceIdVariable = "off_tech_id",
         TargetVariable = "def_tech",
         TargetMatch = MappingTargetMatch.SourceIdLocalName,
-        TargetLabelVariable = "def_tech_label",
         TacticVariable = "def_tactic_label",
         TargetRelationVariable = "def_artifact_rel_label",
         TargetArtifactVariable = "def_artifact_label",

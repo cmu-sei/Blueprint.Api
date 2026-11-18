@@ -187,7 +187,6 @@ namespace Blueprint.Api.Data.Models
         /// <summary>The variable naming the target technique.</summary>
         public string TargetVariable { get; set; }
         public MappingTargetMatch TargetMatch { get; set; }
-        public string TargetLabelVariable { get; set; }
         /// <summary>The variable holding the target's tactic name for the pair.</summary>
         public string TacticVariable { get; set; }
         /// <summary>The variables of the path behind a pair, worded into its rationale; a pair's weight is its number of distinct paths.</summary>

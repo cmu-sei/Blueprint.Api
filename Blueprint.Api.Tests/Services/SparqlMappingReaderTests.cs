@@ -67,7 +67,6 @@ public class SparqlMappingReaderTests
 
         var pair = Pair(result, "T1003.005", "NetworkTrafficFiltering");
         Assert.Equal("Isolate", pair.Tactic);
-        Assert.Equal("Network Traffic Filtering", pair.TargetLabel);
         Assert.Equal("Detect", Pair(result, "T1059", "FileAnalysis").Tactic);
     }
 

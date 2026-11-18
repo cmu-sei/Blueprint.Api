@@ -34,7 +34,6 @@ namespace Blueprint.Api.Services
             public string SourceId { get; init; }
             /// <summary>The target technique as the definition matches it: its id, or the local name of its id in the file.</summary>
             public string Target { get; init; }
-            public string TargetLabel { get; init; }
             public string Tactic { get; init; }
             public string Rationale { get; init; }
             public int Weight { get; init; }
@@ -201,10 +200,9 @@ namespace Blueprint.Api.Services
                 var key = (row.SourceId, row.Target);
                 if (!_pairs.TryGetValue(key, out var pair))
                 {
-                    pair = new Accumulator { Order = _pairs.Count, TargetLabel = row.TargetLabel };
+                    pair = new Accumulator { Order = _pairs.Count };
                     _pairs[key] = pair;
                 }
-                pair.TargetLabel ??= row.TargetLabel;
                 if (row.Tactic != null)
                     pair.Tactics[row.Tactic] = pair.Tactics.GetValueOrDefault(row.Tactic) + 1;
                 var path = new ArtifactPath(row.TargetRelation, row.TargetArtifact, row.SourceRelation, row.SourceArtifact);
@@ -230,7 +228,6 @@ namespace Blueprint.Api.Services
                     {
                         SourceId = p.Key.Source,
                         Target = p.Key.Target,
-                        TargetLabel = p.Value.TargetLabel,
                         Tactic = MostCommon(p.Value.Tactics),
                         Rationale = Rationale(p.Key.Source, MostCommon(p.Value.Paths)),
                         Weight = p.Value.Paths.Count
@@ -275,7 +272,6 @@ namespace Blueprint.Api.Services
         private sealed class Accumulator
         {
             public int Order;
-            public string TargetLabel;
             public readonly Dictionary<string, int> Tactics = new();
             public readonly Dictionary<ArtifactPath, int> Paths = new();
         }
@@ -287,7 +283,6 @@ namespace Blueprint.Api.Services
         {
             public string SourceId;
             public string Target;
-            public string TargetLabel;
             public string Tactic;
             public string TargetRelation;
             public string TargetArtifact;
@@ -311,7 +306,6 @@ namespace Blueprint.Api.Services
                     if (name == definition.SourceIdVariable) row.SourceId = value?.Trim();
                     if (name == definition.TargetVariable)
                         row.Target = definition.TargetMatch == MappingTargetMatch.SourceIdLocalName ? LocalName(value) : value?.Trim();
-                    if (name == definition.TargetLabelVariable) row.TargetLabel = value;
                     if (name == definition.TacticVariable) row.Tactic = value;
                     if (name == definition.TargetRelationVariable) row.TargetRelation = value;
                     if (name == definition.TargetArtifactVariable) row.TargetArtifact = value;

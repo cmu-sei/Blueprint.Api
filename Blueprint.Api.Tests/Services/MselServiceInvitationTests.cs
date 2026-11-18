@@ -1262,6 +1262,33 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Empty(DrainIntegrationQueue());
     }
 
+    /// <summary>
+    /// A launch pushes as the service account, which never imports a copy of a directory, so a template with only a
+    /// copy is refused until an author imports it into Caster.
+    /// </summary>
+    [Fact]
+    public async Task Launch_OfACasterTemplateWithOnlyACopyOfItsDirectory_Is409AndSpendsNoSeat()
+    {
+        var template = await SeedTemplate(m =>
+        {
+            CasterSetup(Guid.NewGuid())(m);
+            m.CasterDirectoryId = null;
+        });
+        await Seed(TestData.MselCasterExport(template.Id));
+        var team = await SeedTeam(template);
+        var invitation = await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        Assert.Equal(
+            $"MSEL {template.Id} has only a copy of its Caster directory. Use Import into Caster on its Caster tab before launching it.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        await using var db = NewContext();
+        Assert.Equal(0, (await db.Invitations.SingleAsync(i => i.Id == invitation.Id, Ct)).UserCount);
+        Assert.Empty(DrainIntegrationQueue());
+    }
+
     [Fact]
     public async Task Launch_OfACasterTemplateWhoseTeamsShareAVariable_Is409AndSpendsNoSeat()
     {

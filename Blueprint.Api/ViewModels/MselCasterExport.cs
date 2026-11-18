@@ -24,7 +24,10 @@ namespace Blueprint.Api.ViewModels
         public List<MselCasterExportDirectory> Directories { get; set; } = new List<MselCasterExportDirectory>();
         /// <summary>The exported directory's contents as Caster exported them, by their paths in the export.</summary>
         public List<MselCasterExportEntry> Entries { get; set; } = new List<MselCasterExportEntry>();
-        /// <summary>What the copy could not carry, when it was just taken from Caster.</summary>
+        /// <summary>Whether the files' contents are included. A workspace's files can hold credentials, so only those
+        /// who may change the copy read them; other contributors get the paths alone.</summary>
+        public bool ContentsIncluded { get; set; }
+                /// <summary>What the copy could not carry, when it was just taken from Caster.</summary>
         public List<string> Warnings { get; set; } = new List<string>();
     }
 

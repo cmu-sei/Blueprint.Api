@@ -34,7 +34,9 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Returns the Caster directory the Msel carries to another Caster: the project it came from, the directories
         /// from the project's root down to it with their shared files, and the directory's own contents. Downloading
-        /// the Msel's JSON file refreshes it from the linked directory. A Msel without one answers 204.
+        /// the Msel's JSON file refreshes it from the linked directory. A Msel without one answers 204. File contents
+        /// are included only for EditMsels, the Msel's owner and its editors, since a workspace's files can hold
+        /// credentials; other contributors get the paths alone.
         /// </remarks>
         /// <param name="id">The id of the Msel</param>
         /// <param name="ct"></param>
@@ -46,7 +48,8 @@ namespace Blueprint.Api.Controllers
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
             var hasCreateMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.CreateMsels], ct);
-            var export = await _casterExportService.GetAsync(id, hasSystemPermission, hasCreateMselsPermission, ct);
+            var hasEditMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var export = await _casterExportService.GetAsync(id, hasSystemPermission, hasCreateMselsPermission, hasEditMselsPermission, ct);
             return export == null ? NoContent() : Ok(export);
         }
 
@@ -75,9 +78,9 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Creates a new Caster project, as the caller, from the copy the Msel carries, and links the Msel to the
-        /// directory it creates. The caller needs Caster's Create Projects permission. A push does the same, as
-        /// Blueprint's service account, for a Msel that has a copy and no directory; importing first lets a
-        /// template's launches share one directory. Not while the Msel is pushed, nor while it has a directory.
+        /// directory it creates. The caller needs Caster's Create Projects permission. Pushing a Msel that has a copy
+        /// and no directory does the same, as the pusher. A template's launches need a directory, so a template with
+        /// only a copy is imported here first. Not while the Msel is pushed, nor while it has a directory.
         /// </remarks>
         /// <param name="id">The id of the Msel</param>
         /// <param name="ct"></param>

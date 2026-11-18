@@ -332,6 +332,8 @@ namespace Blueprint.Api.Controllers
         /// <param name="form"> The files to upload and their settings </param>
         /// <param name="ct"></param>
         [HttpPost("msels/json")]
+        [RequestSizeLimit(CasterExportService.MaxMselFileBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = CasterExportService.MaxMselFileBytes)]
         [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "uploadJsonMsel")]
         public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
@@ -347,6 +349,8 @@ namespace Blueprint.Api.Controllers
         /// <param name="form"> The files to upload and their settings </param>
         /// <param name="ct"></param>
         [HttpPost("msels/json/import")]
+        [RequestSizeLimit(CasterExportService.MaxMselFileBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = CasterExportService.MaxMselFileBytes)]
         [ProducesResponseType(typeof(MselImportResult), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "importJsonMsel")]
         public async Task<IActionResult> ImportJsonAsync([FromForm] FileForm form, CancellationToken ct)

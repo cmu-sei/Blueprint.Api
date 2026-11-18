@@ -16,6 +16,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
 using Blueprint.Api.ViewModels;
 using Caster.Api.Client;
@@ -78,6 +79,64 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
             [("Child/child.tf", null), ("__Workspaces__/topology/topology.auto.tfvars", "topology"), ("main.tf", null)],
             copy.Entries.Select(e => (e.Path, e.Workspace)));
         Assert.Contains("variable \"blue\"", copy.Entries.Single(e => e.Path == "main.tf").Content);
+    }
+
+    /// <summary>
+    /// A workspace's files can hold credentials, so a contributor who may not change the copy gets its paths without
+    /// their contents.
+    /// </summary>
+    [Theory]
+    [InlineData(MselRole.Approver)]
+    [InlineData(MselRole.MoveEditor)]
+    [InlineData(MselRole.Evaluator)]
+    [InlineData(MselRole.Viewer)]
+    public async Task Get_ForAContributorWhoIsNotAnOwnerOrEditor_AnswersThePathsWithoutContents(MselRole role)
+    {
+        var msel = await SeedMsel(withCopy: true);
+        var actor = await Actor().OnMsel(msel, role).SeedAsync();
+
+        var copy = await ReadAsync<MselCasterExport>(await Client(actor).GetAsync(Route(msel), Ct), JsonOptions);
+
+        Assert.False(copy.ContentsIncluded);
+        Assert.Equal(3, copy.Entries.Count);
+        Assert.All(copy.Entries, e => Assert.Null(e.Content));
+        Assert.Null(Assert.Single(copy.Directories[0].Files).Content);
+    }
+
+    [Theory]
+    [InlineData(MselRole.Owner)]
+    [InlineData(MselRole.Editor)]
+    public async Task Get_ForAnOwnerOrEditorOfTheMsel_AnswersTheContents(MselRole role)
+    {
+        var msel = await SeedMsel(withCopy: true);
+        var actor = await Actor().OnMsel(msel, role).SeedAsync();
+
+        var copy = await ReadAsync<MselCasterExport>(await Client(actor).GetAsync(Route(msel), Ct), JsonOptions);
+
+        Assert.True(copy.ContentsIncluded);
+        Assert.Equal("terraform {}\n", Assert.Single(copy.Directories[0].Files).Content);
+    }
+
+    [Fact]
+    public async Task Get_WithViewMselsAndEditMsels_AnswersTheContents()
+    {
+        var msel = await SeedMsel(withCopy: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels, SystemPermission.EditMsels).SeedAsync();
+
+        var copy = await ReadAsync<MselCasterExport>(await Client(actor).GetAsync(Route(msel), Ct), JsonOptions);
+
+        Assert.True(copy.ContentsIncluded);
+    }
+
+    [Fact]
+    public async Task Get_WithViewMselsOnly_AnswersThePathsWithoutContents()
+    {
+        var msel = await SeedMsel(withCopy: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var copy = await ReadAsync<MselCasterExport>(await Client(actor).GetAsync(Route(msel), Ct), JsonOptions);
+
+        Assert.False(copy.ContentsIncluded);
     }
 
     [Fact]
@@ -534,6 +593,31 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Null(await ReadBack(db => db.Msels.Where(m => m.Id == msel.Id).Select(m => m.CasterDirectoryId).SingleAsync(Ct)));
     }
 
+    /// <summary>
+    /// Two imports at once each make a project, and only one may link the MSEL; the other deletes the project it made.
+    /// </summary>
+    [Fact]
+    public async Task Import_WhenTheMselIsLinkedWhileItsCopyImports_DeletesItsProjectAndIs409()
+    {
+        var msel = await SeedMsel(withCopy: true);
+        var created = ArrangeImport();
+        var winner = Guid.NewGuid();
+        Factory.Caster.ImportDirectoryAsync(created.Target, Arg.Any<bool?>(), Arg.Any<FileParameter>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                // the other import links the MSEL first
+                using var other = NewContext();
+                other.Msels.Where(m => m.Id == msel.Id).ExecuteUpdate(s => s.SetProperty(m => m.CasterDirectoryId, winner));
+                return new ImportDirectoryResult { LockedFiles = [] };
+            });
+
+        var response = await RootClient.PostAsync($"{Route(msel)}/import", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        await Factory.Caster.Received(1).DeleteProjectAsync(created.Project, Arg.Any<CancellationToken>());
+        Assert.Equal(winner, await ReadBack(db => db.Msels.Where(m => m.Id == msel.Id).Select(m => m.CasterDirectoryId).SingleAsync(Ct)));
+    }
+
     /// <summary>A caller Caster will not let create a project is a 403 that says which permission it takes.</summary>
     [Fact]
     public async Task Import_ByACallerCasterWillNotLetCreateAProject_Is403()
@@ -546,6 +630,7 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Contains("Create Projects", await response.Content.ReadAsStringAsync(Ct));
+        await Factory.Caster.DidNotReceive().DeleteProjectAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -619,19 +704,37 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal(chain.Project, await ReadBack(db => db.MselCasterExports.Where(e => e.MselId == msel.Id).Select(e => e.SourceProjectId).SingleAsync(Ct)));
     }
 
-    /// <summary>A download whose directory Caster cannot export is refused, rather than shipping a stale copy.</summary>
-    [Fact]
-    public async Task Download_WhenCasterCannotExportTheDirectory_IsRefused()
+    /// <summary>
+    /// A download whose directory Caster cannot export (Caster down, the directory gone, or a downloader Caster does
+    /// not show it to) still downloads, with the stored copy: moving a MSEL never depends on Caster.
+    /// </summary>
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task Download_WhenCasterCannotExportTheDirectory_CarriesTheStoredCopy(HttpStatusCode status)
     {
         var chain = ArrangeChain();
         Factory.Caster.ExportDirectoryAsync(chain.Target, Arg.Any<ArchiveType?>(), Arg.Any<bool?>(), Arg.Any<CancellationToken>())
-            .Throws(CasterArrangements.Answering(HttpStatusCode.InternalServerError));
+            .Throws(CasterArrangements.Answering(status));
         var msel = await SeedMsel(withCopy: true, directoryId: chain.Target);
 
-        var response = await RootClient.GetAsync($"api/msels/{msel.Id}/json", Ct);
+        var file = await Download(msel);
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("Topology", file.GetProperty("CasterExport").GetProperty("ProjectName").GetString());
         Assert.Equal("Topology", await ReadBack(db => db.MselCasterExports.Where(e => e.MselId == msel.Id).Select(e => e.ProjectName).SingleAsync(Ct)));
+    }
+
+    /// <summary>The copy follows the linked directory whether or not Caster is on, so turning Caster on elsewhere deploys it as it is.</summary>
+    [Fact]
+    public async Task Download_OfAMselThatLinksADirectoryWithCasterOff_StillCarriesAFreshCopy()
+    {
+        var chain = ArrangeChain();
+        var msel = await SeedMsel(directoryId: chain.Target, adjust: m => m.UseCaster = false);
+
+        var file = await Download(msel);
+
+        Assert.Equal(chain.Project, file.GetProperty("CasterExport").GetProperty("SourceProjectId").GetGuid());
     }
 
     /// <summary>A MSEL with only its copy downloads the copy as it is, and does not call Caster.</summary>
@@ -718,6 +821,40 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
         {
             m.CasterExport = TestData.MselCasterExport(m.Id);
             m.CasterExport.Archive = Encoding.UTF8.GetBytes("not a zip");
+        });
+
+        var response = await ImportFileResponse(file);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>
+    /// An archive is read whole when it is shown, so one that expands past the limits is refused, however small it
+    /// is: a file of zeros compresses a thousandfold.
+    /// </summary>
+    [Fact]
+    public async Task ImportFile_WithACopyHoldingAFileTooBigOnceExpanded_Is400()
+    {
+        var file = FileOf(m =>
+        {
+            m.CasterExport = TestData.MselCasterExport(m.Id);
+            m.CasterExport.Archive = TestData.CasterArchive(("main.tf", new string('0', CasterExportService.MaxEntryBytes + 1)));
+        });
+
+        var response = await ImportFileResponse(file);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("main.tf", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    [Fact]
+    public async Task ImportFile_WithACopyHoldingTooManyFiles_Is400()
+    {
+        var file = FileOf(m =>
+        {
+            m.CasterExport = TestData.MselCasterExport(m.Id);
+            m.CasterExport.Archive = TestData.CasterArchive(
+                [.. Enumerable.Range(0, CasterExportService.MaxArchiveEntries + 1).Select(i => ($"f{i}.tf", ""))]);
         });
 
         var response = await ImportFileResponse(file);

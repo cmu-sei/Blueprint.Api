@@ -80,104 +80,6 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Contains("variable \"blue\"", copy.Entries.Single(e => e.Path == "main.tf").Content);
     }
 
-    /// <summary>Every role on the Contributors tab reads the copy.</summary>
-    [Theory]
-    [InlineData(MselRole.Owner)]
-    [InlineData(MselRole.Editor)]
-    [InlineData(MselRole.Approver)]
-    [InlineData(MselRole.MoveEditor)]
-    [InlineData(MselRole.Evaluator)]
-    [InlineData(MselRole.Viewer)]
-    public async Task Get_ForAContributorOfTheMsel_Is200(MselRole role)
-    {
-        var msel = await SeedMsel(withCopy: true);
-        var actor = await Actor().OnMsel(msel, role).SeedAsync();
-
-        var response = await Client(actor).GetAsync(Route(msel), Ct);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Get_ForTheCreatorOfTheMsel_Is200()
-    {
-        var actor = await Actor().SeedAsync();
-        var msel = await SeedMsel(withCopy: true, createdBy: actor.Id);
-
-        var response = await Client(actor).GetAsync(Route(msel), Ct);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Get_WithViewMsels_Is200()
-    {
-        var msel = await SeedMsel(withCopy: true);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-
-        var response = await Client(actor).GetAsync(Route(msel), Ct);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Get_OfATemplate_WithCreateMsels_Is200()
-    {
-        var msel = await SeedMsel(withCopy: true, isTemplate: true);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
-
-        var response = await Client(actor).GetAsync(Route(msel), Ct);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Get_OfAMselThatIsNotATemplate_WithCreateMsels_Is403()
-    {
-        var msel = await SeedMsel(withCopy: true);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
-
-        var response = await Client(actor).GetAsync(Route(msel), Ct);
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    /// <summary>Being on one of the MSEL's teams makes a participant, who does not read the planners' topology.</summary>
-    [Fact]
-    public async Task Get_ForAMemberOfOneOfTheMselsTeams_Is403()
-    {
-        var msel = await SeedMsel(withCopy: true);
-        var team = TestData.Team(msel.Id);
-        await Seed(team);
-        var actor = await Actor().OnTeam(team).SeedAsync();
-
-        var response = await Client(actor).GetAsync(Route(msel), Ct);
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Get_is_forbidden_for_a_caller_holding_Viewer_only_in_another_msel()
-    {
-        var msel = await SeedMsel(withCopy: true);
-        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
-
-        var response = await Client(actor).GetAsync(Route(msel), Ct);
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Get_is_forbidden_for_a_caller_holding_EditMsels_only()
-    {
-        var msel = await SeedMsel(withCopy: true);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
-
-        var response = await Client(actor).GetAsync(Route(msel), Ct);
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
     [Fact]
     public async Task Get_ForAMselThatIsNotThere_Is404()
     {
@@ -229,74 +131,122 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Empty(variables);
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // The reads: GET caster/export and GET caster/team-variables
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>The two reads, the copy and the team variables, which share their gate.</summary>
+    public static TheoryData<string> Reads => new() { "caster/export", "caster/team-variables" };
+
+    private static readonly MselRole[] ContributorRoles =
+        [MselRole.Owner, MselRole.Editor, MselRole.Approver, MselRole.MoveEditor, MselRole.Evaluator, MselRole.Viewer];
+
+    public static TheoryData<string, MselRole> ReadsByContributor()
+    {
+        var data = new TheoryData<string, MselRole>();
+        foreach (var read in new[] { "caster/export", "caster/team-variables" })
+            foreach (var role in ContributorRoles)
+                data.Add(read, role);
+        return data;
+    }
+
+    /// <summary>Every role on the Contributors tab reads the copy and its team variables.</summary>
     [Theory]
-    [InlineData(MselRole.Owner)]
-    [InlineData(MselRole.Editor)]
-    [InlineData(MselRole.Approver)]
-    [InlineData(MselRole.MoveEditor)]
-    [InlineData(MselRole.Evaluator)]
-    [InlineData(MselRole.Viewer)]
-    public async Task TeamVariables_ForAContributorOfTheMsel_Is200(MselRole role)
+    [MemberData(nameof(ReadsByContributor))]
+    public async Task Read_ForAContributorOfTheMsel_Is200(string read, MselRole role)
     {
         var msel = await SeedMsel(withCopy: true);
         var actor = await Actor().OnMsel(msel, role).SeedAsync();
 
-        var response = await Client(actor).GetAsync(TeamVariablesRoute(msel), Ct);
+        var response = await Client(actor).GetAsync(ReadRoute(msel, read), Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    [Fact]
-    public async Task TeamVariables_ForTheCreatorOfTheMsel_Is200()
+    [Theory]
+    [MemberData(nameof(Reads))]
+    public async Task Read_ForTheCreatorOfTheMsel_Is200(string read)
     {
         var actor = await Actor().SeedAsync();
         var msel = await SeedMsel(withCopy: true, createdBy: actor.Id);
 
-        var response = await Client(actor).GetAsync(TeamVariablesRoute(msel), Ct);
+        var response = await Client(actor).GetAsync(ReadRoute(msel, read), Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    [Fact]
-    public async Task TeamVariables_WithViewMsels_Is200()
+    [Theory]
+    [MemberData(nameof(Reads))]
+    public async Task Read_WithViewMsels_Is200(string read)
     {
         var msel = await SeedMsel(withCopy: true);
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
-        var response = await Client(actor).GetAsync(TeamVariablesRoute(msel), Ct);
+        var response = await Client(actor).GetAsync(ReadRoute(msel, read), Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    [Fact]
-    public async Task TeamVariables_OfATemplate_WithCreateMsels_Is200()
+    /// <summary>CreateMsels reads a template's copy, as it reads the template it creates MSELs from.</summary>
+    [Theory]
+    [MemberData(nameof(Reads))]
+    public async Task Read_OfATemplate_WithCreateMsels_Is200(string read)
     {
         var msel = await SeedMsel(withCopy: true, isTemplate: true);
         var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
 
-        var response = await Client(actor).GetAsync(TeamVariablesRoute(msel), Ct);
+        var response = await Client(actor).GetAsync(ReadRoute(msel, read), Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    [Fact]
-    public async Task TeamVariables_is_forbidden_for_a_caller_holding_Viewer_only_in_another_msel()
+    [Theory]
+    [MemberData(nameof(Reads))]
+    public async Task Read_OfAMselThatIsNotATemplate_WithCreateMsels_Is403(string read)
     {
         var msel = await SeedMsel(withCopy: true);
-        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
 
-        var response = await Client(actor).GetAsync(TeamVariablesRoute(msel), Ct);
+        var response = await Client(actor).GetAsync(ReadRoute(msel, read), Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    [Fact]
-    public async Task TeamVariables_is_forbidden_for_a_caller_holding_EditMsels_only()
+    /// <summary>Being on one of the MSEL's teams makes a participant, who does not read the planners' topology.</summary>
+    [Theory]
+    [MemberData(nameof(Reads))]
+    public async Task Read_ForAMemberOfOneOfTheMselsTeams_Is403(string read)
+    {
+        var msel = await SeedMsel(withCopy: true);
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+        var actor = await Actor().OnTeam(team).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ReadRoute(msel, read), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [MemberData(nameof(Reads))]
+    public async Task Read_is_forbidden_for_a_caller_holding_Viewer_only_in_another_msel(string read)
+    {
+        var msel = await SeedMsel(withCopy: true);
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ReadRoute(msel, read), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [MemberData(nameof(Reads))]
+    public async Task Read_is_forbidden_for_a_caller_holding_EditMsels_only(string read)
     {
         var msel = await SeedMsel(withCopy: true);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
 
-        var response = await Client(actor).GetAsync(TeamVariablesRoute(msel), Ct);
+        var response = await Client(actor).GetAsync(ReadRoute(msel, read), Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -798,6 +748,8 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
     private static string Route(MselEntity msel) => $"api/msels/{msel.Id}/caster/export";
 
     private static string TeamVariablesRoute(MselEntity msel) => $"api/msels/{msel.Id}/caster/team-variables";
+
+    private static string ReadRoute(MselEntity msel, string read) => $"api/msels/{msel.Id}/{read}";
 
     private sealed record Chain(Guid Project, Guid Root, Guid Target);
 

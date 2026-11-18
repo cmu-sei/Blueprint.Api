@@ -1516,6 +1516,7 @@ namespace Blueprint.Api.Services
             var moves = await _context.Moves
                 .Where(m => m.MselId == mselId)
                 .OrderBy(m => m.DeltaSeconds)
+                .ThenBy(m => m.MoveNumber)
                 .ToListAsync(ct);
 
             // Load cards for GUID-to-name resolution
@@ -2570,6 +2571,9 @@ namespace Blueprint.Api.Services
             }
             if (nameInUse)
                 AddChange(result, "name", $"A MSEL named \"{fileName}\" already exists, so this one was named \"{mselEntity.Name}\".");
+            // a file from before every move had its own start time is imported as it is, and the planner told
+            foreach (var problem in MoveOrder.FindProblems(mselEntity.Moves))
+                AddChange(result, "moves", $"{problem} Each move must start after the move before it; fix the start times on the Moves tab before pushing.");
 
             // Integrations stay as the file had them; pushing creates content in each app that is on.
             if (mselEntity.UsePlayer) AddChange(result, "usePlayer", "Player integration is on.");
@@ -2819,6 +2823,18 @@ namespace Blueprint.Api.Services
                 $"Competencies that are not in this Blueprint were removed from Competency data fields: {string.Join(" and ", removed)}.");
         }
 
+        // Moves and events can be saved out of order while a MSEL is edited, but a push needs them valid.
+        private async Task ValidateMovesAsync(Guid mselId, CancellationToken ct)
+        {
+            var moves = await _context.Moves.AsNoTracking().Where(m => m.MselId == mselId).ToListAsync(ct);
+            var eventStarts = await _context.ScenarioEvents.AsNoTracking()
+                .Where(e => e.MselId == mselId).Select(e => e.DeltaSeconds).ToListAsync(ct);
+            var problems = MoveOrder.FindPushProblems(moves, eventStarts);
+            if (problems.Count > 0)
+                throw new ConflictException(
+                    $"Fix the moves before pushing. {string.Join(" ", problems)} Each move must start after the move before it, and every scenario event must start in a move.");
+        }
+
         public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
@@ -2836,6 +2852,7 @@ namespace Blueprint.Api.Services
                 throw new ConflictException($"MSEL {mselId} is already deployed.");
             if (msel.UseCaster)
                 await ValidateCasterSetupAsync(msel, true, ct);
+            await ValidateMovesAsync(mselId, ct);
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
@@ -3264,6 +3281,8 @@ namespace Blueprint.Api.Services
             var template = await _context.Msels.AsNoTracking().SingleAsync(m => m.Id == mselId, ct);
             if (template.UseCaster)
                 await ValidateCasterSetupAsync(template, false, ct);
+            // the launch pushes, so a template with moves out of order fails here for the planner to fix, not later for the participant
+            await ValidateMovesAsync(mselId, ct);
 
             // clone the template MSEL
             // A launch needs the template's directory, so it has no use for the copy, and the invitee, who owns the

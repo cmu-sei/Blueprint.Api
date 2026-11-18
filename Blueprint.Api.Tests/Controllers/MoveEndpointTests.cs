@@ -435,6 +435,24 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
+    /// <summary>Moves are saved however they are timed, because a MSEL changes a lot while it is edited. The
+    /// order is checked when integrations are pushed.</summary>
+    [Theory]
+    [InlineData(600)]   // the same start as Move 1
+    [InlineData(300)]   // before Move 1
+    public async Task Create_AtOrBeforeTheStartOfTheMoveNumberedBeforeIt_Is201(int deltaSeconds)
+    {
+        var msel = await SeedMsel();
+        await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        await SeedMove(msel, moveNumber: 1, deltaSeconds: 600);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Post(Client(actor), Body(msel.Id, moveNumber: 2, deltaSeconds: deltaSeconds));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(3, await CountOn(msel.Id));
+    }
+
     /// <summary>Create for a MSEL that is not there is refused to a caller without EditMsels: a missing MSEL grants no ownership.</summary>
     [Fact]
     public async Task Create_ForAMselThatIsNotThere_Is403()
@@ -734,6 +752,36 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(1, (await Stored(move.Id)).MoveNumber);
     }
 
+    /// <summary>A move can be saved at another move's start, or renumbered past another, so a planner can
+    /// rework the order a step at a time. Pushing is what requires the order.</summary>
+    [Fact]
+    public async Task Update_ToAStartAnotherMoveHas_Is200()
+    {
+        var msel = await SeedMsel();
+        await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        var move = await SeedMove(msel, moveNumber: 1, deltaSeconds: 600);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), move.Id, BodyFor(move) with { DeltaSeconds = 0 });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, (await Stored(move.Id)).DeltaSeconds);
+    }
+
+    [Fact]
+    public async Task Update_ToANumberThatPutsItOutOfOrder_Is200()
+    {
+        var msel = await SeedMsel();
+        var move = await SeedMove(msel, moveNumber: 0, deltaSeconds: 0);
+        await SeedMove(msel, moveNumber: 1, deltaSeconds: 600);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Put(Client(actor), move.Id, BodyFor(move) with { MoveNumber = 2 });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, (await Stored(move.Id)).MoveNumber);
+    }
+
     [Fact]
     public async Task Update_MarksTheMselModifiedAndBroadcastsWhatChanged()
     {
@@ -887,9 +935,9 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(1, (await MovesAndInjects(msel.Id))[scenarioEvent.Id][0]);
     }
 
-    /// <summary>Delete of the only move makes the move lookup throw for every scenario event.</summary>
+    /// <summary>Delete of the only move puts every scenario event in move 0.</summary>
     [Fact]
-    public async Task Delete_OfTheOnlyMove_MakesTheMoveLookupThrowForEveryScenarioEvent()
+    public async Task Delete_OfTheOnlyMove_PutsEveryScenarioEventInMoveZero()
     {
         var msel = await SeedMsel();
         var move = await SeedMove(msel, moveNumber: 1, deltaSeconds: 0);
@@ -899,7 +947,8 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).DeleteAsync(Move(move.Id), Ct);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        await Assert.ThrowsAsync<IndexOutOfRangeException>(() => MovesAndInjects(msel.Id));
+        var movesAndInjects = await MovesAndInjects(msel.Id);
+        Assert.Equal([0, 0], Assert.Single(movesAndInjects.Values));
     }
 
     /// <remarks>

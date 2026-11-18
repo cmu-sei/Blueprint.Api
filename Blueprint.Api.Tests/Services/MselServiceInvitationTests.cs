@@ -1108,6 +1108,23 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    /// <summary>A launch pushes, so a template whose moves share a start time is a 409 for the planner and
+    /// the invitation is not used up.</summary>
+    [Fact]
+    public async Task Launch_OfATemplateWhoseMovesShareAStart_Is409AndKeepsTheInvitation()
+    {
+        var template = await SeedTemplate();
+        await Seed(TestData.Move(template.Id, moveNumber: 0, deltaSeconds: 0));
+        await Seed(TestData.Move(template.Id, moveNumber: 1, deltaSeconds: 0));
+        var team = await SeedTeam(template);
+        await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
     [Fact]
     public async Task Launch_WithAValidInvitationOnlyToAnotherTemplate_Is403()
     {

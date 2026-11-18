@@ -746,7 +746,10 @@ namespace Blueprint.Api.Services
             var movesAndInjects= new Dictionary<Guid, int[]>();
             // order scenario events and moves by DeltaSeconds
             var scenarioEvents = await _context.ScenarioEvents.Where(se => se.MselId == mselId).OrderBy(se => se.DeltaSeconds).ToArrayAsync(ct);
-            var moves = await _context.Moves.Where(se => se.MselId == mselId).OrderBy(m => m.DeltaSeconds).ToArrayAsync(ct);
+            // each move starts after the one before it, but a MSEL saved before that was required can have moves
+            // sharing a start time; they are ordered by number, so an event at that time goes to the higher-numbered
+            // move, as Blueprint shows it
+            var moves = await _context.Moves.Where(se => se.MselId == mselId).OrderBy(m => m.DeltaSeconds).ThenBy(m => m.MoveNumber).ToArrayAsync(ct);
             var m = 0;  // move index
             var inject = 0;  // inject value
             var deltaSeconds = scenarioEvents.Length > 0 ? scenarioEvents[0].DeltaSeconds : 0;  // value of the previous scenario event.  Used to determine the inject number.
@@ -770,9 +773,10 @@ namespace Blueprint.Api.Services
                     }
                     inject = 0;  // start with inject 0 for this new move
                 }
+                // with no moves every event is in move 0, as the Steamfitter push puts it
                 var moveNumber = moves.Length > m ? moves[m].MoveNumber : 0;
                 deltaSeconds = scenarioEvents[s].DeltaSeconds;
-                movesAndInjects.Add(scenarioEvents[s].Id, new int[] {moves[m].MoveNumber, inject});
+                movesAndInjects.Add(scenarioEvents[s].Id, new int[] {moveNumber, inject});
             }
 
             return movesAndInjects;

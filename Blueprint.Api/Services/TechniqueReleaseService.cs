@@ -8,12 +8,11 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Infrastructure.Mappings;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
@@ -39,14 +38,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<ITechniqueReleaseService> _logger;
 
-        public TechniqueReleaseService(BlueprintContext context, IPrincipal user, ILogger<ITechniqueReleaseService> logger, IMapper mapper)
+        public TechniqueReleaseService(BlueprintContext context, IPrincipal user, ILogger<ITechniqueReleaseService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -55,7 +52,7 @@ namespace Blueprint.Api.Services
             var releases = await _context.TechniqueReleases
                 .OrderBy(r => r.Domain)
                 .ThenByDescending(r => r.ReleaseDate)
-                .ProjectTo<TechniqueRelease>(_mapper.ConfigurationProvider)
+                .ProjectToTechniqueRelease()
                 .ToListAsync(ct);
             await AddFrameworkSettingsAsync(releases, ct);
             return releases;
@@ -65,7 +62,7 @@ namespace Blueprint.Api.Services
         {
             var release = await _context.TechniqueReleases
                 .Where(r => r.Id == id)
-                .ProjectTo<TechniqueRelease>(_mapper.ConfigurationProvider)
+                .ProjectToTechniqueRelease()
                 .SingleOrDefaultAsync(ct);
             if (release == null)
                 throw new EntityNotFoundException<TechniqueRelease>();
@@ -108,7 +105,7 @@ namespace Blueprint.Api.Services
                 .Where(t => t.TechniqueReleaseId == id)
                 .OrderBy(t => t.DisplayOrder)
                 .ToListAsync(ct);
-            return _mapper.Map<IEnumerable<TechniqueTactic>>(tactics);
+            return tactics.Select(t => t.ToTechniqueTactic()).ToList();
         }
 
         public async Task<IEnumerable<Technique>> GetTechniquesAsync(Guid id, CancellationToken ct)
@@ -120,7 +117,7 @@ namespace Blueprint.Api.Services
                 .Include(t => t.TechniqueRelease)
                 .OrderBy(t => t.ExternalId)
                 .ToListAsync(ct);
-            return _mapper.Map<IEnumerable<Technique>>(techniques);
+            return techniques.Select(t => t.ToTechnique()).ToList();
         }
 
         public async Task<TechniqueRelease> ImportAsync(FileForm form, string version, Guid? techniqueFrameworkId, CancellationToken ct)

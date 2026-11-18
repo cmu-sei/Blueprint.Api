@@ -8,11 +8,10 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Infrastructure.Mappings;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
@@ -38,14 +37,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<ITechniqueFrameworkService> _logger;
 
-        public TechniqueFrameworkService(BlueprintContext context, IPrincipal user, ILogger<ITechniqueFrameworkService> logger, IMapper mapper)
+        public TechniqueFrameworkService(BlueprintContext context, IPrincipal user, ILogger<ITechniqueFrameworkService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -53,7 +50,7 @@ namespace Blueprint.Api.Services
         {
             return await _context.TechniqueFrameworks
                 .OrderBy(f => f.Name)
-                .ProjectTo<TechniqueFramework>(_mapper.ConfigurationProvider)
+                .ProjectToTechniqueFramework()
                 .ToListAsync(ct);
         }
 
@@ -61,7 +58,7 @@ namespace Blueprint.Api.Services
         {
             var framework = await _context.TechniqueFrameworks
                 .Where(f => f.Id == id)
-                .ProjectTo<TechniqueFramework>(_mapper.ConfigurationProvider)
+                .ProjectToTechniqueFramework()
                 .SingleOrDefaultAsync(ct);
             return framework ?? throw new EntityNotFoundException<TechniqueFramework>();
         }

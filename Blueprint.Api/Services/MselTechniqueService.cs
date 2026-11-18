@@ -8,11 +8,11 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Infrastructure.Mappings;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
@@ -39,14 +39,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IMapper _mapper;
         private readonly ILogger<IMselTechniqueService> _logger;
 
-        public MselTechniqueService(BlueprintContext context, IPrincipal user, ILogger<IMselTechniqueService> logger, IMapper mapper)
+        public MselTechniqueService(BlueprintContext context, IPrincipal user, ILogger<IMselTechniqueService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _mapper = mapper;
             _logger = logger;
         }
 
@@ -66,7 +64,7 @@ namespace Blueprint.Api.Services
                 .OrderBy(m => m.Technique.ExternalId)
                 .ToListAsync(ct);
 
-            return _mapper.Map<IEnumerable<MselTechnique>>(items);
+            return items.Select(m => m.ToMselTechnique()).ToList();
         }
 
         public async Task<MselTechnique> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
@@ -81,7 +79,7 @@ namespace Blueprint.Api.Services
             if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, hasCreateMselsPermission, _context)))
                 throw new ForbiddenException();
 
-            return _mapper.Map<MselTechnique>(item);
+            return item.ToMselTechnique();
         }
 
         public async Task<MselTechnique> CreateAsync(MselTechnique mselTechnique, bool hasSystemPermission, CancellationToken ct)

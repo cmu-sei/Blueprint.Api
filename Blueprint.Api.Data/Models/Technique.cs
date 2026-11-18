@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Blueprint.Api.Data.Models
 {
-    /// <summary>An ATT&amp;CK technique or sub-technique (T1059, T1059.001) in one release.</summary>
+    /// <summary>A technique or sub-technique (T1059, T1059.001) in one release.</summary>
     public class TechniqueEntity
     {
         [Key]
@@ -31,11 +31,10 @@ namespace Blueprint.Api.Data.Models
         public string Tactics { get; set; }
         /// <summary>Comma-separated platforms, e.g. "Windows,Linux,macOS".</summary>
         public string Platforms { get; set; }
-        /// <summary>Comma-separated CWE ids a CAPEC pattern exploits, e.g. "CWE-89,CWE-1286"; null for the other frameworks.</summary>
+        /// <summary>Comma-separated CWE ids the technique exploits, e.g. "CWE-89,CWE-1286"; null when the framework gives none.</summary>
         public string Weaknesses { get; set; }
         /// <summary>
-        /// A CAPEC pattern's links to OWASP and WASC, one per line as "source|label|url"; null for the other
-        /// frameworks.
+        /// Links to other catalogues, one per line as "source|label|url"; null when the framework gives none.
         /// </summary>
         public string ReferenceLinks { get; set; }
     }
@@ -51,8 +50,7 @@ namespace Blueprint.Api.Data.Models
                 .WithMany(x => x.Techniques)
                 .HasForeignKey(x => x.TechniqueReleaseId)
                 .OnDelete(DeleteBehavior.Cascade);
-            // NO ACTION rather than RESTRICT: PostgreSQL checks it at the end of the statement, so the release's
-            // cascade can take a technique and its sub-techniques together.
+            // NO ACTION, not RESTRICT, so the release's cascade can take a technique and its sub-techniques together
             builder
                 .HasOne(x => x.Parent)
                 .WithMany(x => x.SubTechniques)

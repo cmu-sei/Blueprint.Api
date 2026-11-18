@@ -11,14 +11,12 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Blueprint.Api.Data.Models
 {
     /// <summary>
-    /// One imported technique framework release: MITRE ATT&amp;CK (e.g. enterprise-attack 17.1), ATLAS, or D3FEND.
-    /// Releases are reference data: they are uploaded by an administrator and never fetched or updated in place, so
-    /// a MSEL keeps the technique names and descriptions it was planned against until it is explicitly upgraded.
+    /// One imported release of a technique framework. Releases are uploaded by an administrator and never changed
+    /// in place, so a MSEL keeps the techniques it was planned against until it is upgraded.
     /// </summary>
     /// <remarks>
-    /// Ids are derived from the domain, the version and the STIX id rather than generated, so the same release
-    /// has the same ids on every installation and a MSEL exported from one Blueprint links its techniques on
-    /// another.
+    /// Ids are derived from the domain, version and source id, so a MSEL exported from one installation links its
+    /// techniques on another.
     /// </remarks>
     public class TechniqueReleaseEntity : BaseEntity
     {
@@ -27,30 +25,28 @@ namespace Blueprint.Api.Data.Models
         public Guid Id { get; set; }
         public string Domain { get; set; }
         /// <summary>
-        /// Whether the release's techniques are defences (MITRE D3FEND) rather than attacks (ATT&amp;CK, ATLAS). A MSEL
-        /// pools the two families apart; the parser of each file format says which it reads.
+        /// Whether the release's techniques are defences rather than attacks; a MSEL pools the two apart.
         /// </summary>
         public bool IsDefensive { get; set; }
         public string Version { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
         public DateTime? ReleaseDate { get; set; }
-        /// <summary>Who publishes the release (MITRE ATT&amp;CK, MITRE D3FEND); null for a release whose publisher is not known.</summary>
+        /// <summary>Who publishes the release; null for a release whose publisher is not known.</summary>
         public string Source { get; set; }
         /// <summary>The publisher's website for the framework.</summary>
         public string SourceUrl { get; set; }
         /// <summary>
-        /// The copyright and trademark notice the publisher's terms ask to be shown wherever the release's content is,
-        /// one line per sentence group. Null for a release that carries none, which then shows no notice.
+        /// The copyright and trademark notice to show with the release's content; null when it carries none.
         /// </summary>
         public string Notice { get; set; }
         /// <summary>The publisher's terms of use for the release's content.</summary>
         public string TermsUrl { get; set; }
-        /// <summary>What the release calls its groups of techniques: "Tactics" (the default) or "Categories" (CAPEC).</summary>
+        /// <summary>What the release calls its groups of techniques: "Tactics" (the default) or "Categories".</summary>
         public string GroupLabel { get; set; } = "Tactics";
         public virtual ICollection<TechniqueTacticEntity> Tactics { get; set; } = new HashSet<TechniqueTacticEntity>();
         public virtual ICollection<TechniqueEntity> Techniques { get; set; } = new HashSet<TechniqueEntity>();
-        /// <summary>The D3FEND "countered by" mappings imported onto a defensive release; empty for an attack release.</summary>
+        /// <summary>The "countered by" mappings imported onto a defensive release; empty for an attack release.</summary>
         public virtual ICollection<TechniqueCountermeasureEntity> Countermeasures { get; set; } = new HashSet<TechniqueCountermeasureEntity>();
     }
 

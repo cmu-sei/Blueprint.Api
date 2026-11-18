@@ -481,7 +481,7 @@ namespace Blueprint.Api.Services
                 mselCompetency.Msel = null;
                 mselCompetency.Competency = null;
             }
-            // copy the MSEL's technique pool, attack and defensive
+            // copy the MSEL's technique pool
             foreach (var mselTechnique in mselEntity.MselTechniques)
             {
                 mselTechnique.Id = Guid.NewGuid();

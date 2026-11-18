@@ -32,9 +32,8 @@ namespace Blueprint.Api.Services
     }
 
     /// <summary>
-    /// The technique framework releases (ATT&amp;CK, ATLAS, CAPEC, D3FEND) an administrator has uploaded. A release's
-    /// techniques are never edited: a newer version is imported alongside it, and MSELs move to it one at a time. Only
-    /// its publisher and notice fields can be changed, as a custom release has none until an administrator gives it some.
+    /// The releases an administrator has uploaded. Techniques are never edited: a newer version is imported
+    /// alongside, and MSELs move to it one at a time. Only the publisher and notice fields can be changed.
     /// </summary>
     public class TechniqueReleaseService : ITechniqueReleaseService
     {
@@ -129,7 +128,7 @@ namespace Blueprint.Api.Services
             ThrowIfNotWebAddress(sourceUrl, "The source URL");
             ThrowIfNotWebAddress(termsUrl, "The terms URL");
 
-            // Only the four notice fields: the id, domain, version, tactics and techniques are what MSELs are pinned to.
+            // only the notice fields; the rest is what MSELs are pinned to
             release.Source = Blank(notice.Source);
             release.SourceUrl = sourceUrl;
             release.Notice = Blank(notice.Notice);

@@ -48,13 +48,13 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets the D3FEND countermeasures of every attack technique in a MSEL's pool
+        /// Gets the countermeasures of every attack technique in a MSEL's pool
         /// </summary>
         /// <remarks>
-        /// From the D3FEND release the MSEL's defensive techniques are pinned to, else the newest D3FEND release with
-        /// mappings imported; <c>techniqueReleaseId</c> names it and <c>hasMappings</c> says whether it has any. Each
-        /// pooled attack technique gets a group ranked by weight, empty when nothing counters it; a sub-technique with
-        /// no mappings of its own gets its parent's, with <c>inheritedFrom</c> naming the parent.
+        /// From the defensive release the MSEL is pinned to, else the newest with mappings; <c>techniqueReleaseId</c>
+        /// names it and <c>hasMappings</c> says whether it has any. Each pooled attack technique gets a group ranked by
+        /// weight, empty when nothing counters it; a sub-technique with none of its own gets its parent's, with
+        /// <c>inheritedFrom</c> naming the parent.
         /// </remarks>
         /// <param name="mselId">The id of the Msel</param>
         /// <param name="ct"></param>
@@ -89,8 +89,7 @@ namespace Blueprint.Api.Controllers
         /// Adds a technique to a MSEL's pool
         /// </summary>
         /// <remarks>
-        /// Refused with a 409 when the MSEL's pool already holds techniques of the same domain (enterprise-attack,
-        /// ATLAS, capec, d3fend, ...) from another release. Techniques of different domains sit side by side.
+        /// Refused with a 409 when the MSEL's pool already holds techniques of the same domain from another release. Techniques of different domains sit side by side.
         /// </remarks>
         /// <param name="mselTechnique">The MSEL and the technique</param>
         /// <param name="ct"></param>
@@ -139,9 +138,9 @@ namespace Blueprint.Api.Controllers
         /// Moves one domain of a MSEL's technique pool to another release
         /// </summary>
         /// <remarks>
-        /// The release's domain (enterprise-attack, ATLAS, capec, d3fend, ...) says which techniques move; the other
-        /// domains stay. Techniques are matched by their external id (T1059, AML.T0051, D3-CH). Ones the new release no
-        /// longer has are dropped and listed in the response; inject cells that name them keep their text.
+        /// The release's domain says which techniques move; the other domains stay. Techniques are matched by
+        /// external id. Ones the new release lacks are dropped and listed in the response; inject cells that name
+        /// them keep their text.
         /// </remarks>
         /// <param name="mselId">ID of a msel.</param>
         /// <param name="techniqueReleaseId">ID of the release to move to.</param>

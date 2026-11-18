@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Blueprint.Api.Data.Models
 {
-    /// <summary>An ATT&amp;CK tactic (TA0002 Execution) - the column a technique sits under in the matrix.</summary>
+    /// <summary>A tactic (TA0002 Execution) - the column a technique sits under in the matrix.</summary>
     public class TechniqueTacticEntity
     {
         [Key]

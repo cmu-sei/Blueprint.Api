@@ -10,9 +10,8 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Blueprint.Api.Data.Models
 {
     /// <summary>
-    /// A technique in a MSEL's pool - the techniques its Technique and DefensiveTechnique columns offer. The
-    /// pool can hold several domains (enterprise-attack, ATLAS, capec, d3fend, ...), and the rows of one domain are
-    /// all from the same release.
+    /// A technique in a MSEL's pool, offered by its technique columns. The rows of one domain are all from the
+    /// same release.
     /// </summary>
     public class MselTechniqueEntity
     {
@@ -46,7 +45,7 @@ namespace Blueprint.Api.Data.Models
                 .WithMany(p => p.MselTechniques)
                 .HasForeignKey(x => x.MselId)
                 .OnDelete(DeleteBehavior.Cascade);
-            // A release in use by a MSEL can't be deleted out from under it.
+            // a release a MSEL uses can't be deleted
             builder
                 .HasOne(u => u.Technique)
                 .WithMany()

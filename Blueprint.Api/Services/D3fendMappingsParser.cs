@@ -14,17 +14,14 @@ using Blueprint.Api.Infrastructure.Exceptions;
 namespace Blueprint.Api.Services
 {
     /// <summary>
-    /// Reads MITRE D3FEND's d3fend-full-mappings.json - the "countered by" mappings between offensive techniques
-    /// (ATT&amp;CK Enterprise and ICS, SPARTA) and D3FEND techniques - into one row per (offensive id, D3FEND class).
+    /// Reads d3fend-full-mappings.json (SPARQL results JSON), the "countered by" mappings between offensive and
+    /// defensive techniques, into one row per (offensive id, defensive class).
     /// </summary>
     /// <remarks>
     /// The file is SPARQL results JSON: a <c>head.vars</c> list and a <c>results.bindings</c> array of rows, each
-    /// row a map of variable name to <c>{"type", "value"}</c>. It is a 60 MB array with the same pair repeated once
-    /// per artifact path and once more for every sub-technique whose query inherited it, so the file is read
-    /// through a <see cref="Utf8JsonReader"/> a buffer at a time and never held whole: a row is parsed as soon as
-    /// it is entirely in the buffer. A pair's weight is its number of distinct artifact paths (the defensive
-    /// technique hardens a Credential; T1003.005 accesses an Encrypted Credential) and its rationale is the path
-    /// that appears most often, so the planner sees the typical reason and the list can be ranked.
+    /// row a map of variable name to <c>{"type", "value"}</c>. It is about 60 MB, with each pair repeated once per
+    /// artifact path, so it is read a buffer at a time through a <see cref="Utf8JsonReader"/> and never held whole.
+    /// A pair's weight is its number of distinct artifact paths and its rationale is the most common path.
     /// </remarks>
     public static class D3fendMappingsParser
     {
@@ -34,7 +31,7 @@ namespace Blueprint.Api.Services
         public sealed class Pair
         {
             public string OffensiveId { get; init; }
-            /// <summary>The D3FEND class's local name, "CredentialHardening" from "...d3fend.owl#CredentialHardening".</summary>
+            /// <summary>The class's local name, such as "CredentialHardening".</summary>
             public string DefensiveClass { get; init; }
             public string DefensiveLabel { get; init; }
             public string Tactic { get; init; }
@@ -48,7 +45,7 @@ namespace Blueprint.Api.Services
             public List<Pair> Pairs { get; init; } = new List<Pair>();
         }
 
-        /// <summary>True when the JSON is SPARQL results (a <c>head</c> and a <c>results</c>), the shape of the mappings file.</summary>
+        /// <summary>True when the JSON is SPARQL results (a <c>head</c> and a <c>results</c>).</summary>
         public static bool LooksLikeSparqlResults(JsonElement root) =>
             root.ValueKind == JsonValueKind.Object
             && root.TryGetProperty("head", out var head) && head.ValueKind == JsonValueKind.Object
@@ -66,7 +63,7 @@ namespace Blueprint.Api.Services
                 {
                     if (filled == buffer.Length)
                     {
-                        // A token (one row, or the vars list) is longer than the buffer: make room for it.
+                        // a token is longer than the buffer: make room for it
                         var larger = ArrayPool<byte>.Shared.Rent(buffer.Length * 2);
                         Buffer.BlockCopy(buffer, 0, larger, 0, filled);
                         ArrayPool<byte>.Shared.Return(buffer);
@@ -101,9 +98,8 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// Reads as many whole tokens as the buffer holds and says how many bytes they took. A row (or the vars
-        /// list) is only taken when all of it is there; otherwise the reader is put back in front of it so the next
-        /// call, with more data, reads it whole.
+        /// Reads as many whole tokens as the buffer holds and says how many bytes they took. A row is only taken when
+        /// all of it is there; otherwise the reader goes back in front of it for the next call.
         /// </summary>
         private static int Consume(ReadOnlySpan<byte> data, bool isFinal, ref JsonReaderState state, Cursor cursor)
         {
@@ -234,7 +230,7 @@ namespace Blueprint.Api.Services
                 return new Result { RowsRead = _rowsRead, Pairs = pairs };
             }
 
-            /// <summary>The key seen most often; the one seen first on a tie, as the dictionary keeps insertion order until a remove.</summary>
+            /// <summary>The key seen most often; the first seen on a tie.</summary>
             private static T MostCommon<T>(Dictionary<T, int> counts)
             {
                 var best = default(T);
@@ -250,7 +246,7 @@ namespace Blueprint.Api.Services
                 return best;
             }
 
-            /// <summary>"hardens Credential; T1003.005 accesses Encrypted Credential", or as much of it as the row gave.</summary>
+            /// <summary>The path as the file words it, or as much of it as the row gave.</summary>
             private static string Rationale(string offensiveId, ArtifactPath path)
             {
                 var defensive = Join(Humanize(path.DefensiveRelation), path.DefensiveArtifact);
@@ -263,7 +259,7 @@ namespace Blueprint.Api.Services
             private static string Join(string a, string b) =>
                 string.IsNullOrEmpty(a) ? (string.IsNullOrEmpty(b) ? null : b) : string.IsNullOrEmpty(b) ? a : $"{a} {b}";
 
-            /// <summary>"may-modify" reads as "may modify".</summary>
+            /// <summary>A hyphenated relation reads as words.</summary>
             private static string Humanize(string relation) => relation?.Replace('-', ' ');
         }
 
@@ -277,7 +273,7 @@ namespace Blueprint.Api.Services
 
         private readonly record struct ArtifactPath(string DefensiveRelation, string DefensiveArtifact, string OffensiveRelation, string OffensiveArtifact);
 
-        /// <summary>The variables of one result row that the mapping needs.</summary>
+        /// <summary>The variables of one result row the mapping needs.</summary>
         private struct Row
         {
             public string OffensiveId;
@@ -289,7 +285,7 @@ namespace Blueprint.Api.Services
             public string OffensiveRelation;
             public string OffensiveArtifact;
 
-            /// <summary>Reads a row, <c>{"var": {"type": ..., "value": ...}, ...}</c>, taking each variable's value.</summary>
+            /// <summary>Reads a row, taking each variable's value.</summary>
             public static Row Read(ReadOnlySpan<byte> json)
             {
                 var row = new Row();
@@ -297,7 +293,7 @@ namespace Blueprint.Api.Services
                 reader.Read(); // StartObject
                 while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
                 {
-                    // the variable's name, then its binding object
+                    // the variable's name, then its binding
                     var name = reader.TokenType == JsonTokenType.PropertyName ? reader.GetString() : null;
                     reader.Read();
                     var value = BindingValue(ref reader);
@@ -316,7 +312,7 @@ namespace Blueprint.Api.Services
                 return row;
             }
 
-            /// <summary>The <c>value</c> of a binding object; a bare string is taken as is, anything else skipped.</summary>
+            /// <summary>The <c>value</c> of a binding; a bare string is taken as is, anything else skipped.</summary>
             private static string BindingValue(ref Utf8JsonReader reader)
             {
                 if (reader.TokenType == JsonTokenType.String)
@@ -340,7 +336,7 @@ namespace Blueprint.Api.Services
                 return value;
             }
 
-            /// <summary>"CredentialHardening" from "http://d3fend.mitre.org/ontologies/d3fend.owl#CredentialHardening" or "d3f:CredentialHardening".</summary>
+            /// <summary>The class's local name from a full IRI or a prefixed one.</summary>
             private static string LocalName(string iri)
             {
                 if (string.IsNullOrEmpty(iri))

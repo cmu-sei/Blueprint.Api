@@ -2867,7 +2867,7 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
                         .WithMany()
                         .HasForeignKey("MselId")
-                        .OnDelete(DeleteBehavior.NoAction)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("Blueprint.Api.Data.Models.ScenarioEventEntity", "ScenarioEvent")

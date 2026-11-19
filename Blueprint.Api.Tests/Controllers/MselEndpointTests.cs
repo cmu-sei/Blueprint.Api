@@ -1546,6 +1546,32 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Single(await context.Units.ToListAsync(Ct));
     }
 
+    /// <remarks>
+    /// A task belongs to the MSEL and to its event, and the event goes with the MSEL. Postgres checks a NO ACTION
+    /// key from the task to the MSEL before the cascade through the event reaches the task, so that key cascades too.
+    /// </remarks>
+    [Fact]
+    public async Task Delete_CascadesToTheMselsAutomationTasksAndRuns()
+    {
+        var msel = TestData.Msel();
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        var first = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        var chained = TestData.AutomationTask(msel.Id, scenarioEvent.Id, displayOrder: 1,
+            trigger: AutomationTrigger.OnSuccess, triggerTaskId: first.Id);
+        var run = Blueprint.Api.Automation.AutomationRuns.New(first, msel.Id, AutomationRunKind.Test,
+            AutomationRunSource.Manual, DateTime.UtcNow, null, null, null);
+        await Seed(msel, scenarioEvent, first, chained, run);
+
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"/api/msels/{msel.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        await using var context = NewContext();
+        Assert.Empty(await context.AutomationTasks.ToListAsync(Ct));
+        Assert.Empty(await context.AutomationRuns.ToListAsync(Ct));
+    }
+
     [Fact]
     public async Task Delete_NotifiesTheMselGroupAndTheAdminGroupWithTheId()
     {

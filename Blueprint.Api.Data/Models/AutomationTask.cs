@@ -65,12 +65,13 @@ namespace Blueprint.Api.Data.Models
                 .WithMany(e => e.AutomationTasks)
                 .HasForeignKey(t => t.ScenarioEventId)
                 .OnDelete(DeleteBehavior.Cascade);
-            // the scenario event's cascade removes a MSEL's tasks; a second cascade path is not allowed
+            // Postgres checks a NO ACTION key before the cascade through the scenario event reaches the task, so deleting
+            // a MSEL failed; both paths cascade
             builder
                 .HasOne(t => t.Msel)
                 .WithMany()
                 .HasForeignKey(t => t.MselId)
-                .OnDelete(DeleteBehavior.NoAction);
+                .OnDelete(DeleteBehavior.Cascade);
             builder
                 .HasOne(t => t.TriggerTask)
                 .WithMany(t => t.TriggeredTasks)

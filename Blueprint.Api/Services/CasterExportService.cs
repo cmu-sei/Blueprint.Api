@@ -461,12 +461,13 @@ namespace Blueprint.Api.Services
             return safe;
         }
 
-        // The name, or "2_name", "3_name" ... when another file of the chain has it. The number goes in front so the
-        // name keeps whatever suffix terraform reads it by (.tf, .tf.json, .auto.tfvars ...), and a name too long for
-        // it loses characters from its start, never its suffix.
+        // A name that already fits is kept, even one another directory of the chain has: a workspace wrote those to one
+        // path in the source Caster too. A name the mapping changed gets "2_name", "3_name" ... when a file of the chain
+        // has it. The number goes in front so the name keeps whatever suffix terraform reads it by (.tf, .tf.json,
+        // .auto.tfvars ...), and a name too long for it loses characters from its start, never its suffix.
         private static string UniqueFileName(string name, string original, HashSet<string> used, HashSet<string> originals)
         {
-            if (!used.Contains(name) && (name == original || !originals.Contains(name)))
+            if (name == original || (!used.Contains(name) && !originals.Contains(name)))
                 return name;
             for (var n = 2; ; n++)
             {

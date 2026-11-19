@@ -923,6 +923,76 @@ public static class TestData
     }
 
     /// <summary>
+    /// A MSEL's copy of a Caster directory from the project "Topology": the root directory "Root", holding the
+    /// provider file a workspace below it runs with, and the exported directory "Range", whose archive holds its
+    /// template, a workspace of its own and a child directory.
+    /// </summary>
+    public static MselCasterExportEntity MselCasterExport(Guid mselId, Guid? createdBy = null)
+    {
+        var root = new MselCasterExportDirectoryEntity
+        {
+            Id = Guid.NewGuid(),
+            MselCasterExportId = mselId,
+            Level = 0,
+            Name = "Root",
+            TerraformVersion = "1.5.0",
+            AzureDestroyFailureThresholdEnabled = true
+        };
+        root.Files.Add(new MselCasterExportFileEntity
+        {
+            Id = Guid.NewGuid(),
+            MselCasterExportDirectoryId = root.Id,
+            Name = "providers.tf",
+            Content = "terraform {}\n"
+        });
+
+        return new MselCasterExportEntity
+        {
+            MselId = mselId,
+            SourceProjectId = Guid.NewGuid(),
+            ProjectName = "Topology",
+            SourceDirectoryId = Guid.NewGuid(),
+            DateExported = new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc),
+            CreatedBy = createdBy ?? Guid.NewGuid(),
+            Archive = CasterArchive(
+                ("main.tf", "variable \"blue\" {\n  type = string\n}\n"),
+                ("__Workspaces__/topology/", null),
+                ("__Workspaces__/topology/topology.auto.tfvars", "blue = \"x\"\n"),
+                ("Child/child.tf", "variable \"red\" {\n  type = string\n}\n")),
+            Directories =
+            [
+                root,
+                new MselCasterExportDirectoryEntity
+                {
+                    Id = Guid.NewGuid(),
+                    MselCasterExportId = mselId,
+                    Level = 1,
+                    Name = "Range",
+                    Parallelism = 5
+                }
+            ]
+        };
+    }
+
+    /// <summary>A zip laid out as Caster exports a directory: a path ending in / is a folder, with no content.</summary>
+    public static byte[] CasterArchive(params (string Path, string Content)[] entries)
+    {
+        using var stream = new System.IO.MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var (path, content) in entries)
+            {
+                var entry = zip.CreateEntry(path);
+                if (content == null)
+                    continue;
+                using var writer = new System.IO.StreamWriter(entry.Open(), new System.Text.UTF8Encoding(false));
+                writer.Write(content);
+            }
+        }
+        return stream.ToArray();
+    }
+
+    /// <summary>
     /// A competency assigned to a team - the team-level twin of <see cref="MselCompetency"/>.
     /// <c>(TeamId, CompetencyId)</c> is uniquely indexed, so a duplicate pair is a 500.
     /// </summary>

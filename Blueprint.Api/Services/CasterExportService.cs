@@ -368,6 +368,14 @@ namespace Blueprint.Api.Services
             var project = await casterApiClient.CreateProjectAsync(new CreateProjectCommand { Name = export.ProjectName }, ct);
             try
             {
+                // A workspace reads the shared files of every directory in the chain, and the exported directory's
+                // own top-level files from the archive, into one place, and Caster takes two files of one name, so a
+                // fitted name must not be one any of them already has
+                var originals = new HashSet<string>(
+                    export.Directories.SelectMany(d => d.Files).Select(f => f.Name)
+                        .Concat(ReadEntries(export.Archive).Where(e => e.Workspace == null && !e.Path.Contains('/')).Select(e => e.Path)),
+                    StringComparer.Ordinal);
+                var used = new HashSet<string>(StringComparer.Ordinal);
                 Guid? parentId = null;
                 foreach (var level in export.Directories.OrderBy(d => d.Level))
                 {
@@ -384,13 +392,11 @@ namespace Blueprint.Api.Services
                         AzureDestroyFailureThreshold = level.AzureDestroyFailureThreshold,
                         AzureDestroyFailureThresholdEnabled = level.AzureDestroyFailureThresholdEnabled
                     }, ct);
-                    // Caster takes two files of one name and a run writes one over the other, so a name the mapping
-                    // makes twice gets a number; terraform read both files in the directory they came from
-                    var fileNames = new HashSet<string>(level.Files.Select(f => f.Name), StringComparer.Ordinal);
-                    var used = new HashSet<string>(StringComparer.Ordinal);
+                    // a name that already fits is kept; a fitted name another file has gets a number, since terraform
+                    // read both files where they came from
                     foreach (var file in level.Files.OrderBy(f => CasterFileName(f.Name) != f.Name).ThenBy(f => f.Name, StringComparer.Ordinal))
                     {
-                        var fileName = UniqueFileName(CasterFileName(file.Name), used, fileNames, file.Name);
+                        var fileName = UniqueFileName(CasterFileName(file.Name), file.Name, used, originals);
                         used.Add(fileName);
                         if (fileName != file.Name)
                             warnings.Add($"Caster no longer takes the file name \"{file.Name}\" in the directory \"{name}\", so it was imported as \"{fileName}\".");
@@ -455,17 +461,18 @@ namespace Blueprint.Api.Services
             return safe;
         }
 
-        // name, or name_2.ext, name_3.ext ... when another file of the directory already has it
-        private static string UniqueFileName(string name, HashSet<string> used, HashSet<string> originals, string original)
+        // The name, or "2_name", "3_name" ... when another file of the chain has it. The number goes in front so the
+        // name keeps whatever suffix terraform reads it by (.tf, .tf.json, .auto.tfvars ...), and a name too long for
+        // it loses characters from its start, never its suffix.
+        private static string UniqueFileName(string name, string original, HashSet<string> used, HashSet<string> originals)
         {
             if (!used.Contains(name) && (name == original || !originals.Contains(name)))
                 return name;
-            var dot = name.LastIndexOf('.');
-            var (stem, extension) = dot > 0 ? (name[..dot], name[dot..]) : (name, "");
             for (var n = 2; ; n++)
             {
-                var suffix = $"_{n}";
-                var candidate = $"{stem[..Math.Min(stem.Length, MaxFileNameLength - suffix.Length - extension.Length)]}{suffix}{extension}";
+                var prefix = $"{n}_";
+                var rest = name.Length > MaxFileNameLength - prefix.Length ? name[^(MaxFileNameLength - prefix.Length)..] : name;
+                var candidate = prefix + rest;
                 if (!used.Contains(candidate) && !originals.Contains(candidate))
                     return candidate;
             }

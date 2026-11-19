@@ -673,27 +673,58 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
     }
 
     /// <summary>
-    /// Caster takes two files of one name, and a run writes one over the other, so a renamed file that would take
-    /// the name of another file in its directory gets a number instead, and both files arrive.
+    /// Caster takes two files of one name, and a run writes one over the other, so a renamed shared file that would
+    /// take the name of another file a workspace reads, in its own directory, another directory of the chain or the
+    /// exported directory's archive, gets a number in front, which keeps the suffix terraform reads it by.
     /// </summary>
-    [Fact]
-    public async Task Import_OfASharedFileRenamedOntoAnother_NumbersItSoBothArrive()
+    [Theory]
+    [InlineData("network_rules.tf", "network\\rules.tf", 0, "2_network_rules.tf")]
+    [InlineData("network_rules.tf.json", "network\\rules.tf.json", 0, "2_network_rules.tf.json")]
+    [InlineData("site.auto.tfvars", "site.auto.tfvars ", 0, "2_site.auto.tfvars")]
+    [InlineData("network_rules.tf", "network\\rules.tf", 1, "2_network_rules.tf")]
+    public async Task Import_OfASharedFileRenamedOntoAnother_NumbersItSoBothArrive(string kept, string legacy, int keptLevel, string numbered)
     {
         var msel = await SeedMsel();
         var copy = TestData.MselCasterExport(msel.Id);
         var root = copy.Directories.Single(d => d.Level == 0);
-        root.Files.Single().Name = "network_rules.tf";
-        root.Files.Add(new MselCasterExportFileEntity { Id = Guid.NewGuid(), MselCasterExportDirectoryId = root.Id, Name = "network\\rules.tf", Content = "# other" });
+        root.Files.Single().Name = legacy;
+        if (keptLevel == 0)
+            root.Files.Add(new MselCasterExportFileEntity { Id = Guid.NewGuid(), MselCasterExportDirectoryId = root.Id, Name = kept, Content = "# kept" });
+        else
+            // the exported directory's own top-level file, from its archive
+            copy.Archive = TestData.CasterArchive((kept, "# kept"), ("main.tf", "terraform {}"));
         await Seed(copy);
         var created = ArrangeImport();
 
         var result = await ReadAsync<MselCasterImportResult>(await RootClient.PostAsync($"{Route(msel)}/import", null, Ct), JsonOptions);
 
         await Factory.Caster.Received(1).CreateFileAsync(
-            Arg.Is<CreateFileCommand>(c => c.DirectoryId == created.Root && c.Name == "network_rules.tf" && c.Content == "terraform {}\n"), Arg.Any<CancellationToken>());
+            Arg.Is<CreateFileCommand>(c => c.DirectoryId == created.Root && c.Name == numbered && c.Content == "terraform {}\n"), Arg.Any<CancellationToken>());
+        if (keptLevel == 0)
+            await Factory.Caster.Received(1).CreateFileAsync(
+                Arg.Is<CreateFileCommand>(c => c.DirectoryId == created.Root && c.Name == kept && c.Content == "# kept"), Arg.Any<CancellationToken>());
+        Assert.Equal($"Caster no longer takes the file name \"{legacy}\" in the directory \"Root\", so it was imported as \"{numbered}\".", Assert.Single(result.Warnings));
+    }
+
+    /// <summary>A name too long for its number loses characters from its start, keeping its suffix, rather than failing the import.</summary>
+    [Fact]
+    public async Task Import_OfALongSharedFileNameThatCollides_KeepsItsSuffix()
+    {
+        var kept = "_." + new string('x', 253);
+        var msel = await SeedMsel();
+        var copy = TestData.MselCasterExport(msel.Id);
+        var root = copy.Directories.Single(d => d.Level == 0);
+        root.Files.Single().Name = "\\." + new string('x', 253);
+        root.Files.Add(new MselCasterExportFileEntity { Id = Guid.NewGuid(), MselCasterExportDirectoryId = root.Id, Name = kept, Content = "# kept" });
+        await Seed(copy);
+        var created = ArrangeImport();
+
+        var response = await RootClient.PostAsync($"{Route(msel)}/import", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         await Factory.Caster.Received(1).CreateFileAsync(
-            Arg.Is<CreateFileCommand>(c => c.DirectoryId == created.Root && c.Name == "network_rules_2.tf" && c.Content == "# other"), Arg.Any<CancellationToken>());
-        Assert.Equal("Caster no longer takes the file name \"network\\rules.tf\" in the directory \"Root\", so it was imported as \"network_rules_2.tf\".", Assert.Single(result.Warnings));
+            Arg.Is<CreateFileCommand>(c => c.DirectoryId == created.Root && c.Name.Length == 255 && c.Name.StartsWith("2_") && c.Name.EndsWith(new string('x', 253))),
+            Arg.Any<CancellationToken>());
     }
 
     /// <summary>A refusal passes on what Caster said was wrong, field by field, not only its status.</summary>

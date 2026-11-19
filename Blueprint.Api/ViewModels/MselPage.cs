@@ -16,6 +16,13 @@ namespace Blueprint.Api.ViewModels
         public string Content { get; set; }
         public bool AllCanView { get; set; }
         public bool IncludeInPlaybook { get; set; }
+        /// <summary>
+        /// The MSEL's marking and name, so a reader of the page can draw its banner without reading the MSEL, which a
+        /// page reader may not be allowed to; null when the MSEL is not loaded.
+        /// </summary>
+        public string ArticleMarking { get; set; }
+        public string ArticleMarkingText { get; set; }
+        public string MselName { get; set; }
     }
 
 }

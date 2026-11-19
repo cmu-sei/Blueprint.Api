@@ -78,6 +78,7 @@ namespace Blueprint.Api.Services
             }
 
             var item = await _context.MselPages
+                .Include(o => o.Msel)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
 
             return item.ToMselPage();

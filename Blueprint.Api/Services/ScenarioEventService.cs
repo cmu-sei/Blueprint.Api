@@ -9,6 +9,7 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Blueprint.Api.Automation;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
@@ -40,16 +41,26 @@ namespace Blueprint.Api.Services
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
         private readonly DatabaseOptions _options;
+        private readonly IAutomationTaskWriter _automationTaskWriter;
 
         public ScenarioEventService(
             BlueprintContext context,
             IPrincipal user,
-            DatabaseOptions options)
+            DatabaseOptions options,
+            IAutomationTaskWriter automationTaskWriter = null)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
             _options = options;
+            _automationTaskWriter = automationTaskWriter;
         }
+
+        /// <summary>Replaces the event's automation tasks when the request lists them.</summary>
+        private Task ApplyAutomationTasksAsync(Guid mselId, Guid scenarioEventId, List<ViewModels.AutomationTaskFields> tasks, CancellationToken ct) =>
+            tasks == null
+                ? Task.CompletedTask
+                : (_automationTaskWriter ?? throw new InvalidOperationException("No automation task writer."))
+                    .ApplyAsync(mselId, scenarioEventId, tasks, _user.GetId(), ct);
 
         public async Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
@@ -122,6 +133,7 @@ namespace Blueprint.Api.Services
                 scenarioEventEntity.SteamfitterTaskId = steamfitterTaskEntity.Id;
             }
             _context.ScenarioEvents.Add(scenarioEventEntity);
+            await ApplyAutomationTasksAsync(scenarioEventEntity.MselId, scenarioEventEntity.Id, scenarioEvent.AutomationTasks, ct);
             var scenarioEventEnitities = new List<ScenarioEventEntity>
             {
                 scenarioEventEntity
@@ -587,6 +599,7 @@ namespace Blueprint.Api.Services
                 scenarioEventToUpdate.SteamfitterTask = null;
                 scenarioEventToUpdate.SteamfitterTaskId = null;
             }
+            await ApplyAutomationTasksAsync(mselId, scenarioEventToUpdate.Id, scenarioEvent.AutomationTasks, ct);
             var scenarioEventEnitities = new List<ScenarioEventEntity>
             {
                 scenarioEventToUpdate

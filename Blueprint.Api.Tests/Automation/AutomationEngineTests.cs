@@ -290,6 +290,25 @@ public class AutomationEngineTests(DatabaseFixture fixture) : DatabaseTestBase(f
         Assert.Equal(new[] { runs[2].Id, runs[3].Id, exercise.Id }.OrderBy(x => x), left.OrderBy(x => x));
     }
 
+    /// <summary>A test of a task that was not saved has no task, so its event's newest are kept.</summary>
+    [Fact]
+    public async Task Retain_KeepsEachEventsNewestTestsOfDrafts()
+    {
+        var (msel, scenarioEvent) = await Deployed();
+        var draft = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        for (var i = 0; i < 3; i++)
+        {
+            var run = AutomationRuns.New(draft, msel.Id, AutomationRunKind.Test, AutomationRunSource.Manual, _clock.UtcNow, null, null, null);
+            run.AutomationTaskId = null;
+            run.Status = AutomationStatus.Succeeded;
+            run.DateCreated = _clock.UtcNow.AddMinutes(i);
+            await Seed(run);
+        }
+
+        Assert.Equal(1, await Scheduler().RetainAsync(Ct));
+        Assert.Equal(2, await ReadBack(db => db.AutomationRuns.CountAsync(r => r.ScenarioEventId == scenarioEvent.Id, Ct)));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // running
     // ---------------------------------------------------------------------------------------------

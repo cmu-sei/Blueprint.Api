@@ -26,6 +26,11 @@ namespace Blueprint.Api.ViewModels
         public ICollection<ScenarioEventCell> DataValues { get; set; } = new List<ScenarioEventCell>();
         /// <summary>The event's Steamfitter task. Its identity and event are the server's.</summary>
         public SteamfitterTaskFields SteamfitterTask { get; set; }
+        /// <summary>
+        /// The event's automation tasks, in order, replacing those it has. Null leaves them as they are, as an edit
+        /// that only moves the event in time does.
+        /// </summary>
+        public List<AutomationTaskFields> AutomationTasks { get; set; }
     }
 
     public class ScenarioEventCreate : ScenarioEventFields

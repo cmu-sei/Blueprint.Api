@@ -217,7 +217,10 @@ namespace Blueprint.Api.Automation
             return claimed;
         }
 
-        /// <summary>Keeps each task's newest test runs, as many as Automation:TestRunsKeptPerTask says.</summary>
+        /// <summary>
+        /// Keeps each task's newest test runs, as many as Automation:TestRunsKeptPerTask says, and as many tests of drafts
+        /// per scenario event.
+        /// </summary>
         public async Task<int> RetainAsync(CancellationToken ct)
         {
             var keep = Math.Max(1, _options.CurrentValue.TestRunsKeptPerTask);
@@ -232,6 +235,24 @@ namespace Blueprint.Api.Automation
             {
                 var old = await _db.AutomationRuns
                     .Where(r => r.Kind == AutomationRunKind.Test && r.AutomationTaskId == taskId)
+                    .OrderByDescending(r => r.DateCreated)
+                    .Skip(keep)
+                    .Where(r => r.Status != AutomationStatus.Running && r.Status != AutomationStatus.Queued)
+                    .ToListAsync(ct);
+                _db.AutomationRuns.RemoveRange(old);
+                removed += old.Count;
+            }
+            // tests of a task that was not saved yet are kept per scenario event
+            var events = await _db.AutomationRuns
+                .Where(r => r.Kind == AutomationRunKind.Test && r.AutomationTaskId == null && r.ScenarioEventId != null)
+                .GroupBy(r => r.ScenarioEventId)
+                .Where(g => g.Count() > keep)
+                .Select(g => g.Key)
+                .ToListAsync(ct);
+            foreach (var eventId in events)
+            {
+                var old = await _db.AutomationRuns
+                    .Where(r => r.Kind == AutomationRunKind.Test && r.AutomationTaskId == null && r.ScenarioEventId == eventId)
                     .OrderByDescending(r => r.DateCreated)
                     .Skip(keep)
                     .Where(r => r.Status != AutomationStatus.Running && r.Status != AutomationStatus.Queued)

@@ -15,16 +15,19 @@ namespace Blueprint.Api.Infrastructure.Mappings;
 [UseStaticMapper(typeof(SteamfitterTaskMapper))]
 public static partial class ScenarioEventMapper
 {
+    [MapperIgnoreSource(nameof(ScenarioEventEntity.AutomationTasks))]
     public static partial ScenarioEvent ToScenarioEvent(this ScenarioEventEntity source);
 
     [MapperRequiredMapping(RequiredMappingStrategy.Source)]
     [MapperIgnoreSource(nameof(ScenarioEventCreate.DataValues))]
     [MapperIgnoreSource(nameof(ScenarioEventCreate.SteamfitterTask))]
+    [MapperIgnoreSource(nameof(ScenarioEventCreate.AutomationTasks))]
     public static partial ScenarioEventEntity ToEntity(this ScenarioEventCreate source);
 
     [MapperRequiredMapping(RequiredMappingStrategy.Source)]
     [MapperIgnoreSource(nameof(ScenarioEventEdit.DataValues))]
     [MapperIgnoreSource(nameof(ScenarioEventEdit.SteamfitterTask))]
+    [MapperIgnoreSource(nameof(ScenarioEventEdit.AutomationTasks))]
     public static partial void ApplyTo(this ScenarioEventEdit source, ScenarioEventEntity target);
 
     private static ICollection<DataValue> MapDataValues(ICollection<DataValueEntity> source) =>

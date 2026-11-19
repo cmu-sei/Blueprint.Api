@@ -118,6 +118,16 @@ public class BlueprintAppFactory(DatabaseFixture database)
     /// </summary>
     public ICasterApiClient Caster { get; } = Substitute.For<ICasterApiClient>();
 
+    /// <summary>The Player VM API, as automation tasks reach it through <see cref="AutomationClients"/>.</summary>
+    public Player.Vm.Api.IPlayerVmApiClient PlayerVm { get; } = Substitute.For<Player.Vm.Api.IPlayerVmApiClient>();
+
+    /// <summary>
+    /// The service account's clients automation uses: it hands out <see cref="Cite"/>, <see cref="Gallery"/>,
+    /// <see cref="PlayerApi"/> and <see cref="PlayerVm"/>, so a test arranges and asserts on those.
+    /// </summary>
+    public Blueprint.Api.Automation.IAutomationClientFactory AutomationClients { get; } =
+        Substitute.For<Blueprint.Api.Automation.IAutomationClientFactory>();
+
     /// <summary>The xAPI statement seam. <c>IsConfigured()</c> answers false unless a test says otherwise.</summary>
     public IXApiService XApi { get; } = Substitute.For<IXApiService>();
 
@@ -155,6 +165,17 @@ public class BlueprintAppFactory(DatabaseFixture database)
         Steamfitter.ClearSubstitute();
         Caster.ClearSubstitute();
         XApi.ClearSubstitute();
+        PlayerVm.ClearSubstitute();
+        AutomationClients.ClearSubstitute();
+        ArrangeAutomationClients();
+    }
+
+    private void ArrangeAutomationClients()
+    {
+        AutomationClients.CiteAsync(Arg.Any<System.Threading.CancellationToken>()).Returns(Cite);
+        AutomationClients.GalleryAsync(Arg.Any<System.Threading.CancellationToken>()).Returns(Gallery);
+        AutomationClients.PlayerAsync(Arg.Any<System.Threading.CancellationToken>()).Returns(PlayerApi);
+        AutomationClients.PlayerVmAsync(Arg.Any<System.Threading.CancellationToken>()).Returns(PlayerVm);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -190,6 +211,8 @@ public class BlueprintAppFactory(DatabaseFixture database)
             services.Replace(ServiceDescriptor.Singleton(Steamfitter));
             services.Replace(ServiceDescriptor.Singleton(Caster));
             services.Replace(ServiceDescriptor.Singleton(XApi));
+            ArrangeAutomationClients();
+            services.Replace(ServiceDescriptor.Singleton(AutomationClients));
 
             // Transient over the current recording, so ResetForTest takes effect for every handler resolved
             // afterwards. SignalR's own registration is an open generic, which a closed one outranks.

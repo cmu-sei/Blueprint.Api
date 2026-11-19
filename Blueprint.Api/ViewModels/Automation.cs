@@ -82,3 +82,126 @@ namespace Blueprint.Api.ViewModels
         public DateTime? StatusAt { get; set; }
     }
 }
+
+namespace Blueprint.Api.ViewModels
+{
+    /// <summary>
+    /// One automation task of a scenario event, as an edit of the event saves it. The list replaces the event's tasks:
+    /// a task the list leaves out is deleted, and the list's order is theirs. A task named by <see cref="Id"/> is that
+    /// task; one with no id is new, and a client may give a new task an id so that another task of the same save can
+    /// be triggered by it.
+    /// </summary>
+    public class AutomationTaskFields
+    {
+        public Guid? Id { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public AutomationAction Action { get; set; }
+        /// <summary>The action's parameters other than its secrets; keys the action does not take are dropped.</summary>
+        public Dictionary<string, string> ActionParameters { get; set; } = new();
+        /// <summary>
+        /// Secrets to set, by key: a value replaces the stored one, an empty value removes it, and a secret this leaves
+        /// out keeps its stored value. The API never returns a secret.
+        /// </summary>
+        public Dictionary<string, string> SecretParameters { get; set; } = new();
+        public string VmMask { get; set; }
+        public string ExpectedOutput { get; set; }
+        public int ExpirationSeconds { get; set; }
+        public int DelaySeconds { get; set; }
+        public int IntervalSeconds { get; set; }
+        public int Iterations { get; set; } = 1;
+        public AutomationIterationTermination IterationTermination { get; set; }
+        public AutomationTrigger TriggerCondition { get; set; }
+        public Guid? TriggerTaskId { get; set; }
+        public bool Enabled { get; set; } = true;
+        public bool Repeatable { get; set; }
+    }
+
+    /// <summary>
+    /// A test of a task while the MSEL is written: the task as the form has it, saved or not, run once against a Player
+    /// view the caller can see. A test is not exercise history.
+    /// </summary>
+    public class AutomationTestForm
+    {
+        public Guid ScenarioEventId { get; set; }
+        /// <summary>The saved task the form edits, whose stored secrets the test uses where the form sets none; null for a new task.</summary>
+        public Guid? TaskId { get; set; }
+        public AutomationTaskFields Task { get; set; }
+        /// <summary>The Player view whose VMs the test uses, and that a Player notification goes to.</summary>
+        public Guid? PlayerViewId { get; set; }
+        /// <summary>Also run, as tests, the saved tasks this one triggers.</summary>
+        public bool IncludeChain { get; set; }
+    }
+
+    public class AutomationVmPreviewForm
+    {
+        public Guid PlayerViewId { get; set; }
+        public string VmMask { get; set; }
+    }
+
+    public class AutomationVmPreview
+    {
+        /// <summary>ids when the mask is a list of VM ids, name otherwise.</summary>
+        public string MatchMode { get; set; }
+        public List<AutomationVmSummary> Vms { get; set; } = new();
+        /// <summary>Why the VMs could not be listed, if they could not.</summary>
+        public string Error { get; set; }
+    }
+
+    public class AutomationVmSummary
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; }
+    }
+
+    /// <summary>How to start a task by hand.</summary>
+    public class AutomationRunForm
+    {
+        /// <summary>Whether the tasks it triggers run after it.</summary>
+        public bool TriggerChain { get; set; } = true;
+    }
+
+    /// <summary>Where a deployed MSEL is, as the Facilitator View shows it.</summary>
+    public class MselExecution
+    {
+        public Guid MselId { get; set; }
+        public Data.Enumerations.MselItemStatus Status { get; set; }
+        public Guid? DeploymentId { get; set; }
+        public DateTime StartTime { get; set; }
+        public int? CurrentMoveNumber { get; set; }
+        public int? CurrentGroupNumber { get; set; }
+        public DateTime? CurrentGroupStartedAt { get; set; }
+        public bool AutomationPaused { get; set; }
+        /// <summary>Each scenario event's move and group: the numbers Gallery articles are pushed with.</summary>
+        public List<ScenarioEventPosition> Positions { get; set; } = new();
+    }
+
+    public class ScenarioEventPosition
+    {
+        public Guid ScenarioEventId { get; set; }
+        public int MoveNumber { get; set; }
+        public int GroupNumber { get; set; }
+    }
+
+    /// <summary>Starting a move or a group: the manual tasks to run, one after another, in this order.</summary>
+    public class MselAdvanceForm
+    {
+        public List<Guid> RunTaskIds { get; set; } = new();
+    }
+
+    /// <summary>What starting a move or a group did.</summary>
+    public class MselAdvanceResult
+    {
+        public MselExecution Execution { get; set; }
+        /// <summary>One line per integration moved: "CITE evaluation is at move 2", or why it is not.</summary>
+        public List<string> Messages { get; set; } = new();
+        public bool Succeeded { get; set; }
+        /// <summary>The run of the first manual task, which starts the rest; null when none was asked for.</summary>
+        public AutomationRun FirstRun { get; set; }
+    }
+
+    public class AutomationPausedForm
+    {
+        public bool Paused { get; set; }
+    }
+}

@@ -41,5 +41,12 @@ internal static class TestConfiguration
         // IMemoryCache keyed on user id alone, so cached claims would let one test's permissions answer
         // another test's request. UserClaimsServiceTests drive the cache directly.
         ["ClaimsTransformation:EnableCaching"] = "false",
+
+        // The shipped settings set no key, so a task's password, private key or headers could not be saved.
+        // A key here lets the task routes store secrets, as a deployment with Automation:SecretKeys does.
+        ["Automation:SecretKeys:test"] = SecretKey,
     };
+
+    /// <summary>The automation secret key the host encrypts with: 32 fixed bytes, base64.</summary>
+    public const string SecretKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 }

@@ -43,6 +43,9 @@ namespace Blueprint.Api.Automation
             services.AddScoped<AutomationScheduler>();
             services.AddScoped<IAutomationRunExecutor, AutomationRunExecutor>();
             services.AddScoped<IAutomationRunControl, AutomationRunControl>();
+            services.AddScoped<IAutomationTaskWriter, AutomationTaskWriter>();
+            services.AddScoped<Services.IAutomationService, Services.AutomationService>();
+            services.AddScoped<Services.IMselExecutionService, Services.MselExecutionService>();
             services.AddHostedService<AutomationDispatcher>();
             return services;
         }

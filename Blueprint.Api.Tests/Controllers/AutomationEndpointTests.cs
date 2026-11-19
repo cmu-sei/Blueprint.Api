@@ -652,6 +652,63 @@ public class AutomationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(original.Id, run.RerunOfRunId);
     }
 
+    /// <summary>
+    /// A task's delay is the wait once it is triggered, as in Steamfitter, so a run by hand and a rerun wait it too,
+    /// as a scheduled, chained or group-start run does.
+    /// </summary>
+    [Theory]
+    [InlineData("run")]
+    [InlineData("rerun")]
+    public async Task RunByHand_WaitsTheTasksDelay(string how)
+    {
+        var (msel, scenarioEvent) = await SeedDeployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        task.DelaySeconds = 600;
+        task.Repeatable = true;
+        await Seed(task);
+        var actor = await Actor().OnMsel(msel, MselRole.Facilitator).SeedAsync();
+        var before = DateTime.UtcNow;
+
+        var response = how == "run"
+            ? await RunTask(Client(actor), task.Id)
+            : await Client(actor).PostAsJsonAsync($"/api/automationRuns/{(await SeedRun(task, msel, AutomationStatus.Failed)).Id}/rerun", new { }, Ct);
+
+        var run = await Created(response);
+        Assert.InRange(run.DueAt, before.AddSeconds(590), DateTime.UtcNow.AddSeconds(610));
+    }
+
+    /// <summary>A test runs at once: an author testing a task does not wait out its delay.</summary>
+    [Fact]
+    public async Task Test_RunsAtOnce_WithoutTheTasksDelay()
+    {
+        var (msel, scenarioEvent) = await SeedEvent();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id, action: AutomationAction.http_get);
+        task.ActionParameters["Url"] = "http://localhost/";
+        task.DelaySeconds = 600;
+        await Seed(task);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var run = await Created(await Client(actor).PostAsJsonAsync("/api/automationTasks/test",
+            new { scenarioEventId = scenarioEvent.Id, taskId = task.Id, task = new { name = task.Name, action = "http_get", actionParameters = task.ActionParameters } }, Ct));
+
+        Assert.True(run.DueAt <= DateTime.UtcNow.AddSeconds(5));
+    }
+
+    /// <summary>A rerun waits, as a run by hand does, for the task's run that has not ended.</summary>
+    [Fact]
+    public async Task Rerun_WhileTheTaskRunsAgain_Is409()
+    {
+        var (msel, scenarioEvent) = await SeedDeployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        task.Repeatable = true;
+        await Seed(task);
+        var ended = await SeedRun(task, msel, AutomationStatus.Failed);
+        await SeedRun(task, msel, AutomationStatus.Running);
+        var actor = await Actor().OnMsel(msel, MselRole.Facilitator).SeedAsync();
+
+        await AssertStatus(HttpStatusCode.Conflict, await Client(actor).PostAsJsonAsync($"/api/automationRuns/{ended.Id}/rerun", new { }, Ct));
+    }
+
     [Fact]
     public async Task Rerun_OfARunThatHasNotEnded_Is409()
     {

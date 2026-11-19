@@ -88,6 +88,8 @@ namespace Blueprint.Api.Services
         }
 
         private DateTime Now => _time.GetUtcNow().UtcDateTime;
+        // a task's delay is the wait once it is triggered, by hand too, as in Steamfitter; a test runs at once
+        private DateTime AfterDelay(AutomationTaskEntity task) => Now.AddSeconds(Math.Max(0, task.DelaySeconds));
         private Guid UserId => _user.GetId();
 
         public IReadOnlyList<AutomationActionDefinition> GetActions() => _catalog.Actions;
@@ -191,7 +193,7 @@ namespace Blueprint.Api.Services
                 throw new ConflictException("The task is disabled.");
             await RequireNotRunningAsync(task, msel, ct);
             await RequireRepeatableAsync(task, msel, ct);
-            var run = AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Manual, Now,
+            var run = AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Manual, AfterDelay(task),
                 msel.DeploymentId, msel.PlayerViewId, UserId, triggerChain: form?.TriggerChain ?? true);
             _context.AutomationRuns.Add(run);
             await _context.SaveChangesAsync(ct);
@@ -210,8 +212,9 @@ namespace Blueprint.Api.Services
                 throw new ConflictException("The run has not ended.");
             var task = await _context.AutomationTasks.AsNoTracking().SingleOrDefaultAsync(t => t.Id == original.AutomationTaskId, ct)
                 ?? throw new ConflictException("The task this run ran has been deleted.");
+            await RequireNotRunningAsync(task, msel, ct);
             await RequireRepeatableAsync(task, msel, ct);
-            var run = AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Rerun, Now,
+            var run = AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Rerun, AfterDelay(task),
                 msel.DeploymentId, msel.PlayerViewId, UserId, rerunOfRunId: original.Id, triggerChain: form?.TriggerChain ?? true);
             _context.AutomationRuns.Add(run);
             await _context.SaveChangesAsync(ct);
@@ -326,7 +329,7 @@ namespace Blueprint.Api.Services
                 throw new ConflictException("The exercise's automation is paused.");
             await RequireNotRunningAsync(task, msel, ct);
             await RequireRepeatableAsync(task, msel, ct);
-            var run = AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Participant, Now,
+            var run = AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Participant, AfterDelay(task),
                 msel.DeploymentId, msel.PlayerViewId, UserId, triggerChain: true);
             _context.AutomationRuns.Add(run);
             await _context.SaveChangesAsync(ct);

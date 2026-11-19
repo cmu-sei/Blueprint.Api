@@ -192,6 +192,27 @@ public class ParticipantTaskEndpointTests(DatabaseFixture fixture, BlueprintAppF
         await AssertStatus(expected, await Run(Client(participant), msel, task));
     }
 
+    /// <summary>A participant's run waits the task's delay, as a facilitator's does.</summary>
+    [Fact]
+    public async Task RunParticipantTask_WaitsTheTasksDelay()
+    {
+        var (msel, scenarioEvent, team) = await SeedDeployed();
+        var task = await SeedTask(msel, scenarioEvent, "Collect evidence");
+        task.DelaySeconds = 600;
+        await ReadBack(async db =>
+        {
+            db.Update(task);
+            return await db.SaveChangesAsync(Ct);
+        });
+        var participant = await Actor().OnTeam(team).SeedAsync();
+        var before = DateTime.UtcNow;
+
+        await AssertStatus(HttpStatusCode.OK, await Run(Client(participant), msel, task));
+
+        var run = await ReadBack(db => db.AutomationRuns.SingleAsync(r => r.AutomationTaskId == task.Id, Ct));
+        Assert.InRange(run.DueAt, before.AddSeconds(590), DateTime.UtcNow.AddSeconds(610));
+    }
+
     /// <summary>
     /// A facilitator's run by hand also waits for the task's run that has not ended, so two runs of one task do not
     /// overlap.

@@ -21,7 +21,7 @@ using Xunit;
 namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary><c>MoveService</c> / <c>MoveController</c> - the five routes behind the Moves tab, and the
-/// coarse division of a MSEL's timeline that CITE, Gallery and Steamfitter are all told about.</summary>
+/// coarse division of a MSEL's timeline that CITE and Gallery are both told about.</summary>
 public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
 {

@@ -15,13 +15,11 @@ namespace Blueprint.Api.Infrastructure.Options
         public string PlayerApiUrl { get; set; }
         // the Player VM API, which automation tasks' VM actions go through
         public string PlayerVmApiUrl { get; set; }
-        public string SteamfitterApiUrl { get; set; }
         public string CasterApiUrl { get; set; }
 
         public string CiteUiUrl { get; set; }
         public string GalleryUiUrl { get; set; }
         public string PlayerUiUrl { get; set; }
-        public string SteamfitterUiUrl { get; set; }
         public string CasterUiUrl { get; set; }
         public string VmUiUrl { get; set; }
         public string BlueprintApiUrl { get; set; }
@@ -39,9 +37,6 @@ namespace Blueprint.Api.Infrastructure.Options
         public int CasterPlanMaxWaitMinutes { get; set; } = 15;
         public int CasterApplyMaxWaitMinutes { get; set; } = 120;
         public int CasterDestroyMaxWaitMinutes { get; set; } = 60;
-
-        // How often to look for Steamfitter scenarios that are to start at their MSEL start time
-        public int SteamfitterStartCheckSeconds { get; set; } = 30;
     }
 }
 

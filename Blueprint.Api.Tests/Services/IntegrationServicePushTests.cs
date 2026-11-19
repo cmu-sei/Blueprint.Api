@@ -21,7 +21,7 @@ using Xunit;
 namespace Blueprint.Api.Tests.Services;
 
 /// <summary><c>IntegrationService</c>'s push - the orchestration that turns a MSEL into a Player view, a
-/// Gallery collection, a CITE evaluation and a Steamfitter scenario.</summary>
+/// Gallery collection and a CITE evaluation, and starts its deployment.</summary>
 public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 {
     /// <summary>Starts describing an actor to seed over this test's database.</summary>
@@ -33,12 +33,10 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
 
     /// <remarks>
     /// The whole progress sequence in one assertion, which is the clearest statement of what a push does.
-    /// Player is split around Gallery, CITE and Steamfitter because an application's url can name their
-    /// ids. Gallery is split around Steamfitter too, because Gallery refuses an exhibit's Scenario until
-    /// Steamfitter has it.
+    /// Player is split around Gallery and CITE because an application's url can name their ids.
     /// </remarks>
     [Fact]
-    public async Task Push_PushesTheFourApplicationsInOrder()
+    public async Task Push_PushesTheThreeApplicationsInOrder()
     {
         var msel = await SeedPushableMsel();
         var harness = Harness();
@@ -63,9 +61,6 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
                 "Pushing Duties to CITE",
                 "Pushing Actions to CITE",
                 "Finishing Evaluation to CITE",
-                "Pushing Scenario to Steamfitter",
-                "Pushing Scenario Memberships to Steamfitter",
-                "Pushing Exhibit Scenario to Gallery",
                 "Pushing Player Applications"
             ],
             Statuses(harness, msel.Id));
@@ -101,7 +96,25 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
         Assert.NotNull(deployed.GalleryCollectionId);
         Assert.NotNull(deployed.GalleryExhibitId);
         Assert.NotNull(deployed.CiteEvaluationId);
-        Assert.NotNull(deployed.SteamfitterScenarioId);
+    }
+
+    /// <summary>
+    /// A push that deploys the MSEL starts a deployment, which its automation runs are kept under, at its first move:
+    /// where the push leaves CITE and Gallery.
+    /// </summary>
+    [Fact]
+    public async Task Push_StartsADeploymentAtTheFirstMove()
+    {
+        var msel = await SeedPushableMsel();
+        var harness = Harness();
+
+        await harness.PushAsync(msel.Id);
+
+        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
+
+        Assert.NotNull(deployed.DeploymentId);
+        Assert.Equal(1, deployed.CurrentMoveNumber);
+        Assert.Equal(0, deployed.CurrentGroupNumber);
     }
 
     [Fact]
@@ -171,7 +184,6 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
         Assert.DoesNotContain(harness.Handler.Paths, x => x.StartsWith("gallery/"));
         Assert.DoesNotContain(harness.Handler.Paths, x => x.StartsWith("cite/"));
         Assert.Contains(harness.Handler.Paths, x => x.StartsWith("player/"));
-        Assert.Contains(harness.Handler.Paths, x => x.StartsWith("steamfitter/"));
     }
 
     /// <summary>A push of a MSEL using no integration contacts nothing and marks the MSEL deployed.</summary>
@@ -183,7 +195,6 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
             x.UsePlayer = false;
             x.UseGallery = false;
             x.UseCite = false;
-            x.UseSteamfitter = false;
         });
 
         var harness = Harness();
@@ -194,14 +205,12 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
 
         Assert.Equal(MselItemStatus.Deployed, deployed.Status);
         Assert.Null(deployed.PlayerViewId);
-        Assert.Null(deployed.SteamfitterScenarioId);
         Assert.DoesNotContain(harness.Handler.Paths, x => x.StartsWith("player/") || x.StartsWith("cite/"));
     }
 
     /// <remarks>
     /// Three lists, fetched concurrently before any application is pushed, so that
-    /// <c>CreateTeamsAsync</c> knows which users each already has. Steamfitter is not asked, because its
-    /// memberships are created against user ids without creating the users first.
+    /// <c>CreateTeamsAsync</c> knows which users each already has.
     /// </remarks>
     [Fact]
     public async Task Push_FetchesTheUserListFromEveryApplicationThatNeedsOne()
@@ -252,41 +261,15 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
             paths.IndexOf(application.Path) > paths.IndexOf("cite/api/evaluations"),
             "the applications should be created after the CITE evaluation their urls name");
         Assert.True(
-            paths.IndexOf(application.Path) > paths.IndexOf("steamfitter/api/scenarios"),
-            "the applications should be created last of all");
+            paths.IndexOf(application.Path) > paths.IndexOf("gallery/api/articles"),
+            "the applications should be created after the Gallery articles");
     }
 
-    /// <remarks>
-    /// Gallery checks that its caller can read an exhibit's Scenario in Steamfitter, which it cannot while
-    /// the Scenario does not exist. So the exhibit is created without one and updated to name it once the
-    /// Steamfitter push is done.
-    /// </remarks>
+    /// <summary>The exhibit is created at move 0, inject 0, and is not updated again by the push.</summary>
     [Fact]
-    public async Task Push_NamesTheScenarioOnTheExhibitOnlyAfterSteamfitterHasIt()
+    public async Task Push_LeavesTheExhibitAsCreated()
     {
         var msel = await SeedPushableMsel();
-        var harness = Harness();
-
-        await harness.PushAsync(msel.Id);
-
-        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
-        var sent = harness.Handler.Sent.ToList();
-        var created = sent.Single(x => x.Method == HttpMethod.Post && x.Path == "gallery/api/exhibits");
-        var updated = sent.Single(x => x.Method == HttpMethod.Put && x.Path == $"gallery/api/exhibits/{deployed.GalleryExhibitId}");
-        var scenario = sent.Single(x => x.Method == HttpMethod.Post && x.Path == "steamfitter/api/scenarios");
-
-        Assert.Equal(JsonValueKind.Null, Body(created.Body)["scenarioId"].ValueKind);
-        Assert.Equal(deployed.SteamfitterScenarioId.ToString(), Body(updated.Body)["scenarioId"].GetString());
-        Assert.True(
-            sent.IndexOf(updated) > sent.IndexOf(scenario),
-            "the exhibit should name the scenario only after Steamfitter has created it");
-    }
-
-    /// <summary>A MSEL that does not use Steamfitter has no Scenario to name, so its exhibit is not updated.</summary>
-    [Fact]
-    public async Task Push_WithoutSteamfitter_LeavesTheExhibitAsCreated()
-    {
-        var msel = await SeedPushableMsel(x => x.UseSteamfitter = false);
         var harness = Harness();
 
         await harness.PushAsync(msel.Id);
@@ -294,7 +277,6 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
 
         Assert.Contains(harness.Handler.Sent, x => x.Method == HttpMethod.Post && x.Path == "gallery/api/exhibits");
         Assert.DoesNotContain(harness.Handler.Sent, x => x.Method == HttpMethod.Put && x.Path.StartsWith("gallery/api/exhibits/"));
-        Assert.DoesNotContain("Pushing Exhibit Scenario to Gallery", Statuses(harness, msel.Id));
     }
 
     /// <summary>The push sends the MSEL's own applications. A template names no MSEL, so it is never one of
@@ -362,25 +344,6 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
     // The move number every application is told
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Push names Steamfitter tasks from the move's number, here a MSEL numbering its moves from 1.</summary>
-    [Fact]
-    public async Task Push_NamesSteamfitterTasksFromTheMoveNumber()
-    {
-        var msel = await SeedPushableMsel();
-        var harness = Harness();
-
-        await harness.PushAsync(msel.Id);
-        await harness.WaitForDeployment(msel.Id, Ct);
-
-        var names = harness.Handler.Sent
-            .Where(x => x.Path == "steamfitter/api/tasks")
-            .Select(x => Body(x.Body)["name"].GetString())
-            .ToList();
-
-        Assert.Contains("01-00 notify", names);
-        Assert.DoesNotContain("00-00 notify", names);
-    }
-
     /// <summary>The Gallery article carries the move and inject the real move service computes from the timeline.</summary>
     [Fact]
     public async Task Push_SendsGalleryTheArticlesMoveAndInjectFromTheTimeline()
@@ -417,35 +380,6 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
 
         var article = Body(harness.Handler.Sent.Single(x => x.Path == "gallery/api/articles").Body);
         Assert.Equal(expected, article["status"].GetString());
-    }
-
-    /// <summary>
-    /// The CITE and Gallery move-change urls carry the move's number: the CITE evaluation's moves and the Gallery
-    /// articles are numbered by it, so the move index sent CITE to a move it did not have and left Gallery short
-    /// of the article's move.
-    /// </summary>
-    [Fact]
-    public async Task Push_TellsCiteAndGalleryToAdvanceToTheMoveNumber()
-    {
-        var msel = await SeedPushableMsel();
-        var harness = Harness();
-
-        await harness.PushAsync(msel.Id);
-        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
-
-        var urls = harness.Handler.Sent
-            .Where(x => x.Path == "steamfitter/api/tasks")
-            .Select(x => Body(x.Body)["actionParameters"])
-            .Where(x => x.ValueKind == JsonValueKind.Object && x.TryGetProperty("Url", out _))
-            .Select(x => x.GetProperty("Url").GetString())
-            .ToList();
-
-        Assert.Contains(
-            $"{IntegrationServiceHarness.CiteApiUrl}api/evaluations/{deployed.CiteEvaluationId}/move/1",
-            urls);
-        Assert.Contains(
-            $"{IntegrationServiceHarness.GalleryApiUrl}api/exhibits/{deployed.GalleryExhibitId}/move/1/inject/0",
-            urls);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -492,13 +426,12 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
         Assert.NotNull(failed.PlayerViewId);
         Assert.NotNull(failed.GalleryCollectionId);
         Assert.NotNull(failed.CiteEvaluationId);
-        Assert.NotNull(failed.SteamfitterScenarioId);
         Assert.Contains("player/api/views", harness.Handler.Paths);
     }
 
     /// <remarks>
     /// <para>
-    /// The failure stops the push where it stood, so nothing is <em>created</em> in CITE or Steamfitter -
+    /// The failure stops the push where it stood, so nothing is <em>created</em> in CITE -
     /// there is no partial-success path, and one application's refusal abandons the rest.
     /// </para>
     /// <para>
@@ -522,7 +455,6 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
             .ToList();
 
         Assert.DoesNotContain(writes, x => x.StartsWith("cite/"));
-        Assert.DoesNotContain(writes, x => x.StartsWith("steamfitter/"));
         Assert.Contains("cite/api/users", harness.Handler.Paths);
     }
 
@@ -645,133 +577,14 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
             .AnswersJson("POST cite/api/scoringmodels", $$"""{"id":"{{UploadedScoringModelId}}","description":"m"}""", HttpStatusCode.Created)
             .Answers($"DELETE cite/api/scoringmodels/{UploadedScoringModelId}", HttpStatusCode.NoContent);
     // ---------------------------------------------------------------------------------------------
-    // Starting the Steamfitter scenario
-    // ---------------------------------------------------------------------------------------------
-
-    /// <summary>A MSEL that does not ask for it leaves the scenario for a facilitator to start, as every
-    /// push did before the setting existed.</summary>
-    [Fact]
-    public async Task Push_OfAScenarioStartedManually_NeitherReadsNorStartsIt()
-    {
-        var msel = await SeedPushableMsel();
-        var harness = Harness(Scenario("ready"));
-
-        await harness.PushAsync(msel.Id);
-        await harness.WaitForDeployment(msel.Id, Ct);
-
-        Assert.DoesNotContain(harness.Handler.Sent, IsAScenarioRead);
-        Assert.DoesNotContain(harness.Handler.Sent, IsAStart);
-    }
-
-    /// <remarks>
-    /// Last, after the Player applications: the scenario then starts only once everything a facilitator
-    /// needs exists, and a Caster retry that finishes the push reaches the same step.
-    /// </remarks>
-    [Fact]
-    public async Task Push_ToStartOnThePush_StartsTheScenarioAsItsLastStep()
-    {
-        var msel = await SeedPushableMsel(x => x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.OnPush);
-        var harness = Harness(Scenario("ready"));
-
-        await harness.PushAsync(msel.Id);
-        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
-
-        var last = harness.Handler.Sent.Last(x => !x.Path.StartsWith("realms/"));
-        Assert.Equal(System.Net.Http.HttpMethod.Put, last.Method);
-        Assert.Equal($"steamfitter/api/scenarios/{deployed.SteamfitterScenarioId}/start", last.Path);
-        Assert.Equal("Starting Scenario in Steamfitter", Statuses(harness, msel.Id).Last());
-        Assert.Null(deployed.IntegrationStatus);
-    }
-
-    [Fact]
-    public async Task Push_ToStartAtAStartTimeStillToCome_LeavesTheScenarioReady()
-    {
-        var msel = await SeedPushableMsel(x =>
-        {
-            x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.AtStartTime;
-            x.StartTime = DateTime.UtcNow.AddHours(1);
-        });
-        var harness = Harness(Scenario("ready"));
-
-        await harness.PushAsync(msel.Id);
-        await harness.WaitForDeployment(msel.Id, Ct);
-
-        Assert.DoesNotContain(harness.Handler.Sent, IsAStart);
-    }
-
-    /// <summary>A start time already past, as a launch from an invitation always has, starts the scenario
-    /// with the push rather than waiting for <c>SteamfitterStartService</c>.</summary>
-    [Fact]
-    public async Task Push_ToStartAtAStartTimeAlreadyPast_StartsTheScenario()
-    {
-        var msel = await SeedPushableMsel(x =>
-        {
-            x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.AtStartTime;
-            x.StartTime = DateTime.UtcNow.AddMinutes(-5);
-        });
-        var harness = Harness(Scenario("ready"));
-
-        await harness.PushAsync(msel.Id);
-        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
-
-        Assert.Contains(harness.Handler.Sent, x => IsAStart(x) && x.Path.Contains(deployed.SteamfitterScenarioId.ToString()));
-    }
-
-    /// <summary>Starting a scenario again would reset its start date, so one already running is left be.</summary>
-    [Fact]
-    public async Task Push_ToStartOnThePush_OfAScenarioAlreadyActive_DoesNotStartItAgain()
-    {
-        var msel = await SeedPushableMsel(x => x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.OnPush);
-        var harness = Harness(Scenario("active"));
-
-        await harness.PushAsync(msel.Id);
-        await harness.WaitForDeployment(msel.Id, Ct);
-
-        Assert.Contains(harness.Handler.Sent, IsAScenarioRead);
-        Assert.DoesNotContain(harness.Handler.Sent, IsAStart);
-    }
-
-    /// <remarks>
-    /// Everything was created, and a facilitator can still start the scenario in Steamfitter, so the push
-    /// finishes. The failure is announced as it happens and then cleared like any other status: a status
-    /// left on a deployed MSEL would hold the MSEL Info page and the launch page on it.
-    /// </remarks>
-    [Fact]
-    public async Task Push_WhenTheScenarioCannotBeStarted_StillDeploysTheMsel()
-    {
-        var msel = await SeedPushableMsel(x => x.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.OnPush);
-        var harness = Harness(x => Scenario("ready")(x.Answers("PUT steamfitter/api/scenarios/*/start", HttpStatusCode.Forbidden)));
-
-        await harness.PushAsync(msel.Id);
-        var deployed = await harness.WaitForDeployment(msel.Id, Ct);
-
-        Assert.Equal(MselItemStatus.Deployed, deployed.Status);
-        Assert.Null(deployed.IntegrationStatus);
-        Assert.Contains(Statuses(harness, msel.Id), x => x.StartsWith("Steamfitter Scenario was not started - "));
-        Assert.DoesNotContain(Statuses(harness, msel.Id), x => x.StartsWith("ERROR"));
-    }
-
-    // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------
-
-    /// <summary>Steamfitter answering a read of the pushed scenario with <paramref name="status"/>, and a start.</summary>
-    private static Func<SiblingApiHandler, SiblingApiHandler> Scenario(string status) => x => x
-        .AnswersJson("GET steamfitter/api/scenarios/*", $$"""{"id":"{{StubId}}","name":"s","status":"{{status}}"}""")
-        .AnswersJson("PUT steamfitter/api/scenarios/*/start", $$"""{"id":"{{StubId}}","name":"s","status":"active"}""");
-
-    private static bool IsAScenarioRead(SentRequest x) =>
-        x.Method == System.Net.Http.HttpMethod.Get && x.Path.StartsWith("steamfitter/api/scenarios/");
-
-    private static bool IsAStart(SentRequest x) =>
-        x.Method == System.Net.Http.HttpMethod.Put && x.Path.StartsWith("steamfitter/api/scenarios/") && x.Path.EndsWith("/start");
-
 
     private static readonly Guid StubId = Guid.Parse("99999999-9999-9999-9999-999999999999");
 
     /// <summary>
-    /// A MSEL ready to push: all four integrations on, two moves numbered 1 and 2, one team with one user,
-    /// and one scenario event carrying a Steamfitter notification.
+    /// A MSEL ready to push: all three integrations on, two moves numbered 1 and 2, one team with one user,
+    /// and one scenario event that is a Gallery article.
     /// </summary>
     /// <remarks>
     /// The moves are numbered 1 and 2 rather than 0 and 1 on purpose - it is the only way to tell a move's
@@ -784,7 +597,6 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
         msel.UsePlayer = true;
         msel.UseGallery = true;
         msel.UseCite = true;
-        msel.UseSteamfitter = true;
         msel.CiteScoringModelId = Guid.NewGuid();
         msel.StartTime = DateTime.UtcNow.AddDays(1);
         msel.DurationSeconds = 3600;
@@ -807,10 +619,8 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
             url: "http://application.example/?cite={citeEvaluationId}&exhibit={galleryExhibitId}"));
 
         var scenarioEvent = TestData.ScenarioEvent(msel.Id, deltaSeconds: 0);
-        scenarioEvent.IntegrationTarget = "Gallery,Steamfitter";
+        scenarioEvent.IntegrationTarget = "Gallery";
         await Seed(scenarioEvent);
-        await Seed(TestData.SteamfitterTask(
-            scenarioEvent.Id, "notify", actionParameters: new() { ["notificationText"] = "stand by" }));
 
         return msel;
     }
@@ -904,10 +714,5 @@ public class IntegrationServicePushTests(DatabaseFixture fixture) : DatabaseTest
             .AnswersJson("cite/api/teams", $$"""{"id":"{{StubId}}","name":"t"}""", HttpStatusCode.Created)
             .AnswersJson("cite/api/duties", $$"""{"id":"{{StubId}}","name":"d"}""", HttpStatusCode.Created)
             .AnswersJson("cite/api/actions", $$"""{"id":"{{StubId}}"}""", HttpStatusCode.Created)
-            .AnswersJson("POST cite/api/users", $$"""{"id":"{{StubId}}","name":"u"}""", HttpStatusCode.Created)
-
-            .AnswersJson("steamfitter/api/scenario-roles", $$"""[{"id":"{{StubId}}","name":"Manager"}]""")
-            .AnswersJson("steamfitter/api/scenarios/*/memberships", $$"""{"id":"{{StubId}}"}""", HttpStatusCode.Created)
-            .AnswersJson("steamfitter/api/scenarios", $$"""{"id":"{{StubId}}","name":"s","status":"active"}""", HttpStatusCode.Created)
-            .AnswersJson("steamfitter/api/tasks", $$"""{"id":"{{StubId}}","name":"t"}""", HttpStatusCode.Created);
+            .AnswersJson("POST cite/api/users", $$"""{"id":"{{StubId}}","name":"u"}""", HttpStatusCode.Created);
 }

@@ -168,8 +168,8 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
     }
 
     /// <summary>
-    /// A participant is not sent what the Exercise View leaves out of an event it shows: the Steamfitter
-    /// task, where the event is delivered, and the text of an Information event.
+    /// A participant is not sent what the Exercise View leaves out of an event it shows: where the event is
+    /// delivered, and the text of an Information event. An event never carries its automation tasks.
     /// </summary>
     [Fact]
     public async Task GetByMsel_ForAParticipant_TrimsWhatTheExerciseViewDoesNotShow()
@@ -187,7 +187,6 @@ public class ScenarioEventEndpointTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(scenarioEvent.Id, sent.Id);
         Assert.Null(sent.Information);
         Assert.Null(sent.IntegrationTarget);
-        Assert.Null(sent.SteamfitterTaskId);
     }
 
     /// <summary>A participant asking for a hidden event by id is refused it.</summary>

@@ -67,7 +67,7 @@ public sealed class QueueWorkerHarness
             ClientId = "blueprint-admin",
             UserName = "blueprint-admin",
             Password = string.Empty,
-            Scope = "player player-vm cite gallery steamfitter"
+            Scope = "player player-vm cite gallery"
         });
 
         var scopes = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
@@ -77,8 +77,7 @@ public sealed class QueueWorkerHarness
         {
             PlayerApiUrl = IntegrationServiceHarness.PlayerApiUrl,
             GalleryApiUrl = IntegrationServiceHarness.GalleryApiUrl,
-            CiteApiUrl = IntegrationServiceHarness.CiteApiUrl,
-            SteamfitterApiUrl = IntegrationServiceHarness.SteamfitterApiUrl
+            CiteApiUrl = IntegrationServiceHarness.CiteApiUrl
         });
 
         Join = new JoinService(JoinLog, scopes, JoinQueue, Hub, handler.AsFactory(), options);

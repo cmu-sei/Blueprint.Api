@@ -12,7 +12,7 @@ Run locally (`dotnet run --project Blueprint.Api`), blueprint.api is available a
 
 **Docker must be running.** The suite uses Testcontainers PostgreSQL and gives every test its own
 database, cloned from a migrated template.  Nothing else is needed — no Keycloak, no Player, Gallery,
-CITE or Steamfitter, and no network.
+CITE or Caster, and no network.
 
 To run one class or one test:
 
@@ -45,7 +45,7 @@ Then remove the migration
 
 ## Concurrent Request Configuration
 
-When pushing MSELs to external systems (CITE, Gallery, Player, Steamfitter), Blueprint uses parallel processing to improve performance. The maximum concurrent requests can be configured in `appsettings.json` under the `ClientSettings` section:
+When pushing MSELs to external systems (CITE, Gallery, Player), Blueprint uses parallel processing to improve performance. The maximum concurrent requests can be configured in `appsettings.json` under the `ClientSettings` section:
 
 ```json
 {
@@ -82,9 +82,42 @@ Higher concurrency improves MSEL push performance but consumes more database con
 - **Production with connection pooler (PgBouncer, etc.)**: Can increase to 20+
 
 **Connection Usage During MSEL Push**:
-- Operations run sequentially across APIs (Player view and teams → Gallery → CITE → Steamfitter → Player applications)
+- Operations run sequentially across APIs (Player view and teams → Gallery → CITE → Player applications)
 - Gallery cards and articles, CITE moves, duties and actions, and Player applications run in parallel up to the configured limit
 - Approximate peak connection usage: `MaxConcurrentRequests × NumberOfTeams` (for team-related operations)
+
+# Automation Tasks
+
+Blueprint runs a MSEL's automation tasks itself; it no longer pushes them to Steamfitter. Authors add tasks to a
+scenario event on its Automation tab and test them against one of their own Player views. Once the MSEL is
+deployed, a Facilitator runs them on the Facilitator View, or they run at their event's time or after another task.
+Settings are in the `Automation` section of `appsettings.json`.
+
+**Secret keys.** Passwords, private keys and http headers are stored encrypted with AES-GCM. Without a key, a
+task with a secret cannot be saved. Give each key an id and 32 random bytes, base64 encoded:
+
+    Automation__SecretKeys__k1=$(openssl rand -base64 32)
+
+New secrets use `Automation:ActiveSecretKeyId`, or the first key id in order when that is unset. To rotate, add a
+new key, make it active, and keep the old one for as long as secrets written with it are stored.
+
+**Outbound requests.** An http task may reach only the hosts in `Automation:Http:AllowedHosts`, or the Crucible
+APIs Blueprint is configured with when that is empty. Blueprint's service account token is sent only to
+`Automation:Http:TokenHosts`, which also defaults to the Crucible APIs. Link-local addresses, including cloud
+metadata endpoints, are always refused, and loopback addresses are refused unless
+`Automation:Http:AllowLoopbackAddresses` is true, which a development stack on one machine needs. SSH tasks may
+reach only `Automation:Ssh:AllowedHosts`, and file uploads read only from `Automation:Files:LocalDirectory`.
+
+**VM actions** go through the Player VM API at `ClientSettings:PlayerVmApiUrl`, as Blueprint's service account,
+which needs the `player-vm` scope.
+
+**More than one instance.** Instances share the work safely through leases in the database, but SignalR updates
+reach only the clients of the instance that made them. Set `Automation:WorkerEnabled` to true on one replica only.
+
+**Upgrading from Steamfitter.** Pull deployed MSELs before upgrading, or their Steamfitter scenarios are left behind.
+The upgrade converts each scenario event's Steamfitter task to an automation task, and so does importing an older
+MSEL file. Within a group, each converted task runs after the one before it, and the first is run by hand or by
+starting the group, as the push did. Http headers in an imported file are dropped and have to be entered again.
 
 # Permissions
 
@@ -115,6 +148,7 @@ Users can be assigned roles for individual MSELs. A role applies only while the 
 * **MoveEditor** - Can add, edit and delete the MSEL's moves
 * **Viewer** - Read-only access to the MSEL
 * **Evaluator** - Can evaluate MSEL execution
+* **Facilitator** - Runs a deployed MSEL on the Facilitator View: starts moves and groups, runs, reruns and cancels automation tasks, and pauses automation. Editors and Approvers can open the Facilitator View read-only.
 
 ## Team Roles
 

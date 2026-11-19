@@ -230,7 +230,7 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
             .ToList();
 
         Assert.Equal(6, registered.Count);
-        Assert.Equal(["AddApplicationService", "AutomationDispatcher", "JoinService", "SteamfitterStartService", "XApiBackgroundService"], named);
+        Assert.Equal(["AddApplicationService", "AutomationDispatcher", "AutomationSecretUpgrader", "JoinService", "XApiBackgroundService"], named);
         Assert.Empty(surviving);
     }
 

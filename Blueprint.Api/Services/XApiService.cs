@@ -1142,12 +1142,6 @@ namespace Blueprint.Api.Services
                 registrationIds.Add(msel.CiteEvaluationId.Value.ToString());
             }
 
-            if ((!filterBySource || source.Equals("steamfitter", StringComparison.OrdinalIgnoreCase))
-                && msel.SteamfitterScenarioId.HasValue)
-            {
-                registrationIds.Add(msel.SteamfitterScenarioId.Value.ToString());
-            }
-
             if ((!filterBySource || source.Equals("player", StringComparison.OrdinalIgnoreCase))
                 && msel.PlayerViewId.HasValue)
             {
@@ -1272,23 +1266,6 @@ namespace Blueprint.Api.Services
                 citeIntegration.Add("moreInfo", "");
                 citeIntegration.Add("apiUrl", citeApiUrl);
                 grouping.Add(citeIntegration);
-            }
-
-            if (msel.SteamfitterScenarioId.HasValue && !string.IsNullOrEmpty(_clientOptions.SteamfitterApiUrl))
-            {
-                var steamfitterApiUrl = _clientOptions.SteamfitterApiUrl.EndsWith("/")
-                    ? _clientOptions.SteamfitterApiUrl + "api/"
-                    : _clientOptions.SteamfitterApiUrl + "/api/";
-
-                var steamfitterIntegration = new Dictionary<string, string>();
-                steamfitterIntegration.Add("id", msel.SteamfitterScenarioId.Value.ToString());
-                steamfitterIntegration.Add("name", "Steamfitter Scenario");
-                steamfitterIntegration.Add("description", "Steamfitter scenario for " + msel.Name);
-                steamfitterIntegration.Add("type", "scenarios");
-                steamfitterIntegration.Add("activityType", "http://id.tincanapi.com/activitytype/resource");
-                steamfitterIntegration.Add("moreInfo", "");
-                steamfitterIntegration.Add("apiUrl", steamfitterApiUrl);
-                grouping.Add(steamfitterIntegration);
             }
 
             return grouping;

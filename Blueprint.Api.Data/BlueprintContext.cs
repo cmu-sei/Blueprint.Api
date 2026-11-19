@@ -38,7 +38,6 @@ namespace Blueprint.Api.Data
         public DbSet<DataFieldEntity> DataFields { get; set; }
         public DbSet<DataOptionEntity> DataOptions { get; set; }
         public DbSet<DataValueEntity> DataValues { get; set; }
-        public DbSet<SteamfitterTaskEntity> SteamfitterTasks { get; set; }
         public DbSet<AutomationTaskEntity> AutomationTasks { get; set; }
         public DbSet<AutomationRunEntity> AutomationRuns { get; set; }
         public DbSet<AutomationResultEntity> AutomationResults { get; set; }

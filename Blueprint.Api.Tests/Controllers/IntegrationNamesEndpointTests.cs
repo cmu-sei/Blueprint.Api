@@ -25,12 +25,12 @@ namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary>
 /// <c>GET api/msels/{id}/integrations/names</c>, and through it <c>IntegrationNameService</c> - the one
-/// place blueprint reads from all five sibling APIs in a single request.
+/// place blueprint reads from all four sibling APIs in a single request.
 /// </summary>
 /// <remarks>
 /// <para>
 /// This is the first test class to drive the substituted API clients, which is the whole point of
-/// covering this endpoint early: everything else that talks to Player, Gallery, CITE or Steamfitter does it
+/// covering this endpoint early: everything else that talks to Player, Gallery or CITE does it
 /// from a background worker, where a test can only see what went on a queue. Here the calls happen on the
 /// request thread and their results come back in the response.
 /// </para>
@@ -63,9 +63,6 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
             .Returns(new Evaluation { Description = "the evaluation" });
         Factory.Cite.GetScoringModelAsync((Guid)msel.CiteScoringModelId, Arg.Any<CancellationToken>())
             .Returns(new ScoringModel { Description = "the scoring model" });
-        Factory.Steamfitter
-            .GetScenarioAsync((Guid)msel.SteamfitterScenarioId, Arg.Any<CancellationToken>())
-            .Returns(new Steamfitter.Api.Client.Scenario { Name = "the scenario" });
         Factory.Caster.GetDirectoryAsync((Guid)msel.CasterDirectoryId, false, false, Arg.Any<CancellationToken>())
             .Returns(new Caster.Api.Client.Directory { Name = "the directory" });
         Factory.Caster.GetWorkspaceAsync((Guid)msel.CasterWorkspaceId, Arg.Any<CancellationToken>())
@@ -79,7 +76,6 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         // CITE names an evaluation and a scoring model by their description, not by a Name property.
         Assert.Equal("the evaluation", names.CiteEvaluationName);
         Assert.Equal("the scoring model", names.CiteScoringModelName);
-        Assert.Equal("the scenario", names.SteamfitterScenarioName);
         Assert.Equal("the directory", names.CasterDirectoryName);
         Assert.Equal("the workspace", names.CasterWorkspaceName);
     }
@@ -98,14 +94,12 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal("", names.GalleryExhibitName);
         Assert.Equal("", names.CiteEvaluationName);
         Assert.Equal("", names.CiteScoringModelName);
-        Assert.Equal("", names.SteamfitterScenarioName);
         Assert.Equal("", names.CasterDirectoryName);
         Assert.Equal("", names.CasterWorkspaceName);
 
         Assert.Empty(Factory.PlayerApi.ReceivedCalls());
         Assert.Empty(Factory.Gallery.ReceivedCalls());
         Assert.Empty(Factory.Cite.ReceivedCalls());
-        Assert.Empty(Factory.Steamfitter.ReceivedCalls());
         Assert.Empty(Factory.Caster.ReceivedCalls());
     }
 
@@ -185,60 +179,17 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
     public async Task Names_WhenTheTargetIsGone_IsEmptyRatherThanAnError()
     {
         var msel = TestData.Msel();
-        msel.SteamfitterScenarioId = Guid.NewGuid();
+        msel.CiteEvaluationId = Guid.NewGuid();
         await Seed(msel);
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
-        Factory.Steamfitter
-            .GetScenarioAsync((Guid)msel.SteamfitterScenarioId, Arg.Any<CancellationToken>())
-            .Returns((Steamfitter.Api.Client.Scenario)null);
+        Factory.Cite
+            .GetEvaluationAsync((Guid)msel.CiteEvaluationId, Arg.Any<CancellationToken>())
+            .Returns((Evaluation)null);
 
         var names = await Names(Client(actor), msel.Id);
 
-        Assert.Equal("", names.SteamfitterScenarioName);
-        Assert.Equal("", names.SteamfitterScenarioStatus);
-    }
-
-    /// <summary>
-    /// The scenario's status comes from the same read as its name, and is how the MSEL Info page tells a
-    /// scenario nobody has started from one that is running.
-    /// </summary>
-    [Theory]
-    [InlineData(Steamfitter.Api.Client.ScenarioStatus.Ready, "Ready")]
-    [InlineData(Steamfitter.Api.Client.ScenarioStatus.Active, "Active")]
-    public async Task Names_CarryTheSteamfitterScenarioStatus(Steamfitter.Api.Client.ScenarioStatus status, string expected)
-    {
-        var msel = TestData.Msel();
-        msel.SteamfitterScenarioId = Guid.NewGuid();
-        await Seed(msel);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-
-        Factory.Steamfitter
-            .GetScenarioAsync((Guid)msel.SteamfitterScenarioId, Arg.Any<CancellationToken>())
-            .Returns(new Steamfitter.Api.Client.Scenario { Name = "the scenario", Status = status });
-
-        var names = await Names(Client(actor), msel.Id);
-
-        Assert.Equal(expected, names.SteamfitterScenarioStatus);
-        await Factory.Steamfitter.Received(1)
-            .GetScenarioAsync((Guid)msel.SteamfitterScenarioId, Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task Names_WhenSteamfitterCannotBeReached_HaveNoScenarioStatus()
-    {
-        var msel = TestData.Msel();
-        msel.SteamfitterScenarioId = Guid.NewGuid();
-        await Seed(msel);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-
-        Factory.Steamfitter
-            .GetScenarioAsync((Guid)msel.SteamfitterScenarioId, Arg.Any<CancellationToken>())
-            .Throws(new HttpRequestException("unreachable"));
-
-        var names = await Names(Client(actor), msel.Id);
-
-        Assert.Equal("", names.SteamfitterScenarioStatus);
+        Assert.Equal("", names.CiteEvaluationName);
     }
 
     /// <summary>A lookup that throws <c>OperationCanceledException</c> is not caught, and fails the request with a 500.</summary>
@@ -312,7 +263,6 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Empty(Factory.PlayerApi.ReceivedCalls());
         Assert.Empty(Factory.Gallery.ReceivedCalls());
         Assert.Empty(Factory.Cite.ReceivedCalls());
-        Assert.Empty(Factory.Steamfitter.ReceivedCalls());
         Assert.Empty(Factory.Caster.ReceivedCalls());
     }
 
@@ -358,7 +308,6 @@ public class IntegrationNamesEndpointTests(DatabaseFixture fixture, BlueprintApp
         msel.GalleryExhibitId = Guid.NewGuid();
         msel.CiteEvaluationId = Guid.NewGuid();
         msel.CiteScoringModelId = Guid.NewGuid();
-        msel.SteamfitterScenarioId = Guid.NewGuid();
         msel.CasterDirectoryId = Guid.NewGuid();
         msel.CasterWorkspaceId = Guid.NewGuid();
 

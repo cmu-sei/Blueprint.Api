@@ -34,8 +34,10 @@ namespace Blueprint.Api.Automation
         Dictionary<string, string> Unprotect(string stored);
         /// <summary>The keys a task's stored secrets hold, without decrypting them.</summary>
         IReadOnlyList<string> Keys(string stored);
-        /// <summary>Whether any of the stored values is not yet encrypted with a configured key.</summary>
+        /// <summary>Whether any of the stored values is not yet encrypted with the active key.</summary>
         bool NeedsProtecting(string stored);
+        /// <summary>Whether any of the stored values is in the clear.</summary>
+        bool HasUnencrypted(string stored);
     }
 
     public class AutomationSecretProtector : IAutomationSecretProtector
@@ -91,6 +93,8 @@ namespace Blueprint.Api.Automation
             var activeId = ActiveKey()?.Id;
             return activeId != null && Read(stored).Values.Any(v => !v.StartsWith(Prefix + activeId + ":", StringComparison.Ordinal));
         }
+
+        public bool HasUnencrypted(string stored) => Read(stored).Values.Any(v => !v.StartsWith(Prefix, StringComparison.Ordinal));
 
         private static Dictionary<string, string> Read(string stored)
         {

@@ -18,6 +18,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Blueprint.Api.Automation;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
@@ -79,6 +80,7 @@ namespace Blueprint.Api.Services
         private readonly IXApiService _xApiService;
         private readonly ICiteApiClient _citeApiClient;
         private readonly ICasterService _casterService;
+        private readonly IAutomationActionCatalog _catalog;
 
         public MselService(
             BlueprintContext context,
@@ -92,7 +94,8 @@ namespace Blueprint.Api.Services
             ILogger<MselService> logger,
             IXApiService xApiService,
             ICiteApiClient citeApiClient,
-            ICasterService casterService)
+            ICasterService casterService,
+            IAutomationActionCatalog catalog)
         {
             _context = context;
             _clientOptions = clientOptions;
@@ -106,6 +109,7 @@ namespace Blueprint.Api.Services
             _xApiService = xApiService;
             _citeApiClient = citeApiClient;
             _casterService = casterService;
+            _catalog = catalog;
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct)
@@ -298,7 +302,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.ScenarioEvents)
                 .ThenInclude(se => se.DataValues)
                 .Include(m => m.ScenarioEvents)
-                .ThenInclude(se => se.SteamfitterTask)
+                .ThenInclude(se => se.AutomationTasks)
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .Include(m => m.Teams)
@@ -345,7 +349,6 @@ namespace Blueprint.Api.Services
             mselEntity.GalleryExhibitId = null;
             mselEntity.CiteEvaluationId = null;
             mselEntity.PlayerViewId = null;
-            mselEntity.SteamfitterScenarioId = null;
             mselEntity.CasterWorkspaceId = null;
             mselEntity.CasterRunId = null;
             mselEntity.Status = MselItemStatus.Pending;
@@ -526,15 +529,21 @@ namespace Blueprint.Api.Services
                 .Where(df => df.DataType == DataFieldType.Competency)
                 .Select(df => df.Id)
                 .ToHashSet();
+            // the events' automation tasks are copied apart from the graph, since one can trigger a task of another event
+            var copiedTasks = new List<(AutomationTaskEntity, Guid)>();
             foreach (var scenarioEventEntity in mselEntity.ScenarioEvents)
             {
+                var tasks = scenarioEventEntity.AutomationTasks.ToList();
+                scenarioEventEntity.AutomationTasks = new HashSet<AutomationTaskEntity>();
                 ScenarioEventReplaceIds(scenarioEventEntity, mselEntity.Id, mselEntity.DateCreated, mselEntity.CreatedBy, newGuidValues, competencyFieldIds);
+                copiedTasks.AddRange(tasks.Select(t => (t, scenarioEventEntity.Id)));
             }
             // copy the MSEL's own scoring model
             if (mselEntity.ScoringModel != null)
                 MselScoringModelService.AssignIds(mselEntity.ScoringModel, mselEntity.Id, mselEntity.CreatedBy);
 
             _context.Msels.Add(mselEntity);
+            _context.AutomationTasks.AddRange(AutomationTaskCopier.Copy(copiedTasks, mselEntity.Id, mselEntity.CreatedBy));
             if (sourceImage != null)
             {
                 _context.MselImages.Add(new MselImageEntity { MselId = mselEntity.Id, Data = sourceImage.Data, ContentType = sourceImage.ContentType });
@@ -612,15 +621,6 @@ namespace Blueprint.Api.Services
                     }
                 }
             }
-            // copy steamfitter task
-            if (scenarioEventEntity.SteamfitterTask != null)
-            {
-                scenarioEventEntity.SteamfitterTaskId = Guid.NewGuid();
-                scenarioEventEntity.SteamfitterTask.Id = (Guid)scenarioEventEntity.SteamfitterTaskId;
-                scenarioEventEntity.SteamfitterTask.ScenarioEventId = scenarioEventEntity.Id;
-                scenarioEventEntity.SteamfitterTask.ScenarioEvent = null;
-                scenarioEventEntity.SteamfitterTask.CreatedBy = createdBy;
-            }
         }
 
         public async Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.MselEdit msel, bool hasSystemPermission, CancellationToken ct)
@@ -678,7 +678,6 @@ namespace Blueprint.Api.Services
             msel.GalleryCollectionId != null ||
             msel.GalleryExhibitId != null ||
             msel.CiteEvaluationId != null ||
-            msel.SteamfitterScenarioId != null ||
             msel.CasterWorkspaceId != null;
 
         private static bool IntegrationSettingsChanged(ViewModels.MselEdit msel, MselEntity stored) =>
@@ -686,7 +685,6 @@ namespace Blueprint.Api.Services
             msel.UseGallery != stored.UseGallery ||
             msel.UseCite != stored.UseCite ||
             msel.CiteScoringModelId != stored.CiteScoringModelId ||
-            msel.UseSteamfitter != stored.UseSteamfitter ||
             msel.UseCaster != stored.UseCaster ||
             msel.CasterDirectoryId != stored.CasterDirectoryId;
 
@@ -2150,7 +2148,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.ScenarioEvents)
                 .ThenInclude(se => se.DataValues)
                 .Include(m => m.ScenarioEvents)
-                .ThenInclude(se => se.SteamfitterTask)
+                .ThenInclude(se => se.AutomationTasks)
                 .Include(m => m.Teams)
                 .ThenInclude(t => t.TeamUsers)
                 .Include(m => m.Teams)
@@ -2235,6 +2233,10 @@ namespace Blueprint.Api.Services
             {
                 ReferenceHandler = ReferenceHandler.IgnoreCycles
             };
+            // a task's secrets stay in this installation: they are encrypted with its keys, and would not decrypt
+            // elsewhere. The file names them, empty, so an import can say which tasks need them entered again.
+            foreach (var task in msel.ScenarioEvents.SelectMany(se => se.AutomationTasks))
+                task.SecretParameters = SecretNamesOnly(task.SecretParameters);
             mselJson = JsonSerializer.Serialize(msel, options);
             // convert string to stream
             byte[] byteArray = Encoding.ASCII.GetBytes(mselJson);
@@ -2247,6 +2249,24 @@ namespace Blueprint.Api.Services
         public async Task<Msel> UploadJsonAsync(FileForm form, CancellationToken ct)
         {
             return (await ImportJsonAsync(form, ct)).Msel;
+        }
+
+        /// <summary>A task's secret parameters as their names alone, each with an empty value; null when it has none.</summary>
+        private static string SecretNamesOnly(string secretParameters)
+        {
+            if (string.IsNullOrWhiteSpace(secretParameters))
+                return null;
+            try
+            {
+                var secrets = JsonSerializer.Deserialize<Dictionary<string, string>>(secretParameters);
+                return secrets == null || secrets.Count == 0
+                    ? null
+                    : JsonSerializer.Serialize(secrets.Keys.ToDictionary(k => k, _ => string.Empty));
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -2285,6 +2305,9 @@ namespace Blueprint.Api.Services
                 ReferenceHandler = ReferenceHandler.Preserve,
                 TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { KeepEmptyCollectionForNull } }
             };
+            // a file from before Blueprint ran automation tasks carries Steamfitter tasks: they become automation tasks
+            var (upgradedJson, upgradeNotes) = MselJsonUpgrader.Upgrade(mselJson);
+            mselJson = upgradedJson;
             MselEntity mselEntity;
             try
             {
@@ -2313,6 +2336,17 @@ namespace Blueprint.Api.Services
             {
                 team.TeamUsers = [];
                 team.UserTeamRoles = [];
+            }
+            // A file carries no secrets, only their names. Whatever a hand-edited file puts there is not stored: a
+            // secret is entered in Blueprint, which encrypts it.
+            var tasksWithoutSecrets = 0;
+            foreach (var task in mselEntity.ScenarioEvents.SelectMany(se => se.AutomationTasks ?? []))
+            {
+                var hadSecrets = SecretNamesOnly(task.SecretParameters) != null;
+                task.SecretParameters = null;
+                var missingRequired = _catalog.Get(task.Action)?.Parameters.Any(p => p.Secret && p.Required) == true;
+                if (hadSecrets || missingRequired)
+                    tasksWithoutSecrets++;
             }
             await MatchImportedCompetenciesAsync(mselEntity, result, ct);
 
@@ -2540,11 +2574,10 @@ namespace Blueprint.Api.Services
             if (mselEntity.UsePlayer) AddChange(result, "usePlayer", "Player integration is on.");
             if (mselEntity.UseGallery) AddChange(result, "useGallery", "Gallery integration is on.");
             if (mselEntity.UseCite) AddChange(result, "useCite", "CITE integration is on.");
-            if (mselEntity.UseSteamfitter) AddChange(result, "useSteamfitter", "Steamfitter integration is on.");
-            if (mselEntity.UseSteamfitter && mselEntity.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.OnPush)
-                AddChange(result, "steamfitterScenarioStartMode", "The Steamfitter scenario starts when the push finishes.");
-            if (mselEntity.UseSteamfitter && mselEntity.SteamfitterScenarioStartMode == SteamfitterScenarioStartMode.AtStartTime)
-                AddChange(result, "steamfitterScenarioStartMode", "The Steamfitter scenario starts at the MSEL start time.");
+            foreach (var note in upgradeNotes)
+                AddChange(result, "automationTasks", note);
+            if (tasksWithoutSecrets > 0)
+                AddChange(result, "automationTasks", $"{tasksWithoutSecrets} automation task(s) need a password or key entered again: a file carries no secrets.");
 
             result.Imported = new MselImportCounts
             {

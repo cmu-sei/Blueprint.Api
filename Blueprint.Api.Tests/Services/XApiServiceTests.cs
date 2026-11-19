@@ -407,14 +407,12 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         msel.PlayerViewId = Guid.NewGuid();
         msel.GalleryExhibitId = Guid.NewGuid();
         msel.CiteEvaluationId = Guid.NewGuid();
-        msel.SteamfitterScenarioId = Guid.NewGuid();
         await Seed(msel);
 
         await Service(clients: Clients(
                 player: "https://player.test/",
                 gallery: "https://gallery.test/",
-                cite: "https://cite.test/",
-                steamfitter: "https://steamfitter.test/"))
+                cite: "https://cite.test/"))
             .MselViewedAsync(msel, Ct);
 
         var grouping = Items(await QueuedStatement(), "context.contextActivities.grouping")
@@ -426,7 +424,6 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
                 $"https://player.test/api/views/{msel.PlayerViewId}",
                 $"https://gallery.test/api/exhibits/{msel.GalleryExhibitId}",
                 $"https://cite.test/api/evaluations/{msel.CiteEvaluationId}",
-                $"https://steamfitter.test/api/scenarios/{msel.SteamfitterScenarioId}",
             ],
             grouping);
     }
@@ -1648,19 +1645,17 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         };
 
     /// <summary>
-    /// The sibling urls, which decide which integrations a statement is grouped under. All four are null
+    /// The sibling urls, which decide which integrations a statement is grouped under. All three are null
     /// by default, because that is what makes a test about anything else produce no groupings at all.
     /// </summary>
     private static ClientOptions Clients(
         string player = null,
         string gallery = null,
-        string cite = null,
-        string steamfitter = null) => new()
+        string cite = null) => new()
         {
             PlayerApiUrl = player,
             GalleryApiUrl = gallery,
             CiteApiUrl = cite,
-            SteamfitterApiUrl = steamfitter,
         };
 
     /// <summary>

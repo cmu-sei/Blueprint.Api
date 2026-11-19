@@ -10,7 +10,7 @@ namespace Blueprint.Api.ViewModels
     /// <summary>
     /// The fields a Scenario Event's create and edit requests share. The owning MSEL is not one of them:
     /// only <see cref="ScenarioEventCreate"/> names it, so an edit cannot move a Scenario Event to another
-    /// MSEL. The cells and the Steamfitter task are written by the service, field by field, for the
+    /// MSEL. The cells and the automation tasks are written by the service, field by field, for the
     /// event's own MSEL and the event itself.
     /// </summary>
     public abstract class ScenarioEventFields
@@ -24,8 +24,6 @@ namespace Blueprint.Api.ViewModels
         public string Information { get; set; }
         /// <summary>The event's cells. Only cells for the MSEL's own Data Fields are written.</summary>
         public ICollection<ScenarioEventCell> DataValues { get; set; } = new List<ScenarioEventCell>();
-        /// <summary>The event's Steamfitter task. Its identity and event are the server's.</summary>
-        public SteamfitterTaskFields SteamfitterTask { get; set; }
         /// <summary>
         /// The event's automation tasks, in order, replacing those it has. Null leaves them as they are, as an edit
         /// that only moves the event in time does.
@@ -52,27 +50,5 @@ namespace Blueprint.Api.ViewModels
         public Guid DataFieldId { get; set; }
         /// <summary>On an edit, a cell is written only when this names the event being edited.</summary>
         public Guid? ScenarioEventId { get; set; }
-    }
-
-    /// <summary>
-    /// The editable fields of a Scenario Event's Steamfitter task.
-    /// </summary>
-    public class SteamfitterTaskFields
-    {
-        public SteamfitterIntegrationType TaskType { get; set; }
-        public string Name { get; set; }
-        public string Description { get; set; }
-        public SteamfitterTaskAction Action { get; set; }
-        public string VmMask { get; set; }
-        public string ApiUrl { get; set; }
-        public Dictionary<string, string> ActionParameters { get; set; }
-        public string ExpectedOutput { get; set; }
-        public int ExpirationSeconds { get; set; }
-        public int DelaySeconds { get; set; }
-        public int IntervalSeconds { get; set; }
-        public int Iterations { get; set; }
-        public SteamfitterTaskTrigger TriggerCondition { get; set; }
-        public bool UserExecutable { get; set; }
-        public bool Repeatable { get; set; }
     }
 }

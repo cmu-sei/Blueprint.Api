@@ -54,7 +54,6 @@ public sealed class IntegrationServiceHarness
     public const string PlayerApiUrl = "http://siblings.test/player/";
     public const string GalleryApiUrl = "http://siblings.test/gallery/";
     public const string CiteApiUrl = "http://siblings.test/cite/";
-    public const string SteamfitterApiUrl = "http://siblings.test/steamfitter/";
     public const string CasterApiUrl = "http://siblings.test/caster/";
 
     /// <summary>The realm path the identity provider stubs sit under.</summary>
@@ -85,7 +84,7 @@ public sealed class IntegrationServiceHarness
             ClientId = "blueprint-admin",
             UserName = "blueprint-admin",
             Password = string.Empty,
-            Scope = "player player-vm cite gallery steamfitter"
+            Scope = "player player-vm cite gallery"
         });
         services.AddScoped<IScenarioEventService>(sp => scenarioEvents ?? new ScenarioEventService(
             sp.GetRequiredService<BlueprintContext>(), null, null));
@@ -98,7 +97,6 @@ public sealed class IntegrationServiceHarness
             PlayerApiUrl = PlayerApiUrl,
             GalleryApiUrl = GalleryApiUrl,
             CiteApiUrl = CiteApiUrl,
-            SteamfitterApiUrl = SteamfitterApiUrl,
             CasterApiUrl = CasterApiUrl,
             CasterCheckIntervalSeconds = 0,
             CasterPlanMaxWaitMinutes = 1,

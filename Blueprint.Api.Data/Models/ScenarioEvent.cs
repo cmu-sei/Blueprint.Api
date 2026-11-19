@@ -29,8 +29,6 @@ namespace Blueprint.Api.Data.Models
         public InjectEntity Inject { get; set; }
         public string IntegrationTarget { get; set; }
         public string Information { get; set; }
-        public Guid? SteamfitterTaskId { get; set; }
-        public SteamfitterTaskEntity SteamfitterTask { get; set; }
         public virtual ICollection<AutomationTaskEntity> AutomationTasks { get; set; } = new HashSet<AutomationTaskEntity>();
     }
 

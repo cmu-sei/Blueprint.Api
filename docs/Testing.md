@@ -13,7 +13,7 @@ dotnet run --project Blueprint.Api.Tests -- --xunit-diagnostics on    # prints t
 
 The suite runs on Microsoft.Testing.Platform (`"test": { "runner": "Microsoft.Testing.Platform" }` in `global.json`), which xunit.v3 4 requires on the .NET 10 SDK, so test options are xUnit's own (`--filter-class`, `--filter-method`, `--xunit-diagnostics`; see `dotnet test Blueprint.Api.Tests --help`) rather than VSTest's `--filter` and `-- xUnit.…` settings. The banner is printed with `dotnet run` because `dotnet test` does not forward the test app's diagnostic messages. Under `dotnet test` use `--progress off` rather than the deprecated `--no-progress`.
 
-Docker must be running. The suite starts and disposes its own PostgreSQL container through [Testcontainers](https://testcontainers.com/), so there is nothing to install and no local database to keep in sync. Nothing else is needed: no Keycloak, no Player, Gallery, CITE, Steamfitter or Caster, no network access and no `appsettings.json` edit. The container starts when the first test asks for a database, so the tests that take none still run without Docker.
+Docker must be running. The suite starts and disposes its own PostgreSQL container through [Testcontainers](https://testcontainers.com/), so there is nothing to install and no local database to keep in sync. Nothing else is needed: no Keycloak, no Player, Gallery, CITE or Caster, no network access and no `appsettings.json` edit. The container starts when the first test asks for a database, so the tests that take none still run without Docker.
 
 A single class or a single test can be run with a filter:
 
@@ -88,7 +88,7 @@ Extends `DatabaseTestBase` for tests that drive the application over HTTP:
 - `Actor()` - Starts describing another actor: `await Actor().WithSystemPermissions(SystemPermission.EditMsels).OnMsel(msel, MselRole.Owner).SeedAsync()`.
 - `Client(actor)` - A client acting as a seeded actor. `Client()` carries no identity, so a request to an `/api/` route is a 401.
 - `Hub` - The `HubRecorder<MainHub>` of this test's host. `MainHubBroadcasts` reads it by group.
-- `Factory` - The class's host, with the substituted sibling clients (`Factory.Cite`, `.Gallery`, `.PlayerApi`, `.Steamfitter`, `.Caster`, `.XApi`) and `OutboundHttp`.
+- `Factory` - The class's host, with the substituted sibling clients (`Factory.Cite`, `.Gallery`, `.PlayerApi`, `.PlayerVm`, `.Caster`, `.XApi`, and `.AutomationClients`, which hands out the first four as automation's service-account clients) and `OutboundHttp`.
 - `ReadAsync<T>`, `AssertStatus`, `AssertProblem` - From the shared base, with the host's own JSON options.
 
 Both fixtures arrive by constructor injection: `DatabaseFixture` from `[assembly: AssemblyFixture(...)]` in `AssemblyFixtures.cs`, and `BlueprintAppFactory` from `IClassFixture<BlueprintAppFactory>` on each hosted class.
@@ -101,7 +101,7 @@ Both fixtures arrive by constructor injection: `DatabaseFixture` from `[assembly
 
 | Real | Substituted or removed |
 | --- | --- |
-| `Startup`, the MVC pipeline, routing, model binding, both global filters | The sibling API clients: CITE, Gallery, Player, Steamfitter, Caster, and `IXApiService` (except in `XApiEnabledFactory`) |
+| `Startup`, the MVC pipeline, routing, model binding, both global filters | The sibling API clients: CITE, Gallery, Player, Player VM, Caster, and `IXApiService` (except in `XApiEnabledFactory`) |
 | Authorization, `AuthorizationClaimsTransformer`, `UserClaimsService` | `IHostedService`: the four background workers are removed |
 | PostgreSQL, EF Core, the real migrations, both interceptors | `IHubContext<MainHub>`, replaced by the shared `HubRecorder<MainHub>` (which records a `Clients.Groups(...)` send for each group) |
 | The Mapperly mappers, MediatR and the 24 event handlers | Outbound HTTP, over the shared `StubHttpClientFactory` (`Factory.OutboundHttp`) |

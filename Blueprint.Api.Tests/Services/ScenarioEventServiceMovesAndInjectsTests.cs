@@ -133,7 +133,7 @@ public class ScenarioEventServiceMovesAndInjectsTests(DatabaseFixture fixture) :
     }
 
     /// <summary>A MSEL with scenario events and no moves puts every event in move 0, counting the injects
-    /// by time, as the Steamfitter push does, instead of throwing <c>IndexOutOfRangeException</c>.</summary>
+    /// by time, instead of throwing <c>IndexOutOfRangeException</c>.</summary>
     [Fact]
     public async Task GetMovesAndInjects_WithNoMoves_PutsEveryEventInMoveZero()
     {

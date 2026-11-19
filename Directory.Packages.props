@@ -41,7 +41,6 @@
     <PackageVersion Include="caster.api.client" Version="1.5.0" />
     <PackageVersion Include="Player.Api.Client" Version="3.2.0" />
     <PackageVersion Include="Player.Vm.Api.Client" Version="2.1.0" />
-    <PackageVersion Include="steamfitter.api.client" Version="3.11.0" />
     <PackageVersion Include="TinCanStandard" Version="1.5.0" />
   </ItemGroup>
 

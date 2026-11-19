@@ -60,7 +60,7 @@ public static class Tokens
                 ClientId = "blueprint-admin",
                 UserName = "blueprint-admin",
                 Password = string.Empty,
-                Scope = "player player-vm cite gallery steamfitter"
+                Scope = "player player-vm cite gallery"
             },
             client);
     }

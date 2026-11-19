@@ -173,7 +173,7 @@ public class ApiClientsExtensionsTests
 
         Assert.EndsWith("/", clientSettings.CiteApiUrl);
         Assert.EndsWith("/", clientSettings.GalleryApiUrl);
-        Assert.EndsWith("/", clientSettings.SteamfitterApiUrl);
+        Assert.EndsWith("/", clientSettings.PlayerVmApiUrl);
         Assert.False(clientSettings.PlayerApiUrl.EndsWith('/'));
     }
 
@@ -242,7 +242,7 @@ public class ApiClientsExtensionsTests
 
         await ApiClientsExtensions.RequestTokenAsync(Options(), Client(handler), Ct);
 
-        Assert.Contains("scope=player+player-vm+cite+gallery+steamfitter", handler.Sent[^1].Body);
+        Assert.Contains("scope=player+player-vm+cite+gallery", handler.Sent[^1].Body);
     }
 
     /// <remarks>
@@ -575,7 +575,7 @@ public class ApiClientsExtensionsTests
         ClientId = "blueprint-admin",
         UserName = "blueprint-admin",
         Password = string.Empty,
-        Scope = "player player-vm cite gallery steamfitter",
+        Scope = "player player-vm cite gallery",
         TokenExpirationBufferSeconds = 900,
         ValidateDiscoveryDocument = false,
     };

@@ -49,7 +49,6 @@
     <PackageReference Include="Player.Vm.Api.Client" />
     <PackageReference Include="SSH.NET" />
     <PackageReference Include="MailKit" />
-    <PackageReference Include="steamfitter.api.client" />
     <PackageReference Include="HtmlSanitizer" />
     <PackageReference Include="Crucible.Common.ServiceDefaults"/>
     <PackageReference Include="TinCanStandard" />

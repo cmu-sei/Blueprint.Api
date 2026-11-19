@@ -1619,18 +1619,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("status");
 
-                    b.Property<int>("SteamfitterIntegrationType")
-                        .HasColumnType("integer")
-                        .HasColumnName("steamfitter_integration_type");
-
-                    b.Property<Guid?>("SteamfitterScenarioId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("steamfitter_scenario_id");
-
-                    b.Property<int>("SteamfitterScenarioStartMode")
-                        .HasColumnType("integer")
-                        .HasColumnName("steamfitter_scenario_start_mode");
-
                     b.Property<string>("Subject")
                         .HasColumnType("text")
                         .HasColumnName("subject");
@@ -1654,10 +1642,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<bool>("UsePlayer")
                         .HasColumnType("boolean")
                         .HasColumnName("use_player");
-
-                    b.Property<bool>("UseSteamfitter")
-                        .HasColumnType("boolean")
-                        .HasColumnName("use_steamfitter");
 
                     b.HasKey("Id");
 
@@ -2333,116 +2317,13 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("scenario_event_type");
 
-                    b.Property<Guid?>("SteamfitterTaskId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("steamfitter_task_id");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("Id")
-                        .IsUnique();
 
                     b.HasIndex("InjectId");
 
                     b.HasIndex("MselId");
 
                     b.ToTable("scenario_events");
-                });
-
-            modelBuilder.Entity("Blueprint.Api.Data.Models.SteamfitterTaskEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("uuid_generate_v4()");
-
-                    b.Property<int>("Action")
-                        .HasColumnType("integer")
-                        .HasColumnName("action");
-
-                    b.Property<Dictionary<string, string>>("ActionParameters")
-                        .HasColumnType("hstore")
-                        .HasColumnName("action_parameters");
-
-                    b.Property<string>("ApiUrl")
-                        .HasColumnType("text")
-                        .HasColumnName("api_url");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<DateTime>("DateCreated")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("date_created");
-
-                    b.Property<DateTime?>("DateModified")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("date_modified");
-
-                    b.Property<int>("DelaySeconds")
-                        .HasColumnType("integer")
-                        .HasColumnName("delay_seconds");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text")
-                        .HasColumnName("description");
-
-                    b.Property<string>("ExpectedOutput")
-                        .HasColumnType("text")
-                        .HasColumnName("expected_output");
-
-                    b.Property<int>("ExpirationSeconds")
-                        .HasColumnType("integer")
-                        .HasColumnName("expiration_seconds");
-
-                    b.Property<int>("IntervalSeconds")
-                        .HasColumnType("integer")
-                        .HasColumnName("interval_seconds");
-
-                    b.Property<int>("Iterations")
-                        .HasColumnType("integer")
-                        .HasColumnName("iterations");
-
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("modified_by");
-
-                    b.Property<string>("Name")
-                        .HasColumnType("text")
-                        .HasColumnName("name");
-
-                    b.Property<bool>("Repeatable")
-                        .HasColumnType("boolean")
-                        .HasColumnName("repeatable");
-
-                    b.Property<Guid>("ScenarioEventId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("scenario_event_id");
-
-                    b.Property<int>("TaskType")
-                        .HasColumnType("integer")
-                        .HasColumnName("task_type");
-
-                    b.Property<int>("TriggerCondition")
-                        .HasColumnType("integer")
-                        .HasColumnName("trigger_condition");
-
-                    b.Property<bool>("UserExecutable")
-                        .HasColumnType("boolean")
-                        .HasColumnName("user_executable");
-
-                    b.Property<string>("VmMask")
-                        .HasColumnType("text")
-                        .HasColumnName("vm_mask");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ScenarioEventId")
-                        .IsUnique();
-
-                    b.ToTable("steamfitter_tasks");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.SystemRoleEntity", b =>
@@ -2787,10 +2668,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<int>("Role")
                         .HasColumnType("integer")
                         .HasColumnName("role");
-
-                    b.Property<string>("SteamfitterScenarioRole")
-                        .HasColumnType("text")
-                        .HasColumnName("steamfitter_scenario_role");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid")
@@ -3458,17 +3335,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Msel");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.SteamfitterTaskEntity", b =>
-                {
-                    b.HasOne("Blueprint.Api.Data.Models.ScenarioEventEntity", "ScenarioEvent")
-                        .WithOne("SteamfitterTask")
-                        .HasForeignKey("Blueprint.Api.Data.Models.SteamfitterTaskEntity", "ScenarioEventId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ScenarioEvent");
-                });
-
             modelBuilder.Entity("Blueprint.Api.Data.Models.TeamCompetencyEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.CompetencyEntity", "Competency")
@@ -3724,8 +3590,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("AutomationTasks");
 
                     b.Navigation("DataValues");
-
-                    b.Navigation("SteamfitterTask");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.TeamEntity", b =>

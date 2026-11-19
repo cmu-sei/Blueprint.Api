@@ -147,11 +147,10 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
     }
 
     /// <remarks>
-    /// The Steamfitter Scenario is pushed after the exhibit, and Gallery refuses a Scenario its caller cannot
-    /// read, so the create leaves it out even though the MSEL already holds the ID.
+    /// Blueprint runs a MSEL's automation itself, so an exhibit names no Steamfitter Scenario.
     /// </remarks>
     [Fact]
-    public async Task CreateExhibit_SendsNoScenarioEvenWhenTheMselHasOne()
+    public async Task CreateExhibit_SendsNoScenario()
     {
         var handler = new SiblingApiHandler().AnswersJson("api/exhibits", ExhibitJson, HttpStatusCode.Created);
 
@@ -188,52 +187,6 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             IntegrationGalleryExtensions.CreateExhibitAsync(msel, Client(handler), null, Ct));
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // SetExhibitScenarioAsync
-    // ---------------------------------------------------------------------------------------------
-
-    /// <remarks>
-    /// Gallery's update replaces every field it is sent, so the exhibit is read first and written back
-    /// whole: a body carrying only the Scenario would reset the name and the current move.
-    /// </remarks>
-    [Fact]
-    public async Task SetExhibitScenario_ReadsTheExhibitThenWritesItBackNamingTheScenario()
-    {
-        var stored = $$"""
-            {"id":"{{ExhibitId}}","collectionId":"{{CollectionId}}","name":"exhibit","description":"about",
-             "currentMove":2,"currentInject":3,"showAdvanceButton":true}
-            """;
-        var handler = new SiblingApiHandler()
-            .AnswersJson($"GET api/exhibits/{ExhibitId}", stored)
-            .AnswersJson($"PUT api/exhibits/{ExhibitId}", ExhibitJson);
-
-        await IntegrationGalleryExtensions.SetExhibitScenarioAsync(Msel(), Client(handler), null, Ct);
-
-        Assert.Equal([HttpMethod.Get, HttpMethod.Put], handler.Sent.Select(x => x.Method));
-
-        var body = Body(handler.Sent[1].Body);
-
-        Assert.Equal(ScenarioId.ToString(), body["scenarioId"].GetString());
-        Assert.Equal(CollectionId.ToString(), body["collectionId"].GetString());
-        Assert.Equal("exhibit", body["name"].GetString());
-        Assert.Equal("about", body["description"].GetString());
-        Assert.Equal(2, body["currentMove"].GetInt32());
-        Assert.Equal(3, body["currentInject"].GetInt32());
-        Assert.True(body["showAdvanceButton"].GetBoolean());
-    }
-
-    /// <summary>Gallery refusing the Scenario fails the push rather than leaving the exhibit unlinked.</summary>
-    [Fact]
-    public async Task SetExhibitScenario_DoesNotSwallowARefusedUpdate()
-    {
-        var handler = new SiblingApiHandler()
-            .AnswersJson($"GET api/exhibits/{ExhibitId}", ExhibitJson)
-            .Answers($"PUT api/exhibits/{ExhibitId}", HttpStatusCode.NotFound);
-
-        await Assert.ThrowsAnyAsync<ApiException>(() =>
-            IntegrationGalleryExtensions.SetExhibitScenarioAsync(Msel(), Client(handler), null, Ct));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -714,8 +667,7 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
     }
 
     /// <remarks>
-    /// Only events whose <c>IntegrationTarget</c> mentions Gallery, by substring - so a target of
-    /// <c>"Gallery,Steamfitter"</c> matches both integrations, which is how one event drives two.
+    /// Only events whose <c>IntegrationTarget</c> mentions Gallery, by substring.
     /// </remarks>
     [Fact]
     public async Task CreateArticles_IgnoresAnEventNotTargetedAtGallery()
@@ -725,7 +677,7 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
 
         var targeted = await SeedArticleEvent(msel.Id, fields, new() { [GalleryArticleParameter.Name] = "in" });
         var other = await SeedArticleEvent(
-            msel.Id, fields, new() { [GalleryArticleParameter.Name] = "out" }, target: "Steamfitter");
+            msel.Id, fields, new() { [GalleryArticleParameter.Name] = "out" }, target: null);
 
         var handler = Articles();
 
@@ -1140,7 +1092,6 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
 
     private static readonly Guid CollectionId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid ExhibitId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-    private static readonly Guid ScenarioId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private static readonly Guid CardId = Guid.Parse("77777777-7777-7777-7777-777777777777");
     private static readonly Guid ObserverRoleId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
     private static readonly Guid ParticipantRoleId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000002");
@@ -1181,14 +1132,13 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
     private static readonly string RolesJson =
         $$"""[{"id":"{{ObserverRoleId}}","name":"Observer"},{"id":"{{ParticipantRoleId}}","name":"Participant"}]""";
 
-    /// <summary>A MSEL pushed as far as having a Gallery collection, an exhibit and a Steamfitter scenario.</summary>
+    /// <summary>A MSEL pushed as far as having a Gallery collection, an and an exhibit.</summary>
     private static MselEntity Msel()
     {
         var msel = TestData.Msel();
 
         msel.GalleryCollectionId = CollectionId;
         msel.GalleryExhibitId = ExhibitId;
-        msel.SteamfitterScenarioId = ScenarioId;
 
         return msel;
     }

@@ -19,8 +19,7 @@ namespace Blueprint.Api.Tests.Controllers;
 /// pipeline. <c>POST msels</c> and <c>PUT msels/{id}</c> cannot set them.
 /// </summary>
 /// <remarks>
-/// The pull and cancel jobs delete the Player view, Gallery collection, CITE evaluation and Steamfitter
-/// scenario a MSEL names, using Blueprint's service account. A MSEL that could be pointed at another
+/// The pull and cancel jobs delete the Player view, Gallery collection and CITE evaluation a MSEL names, using Blueprint's service account. A MSEL that could be pointed at another
 /// exercise's objects would let its owner delete them, so the pull tests here run the real worker and
 /// assert that nothing reached the sibling APIs. A 200 alone would prove nothing, because the worker
 /// swallows remote failures.
@@ -32,7 +31,6 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
     private static readonly Guid ForeignCollectionId = Guid.NewGuid();
     private static readonly Guid ForeignExhibitId = Guid.NewGuid();
     private static readonly Guid ForeignEvaluationId = Guid.NewGuid();
-    private static readonly Guid ForeignScenarioId = Guid.NewGuid();
 
     [Fact]
     public async Task Create_WithIntegrationIdsInTheBody_StoresNone()
@@ -118,7 +116,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
         msel.CiteEvaluationId = ownEvaluationId;
         msel.IntegrationStatus = null;
         // the body's integration settings, which cannot change while deployed
-        msel.UsePlayer = msel.UseGallery = msel.UseCite = msel.UseSteamfitter = true;
+        msel.UsePlayer = msel.UseGallery = msel.UseCite = true;
         await Seed(msel);
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
@@ -131,7 +129,6 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal(ownViewId, stored.PlayerViewId);
         Assert.Equal(ownEvaluationId, stored.CiteEvaluationId);
         Assert.Null(stored.GalleryCollectionId);
-        Assert.Null(stored.SteamfitterScenarioId);
         Assert.Null(stored.IntegrationStatus);
     }
 
@@ -270,27 +267,43 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
     }
 
     /// <summary>
-    /// When the Steamfitter scenario starts changes nothing the push built, so a pushed MSEL can still change
-    /// it - which is what lets a facilitator have a pushed scenario start at the MSEL start time after all.
+    /// The Facilitator View's columns change only what that view lists, so they can change during the event. The
+    /// live position and the pause belong to the execution endpoints, and a body that names them changes neither.
     /// </summary>
     [Fact]
-    public async Task Update_ChangingTheSteamfitterScenarioStartMode_OfADeployedMsel_Is200()
+    public async Task Update_ChangingTheFacilitatorViewColumns_OfADeployedMsel_Is200_AndLeavesTheLivePositionAlone()
     {
         var msel = TestData.Msel(status: MselItemStatus.Deployed);
-        msel.UseSteamfitter = true;
-        msel.SteamfitterScenarioId = Guid.NewGuid();
+        var deploymentId = Guid.NewGuid();
+        msel.DeploymentId = deploymentId;
+        msel.CurrentMoveNumber = 2;
+        msel.CurrentGroupNumber = 1;
         await Seed(msel);
         var owner = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
         var response = await Client(owner).PutAsJsonAsync(
             $"/api/msels/{msel.Id}",
-            new { name = msel.Name, status = msel.Status, useSteamfitter = true, steamfitterScenarioStartMode = "AtStartTime" },
+            new
+            {
+                name = msel.Name,
+                status = msel.Status,
+                showTimeOnFacilitatorView = false,
+                showIntegrationTargetOnFacilitatorView = true,
+                deploymentId = Guid.NewGuid(),
+                currentMoveNumber = 5,
+                currentGroupNumber = 3,
+                automationPaused = true
+            },
             JsonOptions, Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var row = await Stored(msel.Id);
-        Assert.Equal(SteamfitterScenarioStartMode.AtStartTime, row.SteamfitterScenarioStartMode);
-        Assert.Equal(msel.SteamfitterScenarioId, row.SteamfitterScenarioId);
+        Assert.False(row.ShowTimeOnFacilitatorView);
+        Assert.True(row.ShowIntegrationTargetOnFacilitatorView);
+        Assert.Equal(deploymentId, row.DeploymentId);
+        Assert.Equal(2, row.CurrentMoveNumber);
+        Assert.Equal(1, row.CurrentGroupNumber);
+        Assert.False(row.AutomationPaused);
     }
 
     /// <summary>
@@ -350,9 +363,7 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
         galleryCollectionId = ForeignCollectionId,
         galleryExhibitId = ForeignExhibitId,
         useCite = true,
-        citeEvaluationId = ForeignEvaluationId,
-        useSteamfitter = true,
-        steamfitterScenarioId = ForeignScenarioId
+        citeEvaluationId = ForeignEvaluationId
     };
 
     private async Task<MselEntity> Stored(Guid id) =>
@@ -364,7 +375,6 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
         Assert.Null(msel.GalleryCollectionId);
         Assert.Null(msel.GalleryExhibitId);
         Assert.Null(msel.CiteEvaluationId);
-        Assert.Null(msel.SteamfitterScenarioId);
         Assert.Null(msel.IntegrationStatus);
     }
 
@@ -387,7 +397,6 @@ public class MselIntegrationOwnershipTests(DatabaseFixture fixture, BlueprintApp
             .AnswersJson(IntegrationServiceHarness.JwksPath, """{"keys":[]}""")
             .AnswersJson(IntegrationServiceHarness.TokenPath,
                 """{"access_token":"abc123","token_type":"Bearer","expires_in":300}""")
-            .Answers("steamfitter/api/scenarios/*", HttpStatusCode.NoContent)
             .Answers("cite/api/evaluations/*", HttpStatusCode.NoContent)
             .Answers("gallery/api/collections/*", HttpStatusCode.NoContent)
             .Answers("player/api/views/*", HttpStatusCode.NoContent));

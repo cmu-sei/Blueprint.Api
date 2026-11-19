@@ -47,6 +47,7 @@ namespace Blueprint.Api.Automation
             services.AddScoped<Services.IAutomationService, Services.AutomationService>();
             services.AddScoped<Services.IMselExecutionService, Services.MselExecutionService>();
             services.AddHostedService<AutomationDispatcher>();
+            services.AddHostedService<AutomationSecretUpgrader>();
             return services;
         }
     }

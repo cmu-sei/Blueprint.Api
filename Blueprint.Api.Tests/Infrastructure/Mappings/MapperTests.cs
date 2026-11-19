@@ -93,7 +93,7 @@ public class MapperTests
         var scale = new ProficiencyScaleEntity { ProficiencyLevels = null }.ToProficiencyScale();
         var scenarioEvent = new ScenarioEventEntity { DataValues = null }.ToScenarioEvent();
         var role = new SystemRoleEntity { Permissions = null }.ToSystemRole();
-        var task = new SteamfitterTaskEntity { ActionParameters = null }.ToSteamfitterTask();
+        var task = new AutomationTaskEntity { ActionParameters = null, SecretParameters = null }.ToAutomationTask();
 
         Assert.Equal(0, team.Users.Length + team.CardTeams.Length + team.PlayerApplicationTeams.Length + team.Invitations.Length + team.UserTeamRoles.Count);
         Assert.Empty(unit.Users);
@@ -102,7 +102,7 @@ public class MapperTests
             + msel.PlayerApplications.Count + msel.Pages.Count + msel.Invitations.Count + msel.MselCompetencies.Count);
         Assert.Equal(0, field.DataOptions.Count + injectType.DataFields.Count + inject.DataValues.Count + competency.Children.Count
             + framework.Competencies.Count + scale.ProficiencyLevels.Count + scenarioEvent.DataValues.Count + role.Permissions.Count
-            + task.ActionParameters.Count);
+            + task.ActionParameters.Count + task.SecretParameterKeys.Count);
     }
 
     /// <summary>Lists and dictionaries missing on a request are empty on the entity, as AutoMapper left them.</summary>
@@ -115,19 +115,18 @@ public class MapperTests
         var framework = new CompetencyFramework { Competencies = null }.ToEntity();
         var scale = new ProficiencyScale { ProficiencyLevels = null }.ToEntity();
         var role = new SystemRole { Permissions = null }.ToEntity();
-        var task = new SteamfitterTaskFields { ActionParameters = null }.ToEntity();
-        var stored = new SteamfitterTaskEntity { ActionParameters = new() { ["old"] = "value" } };
-        new SteamfitterTaskFields { ActionParameters = null }.ApplyTo(stored);
         var storedRole = new SystemRoleEntity { Permissions = [SystemPermission.ViewUsers] };
         new SystemRole { Permissions = null }.ApplyTo(storedRole);
 
         Assert.Equal(0, inject.DataValues.Count + injectType.DataFields.Count + competency.Children.Count + framework.Competencies.Count
-            + scale.ProficiencyLevels.Count + role.Permissions.Count + task.ActionParameters.Count);
-        Assert.Empty(stored.ActionParameters);
+            + scale.ProficiencyLevels.Count + role.Permissions.Count);
         Assert.Empty(storedRole.Permissions);
     }
 
-    /// <summary>The entity gets copies of a request's permission list and action parameters, never the request's own.</summary>
+    /// <summary>
+    /// The entity gets a copy of a request's permission list, never the request's own, and an automation task's view
+    /// model a copy of the entity's action parameters.
+    /// </summary>
     [Fact]
     public void Permissions_and_action_parameters_are_copied()
     {
@@ -135,7 +134,7 @@ public class MapperTests
         var parameters = new Dictionary<string, string> { ["key"] = "value" };
 
         var role = new SystemRole { Permissions = permissions }.ToEntity();
-        var task = new SteamfitterTaskFields { ActionParameters = parameters }.ToEntity();
+        var task = new AutomationTaskEntity { ActionParameters = parameters }.ToAutomationTask();
 
         Assert.NotSame(permissions, role.Permissions);
         Assert.Equal(permissions, role.Permissions);

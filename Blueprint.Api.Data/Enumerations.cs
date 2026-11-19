@@ -22,28 +22,11 @@ namespace Blueprint.Api.Data.Enumerations
         Connect = 30
     }
 
-    // when Blueprint starts the Steamfitter scenario it pushes; Steamfitter runs no task until it is started
-    public enum SteamfitterScenarioStartMode
-    {
-        Manual = 0,
-        OnPush = 10,
-        AtStartTime = 20
-    }
-
     public enum EventType
     {
         Inject = 10,
         Information = 20,
         Facilitation = 30
-    }
-
-    public enum EventExecutionStatus
-    {
-        Executed = 10,
-        Completed = 20,
-        Succeeded = 30,
-        Failed = 40,
-        Expired = 50
     }
 
     public enum DataFieldType
@@ -199,43 +182,10 @@ namespace Blueprint.Api.Data.Enumerations
         Orders
     }
 
-    public enum SteamfitterTaskAction
-    {
-        // http actions
-        http_get = 11,
-        http_post = 12,
-        http_put = 13,
-        http_delete = 14
-    }
-
-    public enum SteamfitterTaskTrigger
-    {
-        Time = 1,
-        Success = 2,
-        Failure = 3,
-        Completion = 4,
-        Expiration = 5,
-        Manual = 6
-    }
-
+    // where a scenario event is delivered: as a Gallery article, or not
     public enum IntegrationTarget
     {
-        Gallery,
-        Steamfitter
-    }
-
-    public enum SteamfitterIntegrationType
-    {
-        // blueprint helpers
-        Notification = 1,
-        Email = 2,
-        SituationUpdate = 3,
-        // steamfitter http actions
-        http_get = 11,
-        http_post = 12,
-        http_put = 13,
-        http_delete = 14,
-
+        Gallery
     }
 
     public enum SystemPermission

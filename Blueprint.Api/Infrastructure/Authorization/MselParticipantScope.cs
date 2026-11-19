@@ -43,13 +43,11 @@ namespace Blueprint.Api.Infrastructure.Authorization
         public static bool Shows(DataFieldEntity dataField) => dataField.OnExerciseView;
 
         /// <summary>
-        /// Clears the parts of an event the Exercise View does not show: the Steamfitter task it runs, where it
-        /// is delivered, and the text of an Information event.
+        /// Clears the parts of an event the Exercise View does not show: where it is delivered, and the text of an
+        /// Information event. Its automation tasks are never on it.
         /// </summary>
         public static ViewModels.ScenarioEvent Trim(ViewModels.ScenarioEvent scenarioEvent)
         {
-            scenarioEvent.SteamfitterTaskId = null;
-            scenarioEvent.SteamfitterTask = null;
             scenarioEvent.IntegrationTarget = null;
             scenarioEvent.Information = null;
             return scenarioEvent;

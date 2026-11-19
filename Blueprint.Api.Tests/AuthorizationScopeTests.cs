@@ -33,7 +33,6 @@ public class AuthorizationScopeTests(DatabaseFixture fixture, BlueprintAppFactor
     [InlineData("player-vm")]
     [InlineData("cite")]
     [InlineData("gallery")]
-    [InlineData("steamfitter")]
     public async Task AControllerRoute_is_forbidden_for_a_caller_holding_its_permission_whose_token_lacks_one_required_scope(string missing)
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewRoles).SeedAsync();
@@ -59,7 +58,6 @@ public class AuthorizationScopeTests(DatabaseFixture fixture, BlueprintAppFactor
     [InlineData("player-vm")]
     [InlineData("cite")]
     [InlineData("gallery")]
-    [InlineData("steamfitter")]
     public async Task TheHub_is_forbidden_for_an_authenticated_caller_whose_token_lacks_one_required_scope(string missing)
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();

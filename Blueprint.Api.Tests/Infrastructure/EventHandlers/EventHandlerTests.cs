@@ -485,7 +485,7 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(50, tracked.Count);
+        Assert.Equal(49, tracked.Count);
         Assert.Equal(
             new[]
             {
@@ -507,7 +507,6 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
                 "PermissionEntity",
                 "ProficiencyLevelEntity",
                 "ProficiencyScaleEntity",
-                "SteamfitterTaskEntity",
                 "TeamCompetencyEntity",
                 "UserPermissionEntity",
                 "UserTeamRoleEntity",

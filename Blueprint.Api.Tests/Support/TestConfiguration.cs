@@ -16,7 +16,7 @@ namespace Blueprint.Api.Tests.Support;
 /// </para>
 /// <para>
 /// <c>Authorization:AuthorizationScope</c> is deliberately not here. The shipped value
-/// (<c>"blueprint player player-vm cite gallery steamfitter"</c>) is what <c>Startup</c> builds its MVC-wide
+/// (<c>"blueprint player player-vm cite gallery"</c>) is what <c>Startup</c> builds its MVC-wide
 /// authorization filter from, requiring every scope, and what the shared <c>TestAuthHandler</c> reads to mint
 /// the <c>scope</c> claims, so the two cannot drift apart.
 /// </para>

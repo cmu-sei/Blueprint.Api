@@ -313,7 +313,17 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         { "GET", "api/msels/{msel}/execution", "ViewMsels", null },
         { "POST", "api/msels/{msel}/execution/moves/0/start", "EditMsels", "{}" },
         { "POST", "api/msels/{msel}/execution/moves/0/groups/0/start", "EditMsels", "{}" },
-        { "PUT", "api/msels/{msel}/execution/paused", "EditMsels", """{"paused":true}""" }
+        { "PUT", "api/msels/{msel}/execution/paused", "EditMsels", """{"paused":true}""" },
+
+        // CasterExportService / MselCasterExportController - the reads want ViewMsels, the writes EditMsels; each
+        // falls back to a role on the MSEL. The seeded MSEL links no Caster directory and carries no copy of one, so
+        // the copy's read lifts to a 204, the team variables to an empty 200, the copy from Caster to a 409 and the
+        // import and the delete to a 404.
+        { "GET", "api/msels/{msel}/caster/export", "ViewMsels", null },
+        { "GET", "api/msels/{msel}/caster/team-variables", "ViewMsels", null },
+        { "POST", "api/msels/{msel}/caster/export", "EditMsels", null },
+        { "POST", "api/msels/{msel}/caster/export/import", "EditMsels", null },
+        { "DELETE", "api/msels/{msel}/caster/export", "EditMsels", null }
     };
 
     [Theory]

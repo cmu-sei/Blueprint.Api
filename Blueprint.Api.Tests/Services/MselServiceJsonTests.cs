@@ -1675,9 +1675,9 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
             result.Changes.Select(c => (c.Field, c.Message)).Order());
     }
 
-    /// <summary>A Caster MSEL is imported with Caster on, and the report does not list Caster.</summary>
+    /// <summary>A Caster MSEL is imported with Caster on, and the report lists Caster as it does the other apps.</summary>
     [Fact]
-    public async Task Import_OfACasterMsel_DoesNotReportThatCasterIsOn()
+    public async Task Import_OfACasterMsel_ReportsThatCasterIsOn()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
         var file = Exported(m => m.UseCaster = true);
@@ -1685,7 +1685,7 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         var result = await Import(Client(actor), file);
 
         Assert.True(result.Msel.UseCaster);
-        Assert.Empty(result.Changes);
+        Assert.Equal(("useCaster", "Caster integration is on."), Assert.Single(result.Changes.Select(c => (c.Field, c.Message))));
     }
 
     /// <summary>A Caster directory the importer cannot view is dropped, and the report says nothing of it.</summary>

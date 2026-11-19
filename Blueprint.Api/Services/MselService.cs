@@ -44,7 +44,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.Msel>> GetUserMselsAsync(Guid userId, bool hasManageUsersPermission, bool hasViewMselsPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> CreateAsync(ViewModels.MselCreate msel, CancellationToken ct);
-        Task<ViewModels.Msel> CopyAsync(Guid mselId, bool hasViewMselsPermission, CancellationToken ct);
+        Task<ViewModels.Msel> CopyAsync(Guid mselId, bool hasViewMselsPermission, bool hasEditMselsPermission, CancellationToken ct);
         Task<ViewModels.Msel> UpdateAsync(Guid id, ViewModels.MselEdit msel, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> AddUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Msel> RemoveUserMselRoleAsync(Guid mselId, Guid userId, MselRole mselRole, bool hasSystemPermission, CancellationToken ct);
@@ -81,6 +81,7 @@ namespace Blueprint.Api.Services
         private readonly ICiteApiClient _citeApiClient;
         private readonly ICasterService _casterService;
         private readonly IAutomationActionCatalog _catalog;
+        private readonly ICasterExportService _casterExportService;
 
         public MselService(
             BlueprintContext context,
@@ -95,7 +96,8 @@ namespace Blueprint.Api.Services
             IXApiService xApiService,
             ICiteApiClient citeApiClient,
             ICasterService casterService,
-            IAutomationActionCatalog catalog)
+            IAutomationActionCatalog catalog,
+            ICasterExportService casterExportService)
         {
             _context = context;
             _clientOptions = clientOptions;
@@ -110,6 +112,7 @@ namespace Blueprint.Api.Services
             _citeApiClient = citeApiClient;
             _casterService = casterService;
             _catalog = catalog;
+            _casterExportService = casterExportService;
         }
 
         public async Task<IEnumerable<ViewModels.Msel>> GetAsync(MselGet queryParameters, CancellationToken ct)
@@ -267,7 +270,7 @@ namespace Blueprint.Api.Services
             return await GetAsync(mselEntity.Id, true, ct);
         }
 
-        public async Task<ViewModels.Msel> CopyAsync(Guid mselId, bool hasViewMselsPermission, CancellationToken ct)
+        public async Task<ViewModels.Msel> CopyAsync(Guid mselId, bool hasViewMselsPermission, bool hasEditMselsPermission, CancellationToken ct)
         {
             if (!await _context.Msels.AnyAsync(m => m.Id == mselId, ct))
                 throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
@@ -278,8 +281,14 @@ namespace Blueprint.Api.Services
             if (!hasViewMselsPermission && !(await MselContributorRequirement.IsMet(_user.GetId(), mselId, true, _context)))
                 throw new ForbiddenException();
 
-            // the copy carries the MSEL's own scoring model, which a contributor may read
-            var newMselEntity = await privateMselCopyAsync(mselId, null, ct);
+            // The copy carries the MSEL's own scoring model, which a contributor may read. It carries the copy of the
+            // MSEL's Caster directory only for a caller who may read its files (CasterExportService.GetAsync), since
+            // the caller owns the copy and could read them there.
+            var userId = _user.GetId();
+            var keepCasterCopy = hasEditMselsPermission ||
+                await MselOwnerRequirement.IsMet(userId, mselId, _context) ||
+                await MselEditorRequirement.IsMet(userId, mselId, _context);
+            var newMselEntity = await privateMselCopyAsync(mselId, null, ct, keepCasterCopy);
             var msel = newMselEntity.ToMsel();
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
@@ -291,7 +300,7 @@ namespace Blueprint.Api.Services
             return msel;
         }
 
-        private async Task<MselEntity> privateMselCopyAsync(Guid mselId, Guid? currentUserTeamId, CancellationToken ct)
+        private async Task<MselEntity> privateMselCopyAsync(Guid mselId, Guid? currentUserTeamId, CancellationToken ct, bool keepCasterCopy)
         {
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == _user.GetId())).Name;
@@ -322,10 +331,15 @@ namespace Blueprint.Api.Services
                 .Include(m => m.ScoringModel)
                 .ThenInclude(sm => sm.Categories)
                 .ThenInclude(c => c.Options)
+                .Include(m => m.CasterExport)
+                .ThenInclude(e => e.Directories)
+                .ThenInclude(d => d.Files)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (mselEntity == null)
                 throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
+            if (!keepCasterCopy)
+                mselEntity.CasterExport = null;
 
             return await privateMselCopyAsync(mselEntity, currentUserTeamId, ct);
         }
@@ -541,6 +555,9 @@ namespace Blueprint.Api.Services
             // copy the MSEL's own scoring model
             if (mselEntity.ScoringModel != null)
                 MselScoringModelService.AssignIds(mselEntity.ScoringModel, mselEntity.Id, mselEntity.CreatedBy);
+            // copy the MSEL's copy of its Caster directory
+            if (mselEntity.CasterExport != null)
+                CasterExportService.AssignIds(mselEntity.CasterExport, mselEntity.Id, mselEntity.CreatedBy);
 
             _context.Msels.Add(mselEntity);
             _context.AutomationTasks.AddRange(AutomationTaskCopier.Copy(copiedTasks, mselEntity.Id, mselEntity.CreatedBy));
@@ -656,6 +673,14 @@ namespace Blueprint.Api.Services
             // the push deploys this directory as the service account, so only accept one the user can view in Caster
             if (msel.CasterDirectoryId != null && msel.CasterDirectoryId != mselToUpdate.CasterDirectoryId)
                 await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
+
+            // a copy of the directory the MSEL linked before is not the topology of the one it links now
+            if (msel.CasterDirectoryId != null && msel.CasterDirectoryId != mselToUpdate.CasterDirectoryId)
+            {
+                var staleCopy = await _context.MselCasterExports.SingleOrDefaultAsync(e => e.MselId == id, ct);
+                if (staleCopy != null)
+                    _context.MselCasterExports.Remove(staleCopy);
+            }
 
             // okay to update this msel
             msel.ApplyTo(mselToUpdate);
@@ -2141,6 +2166,9 @@ namespace Blueprint.Api.Services
 
         public async Task<Tuple<MemoryStream, string>> DownloadJsonAsync(Guid mselId, CancellationToken ct)
         {
+            // A Caster directory's id is local to this Caster, so the file carries a copy of the directory, taken
+            // now so it is the topology as it is; the copy replaces the one the MSEL had
+            await _casterExportService.RefreshForDownloadAsync(mselId, ct);
             var msel = await _context.Msels
                 .AsNoTracking()
                 .Include(m => m.DataFields)
@@ -2168,6 +2196,9 @@ namespace Blueprint.Api.Services
                 .Include(m => m.ScoringModel)
                 .ThenInclude(sm => sm.Categories)
                 .ThenInclude(c => c.Options)
+                .Include(m => m.CasterExport)
+                .ThenInclude(e => e.Directories)
+                .ThenInclude(d => d.Files)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(m => m.Id == mselId);
             if (msel == null)
@@ -2533,8 +2564,15 @@ namespace Blueprint.Api.Services
                 }
             }
 
+            // The file's copy of its Caster directory is read straight into the entity, so it is checked as an
+            // import into Caster checks it.
+            if (mselEntity.CasterExport != null)
+                CasterExportService.Validate(mselEntity.CasterExport);
+
             // A directory ID from another environment, or one this user cannot view in Caster, is dropped
-            // rather than failing the import; the planner can pick a directory afterwards.
+            // rather than failing the import. The push imports the file's copy of the directory in its place;
+            // without one, the planner picks a directory afterwards.
+            var casterCopy = mselEntity.CasterExport == null ? null : $"the MSEL's copy of it (from the Caster project \"{mselEntity.CasterExport.ProjectName}\")";
             if (mselEntity.CasterDirectoryId != null)
             {
                 try
@@ -2545,7 +2583,15 @@ namespace Blueprint.Api.Services
                 {
                     _logger.LogWarning("Dropping Caster directory {DirectoryId} from imported MSEL {MselId}: {ErrorMessage}", mselEntity.CasterDirectoryId, mselEntity.Id, ex.Message);
                     mselEntity.CasterDirectoryId = null;
+                    if (casterCopy != null)
+                        AddChange(result, "casterDirectoryId", $"The Caster directory is not in this Caster, or you cannot view it, so pushing imports {casterCopy} as a new Caster project.");
+                    else if (mselEntity.UseCaster)
+                        AddChange(result, "casterDirectoryId", "The Caster directory is not in this Caster, or you cannot view it. Select the MSEL's Caster directory before pushing.");
                 }
+            }
+            else if (mselEntity.UseCaster && casterCopy != null)
+            {
+                AddChange(result, "casterDirectoryId", $"The MSEL has no Caster directory, so pushing imports {casterCopy} as a new Caster project.");
             }
 
             // make a copy and add it to the database. An import keeps the file's name, which every pushed
@@ -2574,6 +2620,7 @@ namespace Blueprint.Api.Services
             if (mselEntity.UsePlayer) AddChange(result, "usePlayer", "Player integration is on.");
             if (mselEntity.UseGallery) AddChange(result, "useGallery", "Gallery integration is on.");
             if (mselEntity.UseCite) AddChange(result, "useCite", "CITE integration is on.");
+            if (mselEntity.UseCaster) AddChange(result, "useCaster", "Caster integration is on.");
             foreach (var note in upgradeNotes)
                 AddChange(result, "automationTasks", note);
             if (tasksWithoutSecrets > 0)
@@ -2844,16 +2891,22 @@ namespace Blueprint.Api.Services
             if (msel.PlayerViewId != null)
                 throw new ConflictException($"MSEL {mselId} is already deployed.");
             if (msel.UseCaster)
-            {
-                await ValidateCasterSetupAsync(msel, ct);
-                // also covers a directory that arrived by copy rather than through UpdateAsync
-                await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
-            }
+                await ValidateCasterSetupAsync(msel, true, ct);
             await ValidateMovesAsync(mselId, ct);
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
                 throw new ConflictException(userVerificationErrorMessage);
+            if (msel.UseCaster)
+            {
+                // A MSEL with only its copy of a directory, from another Caster, has it imported now as the pusher,
+                // never as the service account: the copy can come from an uploaded file, so Caster checks that the
+                // pusher may create a project, and the pusher owns it. The MSEL then links the new directory.
+                if (msel.CasterDirectoryId == null)
+                    await _casterExportService.ImportForPushAsync(msel, ct);
+                // also covers a directory that arrived by copy rather than through UpdateAsync
+                await _casterService.GetDirectoryAsync((Guid)msel.CasterDirectoryId, ct);
+            }
             msel.Status = MselItemStatus.Pushing;
             msel.IntegrationStatus = "Pushing Integrations";
             await _context.SaveChangesAsync(ct);
@@ -2948,14 +3001,22 @@ namespace Blueprint.Api.Services
         }
 
         // Checks a Caster MSEL without calling Caster, so an invitee with no Caster access can run them too.
-        // Fails here, where the planner can fix the MSEL, not minutes into the push.
-        private async Task ValidateCasterSetupAsync(MselEntity msel, CancellationToken ct)
+        // Fails here, where the planner can fix the MSEL, not minutes into the push. A push imports a MSEL's copy
+        // of a directory as the pusher (copyImports); a launch pushes as the service account, which never imports
+        // one, so a template needs its directory.
+        private async Task ValidateCasterSetupAsync(MselEntity msel, bool copyImports, CancellationToken ct)
         {
             // terraform attaches the VMs to the Player view and its teams
             if (!msel.UsePlayer)
                 throw new ConflictException($"MSEL {msel.Id} uses Caster, which requires Player.");
             if (msel.CasterDirectoryId == null)
-                throw new ConflictException($"MSEL {msel.Id} uses Caster but has no Caster directory selected.");
+            {
+                var hasCopy = await _context.MselCasterExports.AnyAsync(e => e.MselId == msel.Id, ct);
+                if (hasCopy && !copyImports)
+                    throw new ConflictException($"MSEL {msel.Id} has only a copy of its Caster directory. Use Import into Caster on its Caster tab before launching it.");
+                if (!hasCopy)
+                    throw new ConflictException($"MSEL {msel.Id} uses Caster but has no Caster directory selected.");
+            }
             var teams = await _context.Teams.Where(t => t.MselId == msel.Id).Select(t => new { t.Name, t.CasterTeamVariable }).ToListAsync(ct);
             // Unless a MSEL team takes its place, Player gives the view its own Admin team,
             // which writes "admin" unless a MSEL team is mapped to it
@@ -3259,12 +3320,14 @@ namespace Blueprint.Api.Services
             // the copy gets the template's teams and Caster settings, so check the template before using up an invitation
             var template = await _context.Msels.AsNoTracking().SingleAsync(m => m.Id == mselId, ct);
             if (template.UseCaster)
-                await ValidateCasterSetupAsync(template, ct);
+                await ValidateCasterSetupAsync(template, false, ct);
             // the launch pushes, so a template with moves out of order fails here for the planner to fix, not later for the participant
             await ValidateMovesAsync(mselId, ct);
 
             // clone the template MSEL
-            var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct);
+            // A launch needs the template's directory, so it has no use for the copy, and the invitee, who owns the
+            // launched MSEL, may not read the template's files
+            var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct, keepCasterCopy: false);
             // create the new player view ID, so that the UI will be able to look for it to be created
             var playerViewId = Guid.NewGuid();
             // store it now, as a push does, so the view, its teams and the MSEL all use the same ID

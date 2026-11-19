@@ -22,8 +22,9 @@ namespace Blueprint.Api.Services
         public static readonly string[] TlpLevels = ["CLEAR", "GREEN", "AMBER", "AMBER+STRICT", "RED"];
 
         private const string Title = "Marking";
+        // a table whose own title attribute is Marking, in either quotes and with any spacing; not data-title or the like
         private static readonly Regex _existing = new(
-            @"<table\b[^>]*\btitle=""" + Title + @"""[^>]*>.*?</table>\s*", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            @"<table\b[^>]*?\stitle\s*=\s*([""'])" + Title + @"\1[^>]*>.*?</table>\s*", RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
         /// <summary>
         /// The marking a MSEL may have; the text is a TLP level or the classification. A marking that is not set or not known,
@@ -42,13 +43,18 @@ namespace Blueprint.Api.Services
             };
         }
 
-        /// <summary>The article with its MSEL's marking: at the top, and at the bottom too for a classification</summary>
+        /// <summary>
+        /// The article with its MSEL's marking: at the top, and at the bottom too for a classification. An article with no
+        /// text still gets the marking; with none, it is left as it is.
+        /// </summary>
         public static string Apply(string html, string marking, string text, string exerciseName, string fallback = None)
         {
+            var (kind, value) = Clean(marking, text, fallback);
             if (string.IsNullOrWhiteSpace(html))
+                html = kind == None ? html : "";
+            if (kind == None && string.IsNullOrEmpty(html))
                 return html;
             var body = _existing.Replace(html, "").Trim();
-            var (kind, value) = Clean(marking, text, fallback);
             return kind switch
             {
                 None => body,

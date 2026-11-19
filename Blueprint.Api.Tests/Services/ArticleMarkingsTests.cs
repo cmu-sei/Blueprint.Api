@@ -79,6 +79,39 @@ public class ArticleMarkingsTests
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(remarked, "title=\"Marking\""));
     }
 
+    /// <summary>A marking table written by hand or by another editor is replaced too, however its title attribute is quoted or spaced.</summary>
+    [Theory]
+    [InlineData("<table title='Marking'><tr><td>TLP:RED</td></tr></table>")]
+    [InlineData("<table title = \"Marking\"><tr><td>TLP:RED</td></tr></table>")]
+    [InlineData("<TABLE border=\"0\" TITLE=\"marking\"><tr><td>TLP:RED</td></tr></TABLE>")]
+    public void Apply_ReplacesAMarkingWrittenAnotherWay(string existing)
+    {
+        var html = ArticleMarkings.Apply(existing + Article, "Tlp", "GREEN", "Deep Bite");
+
+        Assert.DoesNotContain("TLP:RED", html);
+        Assert.Contains("<b>TLP:GREEN</b>", html);
+        Assert.EndsWith(Article, html);
+    }
+
+    /// <summary>Only a table's own title marks it: one whose data-title says Marking is the article's content.</summary>
+    [Fact]
+    public void Apply_KeepsATableWhoseOtherAttributeNamesMarking()
+    {
+        const string table = "<table data-title=\"Marking\"><tr><td>Keep me</td></tr></table>";
+
+        Assert.Equal(table + Article, ArticleMarkings.Apply(table + Article, "None", null, "Deep Bite"));
+    }
+
+    /// <summary>An article with no text still carries its MSEL's marking; with none, it is left as it is.</summary>
+    [Fact]
+    public void Apply_MarksAnArticleWithNoText()
+    {
+        Assert.Contains("<b>TLP:GREEN</b>", ArticleMarkings.Apply("", "Tlp", "GREEN", "Deep Bite"));
+        Assert.Contains("SECRET", ArticleMarkings.Apply(null, "Classification", "SECRET", "Deep Bite"));
+        Assert.Null(ArticleMarkings.Apply(null, "None", null, "Deep Bite"));
+        Assert.Equal("", ArticleMarkings.Apply("", "None", null, "Deep Bite"));
+    }
+
     [Fact]
     public void Apply_TakesAMarkingAlreadyThereOff_ForNone()
     {

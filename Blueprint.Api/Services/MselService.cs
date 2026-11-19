@@ -2301,6 +2301,8 @@ namespace Blueprint.Api.Services
             // importer's to write, so keeping the date would copy whatever image that ID has here,
             // even one of a MSEL the importer cannot view.
             mselEntity.ImageDateModified = null;
+            // the file's marking is read straight into the entity, so it is cleaned as a create or save cleans it
+            (mselEntity.ArticleMarking, mselEntity.ArticleMarkingText) = ArticleMarkings.Clean(mselEntity.ArticleMarking, mselEntity.ArticleMarkingText);
             var droppedTeamUsers = mselEntity.Teams.Sum(t => t.TeamUsers?.Count ?? 0);
             if (droppedTeamUsers > 0)
                 AddChange(result, "teams", $"{droppedTeamUsers} team members were not imported. Add users to the teams before pushing.");

@@ -367,6 +367,19 @@ namespace Blueprint.Api.Automation
             await _db.SaveChangesAsync(ct);
             if (next.Count > 0)
                 _registry.Wake();
+            // the exercise's record, with the points the task earned; a record that cannot be made does not fail the run
+            if (run.Kind == AutomationRunKind.Exercise && run.AutomationTaskId != null)
+            {
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    await scope.ServiceProvider.GetRequiredService<Services.IXApiService>().AutomationRunEndedAsync(run.Id, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "The xAPI statement of automation run {RunId} could not be made", run.Id);
+                }
+            }
         }
 
         private static string Truncate(string s, int max) => s == null || s.Length <= max ? s : s.Substring(0, max) + "…";

@@ -75,7 +75,7 @@ public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseT
                         api_url, expected_output, expiration_seconds, delay_seconds, interval_seconds, iterations,
                         trigger_condition, user_executable, repeatable, created_by, date_created)
                     VALUES ({taskIds[c.Key]}, {events[c.Key].Id}, {c.TaskType}, {c.Key}, 12, {hstore}::hstore,
-                        'http', {c.Expected}, 120, 5, 0, 0, 6, true, false, {Guid.NewGuid()}, now())
+                        'http', {c.Expected}, 120, 5, 0, 0, 6, {c.UserExecutable}, false, {Guid.NewGuid()}, now())
                     """, Ct);
                 await context.Database.ExecuteSqlInterpolatedAsync(
                     $"UPDATE scenario_events SET steamfitter_task_id = {taskIds[c.Key]} WHERE id = {events[c.Key].Id}", Ct);
@@ -89,7 +89,7 @@ public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseT
         var converted = stored.ToDictionary(t => keyOfEvent[t.ScenarioEventId], t => new Converted(
             t.Action, t.ActionParameters, t.ExpectedOutput, t.Enabled, t.TriggerCondition,
             t.TriggerTaskId == null ? null : keyOfEvent[stored.Single(x => x.Id == t.TriggerTaskId).ScenarioEventId],
-            t.DelaySeconds, t.Iterations, t.Name));
+            t.DelaySeconds, t.Iterations, t.Name, t.UserExecutable, t.Score));
         AssertConverted(converted);
 
         // the ids are kept, and an http task's headers wait, in the clear, for AutomationSecretUpgrader
@@ -126,7 +126,7 @@ public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseT
                 ["IntervalSeconds"] = 0,
                 ["Iterations"] = 0,
                 ["TriggerCondition"] = 6,
-                ["UserExecutable"] = true,
+                ["UserExecutable"] = c.UserExecutable,
                 ["Repeatable"] = false,
             },
         });
@@ -149,7 +149,9 @@ public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseT
             t.Value["TriggerTaskId"] is JsonValue trigger ? keyOfTask[trigger.GetValue<string>()] : null,
             t.Value["DelaySeconds"]!.GetValue<int>(),
             t.Value["Iterations"]!.GetValue<int>(),
-            t.Value["Name"]!.GetValue<string>()));
+            t.Value["Name"]!.GetValue<string>(),
+            t.Value["UserExecutable"]!.GetValue<bool>(),
+            t.Value["Score"]!.GetValue<int>()));
         AssertConverted(converted);
 
         // a file carries no secrets, so the headers are gone, and the upgrader's notes say so
@@ -197,15 +199,22 @@ public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseT
             Assert.Equal(5, c.Value.Delay);
             // Steamfitter read zero iterations as one
             Assert.Equal(1, c.Value.Iterations);
+            // Blueprint never pushed a score; a task a participant could run still can
+            Assert.Equal(0, c.Value.Score);
+            Assert.Equal(c.Key == "notify", c.Value.UserExecutable);
         });
     }
 
     private static string Escape(string value) => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
     private sealed record LegacyCase(
-        string Key, int Delta, int GroupOrder, string Target, int TaskType, Dictionary<string, string> Parameters, string Expected);
+        string Key, int Delta, int GroupOrder, string Target, int TaskType, Dictionary<string, string> Parameters, string Expected)
+    {
+        // only the notification was one a participant could run
+        public bool UserExecutable => Key == "notify";
+    }
 
     private sealed record Converted(
         AutomationAction Action, Dictionary<string, string> Parameters, string Expected, bool Enabled,
-        AutomationTrigger Trigger, string TriggerKey, int Delay, int Iterations, string Name);
+        AutomationTrigger Trigger, string TriggerKey, int Delay, int Iterations, string Name, bool UserExecutable, int Score);
 }

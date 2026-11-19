@@ -145,4 +145,49 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
                 await SendAsync(RunGroups(mselId.Value), MainHubMethods.AutomationResultDeleted, [notification.Entity.Id], ct);
         }
     }
+
+    /// <summary>
+    /// Tells a MSEL's Tasks page that its tasks or score may have changed: an exercise run started or changed status, a
+    /// task changed, or the MSEL was paused, resumed, pushed or pulled. The page reads them again; the message carries
+    /// only the MSEL's id, so nothing reaches a participant that the Tasks page would not show.
+    /// </summary>
+    public class ParticipantTasksSignalRHandler(IHubContext<MainHub> hub) :
+        INotificationHandler<EntityCreated<AutomationRunEntity>>,
+        INotificationHandler<EntityUpdated<AutomationRunEntity>>,
+        INotificationHandler<EntityCreated<AutomationTaskEntity>>,
+        INotificationHandler<EntityUpdated<AutomationTaskEntity>>,
+        INotificationHandler<EntityDeleted<AutomationTaskEntity>>,
+        INotificationHandler<EntityUpdated<MselEntity>>
+    {
+        private static readonly string[] MselProperties =
+            [nameof(MselEntity.AutomationPaused), nameof(MselEntity.Status), nameof(MselEntity.DeploymentId)];
+
+        private Task Changed(Guid mselId, CancellationToken ct) =>
+            hub.Clients.Group(MainHub.ParticipantGroup(mselId)).SendAsync(MainHubMethods.ParticipantTasksChanged, mselId, ct);
+
+        public Task Handle(EntityCreated<AutomationRunEntity> notification, CancellationToken ct) =>
+            notification.Entity.Kind == Data.Enumerations.AutomationRunKind.Exercise && notification.Entity.AutomationTaskId != null
+                ? Changed(notification.Entity.MselId, ct)
+                : Task.CompletedTask;
+
+        public Task Handle(EntityUpdated<AutomationRunEntity> notification, CancellationToken ct) =>
+            notification.Entity.Kind == Data.Enumerations.AutomationRunKind.Exercise && notification.Entity.AutomationTaskId != null &&
+            (notification.ModifiedProperties?.Contains(nameof(AutomationRunEntity.Status)) ?? true)
+                ? Changed(notification.Entity.MselId, ct)
+                : Task.CompletedTask;
+
+        public Task Handle(EntityCreated<AutomationTaskEntity> notification, CancellationToken ct) =>
+            Changed(notification.Entity.MselId, ct);
+
+        public Task Handle(EntityUpdated<AutomationTaskEntity> notification, CancellationToken ct) =>
+            Changed(notification.Entity.MselId, ct);
+
+        public Task Handle(EntityDeleted<AutomationTaskEntity> notification, CancellationToken ct) =>
+            Changed(notification.Entity.MselId, ct);
+
+        public Task Handle(EntityUpdated<MselEntity> notification, CancellationToken ct) =>
+            (notification.ModifiedProperties ?? []).Any(p => MselProperties.Contains(p))
+                ? Changed(notification.Entity.Id, ct)
+                : Task.CompletedTask;
+    }
 }

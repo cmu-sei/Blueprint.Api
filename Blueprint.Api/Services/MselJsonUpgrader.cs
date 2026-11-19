@@ -168,6 +168,9 @@ namespace Blueprint.Api.Services
                 ["TriggerTaskId"] = null,
                 ["Enabled"] = enabled,
                 ["Repeatable"] = Get(legacy, "Repeatable")?.GetValue<bool>() ?? false,
+                ["Score"] = 0,
+                // a task a participant could run in Steamfitter still can
+                ["UserExecutable"] = Get(legacy, "UserExecutable")?.GetValue<bool>() ?? false,
                 ["DisplayOrder"] = 0,
             };
             // headers are a secret now, and a file carries none

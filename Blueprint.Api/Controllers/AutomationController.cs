@@ -95,6 +95,30 @@ namespace Blueprint.Api.Controllers
             return CreatedAtAction(nameof(GetRun), new { id = run.Id }, run);
         }
 
+        /// <summary>Gets the tasks participants can run on a MSEL, with the exercise's score</summary>
+        /// <remarks>Accessible to anyone who may read the MSEL, its participants included. A task's action, parameters and
+        /// output are not part of it.</remarks>
+        [HttpGet("msels/{mselId}/participantTasks")]
+        [ProducesResponseType(typeof(ParticipantTasks), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getParticipantTasks")]
+        public async Task<IActionResult> GetParticipantTasks(Guid mselId, CancellationToken ct)
+        {
+            var hasViewMsels = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            return Ok(await _automationService.GetParticipantTasksAsync(mselId, hasViewMsels, ct));
+        }
+
+        /// <summary>Runs a task participants can run, as a participant</summary>
+        /// <remarks>Accessible to the MSEL's participants and contributors, and with EditMsels, while it is deployed and its
+        /// automation is not paused. ViewMsels alone does not run tasks.</remarks>
+        [HttpPost("msels/{mselId}/participantTasks/{taskId}/run")]
+        [ProducesResponseType(typeof(ParticipantTask), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "runParticipantTask")]
+        public async Task<IActionResult> RunParticipantTask(Guid mselId, Guid taskId, CancellationToken ct)
+        {
+            var hasEditMsels = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            return Ok(await _automationService.RunAsParticipantAsync(mselId, taskId, hasEditMsels, ct));
+        }
+
         /// <summary>Gets a MSEL's automation runs, newest first, with their results</summary>
         /// <remarks>Accessible to whoever may watch the MSEL's Facilitator View.</remarks>
         [HttpGet("msels/{mselId}/automationRuns")]

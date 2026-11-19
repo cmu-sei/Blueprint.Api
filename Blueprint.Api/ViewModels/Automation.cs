@@ -33,6 +33,8 @@ namespace Blueprint.Api.ViewModels
         public Guid? TriggerTaskId { get; set; }
         public bool Enabled { get; set; }
         public bool Repeatable { get; set; }
+        public int Score { get; set; }
+        public bool UserExecutable { get; set; }
     }
 
     /// <summary>One run of an automation task, or a group start's record.</summary>
@@ -115,6 +117,10 @@ namespace Blueprint.Api.ViewModels
         public Guid? TriggerTaskId { get; set; }
         public bool Enabled { get; set; } = true;
         public bool Repeatable { get; set; }
+        /// <summary>The points the exercise earns when the task's newest run succeeds; 0 is not scored.</summary>
+        public int Score { get; set; }
+        /// <summary>Whether a participant can run it on the MSEL's Tasks page.</summary>
+        public bool UserExecutable { get; set; }
     }
 
     /// <summary>
@@ -203,5 +209,38 @@ namespace Blueprint.Api.ViewModels
     public class AutomationPausedForm
     {
         public bool Paused { get; set; }
+    }
+
+    /// <summary>
+    /// A task a participant can run, as the MSEL's Tasks page shows it: what it is called, how its newest run in this
+    /// deployment went, and its points. A participant is not shown its action, parameters or output.
+    /// </summary>
+    public class ParticipantTask
+    {
+        public Guid Id { get; set; }
+        public Guid ScenarioEventId { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        /// <summary>The newest run's status; none when the task has not run in this deployment.</summary>
+        public AutomationStatus? Status { get; set; }
+        public DateTime? StatusAt { get; set; }
+        /// <summary>Whether the participant can run it now; when not, why.</summary>
+        public bool CanRun { get; set; }
+        public string CannotRunReason { get; set; }
+        public int TotalScore { get; set; }
+        public int TotalScoreEarned { get; set; }
+    }
+
+    /// <summary>A deployed MSEL's Tasks page: the tasks participants can run, and the exercise's score.</summary>
+    public class ParticipantTasks
+    {
+        public Guid MselId { get; set; }
+        public string MselName { get; set; }
+        public bool IsDeployed { get; set; }
+        public bool AutomationPaused { get; set; }
+        /// <summary>The most every task of the MSEL can earn together, participants' or not.</summary>
+        public int Score { get; set; }
+        public int ScoreEarned { get; set; }
+        public List<ParticipantTask> Tasks { get; set; } = new();
     }
 }

@@ -36,7 +36,7 @@ A User can be assigned a Role in the Users section of the Administration area.
   - Facilitator - Runs the deployed MSEL from the Facilitator View: starts its moves and groups, pauses its scheduled automation, and runs, reruns and cancels its automation tasks.
   - Viewer - Reads the MSEL.
 
-  The MSEL's creator holds every MSEL Role. A User on one of the MSEL's Teams without a MSEL Role is a participant and sees only its Exercise View.
+  The MSEL's creator holds every MSEL Role. A User on one of the MSEL's Teams without a MSEL Role is a participant and sees only its Exercise View, and its Tasks page: the automation tasks marked "Participants can run it", with how each went and the exercise's score, but not their actions, parameters or output. A participant runs those tasks while the MSEL is deployed and its automation is not paused. So can any contributor, and a User with `EditMsels`; `ViewMsels` reads the Tasks page but runs nothing.
 
 Roles can also optionally be integrated with your Identity Provider. See Identity Provider Integration below.
 

@@ -47,6 +47,8 @@ namespace Blueprint.Api.Automation
                     TriggerTaskId = copied,
                     Enabled = source.Enabled,
                     Repeatable = source.Repeatable,
+                    Score = source.Score,
+                    UserExecutable = source.UserExecutable,
                     CreatedBy = createdBy,
                 };
             }).ToList();

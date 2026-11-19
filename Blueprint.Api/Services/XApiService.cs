@@ -45,6 +45,7 @@ namespace Blueprint.Api.Services
         Task<string> GetStatementsAsync(Guid mselId, DateTime? since, DateTime? until, int limit, string source, bool hasSystemPermission, CancellationToken ct);
         Task<bool> AssertCompetencyAsync(ViewModels.CompetencyAssertion assertion, bool hasSystemPermission, CancellationToken ct);
         Task<bool> RecordCheckboxChangeAsync(Guid mselId, Guid eventId, Guid dataFieldId, string dataFieldName, bool isChecked, CancellationToken ct);
+        Task<bool> AutomationRunEndedAsync(Guid runId, CancellationToken ct);
     }
 
     public class XApiService : IXApiService
@@ -1211,6 +1212,101 @@ namespace Blueprint.Api.Services
                 writer.WriteEndObject();
             }
             return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+        }
+
+        /// <summary>
+        /// Records that an exercise run of an automation task ended, as Steamfitter recorded a task it executed: whether
+        /// it succeeded, and the points it earned of the task's own. The run ends in the background, with no request, so
+        /// the actor is the user who started it, or the MSEL's creator for a run its schedule or a chain started, named
+        /// in the account of Automation's identity provider: XApiOptions.IssuerUrl, which this needs.
+        /// </summary>
+        public async Task<bool> AutomationRunEndedAsync(Guid runId, CancellationToken ct)
+        {
+            if (!IsConfigured())
+                return true;
+            if (string.IsNullOrEmpty(_xApiOptions.IssuerUrl))
+            {
+                _logger.LogInformation("An automation run's xAPI statement needs XApiOptions:IssuerUrl, so none was sent");
+                return false;
+            }
+            var run = await _context.AutomationRuns.AsNoTracking()
+                .Include(r => r.AutomationTask)
+                .Include(r => r.Msel)
+                .SingleOrDefaultAsync(r => r.Id == runId, ct);
+            if (run?.AutomationTask == null || run.Kind != Data.Enumerations.AutomationRunKind.Exercise)
+                return false;
+            var task = run.AutomationTask;
+            var msel = run.Msel;
+            var actorId = run.RequestedBy ?? msel.CreatedBy;
+            var actor = new TinCan.Agent
+            {
+                Name = await _context.Users.Where(u => u.Id == actorId).Select(u => u.Name).FirstOrDefaultAsync(ct),
+                Account = new TinCan.AgentAccount { Name = actorId.ToString(), HomePage = new Uri(_xApiOptions.IssuerUrl) },
+            };
+
+            var activity = new Activity
+            {
+                Id = _xApiOptions.ApiUrl + "automationTasks/" + task.Id,
+                Definition = new ActivityDefinition
+                {
+                    Type = new Uri("http://adlnet.gov/expapi/activities/cmi.interaction"),
+                    Name = new LanguageMap(),
+                    Description = new LanguageMap(),
+                },
+            };
+            activity.Definition.Name.Add("en-US", task.Name);
+            activity.Definition.Description.Add("en-US", task.Description ?? task.Name);
+            activity.Definition.Extensions = new TinCan.Extensions(new Newtonsoft.Json.Linq.JObject
+            {
+                ["https://crucible.sei.cmu.edu/xapi/extensions/task-action"] = task.Action.ToString(),
+                ["https://crucible.sei.cmu.edu/xapi/extensions/run-status"] = run.Status.ToString(),
+            });
+
+            var succeeded = run.Status == Data.Enumerations.AutomationStatus.Succeeded;
+            var result = new Result { Completion = true, Success = succeeded };
+            if (task.Score > 0)
+            {
+                result.Score = new Score
+                {
+                    Raw = succeeded ? task.Score : 0,
+                    Max = task.Score,
+                    Min = 0,
+                    Scaled = succeeded ? 1 : 0,
+                };
+            }
+
+            var context = new Context
+            {
+                Platform = _xApiOptions.Platform,
+                Language = "en-US",
+                Registration = msel.Id,
+                ContextActivities = new ContextActivities(),
+            };
+            var parent = new Activity
+            {
+                Id = _xApiOptions.ApiUrl + "msel/" + msel.Id,
+                Definition = new ActivityDefinition
+                {
+                    Type = new Uri("http://adlnet.gov/expapi/activities/simulation"),
+                    Name = new LanguageMap(),
+                    Description = new LanguageMap(),
+                },
+            };
+            parent.Definition.Name.Add("en-US", msel.Name);
+            parent.Definition.Description.Add("en-US", msel.Description ?? "Mission Scenario Event List");
+            context.ContextActivities.Parent = new List<Activity> { parent };
+
+            var statement = new Statement { Actor = actor, Verb = new Verb { Id = new Uri("http://adlnet.gov/expapi/verbs/executed"), Display = new LanguageMap() }, Target = activity, Result = result, Context = context };
+            statement.Verb.Display.Add("en-US", "executed");
+            await _queueService.EnqueueAsync(new XApiQueuedStatementEntity
+            {
+                Id = Guid.NewGuid(),
+                StatementJson = statement.ToJson(),
+                Verb = "executed",
+                ActivityId = activity.Id,
+                MselId = msel.Id,
+            }, ct);
+            return true;
         }
 
         private List<Dictionary<string, string>> BuildIntegrationGroupings(MselEntity msel)

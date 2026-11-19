@@ -39,6 +39,9 @@ namespace Blueprint.Api.Hubs
         /// </summary>
         public static string FacilitationGroup(Guid mselId) => FacilitationGroup(mselId.ToString());
         public static string FacilitationGroup(string mselId) => mselId + "-facilitation";
+        // a MSEL's Tasks page: told only that its tasks changed, so it carries nothing a participant may not read
+        public static string ParticipantGroup(Guid mselId) => ParticipantGroup(mselId.ToString());
+        public static string ParticipantGroup(string mselId) => mselId + "-participants";
 
         public MainHub(
             ITeamService teamService,
@@ -173,6 +176,22 @@ namespace Blueprint.Api.Hubs
                 .Select(c => (object)new { id = c.UserId, name = c.UserName })
                 .ToList();
             return Task.FromResult(result);
+        }
+
+        /// <summary>Joins a MSEL's Tasks page, for anyone who may read the MSEL, its participants included.</summary>
+        public async Task JoinParticipantTasks(Guid mselId)
+        {
+            var userId = Guid.Parse(Context.User.Identities.First().Claims.First(c => c.Type == "sub").Value);
+            if (await _blueprintAuthorizationService.AuthorizeAsync([SystemPermission.ViewMsels], _ct) ||
+                await MselViewRequirement.IsMet(userId, mselId, _context))
+            {
+                await Groups.AddToGroupAsync(Context.ConnectionId, ParticipantGroup(mselId));
+            }
+        }
+
+        public async Task LeaveParticipantTasks(Guid mselId)
+        {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, ParticipantGroup(mselId));
         }
 
         public async Task JoinAdmin()
@@ -339,6 +358,8 @@ namespace Blueprint.Api.Hubs
         public const string AutomationResultCreated = "AutomationResultCreated";
         public const string AutomationResultUpdated = "AutomationResultUpdated";
         public const string AutomationResultDeleted = "AutomationResultDeleted";
+        // a MSEL's participant tasks or score changed; it carries only the MSEL's id
+        public const string ParticipantTasksChanged = "ParticipantTasksChanged";
         public const string TeamCreated = "TeamCreated";
         public const string TeamUpdated = "TeamUpdated";
         public const string TeamDeleted = "TeamDeleted";

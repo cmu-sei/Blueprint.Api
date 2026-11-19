@@ -129,6 +129,8 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         first.SecretParameters = "{\"PrivateKey\":\"enc:v1:test:abc\"}";
         var second = TestData.AutomationTask(msel.Id, scenarioEvent.Id, trigger: AutomationTrigger.OnSuccess, triggerTaskId: first.Id, displayOrder: 1);
         second.Name = "second";
+        second.Score = 15;
+        second.UserExecutable = true;
         await Seed(first, second);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, SystemPermission.CreateMsels).SeedAsync();
         var file = (await ReadExport(await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct))).GetRawText();
@@ -145,6 +147,7 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         var copiedSecond = Assert.Single(tasks, t => t.Name == "second");
         Assert.NotEqual(first.Id, copiedFirst.Id);
         Assert.Equal(copiedFirst.Id, copiedSecond.TriggerTaskId);
+        Assert.Equal((15, true), (copiedSecond.Score, copiedSecond.UserExecutable));
         Assert.Null(copiedFirst.SecretParameters);
         Assert.Contains(result.Changes, c => c.Field == "automationTasks" && c.Message.Contains("password or key"));
     }

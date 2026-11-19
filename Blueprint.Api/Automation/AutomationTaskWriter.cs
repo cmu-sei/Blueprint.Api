@@ -179,6 +179,8 @@ namespace Blueprint.Api.Automation
             entity.TriggerTaskId = fields.TriggerCondition is AutomationTrigger.Manual or AutomationTrigger.AtEventTime ? null : fields.TriggerTaskId;
             entity.Enabled = fields.Enabled;
             entity.Repeatable = fields.Repeatable;
+            entity.Score = fields.Score;
+            entity.UserExecutable = fields.UserExecutable;
 
             errors.AddRange(_catalog.Validate(fields.Action, entity.ActionParameters, _secrets.Keys(entity.SecretParameters)));
             if (definition.RequiresVm && entity.VmMask == null)
@@ -199,6 +201,8 @@ namespace Blueprint.Api.Automation
             foreach (var (name, value) in new[] { ("the expiration", fields.ExpirationSeconds), ("the delay", fields.DelaySeconds), ("the interval", fields.IntervalSeconds) })
                 if (value < 0 || value > MaxSeconds)
                     errors.Add($"{name} must be from 0 to {MaxSeconds} seconds.");
+            if (fields.Score < 0 || fields.Score > 100000)
+                errors.Add("the score must be from 0 to 100000.");
             return errors;
         }
     }

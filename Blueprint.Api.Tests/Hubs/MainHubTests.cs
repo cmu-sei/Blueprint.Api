@@ -270,6 +270,44 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
     // SelectMsel
     // ---------------------------------------------------------------------------------------------
 
+    // ---------------------------------------------------------------------------------------------
+    // JoinParticipantTasks
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A participant, a member of one of the MSEL's teams, joins its Tasks page's group, and so does ViewMsels; a
+    /// member of another MSEL's team does not (near miss). The group is the participants' only, not the MSEL's.
+    /// </summary>
+    [Theory]
+    [InlineData("participant", true)]
+    [InlineData("viewMsels", true)]
+    [InlineData("otherTeam", false)]
+    public async Task JoinParticipantTasks_JoinsWhoeverMayReadTheMsel(string who, bool joins)
+    {
+        var msel = TestData.Msel();
+        var team = TestData.Team(msel.Id);
+        var other = TestData.Msel();
+        var otherTeam = TestData.Team(other.Id);
+        await Seed(msel, team, other, otherTeam);
+        var actor = await new TestActorBuilder(Db, Ct).OnTeam(who == "otherTeam" ? otherTeam : team).SeedAsync();
+        var harness = Harness(actor.Id);
+
+        await Hub(harness, who == "viewMsels" ? [SystemPermission.ViewMsels] : []).JoinParticipantTasks(msel.Id);
+
+        Assert.Equal(joins ? [MainHub.ParticipantGroup(msel.Id)] : [], Added(harness));
+    }
+
+    [Fact]
+    public async Task LeaveParticipantTasks_LeavesTheGroup()
+    {
+        var msel = Guid.NewGuid();
+        var harness = Harness(Guid.NewGuid());
+
+        await Hub(harness).LeaveParticipantTasks(msel);
+
+        Assert.Equal([MainHub.ParticipantGroup(msel)], Removed(harness));
+    }
+
     [Fact]
     public async Task SelectMsel_ForAReachableMsel_JoinsIt_TracksTheConnection_AndTellsTheOthers()
     {

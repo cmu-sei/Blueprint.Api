@@ -29,7 +29,9 @@ namespace Blueprint.Api.Services
     /// <item>test a task: whoever may edit the MSEL's events, against a Player view they can see themselves;</item>
     /// <item>read runs: whoever may watch the Facilitator View (<see cref="MselFacilitatorViewRequirement"/>);</item>
     /// <item>run, rerun and cancel an exercise run: whoever may run the MSEL (<see cref="MselFacilitatorRequirement"/>),
-    /// while it is deployed; cancel a test: whoever may test.</item>
+    /// while it is deployed; cancel a test: whoever may test;</item>
+    /// <item>run a task marked for participants, and read the MSEL's Tasks page: anyone who may read the MSEL, a
+    /// participant included, while it is deployed and its automation is not paused.</item>
     /// </list>
     /// </summary>
     public interface IAutomationService
@@ -44,6 +46,8 @@ namespace Blueprint.Api.Services
         Task<AutomationRun> CancelAsync(Guid runId, bool hasEditMsels, CancellationToken ct);
         Task<IEnumerable<AutomationRun>> GetRunsByMselAsync(Guid mselId, AutomationRunKind? kind, Guid? taskId, DateTime? since, bool hasViewMsels, CancellationToken ct);
         Task<AutomationRun> GetRunAsync(Guid runId, bool hasViewMsels, CancellationToken ct);
+        Task<ParticipantTasks> GetParticipantTasksAsync(Guid mselId, bool hasViewMsels, CancellationToken ct);
+        Task<ParticipantTask> RunAsParticipantAsync(Guid mselId, Guid taskId, bool hasEditMsels, CancellationToken ct);
     }
 
     public class AutomationService : IAutomationService
@@ -185,6 +189,7 @@ namespace Blueprint.Api.Services
             var msel = await RequireFacilitatorOfDeployedAsync(task.MselId, hasEditMsels, ct);
             if (!task.Enabled)
                 throw new ConflictException("The task is disabled.");
+            await RequireNotRunningAsync(task, msel, ct);
             await RequireRepeatableAsync(task, msel, ct);
             var run = AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Manual, Now,
                 msel.DeploymentId, msel.PlayerViewId, UserId, triggerChain: form?.TriggerChain ?? true);
@@ -283,10 +288,116 @@ namespace Blueprint.Api.Services
         {
             if (!hasEditMsels && !await MselFacilitatorRequirement.IsMet(UserId, mselId, _context))
                 throw new ForbiddenException();
+            return await RequireDeployedAsync(mselId, ct);
+        }
+
+        private async Task<MselEntity> RequireDeployedAsync(Guid mselId, CancellationToken ct)
+        {
             var msel = await _context.Msels.AsNoTracking().SingleAsync(m => m.Id == mselId, ct);
             if (msel.Status != MselItemStatus.Deployed || msel.DeploymentId == null)
                 throw new ConflictException("The MSEL is not deployed.");
             return msel;
+        }
+
+        /// <summary>A run by hand waits for the task's run that has not ended, so two do not run at once.</summary>
+        private async Task RequireNotRunningAsync(AutomationTaskEntity task, MselEntity msel, CancellationToken ct)
+        {
+            var running = await _context.AutomationRuns.AnyAsync(r =>
+                r.AutomationTaskId == task.Id && r.Kind == AutomationRunKind.Exercise && r.DeploymentId == msel.DeploymentId &&
+                (r.Status == AutomationStatus.Pending || r.Status == AutomationStatus.Queued || r.Status == AutomationStatus.Running), ct);
+            if (running)
+                throw new ConflictException("The task is already running.");
+        }
+
+        /// <summary>
+        /// Runs a task marked for participants, as the MSEL's Tasks page does, and answers the task as that page shows it:
+        /// a participant is not given the run itself. The tasks it triggers run too.
+        /// </summary>
+        public async Task<ParticipantTask> RunAsParticipantAsync(Guid mselId, Guid taskId, bool hasEditMsels, CancellationToken ct)
+        {
+            // ViewMsels only reads: a run takes the MSEL itself, through a team or a role, or EditMsels
+            if (!hasEditMsels && !await MselViewRequirement.IsMet(UserId, mselId, _context))
+                throw new ForbiddenException();
+            var task = await _context.AutomationTasks.AsNoTracking()
+                .SingleOrDefaultAsync(t => t.Id == taskId && t.MselId == mselId && t.UserExecutable && t.Enabled, ct)
+                ?? throw new EntityNotFoundException<AutomationTaskEntity>($"Participant task not found {taskId}.");
+            var msel = await RequireDeployedAsync(mselId, ct);
+            if (msel.AutomationPaused)
+                throw new ConflictException("The exercise's automation is paused.");
+            await RequireNotRunningAsync(task, msel, ct);
+            await RequireRepeatableAsync(task, msel, ct);
+            var run = AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Participant, Now,
+                msel.DeploymentId, msel.PlayerViewId, UserId, triggerChain: true);
+            _context.AutomationRuns.Add(run);
+            await _context.SaveChangesAsync(ct);
+            _registry.Wake();
+            return (await GetParticipantTasksAsync(mselId, true, ct)).Tasks.Single(t => t.Id == taskId);
+        }
+
+        public async Task<ParticipantTasks> GetParticipantTasksAsync(Guid mselId, bool hasViewMsels, CancellationToken ct)
+        {
+            if (!hasViewMsels && !await MselViewRequirement.IsMet(UserId, mselId, _context))
+                throw new ForbiddenException();
+            var msel = await _context.Msels.AsNoTracking().SingleOrDefaultAsync(m => m.Id == mselId, ct)
+                ?? throw new EntityNotFoundException<MselEntity>($"MSEL not found {mselId}.");
+            var tasks = await _context.AutomationTasks.AsNoTracking()
+                .Where(t => t.MselId == mselId)
+                .Include(t => t.ScenarioEvent)
+                .ToListAsync(ct);
+            var runs = msel.DeploymentId == null
+                ? new List<AutomationRunEntity>()
+                : await _context.AutomationRuns.AsNoTracking()
+                    .Where(r => r.MselId == mselId && r.Kind == AutomationRunKind.Exercise && r.DeploymentId == msel.DeploymentId && r.AutomationTaskId != null)
+                    .ToListAsync(ct);
+            var latest = runs
+                .GroupBy(r => r.AutomationTaskId.Value)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.DateCreated).ThenByDescending(r => r.DueAt).First());
+            var score = AutomationScoring.Calculate(tasks, AutomationScoring.LatestStatus(runs, msel.DeploymentId));
+            var succeeded = runs.Where(r => r.Status == AutomationStatus.Succeeded).Select(r => r.AutomationTaskId.Value).ToHashSet();
+            var isDeployed = msel.Status == MselItemStatus.Deployed && msel.DeploymentId != null;
+
+            string CannotRun(AutomationTaskEntity task)
+            {
+                if (!isDeployed) return "The exercise is not running.";
+                if (msel.AutomationPaused) return "The exercise's automation is paused.";
+                if (latest.TryGetValue(task.Id, out var run) && !AutomationRuns.IsFinal(run.Status)) return "The task is running.";
+                if (!task.Repeatable && succeeded.Contains(task.Id)) return "The task has succeeded, and runs only once.";
+                return null;
+            }
+
+            return new ParticipantTasks
+            {
+                MselId = msel.Id,
+                MselName = msel.Name,
+                IsDeployed = isDeployed,
+                AutomationPaused = msel.AutomationPaused,
+                Score = score.Score,
+                ScoreEarned = score.ScoreEarned,
+                Tasks = tasks
+                    .Where(t => t.UserExecutable && t.Enabled)
+                    .OrderBy(t => t.ScenarioEvent.DeltaSeconds)
+                    .ThenBy(t => t.ScenarioEvent.GroupOrder)
+                    .ThenBy(t => t.DisplayOrder)
+                    .Select(t =>
+                    {
+                        var reason = CannotRun(t);
+                        var run = latest.GetValueOrDefault(t.Id);
+                        return new ParticipantTask
+                        {
+                            Id = t.Id,
+                            ScenarioEventId = t.ScenarioEventId,
+                            Name = t.Name,
+                            Description = t.Description,
+                            Status = run?.Status,
+                            StatusAt = run?.EndedAt ?? run?.StartedAt ?? run?.DateCreated,
+                            CanRun = reason == null,
+                            CannotRunReason = reason,
+                            TotalScore = score.Tasks[t.Id].TotalScore,
+                            TotalScoreEarned = score.Tasks[t.Id].TotalScoreEarned,
+                        };
+                    })
+                    .ToList(),
+            };
         }
 
         /// <summary>A task that is not repeatable runs once per deployment.</summary>

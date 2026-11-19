@@ -70,6 +70,41 @@ public class AutomationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal("new", (await ReadBack(db => db.AutomationTasks.SingleAsync(t => t.ScenarioEventId == id, Ct))).Name);
     }
 
+    /// <summary>A task keeps its points and whether participants can run it; a negative score is refused.</summary>
+    [Theory]
+    [InlineData(25, HttpStatusCode.OK)]
+    [InlineData(-1, HttpStatusCode.BadRequest)]
+    public async Task SavingATask_KeepsItsScoreAndWhetherParticipantsRunIt(int score, HttpStatusCode expected)
+    {
+        var (msel, scenarioEvent) = await SeedEvent();
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var response = await PutEvent(Client(actor), scenarioEvent, new
+        {
+            name = "Collect evidence",
+            action = "player_notification",
+            actionParameters = new Dictionary<string, string> { ["Text"] = "Go" },
+            iterations = 1,
+            triggerCondition = "Manual",
+            enabled = true,
+            score,
+            userExecutable = true,
+        });
+
+        await AssertStatus(expected, response);
+        if (expected == HttpStatusCode.OK)
+        {
+            var stored = await ReadBack(db => db.AutomationTasks.SingleAsync(t => t.ScenarioEventId == scenarioEvent.Id, Ct));
+            Assert.Equal((25, true), (stored.Score, stored.UserExecutable));
+            var listed = Assert.Single(await GetTasks(Client(actor), msel.Id));
+            Assert.Equal((25, true), (listed.Score, listed.UserExecutable));
+        }
+        else
+        {
+            Assert.Contains("the score must be from 0 to 100000", await response.Content.ReadAsStringAsync(Ct));
+        }
+    }
+
     /// <summary>An edit that does not list the tasks, as moving the event on the timeline does, keeps them.</summary>
     [Fact]
     public async Task UpdatingAnEvent_WithoutItsTasks_KeepsThem()

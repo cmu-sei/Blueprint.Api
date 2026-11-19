@@ -307,6 +307,9 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         { "POST", "api/automationRuns/{automationrun}/rerun", "EditMsels", "{}" },
 
         // MselExecutionService / MselExecutionController - the read wants ViewMsels, the rest EditMsels.
+        // the Tasks page: read with ViewMsels, run with EditMsels (the graph's MSEL is not deployed, so a run is a 409)
+        { "GET", "api/msels/{msel}/participantTasks", "ViewMsels", null },
+        { "POST", "api/msels/{msel}/participantTasks/{automationtask}/run", "EditMsels", null },
         { "GET", "api/msels/{msel}/execution", "ViewMsels", null },
         { "POST", "api/msels/{msel}/execution/moves/0/start", "EditMsels", "{}" },
         { "POST", "api/msels/{msel}/execution/moves/0/groups/0/start", "EditMsels", "{}" },

@@ -562,6 +562,40 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         Assert.True(sent.OutputTruncated);
     }
 
+    /// <summary>
+    /// The Tasks page's group is told, with the MSEL's id alone, when an exercise run of a task starts or changes status, a
+    /// task changes, or the MSEL is paused or pulled; not for a test, a group start's record, a run's other changes, or
+    /// a MSEL's other changes.
+    /// </summary>
+    [Fact]
+    public async Task TheTasksPage_IsToldOnlyThatItsTasksChanged()
+    {
+        var msel = TestData.Msel();
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        await Seed(msel, scenarioEvent, task);
+        AutomationRunEntity Run(AutomationRunKind kind, Guid? taskId) => new()
+        {
+            Id = Guid.NewGuid(), MselId = msel.Id, AutomationTaskId = taskId, Kind = kind, TaskName = "t",
+            Status = AutomationStatus.Running, DueAt = DateTime.UtcNow,
+        };
+        var participants = MainHub.ParticipantGroup(msel.Id);
+        int Told() => _hub.Of(MainHubMethods.ParticipantTasksChanged, participants).Count;
+
+        await Created(Run(AutomationRunKind.Test, task.Id));
+        await Created(Run(AutomationRunKind.Exercise, null));
+        await Updated(Run(AutomationRunKind.Exercise, task.Id), "LeaseUntil");
+        await Updated(msel, "Name");
+        Assert.Equal(0, Told());
+
+        await Created(Run(AutomationRunKind.Exercise, task.Id));
+        await Updated(Run(AutomationRunKind.Exercise, task.Id), "Status");
+        await Updated(task, "Name");
+        await Updated(msel, "AutomationPaused");
+        Assert.Equal(4, Told());
+        Assert.All(_hub.Of(MainHubMethods.ParticipantTasksChanged, participants), x => Assert.Equal(msel.Id, x.Payload));
+    }
+
     /// <summary>A result whose run is not there is told to nobody.</summary>
     [Fact]
     public async Task AnAutomationResultOfARunThatIsNotThere_TellsNobody()
@@ -611,27 +645,33 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
             ? Activator.CreateInstance(notificationType, entity, modifiedProperties)
             : Activator.CreateInstance(notificationType, entity);
         var handlerInterface = typeof(INotificationHandler<>).MakeGenericType(notificationType);
-        var handler = Construct(HandlerFor(handlerInterface), db ?? Db);
 
-        Task handling;
-        try
+        // every handler of the notification, as MediatR publishes it
+        foreach (var handlerType in HandlersFor(handlerInterface))
         {
-            handling = (Task)handlerInterface.GetMethod("Handle")
-                .Invoke(handler, [notification, Ct]);
-        }
-        catch (TargetInvocationException ex)
-        {
-            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            var handler = Construct(handlerType, db ?? Db);
+            Task handling;
+            try
+            {
+                handling = (Task)handlerInterface.GetMethod("Handle")
+                    .Invoke(handler, [notification, Ct]);
+            }
+            catch (TargetInvocationException ex)
+            {
+                ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
 
-            throw;
-        }
+                throw;
+            }
 
-        await handling;
+            await handling;
+        }
     }
 
-    private static Type HandlerFor(Type handlerInterface) =>
+    private static List<Type> HandlersFor(Type handlerInterface) =>
         typeof(Startup).Assembly.GetTypes()
-            .Single(x => !x.IsAbstract && handlerInterface.IsAssignableFrom(x));
+            .Where(x => !x.IsAbstract && handlerInterface.IsAssignableFrom(x))
+            .OrderBy(x => x.FullName, StringComparer.Ordinal)
+            .ToList();
 
     /// <remarks>
     /// The service argument is <c>null</c> deliberately: every handler in the set injects one and not one

@@ -142,7 +142,9 @@ namespace Blueprint.Api.Data.Enumerations
         Schedule = 10,
         Chain = 20,
         Rerun = 30,
-        GroupStart = 40
+        GroupStart = 40,
+        // a participant ran it from the MSEL's Tasks page
+        Participant = 50
     }
 
     public enum GalleryArticleParameter

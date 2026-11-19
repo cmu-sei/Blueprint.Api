@@ -321,6 +321,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("scenario_event_id");
 
+                    b.Property<int>("Score")
+                        .HasColumnType("integer")
+                        .HasColumnName("score");
+
                     b.Property<string>("SecretParameters")
                         .HasColumnType("text")
                         .HasColumnName("secret_parameters");
@@ -332,6 +336,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<Guid?>("TriggerTaskId")
                         .HasColumnType("uuid")
                         .HasColumnName("trigger_task_id");
+
+                    b.Property<bool>("UserExecutable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("user_executable");
 
                     b.Property<string>("VmMask")
                         .HasColumnType("text")

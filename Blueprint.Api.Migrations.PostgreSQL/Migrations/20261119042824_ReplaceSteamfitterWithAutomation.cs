@@ -15,16 +15,31 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // what the conversion fills in, besides the columns AddAutomation added
+            migrationBuilder.AddColumn<int>(
+                name: "score",
+                table: "automation_tasks",
+                type: "integer",
+                nullable: false,
+                defaultValue: 0);
+
+            migrationBuilder.AddColumn<bool>(
+                name: "user_executable",
+                table: "automation_tasks",
+                type: "boolean",
+                nullable: false,
+                defaultValue: false);
+
             // Each Steamfitter task becomes an automation task of its event, keeping its id. Blueprint's own task types
             // become Blueprint's own actions, aimed at the MSEL's integrations: the push filled in their URLs and bodies,
             // and stored them back, so only the parameters the author wrote are kept. An http task's headers are a
             // secret now; AutomationSecretUpgrader encrypts them at startup. A task was pushed only when its event
-            // targeted Steamfitter, so only those are enabled.
+            // targeted Steamfitter, so only those are enabled. A task a participant could run in Steamfitter still can.
             migrationBuilder.Sql(@"
 INSERT INTO automation_tasks (id, msel_id, scenario_event_id, display_order, name, description, action,
     action_parameters, secret_parameters, vm_mask, expected_output, expiration_seconds, delay_seconds,
     interval_seconds, iterations, iteration_termination, trigger_condition, trigger_task_id, enabled, repeatable,
-    date_created, date_modified, created_by, modified_by)
+    score, user_executable, date_created, date_modified, created_by, modified_by)
 SELECT st.id, se.msel_id, st.scenario_event_id, 0, COALESCE(NULLIF(st.name, ''), 'Steamfitter task'), st.description,
     CASE st.task_type WHEN 1 THEN 100 WHEN 2 THEN 400 WHEN 3 THEN 110 ELSE st.task_type END,
     CASE st.task_type
@@ -46,7 +61,7 @@ SELECT st.id, se.msel_id, st.scenario_event_id, 0, COALESCE(NULLIF(st.name, ''),
     GREATEST(st.expiration_seconds, 0), GREATEST(st.delay_seconds, 0), GREATEST(st.interval_seconds, 0),
     GREATEST(st.iterations, 1), 0, 0, NULL,
     COALESCE(se.integration_target, '') ILIKE '%Steamfitter%', st.repeatable,
-    st.date_created, st.date_modified, st.created_by, st.modified_by
+    0, st.user_executable, st.date_created, st.date_modified, st.created_by, st.modified_by
 FROM steamfitter_tasks st
 JOIN scenario_events se ON se.id = st.scenario_event_id
 WHERE st.task_type IN (1, 2, 3, 11, 12, 13, 14);");
@@ -108,6 +123,7 @@ WHERE integration_target ILIKE '%Steamfitter%';");
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+
             migrationBuilder.AddColumn<string>(
                 name: "steamfitter_scenario_role",
                 table: "user_msel_roles",
@@ -211,13 +227,21 @@ SELECT DISTINCT ON (t.scenario_event_id) t.id, t.scenario_event_id,
         ELSE t.action_parameters
     END,
     t.vm_mask, 'http', t.expected_output, t.expiration_seconds, t.delay_seconds, t.interval_seconds, t.iterations, 6,
-    true, t.repeatable, t.date_created, t.date_modified, t.created_by, t.modified_by
+    t.user_executable, t.repeatable, t.date_created, t.date_modified, t.created_by, t.modified_by
 FROM automation_tasks t
 WHERE t.action IN (11, 12, 13, 14, 100, 110, 400)
 ORDER BY t.scenario_event_id, t.display_order;");
             migrationBuilder.Sql(@"
 UPDATE scenario_events se SET steamfitter_task_id = st.id FROM steamfitter_tasks st WHERE st.scenario_event_id = se.id;");
             migrationBuilder.Sql(@"DELETE FROM automation_tasks WHERE id IN (SELECT id FROM steamfitter_tasks);");
+
+            migrationBuilder.DropColumn(
+                name: "score",
+                table: "automation_tasks");
+
+            migrationBuilder.DropColumn(
+                name: "user_executable",
+                table: "automation_tasks");
         }
     }
 }

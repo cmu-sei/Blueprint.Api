@@ -50,6 +50,10 @@ namespace Blueprint.Api.Data.Models
         public bool Enabled { get; set; } = true;
         // a task that is not repeatable runs once per deployment: it cannot be rerun once it succeeded
         public bool Repeatable { get; set; }
+        // the points the exercise earns when the task's newest run succeeds; 0 is not scored
+        public int Score { get; set; }
+        // a participant, a member of one of the MSEL's teams, can run it on the MSEL's Tasks page
+        public bool UserExecutable { get; set; }
     }
 
     public class AutomationTaskEntityConfiguration : IEntityTypeConfiguration<AutomationTaskEntity>

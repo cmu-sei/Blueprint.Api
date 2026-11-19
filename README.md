@@ -114,10 +114,21 @@ which needs the `player-vm` scope.
 **More than one instance.** Instances share the work safely through leases in the database, but SignalR updates
 reach only the clients of the instance that made them. Set `Automation:WorkerEnabled` to true on one replica only.
 
+**Scoring.** A task has points it earns when its newest run in the deployment succeeds, as a Steamfitter task did. The
+most the MSEL can earn adds up, for each chain of tasks, the best way each run can go: a task's points, the tasks it
+triggers on completion, and the better of those on success and on failure, unless those on expiration offer more. The
+Facilitator View and the Tasks page show the score, and each exercise run's xAPI `executed` statement carries the
+points it earned; that statement needs `XApiOptions:IssuerUrl`, since a run ends with no request to name its user by.
+
+**Participant tasks.** A task marked "Participants can run it" is offered on the MSEL's Tasks page,
+`/msel/{id}/tasks`, to the members of its teams. Add it as a Player application,
+`{blueprintUrl}/msel/{blueprintMselId}/tasks`, as Steamfitter's task page was.
+
 **Upgrading from Steamfitter.** Pull deployed MSELs before upgrading, or their Steamfitter scenarios are left behind.
 The upgrade converts each scenario event's Steamfitter task to an automation task, and so does importing an older
 MSEL file. Within a group, each converted task runs after the one before it, and the first is run by hand or by
-starting the group, as the push did. Http headers in an imported file are dropped and have to be entered again.
+starting the group, as the push did. A task participants could run in Steamfitter can still be run on the Tasks page.
+Http headers in an imported file are dropped and have to be entered again.
 
 # Permissions
 

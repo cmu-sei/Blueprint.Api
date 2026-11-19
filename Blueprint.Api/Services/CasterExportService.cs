@@ -386,9 +386,12 @@ namespace Blueprint.Api.Services
                     }, ct);
                     foreach (var file in level.Files.OrderBy(f => f.Name, StringComparer.Ordinal))
                     {
+                        var fileName = CasterFileName(file.Name);
+                        if (fileName != file.Name)
+                            warnings.Add($"Caster no longer takes the file name \"{file.Name}\" in the directory \"{name}\", so it was imported as \"{fileName}\".");
                         await casterApiClient.CreateFileAsync(new CreateFileCommand
                         {
-                            Name = file.Name,
+                            Name = fileName,
                             DirectoryId = directory.Id,
                             Content = file.Content ?? ""
                         }, ct);
@@ -422,9 +425,29 @@ namespace Blueprint.Api.Services
             var safe = new string((name ?? "").Trim().Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_').ToArray());
             if (safe.Length > MaxDirectoryNameLength)
                 safe = safe[..MaxDirectoryNameLength];
-            if (safe.Length == 0 || safe is "." or ".." || _reservedDirectoryNames.Contains(safe))
+            // Caster compares its reserved names whatever their case
+            if (safe.Length == 0 || safe is "." or ".." || _reservedDirectoryNames.Contains(safe, StringComparer.OrdinalIgnoreCase))
                 safe = $"{safe}_directory".TrimStart('.');
             return safe.Length > MaxDirectoryNameLength ? safe[..MaxDirectoryNameLength] : safe;
+        }
+
+        private const int MaxFileNameLength = 255;
+
+        /// <summary>
+        /// <paramref name="name"/> as Caster takes a new file's name: no path separator or control character, no
+        /// whitespace at either end, at most 255 characters, and not '.' or '..'. Caster has held new files to this
+        /// since 3.7.0, but a file made before keeps its name. Only the shared files of the directories above the
+        /// exported one are created this way; the exported directory's own arrive in the archive, which Caster's
+        /// import does not hold to these rules. A separator or control character becomes '_'.
+        /// </summary>
+        internal static string CasterFileName(string name)
+        {
+            var safe = new string((name ?? "").Select(c => c is '/' or '\\' || char.IsControl(c) ? '_' : c).ToArray()).Trim();
+            if (safe.Length > MaxFileNameLength)
+                safe = safe[..MaxFileNameLength].TrimEnd();
+            if (safe.Length == 0 || safe is "." or "..")
+                safe = $"{safe}_file".TrimStart('.');
+            return safe;
         }
 
         private static async Task DeleteProjectAsync(ICasterApiClient casterApiClient, Guid projectId, ILogger logger)

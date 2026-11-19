@@ -630,6 +630,7 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
     [InlineData("Range (v2)", "Range__v2_")]
     [InlineData("..", "_directory")]
     [InlineData("__Workspaces__", "__Workspaces___directory")]
+    [InlineData("__caster__", "__caster___directory")]
     public async Task Import_OfADirectoryNamedAsCasterNoLongerTakes_RenamesItToFitAndWarns(string name, string imported)
     {
         var msel = await SeedMsel();
@@ -645,6 +646,30 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
         await Factory.Caster.Received(1).CreateDirectoryAsync(
             Arg.Is<CreateDirectoryCommand>(c => c.ParentId == null && c.Name == "Root"), Arg.Any<CancellationToken>());
         Assert.Equal($"Caster no longer takes the directory name \"{name}\", so it was imported as \"{imported}\".", Assert.Single(result.Warnings));
+    }
+
+    /// <summary>
+    /// A shared file of a directory above the exported one is created through Caster's file API too, which has held a
+    /// new file's name to no separators, control characters or surrounding whitespace since 3.7.0. A file made
+    /// before can still have such a name, so the import gives it one Caster takes, and says so.
+    /// </summary>
+    [Theory]
+    [InlineData("providers.tf ", "providers.tf")]
+    [InlineData("shared/providers.tf", "shared_providers.tf")]
+    [InlineData("tab\tname.tf", "tab_name.tf")]
+    public async Task Import_OfASharedFileNamedAsCasterNoLongerTakes_RenamesItToFitAndWarns(string name, string imported)
+    {
+        var msel = await SeedMsel();
+        var copy = TestData.MselCasterExport(msel.Id);
+        copy.Directories.Single(d => d.Level == 0).Files.Single().Name = name;
+        await Seed(copy);
+        var created = ArrangeImport();
+
+        var result = await ReadAsync<MselCasterImportResult>(await RootClient.PostAsync($"{Route(msel)}/import", null, Ct), JsonOptions);
+
+        await Factory.Caster.Received(1).CreateFileAsync(
+            Arg.Is<CreateFileCommand>(c => c.DirectoryId == created.Root && c.Name == imported), Arg.Any<CancellationToken>());
+        Assert.Equal($"Caster no longer takes the file name \"{name}\" in the directory \"Root\", so it was imported as \"{imported}\".", Assert.Single(result.Warnings));
     }
 
     /// <summary>A refusal passes on what Caster said was wrong, field by field, not only its status.</summary>

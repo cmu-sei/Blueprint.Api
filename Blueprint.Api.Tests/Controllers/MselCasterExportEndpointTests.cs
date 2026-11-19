@@ -707,25 +707,28 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
     }
 
     /// <summary>
-    /// Two directories of the chain with a file of one name that already fits keep it: a workspace wrote both to one
-    /// path in the source Caster, so numbering one would have terraform read both.
+    /// Two directories of the chain with a file of one name give both copies one name, kept or fitted: a workspace
+    /// wrote both to one path in the source Caster, so numbering one would have terraform read both.
     /// </summary>
-    [Fact]
-    public async Task Import_OfTheSameFittingFileNameInTwoDirectories_KeepsBoth()
+    [Theory]
+    [InlineData("providers.tf", "providers.tf")]
+    [InlineData("providers\\config.tf", "providers_config.tf")]
+    public async Task Import_OfTheSameFileNameInTwoDirectories_GivesBothTheSameName(string name, string imported)
     {
         var msel = await SeedMsel();
         var copy = TestData.MselCasterExport(msel.Id);
         var mid = new MselCasterExportDirectoryEntity { Id = Guid.NewGuid(), MselCasterExportId = msel.Id, Level = 1, Name = "Mid" };
-        mid.Files.Add(new MselCasterExportFileEntity { Id = Guid.NewGuid(), MselCasterExportDirectoryId = mid.Id, Name = "providers.tf", Content = "# mid" });
+        mid.Files.Add(new MselCasterExportFileEntity { Id = Guid.NewGuid(), MselCasterExportDirectoryId = mid.Id, Name = name, Content = "# mid" });
+        copy.Directories.Single(d => d.Name == "Root").Files.Single().Name = name;
         copy.Directories.Single(d => d.Name == "Range").Level = 2;
         copy.Directories.Add(mid);
         await Seed(copy);
         var (projectId, rootId, midId, rangeId) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
         Factory.Caster.CreateProjectAsync(Arg.Any<CreateProjectCommand>(), Arg.Any<CancellationToken>())
             .Returns(new Project { Id = projectId, Name = "Topology" });
-        foreach (var (name, id) in new[] { ("Root", rootId), ("Mid", midId), ("Range", rangeId) })
-            Factory.Caster.CreateDirectoryAsync(Arg.Is<CreateDirectoryCommand>(c => c.Name == name), Arg.Any<CancellationToken>())
-                .Returns(new CasterDirectory { Id = id, Name = name, ProjectId = projectId });
+        foreach (var (directory, id) in new[] { ("Root", rootId), ("Mid", midId), ("Range", rangeId) })
+            Factory.Caster.CreateDirectoryAsync(Arg.Is<CreateDirectoryCommand>(c => c.Name == directory), Arg.Any<CancellationToken>())
+                .Returns(new CasterDirectory { Id = id, Name = directory, ProjectId = projectId });
         Factory.Caster.CreateFileAsync(Arg.Any<CreateFileCommand>(), Arg.Any<CancellationToken>()).Returns(new CasterFile());
         Factory.Caster.ImportDirectoryAsync(rangeId, Arg.Any<bool?>(), Arg.Any<FileParameter>(), Arg.Any<CancellationToken>())
             .Returns(new ImportDirectoryResult { LockedFiles = [] });
@@ -733,10 +736,10 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
         var result = await ReadAsync<MselCasterImportResult>(await RootClient.PostAsync($"{Route(msel)}/import", null, Ct), JsonOptions);
 
         await Factory.Caster.Received(1).CreateFileAsync(
-            Arg.Is<CreateFileCommand>(c => c.DirectoryId == rootId && c.Name == "providers.tf"), Arg.Any<CancellationToken>());
+            Arg.Is<CreateFileCommand>(c => c.DirectoryId == rootId && c.Name == imported), Arg.Any<CancellationToken>());
         await Factory.Caster.Received(1).CreateFileAsync(
-            Arg.Is<CreateFileCommand>(c => c.DirectoryId == midId && c.Name == "providers.tf"), Arg.Any<CancellationToken>());
-        Assert.Empty(result.Warnings);
+            Arg.Is<CreateFileCommand>(c => c.DirectoryId == midId && c.Name == imported), Arg.Any<CancellationToken>());
+        Assert.Equal(name == imported ? 0 : 2, result.Warnings.Count);
     }
 
     /// <summary>A name too long for its number loses characters from its start, keeping its suffix, rather than failing the import.</summary>

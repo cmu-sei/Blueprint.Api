@@ -376,6 +376,8 @@ namespace Blueprint.Api.Services
                         .Concat(ReadEntries(export.Archive).Where(e => e.Workspace == null && !e.Path.Contains('/')).Select(e => e.Path)),
                     StringComparer.Ordinal);
                 var used = new HashSet<string>(StringComparer.Ordinal);
+                // one original name gets one name in every directory, as it had one path in the source workspace
+                var assigned = new Dictionary<string, string>(StringComparer.Ordinal);
                 Guid? parentId = null;
                 foreach (var level in export.Directories.OrderBy(d => d.Level))
                 {
@@ -396,8 +398,12 @@ namespace Blueprint.Api.Services
                     // read both files where they came from
                     foreach (var file in level.Files.OrderBy(f => CasterFileName(f.Name) != f.Name).ThenBy(f => f.Name, StringComparer.Ordinal))
                     {
-                        var fileName = UniqueFileName(CasterFileName(file.Name), file.Name, used, originals);
-                        used.Add(fileName);
+                        if (!assigned.TryGetValue(file.Name, out var fileName))
+                        {
+                            fileName = UniqueFileName(CasterFileName(file.Name), file.Name, used, originals);
+                            assigned[file.Name] = fileName;
+                            used.Add(fileName);
+                        }
                         if (fileName != file.Name)
                             warnings.Add($"Caster no longer takes the file name \"{file.Name}\" in the directory \"{name}\", so it was imported as \"{fileName}\".");
                         await casterApiClient.CreateFileAsync(new CreateFileCommand

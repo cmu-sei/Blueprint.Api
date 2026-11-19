@@ -81,6 +81,11 @@ SET trigger_condition = 40, trigger_task_id = o.previous
 FROM ordered o
 WHERE t.id = o.id AND o.previous IS NOT NULL;");
 
+            // A MSEL deployed before the upgrade was pushed with no deployment of Blueprint's own, which its automation
+            // runs are kept by: it gets one now, so it can be run from the Facilitator View without a pull and a push.
+            migrationBuilder.Sql(@"
+UPDATE msels SET deployment_id = uuid_generate_v4() WHERE status = 40 AND deployment_id IS NULL;");
+
             // Steamfitter is no longer a place an event is delivered to
             migrationBuilder.Sql(@"
 UPDATE scenario_events

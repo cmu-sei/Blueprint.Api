@@ -170,9 +170,24 @@ namespace Blueprint.Api.Services
             };
             _context.AutomationRuns.Add(record);
 
-            // the chosen manual tasks, one after another, in the order given
+            // the chosen manual tasks, one after another, in the order given; a task that runs once per deployment and
+            // has succeeded in this one is left out, as a run by hand would refuse it
             AutomationRunEntity first = null;
-            var ordered = taskIds.Select(id => tasks.Single(t => t.Id == id)).ToList();
+            var succeededTasks = await _context.AutomationRuns.AsNoTracking()
+                .Where(r => r.MselId == mselId && r.Kind == AutomationRunKind.Exercise && r.DeploymentId == msel.DeploymentId &&
+                    r.Status == AutomationStatus.Succeeded && r.AutomationTaskId != null && taskIds.Contains(r.AutomationTaskId.Value))
+                .Select(r => r.AutomationTaskId.Value)
+                .Distinct()
+                .ToListAsync(ct);
+            var ordered = new List<AutomationTaskEntity>();
+            foreach (var task in taskIds.Select(id => tasks.Single(t => t.Id == id)))
+            {
+                if (!task.Repeatable && succeededTasks.Contains(task.Id))
+                    messages.Add($"{task.Name} has succeeded and runs only once, so it was not run again.");
+                else
+                    ordered.Add(task);
+            }
+            record.StatusDetail = string.Join(" ", messages);
             if (ordered.Count > 0)
             {
                 first = AutomationRuns.New(ordered[0], mselId, AutomationRunKind.Exercise, AutomationRunSource.GroupStart,

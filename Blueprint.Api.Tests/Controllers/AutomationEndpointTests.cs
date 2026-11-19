@@ -876,6 +876,38 @@ public class AutomationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(AutomationStatus.Succeeded, record.Status);
     }
 
+    /// <summary>
+    /// A start leaves out a chosen task that runs only once and has succeeded in this deployment, as a run by hand would
+    /// refuse it, and says so; the rest still run, and a repeatable task runs again.
+    /// </summary>
+    [Fact]
+    public async Task StartMove_LeavesOutATaskThatHasSucceededAndRunsOnce()
+    {
+        var (msel, scenarioEvent) = await SeedDeployed();
+        await Seed(TestData.Move(msel.Id, moveNumber: 1));
+        var once = await SeedTask(msel, scenarioEvent);
+        once.Name = "Once";
+        var again = await SeedTask(msel, scenarioEvent);
+        await ReadBack(async db =>
+        {
+            db.AutomationTasks.Attach(once).Property(t => t.Name).IsModified = true;
+            db.AutomationTasks.Attach(again).Entity.Repeatable = true;
+            db.Entry(again).Property(t => t.Repeatable).IsModified = true;
+            return await db.SaveChangesAsync(Ct);
+        });
+        await SeedRun(once, msel, AutomationStatus.Succeeded);
+        await SeedRun(again, msel, AutomationStatus.Succeeded);
+        var actor = await Actor().OnMsel(msel, MselRole.Facilitator).SeedAsync();
+
+        var result = await ReadAsync<MselAdvanceResult>(await Client(actor).PostAsJsonAsync(
+            $"/api/msels/{msel.Id}/execution/moves/1/start", new { runTaskIds = new[] { once.Id, again.Id } }, Ct));
+
+        Assert.Equal(again.Id, result.FirstRun.AutomationTaskId);
+        Assert.Contains("Once has succeeded and runs only once, so it was not run again.", result.Messages);
+        var record = await ReadBack(db => db.AutomationRuns.SingleAsync(r => r.MselId == msel.Id && r.AutomationTaskId == null, Ct));
+        Assert.Contains("Once has succeeded", record.StatusDetail);
+    }
+
     /// <summary>A group start moves Gallery only: CITE follows moves.</summary>
     [Fact]
     public async Task StartGroup_MovesGalleryOnly()

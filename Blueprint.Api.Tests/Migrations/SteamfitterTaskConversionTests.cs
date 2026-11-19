@@ -55,14 +55,15 @@ public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseT
         var migrator = Db.GetService<IMigrator>();
         await migrator.MigrateAsync(BeforeTheConversion, Ct);
 
-        var msel = TestData.Msel();
+        var msel = TestData.Msel(status: MselItemStatus.Deployed);
+        var draft = TestData.Msel();
         var events = Cases.ToDictionary(c => c.Key, c =>
         {
             var scenarioEvent = TestData.ScenarioEvent(msel.Id, deltaSeconds: c.Delta, groupOrder: c.GroupOrder);
             scenarioEvent.IntegrationTarget = c.Target;
             return scenarioEvent;
         });
-        await Seed([msel, .. events.Values]);
+        await Seed([msel, draft, .. events.Values]);
         var taskIds = new Dictionary<string, Guid>();
         await using (var context = NewContext())
         {
@@ -97,6 +98,11 @@ public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseT
         var post = stored.Single(t => t.Id == taskIds["post"]);
         Assert.Equal("{\"X-Team\":\"blue\"}", JsonSerializer.Deserialize<Dictionary<string, string>>(post.SecretParameters)["Headers"]);
         Assert.All(stored.Where(t => t.Id != post.Id), t => Assert.Null(t.SecretParameters));
+
+        // a MSEL deployed before the upgrade gets a deployment of Blueprint's own, so its automation can run
+        var deployments = await ReadBack(db => db.Msels.AsNoTracking().ToDictionaryAsync(m => m.Id, m => m.DeploymentId, Ct));
+        Assert.NotNull(deployments[msel.Id]);
+        Assert.Null(deployments[draft.Id]);
 
         var targets = await ReadBack(db => db.ScenarioEvents.AsNoTracking().ToDictionaryAsync(e => e.Id, e => e.IntegrationTarget, Ct));
         Assert.Equal("Gallery", targets[events["notify"].Id]);

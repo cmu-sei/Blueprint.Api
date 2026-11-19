@@ -672,6 +672,30 @@ public class MselCasterExportEndpointTests(DatabaseFixture fixture, BlueprintApp
         Assert.Equal($"Caster no longer takes the file name \"{name}\" in the directory \"Root\", so it was imported as \"{imported}\".", Assert.Single(result.Warnings));
     }
 
+    /// <summary>
+    /// Caster takes two files of one name, and a run writes one over the other, so a renamed file that would take
+    /// the name of another file in its directory gets a number instead, and both files arrive.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfASharedFileRenamedOntoAnother_NumbersItSoBothArrive()
+    {
+        var msel = await SeedMsel();
+        var copy = TestData.MselCasterExport(msel.Id);
+        var root = copy.Directories.Single(d => d.Level == 0);
+        root.Files.Single().Name = "network_rules.tf";
+        root.Files.Add(new MselCasterExportFileEntity { Id = Guid.NewGuid(), MselCasterExportDirectoryId = root.Id, Name = "network\\rules.tf", Content = "# other" });
+        await Seed(copy);
+        var created = ArrangeImport();
+
+        var result = await ReadAsync<MselCasterImportResult>(await RootClient.PostAsync($"{Route(msel)}/import", null, Ct), JsonOptions);
+
+        await Factory.Caster.Received(1).CreateFileAsync(
+            Arg.Is<CreateFileCommand>(c => c.DirectoryId == created.Root && c.Name == "network_rules.tf" && c.Content == "terraform {}\n"), Arg.Any<CancellationToken>());
+        await Factory.Caster.Received(1).CreateFileAsync(
+            Arg.Is<CreateFileCommand>(c => c.DirectoryId == created.Root && c.Name == "network_rules_2.tf" && c.Content == "# other"), Arg.Any<CancellationToken>());
+        Assert.Equal("Caster no longer takes the file name \"network\\rules.tf\" in the directory \"Root\", so it was imported as \"network_rules_2.tf\".", Assert.Single(result.Warnings));
+    }
+
     /// <summary>A refusal passes on what Caster said was wrong, field by field, not only its status.</summary>
     [Fact]
     public async Task Import_ThatCasterRefusesAsInvalid_SaysWhatCasterRefused()

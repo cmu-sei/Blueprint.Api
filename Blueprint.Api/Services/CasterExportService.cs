@@ -384,9 +384,14 @@ namespace Blueprint.Api.Services
                         AzureDestroyFailureThreshold = level.AzureDestroyFailureThreshold,
                         AzureDestroyFailureThresholdEnabled = level.AzureDestroyFailureThresholdEnabled
                     }, ct);
-                    foreach (var file in level.Files.OrderBy(f => f.Name, StringComparer.Ordinal))
+                    // Caster takes two files of one name and a run writes one over the other, so a name the mapping
+                    // makes twice gets a number; terraform read both files in the directory they came from
+                    var fileNames = new HashSet<string>(level.Files.Select(f => f.Name), StringComparer.Ordinal);
+                    var used = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (var file in level.Files.OrderBy(f => CasterFileName(f.Name) != f.Name).ThenBy(f => f.Name, StringComparer.Ordinal))
                     {
-                        var fileName = CasterFileName(file.Name);
+                        var fileName = UniqueFileName(CasterFileName(file.Name), used, fileNames, file.Name);
+                        used.Add(fileName);
                         if (fileName != file.Name)
                             warnings.Add($"Caster no longer takes the file name \"{file.Name}\" in the directory \"{name}\", so it was imported as \"{fileName}\".");
                         await casterApiClient.CreateFileAsync(new CreateFileCommand
@@ -448,6 +453,22 @@ namespace Blueprint.Api.Services
             if (safe.Length == 0 || safe is "." or "..")
                 safe = $"{safe}_file".TrimStart('.');
             return safe;
+        }
+
+        // name, or name_2.ext, name_3.ext ... when another file of the directory already has it
+        private static string UniqueFileName(string name, HashSet<string> used, HashSet<string> originals, string original)
+        {
+            if (!used.Contains(name) && (name == original || !originals.Contains(name)))
+                return name;
+            var dot = name.LastIndexOf('.');
+            var (stem, extension) = dot > 0 ? (name[..dot], name[dot..]) : (name, "");
+            for (var n = 2; ; n++)
+            {
+                var suffix = $"_{n}";
+                var candidate = $"{stem[..Math.Min(stem.Length, MaxFileNameLength - suffix.Length - extension.Length)]}{suffix}{extension}";
+                if (!used.Contains(candidate) && !originals.Contains(candidate))
+                    return candidate;
+            }
         }
 
         private static async Task DeleteProjectAsync(ICasterApiClient casterApiClient, Guid projectId, ILogger logger)

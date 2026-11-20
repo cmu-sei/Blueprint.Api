@@ -102,11 +102,15 @@ New secrets use `Automation:ActiveSecretKeyId`, or the first key id in order whe
 new key, make it active, and keep the old one for as long as secrets written with it are stored.
 
 **Outbound requests.** An http task may reach only the hosts in `Automation:Http:AllowedHosts`, or the Crucible
-APIs Blueprint is configured with when that is empty. Blueprint's service account token is sent only to
-`Automation:Http:TokenHosts`, which also defaults to the Crucible APIs. Link-local addresses, including cloud
+APIs Blueprint is configured with when that is empty. Blueprint's service account token is sent only to the hosts in
+`Automation:Http:TokenHosts`, to none when it is empty, and never to Blueprint's own API: with the token, a task could
+read any of that API's data as the service account and show it in a test. Link-local addresses, including cloud
 metadata endpoints, are always refused, and loopback addresses are refused unless
 `Automation:Http:AllowLoopbackAddresses` is true, which a development stack on one machine needs. SSH tasks may
 reach only `Automation:Ssh:AllowedHosts`, and file uploads read only from `Automation:Files:LocalDirectory`.
+
+**Copies.** A copied MSEL keeps its tasks' secrets only for a caller who may edit the source (EditMsels, or its Owner
+or Editor); a MSEL launched from a template by invitation never does, so its owner enters them again.
 
 **VM actions** go through the Player VM API at `ClientSettings:PlayerVmApiUrl`, as Blueprint's service account,
 which needs the `player-vm` scope.

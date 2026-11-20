@@ -130,6 +130,20 @@ namespace Blueprint.Api.Automation
         }
 
         /// <summary>
+        /// Holds the MSEL's row, shared, until the transaction ends, and says whether it is still deployed in the given
+        /// deployment. Ending a deployment changes that row, so it waits for the holder: a run made under this lock is
+        /// seen by the cancel that follows, and one asked for after it is refused.
+        /// </summary>
+        public static async Task<bool> HoldDeploymentAsync(BlueprintContext db, Guid mselId, Guid? deploymentId, CancellationToken ct)
+        {
+            if (db.Database.CurrentTransaction == null)
+                throw new InvalidOperationException("Holding a deployment needs a transaction.");
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM msels WHERE id = {mselId} FOR SHARE", ct);
+            return deploymentId != null && await db.Msels.AsNoTracking()
+                .AnyAsync(m => m.Id == mselId && m.Status == MselItemStatus.Deployed && m.DeploymentId == deploymentId, ct);
+        }
+
+        /// <summary>
         /// Why an exercise run of a task should not be made now, or null: one is already going, or the task runs only once
         /// and has succeeded in this deployment. Every way a task is run asks this, under <see cref="LockTasksAsync"/>.
         /// </summary>

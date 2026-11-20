@@ -304,6 +304,8 @@ namespace Blueprint.Api.Services
             await using (var transaction = await _context.Database.BeginTransactionAsync(ct))
             {
                 await AutomationRuns.LockTasksAsync(_context, new[] { task.Id }, ct);
+                if (!await AutomationRuns.HoldDeploymentAsync(_context, msel.Id, msel.DeploymentId, ct))
+                    throw new ConflictException("The MSEL is not deployed.");
                 await RequireNotRunningAsync(task, msel, ct);
                 await RequireRepeatableAsync(task, msel, ct);
                 run = make();
@@ -361,6 +363,7 @@ namespace Blueprint.Api.Services
                     .Where(r => r.MselId == mselId && r.Kind == AutomationRunKind.Exercise && r.DeploymentId == msel.DeploymentId && r.AutomationTaskId != null)
                     .ToListAsync(ct);
             var latest = runs
+                .Where(r => r.Status != AutomationStatus.Skipped)
                 .GroupBy(r => r.AutomationTaskId.Value)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.DateCreated).ThenByDescending(r => r.DueAt).First());
             var score = AutomationScoring.Calculate(tasks, AutomationScoring.LatestStatus(runs, msel.DeploymentId));

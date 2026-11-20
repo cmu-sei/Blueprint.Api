@@ -2384,8 +2384,10 @@ namespace Blueprint.Api.Services
                 var definition = Enum.IsDefined(task.Action) ? _catalog.Get(task.Action) : null;
                 if (definition == null)
                 {
-                    // an action this Blueprint does not have cannot run
+                    // an action this Blueprint does not have cannot run, and nothing it carries is known to be safe to keep
                     task.Enabled = false;
+                    task.SecretParameters = null;
+                    task.ActionParameters = new();
                     AddChange(result, "automationTasks", $"{task.Name} was disabled: its action {task.Action} is not one this Blueprint has.");
                     continue;
                 }
@@ -2395,6 +2397,8 @@ namespace Blueprint.Api.Services
                 var secretKeys = _catalog.SecretKeys(task.Action);
                 var secretInParameters = (task.ActionParameters ?? new()).Any(kv => secretKeys.Contains(kv.Key) && !string.IsNullOrEmpty(kv.Value));
                 task.ActionParameters = _catalog.Normalize(task.Action, task.ActionParameters);
+                if (AutomationTaskWriter.BringWithinLimits(task))
+                    AddChange(result, "automationTasks", $"{task.Name} had values a task cannot hold, which were brought within its limits.");
                 var missingRequired = definition.Parameters.Any(p => p.Secret && p.Required);
                 if (hadSecrets || secretInParameters || missingRequired)
                     tasksWithoutSecrets++;

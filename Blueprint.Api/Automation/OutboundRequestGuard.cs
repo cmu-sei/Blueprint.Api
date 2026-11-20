@@ -73,11 +73,23 @@ namespace Blueprint.Api.Automation
             return tokenHosts is { Count: > 0 } && HostMatches(uri.Host, tokenHosts) && !IsBlueprintApi(uri);
         }
 
-        /// <summary>Whether the URL is Blueprint's own API, which a task must never call with Blueprint's service token.</summary>
-        private bool IsBlueprintApi(Uri uri) =>
-            Uri.TryCreate(_clientOptions.CurrentValue.BlueprintApiUrl, UriKind.Absolute, out var own)
-            && string.Equals(own.Host, uri.Host, StringComparison.OrdinalIgnoreCase)
-            && own.Port == uri.Port;
+        /// <summary>
+        /// Whether the URL is Blueprint's own API, which a task must never call with Blueprint's service token: the host,
+        /// port and base path of ClientSettings:BlueprintApiUrl, so on a domain the Crucible apps share by path, only
+        /// Blueprint's is excluded.
+        /// </summary>
+        private bool IsBlueprintApi(Uri uri)
+        {
+            if (!Uri.TryCreate(_clientOptions.CurrentValue.BlueprintApiUrl, UriKind.Absolute, out var own))
+                return false;
+            if (!string.Equals(CanonicalHost(own.Host), CanonicalHost(uri.Host), StringComparison.OrdinalIgnoreCase) || own.Port != uri.Port)
+                return false;
+            var basePath = own.AbsolutePath.TrimEnd('/') + "/";
+            return basePath == "/" || (uri.AbsolutePath.TrimEnd('/') + "/").StartsWith(basePath, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>A host name as DNS treats it: blueprint.example. is blueprint.example.</summary>
+        private static string CanonicalHost(string host) => host.TrimEnd('.');
 
         public void CheckSshHost(string host)
         {

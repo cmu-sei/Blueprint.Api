@@ -746,17 +746,91 @@ public class AutomationEngineTests(DatabaseFixture fixture) : DatabaseTestBase(f
         var run = await Run(task, msel);
         _runner.ExecuteAsync(Arg.Any<AutomationActionContext>(), Arg.Any<CancellationToken>()).Returns(async _ =>
         {
+            // as RecoverAsync records it: the run and its unfinished results interrupted
             await using var other = NewContext();
             await other.AutomationRuns.Where(r => r.Id == run.Id).ExecuteUpdateAsync(s => s
                 .SetProperty(r => r.Status, AutomationStatus.Error)
                 .SetProperty(r => r.LeaseOwner, (string)null), Ct);
+            await other.AutomationResults.Where(r => r.RunId == run.Id).ExecuteUpdateAsync(s => s
+                .SetProperty(r => r.Status, AutomationStatus.Error)
+                .SetProperty(r => r.ActualOutput, "interrupted"), Ct);
             return new ActionOutcome("ok", true);
         });
 
         await Execute(Assert.Single(await Scheduler().ClaimAsync(10, Ct)));
 
-        Assert.Equal(AutomationStatus.Error, (await Stored(run.Id)).Status);
+        var stored = await Stored(run.Id);
+        Assert.Equal(AutomationStatus.Error, stored.Status);
+        Assert.Equal((AutomationStatus.Error, "interrupted"), (Assert.Single(stored.Results).Status, stored.Results.Single().ActualOutput));
         Assert.Equal(1, await ReadBack(db => db.AutomationRuns.CountAsync(r => r.MselId == msel.Id, Ct)));
+    }
+
+    /// <summary>
+    /// A task due at its event time is scheduled as a run by hand is admitted: one that is already going at that time, or
+    /// that runs only once and has succeeded, is recorded as skipped, once, rather than run again.
+    /// </summary>
+    [Theory]
+    [InlineData(AutomationStatus.Running, "is already running")]
+    [InlineData(AutomationStatus.Succeeded, "has succeeded and runs only once")]
+    public async Task Schedule_OfATaskThatMayNotRunNow_RecordsItSkipped(AutomationStatus earlier, string why)
+    {
+        // its time came a minute ago, within the grace period
+        var (msel, scenarioEvent) = await Deployed(deltaSeconds: 9 * 60);
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id, trigger: AutomationTrigger.AtEventTime);
+        task.Name = "at its time";
+        await Seed(task);
+        var byHand = await Run(task, msel);
+        await Db.AutomationRuns.Where(r => r.Id == byHand.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, earlier), Ct);
+
+        Assert.Equal(1, await Scheduler().ScheduleAsync(Ct));
+
+        var scheduled = await ReadBack(db => db.AutomationRuns.SingleAsync(r => r.AutomationTaskId == task.Id && r.Source == AutomationRunSource.Schedule, Ct));
+        Assert.Equal(AutomationStatus.Skipped, scheduled.Status);
+        Assert.Equal($"at its time {why} at its event time, so it was not run again.", scheduled.StatusDetail);
+        Assert.Equal(0, await Scheduler().ScheduleAsync(Ct));
+    }
+
+    /// <summary>A run whose deployment ended before it started does not act: it is cancelled, and triggers nothing.</summary>
+    [Fact]
+    public async Task ARunOfADeploymentThatEnded_IsCancelled_WithoutActing()
+    {
+        var (msel, scenarioEvent) = await Deployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        await Seed(task);
+        var run = await Run(task, msel);
+        var claimed = Assert.Single(await Scheduler().ClaimAsync(10, Ct));
+        await Db.Msels.Where(m => m.Id == msel.Id).ExecuteUpdateAsync(s => s.SetProperty(m => m.Status, MselItemStatus.Pulling), Ct);
+
+        await Execute(claimed);
+
+        var stored = await Stored(run.Id);
+        Assert.Equal(AutomationStatus.Cancelled, stored.Status);
+        Assert.Equal("The exercise's deployment ended before it started.", stored.StatusDetail);
+        await _runner.DidNotReceive().ExecuteAsync(Arg.Any<AutomationActionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>A run a restart interrupted is recorded in the exercise's xAPI as one the executor ends would be.</summary>
+    [Fact]
+    public async Task Recover_RecordsTheInterruptedRunInXApi()
+    {
+        var (msel, scenarioEvent) = await Deployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        await Seed(task);
+        var run = await Run(task, msel);
+        await Db.AutomationRuns.Where(r => r.Id == run.Id).ExecuteUpdateAsync(s => s
+            .SetProperty(r => r.Status, AutomationStatus.Running)
+            .SetProperty(r => r.LeaseOwner, "gone")
+            .SetProperty(r => r.LeaseUntil, _clock.UtcNow.AddSeconds(-1)), Ct);
+        var xApi = Substitute.For<Blueprint.Api.Services.IXApiService>();
+        var services = new ServiceCollection();
+        services.AddSingleton(xApi);
+        var scopes = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var scheduler = new AutomationScheduler(Db, _registry, AutomationTestOptions.Monitor(Options), _clock,
+            NullLogger<AutomationScheduler>.Instance, scopes);
+
+        await scheduler.RecoverAsync(Ct);
+
+        await xApi.Received(1).AutomationRunEndedAsync(run.Id, Arg.Any<CancellationToken>());
     }
 
     /// <summary>A cancel of a run a worker has claimed only asks it to stop: the worker ends it.</summary>

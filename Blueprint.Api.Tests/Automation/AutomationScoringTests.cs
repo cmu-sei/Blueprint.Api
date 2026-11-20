@@ -138,6 +138,10 @@ public class AutomationScoringTests
             deployment);
 
         Assert.Equal(AutomationStatus.Failed, latest[task.Id]);
+        // a skipped run records that the task was not run: it leaves the newest real outcome, and the points it earned
+        var skipped = Run(AutomationStatus.Skipped, 5);
+        Assert.Equal(AutomationStatus.Failed, AutomationScoring.LatestStatus([Run(AutomationStatus.Failed, 2), skipped], deployment)[task.Id]);
+        Assert.Empty(AutomationScoring.LatestStatus([skipped], deployment));
         Assert.Empty(AutomationScoring.LatestStatus([Run(AutomationStatus.Succeeded, 1)], null));
     }
 }

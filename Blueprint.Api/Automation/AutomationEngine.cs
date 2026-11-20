@@ -82,14 +82,17 @@ namespace Blueprint.Api.Automation
         private readonly TimeProvider _time;
         private readonly ILogger<AutomationScheduler> _logger;
 
+        private readonly IServiceScopeFactory _scopeFactory;
+
         public AutomationScheduler(BlueprintContext db, AutomationRunRegistry registry, IOptionsMonitor<AutomationOptions> options,
-            TimeProvider time, ILogger<AutomationScheduler> logger)
+            TimeProvider time, ILogger<AutomationScheduler> logger, IServiceScopeFactory scopeFactory = null)
         {
             _db = db;
             _registry = registry;
             _options = options;
             _time = time;
             _logger = logger;
+            _scopeFactory = scopeFactory;
         }
 
         private DateTime Now => _time.GetUtcNow().UtcDateTime;
@@ -119,16 +122,27 @@ namespace Blueprint.Api.Automation
                     continue;
                 var run = AutomationRuns.New(item.Task, item.Task.MselId, AutomationRunKind.Exercise, AutomationRunSource.Schedule,
                     at.AddSeconds(Math.Max(0, item.Task.DelaySeconds)), item.DeploymentId, item.PlayerViewId, null);
+                await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+                // as every path that runs a task: not while it is already going, nor again once a run-once task succeeded
+                await AutomationRuns.LockTasksAsync(_db, new[] { item.Task.Id }, ct);
+                var why = await AutomationRuns.WhyNotRunAsync(_db, item.Task, item.DeploymentId, ct);
                 if (now - at > grace)
                 {
                     run.Status = AutomationStatus.Skipped;
                     run.EndedAt = now;
                     run.StatusDetail = $"Its time, {at:u}, had passed by {Math.Floor((now - at).TotalSeconds)} s when Blueprint could run it.";
                 }
+                else if (why != null)
+                {
+                    run.Status = AutomationStatus.Skipped;
+                    run.EndedAt = now;
+                    run.StatusDetail = $"{item.Task.Name} {why} at its event time, so it was not run again.";
+                }
                 _db.AutomationRuns.Add(run);
                 try
                 {
                     await _db.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
                     made++;
                 }
                 catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
@@ -187,7 +201,25 @@ namespace Blueprint.Api.Automation
             await transaction.CommitAsync(ct);
             if (stale.Count > 0)
                 _registry.Wake();
+            // the exercise's record of each run that ended this way, as the executor makes for the runs it ends
+            foreach (var run in stale.Where(r => r.Kind == AutomationRunKind.Exercise && r.AutomationTaskId != null))
+                await RecordEndedAsync(run.Id, ct);
             return requeued + stale.Count;
+        }
+
+        private async Task RecordEndedAsync(Guid runId, CancellationToken ct)
+        {
+            if (_scopeFactory == null)
+                return;
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                await scope.ServiceProvider.GetRequiredService<Services.IXApiService>().AutomationRunEndedAsync(runId, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "The xAPI statement of recovered automation run {RunId} could not be made", runId);
+            }
         }
 
         /// <summary>Ends the pending runs a cancel was asked for, and claims up to <paramref name="capacity"/> due runs for this instance.</summary>
@@ -233,6 +265,8 @@ namespace Blueprint.Api.Automation
                 var owner = _registry.InstanceId;
                 var won = await _db.AutomationRuns
                     .Where(r => r.Id == id && r.Status == AutomationStatus.Pending && !r.CancelRequested)
+                    // a pause committed since the candidates were read holds a scheduled run still
+                    .Where(r => r.Source != AutomationRunSource.Schedule || !_db.Msels.Any(m => m.Id == r.MselId && m.AutomationPaused))
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(r => r.Status, AutomationStatus.Queued)
                         .SetProperty(r => r.LeaseOwner, owner)

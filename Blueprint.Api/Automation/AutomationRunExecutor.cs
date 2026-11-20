@@ -91,10 +91,21 @@ namespace Blueprint.Api.Automation
             var msel = await _db.Msels.AsNoTracking().SingleOrDefaultAsync(m => m.Id == run.MselId, stopping);
             if (msel == null)
                 return;
+            // an exercise run of a deployment that has ended, or is being taken down, does not act on what it leaves
+            if (run.Kind == AutomationRunKind.Exercise && (msel.Status != MselItemStatus.Deployed || msel.DeploymentId != run.DeploymentId))
+            {
+                await FinishAsync(run, task, AutomationStatus.Cancelled, "The exercise's deployment ended before it started.", stopping);
+                return;
+            }
 
             // started only while this instance still holds the run: one that waited past its lease may have been taken
-            // back and claimed by another
-            var started = await WhileOwnedAsync(run, r => r.Status == AutomationStatus.Queued, async () =>
+            // back and claimed by another, and one whose cancel was asked for meanwhile ends here
+            var cancelledMeanwhile = false;
+            var started = await WhileOwnedAsync(run, r =>
+            {
+                cancelledMeanwhile = r.Status == AutomationStatus.Queued && r.CancelRequested;
+                return r.Status == AutomationStatus.Queued && !r.CancelRequested;
+            }, async () =>
             {
                 run.Status = AutomationStatus.Running;
                 run.StartedAt ??= Now;
@@ -103,6 +114,11 @@ namespace Blueprint.Api.Automation
                 run.StatusDetail = null;
                 await _db.SaveChangesAsync(stopping);
             }, stopping);
+            if (cancelledMeanwhile)
+            {
+                await FinishAsync(run, task, AutomationStatus.Cancelled, "Cancelled before it started.", stopping);
+                return;
+            }
             if (!started)
                 return;
 
@@ -221,12 +237,12 @@ namespace Blueprint.Api.Automation
                 result.ActualOutput = refusal;
                 result.StatusAt = Now;
                 _db.AutomationResults.Add(result);
-                await _db.SaveChangesAsync(CancellationToken.None);
+                await SaveWhileRunningAsync(run);
                 return new List<AutomationResultEntity> { result };
             }
             results.AddRange(definition.RequiresVm ? vms.Select(NewResult) : new[] { NewResult(null) });
             _db.AutomationResults.AddRange(results);
-            await _db.SaveChangesAsync(CancellationToken.None);
+            await SaveWhileRunningAsync(run);
 
             // the parameters
             Dictionary<string, string> secrets;
@@ -238,7 +254,7 @@ namespace Blueprint.Api.Automation
             {
                 foreach (var result in results)
                     Record(result, AutomationStatus.Error, ex.Message);
-                await _db.SaveChangesAsync(CancellationToken.None);
+                await SaveWhileRunningAsync(run);
                 return results;
             }
             var substitutions = await SubstitutionsAsync(run, task, msel, CancellationToken.None);
@@ -301,7 +317,7 @@ namespace Blueprint.Api.Automation
                     {
                         result.InputString = input;
                         Record(result, status, output);
-                        await _db.SaveChangesAsync(CancellationToken.None);
+                        await SaveWhileRunningAsync(run);
                     }
                     finally
                     {
@@ -383,6 +399,13 @@ namespace Blueprint.Api.Automation
         }
 
         /// <summary>
+        /// Saves the run's results only while this instance still holds the running run: once a recovery has recorded it
+        /// interrupted, or another instance has it, its results are theirs to write.
+        /// </summary>
+        private Task<bool> SaveWhileRunningAsync(AutomationRunEntity run) =>
+            WhileOwnedAsync(run, r => r.Status == AutomationStatus.Running, () => _db.SaveChangesAsync(CancellationToken.None), CancellationToken.None);
+
+        /// <summary>
         /// Runs <paramref name="write"/> in a transaction holding the run's row, after reading the run again, only while
         /// this instance still holds its lease and <paramref name="state"/> holds: a cancel, a recovery or another
         /// instance may have changed it since. False when it was not written.
@@ -459,8 +482,9 @@ namespace Blueprint.Api.Automation
             var msel = await db.Msels.AsNoTracking().SingleOrDefaultAsync(m => m.Id == run.MselId, ct);
             if (msel == null)
                 return next;
-            // an exercise run's chain stops when its deployment does
-            if (run.Kind == AutomationRunKind.Exercise && (msel.Status != MselItemStatus.Deployed || msel.DeploymentId != run.DeploymentId))
+            // an exercise run's chain stops when its deployment does, checked while holding it as every path that makes
+            // a run does
+            if (run.Kind == AutomationRunKind.Exercise && !await AutomationRuns.HoldDeploymentAsync(db, run.MselId, run.DeploymentId, ct))
                 return next;
 
             var triggers = run.TriggerChain && run.AutomationTaskId != null ? AutomationRuns.TriggersFor(status) : Array.Empty<AutomationTrigger>();

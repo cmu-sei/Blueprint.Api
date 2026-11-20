@@ -78,7 +78,9 @@ namespace Blueprint.Api.Automation
         /// <summary>Each task's newest exercise run status in the deployment, from the MSEL's runs.</summary>
         public static Dictionary<Guid, AutomationStatus> LatestStatus(IEnumerable<AutomationRunEntity> runs, Guid? deploymentId) =>
             runs
+                // a skipped run is a record that the task was not run, not an outcome: it leaves the newest real one
                 .Where(r => r.Kind == AutomationRunKind.Exercise && r.AutomationTaskId != null && deploymentId != null && r.DeploymentId == deploymentId)
+                .Where(r => r.Status != AutomationStatus.Skipped)
                 .GroupBy(r => r.AutomationTaskId.Value)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.DateCreated).ThenByDescending(r => r.DueAt).First().Status);
     }

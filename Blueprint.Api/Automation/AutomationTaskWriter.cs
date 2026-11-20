@@ -32,7 +32,41 @@ namespace Blueprint.Api.Automation
 
     public class AutomationTaskWriter : IAutomationTaskWriter
     {
-        private const int MaxSeconds = 7 * 24 * 3600;
+        public const int MaxSeconds = 7 * 24 * 3600;
+        public const int MaxIterations = 1000;
+        public const int MaxScore = 100000;
+
+        /// <summary>
+        /// Brings a task read from a file within what the writer accepts: its numbers into their ranges, and an unknown
+        /// trigger or termination to the default. True when anything changed.
+        /// </summary>
+        public static bool BringWithinLimits(AutomationTaskEntity task)
+        {
+            var changed = false;
+            int Clamp(int value, int min, int max)
+            {
+                var within = Math.Clamp(value, min, max);
+                changed |= within != value;
+                return within;
+            }
+            task.Score = Clamp(task.Score, 0, MaxScore);
+            task.Iterations = Clamp(task.Iterations, 1, MaxIterations);
+            task.DelaySeconds = Clamp(task.DelaySeconds, 0, MaxSeconds);
+            task.ExpirationSeconds = Clamp(task.ExpirationSeconds, 0, MaxSeconds);
+            task.IntervalSeconds = Clamp(task.IntervalSeconds, 0, MaxSeconds);
+            if (!Enum.IsDefined(task.TriggerCondition))
+            {
+                task.TriggerCondition = AutomationTrigger.Manual;
+                task.TriggerTaskId = null;
+                changed = true;
+            }
+            if (!Enum.IsDefined(task.IterationTermination))
+            {
+                task.IterationTermination = AutomationIterationTermination.IterationCount;
+                changed = true;
+            }
+            return changed;
+        }
         private readonly BlueprintContext _db;
         private readonly IAutomationActionCatalog _catalog;
         private readonly IAutomationSecretProtector _secrets;
@@ -202,13 +236,13 @@ namespace Blueprint.Api.Automation
                 else if (fields.TriggerTaskId == entity.Id)
                     errors.Add("it cannot trigger itself.");
             }
-            if (fields.Iterations < 1 || fields.Iterations > 1000)
-                errors.Add("iterations must be from 1 to 1000.");
+            if (fields.Iterations < 1 || fields.Iterations > MaxIterations)
+                errors.Add($"iterations must be from 1 to {MaxIterations}.");
             foreach (var (name, value) in new[] { ("the expiration", fields.ExpirationSeconds), ("the delay", fields.DelaySeconds), ("the interval", fields.IntervalSeconds) })
                 if (value < 0 || value > MaxSeconds)
                     errors.Add($"{name} must be from 0 to {MaxSeconds} seconds.");
-            if (fields.Score < 0 || fields.Score > 100000)
-                errors.Add("the score must be from 0 to 100000.");
+            if (fields.Score < 0 || fields.Score > MaxScore)
+                errors.Add($"the score must be from 0 to {MaxScore}.");
             return errors;
         }
     }

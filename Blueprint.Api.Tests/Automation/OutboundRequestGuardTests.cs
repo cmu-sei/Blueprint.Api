@@ -132,9 +132,38 @@ public class OutboundRequestGuardTests
         Assert.False(guard.SendsServiceToken(new Uri("http://other.example/api")));
     }
 
+    /// <summary>
+    /// On a domain the Crucible apps share by path, only Blueprint's own path is kept from the token: the other apps on
+    /// the host still get it.
+    /// </summary>
+    [Theory]
+    [InlineData("https://crucible.example/cite/api/evaluations", true)]
+    [InlineData("https://crucible.example/blueprint/api/users", false)]
+    [InlineData("https://crucible.example/BLUEPRINT/api/users", false)]
+    [InlineData("https://crucible.example/blueprint", false)]
+    [InlineData("https://crucible.example/blueprintish/api", true)]
+    public void OnASharedDomain_OnlyBlueprintsPathIsKeptFromTheToken(string url, bool sent)
+    {
+        var clients = AutomationTestOptions.Monitor(new Blueprint.Api.Infrastructure.Options.ClientOptions
+        {
+            BlueprintApiUrl = "https://crucible.example/blueprint/",
+            CiteApiUrl = "https://crucible.example/cite/",
+        });
+        var guard = new OutboundRequestGuard(
+            AutomationTestOptions.Automation(o =>
+            {
+                o.Http.AllowedHosts = ["crucible.example"];
+                o.Http.TokenHosts = ["crucible.example"];
+            }), clients, new NoClients());
+
+        Assert.Equal(sent, guard.SendsServiceToken(new Uri(url)));
+    }
+
     /// <summary>Blueprint's own API never gets its service token from a task, even when its host is listed.</summary>
     [Theory]
     [InlineData("http://blueprint.example/api/users", false)]
+    [InlineData("http://blueprint.example./api/users", false)]
+    [InlineData("http://BLUEPRINT.example/api/users", false)]
     [InlineData("http://blueprint.example:8080/api/users", true)]
     public void BlueprintsOwnApi_NeverGetsTheServiceToken(string url, bool sent)
     {

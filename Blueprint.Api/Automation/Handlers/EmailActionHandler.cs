@@ -54,8 +54,10 @@ namespace Blueprint.Api.Automation.Handlers
             using var client = new SmtpClient();
             if (options.AcceptAllCertificates)
                 client.ServerCertificateValidationCallback = (_, _, _, _) => true;
+            // STARTTLS is required, not merely tried, so a server, or a stripped reply, without it is refused before the
+            // credentials are sent
             await client.ConnectAsync(options.SmtpHost, options.SmtpPort,
-                options.UseStartTls ? SecureSocketOptions.StartTlsWhenAvailable : SecureSocketOptions.Auto, ct);
+                options.UseStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto, ct);
             if (!string.IsNullOrEmpty(options.SmtpUsername))
                 await client.AuthenticateAsync(options.SmtpUsername, options.SmtpPassword, ct);
             await client.SendAsync(message, ct);

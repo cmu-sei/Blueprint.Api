@@ -68,9 +68,16 @@ namespace Blueprint.Api.Automation
 
         public bool SendsServiceToken(Uri uri)
         {
+            // only to hosts named for it: with the token, a task could read any of an API's data as the service account
             var tokenHosts = _options.CurrentValue.Http.TokenHosts;
-            return HostMatches(uri.Host, tokenHosts is { Count: > 0 } ? tokenHosts : CrucibleHosts());
+            return tokenHosts is { Count: > 0 } && HostMatches(uri.Host, tokenHosts) && !IsBlueprintApi(uri);
         }
+
+        /// <summary>Whether the URL is Blueprint's own API, which a task must never call with Blueprint's service token.</summary>
+        private bool IsBlueprintApi(Uri uri) =>
+            Uri.TryCreate(_clientOptions.CurrentValue.BlueprintApiUrl, UriKind.Absolute, out var own)
+            && string.Equals(own.Host, uri.Host, StringComparison.OrdinalIgnoreCase)
+            && own.Port == uri.Port;
 
         public void CheckSshHost(string host)
         {
@@ -107,6 +114,8 @@ namespace Blueprint.Api.Automation
         public static SocketsHttpHandler CreatePrimaryHandler(IOptionsMonitor<AutomationOptions> options) => new()
         {
             AllowAutoRedirect = false,
+            // a proxy would be connected to instead of the destination, and the address check would see only the proxy
+            UseProxy = false,
             ConnectCallback = (context, ct) => ConnectAsync(context.DnsEndPoint, options.CurrentValue.Http.AllowLoopbackAddresses, ct),
         };
 

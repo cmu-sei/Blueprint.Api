@@ -229,6 +229,58 @@ public class AutomationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Contains("its triggers lead back to it", await response.Content.ReadAsStringAsync(Ct));
     }
 
+    /// <summary>
+    /// A task that only leads into a loop of other tasks, kept from older data, is not in that loop, so it saves; the loop
+    /// is the other tasks' to answer for.
+    /// </summary>
+    [Fact]
+    public async Task UpdatingAnEvent_WithATaskThatLeadsIntoAnotherLoop_SavesIt()
+    {
+        var (msel, scenarioEvent) = await SeedEvent();
+        var other = await SeedEventOf(msel);
+        var b = TestData.AutomationTask(msel.Id, other.Id, trigger: AutomationTrigger.OnSuccess);
+        var c = TestData.AutomationTask(msel.Id, other.Id, displayOrder: 1, trigger: AutomationTrigger.OnSuccess, triggerTaskId: b.Id);
+        await Seed(b, c);
+        // the loop is closed in a second save: EF cannot insert two rows that name each other
+        await ReadBack(db => db.AutomationTasks.Where(t => t.Id == b.Id)
+            .ExecuteUpdateAsync(u => u.SetProperty(t => t.TriggerTaskId, c.Id), Ct));
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        await AssertStatus(HttpStatusCode.OK, await PutEvent(Client(actor), scenarioEvent,
+            Notification("a", trigger: AutomationTrigger.OnSuccess, triggerTaskId: b.Id)));
+    }
+
+    /// <summary>
+    /// A Manual task's trigger id is dropped, not checked: an author who makes a task Manual and deletes its old trigger
+    /// in the same save is not refused.
+    /// </summary>
+    [Fact]
+    public async Task UpdatingAnEvent_WithAManualTaskStillNamingAGoneTrigger_SavesIt()
+    {
+        var (msel, scenarioEvent) = await SeedEvent();
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        await AssertStatus(HttpStatusCode.OK, await PutEvent(Client(actor), scenarioEvent,
+            Notification("n", trigger: AutomationTrigger.Manual, triggerTaskId: Guid.NewGuid())));
+
+        var saved = await ReadBack(db => db.AutomationTasks.SingleAsync(t => t.ScenarioEventId == scenarioEvent.Id, Ct));
+        Assert.Null(saved.TriggerTaskId);
+    }
+
+    /// <summary>A secret given twice, in different cases, is refused as such rather than failing the save.</summary>
+    [Fact]
+    public async Task UpdatingAnEvent_WithASecretGivenTwice_Is400()
+    {
+        var (msel, scenarioEvent) = await SeedEvent();
+        var actor = await Actor().OnMsel(msel, MselRole.Editor).SeedAsync();
+
+        var response = await PutEvent(Client(actor), scenarioEvent,
+            Http("h", secrets: new() { ["Headers"] = "{\"X\":\"a\"}", ["headers"] = "{\"X\":\"b\"}" }));
+
+        await AssertStatus(HttpStatusCode.BadRequest, response);
+        Assert.Contains("the secret Headers is given more than once", await response.Content.ReadAsStringAsync(Ct));
+    }
+
     /// <summary>An edit cannot take another event's task over by naming it.</summary>
     [Fact]
     public async Task UpdatingAnEvent_WithAnotherEventsTaskId_Is400()
@@ -707,6 +759,21 @@ public class AutomationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var actor = await Actor().OnMsel(msel, MselRole.Facilitator).SeedAsync();
 
         await AssertStatus(HttpStatusCode.Conflict, await Client(actor).PostAsJsonAsync($"/api/automationRuns/{ended.Id}/rerun", new { }, Ct));
+    }
+
+    /// <summary>A task its author disabled is not rerun either, as it is not run by hand.</summary>
+    [Fact]
+    public async Task Rerun_OfADisabledTask_Is409()
+    {
+        var (msel, scenarioEvent) = await SeedDeployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        task.Repeatable = true;
+        task.Enabled = false;
+        await Seed(task);
+        var original = await SeedRun(task, msel, AutomationStatus.Failed);
+        var actor = await Actor().OnMsel(msel, MselRole.Facilitator).SeedAsync();
+
+        await AssertStatus(HttpStatusCode.Conflict, await Client(actor).PostAsJsonAsync($"/api/automationRuns/{original.Id}/rerun", new { }, Ct));
     }
 
     [Fact]

@@ -212,6 +212,8 @@ namespace Blueprint.Api.Services
                 throw new ConflictException("The run has not ended.");
             var task = await _context.AutomationTasks.AsNoTracking().SingleOrDefaultAsync(t => t.Id == original.AutomationTaskId, ct)
                 ?? throw new ConflictException("The task this run ran has been deleted.");
+            if (!task.Enabled)
+                throw new ConflictException("The task is disabled.");
             await RequireNotRunningAsync(task, msel, ct);
             await RequireRepeatableAsync(task, msel, ct);
             var run = AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Rerun, AfterDelay(task),

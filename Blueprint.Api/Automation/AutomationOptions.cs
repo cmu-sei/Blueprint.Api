@@ -54,7 +54,10 @@ namespace Blueprint.Api.Automation
         /// hosts of the Crucible APIs in ClientSettings are allowed.
         /// </summary>
         public List<string> AllowedHosts { get; set; } = new();
-        /// <summary>The hosts an http task sends Blueprint's service account token to. When none are set, the Crucible APIs' hosts.</summary>
+        /// <summary>
+        /// The hosts an http task sends Blueprint's service account token to. When none are set, it is sent to none.
+        /// Blueprint's own API never gets it.
+        /// </summary>
         public List<string> TokenHosts { get; set; } = new();
         /// <summary>
         /// Lets an http task reach loopback addresses, as a development stack on one machine needs. Link-local
@@ -81,6 +84,10 @@ namespace Blueprint.Api.Automation
     {
         public string SmtpHost { get; set; }
         public int SmtpPort { get; set; } = 587;
+        /// <summary>
+        /// Requires STARTTLS: a server that does not offer it is refused before the credentials are sent. When false, the
+        /// connection uses TLS on port 465 and STARTTLS when the server offers it otherwise.
+        /// </summary>
         public bool UseStartTls { get; set; } = true;
         public string SmtpUsername { get; set; }
         public string SmtpPassword { get; set; }

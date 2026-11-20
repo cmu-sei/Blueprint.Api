@@ -74,7 +74,8 @@ namespace Blueprint.Api.Automation
                 var entity = existing.SingleOrDefault(t => t.Id == fields.Id) ?? new AutomationTaskEntity { Id = fields.Id.Value, CreatedBy = userId };
                 var label = $"Task {i + 1}{(string.IsNullOrWhiteSpace(fields.Name) ? "" : $" ({fields.Name})")}";
                 errors.AddRange(Apply(fields, entity, mselId, scenarioEventId, i).Select(e => $"{label}: {e}"));
-                if (fields.TriggerTaskId is Guid trigger && !ids.Contains(trigger) && !others.ContainsKey(trigger))
+                // the trigger Apply kept: a Manual or At Event Time task's old trigger id is dropped, not checked
+                if (entity.TriggerTaskId is Guid trigger && !ids.Contains(trigger) && !others.ContainsKey(trigger))
                     errors.Add($"{label}: the task that triggers it is not one of this MSEL's.");
                 entity.ModifiedBy = existing.Contains(entity) ? userId : null;
                 entities.Add(entity);
@@ -86,10 +87,11 @@ namespace Blueprint.Api.Automation
                 triggers[entity.Id] = entity.TriggerTaskId;
             foreach (var entity in entities)
             {
-                var seen = new HashSet<Guid> { entity.Id };
-                for (var at = entity.TriggerTaskId; at != null && triggers.ContainsKey(at.Value); at = triggers[at.Value])
+                // a task that only leads into a loop of others is not in it; that loop is reported on its own tasks
+                var seen = new HashSet<Guid>();
+                for (var at = entity.TriggerTaskId; at != null && triggers.ContainsKey(at.Value) && seen.Add(at.Value); at = triggers[at.Value])
                 {
-                    if (!seen.Add(at.Value))
+                    if (at == entity.Id)
                     {
                         errors.Add($"{entity.Name}: its triggers lead back to it.");
                         break;
@@ -147,9 +149,13 @@ namespace Blueprint.Api.Automation
 
             // a secret of another action does not survive a change of action
             var allowedSecrets = _catalog.SecretKeys(fields.Action);
-            var changes = (fields.SecretParameters ?? new())
+            var given = (fields.SecretParameters ?? new())
                 .Where(kv => allowedSecrets.Contains(kv.Key))
-                .ToDictionary(kv => allowedSecrets.First(k => string.Equals(k, kv.Key, StringComparison.OrdinalIgnoreCase)), kv => kv.Value ?? string.Empty);
+                .GroupBy(kv => allowedSecrets.First(k => string.Equals(k, kv.Key, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+            foreach (var twice in given.Where(g => g.Count() > 1))
+                errors.Add($"the secret {twice.Key} is given more than once.");
+            var changes = given.ToDictionary(g => g.Key, g => g.Last().Value ?? string.Empty);
             foreach (var key in _secrets.Keys(entity.SecretParameters).Where(k => !allowedSecrets.Contains(k)))
                 changes[key] = string.Empty;
             try

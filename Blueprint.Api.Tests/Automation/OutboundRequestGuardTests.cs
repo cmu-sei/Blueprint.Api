@@ -92,6 +92,19 @@ public class OutboundRequestGuardTests
             await OutboundRequestGuard.ConnectAsync(new DnsEndPoint("localhost", 9), false, TestContext.Current.CancellationToken));
     }
 
+    /// <summary>
+    /// The guarded client ignores the system proxy: through one, the connect check would see the proxy's address, not
+    /// the destination's, and a name resolving to a metadata endpoint would get through.
+    /// </summary>
+    [Fact]
+    public void TheGuardedClient_UsesNoProxy()
+    {
+        using var handler = OutboundRequestGuard.CreatePrimaryHandler(AutomationTestOptions.Automation());
+
+        Assert.False(handler.UseProxy);
+        Assert.False(handler.AllowAutoRedirect);
+    }
+
     [Fact]
     public void TheServiceToken_GoesOnlyToTheTokenHosts()
     {
@@ -106,13 +119,32 @@ public class OutboundRequestGuardTests
         Assert.False(guard.SendsServiceToken(new Uri("http://other.example/api")));
     }
 
+    /// <summary>
+    /// With no token hosts the service token goes nowhere: a task that could send it to a Crucible API could read any
+    /// of that API's data as the service account, and show it in a test.
+    /// </summary>
     [Fact]
-    public void WithNoTokenHosts_TheServiceTokenGoesOnlyToTheCrucibleApis()
+    public void WithNoTokenHosts_TheServiceTokenGoesNowhere()
     {
         var guard = Guard(o => o.Http.AllowedHosts = ["*.example"]);
 
-        Assert.True(guard.SendsServiceToken(new Uri("http://gallery.example/api")));
+        Assert.False(guard.SendsServiceToken(new Uri("http://gallery.example/api")));
         Assert.False(guard.SendsServiceToken(new Uri("http://other.example/api")));
+    }
+
+    /// <summary>Blueprint's own API never gets its service token from a task, even when its host is listed.</summary>
+    [Theory]
+    [InlineData("http://blueprint.example/api/users", false)]
+    [InlineData("http://blueprint.example:8080/api/users", true)]
+    public void BlueprintsOwnApi_NeverGetsTheServiceToken(string url, bool sent)
+    {
+        var guard = Guard(o =>
+        {
+            o.Http.AllowedHosts = ["*.example"];
+            o.Http.TokenHosts = ["blueprint.example"];
+        });
+
+        Assert.Equal(sent, guard.SendsServiceToken(new Uri(url)));
     }
 
     [Fact]

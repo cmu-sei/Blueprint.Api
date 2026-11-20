@@ -616,6 +616,7 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
+            await FreeTasksTriggeredFromAsync(new[] { scenarioEventToDelete.Id }, ct);
             _context.ScenarioEvents.Remove(scenarioEventToDelete);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
@@ -624,6 +625,24 @@ namespace Blueprint.Api.Services
             await _context.Database.CommitTransactionAsync(ct);
 
             return true;
+        }
+
+        /// <summary>
+        /// The events' tasks go with them, and a task of another event that one of them triggered is now run by hand, as
+        /// when an edit removes a task: the database would only clear its trigger, and leave it waiting for none.
+        /// </summary>
+        private async Task FreeTasksTriggeredFromAsync(IReadOnlyCollection<Guid> scenarioEventIds, CancellationToken ct)
+        {
+            var orphans = await _context.AutomationTasks
+                .Where(t => !scenarioEventIds.Contains(t.ScenarioEventId) && t.TriggerTaskId != null &&
+                    _context.AutomationTasks.Any(trigger => trigger.Id == t.TriggerTaskId && scenarioEventIds.Contains(trigger.ScenarioEventId)))
+                .ToListAsync(ct);
+            foreach (var orphan in orphans)
+            {
+                orphan.TriggerTaskId = null;
+                orphan.TriggerCondition = AutomationTrigger.Manual;
+                orphan.ModifiedBy = _user.GetId();
+            }
         }
 
         public async Task<bool> BatchDeleteAsync(Guid[] idList, bool hasSystemPermission, CancellationToken ct)
@@ -654,6 +673,7 @@ namespace Blueprint.Api.Services
             }
 
             await _context.Database.BeginTransactionAsync();
+            await FreeTasksTriggeredFromAsync(scenarioEventList.Select(e => e.Id).ToList(), ct);
             foreach (var scenarioEventToDelete in scenarioEventList)
             {
                 // start a transaction, because we may also update DataValues and other scenario events

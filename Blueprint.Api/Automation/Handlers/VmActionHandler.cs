@@ -179,9 +179,12 @@ namespace Blueprint.Api.Automation.Handlers
 
         private static async Task<ActionOutcome> UploadContentAsync(IPlayerVmApiClient client, VmType type, Guid vmId, AutomationActionContext context, CancellationToken ct)
         {
+            // the guest's path, split at its last separator of either kind: Path would use the API host's rules, so a
+            // Windows guest's C:\\Temp\\notes.txt would be all file name on Linux
             var path = context.Get("GuestFilePath") ?? string.Empty;
-            var fileName = Path.GetFileName(path.TrimEnd('/', '\\'));
-            var directory = string.IsNullOrEmpty(fileName) ? path : path.Substring(0, path.Length - fileName.Length);
+            var separator = path.TrimEnd('/', '\\').LastIndexOfAny(new[] { '/', '\\' });
+            var fileName = path.TrimEnd('/', '\\').Substring(separator + 1);
+            var directory = path.Substring(0, separator + 1);
             using var content = new MemoryStream(Encoding.UTF8.GetBytes(context.Get("GuestFileContent") ?? string.Empty));
             return Done(await UploadAsync(client, type, vmId, context, directory, string.IsNullOrEmpty(fileName) ? "uploaded.txt" : fileName, content, ct));
         }

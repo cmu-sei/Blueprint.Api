@@ -124,15 +124,19 @@ namespace Blueprint.Api.Automation.Handlers
 
         private static string ShellQuote(string s) => string.IsNullOrEmpty(s) ? "''" : "'" + s.Replace("'", "'\\''") + "'";
 
-        private static string BuildShellCommand(string cwd, string env, bool sudo, string cmd)
+        /// <summary>
+        /// The remote command line: the directory first, then sudo, then the variables, so they apply to the command
+        /// itself and not to cd, and sudo passes them on.
+        /// </summary>
+        public static string BuildShellCommand(string cwd, string env, bool sudo, string cmd)
         {
             var sb = new StringBuilder();
-            if (!string.IsNullOrWhiteSpace(env) && env.Trim() != "{}")
-                foreach (var (k, v) in ParseEnvPairs(env))
-                    sb.Append(k).Append('=').Append(ShellQuote(v)).Append(' ');
             if (!string.IsNullOrWhiteSpace(cwd))
                 sb.Append("cd ").Append(ShellQuote(cwd)).Append(" && ");
             if (sudo) sb.Append("sudo ");
+            if (!string.IsNullOrWhiteSpace(env) && env.Trim() != "{}")
+                foreach (var (k, v) in ParseEnvPairs(env))
+                    sb.Append(k).Append('=').Append(ShellQuote(v)).Append(' ');
             sb.Append(cmd);
             return sb.ToString();
         }

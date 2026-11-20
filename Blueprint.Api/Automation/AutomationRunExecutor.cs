@@ -92,17 +92,25 @@ namespace Blueprint.Api.Automation
             if (msel == null)
                 return;
 
-            run.Status = AutomationStatus.Running;
-            run.StartedAt ??= Now;
-            run.CurrentIteration += 1;
-            run.LeaseUntil = Now.AddSeconds(LeaseSeconds);
-            run.StatusDetail = null;
-            await _db.SaveChangesAsync(stopping);
+            // started only while this instance still holds the run: one that waited past its lease may have been taken
+            // back and claimed by another
+            var started = await WhileOwnedAsync(run, r => r.Status == AutomationStatus.Queued, async () =>
+            {
+                run.Status = AutomationStatus.Running;
+                run.StartedAt ??= Now;
+                run.CurrentIteration += 1;
+                run.LeaseUntil = Now.AddSeconds(LeaseSeconds);
+                run.StatusDetail = null;
+                await _db.SaveChangesAsync(stopping);
+            }, stopping);
+            if (!started)
+                return;
 
             using var runCts = _registry.Register(run.Id, stopping);
             using var heartbeatStop = new CancellationTokenSource();
             var heartbeat = HeartbeatAsync(run.Id, owner, runCts, heartbeatStop.Token);
             List<AutomationResultEntity> results;
+            bool leaseLost;
             try
             {
                 results = await ExecuteResultsAsync(run, task, msel, runCts, stopping);
@@ -110,8 +118,14 @@ namespace Blueprint.Api.Automation
             finally
             {
                 heartbeatStop.Cancel();
-                await heartbeat;
+                leaseLost = await heartbeat;
                 _registry.Unregister(run.Id);
+            }
+            if (leaseLost)
+            {
+                // another instance has the run now, or has recorded it as interrupted: this one writes nothing more
+                _logger.LogWarning("Automation run {RunId} was taken back while this instance ran it; its outcome here is dropped", run.Id);
+                return;
             }
 
             var status = AutomationRuns.Overall(results.Select(r => r.Status));
@@ -126,13 +140,17 @@ namespace Blueprint.Api.Automation
                 return;     // the lease runs out, and the next instance records the run as interrupted
             if (AutomationRuns.RunsAgain(task, run.CurrentIteration, status))
             {
-                run.Status = AutomationStatus.Pending;
-                run.DueAt = Now.AddSeconds(Math.Max(0, task.IntervalSeconds));
-                run.LeaseOwner = null;
-                run.LeaseUntil = null;
-                run.StatusDetail = $"Iteration {run.CurrentIteration} of {task.Iterations}: {status}.";
-                await _db.SaveChangesAsync(CancellationToken.None);
-                _registry.Wake();
+                var iteration = run.CurrentIteration;
+                if (await WhileOwnedAsync(run, r => r.Status == AutomationStatus.Running, async () =>
+                    {
+                        run.Status = AutomationStatus.Pending;
+                        run.DueAt = Now.AddSeconds(Math.Max(0, task.IntervalSeconds));
+                        run.LeaseOwner = null;
+                        run.LeaseUntil = null;
+                        run.StatusDetail = $"Iteration {iteration} of {task.Iterations}: {status}.";
+                        await _db.SaveChangesAsync(CancellationToken.None);
+                    }, CancellationToken.None))
+                    _registry.Wake();
                 return;
             }
             await FinishAsync(run, task, status, results.Count == 1 && status == AutomationStatus.Error ? Truncate(results[0].ActualOutput, 500) : null,
@@ -327,7 +345,11 @@ namespace Blueprint.Api.Automation
         }
 
         /// <summary>Renews the lease while the run works, and cancels it when a cancel is asked for on another instance.</summary>
-        private async Task HeartbeatAsync(Guid runId, string owner, CancellationTokenSource runCts, CancellationToken stop)
+        /// <summary>
+        /// Renews the run's lease while it works, and stops the work when a cancel is asked for. True when the lease was
+        /// lost: the run was taken back from this instance, which must then write nothing more.
+        /// </summary>
+        private async Task<bool> HeartbeatAsync(Guid runId, string owner, CancellationTokenSource runCts, CancellationToken stop)
         {
             var every = TimeSpan.FromSeconds(Math.Max(1, LeaseSeconds / 3));
             while (!stop.IsCancellationRequested)
@@ -338,34 +360,66 @@ namespace Blueprint.Api.Automation
                     using var scope = _scopeFactory.CreateScope();
                     var db = scope.ServiceProvider.GetRequiredService<BlueprintContext>();
                     var leaseUntil = Now.AddSeconds(LeaseSeconds);
-                    await db.AutomationRuns.Where(r => r.Id == runId && r.LeaseOwner == owner)
+                    var renewed = await db.AutomationRuns.Where(r => r.Id == runId && r.LeaseOwner == owner && r.Status == AutomationStatus.Running)
                         .ExecuteUpdateAsync(s => s.SetProperty(r => r.LeaseUntil, leaseUntil), stop);
+                    if (renewed == 0)
+                    {
+                        runCts.Cancel();
+                        return true;
+                    }
                     if (await db.AutomationRuns.AnyAsync(r => r.Id == runId && r.CancelRequested, stop))
                         runCts.Cancel();
                 }
                 catch (OperationCanceledException)
                 {
-                    return;
+                    return false;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Renewing the lease of automation run {RunId} failed", runId);
                 }
             }
+            return false;
+        }
+
+        /// <summary>
+        /// Runs <paramref name="write"/> in a transaction holding the run's row, after reading the run again, only while
+        /// this instance still holds its lease and <paramref name="state"/> holds: a cancel, a recovery or another
+        /// instance may have changed it since. False when it was not written.
+        /// </summary>
+        private async Task<bool> WhileOwnedAsync(AutomationRunEntity run, Func<AutomationRunEntity, bool> state, Func<Task> write, CancellationToken ct)
+        {
+            await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+            await AutomationRuns.LockRunsAsync(_db, new[] { run.Id }, ct);
+            await _db.Entry(run).ReloadAsync(ct);
+            if (run.LeaseOwner != _registry.InstanceId || !state(run))
+                return false;
+            await write();
+            await transaction.CommitAsync(ct);
+            return true;
         }
 
         /// <summary>Ends a run, and makes the runs that follow from it.</summary>
         private async Task FinishAsync(AutomationRunEntity run, AutomationTaskSnapshot task, AutomationStatus status, string detail, CancellationToken ct)
         {
-            run.Status = status;
-            run.StatusDetail = detail ?? run.StatusDetail;
-            run.EndedAt = Now;
-            run.LeaseOwner = null;
-            run.LeaseUntil = null;
-            var next = await AutomationChainer.NextRunsAsync(_db, run, status, Now, ct);
-            _db.AutomationRuns.AddRange(next);
-            await _db.SaveChangesAsync(ct);
-            if (next.Count > 0)
+            var next = new List<AutomationRunEntity>();
+            var finished = await WhileOwnedAsync(run, r => !AutomationRuns.IsFinal(r.Status), async () =>
+            {
+                run.Status = status;
+                run.StatusDetail = detail ?? run.StatusDetail;
+                run.EndedAt = Now;
+                run.LeaseOwner = null;
+                run.LeaseUntil = null;
+                next = await AutomationChainer.NextRunsAsync(_db, run, status, Now, ct);
+                _db.AutomationRuns.AddRange(next);
+                await _db.SaveChangesAsync(ct);
+            }, ct);
+            if (!finished)
+            {
+                _logger.LogWarning("Automation run {RunId} was taken back before this instance could end it", run.Id);
+                return;
+            }
+            if (next.Any(r => !AutomationRuns.IsFinal(r.Status)))
                 _registry.Wake();
             // the exercise's record, with the points the task earned; a record that cannot be made does not fail the run
             if (run.Kind == AutomationRunKind.Exercise && run.AutomationTaskId != null)
@@ -409,23 +463,33 @@ namespace Blueprint.Api.Automation
             if (run.Kind == AutomationRunKind.Exercise && (msel.Status != MselItemStatus.Deployed || msel.DeploymentId != run.DeploymentId))
                 return next;
 
-            if (run.TriggerChain && run.AutomationTaskId != null)
+            var triggers = run.TriggerChain && run.AutomationTaskId != null ? AutomationRuns.TriggersFor(status) : Array.Empty<AutomationTrigger>();
+            var children = triggers.Length == 0
+                ? new List<AutomationTaskEntity>()
+                : await db.AutomationTasks.AsNoTracking()
+                    .Where(t => t.TriggerTaskId == run.AutomationTaskId && t.Enabled && triggers.Contains(t.TriggerCondition))
+                    .OrderBy(t => t.DisplayOrder)
+                    .ToListAsync(ct);
+            var followOn = AutomationRuns.FollowOn(run).ToList();
+            // An exercise run of a task is made as a run by hand is: not while one is going, and not again once a task
+            // that runs only once has succeeded. The tasks are locked first, as every path that runs them locks them.
+            if (run.Kind == AutomationRunKind.Exercise)
+                await AutomationRuns.LockTasksAsync(db, children.Select(c => c.Id).Concat(followOn), ct);
+            async Task<string> WhyNot(AutomationTaskEntity task) =>
+                run.Kind == AutomationRunKind.Exercise ? await AutomationRuns.WhyNotRunAsync(db, task, run.DeploymentId, ct) : null;
+
+            foreach (var child in children)
             {
-                var triggers = AutomationRuns.TriggersFor(status);
-                if (triggers.Length > 0)
-                {
-                    var children = await db.AutomationTasks.AsNoTracking()
-                        .Where(t => t.TriggerTaskId == run.AutomationTaskId && t.Enabled && triggers.Contains(t.TriggerCondition))
-                        .OrderBy(t => t.DisplayOrder)
-                        .ToListAsync(ct);
-                    next.AddRange(children.Select(child => AutomationRuns.New(child, run.MselId, run.Kind, AutomationRunSource.Chain,
+                var why = await WhyNot(child);
+                next.Add(why != null
+                    ? AutomationRuns.Skipped(child, run, AutomationRunSource.Chain, why, now)
+                    : AutomationRuns.New(child, run.MselId, run.Kind, AutomationRunSource.Chain,
                         now.AddSeconds(Math.Max(0, child.DelaySeconds)), run.DeploymentId, run.PlayerViewId, run.RequestedBy,
-                        parentRunId: run.Id, triggerChain: true)));
-                }
+                        parentRunId: run.Id, triggerChain: true));
             }
 
-            // a group start runs its chosen manual tasks one after another, whatever each one's outcome
-            var followOn = AutomationRuns.FollowOn(run).ToList();
+            // a group start runs its chosen manual tasks one after another, whatever each one's outcome; one that may not
+            // run is recorded as skipped, and the next one runs instead
             while (followOn.Count > 0)
             {
                 var id = followOn[0];
@@ -433,6 +497,12 @@ namespace Blueprint.Api.Automation
                 var task = await db.AutomationTasks.AsNoTracking().SingleOrDefaultAsync(t => t.Id == id && t.Enabled, ct);
                 if (task == null)
                     continue;
+                var why = await WhyNot(task);
+                if (why != null)
+                {
+                    next.Add(AutomationRuns.Skipped(task, run, AutomationRunSource.GroupStart, why, now));
+                    continue;
+                }
                 next.Add(AutomationRuns.New(task, run.MselId, run.Kind, AutomationRunSource.GroupStart,
                     now.AddSeconds(Math.Max(0, task.DelaySeconds)), run.DeploymentId, run.PlayerViewId, run.RequestedBy,
                     parentRunId: run.Id, triggerChain: true, followOnTaskIds: followOn));

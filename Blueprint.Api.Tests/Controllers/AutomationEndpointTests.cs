@@ -281,6 +281,32 @@ public class AutomationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Contains("the secret Headers is given more than once", await response.Content.ReadAsStringAsync(Ct));
     }
 
+    /// <summary>
+    /// Deleting an event takes its tasks, and a task of another event that one of them triggered is now run by hand, as
+    /// when an edit removes the task, rather than left waiting for a trigger that is gone.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DeletingAnEvent_MakesTheTasksItsTasksTriggered_RunByHand(bool batch)
+    {
+        var (msel, scenarioEvent) = await SeedEvent();
+        var other = await SeedEventOf(msel);
+        var trigger = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        var triggered = TestData.AutomationTask(msel.Id, other.Id, trigger: AutomationTrigger.OnSuccess, triggerTaskId: trigger.Id);
+        await Seed(trigger, triggered);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = batch
+            ? await Client(actor).PostAsJsonAsync("/api/scenarioEvents/batchDelete", new[] { scenarioEvent.Id }, Ct)
+            : await Client(actor).DeleteAsync($"/api/scenarioEvents/{scenarioEvent.Id}", Ct);
+
+        Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}");
+        var kept = await ReadBack(db => db.AutomationTasks.SingleAsync(t => t.Id == triggered.Id, Ct));
+        Assert.Equal((AutomationTrigger.Manual, null), (kept.TriggerCondition, kept.TriggerTaskId));
+        Assert.False(await ReadBack(db => db.AutomationTasks.AnyAsync(t => t.Id == trigger.Id, Ct)));
+    }
+
     /// <summary>An edit cannot take another event's task over by naming it.</summary>
     [Fact]
     public async Task UpdatingAnEvent_WithAnotherEventsTaskId_Is400()
@@ -759,6 +785,26 @@ public class AutomationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var actor = await Actor().OnMsel(msel, MselRole.Facilitator).SeedAsync();
 
         await AssertStatus(HttpStatusCode.Conflict, await Client(actor).PostAsJsonAsync($"/api/automationRuns/{ended.Id}/rerun", new { }, Ct));
+    }
+
+    /// <summary>
+    /// Two requests to run one task at once make one run: the second waits for the first's, then finds the task running.
+    /// </summary>
+    [Fact]
+    public async Task Run_TwiceAtOnce_MakesOneRun()
+    {
+        var (msel, scenarioEvent) = await SeedDeployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        task.Repeatable = true;
+        await Seed(task);
+        var actor = await Actor().OnMsel(msel, MselRole.Facilitator).SeedAsync();
+
+        var responses = await System.Threading.Tasks.Task.WhenAll(
+            Enumerable.Range(0, 4).Select(_ => RunTask(Client(actor), task.Id)));
+
+        Assert.Equal(1, responses.Count(r => r.StatusCode == HttpStatusCode.Created));
+        Assert.Equal(3, responses.Count(r => r.StatusCode == HttpStatusCode.Conflict));
+        Assert.Equal(1, await ReadBack(db => db.AutomationRuns.CountAsync(r => r.AutomationTaskId == task.Id, Ct)));
     }
 
     /// <summary>A task its author disabled is not rerun either, as it is not run by hand.</summary>

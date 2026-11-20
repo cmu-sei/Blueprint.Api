@@ -170,32 +170,33 @@ namespace Blueprint.Api.Services
             };
             _context.AutomationRuns.Add(record);
 
-            // the chosen manual tasks, one after another, in the order given; a task that runs once per deployment and
-            // has succeeded in this one is left out, as a run by hand would refuse it
+            // the chosen manual tasks, one after another, in the order given; a task that is already running, or runs once
+            // per deployment and has succeeded in this one, is left out, as a run by hand would refuse it. The tasks are
+            // held while this is decided, as every path that runs them holds them.
             AutomationRunEntity first = null;
-            var succeededTasks = await _context.AutomationRuns.AsNoTracking()
-                .Where(r => r.MselId == mselId && r.Kind == AutomationRunKind.Exercise && r.DeploymentId == msel.DeploymentId &&
-                    r.Status == AutomationStatus.Succeeded && r.AutomationTaskId != null && taskIds.Contains(r.AutomationTaskId.Value))
-                .Select(r => r.AutomationTaskId.Value)
-                .Distinct()
-                .ToListAsync(ct);
-            var ordered = new List<AutomationTaskEntity>();
-            foreach (var task in taskIds.Select(id => tasks.Single(t => t.Id == id)))
+            await using (var transaction = await _context.Database.BeginTransactionAsync(ct))
             {
-                if (!task.Repeatable && succeededTasks.Contains(task.Id))
-                    messages.Add($"{task.Name} has succeeded and runs only once, so it was not run again.");
-                else
-                    ordered.Add(task);
+                await AutomationRuns.LockTasksAsync(_context, taskIds, ct);
+                var ordered = new List<AutomationTaskEntity>();
+                foreach (var task in taskIds.Select(id => tasks.Single(t => t.Id == id)))
+                {
+                    var why = await AutomationRuns.WhyNotRunAsync(_context, task, msel.DeploymentId, ct);
+                    if (why != null)
+                        messages.Add($"{task.Name} {why}, so it was not run again.");
+                    else
+                        ordered.Add(task);
+                }
+                record.StatusDetail = string.Join(" ", messages);
+                if (ordered.Count > 0)
+                {
+                    first = AutomationRuns.New(ordered[0], mselId, AutomationRunKind.Exercise, AutomationRunSource.GroupStart,
+                        Now.AddSeconds(Math.Max(0, ordered[0].DelaySeconds)), msel.DeploymentId, msel.PlayerViewId, UserId,
+                        parentRunId: record.Id, triggerChain: true, followOnTaskIds: ordered.Skip(1).Select(t => t.Id));
+                    _context.AutomationRuns.Add(first);
+                }
+                await _context.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
             }
-            record.StatusDetail = string.Join(" ", messages);
-            if (ordered.Count > 0)
-            {
-                first = AutomationRuns.New(ordered[0], mselId, AutomationRunKind.Exercise, AutomationRunSource.GroupStart,
-                    Now.AddSeconds(Math.Max(0, ordered[0].DelaySeconds)), msel.DeploymentId, msel.PlayerViewId, UserId,
-                    parentRunId: record.Id, triggerChain: true, followOnTaskIds: ordered.Skip(1).Select(t => t.Id));
-                _context.AutomationRuns.Add(first);
-            }
-            await _context.SaveChangesAsync(ct);
             if (first != null)
                 _registry.Wake();
 

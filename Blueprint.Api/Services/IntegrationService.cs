@@ -120,6 +120,9 @@ namespace Blueprint.Api.Services
 
                 _logger.LogInformation($"Cancel cleanup: MSEL {mselId} loaded. PlayerViewId={msel.PlayerViewId}, GalleryCollectionId={msel.GalleryCollectionId}, CiteEvaluationId={msel.CiteEvaluationId}");
 
+                // the deployment's automation stops before what it acts on is taken down, however long that takes or if it fails
+                await CancelAutomationAsync(mselId, "The MSEL's push was cancelled.", freshCt);
+
                 // Caster first, while the Player view still exists. If the destroy fails, stop here
                 // and keep every ID, so Remove Integrations can retry instead of orphaning VMs.
                 if (msel.CasterWorkspaceId != null)
@@ -480,6 +483,15 @@ namespace Blueprint.Api.Services
             }
         }
 
+        /// <summary>Cancels the MSEL's automation runs that have not ended, over a context of its own.</summary>
+        private async STT.Task CancelAutomationAsync(Guid mselId, string reason, CancellationToken ct)
+        {
+            using var automationScope = _scopeFactory.CreateScope();
+            var context = automationScope.ServiceProvider.GetRequiredService<BlueprintContext>();
+            await AutomationRunControl.CancelAllAsync(context, automationScope.ServiceProvider.GetService<AutomationRunRegistry>(), mselId,
+                reason, DateTime.UtcNow, ct);
+        }
+
         /// <summary>
         /// Pulls (deletes) integrations from external services and clears integration IDs.
         /// Uses ExecuteUpdateAsync for all DB writes to avoid the EntityEventInterceptor →
@@ -490,6 +502,8 @@ namespace Blueprint.Api.Services
             var mselId = msel.Id;
             var currentProcessStep = "Pulling Integrations";
             await SendIntegrationStatusAsync(blueprintContext, mselId, "Pulling Integrations", ct);
+            // the deployment's automation stops before what it acts on is taken down, however long that takes or if it fails
+            await CancelAutomationAsync(mselId, "The MSEL's integrations were removed.", ct);
 
             // Pull from Caster first, while the Player view its VMs belong to still exists
             if (msel.CasterWorkspaceId != null)

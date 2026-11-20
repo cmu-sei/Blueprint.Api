@@ -372,20 +372,37 @@ public class AutomationActionHandlerTests
         await Assert.ThrowsAsync<AutomationConfigurationException>(() => handler.ExecuteAsync(Context(AutomationAction.vm_hw_power_off), Ct));
     }
 
-    [Fact]
-    public async Task UploadContent_SplitsThePathIntoItsDirectoryAndFileName()
+    /// <summary>
+    /// An SSH command's variables apply to the command, not to the cd before it, and come after sudo so it passes them on.
+    /// </summary>
+    [Theory]
+    [InlineData(null, "TOKEN=value", false, "TOKEN='value' program")]
+    [InlineData("/tmp", "TOKEN=value", false, "cd '/tmp' && TOKEN='value' program")]
+    [InlineData("/tmp", "TOKEN=value", true, "cd '/tmp' && sudo TOKEN='value' program")]
+    [InlineData("/tmp", null, true, "cd '/tmp' && sudo program")]
+    public void AnSshCommand_PutsItsVariablesOnTheCommand(string cwd, string env, bool sudo, string expected)
+    {
+        Assert.Equal(expected, global::Blueprint.Api.Automation.Handlers.SshActionHandler.BuildShellCommand(cwd, env, sudo, "program"));
+    }
+
+    /// <summary>The guest's path is split at its last separator, a Windows guest's backslash too, whatever the API host runs on.</summary>
+    [Theory]
+    [InlineData("/tmp/notes/readme.txt", "/tmp/notes/", "readme.txt")]
+    [InlineData(@"C:\Temp\notes.txt", @"C:\Temp\", "notes.txt")]
+    [InlineData("readme.txt", "", "readme.txt")]
+    public async Task UploadContent_SplitsThePathIntoItsDirectoryAndFileName(string guestPath, string directory, string fileName)
     {
         var vmId = Guid.NewGuid();
         var (handler, client) = Vm(VmType.Proxmox, vmId);
 
         await handler.ExecuteAsync(Context(AutomationAction.guest_file_upload_content, new()
         {
-            ["GuestFilePath"] = "/tmp/notes/readme.txt",
+            ["GuestFilePath"] = guestPath,
             ["GuestFileContent"] = "hello",
         }, vmId: vmId), Ct);
 
-        await client.Received(1).UploadFileToProxmoxVirtualMachineAsync(vmId, "/tmp/notes/",
-            Arg.Is<IEnumerable<Player.Vm.Api.FileParameter>>(f => f.Single().FileName == "readme.txt"), Arg.Any<CancellationToken>());
+        await client.Received(1).UploadFileToProxmoxVirtualMachineAsync(vmId, directory,
+            Arg.Is<IEnumerable<Player.Vm.Api.FileParameter>>(f => f.Single().FileName == fileName), Arg.Any<CancellationToken>());
     }
 
     [Fact]

@@ -105,6 +105,8 @@ namespace Blueprint.Api.Automation
                 .AsNoTracking()
                 .Where(t => t.Enabled && t.TriggerCondition == AutomationTrigger.AtEventTime)
                 .Where(t => t.Msel.Status == MselItemStatus.Deployed && !t.Msel.AutomationPaused && t.Msel.DeploymentId != null)
+                // only the tasks whose time has come: the rest are read again on a later tick
+                .Where(t => t.Msel.StartTime.AddSeconds(t.ScenarioEvent.DeltaSeconds) <= now)
                 .Where(t => !_db.AutomationRuns.Any(r => r.AutomationTaskId == t.Id && r.Source == AutomationRunSource.Schedule && r.DeploymentId == t.Msel.DeploymentId))
                 .Select(t => new { Task = t, t.Msel.StartTime, t.Msel.DeploymentId, t.Msel.PlayerViewId, t.ScenarioEvent.DeltaSeconds })
                 .ToListAsync(ct);
@@ -152,9 +154,16 @@ namespace Blueprint.Api.Automation
                     .SetProperty(r => r.Status, AutomationStatus.Pending)
                     .SetProperty(r => r.LeaseOwner, (string)null)
                     .SetProperty(r => r.LeaseUntil, (DateTime?)null), ct);
+            // the stale runs' rows are held while they are written, so a worker that ends one meanwhile is not written over
+            await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+            var staleIds = await _db.AutomationRuns
+                .Where(r => r.Status == AutomationStatus.Running && r.LeaseUntil < now)
+                .Select(r => r.Id)
+                .ToListAsync(ct);
+            await AutomationRuns.LockRunsAsync(_db, staleIds, ct);
             var stale = await _db.AutomationRuns
                 .Include(r => r.Results)
-                .Where(r => r.Status == AutomationStatus.Running && r.LeaseUntil < now)
+                .Where(r => staleIds.Contains(r.Id) && r.Status == AutomationStatus.Running && r.LeaseUntil < now)
                 .ToListAsync(ct);
             foreach (var run in stale)
             {
@@ -170,9 +179,14 @@ namespace Blueprint.Api.Automation
                 run.EndedAt = now;
                 run.LeaseOwner = null;
                 run.LeaseUntil = null;
+                // an Error triggers no task, but a group start goes on to its next task, as it does after any outcome
+                _db.AutomationRuns.AddRange(await AutomationChainer.NextRunsAsync(_db, run, AutomationStatus.Error, now, ct));
             }
             if (stale.Count > 0)
                 await _db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            if (stale.Count > 0)
+                _registry.Wake();
             return requeued + stale.Count;
         }
 
@@ -180,22 +194,34 @@ namespace Blueprint.Api.Automation
         public async Task<IReadOnlyList<Guid>> ClaimAsync(int capacity, CancellationToken ct)
         {
             var now = Now;
-            var cancelled = await _db.AutomationRuns
+            var cancelIds = await _db.AutomationRuns
                 .Where(r => r.Status == AutomationStatus.Pending && r.CancelRequested)
+                .Select(r => r.Id)
                 .ToListAsync(ct);
-            foreach (var run in cancelled)
+            if (cancelIds.Count > 0)
             {
-                run.Status = AutomationStatus.Cancelled;
-                run.EndedAt = now;
-                run.StatusDetail ??= "Cancelled before it started.";
-            }
-            if (cancelled.Count > 0)
+                await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+                await AutomationRuns.LockRunsAsync(_db, cancelIds, ct);
+                var cancelled = await _db.AutomationRuns
+                    .Where(r => cancelIds.Contains(r.Id) && r.Status == AutomationStatus.Pending && r.CancelRequested)
+                    .ToListAsync(ct);
+                foreach (var run in cancelled)
+                {
+                    run.Status = AutomationStatus.Cancelled;
+                    run.EndedAt = now;
+                    run.StatusDetail ??= "Cancelled before it started.";
+                }
                 await _db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+            }
             if (capacity <= 0)
                 return Array.Empty<Guid>();
 
+            // a paused MSEL's scheduled runs wait, whether due at their time or between iterations; what a facilitator
+            // runs, and the tasks it triggers, go ahead
             var candidates = await _db.AutomationRuns
                 .Where(r => r.Status == AutomationStatus.Pending && r.DueAt <= now && !r.CancelRequested)
+                .Where(r => r.Source != AutomationRunSource.Schedule || !_db.Msels.Any(m => m.Id == r.MselId && m.AutomationPaused))
                 .OrderBy(r => r.DueAt)
                 .Select(r => r.Id)
                 .Take(capacity)
@@ -206,7 +232,7 @@ namespace Blueprint.Api.Automation
             {
                 var owner = _registry.InstanceId;
                 var won = await _db.AutomationRuns
-                    .Where(r => r.Id == id && r.Status == AutomationStatus.Pending)
+                    .Where(r => r.Id == id && r.Status == AutomationStatus.Pending && !r.CancelRequested)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(r => r.Status, AutomationStatus.Queued)
                         .SetProperty(r => r.LeaseOwner, owner)

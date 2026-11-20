@@ -629,6 +629,155 @@ public class AutomationEngineTests(DatabaseFixture fixture) : DatabaseTestBase(f
         Assert.Equal(AutomationStatus.Failed, (await Stored(first.Id)).Status);
     }
 
+    /// <summary>
+    /// A task a run triggers is run as a run by hand is: one that runs only once and has succeeded in the deployment, or
+    /// one that is already running, is recorded as skipped instead, so the facilitator sees why.
+    /// </summary>
+    [Theory]
+    [InlineData(AutomationStatus.Succeeded, "has succeeded and runs only once")]
+    [InlineData(AutomationStatus.Running, "is already running")]
+    public async Task ATriggeredTask_ThatMayNotRunAgain_IsRecordedSkipped(AutomationStatus childsRun, string why)
+    {
+        var (msel, scenarioEvent) = await Deployed();
+        var parent = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        parent.Repeatable = true;
+        var child = TestData.AutomationTask(msel.Id, scenarioEvent.Id, displayOrder: 1, trigger: AutomationTrigger.OnSuccess, triggerTaskId: parent.Id);
+        child.Name = "child";
+        await Seed(parent, child);
+        var earlier = await Run(child, msel);
+        await Db.AutomationRuns.Where(r => r.Id == earlier.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, childsRun), Ct);
+        var run = await Run(parent, msel);
+        Answers("ok", true);
+
+        await Execute(Assert.Single(await Scheduler().ClaimAsync(10, Ct)));
+
+        var skipped = Assert.Single(await ReadBack(db => db.AutomationRuns.Where(r => r.ParentRunId == run.Id).ToListAsync(Ct)));
+        Assert.Equal(AutomationStatus.Skipped, skipped.Status);
+        Assert.Equal($"child {why}, so it was not run again.", skipped.StatusDetail);
+        Assert.Empty(await Scheduler().ClaimAsync(10, Ct));
+    }
+
+    /// <summary>A group start leaves out a task that may not run again, recording it skipped, and goes on to the next one.</summary>
+    [Fact]
+    public async Task AGroupStart_SkipsATaskThatRanOnce_AndRunsTheNext()
+    {
+        var (msel, scenarioEvent) = await Deployed();
+        var tasks = Enumerable.Range(0, 3).Select(i => TestData.AutomationTask(msel.Id, scenarioEvent.Id, displayOrder: i)).ToList();
+        await Seed(tasks.Cast<object>().ToArray());
+        var once = await Run(tasks[1], msel);
+        await Db.AutomationRuns.Where(r => r.Id == once.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, AutomationStatus.Succeeded), Ct);
+        var first = await Run(tasks[0], msel, source: AutomationRunSource.GroupStart, followOn: [tasks[1].Id, tasks[2].Id]);
+        Answers("ok", true);
+
+        await Execute(Assert.Single(await Scheduler().ClaimAsync(10, Ct)));
+
+        var next = await ReadBack(db => db.AutomationRuns.Where(r => r.ParentRunId == first.Id).ToListAsync(Ct));
+        Assert.Equal(AutomationStatus.Skipped, Assert.Single(next, r => r.AutomationTaskId == tasks[1].Id).Status);
+        Assert.Equal(AutomationStatus.Pending, Assert.Single(next, r => r.AutomationTaskId == tasks[2].Id).Status);
+    }
+
+    /// <summary>A pause holds a scheduled run that is due, as it holds the scheduling; a run by hand goes ahead.</summary>
+    [Fact]
+    public async Task APausedMsel_HoldsItsScheduledRuns_ButNotARunByHand()
+    {
+        var (msel, scenarioEvent) = await Deployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        await Seed(task);
+        var scheduled = await Run(task, msel, source: AutomationRunSource.Schedule);
+        var byHand = await Run(task, msel);
+        await Db.Msels.Where(m => m.Id == msel.Id).ExecuteUpdateAsync(s => s.SetProperty(m => m.AutomationPaused, true), Ct);
+
+        Assert.Equal([byHand.Id], await Scheduler().ClaimAsync(10, Ct));
+
+        await Db.Msels.Where(m => m.Id == msel.Id).ExecuteUpdateAsync(s => s.SetProperty(m => m.AutomationPaused, false), Ct);
+        Assert.Equal([scheduled.Id], await Scheduler().ClaimAsync(10, Ct));
+    }
+
+    /// <summary>
+    /// A group start's run that was interrupted by a restart is an error, which triggers nothing, but the group goes on
+    /// to its next task, as it does after any outcome.
+    /// </summary>
+    [Fact]
+    public async Task Recover_OfAGroupStartsRun_GoesOnToTheNextTask()
+    {
+        var (msel, scenarioEvent) = await Deployed();
+        var tasks = Enumerable.Range(0, 2).Select(i => TestData.AutomationTask(msel.Id, scenarioEvent.Id, displayOrder: i)).ToList();
+        await Seed(tasks.Cast<object>().ToArray());
+        var first = await Run(tasks[0], msel, source: AutomationRunSource.GroupStart, followOn: [tasks[1].Id]);
+        await Db.AutomationRuns.Where(r => r.Id == first.Id).ExecuteUpdateAsync(s => s
+            .SetProperty(r => r.Status, AutomationStatus.Running)
+            .SetProperty(r => r.LeaseOwner, "gone")
+            .SetProperty(r => r.LeaseUntil, _clock.UtcNow.AddSeconds(-1)), Ct);
+
+        await Scheduler().RecoverAsync(Ct);
+
+        Assert.Equal(AutomationStatus.Error, (await Stored(first.Id)).Status);
+        var next = Assert.Single(await ReadBack(db => db.AutomationRuns.Where(r => r.ParentRunId == first.Id).ToListAsync(Ct)));
+        Assert.Equal((tasks[1].Id, AutomationStatus.Pending), (next.AutomationTaskId.Value, next.Status));
+    }
+
+    /// <summary>A run another instance holds is not started here, though it is still queued.</summary>
+    [Fact]
+    public async Task ARunAnotherInstanceHolds_IsNotStartedHere()
+    {
+        var (msel, scenarioEvent) = await Deployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        await Seed(task);
+        var run = await Run(task, msel);
+        var claimed = await Scheduler(registry: new AutomationRunRegistry()).ClaimAsync(10, Ct);
+
+        await Execute(Assert.Single(claimed));
+
+        Assert.Equal(AutomationStatus.Queued, (await Stored(run.Id)).Status);
+        await _runner.DidNotReceive().ExecuteAsync(Arg.Any<AutomationActionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// A run taken back while this instance worked it, here by a recovery that recorded it interrupted, keeps what the
+    /// recovery wrote: the worker's outcome is dropped, and it triggers nothing.
+    /// </summary>
+    [Fact]
+    public async Task ARunTakenBackWhileItRan_KeepsWhatTheRecoveryWrote()
+    {
+        var (msel, scenarioEvent) = await Deployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        await Seed(task);
+        await Seed(TestData.AutomationTask(msel.Id, scenarioEvent.Id, trigger: AutomationTrigger.OnSuccess, triggerTaskId: task.Id));
+        var run = await Run(task, msel);
+        _runner.ExecuteAsync(Arg.Any<AutomationActionContext>(), Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            await using var other = NewContext();
+            await other.AutomationRuns.Where(r => r.Id == run.Id).ExecuteUpdateAsync(s => s
+                .SetProperty(r => r.Status, AutomationStatus.Error)
+                .SetProperty(r => r.LeaseOwner, (string)null), Ct);
+            return new ActionOutcome("ok", true);
+        });
+
+        await Execute(Assert.Single(await Scheduler().ClaimAsync(10, Ct)));
+
+        Assert.Equal(AutomationStatus.Error, (await Stored(run.Id)).Status);
+        Assert.Equal(1, await ReadBack(db => db.AutomationRuns.CountAsync(r => r.MselId == msel.Id, Ct)));
+    }
+
+    /// <summary>A cancel of a run a worker has claimed only asks it to stop: the worker ends it.</summary>
+    [Fact]
+    public async Task ACancel_OfAClaimedRun_OnlyAsksItToStop()
+    {
+        var (msel, scenarioEvent) = await Deployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        await Seed(task);
+        var run = await Run(task, msel);
+        var claimed = Assert.Single(await Scheduler().ClaimAsync(10, Ct));
+
+        await using (var other = NewContext())
+            Assert.True(await new AutomationRunControl(other, _registry, _clock).CancelAsync(run.Id, Ct));
+        var asked = await Stored(run.Id);
+        Assert.Equal((AutomationStatus.Queued, true), (asked.Status, asked.CancelRequested));
+
+        await Execute(claimed);
+        Assert.Equal(AutomationStatus.Cancelled, (await Stored(run.Id)).Status);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // VMs
     // ---------------------------------------------------------------------------------------------

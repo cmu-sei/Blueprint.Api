@@ -5,8 +5,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace Blueprint.Api.Automation
 {
@@ -99,6 +103,56 @@ namespace Blueprint.Api.Automation
             string.IsNullOrEmpty(run.FollowOnTaskIds)
                 ? Array.Empty<Guid>()
                 : run.FollowOnTaskIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(Guid.Parse).ToList();
+
+        /// <summary>
+        /// Locks the tasks' rows until the transaction ends, so two requests that each check a task has no run going and
+        /// then make one cannot both make it. Every path that makes an exercise run of a task takes this lock first.
+        /// </summary>
+        public static Task LockTasksAsync(BlueprintContext db, IEnumerable<Guid> taskIds, CancellationToken ct)
+        {
+            if (db.Database.CurrentTransaction == null)
+                throw new InvalidOperationException("Locking automation tasks needs a transaction.");
+            var ids = taskIds.Distinct().ToArray();
+            return ids.Length == 0
+                ? Task.CompletedTask
+                : db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM automation_tasks WHERE id = ANY({ids}) FOR UPDATE", ct);
+        }
+
+        /// <summary>Locks the runs' rows until the transaction ends, so a cancel, a claim, a recovery and a worker never write over each other.</summary>
+        public static Task LockRunsAsync(BlueprintContext db, IEnumerable<Guid> runIds, CancellationToken ct)
+        {
+            if (db.Database.CurrentTransaction == null)
+                throw new InvalidOperationException("Locking automation runs needs a transaction.");
+            var ids = runIds.Distinct().ToArray();
+            return ids.Length == 0
+                ? Task.CompletedTask
+                : db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM automation_runs WHERE id = ANY({ids}) FOR UPDATE", ct);
+        }
+
+        /// <summary>
+        /// Why an exercise run of a task should not be made now, or null: one is already going, or the task runs only once
+        /// and has succeeded in this deployment. Every way a task is run asks this, under <see cref="LockTasksAsync"/>.
+        /// </summary>
+        public static async Task<string> WhyNotRunAsync(BlueprintContext db, AutomationTaskEntity task, Guid? deploymentId, CancellationToken ct)
+        {
+            var runs = db.AutomationRuns.Where(r => r.AutomationTaskId == task.Id && r.Kind == AutomationRunKind.Exercise && r.DeploymentId == deploymentId);
+            if (await runs.AnyAsync(r => r.Status == AutomationStatus.Pending || r.Status == AutomationStatus.Queued || r.Status == AutomationStatus.Running, ct))
+                return "is already running";
+            if (!task.Repeatable && await runs.AnyAsync(r => r.Status == AutomationStatus.Succeeded, ct))
+                return "has succeeded and runs only once";
+            return null;
+        }
+
+        /// <summary>A run of a task that was not run, recorded so the facilitator sees why.</summary>
+        public static AutomationRunEntity Skipped(AutomationTaskEntity task, AutomationRunEntity parent, AutomationRunSource source, string why, DateTime now)
+        {
+            var run = New(task, parent.MselId, parent.Kind, source, now, parent.DeploymentId, parent.PlayerViewId, parent.RequestedBy,
+                parentRunId: parent.Id, triggerChain: false);
+            run.Status = AutomationStatus.Skipped;
+            run.EndedAt = now;
+            run.StatusDetail = $"{task.Name} {why}, so it was not run again.";
+            return run;
+        }
 
         /// <summary>Whether a status ends a run.</summary>
         public static bool IsFinal(AutomationStatus status) =>

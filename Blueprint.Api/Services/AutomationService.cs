@@ -191,13 +191,8 @@ namespace Blueprint.Api.Services
             var msel = await RequireFacilitatorOfDeployedAsync(task.MselId, hasEditMsels, ct);
             if (!task.Enabled)
                 throw new ConflictException("The task is disabled.");
-            await RequireNotRunningAsync(task, msel, ct);
-            await RequireRepeatableAsync(task, msel, ct);
-            var run = AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Manual, AfterDelay(task),
-                msel.DeploymentId, msel.PlayerViewId, UserId, triggerChain: form?.TriggerChain ?? true);
-            _context.AutomationRuns.Add(run);
-            await _context.SaveChangesAsync(ct);
-            _registry.Wake();
+            var run = await AdmitAsync(task, msel, () => AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Manual,
+                AfterDelay(task), msel.DeploymentId, msel.PlayerViewId, UserId, triggerChain: form?.TriggerChain ?? true), ct);
             return run.ToAutomationRun();
         }
 
@@ -214,13 +209,8 @@ namespace Blueprint.Api.Services
                 ?? throw new ConflictException("The task this run ran has been deleted.");
             if (!task.Enabled)
                 throw new ConflictException("The task is disabled.");
-            await RequireNotRunningAsync(task, msel, ct);
-            await RequireRepeatableAsync(task, msel, ct);
-            var run = AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Rerun, AfterDelay(task),
-                msel.DeploymentId, msel.PlayerViewId, UserId, rerunOfRunId: original.Id, triggerChain: form?.TriggerChain ?? true);
-            _context.AutomationRuns.Add(run);
-            await _context.SaveChangesAsync(ct);
-            _registry.Wake();
+            var run = await AdmitAsync(task, msel, () => AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Rerun,
+                AfterDelay(task), msel.DeploymentId, msel.PlayerViewId, UserId, rerunOfRunId: original.Id, triggerChain: form?.TriggerChain ?? true), ct);
             return run.ToAutomationRun();
         }
 
@@ -304,6 +294,27 @@ namespace Blueprint.Api.Services
             return msel;
         }
 
+        /// <summary>
+        /// Makes an exercise run of a task, holding the task's row while it checks that none is going and that a task that
+        /// runs only once has not succeeded: two requests at once cannot both pass the checks and both run it.
+        /// </summary>
+        private async Task<AutomationRunEntity> AdmitAsync(AutomationTaskEntity task, MselEntity msel, Func<AutomationRunEntity> make, CancellationToken ct)
+        {
+            AutomationRunEntity run;
+            await using (var transaction = await _context.Database.BeginTransactionAsync(ct))
+            {
+                await AutomationRuns.LockTasksAsync(_context, new[] { task.Id }, ct);
+                await RequireNotRunningAsync(task, msel, ct);
+                await RequireRepeatableAsync(task, msel, ct);
+                run = make();
+                _context.AutomationRuns.Add(run);
+                await _context.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+            }
+            _registry.Wake();
+            return run;
+        }
+
         /// <summary>A run by hand waits for the task's run that has not ended, so two do not run at once.</summary>
         private async Task RequireNotRunningAsync(AutomationTaskEntity task, MselEntity msel, CancellationToken ct)
         {
@@ -329,13 +340,8 @@ namespace Blueprint.Api.Services
             var msel = await RequireDeployedAsync(mselId, ct);
             if (msel.AutomationPaused)
                 throw new ConflictException("The exercise's automation is paused.");
-            await RequireNotRunningAsync(task, msel, ct);
-            await RequireRepeatableAsync(task, msel, ct);
-            var run = AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Participant, AfterDelay(task),
-                msel.DeploymentId, msel.PlayerViewId, UserId, triggerChain: true);
-            _context.AutomationRuns.Add(run);
-            await _context.SaveChangesAsync(ct);
-            _registry.Wake();
+            await AdmitAsync(task, msel, () => AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Participant,
+                AfterDelay(task), msel.DeploymentId, msel.PlayerViewId, UserId, triggerChain: true), ct);
             return (await GetParticipantTasksAsync(mselId, true, ct)).Tasks.Single(t => t.Id == taskId);
         }
 

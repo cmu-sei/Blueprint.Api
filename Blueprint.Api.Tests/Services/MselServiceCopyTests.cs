@@ -532,12 +532,15 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Null(stranger.Value);
     }
 
-    /// <summary>A copy brings the events' automation tasks, as new tasks of the copy, with their stored secrets.</summary>
+    /// <summary>
+    /// A copy brings the events' automation tasks, as new tasks of the copy, with their stored secrets for a caller who
+    /// may edit the source's tasks.
+    /// </summary>
     [Fact]
     public async Task Copy_CopiesTheScenarioEventsAutomationTasks()
     {
         var graph = await SeedGraph();
-        var actor = await Copier().SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels, SystemPermission.ViewMsels, SystemPermission.EditMsels).SeedAsync();
 
         var copy = await Copy(Client(actor), graph.Msel.Id);
 
@@ -549,6 +552,32 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal(graph.AutomationTask.SecretParameters, task.SecretParameters);
         Assert.Equal(actor.Id, task.CreatedBy);
         Assert.True(await ReadBack(rb => rb.AutomationTasks.AnyAsync(x => x.Id == graph.AutomationTask.Id, Ct)));
+    }
+
+    /// <summary>
+    /// A caller who may not edit the source's tasks gets them without their secrets: owning the copy, they could otherwise
+    /// change a task and test it with passwords, keys and headers they were never given. An Owner or Editor of the source
+    /// keeps them.
+    /// </summary>
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(MselRole.Viewer, false)]
+    [InlineData(MselRole.Facilitator, false)]
+    [InlineData(MselRole.Editor, true)]
+    [InlineData(MselRole.Owner, true)]
+    public async Task Copy_KeepsTheTasksSecretsOnlyForACallerWhoMayEditTheSource(MselRole? role, bool kept)
+    {
+        var graph = await SeedGraph();
+        var builder = Actor().WithSystemPermissions(SystemPermission.CreateMsels, SystemPermission.ViewMsels);
+        if (role is MselRole r)
+            builder = builder.OnMsel(graph.Msel, r);
+        var actor = await builder.SeedAsync();
+
+        var copy = await Copy(Client(actor), graph.Msel.Id);
+
+        var task = await ReadBack(rb => rb.AutomationTasks.SingleAsync(x => x.MselId == copy.Id, Ct));
+        Assert.Equal(kept ? graph.AutomationTask.SecretParameters : null, task.SecretParameters);
+        Assert.Equal(graph.AutomationTask.Name, task.Name);
     }
 
     /// <summary>

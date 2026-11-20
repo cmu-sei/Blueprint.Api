@@ -282,13 +282,14 @@ namespace Blueprint.Api.Services
                 throw new ForbiddenException();
 
             // The copy carries the MSEL's own scoring model, which a contributor may read. It carries the copy of the
-            // MSEL's Caster directory only for a caller who may read its files (CasterExportService.GetAsync), since
-            // the caller owns the copy and could read them there.
+            // MSEL's Caster directory only for a caller who may read its files (CasterExportService.GetAsync), and its
+            // automation tasks' secrets only for one who may edit its tasks, since the caller owns the copy and could
+            // read or use them there.
             var userId = _user.GetId();
-            var keepCasterCopy = hasEditMselsPermission ||
+            var mayEditSource = hasEditMselsPermission ||
                 await MselOwnerRequirement.IsMet(userId, mselId, _context) ||
                 await MselEditorRequirement.IsMet(userId, mselId, _context);
-            var newMselEntity = await privateMselCopyAsync(mselId, null, ct, keepCasterCopy);
+            var newMselEntity = await privateMselCopyAsync(mselId, null, ct, keepCasterCopy: mayEditSource, keepTaskSecrets: mayEditSource);
             var msel = newMselEntity.ToMsel();
             // add the needed parameters for Gallery integration
             if (msel.UseGallery)
@@ -300,7 +301,8 @@ namespace Blueprint.Api.Services
             return msel;
         }
 
-        private async Task<MselEntity> privateMselCopyAsync(Guid mselId, Guid? currentUserTeamId, CancellationToken ct, bool keepCasterCopy)
+        private async Task<MselEntity> privateMselCopyAsync(Guid mselId, Guid? currentUserTeamId, CancellationToken ct, bool keepCasterCopy,
+            bool keepTaskSecrets)
         {
             var currentUserId = _user.GetId();
             var username = (await _context.Users.SingleOrDefaultAsync(u => u.Id == _user.GetId())).Name;
@@ -340,6 +342,11 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<MselEntity>("MSEL not found with ID=" + mselId.ToString());
             if (!keepCasterCopy)
                 mselEntity.CasterExport = null;
+            // The copy's owner could edit a task and test it with the source's passwords, keys and headers, so they
+            // keep them only if they could already edit the source; otherwise each one is entered again in the copy.
+            if (!keepTaskSecrets)
+                foreach (var task in mselEntity.ScenarioEvents.SelectMany(se => se.AutomationTasks))
+                    task.SecretParameters = null;
 
             return await privateMselCopyAsync(mselEntity, currentUserTeamId, ct);
         }
@@ -2371,14 +2378,29 @@ namespace Blueprint.Api.Services
             // A file carries no secrets, only their names. Whatever a hand-edited file puts there is not stored: a
             // secret is entered in Blueprint, which encrypts it.
             var tasksWithoutSecrets = 0;
-            foreach (var task in mselEntity.ScenarioEvents.SelectMany(se => se.AutomationTasks ?? []))
+            var importedTasks = mselEntity.ScenarioEvents.SelectMany(se => se.AutomationTasks ?? []).ToList();
+            foreach (var task in importedTasks)
             {
+                var definition = Enum.IsDefined(task.Action) ? _catalog.Get(task.Action) : null;
+                if (definition == null)
+                {
+                    // an action this Blueprint does not have cannot run
+                    task.Enabled = false;
+                    AddChange(result, "automationTasks", $"{task.Name} was disabled: its action {task.Action} is not one this Blueprint has.");
+                    continue;
+                }
                 var hadSecrets = SecretNamesOnly(task.SecretParameters) != null;
                 task.SecretParameters = null;
-                var missingRequired = _catalog.Get(task.Action)?.Parameters.Any(p => p.Secret && p.Required) == true;
-                if (hadSecrets || missingRequired)
+                // the action's own parameters only, as the task writer keeps them: a secret put among them is dropped too
+                var secretKeys = _catalog.SecretKeys(task.Action);
+                var secretInParameters = (task.ActionParameters ?? new()).Any(kv => secretKeys.Contains(kv.Key) && !string.IsNullOrEmpty(kv.Value));
+                task.ActionParameters = _catalog.Normalize(task.Action, task.ActionParameters);
+                var missingRequired = definition.Parameters.Any(p => p.Secret && p.Required);
+                if (hadSecrets || secretInParameters || missingRequired)
                     tasksWithoutSecrets++;
             }
+            foreach (var name in AutomationTaskCopier.BreakTriggerLoops(importedTasks))
+                AddChange(result, "automationTasks", $"{name} now runs by hand: its triggers led back to it.");
             await MatchImportedCompetenciesAsync(mselEntity, result, ct);
 
             // A file carrying the MSEL's own scoring model pushes that one, so a CITE model it also links is dropped.
@@ -3327,7 +3349,8 @@ namespace Blueprint.Api.Services
             // clone the template MSEL
             // A launch needs the template's directory, so it has no use for the copy, and the invitee, who owns the
             // launched MSEL, may not read the template's files
-            var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct, keepCasterCopy: false);
+            // nor the template's task secrets, which the invitee, owning the launch, could use in a task of their own
+            var mselEntity = await privateMselCopyAsync(mselId, invitation.TeamId, ct, keepCasterCopy: false, keepTaskSecrets: false);
             // create the new player view ID, so that the UI will be able to look for it to be created
             var playerViewId = Guid.NewGuid();
             // store it now, as a push does, so the view, its teams and the MSEL all use the same ID

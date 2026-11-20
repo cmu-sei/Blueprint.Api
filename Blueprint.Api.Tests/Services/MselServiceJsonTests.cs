@@ -180,6 +180,90 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
     }
 
     /// <summary>
+    /// A secret a hand-edited file puts among a task's own parameters is dropped as one in its secrets is, so it is not
+    /// stored, shown or run in the clear; and so is any parameter the action does not have.
+    /// </summary>
+    [Fact]
+    public async Task Upload_OfASecretAmongTheActionParameters_DropsIt()
+    {
+        var (actor, file, msel) = await ExportedWithOneHttpTask();
+        var exported = file["ScenarioEvents"]![0]!["AutomationTasks"]![0]!;
+        exported["ActionParameters"]!["Headers"] = "{\"Authorization\":\"Bearer plain\"}";
+        exported["ActionParameters"]!["Unknown"] = "x";
+
+        var result = await Import(Client(actor), file.ToJsonString());
+
+        var stored = await ReadBack(db => db.AutomationTasks.SingleAsync(t => t.MselId == result.Msel.Id, Ct));
+        Assert.Equal(new Dictionary<string, string> { ["Url"] = "http://localhost:4720/api/health" }, stored.ActionParameters);
+        Assert.Null(stored.SecretParameters);
+        Assert.Contains(result.Changes, c => c.Field == "automationTasks" && c.Message.StartsWith("1 automation task(s) need a password or key"));
+        Assert.NotEqual(msel.Id, result.Msel.Id);
+    }
+
+    /// <summary>
+    /// Tasks a hand-edited file chains in a loop would run each other over and over, so each one on the loop runs by hand
+    /// instead, and the import says so; a task that only leads into the loop keeps its trigger.
+    /// </summary>
+    [Fact]
+    public async Task Upload_OfTasksWhoseTriggersLoop_MakesThemManual()
+    {
+        var (actor, file, _) = await ExportedWithOneHttpTask();
+        var tasks = file["ScenarioEvents"]![0]!["AutomationTasks"]!.AsArray();
+        var a = tasks[0]!.AsObject();
+        var b = System.Text.Json.Nodes.JsonNode.Parse(a.ToJsonString())!.AsObject();
+        var c = System.Text.Json.Nodes.JsonNode.Parse(a.ToJsonString())!.AsObject();
+        (b["Id"], b["Name"]) = (Guid.NewGuid().ToString(), "b");
+        (c["Id"], c["Name"]) = (Guid.NewGuid().ToString(), "c");
+        a["Name"] = "a";
+        a["TriggerCondition"] = (int)AutomationTrigger.OnSuccess;
+        a["TriggerTaskId"] = b["Id"]!.GetValue<string>();
+        b["TriggerCondition"] = (int)AutomationTrigger.OnCompletion;
+        b["TriggerTaskId"] = a["Id"]!.GetValue<string>();
+        c["TriggerCondition"] = (int)AutomationTrigger.OnSuccess;
+        c["TriggerTaskId"] = a["Id"]!.GetValue<string>();
+        tasks.Add(b);
+        tasks.Add(c);
+
+        var result = await Import(Client(actor), file.ToJsonString());
+
+        var stored = await ReadBack(db => db.AutomationTasks.Where(t => t.MselId == result.Msel.Id).ToDictionaryAsync(t => t.Name, Ct));
+        Assert.Equal((AutomationTrigger.Manual, null), (stored["a"].TriggerCondition, stored["a"].TriggerTaskId));
+        Assert.Equal((AutomationTrigger.Manual, null), (stored["b"].TriggerCondition, stored["b"].TriggerTaskId));
+        Assert.Equal((AutomationTrigger.OnSuccess, stored["a"].Id), (stored["c"].TriggerCondition, stored["c"].TriggerTaskId));
+        Assert.Contains(result.Changes, ch => ch.Message == "a now runs by hand: its triggers led back to it.");
+        Assert.Contains(result.Changes, ch => ch.Message == "b now runs by hand: its triggers led back to it.");
+    }
+
+    /// <summary>A task whose action this Blueprint does not have is imported disabled, and the import says so.</summary>
+    [Fact]
+    public async Task Upload_OfATaskWithAnUnknownAction_DisablesIt()
+    {
+        var (actor, file, _) = await ExportedWithOneHttpTask();
+        file["ScenarioEvents"]![0]!["AutomationTasks"]![0]!["Action"] = 9999;
+
+        var result = await Import(Client(actor), file.ToJsonString());
+
+        var stored = await ReadBack(db => db.AutomationTasks.SingleAsync(t => t.MselId == result.Msel.Id, Ct));
+        Assert.False(stored.Enabled);
+        Assert.Contains(result.Changes, c => c.Field == "automationTasks" && c.Message.Contains("is not one this Blueprint has"));
+    }
+
+    private async Task<(TestActor Actor, System.Text.Json.Nodes.JsonObject File, MselEntity Msel)> ExportedWithOneHttpTask()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        await Seed(scenarioEvent);
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id, AutomationAction.http_get);
+        task.ActionParameters = new() { ["Url"] = "http://localhost:4720/api/health" };
+        await Seed(task);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(
+            (await ReadExport(await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct))).GetRawText())!.AsObject();
+        return (actor, file, msel);
+    }
+
+    /// <summary>
     /// A file from before Blueprint ran automation tasks has Steamfitter tasks: they become automation tasks, as the
     /// migration converts stored ones. A group's enabled tasks run one after another, the first by hand, and only
     /// the tasks of events that targeted Steamfitter are enabled.

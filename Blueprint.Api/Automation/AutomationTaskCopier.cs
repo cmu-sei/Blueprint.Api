@@ -12,7 +12,8 @@ namespace Blueprint.Api.Automation
     /// <summary>
     /// Copies of automation tasks, for scenario events copied to another MSEL or a whole MSEL copied. A copied task
     /// triggered by another copied task is triggered by that one's copy; one whose trigger was not copied with it runs
-    /// by hand. A task's secrets are copied as they are stored: they are bound to their parameter, not their task.
+    /// by hand. A task's secrets are copied as they are stored, when the caller keeps them: they are bound to their
+    /// parameter, not their task.
     /// </summary>
     public static class AutomationTaskCopier
     {
@@ -52,6 +53,34 @@ namespace Blueprint.Api.Automation
                     CreatedBy = createdBy,
                 };
             }).ToList();
+        }
+
+        /// <summary>
+        /// Makes Manual each task on a loop of triggers, which would run its tasks over and over: the task writer refuses
+        /// one, but a hand-edited file can carry it. Returns the names of the tasks changed.
+        /// </summary>
+        public static List<string> BreakTriggerLoops(IReadOnlyCollection<AutomationTaskEntity> tasks)
+        {
+            var byId = tasks.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First());
+            var onLoops = new List<AutomationTaskEntity>();
+            foreach (var task in tasks)
+            {
+                var seen = new HashSet<Guid>();
+                for (var at = task.TriggerTaskId; at is Guid id && byId.TryGetValue(id, out var next) && seen.Add(id); at = next.TriggerTaskId)
+                {
+                    if (id == task.Id)
+                    {
+                        onLoops.Add(task);
+                        break;
+                    }
+                }
+            }
+            foreach (var task in onLoops)
+            {
+                task.TriggerCondition = AutomationTrigger.Manual;
+                task.TriggerTaskId = null;
+            }
+            return onLoops.Select(t => t.Name).ToList();
         }
     }
 }

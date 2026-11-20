@@ -162,6 +162,26 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.False(imported.HideNamesOnAssessorView);
     }
 
+    /// <summary>
+    /// A file's marking is cleaned as a create or save cleans it: a hand-edited file's lower-case TLP becomes the
+    /// marking and level the Info tab offers, and one Blueprint does not know is none.
+    /// </summary>
+    [Theory]
+    [InlineData("tlp", "green", "Tlp", "GREEN")]
+    [InlineData("Bogus", "x", "None", null)]
+    public async Task Upload_CleansTheFilesMarking(string marking, string text, string savedMarking, string savedText)
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(Exported(m => { })).AsObject();
+        file["ArticleMarking"] = marking;
+        file["ArticleMarkingText"] = text;
+
+        var imported = await Upload(Client(actor), file.ToJsonString());
+
+        Assert.Equal(savedMarking, imported.ArticleMarking);
+        Assert.Equal(savedText, imported.ArticleMarkingText);
+    }
+
     /// <summary>A file from before the setting existed imports as a scenario someone starts by hand.</summary>
     [Fact]
     public async Task Upload_OfAFileWithoutTheSteamfitterStartMode_StartsTheScenarioManually()

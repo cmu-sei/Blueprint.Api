@@ -713,6 +713,70 @@ public class IntegrationGalleryExtensionsTests(DatabaseFixture fixture) : Databa
         Assert.Equal(5, body["inject"].GetInt32());
     }
 
+    /// <summary>A MSEL whose marking was never set pushes its articles as written.</summary>
+    [Fact]
+    public async Task CreateArticles_WithNoMarking_PushesTheArticleAsWritten()
+    {
+        var body = await OneArticle(new() { [GalleryArticleParameter.Description] = "<p>The grid is down</p>" });
+
+        Assert.Equal("<p>The grid is down</p>", body["description"].GetString());
+    }
+
+    [Theory]
+    [InlineData("Exercise", null, "EXERCISE · EXERCISE · EXERCISE")]
+    [InlineData("Tlp", "AMBER", "TLP:AMBER")]
+    [InlineData("Classification", "Secret//NoForn", "SECRET//NOFORN")]
+    public async Task CreateArticles_PutsTheMselsMarkingOnTheArticle(string marking, string text, string banner)
+    {
+        var msel = Msel();
+        msel.ArticleMarking = marking;
+        msel.ArticleMarkingText = text;
+        await Seed(msel);
+
+        var body = await OneArticle(new() { [GalleryArticleParameter.Description] = "<p>The grid is down</p>" }, msel.Id);
+
+        var description = body["description"].GetString();
+        Assert.StartsWith("<table title=\"Marking\"", description);
+        Assert.Contains($"<b>{banner}</b>", description);
+        Assert.Contains("<p>The grid is down</p>", description);
+    }
+
+    /// <summary>The marking goes on what is pushed: the article's data value keeps what the planner wrote.</summary>
+    [Fact]
+    public async Task CreateArticles_LeavesTheStoredDescriptionUnmarked()
+    {
+        var msel = Msel();
+        msel.ArticleMarking = "Tlp";
+        msel.ArticleMarkingText = "RED";
+        await Seed(msel);
+
+        await OneArticle(new() { [GalleryArticleParameter.Description] = "<p>The grid is down</p>" }, msel.Id);
+
+        await using var after = NewContext();
+        Assert.Contains(
+            "<p>The grid is down</p>",
+            await after.DataValues.Where(x => x.ScenarioEvent.MselId == msel.Id).Select(x => x.Value).ToListAsync(Ct));
+    }
+
+    /// <summary>A marking already written into the article is replaced by the MSEL's, and taken off for none.</summary>
+    [Theory]
+    [InlineData("Tlp", "GREEN", 1)]
+    [InlineData("None", null, 0)]
+    public async Task CreateArticles_ReplacesAMarkingAlreadyInTheArticle(string marking, string text, int banners)
+    {
+        var msel = Msel();
+        msel.ArticleMarking = marking;
+        msel.ArticleMarkingText = text;
+        await Seed(msel);
+        var written = ArticleMarkings.Apply("<p>The grid is down</p>", "Exercise", null, "Old name");
+
+        var body = await OneArticle(new() { [GalleryArticleParameter.Description] = written }, msel.Id);
+
+        var description = body["description"].GetString();
+        Assert.DoesNotContain("EXERCISE", description);
+        Assert.Equal(banners, System.Text.RegularExpressions.Regex.Matches(description, "title=\"Marking\"").Count);
+    }
+
     /// <remarks>
     /// Only events whose <c>IntegrationTarget</c> mentions Gallery, by substring - so a target of
     /// <c>"Gallery,Steamfitter"</c> matches both integrations, which is how one event drives two.

@@ -13,6 +13,9 @@ namespace Blueprint.Api.Infrastructure.Mappings;
 [Mapper]
 public static partial class MselPageMapper
 {
+    [MapProperty("Msel.ArticleMarking", nameof(MselPage.ArticleMarking))]
+    [MapProperty("Msel.ArticleMarkingText", nameof(MselPage.ArticleMarkingText))]
+    [MapProperty("Msel.Name", nameof(MselPage.MselName))]
     public static partial MselPage ToMselPage(this MselPageEntity source);
 
     [MapperRequiredMapping(RequiredMappingStrategy.Source)]

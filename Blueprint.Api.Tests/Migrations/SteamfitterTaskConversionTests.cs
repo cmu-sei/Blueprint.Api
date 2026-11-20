@@ -168,6 +168,47 @@ public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseT
         Assert.Equal("Gallery", target["situation"]);
     }
 
+    /// <summary>
+    /// A file is written PascalCase, but one written in another casing converts the same: the task, its parameters,
+    /// and the Steamfitter fields that are removed are all found whatever their case.
+    /// </summary>
+    [Fact]
+    public void TheJsonUpgrader_ReadsAFileInAnyCasing()
+    {
+        var file = JsonNode.Parse("""
+            {
+              "id": "6b5f0c5e-2b8b-4f4e-9d65-0d1d1c1f1a01",
+              "useSteamfitter": true,
+              "scenarioEvents": [
+                {
+                  "id": "6b5f0c5e-2b8b-4f4e-9d65-0d1d1c1f1a02",
+                  "deltaSeconds": 0,
+                  "groupOrder": 1,
+                  "integrationTarget": "Gallery, Steamfitter",
+                  "steamfitterTask": {
+                    "taskType": 1,
+                    "name": "notify",
+                    "actionParameters": { "NOTIFICATIONTEXT": "Move 2 begins" },
+                    "iterations": 0
+                  }
+                }
+              ]
+            }
+            """)!;
+
+        var (json, _) = MselJsonUpgrader.Upgrade(file.ToJsonString());
+
+        var upgraded = JsonNode.Parse(json)!.AsObject();
+        Assert.Null(upgraded["useSteamfitter"]);
+        var scenarioEvent = upgraded["scenarioEvents"]![0]!.AsObject();
+        Assert.Null(scenarioEvent["steamfitterTask"]);
+        Assert.Equal("Gallery", scenarioEvent["integrationTarget"]!.GetValue<string>());
+        var task = Assert.Single(scenarioEvent["AutomationTasks"]!.AsArray())!.AsObject();
+        Assert.Equal("notify", task["Name"]!.GetValue<string>());
+        Assert.Equal((int)AutomationAction.player_notification, task["Action"]!.GetValue<int>());
+        Assert.Equal("Move 2 begins", task["ActionParameters"]!["Text"]!.GetValue<string>());
+    }
+
     /// <summary>What both conversions must make of <see cref="Cases"/>.</summary>
     private static void AssertConverted(Dictionary<string, Converted> converted)
     {

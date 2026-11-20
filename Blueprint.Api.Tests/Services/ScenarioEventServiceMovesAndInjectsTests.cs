@@ -5,9 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Blueprint.Api.Automation;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
+using NSubstitute;
 using Xunit;
 
 namespace Blueprint.Api.Tests.Services;
@@ -261,8 +263,8 @@ public class ScenarioEventServiceMovesAndInjectsTests(DatabaseFixture fixture) :
     // Helpers
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>The service over the test's own context, with <c>null</c> for everything else: the method reads only <c>_context</c>.</summary>
-    private ScenarioEventService Service() => new(Db, null, null);
+    /// <summary>The service over the test's own context, with <c>null</c> or a substitute for everything else: the method reads only <c>_context</c>.</summary>
+    private ScenarioEventService Service() => new(Db, null, null, Substitute.For<IAutomationTaskWriter>());
 
     private async Task<ScenarioEventEntity> SeedEvent(Guid mselId, int deltaSeconds)
     {

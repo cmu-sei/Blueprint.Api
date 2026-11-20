@@ -29,7 +29,8 @@ namespace Blueprint.Api.Services
             JsonNode root;
             try
             {
-                root = JsonNode.Parse(json);
+                // files are written PascalCase, but other casing is tolerated
+                root = JsonNode.Parse(json, new JsonNodeOptions { PropertyNameCaseInsensitive = true });
             }
             catch (JsonException)
             {
@@ -41,16 +42,16 @@ namespace Blueprint.Api.Services
 
             var changed = false;
             foreach (var key in new[] { "UseSteamfitter", "SteamfitterScenarioId", "SteamfitterIntegrationType", "SteamfitterScenarioStartMode" })
-                changed |= Remove(msel, key);
-            foreach (var role in Items(Get(msel, "UserMselRoles")).OfType<JsonObject>())
-                changed |= Remove(role, "SteamfitterScenarioRole");
+                changed |= msel.Remove(key);
+            foreach (var role in Items(msel["UserMselRoles"]).OfType<JsonObject>())
+                changed |= role.Remove("SteamfitterScenarioRole");
 
-            var events = Items(Get(msel, "ScenarioEvents")).OfType<JsonObject>().ToList();
+            var events = Items(msel["ScenarioEvents"]).OfType<JsonObject>().ToList();
             var converted = new List<(JsonObject Event, JsonObject Task, int Delta, int Order, string Id)>();
             var droppedHeaders = 0;
             foreach (var scenarioEvent in events)
             {
-                var target = Get(scenarioEvent, "IntegrationTarget")?.GetValue<string>();
+                var target = scenarioEvent["IntegrationTarget"]?.GetValue<string>();
                 var targetsSteamfitter = target != null && target.Contains("Steamfitter", StringComparison.OrdinalIgnoreCase);
                 if (target != null)
                 {
@@ -59,21 +60,21 @@ namespace Blueprint.Api.Services
                     var newTarget = string.Join(", ", rest);
                     if (newTarget != target)
                     {
-                        Set(scenarioEvent, "IntegrationTarget", string.IsNullOrEmpty(newTarget) ? null : JsonValue.Create(newTarget));
+                        scenarioEvent["IntegrationTarget"] = string.IsNullOrEmpty(newTarget) ? null : JsonValue.Create(newTarget);
                         changed = true;
                     }
                 }
-                var legacy = Get(scenarioEvent, "SteamfitterTask") as JsonObject;
-                changed |= Remove(scenarioEvent, "SteamfitterTask");
-                changed |= Remove(scenarioEvent, "SteamfitterTaskId");
+                var legacy = scenarioEvent["SteamfitterTask"] as JsonObject;
+                changed |= scenarioEvent.Remove("SteamfitterTask");
+                changed |= scenarioEvent.Remove("SteamfitterTaskId");
                 if (legacy == null)
                     continue;
                 var task = Convert(legacy, targetsSteamfitter, out var hadHeaders);
                 if (task == null)
                     continue;
                 droppedHeaders += hadHeaders ? 1 : 0;
-                converted.Add((scenarioEvent, task, Int(Get(scenarioEvent, "DeltaSeconds")), Int(Get(scenarioEvent, "GroupOrder")),
-                    Get(scenarioEvent, "Id")?.ToString() ?? string.Empty));
+                converted.Add((scenarioEvent, task, Int(scenarioEvent["DeltaSeconds"]), Int(scenarioEvent["GroupOrder"]),
+                    scenarioEvent["Id"]?.ToString() ?? string.Empty));
                 changed = true;
             }
 
@@ -93,9 +94,9 @@ namespace Blueprint.Api.Services
             }
             foreach (var item in converted)
             {
-                var list = Get(item.Event, "AutomationTasks") as JsonArray ?? new JsonArray();
+                var list = item.Event["AutomationTasks"] as JsonArray ?? new JsonArray();
                 list.Add(item.Task);
-                Set(item.Event, "AutomationTasks", list);
+                item.Event["AutomationTasks"] = list;
             }
 
             if (converted.Count > 0)
@@ -111,8 +112,8 @@ namespace Blueprint.Api.Services
         private static JsonObject Convert(JsonObject legacy, bool enabled, out bool hadHeaders)
         {
             hadHeaders = false;
-            var parameters = Get(legacy, "ActionParameters") as JsonObject ?? new JsonObject();
-            string P(string key) => parameters.FirstOrDefault(kv => string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase)).Value?.ToString();
+            var parameters = legacy["ActionParameters"] as JsonObject ?? new JsonObject();
+            string P(string key) => parameters[key]?.ToString();
             JsonObject Slice(params (string To, string From)[] keys)
             {
                 var sliced = new JsonObject();
@@ -122,10 +123,10 @@ namespace Blueprint.Api.Services
                 return sliced;
             }
 
-            var type = Int(Get(legacy, "TaskType"));
+            var type = Int(legacy["TaskType"]);
             AutomationAction action;
             JsonObject actionParameters;
-            var expected = Get(legacy, "ExpectedOutput")?.ToString();
+            var expected = legacy["ExpectedOutput"]?.ToString();
             switch (type)
             {
                 case 1:
@@ -154,23 +155,23 @@ namespace Blueprint.Api.Services
             var task = new JsonObject
             {
                 ["Id"] = Guid.NewGuid().ToString(),
-                ["Name"] = Get(legacy, "Name")?.ToString() ?? "Steamfitter task",
-                ["Description"] = Get(legacy, "Description")?.ToString(),
+                ["Name"] = legacy["Name"]?.ToString() ?? "Steamfitter task",
+                ["Description"] = legacy["Description"]?.ToString(),
                 ["Action"] = (int)action,
                 ["ActionParameters"] = actionParameters,
                 ["ExpectedOutput"] = string.IsNullOrEmpty(expected) ? null : expected,
-                ["ExpirationSeconds"] = Math.Max(0, Int(Get(legacy, "ExpirationSeconds"))),
-                ["DelaySeconds"] = Math.Max(0, Int(Get(legacy, "DelaySeconds"))),
-                ["IntervalSeconds"] = Math.Max(0, Int(Get(legacy, "IntervalSeconds"))),
-                ["Iterations"] = Math.Max(1, Int(Get(legacy, "Iterations"))),
+                ["ExpirationSeconds"] = Math.Max(0, Int(legacy["ExpirationSeconds"])),
+                ["DelaySeconds"] = Math.Max(0, Int(legacy["DelaySeconds"])),
+                ["IntervalSeconds"] = Math.Max(0, Int(legacy["IntervalSeconds"])),
+                ["Iterations"] = Math.Max(1, Int(legacy["Iterations"])),
                 ["IterationTermination"] = (int)AutomationIterationTermination.IterationCount,
                 ["TriggerCondition"] = (int)AutomationTrigger.Manual,
                 ["TriggerTaskId"] = null,
                 ["Enabled"] = enabled,
-                ["Repeatable"] = Get(legacy, "Repeatable")?.GetValue<bool>() ?? false,
+                ["Repeatable"] = legacy["Repeatable"]?.GetValue<bool>() ?? false,
                 ["Score"] = 0,
                 // a task a participant could run in Steamfitter still can
-                ["UserExecutable"] = Get(legacy, "UserExecutable")?.GetValue<bool>() ?? false,
+                ["UserExecutable"] = legacy["UserExecutable"]?.GetValue<bool>() ?? false,
                 ["DisplayOrder"] = 0,
             };
             // headers are a secret now, and a file carries none
@@ -178,27 +179,11 @@ namespace Blueprint.Api.Services
             return task;
         }
 
-        /// <summary>The value of a property, by name ignoring case: files are written PascalCase, but tolerated otherwise.</summary>
-        private static JsonNode Get(JsonObject o, string name) =>
-            o.FirstOrDefault(kv => string.Equals(kv.Key, name, StringComparison.OrdinalIgnoreCase)).Value;
-
-        private static void Set(JsonObject o, string name, JsonNode value)
-        {
-            var key = o.FirstOrDefault(kv => string.Equals(kv.Key, name, StringComparison.OrdinalIgnoreCase)).Key ?? name;
-            o[key] = value;
-        }
-
-        private static bool Remove(JsonObject o, string name)
-        {
-            var key = o.FirstOrDefault(kv => string.Equals(kv.Key, name, StringComparison.OrdinalIgnoreCase)).Key;
-            return key != null && o.Remove(key);
-        }
-
         /// <summary>The items of a collection, written as an array or, by a reference-preserving writer, as {"$values": [...]}.</summary>
         private static IEnumerable<JsonNode> Items(JsonNode node) => node switch
         {
             JsonArray array => array,
-            JsonObject o when Get(o, "$values") is JsonArray values => values,
+            JsonObject o when o["$values"] is JsonArray values => values,
             _ => Enumerable.Empty<JsonNode>(),
         };
 

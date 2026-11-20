@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Blueprint.Api.Automation;
 using Blueprint.Api.Data;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Data.Models;
@@ -87,7 +88,7 @@ public sealed class IntegrationServiceHarness
             Scope = "player player-vm cite gallery"
         });
         services.AddScoped<IScenarioEventService>(sp => scenarioEvents ?? new ScenarioEventService(
-            sp.GetRequiredService<BlueprintContext>(), null, null));
+            sp.GetRequiredService<BlueprintContext>(), null, null, Substitute.For<IAutomationTaskWriter>()));
 
         var provider = services.BuildServiceProvider();
         var options = Substitute.For<IOptionsMonitor<ClientOptions>>();

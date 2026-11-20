@@ -47,7 +47,7 @@ namespace Blueprint.Api.Services
             BlueprintContext context,
             IPrincipal user,
             DatabaseOptions options,
-            IAutomationTaskWriter automationTaskWriter = null)
+            IAutomationTaskWriter automationTaskWriter)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
@@ -59,8 +59,7 @@ namespace Blueprint.Api.Services
         private Task ApplyAutomationTasksAsync(Guid mselId, Guid scenarioEventId, List<ViewModels.AutomationTaskFields> tasks, CancellationToken ct) =>
             tasks == null
                 ? Task.CompletedTask
-                : (_automationTaskWriter ?? throw new InvalidOperationException("No automation task writer."))
-                    .ApplyAsync(mselId, scenarioEventId, tasks, _user.GetId(), ct);
+                : _automationTaskWriter.ApplyAsync(mselId, scenarioEventId, tasks, _user.GetId(), ct);
 
         public async Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {

@@ -21,6 +21,7 @@ using Blueprint.Api.Data;
 using Blueprint.Api.Infrastructure.JsonConverters;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Services;
+using Blueprint.Api.Automation;
 using System;
 using Blueprint.Api.Infrastructure;
 using Blueprint.Api.Infrastructure.Authorization;
@@ -179,7 +180,6 @@ public class Startup
         services.AddCiteApiClient();
         services.AddGalleryApiClient();
         services.AddPlayerApiClient();
-        services.AddSteamfitterApiClient();
         services.AddCasterApiClient();
 
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
@@ -271,6 +271,8 @@ public class Startup
         services.AddScoped<IXApiQueueService, XApiQueueService>();
         services.AddScoped<ILmtService, LmtService>();
         services.AddHttpClient();
+        services.AddAutomationActions(Configuration);
+        services.AddAutomationEngine();
 
         // Register xAPI Background Service
         services.AddHostedService<Services.XApiBackgroundService>();
@@ -283,7 +285,6 @@ public class Startup
         services.AddHostedService<JoinService>();
         services.AddSingleton<IAddApplicationQueue, AddApplicationQueue>();
         services.AddHostedService<AddApplicationService>();
-        services.AddHostedService<SteamfitterStartService>();
 
         ApplyPolicies(services);
 

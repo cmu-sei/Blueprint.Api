@@ -439,9 +439,10 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
     }
 
     /// <remarks>
-    /// Ten placeholders, five of them the MSEL's own integration ids and five from
-    /// <c>ClientSettings</c>. This is how an application lands in Player already pointing at the CITE
-    /// evaluation or Gallery exhibit the same push created.
+    /// The MSEL's own integration ids and the <c>ClientSettings</c> urls. This is how an application lands in
+    /// Player already pointing at the CITE evaluation or Gallery exhibit the same push created. Blueprint no
+    /// longer pushes to Steamfitter, so its two placeholders become empty rather than staying in the url as
+    /// written.
     /// </remarks>
     [Fact]
     public async Task CreateApplications_SubstitutesEveryPlaceholderInTheUrl()
@@ -460,12 +461,12 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
             $"?msel={msel.Id}" +
             $"&cite={CiteEvaluationId}" +
             $"&exhibit={GalleryExhibitId}" +
-            $"&scenario={SteamfitterScenarioId}" +
+            "&scenario=" +
             $"&view={ViewId}" +
             "&playerUrl=http://player.ui" +
             "&citeUrl=http://cite.ui" +
             "&galleryUrl=http://gallery.ui" +
-            "&steamfitterUrl=http://steamfitter.ui" +
+            "&steamfitterUrl=" +
             "&blueprintUrl=http://blueprint.ui" +
             $"&workspace={CasterWorkspaceId}" +
             "&casterUrl=http://caster.ui" +
@@ -730,7 +731,6 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
     private static readonly Guid ViewId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid CiteEvaluationId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
     private static readonly Guid GalleryExhibitId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000002");
-    private static readonly Guid SteamfitterScenarioId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000003");
     private static readonly Guid CasterWorkspaceId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000004");
 
     private const string AllPlaceholders =
@@ -770,7 +770,6 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         PlayerUiUrl = "http://player.ui",
         CiteUiUrl = "http://cite.ui",
         GalleryUiUrl = "http://gallery.ui",
-        SteamfitterUiUrl = "http://steamfitter.ui",
         BlueprintUiUrl = "http://blueprint.ui",
         CasterUiUrl = "http://caster.ui",
         // a trailing slash is trimmed, so "{vmUrl}/views/..." never doubles it
@@ -789,7 +788,6 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         {
             msel.CiteEvaluationId = CiteEvaluationId;
             msel.GalleryExhibitId = GalleryExhibitId;
-            msel.SteamfitterScenarioId = SteamfitterScenarioId;
             msel.CasterWorkspaceId = CasterWorkspaceId;
         }
 

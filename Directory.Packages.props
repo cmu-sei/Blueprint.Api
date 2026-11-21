@@ -40,8 +40,14 @@
   <ItemGroup>
     <PackageVersion Include="caster.api.client" Version="1.5.0" />
     <PackageVersion Include="Player.Api.Client" Version="3.2.0" />
-    <PackageVersion Include="steamfitter.api.client" Version="3.11.0" />
+    <PackageVersion Include="Player.Vm.Api.Client" Version="2.1.0" />
     <PackageVersion Include="TinCanStandard" Version="1.5.0" />
+  </ItemGroup>
+
+  <!-- What automation tasks run their SSH and email actions with. -->
+  <ItemGroup>
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
+    <PackageVersion Include="MailKit" Version="4.17.0" />
   </ItemGroup>
 
   <!-- EF Core and its providers. All four providers ship in the image: Postgres is production, and

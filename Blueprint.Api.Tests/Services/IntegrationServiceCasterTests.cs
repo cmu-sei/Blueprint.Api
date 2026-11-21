@@ -13,6 +13,7 @@ using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace Blueprint.Api.Tests.Services;
@@ -437,6 +438,30 @@ public class IntegrationServiceCasterTests(DatabaseFixture fixture) : DatabaseTe
         Assert.Equal(RunId, failed.CasterRunId);
         Assert.Equal(PlayerViewId, failed.PlayerViewId);
         Assert.DoesNotContain(harness.Handler.Paths, x => x.StartsWith("player/"));
+    }
+
+    /// <summary>
+    /// The deployment's automation is cancelled before anything is taken down, so a waiting task does not run against a
+    /// topology being destroyed, and is cancelled even when the destroy fails and the pull stops.
+    /// </summary>
+    [Fact]
+    public async Task Pull_CancelsTheAutomationFirst_EvenWhenTheCasterDestroyFails()
+    {
+        var msel = await SeedDeployedCasterMsel();
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        await Seed(scenarioEvent, task);
+        var waiting = Blueprint.Api.Automation.AutomationRuns.New(task, msel.Id, AutomationRunKind.Exercise, AutomationRunSource.Manual,
+            DateTime.UtcNow.AddMinutes(10), msel.DeploymentId, msel.PlayerViewId, null);
+        await Seed(waiting);
+        var harness = PullHarness(x => x.AnswersJson($"GET caster/api/workspaces/{WorkspaceId}", "{}", HttpStatusCode.InternalServerError));
+
+        await harness.PullAsync(msel.Id);
+        await harness.WaitForError(msel.Id, Ct);
+
+        var run = await ReadBack(db => db.AutomationRuns.SingleAsync(r => r.Id == waiting.Id, Ct));
+        Assert.Equal(AutomationStatus.Cancelled, run.Status);
+        Assert.Equal("The MSEL's integrations were removed.", run.StatusDetail);
     }
 
     // ---------------------------------------------------------------------------------------------

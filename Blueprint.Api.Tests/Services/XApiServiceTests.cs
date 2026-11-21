@@ -407,14 +407,12 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         msel.PlayerViewId = Guid.NewGuid();
         msel.GalleryExhibitId = Guid.NewGuid();
         msel.CiteEvaluationId = Guid.NewGuid();
-        msel.SteamfitterScenarioId = Guid.NewGuid();
         await Seed(msel);
 
         await Service(clients: Clients(
                 player: "https://player.test/",
                 gallery: "https://gallery.test/",
-                cite: "https://cite.test/",
-                steamfitter: "https://steamfitter.test/"))
+                cite: "https://cite.test/"))
             .MselViewedAsync(msel, Ct);
 
         var grouping = Items(await QueuedStatement(), "context.contextActivities.grouping")
@@ -426,7 +424,6 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
                 $"https://player.test/api/views/{msel.PlayerViewId}",
                 $"https://gallery.test/api/exhibits/{msel.GalleryExhibitId}",
                 $"https://cite.test/api/evaluations/{msel.CiteEvaluationId}",
-                $"https://steamfitter.test/api/scenarios/{msel.SteamfitterScenarioId}",
             ],
             grouping);
     }
@@ -1623,6 +1620,88 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
     }
 
     // -------------------------------------------------------------------------------------------------
+    // Automation runs
+    // -------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// An exercise run that ended is recorded as Steamfitter recorded a task it executed: by the user who started it, in
+    /// the account of the configured issuer, whether it succeeded, and the points it earned of the task's own.
+    /// </summary>
+    [Theory]
+    [InlineData(Data.Enumerations.AutomationStatus.Succeeded, true, 10)]
+    [InlineData(Data.Enumerations.AutomationStatus.Failed, false, 0)]
+    public async Task AutomationRunEnded_RecordsTheRunAndItsScore(
+        Data.Enumerations.AutomationStatus status, bool success, int earned)
+    {
+        var (msel, task, run) = await SeedRun(status, requestedBy: UserId, score: 10);
+
+        Assert.True(await Service(Options(issuerUrl: "https://idp.test/realms/crucible"), user: null).AutomationRunEndedAsync(run.Id, Ct));
+
+        var statement = await QueuedStatement();
+        Assert.Equal("http://adlnet.gov/expapi/verbs/executed", Text(statement, "verb.id"));
+        Assert.Equal(UserId.ToString(), Text(statement, "actor.account.name"));
+        Assert.Equal("https://idp.test/realms/crucible", Text(statement, "actor.account.homePage"));
+        Assert.Equal($"{ApiUrl}automationTasks/{task.Id}", Text(statement, "object.id"));
+        Assert.Equal(task.Name, Text(statement, "object.definition.name.en-US"));
+        Assert.Equal(success, At(statement, "result.success").GetBoolean());
+        Assert.Equal(earned, At(statement, "result.score.raw").GetDouble());
+        Assert.Equal(10, At(statement, "result.score.max").GetDouble());
+        Assert.Equal(msel.Id.ToString(), Text(statement, "context.registration"));
+        Assert.Equal($"{ApiUrl}msel/{msel.Id}", Text(Items(statement, "context.contextActivities.parent").First(), "id"));
+    }
+
+    /// <summary>
+    /// A run its schedule or a chain started has no user: the MSEL's creator is the actor; a task without points has no
+    /// score in the result.
+    /// </summary>
+    [Fact]
+    public async Task AutomationRunEnded_OfAScheduledRun_NamesTheMselsCreator_AndNoScoreWithoutPoints()
+    {
+        var (msel, _, run) = await SeedRun(Data.Enumerations.AutomationStatus.Succeeded, requestedBy: null, score: 0);
+
+        await Service(Options(issuerUrl: "https://idp.test/realms/crucible"), user: null).AutomationRunEndedAsync(run.Id, Ct);
+
+        var statement = await QueuedStatement();
+        Assert.Equal(msel.CreatedBy.ToString(), Text(statement, "actor.account.name"));
+        Assert.False(At(statement, "result").TryGetProperty("score", out _));
+    }
+
+    /// <summary>
+    /// Without an issuer to name the actor's account by, a test run, or the xAPI turned off, nothing is queued.
+    /// </summary>
+    [Theory]
+    [InlineData("noIssuer")]
+    [InlineData("test")]
+    [InlineData("disabled")]
+    public async Task AutomationRunEnded_QueuesNothing_WhenItCannotOrShouldNot(string why)
+    {
+        var (_, _, run) = await SeedRun(Data.Enumerations.AutomationStatus.Succeeded, requestedBy: UserId, score: 5,
+            kind: why == "test" ? Data.Enumerations.AutomationRunKind.Test : Data.Enumerations.AutomationRunKind.Exercise);
+        var options = Options(
+            enabled: why != "disabled",
+            issuerUrl: why == "noIssuer" ? null : "https://idp.test/realms/crucible");
+
+        await Service(options, user: null).AutomationRunEndedAsync(run.Id, Ct);
+
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    private async Task<(MselEntity, AutomationTaskEntity, AutomationRunEntity)> SeedRun(
+        Data.Enumerations.AutomationStatus status, Guid? requestedBy, int score,
+        Data.Enumerations.AutomationRunKind kind = Data.Enumerations.AutomationRunKind.Exercise)
+    {
+        var msel = TestData.Msel();
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        task.Score = score;
+        var run = Blueprint.Api.Automation.AutomationRuns.New(task, msel.Id, kind,
+            Data.Enumerations.AutomationRunSource.Manual, DateTime.UtcNow, Guid.NewGuid(), null, requestedBy);
+        run.Status = status;
+        await Seed(msel, scenarioEvent, task, run);
+        return (msel, task, run);
+    }
+
+    // -------------------------------------------------------------------------------------------------
     // Harness
     // -------------------------------------------------------------------------------------------------
 
@@ -1648,19 +1727,17 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         };
 
     /// <summary>
-    /// The sibling urls, which decide which integrations a statement is grouped under. All four are null
+    /// The sibling urls, which decide which integrations a statement is grouped under. All three are null
     /// by default, because that is what makes a test about anything else produce no groupings at all.
     /// </summary>
     private static ClientOptions Clients(
         string player = null,
         string gallery = null,
-        string cite = null,
-        string steamfitter = null) => new()
+        string cite = null) => new()
         {
             PlayerApiUrl = player,
             GalleryApiUrl = gallery,
             CiteApiUrl = cite,
-            SteamfitterApiUrl = steamfitter,
         };
 
     /// <summary>

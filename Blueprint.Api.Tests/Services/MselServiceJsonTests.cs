@@ -13,6 +13,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Blueprint.Api.Automation;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Tests.Support;
@@ -115,23 +116,244 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal("the headline", Single(exportedEvent, "DataValues").GetProperty("Value").GetString());
     }
 
+    /// <summary>A file carries a MSEL's automation tasks, chained as they were, and none of their secrets.</summary>
     [Fact]
-    public async Task Download_ThenUpload_KeepsWhenTheSteamfitterScenarioStarts()
+    public async Task Download_ThenUpload_CarriesTheAutomationTasks_WithoutTheirSecrets()
     {
         var msel = TestData.Msel();
-        msel.UseSteamfitter = true;
-        msel.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.AtStartTime;
         await Seed(msel);
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        await Seed(scenarioEvent);
+        var first = TestData.AutomationTask(msel.Id, scenarioEvent.Id, AutomationAction.core_remote);
+        first.Name = "first";
+        first.ActionParameters = new() { ["Hosts"] = "h", ["Username"] = "u", ["Cmd"] = "ls" };
+        first.SecretParameters = "{\"PrivateKey\":\"enc:v1:test:abc\"}";
+        var second = TestData.AutomationTask(msel.Id, scenarioEvent.Id, trigger: AutomationTrigger.OnSuccess, triggerTaskId: first.Id, displayOrder: 1);
+        second.Name = "second";
+        second.Score = 15;
+        second.UserExecutable = true;
+        await Seed(first, second);
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, SystemPermission.CreateMsels).SeedAsync();
-        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
-        var file = (await ReadExport(response)).GetRawText();
+        var file = (await ReadExport(await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct))).GetRawText();
 
-        var imported = await Upload(Client(actor), file);
+        var result = await Import(Client(actor), file);
 
-        Assert.Equal((int)SteamfitterScenarioStartMode.AtStartTime,
-            JsonDocument.Parse(file).RootElement.GetProperty("SteamfitterScenarioStartMode").GetInt32());
-        Assert.Equal(SteamfitterScenarioStartMode.AtStartTime, imported.SteamfitterScenarioStartMode);
+        Assert.DoesNotContain("enc:v1", file);
+        // the file names the secret, so the import can say the task needs it again
+        var named = JsonDocument.Parse(file).RootElement.GetProperty("ScenarioEvents")[0].GetProperty("AutomationTasks")
+            .EnumerateArray().Single(t => t.GetProperty("Name").GetString() == "first").GetProperty("SecretParameters").GetString();
+        Assert.Equal(new Dictionary<string, string> { ["PrivateKey"] = "" }, JsonSerializer.Deserialize<Dictionary<string, string>>(named));
+        var tasks = await ReadBack(db => db.AutomationTasks.Where(t => t.MselId == result.Msel.Id).ToListAsync(Ct));
+        var copiedFirst = Assert.Single(tasks, t => t.Name == "first");
+        var copiedSecond = Assert.Single(tasks, t => t.Name == "second");
+        Assert.NotEqual(first.Id, copiedFirst.Id);
+        Assert.Equal(copiedFirst.Id, copiedSecond.TriggerTaskId);
+        Assert.Equal((15, true), (copiedSecond.Score, copiedSecond.UserExecutable));
+        Assert.Null(copiedFirst.SecretParameters);
+        Assert.Contains(result.Changes, c => c.Field == "automationTasks" && c.Message.Contains("password or key"));
     }
+
+    /// <summary>
+    /// A secret a hand-edited file carries is not stored, in the clear or as another installation's ciphertext: secrets
+    /// are entered in Blueprint, which encrypts them.
+    /// </summary>
+    [Fact]
+    public async Task Upload_OfAFileWithSecretValues_StoresNone()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        await Seed(scenarioEvent);
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id, AutomationAction.http_get);
+        task.ActionParameters = new() { ["Url"] = "http://localhost:4720/api/health" };
+        await Seed(task);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(
+            (await ReadExport(await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct))).GetRawText())!.AsObject();
+        foreach (var exported in file["ScenarioEvents"]!.AsArray().SelectMany(e => e!["AutomationTasks"]!.AsArray()))
+            exported!["SecretParameters"] = "{\"Headers\":\"{\\\"Authorization\\\":\\\"Bearer plain\\\"}\"}";
+
+        var result = await Import(Client(actor), file.ToJsonString());
+
+        var stored = await ReadBack(db => db.AutomationTasks.SingleAsync(t => t.MselId == result.Msel.Id, Ct));
+        Assert.Null(stored.SecretParameters);
+        Assert.Contains(result.Changes, c => c.Field == "automationTasks" && c.Message.StartsWith("1 automation task(s) need a password or key"));
+    }
+
+    /// <summary>
+    /// A secret a hand-edited file puts among a task's own parameters is dropped as one in its secrets is, so it is not
+    /// stored, shown or run in the clear; and so is any parameter the action does not have.
+    /// </summary>
+    [Fact]
+    public async Task Upload_OfASecretAmongTheActionParameters_DropsIt()
+    {
+        var (actor, file, msel) = await ExportedWithOneHttpTask();
+        var exported = file["ScenarioEvents"]![0]!["AutomationTasks"]![0]!;
+        exported["ActionParameters"]!["Headers"] = "{\"Authorization\":\"Bearer plain\"}";
+        exported["ActionParameters"]!["Unknown"] = "x";
+
+        var result = await Import(Client(actor), file.ToJsonString());
+
+        var stored = await ReadBack(db => db.AutomationTasks.SingleAsync(t => t.MselId == result.Msel.Id, Ct));
+        Assert.Equal(new Dictionary<string, string> { ["Url"] = "http://localhost:4720/api/health" }, stored.ActionParameters);
+        Assert.Null(stored.SecretParameters);
+        Assert.Contains(result.Changes, c => c.Field == "automationTasks" && c.Message.StartsWith("1 automation task(s) need a password or key"));
+        Assert.NotEqual(msel.Id, result.Msel.Id);
+    }
+
+    /// <summary>
+    /// Tasks a hand-edited file chains in a loop would run each other over and over, so each one on the loop runs by hand
+    /// instead, and the import says so; a task that only leads into the loop keeps its trigger.
+    /// </summary>
+    [Fact]
+    public async Task Upload_OfTasksWhoseTriggersLoop_MakesThemManual()
+    {
+        var (actor, file, _) = await ExportedWithOneHttpTask();
+        var tasks = file["ScenarioEvents"]![0]!["AutomationTasks"]!.AsArray();
+        var a = tasks[0]!.AsObject();
+        var b = System.Text.Json.Nodes.JsonNode.Parse(a.ToJsonString())!.AsObject();
+        var c = System.Text.Json.Nodes.JsonNode.Parse(a.ToJsonString())!.AsObject();
+        (b["Id"], b["Name"]) = (Guid.NewGuid().ToString(), "b");
+        (c["Id"], c["Name"]) = (Guid.NewGuid().ToString(), "c");
+        a["Name"] = "a";
+        a["TriggerCondition"] = (int)AutomationTrigger.OnSuccess;
+        a["TriggerTaskId"] = b["Id"]!.GetValue<string>();
+        b["TriggerCondition"] = (int)AutomationTrigger.OnCompletion;
+        b["TriggerTaskId"] = a["Id"]!.GetValue<string>();
+        c["TriggerCondition"] = (int)AutomationTrigger.OnSuccess;
+        c["TriggerTaskId"] = a["Id"]!.GetValue<string>();
+        tasks.Add(b);
+        tasks.Add(c);
+
+        var result = await Import(Client(actor), file.ToJsonString());
+
+        var stored = await ReadBack(db => db.AutomationTasks.Where(t => t.MselId == result.Msel.Id).ToDictionaryAsync(t => t.Name, Ct));
+        Assert.Equal((AutomationTrigger.Manual, null), (stored["a"].TriggerCondition, stored["a"].TriggerTaskId));
+        Assert.Equal((AutomationTrigger.Manual, null), (stored["b"].TriggerCondition, stored["b"].TriggerTaskId));
+        Assert.Equal((AutomationTrigger.OnSuccess, stored["a"].Id), (stored["c"].TriggerCondition, stored["c"].TriggerTaskId));
+        Assert.Contains(result.Changes, ch => ch.Message == "a now runs by hand: its triggers led back to it.");
+        Assert.Contains(result.Changes, ch => ch.Message == "b now runs by hand: its triggers led back to it.");
+    }
+
+    /// <summary>A task whose action this Blueprint does not have is imported disabled, and the import says so.</summary>
+    [Fact]
+    public async Task Upload_OfATaskWithAnUnknownAction_DisablesIt()
+    {
+        var (actor, file, _) = await ExportedWithOneHttpTask();
+        var exported = file["ScenarioEvents"]![0]!["AutomationTasks"]![0]!;
+        exported["Action"] = 9999;
+        exported["ActionParameters"]!["Headers"] = "{\"Authorization\":\"Bearer plain\"}";
+        exported["SecretParameters"] = "{\"Headers\":\"{\\\"Authorization\\\":\\\"Bearer plain\\\"}\"}";
+
+        var result = await Import(Client(actor), file.ToJsonString());
+
+        var stored = await ReadBack(db => db.AutomationTasks.SingleAsync(t => t.MselId == result.Msel.Id, Ct));
+        Assert.False(stored.Enabled);
+        // nothing an unknown action carries is kept, secrets least of all
+        Assert.Empty(stored.ActionParameters);
+        Assert.Null(stored.SecretParameters);
+        Assert.Contains(result.Changes, c => c.Field == "automationTasks" && c.Message.Contains("is not one this Blueprint has"));
+    }
+
+    /// <summary>
+    /// A file's task numbers are brought within what a task can hold, as the editor's save would refuse them, and the
+    /// import says so; the Tasks page then reads, rather than overflowing the score.
+    /// </summary>
+    [Fact]
+    public async Task Upload_OfATaskOutsideTheLimits_BringsItWithinThem()
+    {
+        var (actor, file, _) = await ExportedWithOneHttpTask();
+        var exported = file["ScenarioEvents"]![0]!["AutomationTasks"]![0]!;
+        exported["Score"] = int.MaxValue;
+        exported["Iterations"] = 0;
+        exported["DelaySeconds"] = -5;
+        exported["TriggerCondition"] = 999;
+        var second = System.Text.Json.Nodes.JsonNode.Parse(exported.ToJsonString())!.AsObject();
+        second["Id"] = Guid.NewGuid().ToString();
+        file["ScenarioEvents"]![0]!["AutomationTasks"]!.AsArray().Add(second);
+
+        var result = await Import(Client(actor), file.ToJsonString());
+
+        var stored = await ReadBack(db => db.AutomationTasks.Where(t => t.MselId == result.Msel.Id).ToListAsync(Ct));
+        Assert.All(stored, t => Assert.Equal(
+            (AutomationTaskWriter.MaxScore, 1, 0, AutomationTrigger.Manual),
+            (t.Score, t.Iterations, t.DelaySeconds, t.TriggerCondition)));
+        Assert.Contains(result.Changes, c => c.Message.Contains("brought within its limits"));
+        await AssertStatus(System.Net.HttpStatusCode.OK, await Client(actor).GetAsync($"/api/msels/{result.Msel.Id}/participantTasks", Ct));
+    }
+
+    private async Task<(TestActor Actor, System.Text.Json.Nodes.JsonObject File, MselEntity Msel)> ExportedWithOneHttpTask()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        await Seed(scenarioEvent);
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id, AutomationAction.http_get);
+        task.ActionParameters = new() { ["Url"] = "http://localhost:4720/api/health" };
+        await Seed(task);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(
+            (await ReadExport(await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct))).GetRawText())!.AsObject();
+        return (actor, file, msel);
+    }
+
+    /// <summary>
+    /// A file from before Blueprint ran automation tasks has Steamfitter tasks: they become automation tasks, as the
+    /// migration converts stored ones. A group's enabled tasks run one after another, the first by hand, and only
+    /// the tasks of events that targeted Steamfitter are enabled.
+    /// </summary>
+    [Fact]
+    public async Task Upload_OfAFileWithSteamfitterTasks_ConvertsThemToAutomationTasks()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(Exported(m =>
+        {
+            for (var i = 0; i < 3; i++)
+                m.ScenarioEvents.Add(TestData.ScenarioEvent(m.Id, deltaSeconds: 60, groupOrder: i));
+        })).AsObject();
+        file["UseSteamfitter"] = true;
+        file["SteamfitterScenarioStartMode"] = 10;
+        var events = file["ScenarioEvents"]!["$values"]!.AsArray().Select(e => e!.AsObject()).OrderBy(e => (int)e["GroupOrder"]!).ToList();
+        events[0]["IntegrationTarget"] = "Gallery, Steamfitter";
+        events[0]["SteamfitterTask"] = Legacy(1, "notify", new() { ["notificationText"] = "Move 2", ["Url"] = "computed by the push" });
+        events[1]["IntegrationTarget"] = "Steamfitter";
+        events[1]["SteamfitterTask"] = Legacy(12, "post", new() { ["Url"] = "http://localhost:4720/api", ["Body"] = "{}", ["Headers"] = "{\"X\":\"y\"}" });
+        events[2]["IntegrationTarget"] = "Gallery";
+        events[2]["SteamfitterTask"] = Legacy(3, "situation", new() { ["situationTime"] = "2026-05-25T18:00:00Z", ["situationDescription"] = "calm" });
+
+        var result = await Import(Client(actor), file.ToJsonString());
+
+        var tasks = (await ReadBack(db => db.AutomationTasks.Where(t => t.MselId == result.Msel.Id).ToListAsync(Ct))).ToDictionary(t => t.Name);
+        Assert.Equal(AutomationAction.player_notification, tasks["notify"].Action);
+        Assert.Equal(new Dictionary<string, string> { ["Text"] = "Move 2" }, tasks["notify"].ActionParameters);
+        Assert.Equal(AutomationTrigger.Manual, tasks["notify"].TriggerCondition);
+        Assert.Equal(AutomationAction.http_post, tasks["post"].Action);
+        Assert.Equal(tasks["notify"].Id, tasks["post"].TriggerTaskId);
+        Assert.Equal(AutomationTrigger.OnCompletion, tasks["post"].TriggerCondition);
+        Assert.Null(tasks["post"].SecretParameters);
+        Assert.Equal(AutomationAction.cite_situation_update, tasks["situation"].Action);
+        Assert.False(tasks["situation"].Enabled);
+        Assert.Null(tasks["situation"].TriggerTaskId);
+        var targets = await ReadBack(db => db.ScenarioEvents.Where(e => e.MselId == result.Msel.Id).Select(e => e.IntegrationTarget).ToListAsync(Ct));
+        Assert.DoesNotContain(targets, t => t != null && t.Contains("Steamfitter"));
+        Assert.Contains(result.Changes, c => c.Message.StartsWith("3 Steamfitter task(s) became automation tasks"));
+        Assert.Contains(result.Changes, c => c.Message.StartsWith("1 task(s) had http headers"));
+    }
+
+    private static System.Text.Json.Nodes.JsonObject Legacy(int taskType, string name, Dictionary<string, string> parameters) => new()
+    {
+        ["Id"] = Guid.NewGuid().ToString(),
+        ["TaskType"] = taskType,
+        ["Name"] = name,
+        ["Action"] = 12,
+        ["ActionParameters"] = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(parameters)),
+        ["ExpectedOutput"] = "Message was sent",
+        ["ExpirationSeconds"] = 120,
+        ["Iterations"] = 0,
+        ["TriggerCondition"] = 6,
+        ["UserExecutable"] = true,
+        ["Repeatable"] = false,
+    };
 
     [Fact]
     public async Task Download_ThenUpload_KeepsHidingNamesOnTheAssessorView()
@@ -149,6 +371,40 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.True(imported.HideNamesOnAssessorView);
     }
 
+    [Fact]
+    public async Task Download_ThenUpload_KeepsTheFacilitatorViewsColumns()
+    {
+        var msel = TestData.Msel();
+        msel.ShowGroupOnFacilitatorView = false;
+        msel.ShowIntegrationTargetOnFacilitatorView = true;
+        await Seed(msel);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels, SystemPermission.CreateMsels).SeedAsync();
+        var response = await Client(actor).GetAsync($"/api/msels/{msel.Id}/json", Ct);
+        var file = (await ReadExport(response)).GetRawText();
+
+        var imported = await Upload(Client(actor), file);
+
+        Assert.False(imported.ShowGroupOnFacilitatorView);
+        Assert.True(imported.ShowIntegrationTargetOnFacilitatorView);
+    }
+
+    /// <summary>A file from before the Facilitator View existed imports showing its move, group and time columns.</summary>
+    [Fact]
+    public async Task Upload_OfAFileWithoutTheFacilitatorViewsColumns_ShowsMoveGroupAndTime()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(Exported(m => m.ShowMoveOnFacilitatorView = false)).AsObject();
+        foreach (var flag in new[] { "ShowMoveOnFacilitatorView", "ShowGroupOnFacilitatorView", "ShowTimeOnFacilitatorView", "ShowIntegrationTargetOnFacilitatorView" })
+            file.Remove(flag);
+
+        var imported = await Upload(Client(actor), file.ToJsonString());
+
+        Assert.True(imported.ShowMoveOnFacilitatorView);
+        Assert.True(imported.ShowGroupOnFacilitatorView);
+        Assert.True(imported.ShowTimeOnFacilitatorView);
+        Assert.False(imported.ShowIntegrationTargetOnFacilitatorView);
+    }
+
     /// <summary>A file from before the setting existed imports with names shown, as every MSEL had them.</summary>
     [Fact]
     public async Task Upload_OfAFileWithoutHideNamesOnTheAssessorView_ShowsTheNames()
@@ -160,19 +416,6 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         var imported = await Upload(Client(actor), file.ToJsonString());
 
         Assert.False(imported.HideNamesOnAssessorView);
-    }
-
-    /// <summary>A file from before the setting existed imports as a scenario someone starts by hand.</summary>
-    [Fact]
-    public async Task Upload_OfAFileWithoutTheSteamfitterStartMode_StartsTheScenarioManually()
-    {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
-        var file = System.Text.Json.Nodes.JsonNode.Parse(Exported(m => m.UseSteamfitter = true)).AsObject();
-        file.Remove("SteamfitterScenarioStartMode");
-
-        var imported = await Upload(Client(actor), file.ToJsonString());
-
-        Assert.Equal(SteamfitterScenarioStartMode.Manual, imported.SteamfitterScenarioStartMode);
     }
 
     /// <summary>Text outside ASCII survives the export, as <c>\uXXXX</c> escapes in an ASCII file.</summary>
@@ -450,8 +693,8 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
 
     /// <summary>
     /// An imported MSEL arrives disconnected from whatever it was deployed to at the other installation:
-    /// the ids of the Player view, Gallery collection and exhibit, CITE evaluation and Steamfitter
-    /// scenario are all cleared, and the status is reset. The integration <em>settings</em> survive, so
+    /// the ids of the Player view, Gallery collection and exhibit and CITE evaluation are all cleared, and
+    /// the status is reset. The integration <em>settings</em> survive, so
     /// the MSEL can be pushed again here.
     /// </summary>
     [Fact]
@@ -468,8 +711,6 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
             m.GalleryCollectionId = Guid.NewGuid();
             m.GalleryExhibitId = Guid.NewGuid();
             m.CiteEvaluationId = Guid.NewGuid();
-            m.UseSteamfitter = true;
-            m.SteamfitterScenarioId = Guid.NewGuid();
             m.UseCaster = true;
             m.CasterWorkspaceId = Guid.NewGuid();
             m.CasterRunId = Guid.NewGuid();
@@ -481,13 +722,11 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Null(imported.GalleryCollectionId);
         Assert.Null(imported.GalleryExhibitId);
         Assert.Null(imported.CiteEvaluationId);
-        Assert.Null(imported.SteamfitterScenarioId);
         Assert.Equal(MselItemStatus.Pending, imported.Status);
         Assert.False(imported.IsTemplate);
         // The settings themselves are what the MSEL is for, and they come across.
         Assert.True(imported.UsePlayer);
         Assert.True(imported.UseGallery);
-        Assert.True(imported.UseSteamfitter);
         Assert.True(imported.UseCaster);
 
         var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == imported.Id, Ct));
@@ -1239,46 +1478,14 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         var file = Exported(m =>
         {
             m.UsePlayer = true;
-            m.UseSteamfitter = true;
+            m.UseCaster = false;
             m.UseGallery = false;
             m.UseCite = false;
         });
 
         var result = await Import(Client(actor), file);
 
-        Assert.Equal(["usePlayer", "useSteamfitter"], result.Changes.Select(c => c.Field).Order());
-    }
-
-    /// <summary>
-    /// A scenario that starts itself runs its tasks as soon as a facilitator clicks them, so the report says so.
-    /// </summary>
-    [Theory]
-    [InlineData(SteamfitterScenarioStartMode.OnPush, "The Steamfitter scenario starts when the push finishes.")]
-    [InlineData(SteamfitterScenarioStartMode.AtStartTime, "The Steamfitter scenario starts at the MSEL start time.")]
-    public async Task Import_ReportsAScenarioThatStartsItself(SteamfitterScenarioStartMode mode, string message)
-    {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
-        var file = Exported(m =>
-        {
-            m.UseSteamfitter = true;
-            m.SteamfitterScenarioStartMode = mode;
-        });
-
-        var result = await Import(Client(actor), file);
-
-        Assert.Equal(message, Assert.Single(result.Changes, c => c.Field == "steamfitterScenarioStartMode").Message);
-        Assert.Equal(mode, result.Msel.SteamfitterScenarioStartMode);
-    }
-
-    [Fact]
-    public async Task Import_OfAManuallyStartedScenario_ReportsNothingAboutIt()
-    {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
-
-        var result = await Import(Client(actor), Exported(m => m.UseSteamfitter = true));
-
-        Assert.DoesNotContain(result.Changes, c => c.Field == "steamfitterScenarioStartMode");
-        Assert.Equal(SteamfitterScenarioStartMode.Manual, result.Msel.SteamfitterScenarioStartMode);
+        Assert.Equal(["usePlayer"], result.Changes.Select(c => c.Field).Order());
     }
 
     [Fact]
@@ -1577,7 +1784,6 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
             m.UsePlayer = false;
             m.UseGallery = true;
             m.UseCite = true;
-            m.UseSteamfitter = false;
         });
 
         var result = await Import(Client(actor), file);

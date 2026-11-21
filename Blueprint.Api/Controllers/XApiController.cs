@@ -30,7 +30,7 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Queries the LRS for xAPI statements related to the MSEL's integrations.
-        /// When source is omitted, queries all configured integrations (Blueprint, CITE, Steamfitter, Player, Gallery).
+        /// When source is omitted, queries all configured integrations (Blueprint, CITE, Player, Gallery).
         /// When source is specified, queries only that integration's activity ID.
         /// </remarks>
         [HttpGet("xapi/statements")]

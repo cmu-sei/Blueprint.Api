@@ -9,6 +9,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Blueprint.Api.Automation;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
@@ -16,12 +17,13 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
 using Blueprint.Api.ViewModels;
 using Microsoft.EntityFrameworkCore;
+using NSubstitute;
 using Xunit;
 
 namespace Blueprint.Api.Tests.Controllers;
 
 /// <summary><c>MoveService</c> / <c>MoveController</c> - the five routes behind the Moves tab, and the
-/// coarse division of a MSEL's timeline that CITE, Gallery and Steamfitter are all told about.</summary>
+/// coarse division of a MSEL's timeline that CITE and Gallery are both told about.</summary>
 public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
 {
@@ -1182,7 +1184,7 @@ public class MoveEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     {
         await using var context = NewContext();
 
-        return await new ScenarioEventService(context, null, null).GetMovesAndInjects(mselId, Ct);
+        return await new ScenarioEventService(context, null, null, Substitute.For<IAutomationTaskWriter>()).GetMovesAndInjects(mselId, Ct);
     }
 
     private async Task<MoveEntity> Stored(Guid id)

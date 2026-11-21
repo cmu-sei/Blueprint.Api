@@ -25,6 +25,7 @@ namespace Blueprint.Api.Infrastructure.Authorization
             MselRole.Approver,
             MselRole.MoveEditor,
             MselRole.Evaluator,
+            MselRole.Facilitator,
             MselRole.Viewer,
         };
 

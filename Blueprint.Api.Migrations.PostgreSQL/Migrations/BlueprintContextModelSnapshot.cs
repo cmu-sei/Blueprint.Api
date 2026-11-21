@@ -28,6 +28,337 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "uuid-ossp");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.AutomationResultEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<string>("ActualOutput")
+                        .HasColumnType("text")
+                        .HasColumnName("actual_output");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<DateTime?>("DateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_modified");
+
+                    b.Property<string>("ExpectedOutput")
+                        .HasColumnType("text")
+                        .HasColumnName("expected_output");
+
+                    b.Property<int>("ExpirationSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("expiration_seconds");
+
+                    b.Property<string>("InputString")
+                        .HasColumnType("text")
+                        .HasColumnName("input_string");
+
+                    b.Property<int>("Iteration")
+                        .HasColumnType("integer")
+                        .HasColumnName("iteration");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modified_by");
+
+                    b.Property<bool>("OutputTruncated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("output_truncated");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("run_id");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("StatusAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("status_at");
+
+                    b.Property<Guid?>("VmId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("vm_id");
+
+                    b.Property<string>("VmName")
+                        .HasColumnType("text")
+                        .HasColumnName("vm_name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId", "Iteration");
+
+                    b.ToTable("automation_results");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.AutomationRunEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<int>("Action")
+                        .HasColumnType("integer")
+                        .HasColumnName("action");
+
+                    b.Property<Guid?>("AutomationTaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("automation_task_id");
+
+                    b.Property<bool>("CancelRequested")
+                        .HasColumnType("boolean")
+                        .HasColumnName("cancel_requested");
+
+                    b.Property<string>("ConfigSnapshot")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("config_snapshot");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<int>("CurrentIteration")
+                        .HasColumnType("integer")
+                        .HasColumnName("current_iteration");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<DateTime?>("DateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_modified");
+
+                    b.Property<Guid?>("DeploymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deployment_id");
+
+                    b.Property<DateTime>("DueAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("due_at");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<string>("FollowOnTaskIds")
+                        .HasColumnType("text")
+                        .HasColumnName("follow_on_task_ids");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("LeaseOwner")
+                        .HasColumnType("text")
+                        .HasColumnName("lease_owner");
+
+                    b.Property<DateTime?>("LeaseUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lease_until");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modified_by");
+
+                    b.Property<Guid>("MselId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("msel_id");
+
+                    b.Property<Guid?>("ParentRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parent_run_id");
+
+                    b.Property<Guid?>("PlayerViewId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("player_view_id");
+
+                    b.Property<Guid?>("RequestedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by");
+
+                    b.Property<Guid?>("RerunOfRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rerun_of_run_id");
+
+                    b.Property<Guid?>("ScenarioEventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("scenario_event_id");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer")
+                        .HasColumnName("source");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<string>("StatusDetail")
+                        .HasColumnType("text")
+                        .HasColumnName("status_detail");
+
+                    b.Property<string>("TaskName")
+                        .HasColumnType("text")
+                        .HasColumnName("task_name");
+
+                    b.Property<bool>("TriggerChain")
+                        .HasColumnType("boolean")
+                        .HasColumnName("trigger_chain");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AutomationTaskId", "DeploymentId")
+                        .IsUnique()
+                        .HasFilter("source = 10");
+
+                    b.HasIndex("Status", "DueAt");
+
+                    b.HasIndex("MselId", "Kind", "DateCreated");
+
+                    b.ToTable("automation_runs");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.AutomationTaskEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<int>("Action")
+                        .HasColumnType("integer")
+                        .HasColumnName("action");
+
+                    b.Property<Dictionary<string, string>>("ActionParameters")
+                        .HasColumnType("hstore")
+                        .HasColumnName("action_parameters");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<DateTime?>("DateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_modified");
+
+                    b.Property<int>("DelaySeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("delay_seconds");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("display_order");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("enabled");
+
+                    b.Property<string>("ExpectedOutput")
+                        .HasColumnType("text")
+                        .HasColumnName("expected_output");
+
+                    b.Property<int>("ExpirationSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("expiration_seconds");
+
+                    b.Property<int>("IntervalSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("interval_seconds");
+
+                    b.Property<int>("IterationTermination")
+                        .HasColumnType("integer")
+                        .HasColumnName("iteration_termination");
+
+                    b.Property<int>("Iterations")
+                        .HasColumnType("integer")
+                        .HasColumnName("iterations");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modified_by");
+
+                    b.Property<Guid>("MselId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("msel_id");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<bool>("Repeatable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("repeatable");
+
+                    b.Property<Guid>("ScenarioEventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("scenario_event_id");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("integer")
+                        .HasColumnName("score");
+
+                    b.Property<string>("SecretParameters")
+                        .HasColumnType("text")
+                        .HasColumnName("secret_parameters");
+
+                    b.Property<int>("TriggerCondition")
+                        .HasColumnType("integer")
+                        .HasColumnName("trigger_condition");
+
+                    b.Property<Guid?>("TriggerTaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("trigger_task_id");
+
+                    b.Property<bool>("UserExecutable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("user_executable");
+
+                    b.Property<string>("VmMask")
+                        .HasColumnType("text")
+                        .HasColumnName("vm_mask");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MselId");
+
+                    b.HasIndex("TriggerTaskId");
+
+                    b.HasIndex("ScenarioEventId", "DisplayOrder");
+
+                    b.ToTable("automation_tasks");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.CardEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -649,6 +980,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("on_exercise_view");
 
+                    b.Property<bool>("OnFacilitatorView")
+                        .HasColumnType("boolean")
+                        .HasColumnName("on_facilitator_view");
+
                     b.Property<bool>("OnScenarioEventList")
                         .HasColumnType("boolean")
                         .HasColumnName("on_scenario_event_list");
@@ -1220,6 +1555,14 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("uuid_generate_v4()");
 
+                    b.Property<bool>("AutomationPaused")
+                        .HasColumnType("boolean")
+                        .HasColumnName("automation_paused");
+
+                    b.Property<Guid?>("AutomationTestPlayerViewId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("automation_test_player_view_id");
+
                     b.Property<Guid?>("CasterDirectoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("caster_directory_id");
@@ -1260,6 +1603,18 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("created_by");
 
+                    b.Property<int?>("CurrentGroupNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("current_group_number");
+
+                    b.Property<DateTime?>("CurrentGroupStartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("current_group_started_at");
+
+                    b.Property<int?>("CurrentMoveNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("current_move_number");
+
                     b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("date_created");
@@ -1267,6 +1622,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<DateTime?>("DateModified")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("date_modified");
+
+                    b.Property<Guid?>("DeploymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deployment_id");
 
                     b.Property<string>("Description")
                         .HasColumnType("text")
@@ -1360,6 +1719,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("show_group_on_exercise_view");
 
+                    b.Property<bool>("ShowGroupOnFacilitatorView")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_group_on_facilitator_view");
+
                     b.Property<bool>("ShowGroupOnScenarioEventList")
                         .HasColumnType("boolean")
                         .HasColumnName("show_group_on_scenario_event_list");
@@ -1371,6 +1734,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<bool>("ShowIntegrationTargetOnExerciseView")
                         .HasColumnType("boolean")
                         .HasColumnName("show_integration_target_on_exercise_view");
+
+                    b.Property<bool>("ShowIntegrationTargetOnFacilitatorView")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_integration_target_on_facilitator_view");
 
                     b.Property<bool>("ShowIntegrationTargetOnScenarioEventList")
                         .HasColumnType("boolean")
@@ -1384,6 +1751,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("show_move_on_exercise_view");
 
+                    b.Property<bool>("ShowMoveOnFacilitatorView")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_move_on_facilitator_view");
+
                     b.Property<bool>("ShowMoveOnScenarioEventList")
                         .HasColumnType("boolean")
                         .HasColumnName("show_move_on_scenario_event_list");
@@ -1396,6 +1767,10 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("show_time_on_exercise_view");
 
+                    b.Property<bool>("ShowTimeOnFacilitatorView")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_time_on_facilitator_view");
+
                     b.Property<bool>("ShowTimeOnScenarioEventList")
                         .HasColumnType("boolean")
                         .HasColumnName("show_time_on_scenario_event_list");
@@ -1407,18 +1782,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
-
-                    b.Property<int>("SteamfitterIntegrationType")
-                        .HasColumnType("integer")
-                        .HasColumnName("steamfitter_integration_type");
-
-                    b.Property<Guid?>("SteamfitterScenarioId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("steamfitter_scenario_id");
-
-                    b.Property<int>("SteamfitterScenarioStartMode")
-                        .HasColumnType("integer")
-                        .HasColumnName("steamfitter_scenario_start_mode");
 
                     b.Property<string>("Subject")
                         .HasColumnType("text")
@@ -1443,10 +1806,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Property<bool>("UsePlayer")
                         .HasColumnType("boolean")
                         .HasColumnName("use_player");
-
-                    b.Property<bool>("UseSteamfitter")
-                        .HasColumnType("boolean")
-                        .HasColumnName("use_steamfitter");
 
                     b.HasKey("Id");
 
@@ -2122,116 +2481,13 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("scenario_event_type");
 
-                    b.Property<Guid?>("SteamfitterTaskId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("steamfitter_task_id");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("Id")
-                        .IsUnique();
 
                     b.HasIndex("InjectId");
 
                     b.HasIndex("MselId");
 
                     b.ToTable("scenario_events");
-                });
-
-            modelBuilder.Entity("Blueprint.Api.Data.Models.SteamfitterTaskEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("uuid_generate_v4()");
-
-                    b.Property<int>("Action")
-                        .HasColumnType("integer")
-                        .HasColumnName("action");
-
-                    b.Property<Dictionary<string, string>>("ActionParameters")
-                        .HasColumnType("hstore")
-                        .HasColumnName("action_parameters");
-
-                    b.Property<string>("ApiUrl")
-                        .HasColumnType("text")
-                        .HasColumnName("api_url");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<DateTime>("DateCreated")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("date_created");
-
-                    b.Property<DateTime?>("DateModified")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("date_modified");
-
-                    b.Property<int>("DelaySeconds")
-                        .HasColumnType("integer")
-                        .HasColumnName("delay_seconds");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text")
-                        .HasColumnName("description");
-
-                    b.Property<string>("ExpectedOutput")
-                        .HasColumnType("text")
-                        .HasColumnName("expected_output");
-
-                    b.Property<int>("ExpirationSeconds")
-                        .HasColumnType("integer")
-                        .HasColumnName("expiration_seconds");
-
-                    b.Property<int>("IntervalSeconds")
-                        .HasColumnType("integer")
-                        .HasColumnName("interval_seconds");
-
-                    b.Property<int>("Iterations")
-                        .HasColumnType("integer")
-                        .HasColumnName("iterations");
-
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("modified_by");
-
-                    b.Property<string>("Name")
-                        .HasColumnType("text")
-                        .HasColumnName("name");
-
-                    b.Property<bool>("Repeatable")
-                        .HasColumnType("boolean")
-                        .HasColumnName("repeatable");
-
-                    b.Property<Guid>("ScenarioEventId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("scenario_event_id");
-
-                    b.Property<int>("TaskType")
-                        .HasColumnType("integer")
-                        .HasColumnName("task_type");
-
-                    b.Property<int>("TriggerCondition")
-                        .HasColumnType("integer")
-                        .HasColumnName("trigger_condition");
-
-                    b.Property<bool>("UserExecutable")
-                        .HasColumnType("boolean")
-                        .HasColumnName("user_executable");
-
-                    b.Property<string>("VmMask")
-                        .HasColumnType("text")
-                        .HasColumnName("vm_mask");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ScenarioEventId")
-                        .IsUnique();
-
-                    b.ToTable("steamfitter_tasks");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.SystemRoleEntity", b =>
@@ -2577,10 +2833,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("role");
 
-                    b.Property<string>("SteamfitterScenarioRole")
-                        .HasColumnType("text")
-                        .HasColumnName("steamfitter_scenario_role");
-
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
@@ -2735,6 +2987,61 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("x_api_queued_statements");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.AutomationResultEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.AutomationRunEntity", "Run")
+                        .WithMany("Results")
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Run");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.AutomationRunEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.AutomationTaskEntity", "AutomationTask")
+                        .WithMany()
+                        .HasForeignKey("AutomationTaskId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
+                        .WithMany()
+                        .HasForeignKey("MselId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AutomationTask");
+
+                    b.Navigation("Msel");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.AutomationTaskEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
+                        .WithMany()
+                        .HasForeignKey("MselId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blueprint.Api.Data.Models.ScenarioEventEntity", "ScenarioEvent")
+                        .WithMany("AutomationTasks")
+                        .HasForeignKey("ScenarioEventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blueprint.Api.Data.Models.AutomationTaskEntity", "TriggerTask")
+                        .WithMany("TriggeredTasks")
+                        .HasForeignKey("TriggerTaskId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Msel");
+
+                    b.Navigation("ScenarioEvent");
+
+                    b.Navigation("TriggerTask");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.CardEntity", b =>
@@ -3219,17 +3526,6 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Msel");
                 });
 
-            modelBuilder.Entity("Blueprint.Api.Data.Models.SteamfitterTaskEntity", b =>
-                {
-                    b.HasOne("Blueprint.Api.Data.Models.ScenarioEventEntity", "ScenarioEvent")
-                        .WithOne("SteamfitterTask")
-                        .HasForeignKey("Blueprint.Api.Data.Models.SteamfitterTaskEntity", "ScenarioEventId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ScenarioEvent");
-                });
-
             modelBuilder.Entity("Blueprint.Api.Data.Models.TeamCompetencyEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.CompetencyEntity", "Competency")
@@ -3364,6 +3660,16 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.AutomationRunEntity", b =>
+                {
+                    b.Navigation("Results");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.AutomationTaskEntity", b =>
+                {
+                    b.Navigation("TriggeredTasks");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.CardEntity", b =>
                 {
                     b.Navigation("CardTeams");
@@ -3484,9 +3790,9 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.ScenarioEventEntity", b =>
                 {
-                    b.Navigation("DataValues");
+                    b.Navigation("AutomationTasks");
 
-                    b.Navigation("SteamfitterTask");
+                    b.Navigation("DataValues");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.TeamEntity", b =>

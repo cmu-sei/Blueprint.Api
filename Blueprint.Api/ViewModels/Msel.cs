@@ -31,10 +31,6 @@ namespace Blueprint.Api.ViewModels
         public Guid? CiteEvaluationId { get; set; }
         public Guid? CiteScoringModelId { get; set; }
         public IntegrationType CiteIntegrationType { get; set; }
-        public bool UseSteamfitter { get; set; }
-        public Guid? SteamfitterScenarioId { get; set; }
-        public IntegrationType SteamfitterIntegrationType { get; set; }
-        public SteamfitterScenarioStartMode SteamfitterScenarioStartMode { get; set; }
         public bool UseCaster { get; set; }
         public Guid? CasterDirectoryId { get; set; }
         public Guid? CasterWorkspaceId { get; set; }
@@ -65,6 +61,17 @@ namespace Blueprint.Api.ViewModels
         public bool ShowGroupOnAssessorView { get; set; }
         public bool ShowIntegrationTargetOnAssessorView { get; set; }
         public bool HideNamesOnAssessorView { get; set; }
+        public bool ShowTimeOnFacilitatorView { get; set; }
+        public bool ShowMoveOnFacilitatorView { get; set; }
+        public bool ShowGroupOnFacilitatorView { get; set; }
+        public bool ShowIntegrationTargetOnFacilitatorView { get; set; }
+        // the running exercise's state; written by the push and the Facilitator View, never by an edit
+        public Guid? DeploymentId { get; set; }
+        public int? CurrentMoveNumber { get; set; }
+        public int? CurrentGroupNumber { get; set; }
+        public DateTime? CurrentGroupStartedAt { get; set; }
+        public bool AutomationPaused { get; set; }
+        public Guid? AutomationTestPlayerViewId { get; set; }
         public virtual ICollection<Move> Moves { get; set; } = new HashSet<Move>();
         public virtual ICollection<DataField> DataFields { get; set; } = new HashSet<DataField>();
         public virtual ICollection<ScenarioEvent> ScenarioEvents { get; set; } = new HashSet<ScenarioEvent>();

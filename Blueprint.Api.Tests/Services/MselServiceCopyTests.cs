@@ -181,19 +181,48 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.True(copy.HideNamesOnAssessorView);
     }
 
-    /// <summary>A copy, and so an event launched from a template, starts its Steamfitter scenario as the original does.</summary>
+    /// <summary>A copy shows the original's columns on the Facilitator View.</summary>
     [Fact]
-    public async Task Copy_KeepsWhenTheSteamfitterScenarioStarts()
+    public async Task Copy_KeepsTheFacilitatorViewsColumns()
     {
         var msel = TestData.Msel();
-        msel.UseSteamfitter = true;
-        msel.SteamfitterScenarioStartMode = SteamfitterScenarioStartMode.OnPush;
+        msel.ShowMoveOnFacilitatorView = false;
+        msel.ShowIntegrationTargetOnFacilitatorView = true;
+        await Seed(msel);
+        var field = TestData.DataField(mselId: msel.Id);
+        field.OnFacilitatorView = true;
+        await Seed(field);
+        var actor = await Copier().SeedAsync();
+
+        var copy = await Copy(Client(actor), msel.Id);
+
+        Assert.False(copy.ShowMoveOnFacilitatorView);
+        Assert.True(copy.ShowIntegrationTargetOnFacilitatorView);
+        Assert.True(copy.ShowTimeOnFacilitatorView);
+        Assert.True(await ReadBack(db => db.DataFields.Where(x => x.MselId == copy.Id).Select(x => x.OnFacilitatorView).SingleAsync(Ct)));
+    }
+
+    /// <summary>A copy of a deployed MSEL has not been deployed: it is at no move, and its automation is not paused.</summary>
+    [Fact]
+    public async Task Copy_OfADeployedMsel_LeavesItsDeploymentBehind()
+    {
+        var msel = TestData.Msel();
+        msel.DeploymentId = Guid.NewGuid();
+        msel.CurrentMoveNumber = 2;
+        msel.CurrentGroupNumber = 1;
+        msel.CurrentGroupStartedAt = DateTime.UtcNow;
+        msel.AutomationPaused = true;
         await Seed(msel);
         var actor = await Copier().SeedAsync();
 
         var copy = await Copy(Client(actor), msel.Id);
 
-        Assert.Equal(SteamfitterScenarioStartMode.OnPush, copy.SteamfitterScenarioStartMode);
+        var stored = await ReadBack(db => db.Msels.SingleAsync(x => x.Id == copy.Id, Ct));
+        Assert.Null(stored.DeploymentId);
+        Assert.Null(stored.CurrentMoveNumber);
+        Assert.Null(stored.CurrentGroupNumber);
+        Assert.Null(stored.CurrentGroupStartedAt);
+        Assert.False(stored.AutomationPaused);
     }
 
     /// <summary>
@@ -209,7 +238,6 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         msel.GalleryCollectionId = Guid.NewGuid();
         msel.GalleryExhibitId = Guid.NewGuid();
         msel.CiteEvaluationId = Guid.NewGuid();
-        msel.SteamfitterScenarioId = Guid.NewGuid();
         msel.CasterWorkspaceId = Guid.NewGuid();
         msel.CasterRunId = Guid.NewGuid();
         await Seed(msel);
@@ -221,7 +249,6 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Null(copy.GalleryCollectionId);
         Assert.Null(copy.GalleryExhibitId);
         Assert.Null(copy.CiteEvaluationId);
-        Assert.Null(copy.SteamfitterScenarioId);
 
         var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == copy.Id, Ct));
         Assert.Null(stored.CasterWorkspaceId);
@@ -505,24 +532,52 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Null(stranger.Value);
     }
 
+    /// <summary>
+    /// A copy brings the events' automation tasks, as new tasks of the copy, with their stored secrets for a caller who
+    /// may edit the source's tasks.
+    /// </summary>
     [Fact]
-    public async Task Copy_CopiesTheScenarioEventsSteamfitterTask()
+    public async Task Copy_CopiesTheScenarioEventsAutomationTasks()
     {
         var graph = await SeedGraph();
-        var actor = await Copier().SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels, SystemPermission.ViewMsels, SystemPermission.EditMsels).SeedAsync();
 
         var copy = await Copy(Client(actor), graph.Msel.Id);
 
-        var scenarioEvent = await ReadBack(rb => rb.ScenarioEvents
-            .Include(x => x.SteamfitterTask)
-            .SingleAsync(x => x.MselId == copy.Id, Ct));
+        var task = await ReadBack(rb => rb.AutomationTasks.SingleAsync(x => x.MselId == copy.Id, Ct));
+        var scenarioEvent = await ReadBack(rb => rb.ScenarioEvents.SingleAsync(x => x.MselId == copy.Id, Ct));
+        Assert.NotEqual(graph.AutomationTask.Id, task.Id);
+        Assert.Equal(scenarioEvent.Id, task.ScenarioEventId);
+        Assert.Equal(graph.AutomationTask.Name, task.Name);
+        Assert.Equal(graph.AutomationTask.SecretParameters, task.SecretParameters);
+        Assert.Equal(actor.Id, task.CreatedBy);
+        Assert.True(await ReadBack(rb => rb.AutomationTasks.AnyAsync(x => x.Id == graph.AutomationTask.Id, Ct)));
+    }
 
-        Assert.NotNull(scenarioEvent.SteamfitterTask);
-        Assert.NotEqual(graph.SteamfitterTask.Id, scenarioEvent.SteamfitterTask.Id);
-        Assert.Equal(scenarioEvent.SteamfitterTaskId, scenarioEvent.SteamfitterTask.Id);
-        Assert.Equal(scenarioEvent.Id, scenarioEvent.SteamfitterTask.ScenarioEventId);
-        Assert.Equal(graph.SteamfitterTask.Name, scenarioEvent.SteamfitterTask.Name);
-        Assert.Equal(actor.Id, scenarioEvent.SteamfitterTask.CreatedBy);
+    /// <summary>
+    /// A caller who may not edit the source's tasks gets them without their secrets: owning the copy, they could otherwise
+    /// change a task and test it with passwords, keys and headers they were never given. An Owner or Editor of the source
+    /// keeps them.
+    /// </summary>
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(MselRole.Viewer, false)]
+    [InlineData(MselRole.Facilitator, false)]
+    [InlineData(MselRole.Editor, true)]
+    [InlineData(MselRole.Owner, true)]
+    public async Task Copy_KeepsTheTasksSecretsOnlyForACallerWhoMayEditTheSource(MselRole? role, bool kept)
+    {
+        var graph = await SeedGraph();
+        var builder = Actor().WithSystemPermissions(SystemPermission.CreateMsels, SystemPermission.ViewMsels);
+        if (role is MselRole r)
+            builder = builder.OnMsel(graph.Msel, r);
+        var actor = await builder.SeedAsync();
+
+        var copy = await Copy(Client(actor), graph.Msel.Id);
+
+        var task = await ReadBack(rb => rb.AutomationTasks.SingleAsync(x => x.MselId == copy.Id, Ct));
+        Assert.Equal(kept ? graph.AutomationTask.SecretParameters : null, task.SecretParameters);
+        Assert.Equal(graph.AutomationTask.Name, task.Name);
     }
 
     /// <summary>
@@ -865,7 +920,7 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
         public DataFieldEntity DataField { get; init; }
         public DataOptionEntity DataOption { get; init; }
         public ScenarioEventEntity ScenarioEvent { get; init; }
-        public SteamfitterTaskEntity SteamfitterTask { get; init; }
+        public AutomationTaskEntity AutomationTask { get; init; }
         public MoveEntity Move { get; init; }
         public OrganizationEntity Organization { get; init; }
         public MselPageEntity Page { get; init; }
@@ -976,16 +1031,10 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
                 CreatedBy = creator
             });
 
-        var steamfitterTask = new SteamfitterTaskEntity
-        {
-            Id = Guid.NewGuid(),
-            ScenarioEventId = scenarioEvent.Id,
-            Name = "restart the mail server",
-            CreatedBy = creator
-        };
-        await Seed(steamfitterTask);
-        scenarioEvent.SteamfitterTaskId = steamfitterTask.Id;
-        await Db.SaveChangesAsync(Ct);
+        var automationTask = TestData.AutomationTask(msel.Id, scenarioEvent.Id, createdBy: creator);
+        automationTask.Name = "restart the mail server";
+        automationTask.SecretParameters = "{\"Password\":\"enc:v1:test:abc\"}";
+        await Seed(automationTask);
 
         var move = new MoveEntity
         {
@@ -1095,7 +1144,7 @@ public class MselServiceCopyTests(DatabaseFixture fixture, BlueprintAppFactory f
             DataField = dataField,
             DataOption = dataOption,
             ScenarioEvent = scenarioEvent,
-            SteamfitterTask = steamfitterTask,
+            AutomationTask = automationTask,
             Move = move,
             Organization = organization,
             Page = page,

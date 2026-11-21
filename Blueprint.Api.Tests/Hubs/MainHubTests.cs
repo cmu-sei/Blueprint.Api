@@ -270,6 +270,44 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
     // SelectMsel
     // ---------------------------------------------------------------------------------------------
 
+    // ---------------------------------------------------------------------------------------------
+    // JoinParticipantTasks
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A participant, a member of one of the MSEL's teams, joins its Tasks page's group, and so does ViewMsels; a
+    /// member of another MSEL's team does not (near miss). The group is the participants' only, not the MSEL's.
+    /// </summary>
+    [Theory]
+    [InlineData("participant", true)]
+    [InlineData("viewMsels", true)]
+    [InlineData("otherTeam", false)]
+    public async Task JoinParticipantTasks_JoinsWhoeverMayReadTheMsel(string who, bool joins)
+    {
+        var msel = TestData.Msel();
+        var team = TestData.Team(msel.Id);
+        var other = TestData.Msel();
+        var otherTeam = TestData.Team(other.Id);
+        await Seed(msel, team, other, otherTeam);
+        var actor = await new TestActorBuilder(Db, Ct).OnTeam(who == "otherTeam" ? otherTeam : team).SeedAsync();
+        var harness = Harness(actor.Id);
+
+        await Hub(harness, who == "viewMsels" ? [SystemPermission.ViewMsels] : []).JoinParticipantTasks(msel.Id);
+
+        Assert.Equal(joins ? [MainHub.ParticipantGroup(msel.Id)] : [], Added(harness));
+    }
+
+    [Fact]
+    public async Task LeaveParticipantTasks_LeavesTheGroup()
+    {
+        var msel = Guid.NewGuid();
+        var harness = Harness(Guid.NewGuid());
+
+        await Hub(harness).LeaveParticipantTasks(msel);
+
+        Assert.Equal([MainHub.ParticipantGroup(msel)], Removed(harness));
+    }
+
     [Fact]
     public async Task SelectMsel_ForAReachableMsel_JoinsIt_TracksTheConnection_AndTellsTheOthers()
     {
@@ -280,8 +318,8 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 
         await Hub(harness).SelectMsel([msel.Id]);
 
-        AssertGroups([msel.Id.ToString()], Added(harness));
-        AssertGroups([msel.Id.ToString()], Removed(harness));
+        AssertGroups([msel.Id.ToString(), MainHub.FacilitationGroup(msel.Id)], Added(harness));
+        AssertGroups([msel.Id.ToString(), MainHub.FacilitationGroup(msel.Id)], Removed(harness));
         var send = Assert.Single(Presence(harness, MainHubMethods.PresenceArrived));
         Assert.Equal(msel.Id.ToString(), send.Group);
         Assert.Equal((actor.ToString(), "arriving"), Identity(send.Payload));
@@ -323,11 +361,78 @@ public class MainHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
         await Hub(harness).SelectMsel([]);
 
         Assert.Empty(Added(harness));
-        AssertGroups([msel.Id.ToString(), other.Id.ToString()], Removed(harness));
+        AssertGroups(
+            [msel.Id.ToString(), other.Id.ToString(), MainHub.FacilitationGroup(msel.Id), MainHub.FacilitationGroup(other.Id)],
+            Removed(harness));
         var send = Assert.Single(Presence(harness, MainHubMethods.PresenceDeparted));
         Assert.Equal(msel.Id.ToString(), send.Group);
         Assert.Empty(_cache.Connections);
         AssertAddressedOnlyOthersInGroup(harness);
+    }
+
+    /// <summary>
+    /// The roles that watch the Facilitator View also join the MSEL's facilitation group, which its automation runs
+    /// and results go to.
+    /// </summary>
+    [Theory]
+    [InlineData(MselRole.Owner)]
+    [InlineData(MselRole.Facilitator)]
+    [InlineData(MselRole.Editor)]
+    [InlineData(MselRole.Approver)]
+    public async Task SelectMsel_ForAFacilitatorViewRole_JoinsTheFacilitationGroup(MselRole role)
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await new TestActorBuilder(Db, Ct).OnMsel(msel, role).SeedAsync();
+        var harness = Harness(actor.Id);
+
+        await Hub(harness).SelectMsel([msel.Id]);
+
+        AssertGroups([msel.Id.ToString(), MainHub.FacilitationGroup(msel.Id)], Added(harness));
+    }
+
+    /// <summary>An Evaluator, a Viewer and a Move Editor see the MSEL, and none of its automation.</summary>
+    [Theory]
+    [InlineData(MselRole.Evaluator)]
+    [InlineData(MselRole.Viewer)]
+    [InlineData(MselRole.MoveEditor)]
+    public async Task SelectMsel_ForAnotherRole_JoinsOnlyTheMselsGroup(MselRole role)
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await new TestActorBuilder(Db, Ct).OnMsel(msel, role).SeedAsync();
+        var harness = Harness(actor.Id);
+
+        await Hub(harness).SelectMsel([msel.Id]);
+
+        AssertGroups([msel.Id.ToString()], Added(harness));
+    }
+
+    /// <summary>A Facilitator of another MSEL joins this one's group by its own role, and not its facilitation group.</summary>
+    [Fact]
+    public async Task SelectMsel_ForAViewerWhoFacilitatesAnotherMsel_JoinsOnlyTheMselsGroup()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await new TestActorBuilder(Db, Ct).OnMsel(msel, MselRole.Viewer).OnNewMsel(MselRole.Facilitator).SeedAsync();
+        var harness = Harness(actor.Id);
+
+        await Hub(harness).SelectMsel([msel.Id]);
+
+        AssertGroups([msel.Id.ToString()], Added(harness));
+    }
+
+    [Fact]
+    public async Task SelectMsel_WithViewMsels_JoinsTheFacilitationGroup()
+    {
+        var actor = Guid.NewGuid();
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var harness = Harness(actor);
+
+        await Hub(harness, SystemPermission.ViewMsels).SelectMsel([msel.Id]);
+
+        AssertGroups([msel.Id.ToString(), MainHub.FacilitationGroup(msel.Id)], Added(harness));
     }
 
     /// <summary>Selecting two MSELs joins neither.</summary>

@@ -19,9 +19,6 @@ namespace Blueprint.Api.ViewModels
         public string GalleryExhibitName { get; set; } = "";
         public string CiteEvaluationName { get; set; } = "";
         public string CiteScoringModelName { get; set; } = "";
-        public string SteamfitterScenarioName { get; set; } = "";
-        /// <summary>The Steamfitter scenario's status - Ready until it is started, then Active, then Ended.</summary>
-        public string SteamfitterScenarioStatus { get; set; } = "";
         public string CasterDirectoryName { get; set; } = "";
         public string CasterWorkspaceName { get; set; } = "";
     }

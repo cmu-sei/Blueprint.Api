@@ -1,7 +1,7 @@
 // Copyright 2026 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
-// The per-class factory variant (PerClassAppFactory.template.cs). App-specific: the five sibling API
+// The per-class factory variant (PerClassAppFactory.template.cs). App-specific: the sibling API
 // clients and IXApiService substituted; Development rather than Production; the shared test scheme
 // registered as Bearer; the hub recorder renewed per test; outside a request the context falls back to the
 // host's own database, also after start-up, because CompositionTests resolve every service off
@@ -30,13 +30,12 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NSubstitute.ClearExtensions;
 using Player.Api.Client;
-using Steamfitter.Api.Client;
 
 namespace Blueprint.Api.Tests.Support;
 
 /// <summary>
 /// Hosts <c>Blueprint.Api</c> in process, once per test class, with the sibling-API clients substituted.
-/// Everything between the HTTP request and the five sibling Crucible APIs is the production wiring: routing,
+/// Everything between the HTTP request and the sibling Crucible APIs is the production wiring: routing,
 /// model binding, the MVC-wide authorization filter, the claims transformer, the controllers, the services,
 /// the static requirement helpers, the mappings, MediatR, the entity-event interceptor and EF Core against real
 /// PostgreSQL.
@@ -44,15 +43,15 @@ namespace Blueprint.Api.Tests.Support;
 /// <remarks>
 /// <para>
 /// <b>Why per class.</b> Tests arrange return values on and assert <c>Received()</c> against
-/// <see cref="Cite"/>, <see cref="Gallery"/>, <see cref="PlayerApi"/>, <see cref="Steamfitter"/>,
-/// <see cref="Caster"/> and <see cref="XApi"/>. NSubstitute keeps its assertion state per thread, so substitutes shared by test classes
+/// <see cref="Cite"/>, <see cref="Gallery"/>, <see cref="PlayerApi"/>,
+/// <see cref="PlayerVm"/>, <see cref="Caster"/> and <see cref="XApi"/>. NSubstitute keeps its assertion state per thread, so substitutes shared by test classes
 /// running in parallel would lose calls; one class's tests run one after another, so a class fixture is safe.
 /// <see cref="ResetForTest"/>, called by <see cref="ApiTestBase"/> before each test, clears them and renews
 /// <see cref="Hub"/>. Each test class declares
 /// <c>XTests(DatabaseFixture fixture, BlueprintAppFactory factory) : ApiTestBase(fixture, factory), IClassFixture&lt;BlueprintAppFactory&gt;</c>.
 /// </para>
 /// <para>
-/// <b>The substitutes.</b> The production registrations of the five clients build their own HttpClient from
+/// <b>The substitutes.</b> The production registrations of the four clients build their own HttpClient from
 /// <c>ClientSettings:*ApiUrl</c> and a bearer token lifted off the current request. <see cref="XApi"/> is
 /// substituted for observability: <c>XApiOptions:Enabled</c> ships false, so the real service returns early
 /// from every method, and the substitute answers <c>IsConfigured()</c> with false as the real one does.
@@ -81,8 +80,9 @@ namespace Blueprint.Api.Tests.Support;
 /// <para>
 /// Removed: every <see cref="IHostedService"/>. <c>XApiBackgroundService</c>, <c>IntegrationService</c>,
 /// <c>JoinService</c> and <c>AddApplicationService</c> each start a loop over a blocking queue and dial the
-/// identity provider and the sibling APIs, and <c>SteamfitterStartService</c> polls the database and dials
-/// Steamfitter; <c>SteamfitterStartServiceTests</c> drives it directly. The singleton queues behind them stay real, so a request-path test
+/// identity provider and the sibling APIs, <c>AutomationDispatcher</c> polls the database and runs automation
+/// tasks, which <c>AutomationEngineTests</c> drive directly, and <c>AutomationSecretUpgrader</c> rewrites stored
+/// secrets once at start-up. The singleton queues behind them stay real, so a request-path test
 /// asserts that work was enqueued; the workers are driven directly by <c>IntegrationServiceHarness</c> and
 /// <c>QueueWorkerHarness</c>.
 /// </para>
@@ -109,14 +109,21 @@ public class BlueprintAppFactory(DatabaseFixture database)
     /// </summary>
     public IPlayerApiClient PlayerApi { get; } = Substitute.For<IPlayerApiClient>();
 
-    /// <summary>Steamfitter, reached by the MSEL integration paths.</summary>
-    public ISteamfitterApiClient Steamfitter { get; } = Substitute.For<ISteamfitterApiClient>();
-
     /// <summary>
     /// Caster, as <c>CasterService</c> and <c>IntegrationNameService</c> consume it with the caller's own token.
     /// The push and pull build their own client as the service account, over <see cref="OutboundHttp"/>.
     /// </summary>
     public ICasterApiClient Caster { get; } = Substitute.For<ICasterApiClient>();
+
+    /// <summary>The Player VM API, as automation tasks reach it through <see cref="AutomationClients"/>.</summary>
+    public Player.Vm.Api.IPlayerVmApiClient PlayerVm { get; } = Substitute.For<Player.Vm.Api.IPlayerVmApiClient>();
+
+    /// <summary>
+    /// The service account's clients automation uses: it hands out <see cref="Cite"/>, <see cref="Gallery"/>,
+    /// <see cref="PlayerApi"/> and <see cref="PlayerVm"/>, so a test arranges and asserts on those.
+    /// </summary>
+    public Blueprint.Api.Automation.IAutomationClientFactory AutomationClients { get; } =
+        Substitute.For<Blueprint.Api.Automation.IAutomationClientFactory>();
 
     /// <summary>The xAPI statement seam. <c>IsConfigured()</c> answers false unless a test says otherwise.</summary>
     public IXApiService XApi { get; } = Substitute.For<IXApiService>();
@@ -152,9 +159,19 @@ public class BlueprintAppFactory(DatabaseFixture database)
         Cite.ClearSubstitute();
         Gallery.ClearSubstitute();
         PlayerApi.ClearSubstitute();
-        Steamfitter.ClearSubstitute();
         Caster.ClearSubstitute();
         XApi.ClearSubstitute();
+        PlayerVm.ClearSubstitute();
+        AutomationClients.ClearSubstitute();
+        ArrangeAutomationClients();
+    }
+
+    private void ArrangeAutomationClients()
+    {
+        AutomationClients.CiteAsync(Arg.Any<System.Threading.CancellationToken>()).Returns(Cite);
+        AutomationClients.GalleryAsync(Arg.Any<System.Threading.CancellationToken>()).Returns(Gallery);
+        AutomationClients.PlayerAsync(Arg.Any<System.Threading.CancellationToken>()).Returns(PlayerApi);
+        AutomationClients.PlayerVmAsync(Arg.Any<System.Threading.CancellationToken>()).Returns(PlayerVm);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -187,9 +204,10 @@ public class BlueprintAppFactory(DatabaseFixture database)
             services.Replace(ServiceDescriptor.Singleton(Cite));
             services.Replace(ServiceDescriptor.Singleton(Gallery));
             services.Replace(ServiceDescriptor.Singleton(PlayerApi));
-            services.Replace(ServiceDescriptor.Singleton(Steamfitter));
             services.Replace(ServiceDescriptor.Singleton(Caster));
             services.Replace(ServiceDescriptor.Singleton(XApi));
+            ArrangeAutomationClients();
+            services.Replace(ServiceDescriptor.Singleton(AutomationClients));
 
             // Transient over the current recording, so ResetForTest takes effect for every handler resolved
             // afterwards. SignalR's own registration is an open generic, which a closed one outranks.

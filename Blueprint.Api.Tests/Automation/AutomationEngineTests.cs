@@ -817,6 +817,50 @@ public class AutomationEngineTests(DatabaseFixture fixture) : DatabaseTestBase(f
         Assert.Equal(AutomationStatus.Error, (await Stored(run.Id)).Status);
     }
 
+    /// <summary>
+    /// While a run works, its heartbeat renews its lease, and picks up a cancel asked for on another instance, which
+    /// this instance's registry never hears of: the action is stopped and the run recorded cancelled. Real time, as the
+    /// heartbeat waits on timers: with a 5 s lease it beats every second.
+    /// </summary>
+    [Fact]
+    public async Task TheHeartbeat_RenewsTheLease_AndStopsTheRunOnACancelFromAnotherInstance()
+    {
+        Options.LeaseSeconds = 5;
+        var (msel, scenarioEvent) = await Deployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        await Seed(task);
+        var run = await Run(task, msel);
+        _runner.ExecuteAsync(Arg.Any<AutomationActionContext>(), Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), call.Arg<CancellationToken>());
+            return new ActionOutcome("never stopped", true);
+        });
+        async Task<AutomationRunEntity> Until(Func<AutomationRunEntity, bool> condition)
+        {
+            for (var tries = 0; tries < 100; tries++)
+            {
+                await using var other = NewContext();
+                var current = await other.AutomationRuns.AsNoTracking().SingleAsync(r => r.Id == run.Id, Ct);
+                if (condition(current))
+                    return current;
+                await Task.Delay(100, Ct);
+            }
+            throw new TimeoutException("The run never got there.");
+        }
+
+        var executing = Execute(Assert.Single(await Scheduler().ClaimAsync(10, Ct)));
+        var started = await Until(r => r.Status == AutomationStatus.Running);
+        _clock.Advance(TimeSpan.FromMinutes(1));
+        await Until(r => r.LeaseUntil > started.LeaseUntil);
+        await using (var other = NewContext())
+            await other.AutomationRuns.Where(r => r.Id == run.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.CancelRequested, true), Ct);
+        await executing.WaitAsync(TimeSpan.FromSeconds(15), Ct);
+
+        var stored = await Stored(run.Id);
+        Assert.Equal(AutomationStatus.Cancelled, stored.Status);
+        Assert.Equal(AutomationStatus.Cancelled, Assert.Single(stored.Results).Status);
+    }
+
     /// <summary>As RecoverAsync records a run whose instance stopped: interrupted, and no instance's.</summary>
     private async Task TakeBack(Guid runId)
     {

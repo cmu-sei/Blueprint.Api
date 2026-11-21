@@ -28,12 +28,22 @@ public class AutomationServerHandlerTests : IAsyncLifetime
     private static System.Threading.CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private IContainer _mail;
+    private IContainer _authMail;
     private IContainer _ssh;
     private string _privateKey;
 
     public async ValueTask InitializeAsync()
     {
         _mail = new ContainerBuilder("axllent/mailpit:v1.27")
+            .WithPortBinding(1025, true)
+            .WithPortBinding(8025, true)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8025).ForPath("/readyz")))
+            .Build();
+
+        // one that takes mail only after a login
+        _authMail = new ContainerBuilder("axllent/mailpit:v1.27")
+            .WithEnvironment("MP_SMTP_AUTH", "white-cell:s3cret")
+            .WithEnvironment("MP_SMTP_AUTH_ALLOW_INSECURE", "true")
             .WithPortBinding(1025, true)
             .WithPortBinding(8025, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8025).ForPath("/readyz")))
@@ -50,12 +60,13 @@ public class AutomationServerHandlerTests : IAsyncLifetime
             .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("ls.io-init\\] done"))
             .Build();
 
-        await Task.WhenAll(_mail.StartAsync(Ct), _ssh.StartAsync(Ct));
+        await Task.WhenAll(_mail.StartAsync(Ct), _authMail.StartAsync(Ct), _ssh.StartAsync(Ct));
     }
 
     public async ValueTask DisposeAsync()
     {
         await _mail.DisposeAsync();
+        await _authMail.DisposeAsync();
         await _ssh.DisposeAsync();
     }
 
@@ -74,9 +85,20 @@ public class AutomationServerHandlerTests : IAsyncLifetime
         Parameters = parameters,
     };
 
-    private async Task<List<string>> MailSubjects()
+    private EmailActionHandler AuthEmail(string password) => new(AutomationTestOptions.Automation(o =>
     {
-        using var http = new HttpClient { BaseAddress = new Uri($"http://{_mail.Hostname}:{_mail.GetMappedPublicPort(8025)}/") };
+        o.Email.SmtpHost = _authMail.Hostname;
+        o.Email.SmtpPort = _authMail.GetMappedPublicPort(1025);
+        o.Email.UseStartTls = false;
+        o.Email.SmtpUsername = "white-cell";
+        o.Email.SmtpPassword = password;
+        o.Email.DefaultFromAddress = "white-cell@example.test";
+    }));
+
+    private async Task<List<string>> MailSubjects(IContainer server = null)
+    {
+        server ??= _mail;
+        using var http = new HttpClient { BaseAddress = new Uri($"http://{server.Hostname}:{server.GetMappedPublicPort(8025)}/") };
         using var document = JsonDocument.Parse(await http.GetStringAsync("api/v1/messages", Ct));
         return document.RootElement.GetProperty("messages").EnumerateArray().Select(m => m.GetProperty("Subject").GetString()).ToList();
     }
@@ -109,6 +131,26 @@ public class AutomationServerHandlerTests : IAsyncLifetime
         }), Ct));
 
         Assert.DoesNotContain("Never sent", await MailSubjects());
+    }
+
+    /// <summary>With a user name set, the task logs in to the mail server, and a password it refuses sends nothing.</summary>
+    [Fact]
+    public async Task AnEmailTask_LogsInToAServerThatRequiresIt()
+    {
+        Dictionary<string, string> Message(string subject) => new()
+        {
+            ["EmailTo"] = "blue@example.test",
+            ["Subject"] = subject,
+            ["Message"] = "x",
+        };
+
+        var outcome = await AuthEmail("s3cret").ExecuteAsync(Context(AutomationAction.send_email, Message("Logged in")), Ct);
+        await Assert.ThrowsAnyAsync<Exception>(() => AuthEmail("wrong").ExecuteAsync(Context(AutomationAction.send_email, Message("Refused")), Ct));
+
+        Assert.True(outcome.Succeeded);
+        var subjects = await MailSubjects(_authMail);
+        Assert.Contains("Logged in", subjects);
+        Assert.DoesNotContain("Refused", subjects);
     }
 
     private SshActionHandler Ssh() => new(

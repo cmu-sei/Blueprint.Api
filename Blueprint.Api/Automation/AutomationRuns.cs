@@ -132,13 +132,19 @@ namespace Blueprint.Api.Automation
         /// <summary>
         /// Holds the MSEL's row, shared, until the transaction ends, and says whether it is still deployed in the given
         /// deployment. Ending a deployment changes that row, so it waits for the holder: a run made under this lock is
-        /// seen by the cancel that follows, and one asked for after it is refused.
+        /// seen by the cancel that follows, and one asked for after it is refused. A caller that goes on to change the
+        /// MSEL holds it <paramref name="forChange"/>, as that change would: two holders of a shared lock that both then
+        /// change the row would wait on each other. Take the tasks' locks first: every path locks tasks, then the MSEL.
         /// </summary>
-        public static async Task<bool> HoldDeploymentAsync(BlueprintContext db, Guid mselId, Guid? deploymentId, CancellationToken ct)
+        public static async Task<bool> HoldDeploymentAsync(BlueprintContext db, Guid mselId, Guid? deploymentId, CancellationToken ct,
+            bool forChange = false)
         {
             if (db.Database.CurrentTransaction == null)
                 throw new InvalidOperationException("Holding a deployment needs a transaction.");
-            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM msels WHERE id = {mselId} FOR SHARE", ct);
+            if (forChange)
+                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM msels WHERE id = {mselId} FOR NO KEY UPDATE", ct);
+            else
+                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM msels WHERE id = {mselId} FOR SHARE", ct);
             return deploymentId != null && await db.Msels.AsNoTracking()
                 .AnyAsync(m => m.Id == mselId && m.Status == MselItemStatus.Deployed && m.DeploymentId == deploymentId, ct);
         }

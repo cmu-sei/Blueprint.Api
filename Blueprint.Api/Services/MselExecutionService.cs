@@ -177,7 +177,8 @@ namespace Blueprint.Api.Services
             await using (var transaction = await _context.Database.BeginTransactionAsync(ct))
             {
                 await AutomationRuns.LockTasksAsync(_context, taskIds, ct);
-                if (!await AutomationRuns.HoldDeploymentAsync(_context, mselId, msel.DeploymentId, ct))
+                // the MSEL's position changes in this transaction
+                if (!await AutomationRuns.HoldDeploymentAsync(_context, mselId, msel.DeploymentId, ct, forChange: true))
                     throw new ConflictException("The MSEL is not deployed.");
                 var ordered = new List<AutomationTaskEntity>();
                 foreach (var task in taskIds.Select(id => tasks.Single(t => t.Id == id)))

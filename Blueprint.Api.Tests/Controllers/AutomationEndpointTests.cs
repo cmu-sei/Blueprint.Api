@@ -1097,6 +1097,24 @@ public class AutomationEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     }
 
     /// <summary>A failed integration is reported, and the facilitator's position still moves on.</summary>
+    /// <summary>
+    /// Facilitators starting moves of one MSEL at once each start theirs in turn: none fails waiting on another's hold
+    /// of the MSEL, which each then changes.
+    /// </summary>
+    [Fact]
+    public async Task StartMove_ManyAtOnce_AllStart()
+    {
+        var (msel, _) = await SeedDeployed();
+        await Seed(TestData.Move(msel.Id, moveNumber: 1), TestData.Move(msel.Id, moveNumber: 2, deltaSeconds: 600));
+        var actor = await Actor().OnMsel(msel, MselRole.Facilitator).SeedAsync();
+
+        var responses = await System.Threading.Tasks.Task.WhenAll(Enumerable.Range(0, 6).Select(i =>
+            Client(actor).PostAsJsonAsync($"/api/msels/{msel.Id}/execution/moves/{1 + i % 2}/start", new { }, Ct)));
+
+        Assert.All(responses, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+        Assert.Equal(6, await ReadBack(db => db.AutomationRuns.CountAsync(r => r.MselId == msel.Id && r.Source == AutomationRunSource.GroupStart, Ct)));
+    }
+
     [Fact]
     public async Task StartMove_WhenCiteRefuses_SaysSo_AndStillMoves()
     {

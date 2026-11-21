@@ -766,6 +766,67 @@ public class AutomationEngineTests(DatabaseFixture fixture) : DatabaseTestBase(f
     }
 
     /// <summary>
+    /// A run taken back while its VMs were listed starts no action: this instance learns it no longer has the run when
+    /// it writes the results, before acting on any VM.
+    /// </summary>
+    [Fact]
+    public async Task ARunTakenBackWhileItsVmsAreListed_ActsOnNoVm()
+    {
+        var (msel, scenarioEvent) = await Deployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id, AutomationAction.vm_hw_power_off);
+        task.VmMask = "web";
+        await Seed(task);
+        var run = await Run(task, msel);
+        _vms.ResolveAsync(msel.PlayerViewId.Value, "web", Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            await TakeBack(run.Id);
+            return (IReadOnlyList<AutomationVm>)[new AutomationVm(Guid.NewGuid(), "web-01")];
+        });
+
+        await Execute(Assert.Single(await Scheduler().ClaimAsync(10, Ct)));
+
+        await _runner.DidNotReceive().ExecuteAsync(Arg.Any<AutomationActionContext>(), Arg.Any<CancellationToken>());
+        var stored = await Stored(run.Id);
+        Assert.Equal(AutomationStatus.Error, stored.Status);
+        Assert.Empty(stored.Results);
+    }
+
+    /// <summary>A run taken back while it acted on one VM acts on no further VM.</summary>
+    [Fact]
+    public async Task ARunTakenBackWhileItActsOnAVm_ActsOnNoOtherVm()
+    {
+        var (msel, scenarioEvent) = await Deployed();
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id, AutomationAction.vm_hw_power_off);
+        task.VmMask = "web";
+        await Seed(task);
+        var run = await Run(task, msel);
+        _vms.ResolveAsync(msel.PlayerViewId.Value, "web", Arg.Any<CancellationToken>())
+            .Returns([new AutomationVm(Guid.NewGuid(), "web-01"), new AutomationVm(Guid.NewGuid(), "web-02")]);
+        var acted = 0;
+        _runner.ExecuteAsync(Arg.Any<AutomationActionContext>(), Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            if (Interlocked.Increment(ref acted) == 1)
+                await TakeBack(run.Id);
+            return new ActionOutcome("off", true);
+        });
+
+        Options.MaxConcurrentVmOperationsPerRun = 1;
+        await Execute(Assert.Single(await Scheduler().ClaimAsync(10, Ct)));
+
+        Assert.Equal(1, acted);
+        Assert.Equal(AutomationStatus.Error, (await Stored(run.Id)).Status);
+    }
+
+    /// <summary>As RecoverAsync records a run whose instance stopped: interrupted, and no instance's.</summary>
+    private async Task TakeBack(Guid runId)
+    {
+        await using var other = NewContext();
+        await other.AutomationRuns.Where(r => r.Id == runId).ExecuteUpdateAsync(s => s
+            .SetProperty(r => r.Status, AutomationStatus.Error)
+            .SetProperty(r => r.LeaseOwner, (string)null), Ct);
+    }
+
+    /// <summary>
     /// A task due at its event time is scheduled as a run by hand is admitted: one that is already going at that time, or
     /// that runs only once and has succeeded, is recorded as skipped, once, rather than run again.
     /// </summary>

@@ -84,8 +84,44 @@ namespace Blueprint.Api.Automation
                 return false;
             if (!string.Equals(CanonicalHost(own.Host), CanonicalHost(uri.Host), StringComparison.OrdinalIgnoreCase) || own.Port != uri.Port)
                 return false;
-            var basePath = own.AbsolutePath.TrimEnd('/') + "/";
-            return basePath == "/" || (uri.AbsolutePath.TrimEnd('/') + "/").StartsWith(basePath, StringComparison.OrdinalIgnoreCase);
+            var basePath = ProxiedPath(own.AbsolutePath);
+            if (basePath == "/")
+                return true;
+            // a path a proxy could read in more than one way is taken as Blueprint's
+            var path = ProxiedPath(uri.AbsolutePath);
+            return path == null || path.StartsWith(basePath, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// The path as a reverse proxy routes it, ending in a slash: decoded, with backslashes as slashes, repeated slashes
+        /// merged, and dot segments resolved, so /x//blueprint/, /blueprint%2Fapi and /x/../blueprint all read as
+        /// /blueprint/. Null when it is still encoded after a few rounds of decoding.
+        /// </summary>
+        private static string ProxiedPath(string path)
+        {
+            for (var round = 0; path.Contains('%'); round++)
+            {
+                var decoded = Uri.UnescapeDataString(path);
+                if (decoded == path)
+                    break;
+                if (round == 3)
+                    return null;
+                path = decoded;
+            }
+            var segments = new List<string>();
+            foreach (var segment in path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (segment == ".")
+                    continue;
+                if (segment == "..")
+                {
+                    if (segments.Count > 0)
+                        segments.RemoveAt(segments.Count - 1);
+                    continue;
+                }
+                segments.Add(segment);
+            }
+            return "/" + string.Concat(segments.Select(segment => segment + "/"));
         }
 
         /// <summary>A host name as DNS treats it: blueprint.example. is blueprint.example.</summary>

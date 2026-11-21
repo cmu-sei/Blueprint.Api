@@ -142,6 +142,15 @@ public class OutboundRequestGuardTests
     [InlineData("https://crucible.example/BLUEPRINT/api/users", false)]
     [InlineData("https://crucible.example/blueprint", false)]
     [InlineData("https://crucible.example/blueprintish/api", true)]
+    // paths a proxy routes to Blueprint, written another way
+    [InlineData("https://crucible.example//blueprint/api/users", false)]
+    [InlineData("https://crucible.example/blueprint%2Fapi/users", false)]
+    [InlineData("https://crucible.example/%62lueprint/api/users", false)]
+    [InlineData("https://crucible.example/blueprint%252Fapi/users", false)]
+    [InlineData("https://crucible.example/cite/..%2Fblueprint/api/users", false)]
+    [InlineData("https://crucible.example/cite%5C..%5Cblueprint/api/users", false)]
+    [InlineData("https://crucible.example/%25252525252Fblueprint", false)]
+    [InlineData("https://crucible.example/cite//api/evaluations", true)]
     public void OnASharedDomain_OnlyBlueprintsPathIsKeptFromTheToken(string url, bool sent)
     {
         var clients = AutomationTestOptions.Monitor(new Blueprint.Api.Infrastructure.Options.ClientOptions

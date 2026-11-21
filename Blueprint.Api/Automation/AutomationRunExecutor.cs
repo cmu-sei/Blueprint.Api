@@ -43,6 +43,8 @@ namespace Blueprint.Api.Automation
         private readonly TimeProvider _time;
         private readonly ILogger<AutomationRunExecutor> _logger;
         private readonly SemaphoreSlim _save = new(1, 1);
+        // set once a fenced save finds the run no longer this instance's: from then on it starts no action
+        private volatile bool _ownershipLost;
 
         public AutomationRunExecutor(
             BlueprintContext db,
@@ -134,7 +136,7 @@ namespace Blueprint.Api.Automation
             finally
             {
                 heartbeatStop.Cancel();
-                leaseLost = await heartbeat;
+                leaseLost = await heartbeat || _ownershipLost;
                 _registry.Unregister(run.Id);
             }
             if (leaseLost)
@@ -242,7 +244,11 @@ namespace Blueprint.Api.Automation
             }
             results.AddRange(definition.RequiresVm ? vms.Select(NewResult) : new[] { NewResult(null) });
             _db.AutomationResults.AddRange(results);
-            await SaveWhileRunningAsync(run);
+            if (!await SaveWhileRunningAsync(run))
+            {
+                runCts.Cancel();
+                return results;
+            }
 
             // the parameters
             Dictionary<string, string> secrets;
@@ -265,6 +271,9 @@ namespace Blueprint.Api.Automation
                 new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Options.MaxConcurrentVmOperationsPerRun) },
                 async (result, _) =>
                 {
+                    // the run was taken back while the VMs before this one ran: this instance starts nothing more
+                    if (_ownershipLost)
+                        return;
                     var bound = AutomationParameterBinder.Bind(task.ActionParameters, secrets, substitutions, result.VmId, result.VmName);
                     var input = AutomationParameterBinder.Describe(bound, secretKeys);
                     AutomationStatus status;
@@ -317,7 +326,8 @@ namespace Blueprint.Api.Automation
                     {
                         result.InputString = input;
                         Record(result, status, output);
-                        await SaveWhileRunningAsync(run);
+                        if (!await SaveWhileRunningAsync(run))
+                            runCts.Cancel();
                     }
                     finally
                     {
@@ -402,8 +412,15 @@ namespace Blueprint.Api.Automation
         /// Saves the run's results only while this instance still holds the running run: once a recovery has recorded it
         /// interrupted, or another instance has it, its results are theirs to write.
         /// </summary>
-        private Task<bool> SaveWhileRunningAsync(AutomationRunEntity run) =>
-            WhileOwnedAsync(run, r => r.Status == AutomationStatus.Running, () => _db.SaveChangesAsync(CancellationToken.None), CancellationToken.None);
+        private async Task<bool> SaveWhileRunningAsync(AutomationRunEntity run)
+        {
+            if (_ownershipLost)
+                return false;
+            if (await WhileOwnedAsync(run, r => r.Status == AutomationStatus.Running, () => _db.SaveChangesAsync(CancellationToken.None), CancellationToken.None))
+                return true;
+            _ownershipLost = true;
+            return false;
+        }
 
         /// <summary>
         /// Runs <paramref name="write"/> in a transaction holding the run's row, after reading the run again, only while
@@ -482,11 +499,6 @@ namespace Blueprint.Api.Automation
             var msel = await db.Msels.AsNoTracking().SingleOrDefaultAsync(m => m.Id == run.MselId, ct);
             if (msel == null)
                 return next;
-            // an exercise run's chain stops when its deployment does, checked while holding it as every path that makes
-            // a run does
-            if (run.Kind == AutomationRunKind.Exercise && !await AutomationRuns.HoldDeploymentAsync(db, run.MselId, run.DeploymentId, ct))
-                return next;
-
             var triggers = run.TriggerChain && run.AutomationTaskId != null ? AutomationRuns.TriggersFor(status) : Array.Empty<AutomationTrigger>();
             var children = triggers.Length == 0
                 ? new List<AutomationTaskEntity>()
@@ -496,9 +508,14 @@ namespace Blueprint.Api.Automation
                     .ToListAsync(ct);
             var followOn = AutomationRuns.FollowOn(run).ToList();
             // An exercise run of a task is made as a run by hand is: not while one is going, and not again once a task
-            // that runs only once has succeeded. The tasks are locked first, as every path that runs them locks them.
+            // that runs only once has succeeded. The tasks are locked first, then the deployment held, as every path that
+            // runs them does: an event save also changes its tasks before its MSEL. The chain stops when the deployment does.
             if (run.Kind == AutomationRunKind.Exercise)
+            {
                 await AutomationRuns.LockTasksAsync(db, children.Select(c => c.Id).Concat(followOn), ct);
+                if (!await AutomationRuns.HoldDeploymentAsync(db, run.MselId, run.DeploymentId, ct))
+                    return next;
+            }
             async Task<string> WhyNot(AutomationTaskEntity task) =>
                 run.Kind == AutomationRunKind.Exercise ? await AutomationRuns.WhyNotRunAsync(db, task, run.DeploymentId, ct) : null;
 

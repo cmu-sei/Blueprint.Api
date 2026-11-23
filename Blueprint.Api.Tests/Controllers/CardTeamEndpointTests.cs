@@ -604,10 +604,11 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
     /// <summary>
     /// The update first shipped at <c>cardteams/{id}</c>, the one route the other seven do not share;
-    /// clients generated from that document still use it, so it still updates the row.
+    /// clients generated from that document still use it, so it still updates the row, and it says it is
+    /// deprecated and which route replaces it.
     /// </summary>
     [Fact]
-    public async Task Update_AtTheFormerRoute_StillUpdatesTheRow()
+    public async Task Update_AtTheFormerRoute_StillUpdatesTheRowAndNamesItsSuccessor()
     {
         var msel = await SeedMsel();
         var row = await SeedCardTeam(msel);
@@ -617,6 +618,8 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.True((await Stored(row.Id)).IsShownOnWall);
+        Assert.Equal(["@1795392000"], response.Headers.GetValues("Deprecation"));
+        Assert.Equal([$"</api/teamcards/{row.Id}>; rel=\"successor-version\""], response.Headers.GetValues("Link"));
     }
 
     /// <summary>The update at the former route still wants <c>EditMsels</c>.</summary>

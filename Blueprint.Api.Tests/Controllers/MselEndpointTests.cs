@@ -1237,6 +1237,134 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     }
 
     // ---------------------------------------------------------------------------------------------
+    // The MSEL's marking
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>A MSEL whose marking was never set, as every one made before markings, reads back with none.</summary>
+    [Fact]
+    public async Task Get_AMselWithNoMarkingSet_HasNone()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var returned = await GetMsel(Client(actor), msel.Id);
+
+        Assert.Null(returned.ArticleMarking);
+        Assert.Null(returned.ArticleMarkingText);
+    }
+
+    [Theory]
+    [InlineData("Tlp", "amber+strict", "Tlp", "AMBER+STRICT")]
+    [InlineData("Classification", " Unclassified // Exercise ", "Classification", "Unclassified // Exercise")]
+    [InlineData("exercise", "dropped", "Exercise", null)]
+    [InlineData("None", "dropped", "None", null)]
+    public async Task Update_SavesTheMarkingAndReadsItBack(string marking, string text, string savedMarking, string savedText)
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var body = Body(msel);
+        body.ArticleMarking = marking;
+        body.ArticleMarkingText = text;
+
+        var returned = await Update(Client(actor), msel.Id, body);
+
+        Assert.Equal((savedMarking, savedText), (returned.ArticleMarking, returned.ArticleMarkingText));
+        var read = await GetMsel(Client(actor), msel.Id);
+        Assert.Equal((savedMarking, savedText), (read.ArticleMarking, read.ArticleMarkingText));
+    }
+
+    /// <summary>A marking Blueprint does not know, or a classification with no words, is saved as none.</summary>
+    [Theory]
+    [InlineData("Bogus", "x", "None", null)]
+    [InlineData(null, "x", "None", null)]
+    [InlineData("Classification", "  ", "None", null)]
+    public async Task Update_CleansAnInvalidMarking(string marking, string text, string savedMarking, string savedText)
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var body = Body(msel);
+        body.ArticleMarking = marking;
+        body.ArticleMarkingText = text;
+
+        await Update(Client(actor), msel.Id, body);
+
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct));
+        Assert.Equal((savedMarking, savedText), (stored.ArticleMarking, stored.ArticleMarkingText));
+    }
+
+    /// <summary>A TLP marking with no level, or one that is not a TLP level, is refused rather than saved as CLEAR,
+    /// the least restrictive level, and the MSEL keeps the marking it had.</summary>
+    [Theory]
+    [InlineData("purple")]
+    [InlineData("AMBER STRICT")]
+    [InlineData(null)]
+    [InlineData(" ")]
+    public async Task Update_WithATlpLevelItDoesNotKnow_Is400(string text)
+    {
+        var msel = TestData.Msel();
+        msel.ArticleMarking = "Tlp";
+        msel.ArticleMarkingText = "RED";
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var body = Body(msel);
+        body.ArticleMarking = "Tlp";
+        body.ArticleMarkingText = text;
+
+        var response = await Client(actor).PutAsJsonAsync($"/api/msels/{msel.Id}", body, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct));
+        Assert.Equal(("Tlp", "RED"), (stored.ArticleMarking, stored.ArticleMarkingText));
+    }
+
+    [Fact]
+    public async Task Create_WithATlpLevelItDoesNotKnow_Is400()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "/api/msels",
+            new Msel { Name = "Hurricane response", ArticleMarking = "Tlp", ArticleMarkingText = "purple" },
+            JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.False(await ReadBack(rb => rb.Msels.AnyAsync(x => x.Name == "Hurricane response", Ct)));
+    }
+
+    [Fact]
+    public async Task Update_CutsAClassificationTo120Characters()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var body = Body(msel);
+        body.ArticleMarking = "Classification";
+        body.ArticleMarkingText = new string('S', 150);
+
+        var returned = await Update(Client(actor), msel.Id, body);
+
+        Assert.Equal(new string('S', 120), returned.ArticleMarkingText);
+    }
+
+    [Fact]
+    public async Task Create_SavesACleanedMarking()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "/api/msels",
+            new Msel { Name = "Hurricane response", ArticleMarking = "tlp", ArticleMarkingText = "TLP:green" },
+            JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await Read<Msel>(response);
+        Assert.Equal(("Tlp", "GREEN"), (created.ArticleMarking, created.ArticleMarkingText));
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // PUT msels/{mselId}/user/{userId}/role/{mselRole}/add and .../remove
     // ---------------------------------------------------------------------------------------------
 

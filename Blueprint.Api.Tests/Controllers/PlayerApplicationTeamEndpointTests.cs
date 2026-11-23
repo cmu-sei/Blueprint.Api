@@ -231,6 +231,32 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         Assert.Equal(1, stored.DisplayOrder);
     }
 
+    /// <summary>Creating a row at a place in the team's order shifts the rows from that place down by one.</summary>
+    [Fact]
+    public async Task Create_InTheMiddle_ShiftsTheRestOfTheOrder()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var graph = await SeedGraph();
+        var second = TestData.PlayerApplication(graph.Msel.Id, "second");
+        var added = TestData.PlayerApplication(graph.Msel.Id, "added");
+        await Seed(second, added);
+        var secondRow = TestData.PlayerApplicationTeam(second.Id, graph.Team.Id, 2);
+        await Seed(secondRow);
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/teamplayerApplications", Body(added.Id, graph.Team.Id) with { displayOrder = 2 }, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<ViewModels.PlayerApplicationTeam>(JsonOptions, Ct);
+        var order = await ReadBack(db => db.PlayerApplicationTeams
+            .Where(x => x.TeamId == graph.Team.Id)
+            .OrderBy(x => x.DisplayOrder)
+            .Select(x => new { x.Id, x.DisplayOrder })
+            .ToListAsync(Ct));
+        Assert.Equal([graph.Row.Id, created.Id, secondRow.Id], order.Select(x => x.Id));
+        Assert.Equal([1, 2, 3], order.Select(x => x.DisplayOrder));
+    }
+
     /// <summary>No write consults a MSEL role, so an owner of the MSEL without EditMsels is refused.</summary>
     [Fact]
     public async Task NoWriteConsultsAMselRole_SoAnOwnerIsRefused()
@@ -315,8 +341,128 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
     }
 
     // ---------------------------------------------------------------------------------------------
-    // PUT playerApplicationteams/{id}
+    // PUT teamplayerApplications/{id}
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Moving an application to another place in its team's order shifts the team's other applications
+    /// to make room, so a team's order is changed in place rather than by removing and re-adding the row.
+    /// </summary>
+    [Fact]
+    public async Task Update_MovesTheApplicationInItsTeamsOrder()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var graph = await SeedGraph();
+        var second = TestData.PlayerApplication(graph.Msel.Id, "second");
+        var third = TestData.PlayerApplication(graph.Msel.Id, "third");
+        await Seed(second, third);
+        var secondRow = TestData.PlayerApplicationTeam(second.Id, graph.Team.Id, 2);
+        var thirdRow = TestData.PlayerApplicationTeam(third.Id, graph.Team.Id, 3);
+        await Seed(secondRow, thirdRow);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/teamplayerApplications/{thirdRow.Id}", new { displayOrder = 1 }, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var answered = await response.Content.ReadFromJsonAsync<ViewModels.PlayerApplicationTeam>(JsonOptions, Ct);
+        Assert.Equal(thirdRow.Id, answered.Id);
+        Assert.Equal(1, answered.DisplayOrder);
+        var order = await ReadBack(db => db.PlayerApplicationTeams
+            .Where(x => x.TeamId == graph.Team.Id)
+            .OrderBy(x => x.DisplayOrder)
+            .Select(x => new { x.Id, x.DisplayOrder })
+            .ToListAsync(Ct));
+        Assert.Equal([thirdRow.Id, graph.Row.Id, secondRow.Id], order.Select(x => x.Id));
+        Assert.Equal([1, 2, 3], order.Select(x => x.DisplayOrder));
+    }
+
+    /// <summary>
+    /// The update first shipped at <c>playerApplicationteams/{id}</c>, the one route the other operations
+    /// do not share; clients generated from that document still use it, so it still updates the row, and
+    /// it says it is deprecated and which route replaces it.
+    /// </summary>
+    [Fact]
+    public async Task Update_AtTheFormerRoute_StillUpdatesTheRowAndNamesItsSuccessor()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var graph = await SeedGraph();
+        var second = TestData.PlayerApplication(graph.Msel.Id, "second");
+        await Seed(second);
+        await Seed(TestData.PlayerApplicationTeam(second.Id, graph.Team.Id, 2));
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/playerApplicationteams/{graph.Row.Id}", new { displayOrder = 2 }, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, (await ReadBack(db => db.PlayerApplicationTeams.SingleAsync(x => x.Id == graph.Row.Id, Ct))).DisplayOrder);
+        Assert.Equal(["@1795392000"], response.Headers.GetValues("Deprecation"));
+        Assert.Equal(
+            [$"</api/teamplayerApplications/{graph.Row.Id}>; rel=\"successor-version\""],
+            response.Headers.GetValues("Link"));
+    }
+
+    /// <summary>The shared route is the current one, so it carries no deprecation.</summary>
+    [Fact]
+    public async Task Update_AtTheSharedRoute_IsNotMarkedDeprecated()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var graph = await SeedGraph();
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/teamplayerApplications/{graph.Row.Id}", new { displayOrder = 1 }, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(response.Headers.Contains("Deprecation"));
+    }
+
+    /// <summary>
+    /// Moves of different applications in one team that arrive together are applied one after another,
+    /// so the team still ends with each place in its order held once.
+    /// </summary>
+    [Fact]
+    public async Task Update_ConcurrentMovesInOneTeam_LeaveEachPlaceHeldOnce()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var graph = await SeedGraph();
+        var rows = new List<PlayerApplicationTeamEntity> { graph.Row };
+        for (var order = 2; order <= 6; order++)
+        {
+            var application = TestData.PlayerApplication(graph.Msel.Id, $"app {order}");
+            await Seed(application);
+            var row = TestData.PlayerApplicationTeam(application.Id, graph.Team.Id, order);
+            await Seed(row);
+            rows.Add(row);
+        }
+        var client = Client(actor);
+
+        // each row is moved to the front, or the back, at the same time as the others
+        var responses = await Task.WhenAll(rows.Select((row, index) => client.PutAsJsonAsync(
+            $"api/teamplayerApplications/{row.Id}", new { displayOrder = index % 2 == 0 ? 1 : rows.Count }, Ct)));
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
+        var orders = await ReadBack(db => db.PlayerApplicationTeams
+            .Where(x => x.TeamId == graph.Team.Id)
+            .Select(x => x.DisplayOrder)
+            .ToListAsync(Ct));
+        Assert.Equal(Enumerable.Range(1, rows.Count), orders.Order());
+    }
+
+    /// <summary>
+    /// The API document names the update at the route the other operations share, once (routes are lowercased), so a generated
+    /// client or a script reading the document is not sent to the former route.
+    /// </summary>
+    [Fact]
+    public async Task TheApiDocument_PublishesTheUpdateAtTheSharedRouteOnly()
+    {
+        var response = await Client().GetAsync("/swagger/v1/swagger.json", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+        var paths = document.RootElement.GetProperty("paths");
+        Assert.True(paths.GetProperty("/api/teamplayerapplications/{id}").TryGetProperty("put", out var put));
+        Assert.Equal("updatePlayerApplicationTeam", put.GetProperty("operationId").GetString());
+        Assert.False(paths.TryGetProperty("/api/playerapplicationteams/{id}", out _));
+    }
 
     /// <summary>
     /// The edit request carries only the display order, so a body naming another application or team
@@ -334,7 +480,7 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         await Seed(other, otherTeam);
 
         var response = await Client(actor).PutAsJsonAsync(
-            $"api/playerApplicationteams/{graph.Row.Id}",
+            $"api/teamplayerApplications/{graph.Row.Id}",
             Body(other.Id, otherTeam.Id) with { id = graph.Row.Id, displayOrder = 1 },
             Ct);
 
@@ -360,7 +506,7 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         await Seed(emptyTeam);
 
         var response = await Client(actor).PutAsJsonAsync(
-            $"api/playerApplicationteams/{graph.Row.Id}",
+            $"api/teamplayerApplications/{graph.Row.Id}",
             Body(graph.Application.Id, emptyTeam.Id) with { id = graph.Row.Id, displayOrder = 2 },
             Ct);
 
@@ -368,19 +514,30 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         Assert.Equal(2, (await ReadBack(db => db.PlayerApplicationTeams.SingleAsync(x => x.Id == graph.Row.Id, Ct))).DisplayOrder);
     }
 
-    /// <summary>Update without a display order is answered with a 500.</summary>
-    [Fact]
-    public async Task Update_WithoutADisplayOrder_Is500()
+    /// <summary>
+    /// A display order outside the team's order - missing, so 0, or past the end - is the caller's mistake,
+    /// so it is answered with a 400 naming the valid range, and the row is left where it was.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    public async Task Update_WithADisplayOrderOutOfRange_Is400(int displayOrder)
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
         var graph = await SeedGraph();
+        var second = TestData.PlayerApplication(graph.Msel.Id, "second");
+        await Seed(second);
+        await Seed(TestData.PlayerApplicationTeam(second.Id, graph.Team.Id, 2));
 
         var response = await Client(actor).PutAsJsonAsync(
-            $"api/playerApplicationteams/{graph.Row.Id}",
-            Body(graph.Application.Id, graph.Team.Id) with { id = graph.Row.Id },
+            $"api/teamplayerApplications/{graph.Row.Id}",
+            Body(graph.Application.Id, graph.Team.Id) with { id = graph.Row.Id, displayOrder = displayOrder },
             Ct);
 
-        Assert.Equal("The requested display order is not valid", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
+        Assert.Equal(
+            "The requested display order is not valid. It must be from 1 to 2.",
+            (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.BadRequest, response)).Title);
+        Assert.Equal(1, (await ReadBack(db => db.PlayerApplicationTeams.SingleAsync(x => x.Id == graph.Row.Id, Ct))).DisplayOrder);
     }
 
     [Fact]
@@ -391,7 +548,7 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
         var id = Guid.NewGuid();
 
         var response = await Client(actor).PutAsJsonAsync(
-            $"api/playerApplicationteams/{id}",
+            $"api/teamplayerApplications/{id}",
             Body(graph.Application.Id, graph.Team.Id) with { id = id, displayOrder = 1 },
             Ct);
 
@@ -413,6 +570,31 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Empty(await ReadBack(rb => rb.PlayerApplicationTeams.ToListAsync(Ct)));
+    }
+
+    /// <summary>Deleting an application from the middle of a team's order closes the gap it leaves.</summary>
+    [Fact]
+    public async Task Delete_FromTheMiddle_ClosesTheGap()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var graph = await SeedGraph();
+        var second = TestData.PlayerApplication(graph.Msel.Id, "second");
+        var third = TestData.PlayerApplication(graph.Msel.Id, "third");
+        await Seed(second, third);
+        var secondRow = TestData.PlayerApplicationTeam(second.Id, graph.Team.Id, 2);
+        var thirdRow = TestData.PlayerApplicationTeam(third.Id, graph.Team.Id, 3);
+        await Seed(secondRow, thirdRow);
+
+        var response = await Client(actor).DeleteAsync($"api/teamplayerApplications/{secondRow.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var order = await ReadBack(db => db.PlayerApplicationTeams
+            .Where(x => x.TeamId == graph.Team.Id)
+            .OrderBy(x => x.DisplayOrder)
+            .Select(x => new { x.Id, x.DisplayOrder })
+            .ToListAsync(Ct));
+        Assert.Equal([graph.Row.Id, thirdRow.Id], order.Select(x => x.Id));
+        Assert.Equal([1, 2], order.Select(x => x.DisplayOrder));
     }
 
     [Fact]

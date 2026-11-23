@@ -192,7 +192,8 @@ namespace Blueprint.Api.Controllers
                 throw new ForbiddenException();
 
             var hasViewMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var createdMsel = await _mselService.CopyAsync(id, hasViewMselsPermission, ct);
+            var hasEditMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
+            var createdMsel = await _mselService.CopyAsync(id, hasViewMselsPermission, hasEditMselsPermission, ct);
             return CreatedAtAction(nameof(this.Get), new { id = createdMsel.Id }, createdMsel);
         }
 
@@ -332,6 +333,8 @@ namespace Blueprint.Api.Controllers
         /// <param name="form"> The files to upload and their settings </param>
         /// <param name="ct"></param>
         [HttpPost("msels/json")]
+        [RequestSizeLimit(CasterExportService.MaxMselFileBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = CasterExportService.MaxMselFileBytes)]
         [ProducesResponseType(typeof(Msel), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "uploadJsonMsel")]
         public async Task<IActionResult> UploadJsonAsync([FromForm] FileForm form, CancellationToken ct)
@@ -347,6 +350,8 @@ namespace Blueprint.Api.Controllers
         /// <param name="form"> The files to upload and their settings </param>
         /// <param name="ct"></param>
         [HttpPost("msels/json/import")]
+        [RequestSizeLimit(CasterExportService.MaxMselFileBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = CasterExportService.MaxMselFileBytes)]
         [ProducesResponseType(typeof(MselImportResult), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "importJsonMsel")]
         public async Task<IActionResult> ImportJsonAsync([FromForm] FileForm form, CancellationToken ct)

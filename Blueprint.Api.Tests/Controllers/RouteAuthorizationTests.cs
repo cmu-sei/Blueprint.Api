@@ -188,6 +188,11 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             """{"playerApplicationId":"{sparePlayerApplication}","teamId":"{team}","displayOrder":1}"""
         },
         {
+            "PUT", "api/teamplayerApplications/{playerapplicationteam}", "EditMsels",
+            """{"id":"{playerapplicationteam}","playerApplicationId":"{playerapplication}","teamId":"{team}","displayOrder":1}"""
+        },
+        // the update's former route, still served for clients generated before it moved
+        {
             "PUT", "api/playerApplicationteams/{playerapplicationteam}", "EditMsels",
             """{"id":"{playerapplicationteam}","playerApplicationId":"{playerapplication}","teamId":"{team}","displayOrder":1}"""
         },
@@ -288,7 +293,17 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         { "PUT", "api/msels/{msel}/scoringmodel", "EditMsels", """{"description":"{unique}"}""" },
         { "POST", "api/msels/{msel}/scoringmodel/presets/Nciss", "EditMsels", null },
         { "PUT", "api/msels/{msel}/scoringmodel/link", "EditMsels", "{}" },
-        { "DELETE", "api/msels/{msel}/scoringmodel", "EditMsels", null }
+        { "DELETE", "api/msels/{msel}/scoringmodel", "EditMsels", null },
+
+        // CasterExportService / MselCasterExportController - the reads want ViewMsels, the writes EditMsels; each
+        // falls back to a role on the MSEL. The seeded MSEL links no Caster directory and carries no copy of one, so
+        // the copy's read lifts to a 204, the team variables to an empty 200, the copy from Caster to a 409 and the
+        // import and the delete to a 404.
+        { "GET", "api/msels/{msel}/caster/export", "ViewMsels", null },
+        { "GET", "api/msels/{msel}/caster/team-variables", "ViewMsels", null },
+        { "POST", "api/msels/{msel}/caster/export", "EditMsels", null },
+        { "POST", "api/msels/{msel}/caster/export/import", "EditMsels", null },
+        { "DELETE", "api/msels/{msel}/caster/export", "EditMsels", null }
     };
 
     [Theory]

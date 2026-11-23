@@ -132,7 +132,7 @@ namespace Blueprint.Api.Services
                 OffensiveTechniqueCount = rows.Select(r => r.OffensiveExternalId).Distinct().Count()
             };
             _logger.LogWarning("Mappings imported onto release {ReleaseId} by {UserId}: {Rows} rows, {Pairs} pairs stored, {Skipped} skipped, {Sources} source techniques",
-                release.Id, _user.GetId(), result.RowsRead, result.PairsStored, result.PairsSkipped, result.OffensiveTechniqueCount);
+                releaseId, _user.GetId(), result.RowsRead, result.PairsStored, result.PairsSkipped, result.OffensiveTechniqueCount);
             return result;
         }
 

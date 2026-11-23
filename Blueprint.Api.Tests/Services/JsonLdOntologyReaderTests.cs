@@ -212,4 +212,35 @@ public class JsonLdOntologyReaderTests
         Assert.Null(release.Source);
         Assert.Null(release.Notice);
     }
+
+    /// <summary>
+    /// OWL lets a class name itself as a superclass, and two classes name each other: the link that would close the
+    /// loop is left out, as EF cannot insert a technique that is its own ancestor.
+    /// </summary>
+    [Fact]
+    public void Read_OfAClassHierarchyThatLoops_LinksNoTechniqueToItself()
+    {
+        const string json = """
+            {
+              "@graph": [
+                { "@id": "d3f:Harden", "@type": "d3f:DefensiveTactic", "rdfs:label": "Harden" },
+                { "@id": "d3f:Self", "d3f:d3fend-id": "D3-S", "d3f:enables": { "@id": "d3f:Harden" },
+                  "rdfs:subClassOf": [ { "@id": "d3f:Self" }, { "@id": "d3f:DefensiveTechnique" } ] },
+                { "@id": "d3f:Left", "d3f:d3fend-id": "D3-L",
+                  "rdfs:subClassOf": [ { "@id": "d3f:Right" }, { "@id": "d3f:DefensiveTechnique" } ] },
+                { "@id": "d3f:Right", "d3f:d3fend-id": "D3-R",
+                  "rdfs:subClassOf": [ { "@id": "d3f:Left" }, { "@id": "d3f:DefensiveTechnique" } ] }
+              ]
+            }
+            """;
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+
+        var release = JsonLdOntologyReader.Read(document.RootElement, "1.0", TechniqueFrameworks.D3fend());
+
+        Assert.Null(release.Techniques.Single(t => t.ExternalId == "D3-S").Parent);
+        var left = release.Techniques.Single(t => t.ExternalId == "D3-L");
+        var right = release.Techniques.Single(t => t.ExternalId == "D3-R");
+        Assert.True((left.Parent == right) ^ (right.Parent == left));
+        Assert.True(left.Parent == null || right.Parent == null);
+    }
 }

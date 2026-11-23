@@ -106,6 +106,9 @@ namespace Blueprint.Api.Services
                 .Where(m => m.Technique.TechniqueReleaseId != technique.TechniqueReleaseId)
                 .Select(m => m.Technique.TechniqueRelease)
                 .FirstOrDefaultAsync(ct);
+            if (pinned != null && pinned.IsDefensive != technique.TechniqueRelease.IsDefensive)
+                throw new ConflictException(
+                    $"This MSEL's {domain} techniques are {Family(pinned.IsDefensive)} techniques, and {technique.ExternalId} is a {Family(technique.TechniqueRelease.IsDefensive)} one.");
             if (pinned != null)
                 throw new ConflictException(
                     $"This MSEL's {domain} techniques are from {pinned.Version}. " +
@@ -161,7 +164,12 @@ namespace Blueprint.Api.Services
             await LockPoolAsync(mselId, ct);
             var current = await InDomain(_context.MselTechniques.Where(m => m.MselId == mselId), release.Domain)
                 .Include(m => m.Technique)
+                .ThenInclude(t => t.TechniqueRelease)
                 .ToListAsync(ct);
+            // attack techniques never move onto a defensive release, nor the other way round
+            if (current.Any(m => m.Technique.TechniqueRelease.IsDefensive != release.IsDefensive))
+                throw new ConflictException(
+                    $"This MSEL's {release.Domain} techniques are {Family(!release.IsDefensive)} techniques, and {release.Version} is a {Family(release.IsDefensive)} release.");
             var result = new MselTechniqueUpgrade { MselId = mselId, TechniqueReleaseId = techniqueReleaseId };
 
             var moving = current.Where(m => m.Technique.TechniqueReleaseId != techniqueReleaseId).ToList();
@@ -223,6 +231,8 @@ namespace Blueprint.Api.Services
             await _context.Database.BeginTransactionAsync(ct);
             await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM msels WHERE id = {mselId} FOR UPDATE", ct);
         }
+
+        private static string Family(bool isDefensive) => isDefensive ? "defensive" : "attack";
 
         /// <summary>The pool rows of one domain.</summary>
         private static IQueryable<MselTechniqueEntity> InDomain(IQueryable<MselTechniqueEntity> pool, string domain) =>

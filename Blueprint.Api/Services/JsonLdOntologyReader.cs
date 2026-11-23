@@ -160,14 +160,13 @@ namespace Blueprint.Api.Services
                 release.Techniques.Add(entity);
             }
 
+            // The first technique superclass that does not loop back to the technique is its parent.
             foreach (var (id, entity) in byNodeId)
             {
-                var parentId = SuperClasses(nodes[id]).FirstOrDefault(byNodeId.ContainsKey);
-                if (parentId != null)
+                foreach (var parentId in SuperClasses(nodes[id]).Where(byNodeId.ContainsKey))
                 {
-                    // Set the navigation as well as the key so EF inserts the parent first.
-                    entity.ParentId = byNodeId[parentId].Id;
-                    entity.Parent = byNodeId[parentId];
+                    if (TechniqueParents.Link(entity, byNodeId[parentId]))
+                        break;
                 }
             }
 

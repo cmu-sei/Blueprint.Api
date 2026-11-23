@@ -2365,6 +2365,13 @@ namespace Blueprint.Api.Services
                 mselTechnique.Msel = null;
                 mselTechnique.Technique = null;
             }
+            // A pool holds a technique once; a file listing one twice (a hand-merged export) keeps the first.
+            var distinctTechniques = mselEntity.MselTechniques.DistinctBy(t => t.TechniqueId).ToList();
+            if (distinctTechniques.Count < mselEntity.MselTechniques.Count)
+            {
+                AddChange(result, "techniques", $"{mselEntity.MselTechniques.Count - distinctTechniques.Count} techniques were listed more than once; each was imported once.");
+                mselEntity.MselTechniques = distinctTechniques;
+            }
             if (mselEntity.MselTechniques.Count > 0)
             {
                 var fileTechniqueIds = mselEntity.MselTechniques.Select(t => t.TechniqueId).ToList();

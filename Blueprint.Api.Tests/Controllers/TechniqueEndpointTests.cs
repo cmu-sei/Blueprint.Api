@@ -127,6 +127,34 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
+    /// <summary>One domain is attack or defensive, never both, as MSELs pin and upgrade by domain.</summary>
+    [Fact]
+    public async Task Import_OfAReleaseOfADomainWhoseReleasesAreOfTheOtherFamily_Is409()
+    {
+        await SeedDefensiveRelease("enterprise-attack", "0.9");
+
+        var response = await Upload(RootClient, TechniqueBundles.Enterprise("1.0"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("defensive releases", await response.Content.ReadAsStringAsync(Ct));
+        Assert.False(await ReadBack(rb => rb.TechniqueReleases.AnyAsync(r => r.Version == "1.0", Ct)));
+    }
+
+    /// <summary>Newest first within a domain, with an undated release after the dated ones rather than before.</summary>
+    [Fact]
+    public async Task Get_ListsADomainsReleasesNewestFirst_AndUndatedOnesLast()
+    {
+        await SeedRelease("1.0");
+        await SeedFrameworks();
+        var undated = await TechniqueFrameworks.ReadAsync(TechniqueBundles.Enterprise("2.0"));
+        undated.ReleaseDate = null;
+        await Seed(undated);
+
+        var releases = await Get<List<TechniqueRelease>>(RootClient, "api/techniquereleases");
+
+        Assert.Equal(["1.0", "2.0"], releases.Where(r => r.Domain == "enterprise-attack").Select(r => r.Version));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // A release's notice fields
     // ---------------------------------------------------------------------------------------------
@@ -495,6 +523,39 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal([Technique(second, "T1059").Id], pool);
     }
 
+    /// <summary>A pool's attack techniques never move onto a defensive release of their domain.</summary>
+    [Fact]
+    public async Task Upgrade_ToAReleaseOfTheOtherFamily_Is409_AndKeepsThePool()
+    {
+        var attack = await SeedRelease("1.0");
+        var defensive = await SeedDefensiveRelease("enterprise-attack", "2.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+
+        var response = await RootClient.PostAsync($"api/msels/{msel.Id}/techniques/upgrade/{defensive.Id}", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("attack techniques", await response.Content.ReadAsStringAsync(Ct));
+        var pool = await ReadBack(rb => rb.MselTechniques.Where(m => m.MselId == msel.Id).Select(m => m.TechniqueId).ToListAsync(Ct));
+        Assert.Equal([Technique(attack, "T1059").Id], pool);
+    }
+
+    [Fact]
+    public async Task Create_OfATechniqueOfTheOtherFamilyInAPinnedDomain_Is409()
+    {
+        var attack = await SeedRelease("1.0");
+        var defensive = await SeedDefensiveRelease("enterprise-attack", "2.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+
+        var response = await RootClient.PostAsJsonAsync("api/mseltechniques", Body(msel.Id, Technique(defensive, "D3-CH").Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("attack techniques", await response.Content.ReadAsStringAsync(Ct));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // The pool pins one release per domain (enterprise-attack, capec, d3fend, ...), not one per family
     // ---------------------------------------------------------------------------------------------
@@ -794,6 +855,36 @@ public class TechniqueEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Contains(result.Changes, c => c.Field == "techniques" && c.Message.StartsWith("1 enterprise-attack technique"));
         var pool = await ReadBack(rb => rb.MselTechniques.Where(m => m.MselId == result.Msel.Id).Select(m => m.TechniqueId).ToListAsync(Ct));
         Assert.Equal(new[] { Technique(second, "T1059").Id, Technique(second, "T1059.001").Id }.Order(), pool.Order());
+    }
+
+    /// <summary>A hand-merged file can list a technique twice; the pool holds it once, and says so.</summary>
+    [Fact]
+    public async Task JsonImport_OfATechniqueListedTwice_ImportsItOnce()
+    {
+        var release = await SeedRelease("1.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var technique = Technique(release, "T1059");
+        await Seed(new MselTechniqueEntity(msel.Id, technique.Id) { Id = Guid.NewGuid() });
+        var exported = await (await RootClient.GetAsync($"api/msels/{msel.Id}/json", Ct)).Content.ReadAsStringAsync(Ct);
+        var root = System.Text.Json.Nodes.JsonNode.Parse(exported).AsObject();
+        var pool = root.Single(p => string.Equals(p.Key, "MselTechniques", StringComparison.OrdinalIgnoreCase)).Value.AsArray();
+        var copy = pool[0].DeepClone();
+        copy.AsObject().Single(p => string.Equals(p.Key, "Id", StringComparison.OrdinalIgnoreCase)).Value.ReplaceWith(Guid.NewGuid());
+        pool.Add(copy);
+
+        using var content = new MultipartFormDataContent();
+        var upload = new ByteArrayContent(Encoding.UTF8.GetBytes(root.ToJsonString()));
+        upload.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Add(upload, "ToUpload", "msel.json");
+        var response = await RootClient.PostAsync("api/msels/json/import", content, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await Read<MselImportResult>(response);
+        Assert.Contains(result.Changes, c => c.Field == "techniques" && c.Message.StartsWith("1 techniques were listed more than once"));
+        Assert.Equal(
+            technique.Id,
+            await ReadBack(rb => rb.MselTechniques.Where(m => m.MselId == result.Msel.Id).Select(m => m.TechniqueId).SingleAsync(Ct)));
     }
 
     // ---------------------------------------------------------------------------------------------

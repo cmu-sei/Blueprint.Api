@@ -133,6 +133,8 @@ namespace Blueprint.Api.Services
         private static Bundle Collect(JsonElement objects, StixFormatOptions options)
         {
             var bundle = new Bundle();
+            var tacticAt = new Dictionary<string, int>();
+            var techniqueAt = new Dictionary<string, int>();
             var skip = new HashSet<string>(options.SkipStatuses ?? [], StringComparer.OrdinalIgnoreCase);
             foreach (var item in objects.EnumerateArray())
             {
@@ -154,7 +156,7 @@ namespace Blueprint.Api.Services
                 }
                 if (Given(options.TacticType) && type == options.TacticType)
                 {
-                    bundle.Tactics.Add(item);
+                    AddVersion(bundle.Tactics, tacticAt, item);
                     continue;
                 }
 
@@ -181,12 +183,37 @@ namespace Blueprint.Api.Services
                         break;
                     case "attack-pattern":
                         if (GetString(item, "id") != null)
-                            bundle.Techniques.Add(item);
+                            AddVersion(bundle.Techniques, techniqueAt, item);
                         break;
                 }
             }
 
             return bundle;
+        }
+
+        /// <summary>
+        /// Adds an object, or replaces an earlier version of it. STIX objects with the same id are versions of one
+        /// object, and a bundle may carry several; the one modified last is current.
+        /// </summary>
+        private static void AddVersion(List<JsonElement> list, Dictionary<string, int> at, JsonElement item)
+        {
+            var id = GetString(item, "id");
+            if (id == null)
+            {
+                list.Add(item);
+                return;
+            }
+            if (!at.TryGetValue(id, out var index))
+            {
+                at[id] = list.Count;
+                list.Add(item);
+                return;
+            }
+
+            var current = GetDate(list[index], "modified");
+            var modified = GetDate(item, "modified");
+            if (modified.HasValue && (!current.HasValue || modified > current))
+                list[index] = item;
         }
 
         /// <summary>
@@ -237,11 +264,13 @@ namespace Blueprint.Api.Services
                     order.TryAdd(tacticRef.GetString() ?? "", order.Count);
             }
 
+            var tacticIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var tactic in bundle.Tactics)
             {
                 var (externalId, url) = GetReference(tactic, source, options.IdPrefix);
                 var stixId = GetString(tactic, "id");
-                if (externalId == null || stixId == null)
+                // Two tactic objects with one id would be one tactic twice; the first is kept.
+                if (externalId == null || stixId == null || !tacticIds.Add(externalId))
                     continue;
 
                 release.Tactics.Add(new TechniqueTacticEntity
@@ -283,13 +312,8 @@ namespace Blueprint.Api.Services
             {
                 if (technique.StixId != null
                     && bundle.ParentOf.TryGetValue(technique.StixId, out var parentStixId)
-                    && byStixId.TryGetValue(parentStixId, out var parent)
-                    && parent != technique)
-                {
-                    // Set the navigation as well as the key so EF inserts the parent first.
-                    technique.ParentId = parent.Id;
-                    technique.Parent = parent;
-                }
+                    && byStixId.TryGetValue(parentStixId, out var parent))
+                    TechniqueParents.Link(technique, parent);
             }
         }
 
@@ -324,6 +348,8 @@ namespace Blueprint.Api.Services
                 .Where(g => g.Id.ExternalId != null)
                 .OrderBy(g => GetString(g.Pattern, "name"), StringComparer.OrdinalIgnoreCase)
                 .ThenBy(g => g.Id.ExternalId, StringComparer.Ordinal)
+                // Two groups with one id would be one tactic twice; the first is kept.
+                .DistinctBy(g => g.Id.ExternalId, StringComparer.OrdinalIgnoreCase)
                 .ToList();
             var shortNames = new Dictionary<string, string>();
             foreach (var (pattern, id) in groups)
@@ -410,11 +436,7 @@ namespace Blueprint.Api.Services
             foreach (var (sub, rootStixId) in parentOf)
             {
                 if (byStix.TryGetValue(rootStixId, out var parent))
-                {
-                    // Set the navigation as well as the key so EF inserts the parent first.
-                    sub.ParentId = parent.Id;
-                    sub.Parent = parent;
-                }
+                    TechniqueParents.Link(sub, parent);
             }
         }
 

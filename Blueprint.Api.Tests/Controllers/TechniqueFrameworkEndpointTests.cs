@@ -165,6 +165,40 @@ public class TechniqueFrameworkEndpointTests(DatabaseFixture fixture, BlueprintA
         Assert.Equal("capec", (await ReadBack(rb => rb.TechniqueFrameworks.SingleAsync(f => f.Id == framework.Id, Ct))).Domain);
     }
 
+    /// <summary>
+    /// A release keeps its domain and family when its framework is deleted, so a new framework for the domain must
+    /// be of that family: MSELs pin and upgrade by domain, and would move attack techniques onto defensive ones.
+    /// </summary>
+    [Fact]
+    public async Task Create_ForADomainWhoseReleasesAreOfTheOtherFamily_Is409()
+    {
+        var framework = await Read<TechniqueFramework>(await Post(CapecDefinition));
+        await UploadRelease(CapecBundles.Capec());
+        await RootClient.DeleteAsync($"api/techniqueframeworks/{framework.Id}", Ct);
+
+        var response = await Post(CapecDefinition.Replace("\"isDefensive\": false", "\"isDefensive\": true"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("attack releases", await response.Content.ReadAsStringAsync(Ct));
+        Assert.False(await ReadBack(rb => rb.TechniqueFrameworks.AnyAsync(Ct)));
+    }
+
+    /// <summary>Unlinking the releases first does not let the family change either.</summary>
+    [Fact]
+    public async Task Update_OfTheFamilyAfterItsReleasesAreUnlinked_Is409()
+    {
+        var framework = await Read<TechniqueFramework>(await Post(CapecDefinition));
+        var release = await Read<TechniqueRelease>(await UploadRelease(CapecBundles.Capec()));
+        var unlinked = await RootClient.PutAsJsonAsync($"api/techniquereleases/{release.Id}", new { techniqueFrameworkId = (Guid?)null }, Ct);
+        Assert.Equal(HttpStatusCode.OK, unlinked.StatusCode);
+        framework.IsDefensive = true;
+
+        var response = await RootClient.PutAsJsonAsync($"api/techniqueframeworks/{framework.Id}", framework, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.False((await ReadBack(rb => rb.TechniqueFrameworks.SingleAsync(f => f.Id == framework.Id, Ct))).IsDefensive);
+    }
+
     [Fact]
     public async Task Update_OfAFrameworkThatIsNotThere_Is404()
     {

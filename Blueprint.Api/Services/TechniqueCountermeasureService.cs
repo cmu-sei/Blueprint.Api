@@ -73,21 +73,31 @@ namespace Blueprint.Api.Services
                 .Where(t => t.TechniqueReleaseId == releaseId)
                 .Select(t => new { t.Id, t.StixId, t.ExternalId })
                 .ToListAsync(ct);
+            // Targets match without regard to case, so the grouping does too.
             var techniquesByTarget = techniques
-                .GroupBy(t => definition.TargetMatch == MappingTargetMatch.SourceIdLocalName ? SparqlMappingReader.LocalName(t.StixId) : t.ExternalId)
+                .GroupBy(t => definition.TargetMatch == MappingTargetMatch.SourceIdLocalName ? SparqlMappingReader.LocalName(t.StixId) : t.ExternalId, StringComparer.OrdinalIgnoreCase)
                 .Where(g => !string.IsNullOrEmpty(g.Key))
                 .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
 
+            // Pairs whose targets are written differently can name one technique: they are one mapping, weighing
+            // what both do, with the stronger pair's tactic and rationale.
+            var rowsByKey = new Dictionary<(string, Guid), TechniqueCountermeasureEntity>();
             var rows = new List<TechniqueCountermeasureEntity>();
             var skipped = 0;
-            foreach (var pair in parsed.Pairs)
+            foreach (var pair in parsed.Pairs.OrderByDescending(p => p.Weight))
             {
                 if (!techniquesByTarget.TryGetValue(pair.Target, out var techniqueId))
                 {
                     skipped++;
                     continue;
                 }
-                rows.Add(new TechniqueCountermeasureEntity
+                if (rowsByKey.TryGetValue((pair.SourceId, techniqueId), out var existing))
+                {
+                    existing.Weight += pair.Weight;
+                    continue;
+                }
+
+                var row = new TechniqueCountermeasureEntity
                 {
                     Id = Guid.NewGuid(),
                     ReleaseId = releaseId,
@@ -96,13 +106,22 @@ namespace Blueprint.Api.Services
                     DefensiveTactic = pair.Tactic,
                     Rationale = pair.Rationale,
                     Weight = pair.Weight
-                });
+                };
+                rowsByKey[(pair.SourceId, techniqueId)] = row;
+                rows.Add(row);
             }
 
-            // one SaveChanges, so a re-import either replaces the old rows or leaves them
-            _context.TechniqueCountermeasures.RemoveRange(_context.TechniqueCountermeasures.Where(c => c.ReleaseId == releaseId));
-            _context.TechniqueCountermeasures.AddRange(rows);
-            await _context.SaveChangesAsync(ct);
+            // One SaveChanges, so a re-import either replaces the old rows or leaves them. The release's row is held
+            // until then, so two imports onto it take turns: each removes what the other saved, never the same rows twice.
+            await using (var transaction = await _context.Database.BeginTransactionAsync(ct))
+            {
+                await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM technique_releases WHERE id = {releaseId} FOR UPDATE", ct);
+                var old = await _context.TechniqueCountermeasures.Where(c => c.ReleaseId == releaseId).ToListAsync(ct);
+                _context.TechniqueCountermeasures.RemoveRange(old);
+                _context.TechniqueCountermeasures.AddRange(rows);
+                await _context.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+            }
 
             var result = new TechniqueCountermeasureImport
             {
@@ -146,7 +165,8 @@ namespace Blueprint.Api.Services
                 .Where(t => t.ExternalId == offensiveId && !t.TechniqueRelease.IsDefensive)
                 .OrderByDescending(t => t.TechniqueRelease.ReleaseDate.HasValue)
                 .ThenByDescending(t => t.TechniqueRelease.ReleaseDate)
-                .ThenByDescending(t => t.TechniqueRelease.Version)
+                // versions do not sort as text (v9 would beat v16), so a tie goes to the one imported last
+                .ThenByDescending(t => t.TechniqueRelease.DateCreated)
                 .Select(t => t.Parent.ExternalId)
                 .FirstOrDefaultAsync(ct);
             if (parentId == null)
@@ -193,7 +213,8 @@ namespace Blueprint.Api.Services
                 .Where(r => r.IsDefensive && r.Countermeasures.Any() && (pooled.Count == 0 || pooled.Contains(r.Id)))
                 .OrderByDescending(r => r.ReleaseDate.HasValue)
                 .ThenByDescending(r => r.ReleaseDate)
-                .ThenByDescending(r => r.Version)
+                // versions do not sort as text (v9 would beat v16), so a tie goes to the one imported last
+                .ThenByDescending(r => r.DateCreated)
                 .Select(r => r.Id);
             var releases = await (pooled.Count == 0 ? withMappings.Take(1) : withMappings).ToListAsync(ct);
             result.HasMappings = releases.Count > 0;

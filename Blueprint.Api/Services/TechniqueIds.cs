@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
 using Blueprint.Api.Data.Models;
@@ -34,6 +35,31 @@ namespace Blueprint.Api.Services
             bytes[6] = (byte)((bytes[6] & 0x0F) | 0x50);
             bytes[8] = (byte)((bytes[8] & 0x3F) | 0x80);
             return new Guid(bytes, bigEndian: true);
+        }
+    }
+
+    /// <summary>Links a technique to its parent as an import reads them.</summary>
+    public static class TechniqueParents
+    {
+        /// <summary>
+        /// Makes <paramref name="parent"/> the technique's parent, unless that would make the technique its own
+        /// ancestor. A file can say a class is its own superclass, or that two techniques are each other's
+        /// sub-technique; the link that would close the loop is left out, as EF cannot insert a cycle.
+        /// </summary>
+        /// <returns>True when the link was made.</returns>
+        public static bool Link(TechniqueEntity technique, TechniqueEntity parent)
+        {
+            var seen = new HashSet<TechniqueEntity>(ReferenceEqualityComparer.Instance);
+            for (var ancestor = parent; ancestor != null; ancestor = ancestor.Parent)
+            {
+                if (ReferenceEquals(ancestor, technique) || !seen.Add(ancestor))
+                    return false;
+            }
+
+            // Set the navigation as well as the key so EF inserts the parent first.
+            technique.ParentId = parent.Id;
+            technique.Parent = parent;
+            return true;
         }
     }
 

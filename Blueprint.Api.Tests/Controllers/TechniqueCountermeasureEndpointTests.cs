@@ -88,6 +88,29 @@ public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, Bluep
         Assert.Equal(["T1059"], stored);
     }
 
+    /// <summary>
+    /// Targets match without regard to case, so two written differently can name one technique: they are one
+    /// mapping weighing both, not two rows that trip the unique index.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfPairsWhoseTargetsNameOneTechnique_StoresOneMapping()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        var file = D3fendMappings.File(
+            D3fendMappings.Row("T1059", "Command and Scripting Interpreter", null, "enterprise", "FileAnalysis", "File Analysis", "Detect",
+                "analyzes", "File", "executes", "Executable Script"),
+            D3fendMappings.Row("T1059", "Command and Scripting Interpreter", null, "enterprise", "fileanalysis", "File Analysis", "Detect",
+                "analyzes", "Document File", "reads", "Document File"));
+
+        var response = await Upload(RootClient, d3fend.Id, file);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(1, (await Read<TechniqueCountermeasureImport>(response)).PairsStored);
+        var stored = Assert.Single(await ReadBack(rb => rb.TechniqueCountermeasures.Where(c => c.ReleaseId == d3fend.Id).ToListAsync(Ct)));
+        Assert.Equal(Technique(d3fend, "D3-FA").Id, stored.DefensiveTechniqueId);
+        Assert.Equal(2, stored.Weight);
+    }
+
     [Fact]
     public async Task Import_OfAFileThatIsNotTheMappings_Is400()
     {

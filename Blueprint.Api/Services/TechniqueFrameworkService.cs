@@ -69,6 +69,7 @@ namespace Blueprint.Api.Services
             var domain = framework.Domain.Trim();
             if (await _context.TechniqueFrameworks.AnyAsync(f => f.Domain == domain, ct))
                 throw new ConflictException($"A technique framework for the {domain} domain already exists.");
+            await ThrowIfOtherFamilyHasDomainAsync(domain, framework.IsDefensive, ct);
 
             var entity = new TechniqueFrameworkEntity { Id = Guid.NewGuid(), CreatedBy = _user.GetId() };
             Apply(entity, framework);
@@ -92,6 +93,7 @@ namespace Blueprint.Api.Services
             if ((entity.Domain != domain || entity.IsDefensive != framework.IsDefensive)
                 && await _context.TechniqueReleases.AnyAsync(r => r.TechniqueFrameworkId == id, ct))
                 throw new ConflictException($"{entity.Name} has releases, so its domain and family cannot change.");
+            await ThrowIfOtherFamilyHasDomainAsync(domain, framework.IsDefensive, ct);
 
             Apply(entity, framework);
             entity.ModifiedBy = _user.GetId();
@@ -112,6 +114,18 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning("Technique framework {Name} ({Domain}) deleted by {UserId}", entity.Name, entity.Domain, _user.GetId());
             return true;
+        }
+
+        /// <summary>
+        /// A 409 when releases of the domain are of the other family, whether a framework holds them or not: MSELs pin
+        /// and upgrade by domain, so one domain is attack or defensive, never both. A release keeps its domain and
+        /// family when its framework is deleted or it is unlinked, so checking the framework's own releases is not enough.
+        /// </summary>
+        private async Task ThrowIfOtherFamilyHasDomainAsync(string domain, bool isDefensive, CancellationToken ct)
+        {
+            if (await _context.TechniqueReleases.AnyAsync(r => r.Domain == domain && r.IsDefensive != isDefensive, ct))
+                throw new ConflictException(
+                    $"The {domain} domain has {(isDefensive ? "attack" : "defensive")} releases, so its framework must be {(isDefensive ? "attack" : "defensive")} too.");
         }
 
         private static void Apply(TechniqueFrameworkEntity entity, TechniqueFramework framework)

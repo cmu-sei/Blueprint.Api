@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Mappings;
@@ -51,7 +52,11 @@ namespace Blueprint.Api.Services
         {
             var releases = await _context.TechniqueReleases
                 .OrderBy(r => r.Domain)
+                // newest first; an undated release after the dated ones, as Postgres would otherwise put nulls first
+                .ThenByDescending(r => r.ReleaseDate.HasValue)
                 .ThenByDescending(r => r.ReleaseDate)
+                // versions do not sort as text (v9 would beat v16), so a tie goes to the one imported last
+                .ThenByDescending(r => r.DateCreated)
                 .ProjectToTechniqueRelease()
                 .ToListAsync(ct);
             await AddFrameworkSettingsAsync(releases, ct);
@@ -131,11 +136,22 @@ namespace Blueprint.Api.Services
             }
 
             if (await _context.TechniqueReleases.AnyAsync(r => r.Domain == release.Domain && r.Version == release.Version, ct))
-                throw new ConflictException($"{release.Domain} {release.Version} has already been imported.");
+                throw new ConflictException(AlreadyImported(release));
+            // one domain is attack or defensive, never both, as MSELs pin and upgrade by domain
+            if (await _context.TechniqueReleases.AnyAsync(r => r.Domain == release.Domain && r.IsDefensive != release.IsDefensive, ct))
+                throw new ConflictException($"The {release.Domain} domain already has {(release.IsDefensive ? "attack" : "defensive")} releases, and this one is {(release.IsDefensive ? "defensive" : "attack")}.");
 
             release.CreatedBy = _user.GetId();
             _context.TechniqueReleases.Add(release);
-            await _context.SaveChangesAsync(ct);
+            try
+            {
+                await _context.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+            {
+                // another import of the same release saved between the check above and this one
+                throw new ConflictException(AlreadyImported(release));
+            }
             _logger.LogWarning("Release {Domain} {Version} imported by {UserId}: {Tactics} tactics, {Techniques} techniques",
                 release.Domain, release.Version, _user.GetId(), release.Tactics.Count, release.Techniques.Count);
 
@@ -177,6 +193,8 @@ namespace Blueprint.Api.Services
 
             return await GetAsync(id, ct);
         }
+
+        private static string AlreadyImported(TechniqueReleaseEntity release) => $"{release.Domain} {release.Version} has already been imported.";
 
         private static string Blank(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 

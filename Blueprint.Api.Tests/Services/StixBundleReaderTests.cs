@@ -517,4 +517,83 @@ public class StixBundleReaderTests
 
         Assert.Equal(ReleaseFileReader.NoFrameworkMessage, ex.Message);
     }
+
+    /// <summary>A bundle of the Acme catalogue, with the objects given after its collection.</summary>
+    private static string AcmeBundle(string objects) => $$"""
+        {
+          "type": "bundle",
+          "id": "bundle--00000000-0000-4000-8000-000000000501",
+          "objects": [
+            { "type": "x-mitre-collection", "id": "x-mitre-collection--00000000-0000-4000-8000-000000000502",
+              "name": "Acme Techniques", "x_mitre_version": "1.0", "modified": "2026-01-01T00:00:00.000Z" },
+            {{objects}}
+          ]
+        }
+        """;
+
+    private static string AcmeTactic(string stixId, string externalId, string name, string modified) => $$"""
+        { "type": "x-mitre-tactic", "id": "{{stixId}}", "name": "{{name}}", "x_mitre_shortname": "{{externalId.ToLowerInvariant()}}",
+          "modified": "{{modified}}", "external_references": [ { "source_name": "acme", "external_id": "{{externalId}}" } ] }
+        """;
+
+    private static string AcmeTechnique(string stixId, string externalId, string name, string modified = "2026-01-01T00:00:00.000Z") => $$"""
+        { "type": "attack-pattern", "id": "{{stixId}}", "name": "{{name}}", "modified": "{{modified}}",
+          "kill_chain_phases": [ { "kill_chain_name": "acme", "phase_name": "at-1" } ],
+          "external_references": [ { "source_name": "acme", "external_id": "{{externalId}}" } ] }
+        """;
+
+    /// <summary>
+    /// STIX objects with one id are versions of one object, and a bundle may carry several: the one modified last
+    /// is read, once, as two tactics or techniques with one id cannot be saved.
+    /// </summary>
+    [Fact]
+    public void Read_OfABundleWithTwoVersionsOfAnObject_ReadsTheNewestOnce()
+    {
+        var json = AcmeBundle(string.Join(",",
+            AcmeTactic("x-mitre-tactic--00000000-0000-4000-8000-000000000510", "AT-1", "Old Entry", "2025-01-01T00:00:00.000Z"),
+            AcmeTactic("x-mitre-tactic--00000000-0000-4000-8000-000000000510", "AT-1", "Entry", "2026-01-01T00:00:00.000Z"),
+            AcmeTactic("x-mitre-tactic--00000000-0000-4000-8000-000000000510", "AT-1", "Older Entry", "2024-01-01T00:00:00.000Z"),
+            AcmeTechnique("attack-pattern--00000000-0000-4000-8000-000000000520", "AT-100", "Old Front Door", "2025-01-01T00:00:00.000Z"),
+            AcmeTechnique("attack-pattern--00000000-0000-4000-8000-000000000520", "AT-100", "Front Door", "2026-01-01T00:00:00.000Z")));
+
+        var release = Read(json, null, TechniqueFrameworks.Custom());
+
+        Assert.Equal("Entry", Assert.Single(release.Tactics).Name);
+        Assert.Equal("Front Door", Assert.Single(release.Techniques).Name);
+    }
+
+    /// <summary>Two tactic objects with different STIX ids and one external id are one tactic; the first is kept.</summary>
+    [Fact]
+    public void Read_OfABundleWithTwoTacticsOfOneId_KeepsTheFirst()
+    {
+        var json = AcmeBundle(string.Join(",",
+            AcmeTactic("x-mitre-tactic--00000000-0000-4000-8000-000000000510", "AT-1", "Entry", "2026-01-01T00:00:00.000Z"),
+            AcmeTactic("x-mitre-tactic--00000000-0000-4000-8000-000000000511", "AT-1", "Entry Again", "2026-01-01T00:00:00.000Z"),
+            AcmeTechnique("attack-pattern--00000000-0000-4000-8000-000000000520", "AT-100", "Front Door")));
+
+        var release = Read(json, null, TechniqueFrameworks.Custom());
+
+        Assert.Equal("Entry", Assert.Single(release.Tactics).Name);
+    }
+
+    /// <summary>Two techniques that are each other's sub-technique would be their own ancestors: one link is left out.</summary>
+    [Fact]
+    public void Read_OfSubTechniqueRelationshipsThatLoop_LinksNoTechniqueToItself()
+    {
+        const string a = "attack-pattern--00000000-0000-4000-8000-000000000520";
+        const string b = "attack-pattern--00000000-0000-4000-8000-000000000521";
+        var json = AcmeBundle(string.Join(",",
+            AcmeTactic("x-mitre-tactic--00000000-0000-4000-8000-000000000510", "AT-1", "Entry", "2026-01-01T00:00:00.000Z"),
+            AcmeTechnique(a, "AT-100", "Front Door"),
+            AcmeTechnique(b, "AT-101", "Back Door"),
+            $$"""{ "type": "relationship", "id": "relationship--00000000-0000-4000-8000-000000000530", "relationship_type": "subtechnique-of", "source_ref": "{{a}}", "target_ref": "{{b}}" }""",
+            $$"""{ "type": "relationship", "id": "relationship--00000000-0000-4000-8000-000000000531", "relationship_type": "subtechnique-of", "source_ref": "{{b}}", "target_ref": "{{a}}" }"""));
+
+        var release = Read(json, null, TechniqueFrameworks.Custom());
+
+        var front = release.Techniques.Single(t => t.ExternalId == "AT-100");
+        var back = release.Techniques.Single(t => t.ExternalId == "AT-101");
+        Assert.Same(back, front.Parent);
+        Assert.Null(back.Parent);
+    }
 }

@@ -19,6 +19,14 @@ using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Xunit;
 using Xunit.Sdk;
+using NSubstitute.ExceptionExtensions;
+using CreateProjectCommand = Caster.Api.Client.CreateProjectCommand;
+using CreateDirectoryCommand = Caster.Api.Client.CreateDirectoryCommand;
+using CreateFileCommand = Caster.Api.Client.CreateFileCommand;
+using FileParameter = Caster.Api.Client.FileParameter;
+using ImportDirectoryResult = Caster.Api.Client.ImportDirectoryResult;
+using Directory = Caster.Api.Client.Directory;
+using Project = Caster.Api.Client.Project;
 
 namespace Blueprint.Api.Tests.Services;
 
@@ -220,6 +228,49 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         AssertNothingEnqueued();
     }
 
+    /// <summary>Moves and events can be saved out of order, but a push is a 409 naming each problem and
+    /// nothing is marked or queued.</summary>
+    [Theory]
+    [InlineData(0, 0, 0, "Move 0 and Move 1 start at the same time.")]
+    [InlineData(600, 0, 700, "Move 1 starts before Move 0.")]
+    [InlineData(0, 600, -5, "1 scenario event starts before Move 0, so it is in no move.")]
+    public async Task Push_WhenTheMovesOrEventsAreOutOfOrder_Is409AndNamesTheProblem(
+        int firstStart, int secondStart, int eventStart, string expected)
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        await Seed(msel);
+        await Seed(TestData.Move(msel.Id, moveNumber: 0, deltaSeconds: firstStart));
+        await Seed(TestData.Move(msel.Id, moveNumber: 1, deltaSeconds: secondStart));
+        await Seed(TestData.ScenarioEvent(msel.Id, deltaSeconds: eventStart));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        var title = (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.StartsWith("Fix the moves before pushing.", title);
+        Assert.Contains(expected, title);
+        Assert.Equal(
+            MselItemStatus.Approved,
+            (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).Status);
+        AssertNothingEnqueued();
+    }
+
+    /// <summary>Moves in order, with every event in a move, push.</summary>
+    [Fact]
+    public async Task Push_WhenTheMovesAreInOrderAndEveryEventIsInAMove_Is200()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        await Seed(msel);
+        await Seed(TestData.Move(msel.Id, moveNumber: 0, deltaSeconds: 0));
+        await Seed(TestData.Move(msel.Id, moveNumber: 1, deltaSeconds: 600));
+        await Seed(TestData.ScenarioEvent(msel.Id, deltaSeconds: 700));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     /// <summary>Push when a user is on two CITE teams is a 409 that names them, for the planner to fix.</summary>
     [Fact]
     public async Task Push_WhenAUserIsOnTwoCiteTeams_Is409AndNamesThem()
@@ -393,6 +444,57 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         Assert.Equal(
             $"MSEL {msel.Id} uses Caster but has no Caster directory selected.",
             (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        AssertNothingEnqueued();
+    }
+
+    /// <summary>
+    /// A MSEL with no directory but a copy of one has the copy imported as the pusher, with the pusher's own Caster
+    /// token, before the push is queued: a new project, the directory above, its shared file, and the archive into
+    /// the directory, which the MSEL then links and the push deploys.
+    /// </summary>
+    [Fact]
+    public async Task Push_OfACasterMselWithOnlyACopy_ImportsItAsThePusherAndLinksTheDirectory()
+    {
+        var msel = await SeedCasterMsel(m => m.CasterDirectoryId = null);
+        await Seed(TestData.MselCasterExport(msel.Id));
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var (projectId, rootId, directoryId) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        Factory.Caster.CreateProjectAsync(Arg.Is<CreateProjectCommand>(c => c.Name == "Topology"), Arg.Any<CancellationToken>())
+            .Returns(new Project { Id = projectId, Name = "Topology" });
+        Factory.Caster.CreateDirectoryAsync(Arg.Is<CreateDirectoryCommand>(c => c.ParentId == null), Arg.Any<CancellationToken>())
+            .Returns(new Directory { Id = rootId, Name = "Root", ProjectId = projectId });
+        Factory.Caster.CreateDirectoryAsync(Arg.Is<CreateDirectoryCommand>(c => c.ParentId == rootId), Arg.Any<CancellationToken>())
+            .Returns(new Directory { Id = directoryId, Name = "Range", ProjectId = projectId, ParentId = rootId });
+        Factory.Caster.ImportDirectoryAsync(directoryId, false, Arg.Any<FileParameter>(), Arg.Any<CancellationToken>())
+            .Returns(new ImportDirectoryResult { LockedFiles = [] });
+        Factory.Caster.ShowsDirectory(directoryId);
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(directoryId, (await Read<Msel>(response)).CasterDirectoryId);
+        Assert.Equal(directoryId, (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).CasterDirectoryId);
+        await Factory.Caster.Received(1).CreateFileAsync(
+            Arg.Is<CreateFileCommand>(c => c.DirectoryId == rootId && c.Name == "providers.tf"), Arg.Any<CancellationToken>());
+        Assert.True(Enqueued(msel.Id).IsPush);
+    }
+
+    /// <summary>The import runs as the pusher, so a pusher Caster will not let create a project gets a 403, and nothing is pushed.</summary>
+    [Fact]
+    public async Task Push_OfACasterMselWithOnlyACopy_ByAPusherCasterRefuses_Is403AndEnqueuesNothing()
+    {
+        var msel = await SeedCasterMsel(m => m.CasterDirectoryId = null);
+        await Seed(TestData.MselCasterExport(msel.Id));
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        Factory.Caster.CreateProjectAsync(Arg.Any<CreateProjectCommand>(), Arg.Any<CancellationToken>())
+            .Throws(CasterArrangements.Answering(HttpStatusCode.Forbidden));
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct));
+        Assert.Null(stored.CasterDirectoryId);
+        Assert.NotEqual(MselItemStatus.Pushing, stored.Status);
         AssertNothingEnqueued();
     }
 
@@ -656,6 +758,20 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations/caster/retry", null, Ct);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        AssertNothingEnqueued();
+    }
+
+    [Fact]
+    public async Task RetryCaster_OfAMselWithNeitherADirectoryNorACopy_Is409()
+    {
+        var msel = await SeedFailedCasterPush(m => m.CasterDirectoryId = null);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations/caster/retry", null, Ct);
+
+        Assert.Equal(
+            "Only a push that failed at its Caster step can retry Caster.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
         AssertNothingEnqueued();
     }
 

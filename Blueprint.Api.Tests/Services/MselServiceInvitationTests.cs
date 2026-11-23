@@ -1108,6 +1108,23 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    /// <summary>A launch pushes, so a template whose moves share a start time is a 409 for the planner and
+    /// the invitation is not used up.</summary>
+    [Fact]
+    public async Task Launch_OfATemplateWhoseMovesShareAStart_Is409AndKeepsTheInvitation()
+    {
+        var template = await SeedTemplate();
+        await Seed(TestData.Move(template.Id, moveNumber: 0, deltaSeconds: 0));
+        await Seed(TestData.Move(template.Id, moveNumber: 1, deltaSeconds: 0));
+        var team = await SeedTeam(template);
+        await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
     [Fact]
     public async Task Launch_WithAValidInvitationOnlyToAnotherTemplate_Is403()
     {
@@ -1238,6 +1255,23 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
             (await ReadBack(rb => rb.Teams.SingleAsync(t => t.MselId == launched.Id, Ct))).CasterTeamVariable);
     }
 
+    /// <summary>The launched MSEL deploys the template's directory, and its invitee may not read the template's files, so the copy stays behind.</summary>
+    [Fact]
+    public async Task Launch_OfACasterTemplateWithACopy_LeavesTheCopyBehind()
+    {
+        var template = await SeedTemplate(CasterSetup(Guid.NewGuid()));
+        await Seed(TestData.MselCasterExport(template.Id));
+        var team = await SeedTeam(template);
+        await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var launched = await Read<Msel>(await Launch(ClientWithEmail(actor, "a@example.test"), template.Id));
+
+        await using var db = NewContext();
+        Assert.False(await db.MselCasterExports.AnyAsync(e => e.MselId == launched.Id, Ct));
+        Assert.True(await db.MselCasterExports.AnyAsync(e => e.MselId == template.Id, Ct));
+    }
+
     /// <summary>A Caster template that cannot be pushed is refused before the invitation is used.</summary>
     [Fact]
     public async Task Launch_OfACasterTemplateWithoutPlayer_Is409AndSpendsNoSeat()
@@ -1259,6 +1293,33 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         await using var db = NewContext();
         Assert.Equal(0, (await db.Invitations.SingleAsync(i => i.Id == invitation.Id, Ct)).UserCount);
         Assert.Equal(1, await db.Msels.CountAsync(Ct));
+        Assert.Empty(DrainIntegrationQueue());
+    }
+
+    /// <summary>
+    /// A launch pushes as the service account, which never imports a copy of a directory, so a template with only a
+    /// copy is refused until an author imports it into Caster.
+    /// </summary>
+    [Fact]
+    public async Task Launch_OfACasterTemplateWithOnlyACopyOfItsDirectory_Is409AndSpendsNoSeat()
+    {
+        var template = await SeedTemplate(m =>
+        {
+            CasterSetup(Guid.NewGuid())(m);
+            m.CasterDirectoryId = null;
+        });
+        await Seed(TestData.MselCasterExport(template.Id));
+        var team = await SeedTeam(template);
+        var invitation = await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        Assert.Equal(
+            $"MSEL {template.Id} has only a copy of its Caster directory. Use Import into Caster on its Caster tab before launching it.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        await using var db = NewContext();
+        Assert.Equal(0, (await db.Invitations.SingleAsync(i => i.Id == invitation.Id, Ct)).UserCount);
         Assert.Empty(DrainIntegrationQueue());
     }
 

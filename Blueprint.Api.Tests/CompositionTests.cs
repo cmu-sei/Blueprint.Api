@@ -8,9 +8,11 @@ using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Blueprint.Api.Data;
+using Blueprint.Api.Hubs;
 using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -125,6 +127,16 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
         using var scope = Factory.Services.CreateScope();
 
         Assert.IsType<InjectTypeService>(scope.ServiceProvider.GetRequiredService<IInjectTypeService>());
+    }
+
+    /// <summary>MainHub's sends are not waited for, so a broadcast never holds up the request that
+    /// caused it.</summary>
+    [Fact]
+    public void MainHubsSends_DoNotBlock()
+    {
+        var manager = Factory.Services.GetRequiredService<HubLifetimeManager<MainHub>>();
+
+        Assert.IsType<NonBlockingHubLifetimeManager<MainHub>>(manager);
     }
 
     /// <remarks>

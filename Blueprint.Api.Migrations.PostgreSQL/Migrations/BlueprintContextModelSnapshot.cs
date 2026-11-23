@@ -1749,6 +1749,32 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.ToTable("msel_teams");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselTechniqueEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<Guid>("MselId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("msel_id");
+
+                    b.Property<Guid>("TechniqueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("technique_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TechniqueId");
+
+                    b.HasIndex("MselId", "TechniqueId")
+                        .IsUnique();
+
+                    b.ToTable("msel_techniques");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselUnitEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2423,6 +2449,290 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                         .IsUnique();
 
                     b.ToTable("team_users");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueCountermeasureEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<string>("DefensiveTactic")
+                        .HasColumnType("text")
+                        .HasColumnName("defensive_tactic");
+
+                    b.Property<Guid>("DefensiveTechniqueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("defensive_technique_id");
+
+                    b.Property<string>("OffensiveExternalId")
+                        .HasColumnType("text")
+                        .HasColumnName("offensive_external_id");
+
+                    b.Property<string>("Rationale")
+                        .HasColumnType("text")
+                        .HasColumnName("rationale");
+
+                    b.Property<Guid>("ReleaseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("release_id");
+
+                    b.Property<int>("Weight")
+                        .HasColumnType("integer")
+                        .HasColumnName("weight");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DefensiveTechniqueId");
+
+                    b.HasIndex("ReleaseId", "OffensiveExternalId", "DefensiveTechniqueId")
+                        .IsUnique();
+
+                    b.ToTable("technique_countermeasures");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("ExternalId")
+                        .HasColumnType("text")
+                        .HasColumnName("external_id");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parent_id");
+
+                    b.Property<string>("Platforms")
+                        .HasColumnType("text")
+                        .HasColumnName("platforms");
+
+                    b.Property<string>("ReferenceLinks")
+                        .HasColumnType("text")
+                        .HasColumnName("reference_links");
+
+                    b.Property<string>("StixId")
+                        .HasColumnType("text")
+                        .HasColumnName("stix_id");
+
+                    b.Property<string>("Tactics")
+                        .HasColumnType("text")
+                        .HasColumnName("tactics");
+
+                    b.Property<Guid>("TechniqueReleaseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("technique_release_id");
+
+                    b.Property<string>("Url")
+                        .HasColumnType("text")
+                        .HasColumnName("url");
+
+                    b.Property<string>("Weaknesses")
+                        .HasColumnType("text")
+                        .HasColumnName("weaknesses");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParentId");
+
+                    b.HasIndex("TechniqueReleaseId", "ExternalId")
+                        .IsUnique();
+
+                    b.ToTable("techniques");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueFrameworkEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<DateTime?>("DateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_modified");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Domain")
+                        .HasColumnType("text")
+                        .HasColumnName("domain");
+
+                    b.Property<int>("Format")
+                        .HasColumnType("integer")
+                        .HasColumnName("format");
+
+                    b.Property<bool>("IsDefensive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_defensive");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modified_by");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Settings")
+                        .HasColumnType("text")
+                        .HasColumnName("settings");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Domain")
+                        .IsUnique();
+
+                    b.ToTable("technique_frameworks");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueReleaseEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<DateTime?>("DateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_modified");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Domain")
+                        .HasColumnType("text")
+                        .HasColumnName("domain");
+
+                    b.Property<string>("GroupLabel")
+                        .HasColumnType("text")
+                        .HasColumnName("group_label");
+
+                    b.Property<bool>("IsDefensive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_defensive");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modified_by");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Notice")
+                        .HasColumnType("text")
+                        .HasColumnName("notice");
+
+                    b.Property<DateTime?>("ReleaseDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("release_date");
+
+                    b.Property<string>("Source")
+                        .HasColumnType("text")
+                        .HasColumnName("source");
+
+                    b.Property<string>("SourceUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("source_url");
+
+                    b.Property<Guid?>("TechniqueFrameworkId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("technique_framework_id");
+
+                    b.Property<string>("TermsUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("terms_url");
+
+                    b.Property<string>("Version")
+                        .HasColumnType("text")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TechniqueFrameworkId");
+
+                    b.HasIndex("Domain", "Version")
+                        .IsUnique();
+
+                    b.ToTable("technique_releases");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueTacticEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("display_order");
+
+                    b.Property<string>("ExternalId")
+                        .HasColumnType("text")
+                        .HasColumnName("external_id");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<string>("ShortName")
+                        .HasColumnType("text")
+                        .HasColumnName("short_name");
+
+                    b.Property<string>("StixId")
+                        .HasColumnType("text")
+                        .HasColumnName("stix_id");
+
+                    b.Property<Guid>("TechniqueReleaseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("technique_release_id");
+
+                    b.Property<string>("Url")
+                        .HasColumnType("text")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TechniqueReleaseId", "ExternalId")
+                        .IsUnique();
+
+                    b.ToTable("technique_tactics");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.UnitEntity", b =>
@@ -3133,6 +3443,25 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Team");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselTechniqueEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
+                        .WithMany("MselTechniques")
+                        .HasForeignKey("MselId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blueprint.Api.Data.Models.TechniqueEntity", "Technique")
+                        .WithMany()
+                        .HasForeignKey("TechniqueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Msel");
+
+                    b.Navigation("Technique");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselUnitEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.MselEntity", "Msel")
@@ -3277,6 +3606,64 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Team");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueCountermeasureEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.TechniqueEntity", "DefensiveTechnique")
+                        .WithMany()
+                        .HasForeignKey("DefensiveTechniqueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blueprint.Api.Data.Models.TechniqueReleaseEntity", "Release")
+                        .WithMany("Countermeasures")
+                        .HasForeignKey("ReleaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DefensiveTechnique");
+
+                    b.Navigation("Release");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.TechniqueEntity", "Parent")
+                        .WithMany("SubTechniques")
+                        .HasForeignKey("ParentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Blueprint.Api.Data.Models.TechniqueReleaseEntity", "TechniqueRelease")
+                        .WithMany("Techniques")
+                        .HasForeignKey("TechniqueReleaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Parent");
+
+                    b.Navigation("TechniqueRelease");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueReleaseEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.TechniqueFrameworkEntity", "TechniqueFramework")
+                        .WithMany("Releases")
+                        .HasForeignKey("TechniqueFrameworkId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("TechniqueFramework");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueTacticEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.TechniqueReleaseEntity", "TechniqueRelease")
+                        .WithMany("Tactics")
+                        .HasForeignKey("TechniqueReleaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("TechniqueRelease");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.UnitUserEntity", b =>
@@ -3440,6 +3827,8 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
 
                     b.Navigation("MselCompetencies");
 
+                    b.Navigation("MselTechniques");
+
                     b.Navigation("MselUnits");
 
                     b.Navigation("Organizations");
@@ -3506,6 +3895,25 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("TeamUsers");
 
                     b.Navigation("UserTeamRoles");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueEntity", b =>
+                {
+                    b.Navigation("SubTechniques");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueFrameworkEntity", b =>
+                {
+                    b.Navigation("Releases");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.TechniqueReleaseEntity", b =>
+                {
+                    b.Navigation("Countermeasures");
+
+                    b.Navigation("Tactics");
+
+                    b.Navigation("Techniques");
                 });
 
             modelBuilder.Entity("Blueprint.Api.Data.Models.UnitEntity", b =>

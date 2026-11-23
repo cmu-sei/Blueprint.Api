@@ -1,0 +1,557 @@
+// Copyright 2026 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text;
+using System.Threading.Tasks;
+using Blueprint.Api.Data.Enumerations;
+using Blueprint.Api.Data.Models;
+using Blueprint.Api.Services;
+using Blueprint.Api.Tests.Support;
+using Blueprint.Api.ViewModels;
+using Microsoft.EntityFrameworkCore;
+using Xunit;
+
+namespace Blueprint.Api.Tests.Controllers;
+
+/// <summary>
+/// Technique mappings: imported onto a release whose framework defines them (<c>TechniqueReleaseController</c>),
+/// then read per source technique and for a MSEL's whole attack pool. The fixtures are the test D3FEND ones.
+/// </summary>
+/// <remarks>401 and 403 for these routes live in <see cref="RouteAuthorizationTests"/>.</remarks>
+public class TechniqueCountermeasureEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
+    : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
+{
+    // ---------------------------------------------------------------------------------------------
+    // Import
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Import_WithManageCompetencyFrameworks_Is201_CountingRowsPairsAndSkips()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageCompetencyFrameworks).SeedAsync();
+
+        var response = await Upload(Client(actor), d3fend.Id, D3fendMappings.Standard());
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var result = await Read<TechniqueCountermeasureImport>(response);
+        Assert.Equal(d3fend.Id, result.TechniqueReleaseId);
+        Assert.Equal(9, result.RowsRead);
+        Assert.Equal(5, result.PairsStored);
+        // Network Traffic Filtering is not a technique of this release
+        Assert.Equal(1, result.PairsSkipped);
+        Assert.Equal(4, result.OffensiveTechniqueCount);
+        var stored = await ReadBack(rb => rb.TechniqueCountermeasures
+            .Where(c => c.ReleaseId == d3fend.Id)
+            .Include(c => c.DefensiveTechnique)
+            .ToListAsync(Ct));
+        var pair = stored.Single(c => c.OffensiveExternalId == "T1003.005" && c.DefensiveTechnique.ExternalId == "D3-CH");
+        Assert.Equal(3, pair.Weight);
+        Assert.Equal("Harden", pair.DefensiveTactic);
+        Assert.Equal("hardens Credential; T1003.005 accesses Encrypted Credential", pair.Rationale);
+    }
+
+    [Fact]
+    public async Task Import_CountsOnTheRelease()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+
+        var release = await Get<TechniqueRelease>(RootClient, $"api/techniquereleases/{d3fend.Id}");
+
+        Assert.Equal(5, release.CountermeasureCount);
+    }
+
+    /// <summary>A re-import replaces the release's rows rather than adding to them or tripping the unique index.</summary>
+    [Fact]
+    public async Task Import_Again_ReplacesTheReleasesMappings()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+        var smaller = D3fendMappings.File(
+            D3fendMappings.Row("T1059", "Command and Scripting Interpreter", null, "enterprise", "FileAnalysis", "File Analysis", "Detect",
+                "analyzes", "File", "executes", "Executable Script"));
+
+        var response = await Upload(RootClient, d3fend.Id, smaller);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(1, (await Read<TechniqueCountermeasureImport>(response)).PairsStored);
+        var stored = await ReadBack(rb => rb.TechniqueCountermeasures.Where(c => c.ReleaseId == d3fend.Id).Select(c => c.OffensiveExternalId).ToListAsync(Ct));
+        Assert.Equal(["T1059"], stored);
+    }
+
+    /// <summary>
+    /// Targets match without regard to case, so two written differently can name one technique: they are one
+    /// mapping weighing both, not two rows that trip the unique index.
+    /// </summary>
+    [Fact]
+    public async Task Import_OfPairsWhoseTargetsNameOneTechnique_StoresOneMapping()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        var file = D3fendMappings.File(
+            D3fendMappings.Row("T1059", "Command and Scripting Interpreter", null, "enterprise", "FileAnalysis", "File Analysis", "Detect",
+                "analyzes", "File", "executes", "Executable Script"),
+            D3fendMappings.Row("T1059", "Command and Scripting Interpreter", null, "enterprise", "fileanalysis", "File Analysis", "Detect",
+                "analyzes", "Document File", "reads", "Document File"));
+
+        var response = await Upload(RootClient, d3fend.Id, file);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(1, (await Read<TechniqueCountermeasureImport>(response)).PairsStored);
+        var stored = Assert.Single(await ReadBack(rb => rb.TechniqueCountermeasures.Where(c => c.ReleaseId == d3fend.Id).ToListAsync(Ct)));
+        Assert.Equal(Technique(d3fend, "D3-FA").Id, stored.DefensiveTechniqueId);
+        Assert.Equal(2, stored.Weight);
+    }
+
+    [Fact]
+    public async Task Import_OfAFileThatIsNotTheMappings_Is400()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0");
+
+        var response = await Upload(RootClient, d3fend.Id, """{"type":"bundle","objects":[]}""");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("not a mappings file", await response.Content.ReadAsStringAsync(Ct));
+        Assert.False(await ReadBack(rb => rb.TechniqueCountermeasures.AnyAsync(c => c.ReleaseId == d3fend.Id, Ct)));
+    }
+
+    /// <summary>The import rule is "the release's framework defines mappings", whatever its domain.</summary>
+    [Fact]
+    public async Task Import_OntoAReleaseOfAnyFrameworkThatDefinesMappings_Is201_AndServesTheMsel()
+    {
+        var attack = await SeedRelease("1.0");
+        var other = TechniqueFrameworks.D3fend();
+        other.Id = Guid.NewGuid();
+        other.Name = "Other defences";
+        other.Domain = "other-defend";
+        await Seed(other);
+        using var ontology = System.Text.Json.JsonDocument.Parse(D3fendOntologies.Ontology("2.0"));
+        var defensive = JsonLdOntologyReader.Read(ontology.RootElement, null, other);
+        await Seed(defensive);
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+
+        var response = await Upload(RootClient, defensive.Id, D3fendMappings.Standard());
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
+        Assert.Equal(defensive.Id, result.TechniqueReleaseId);
+        Assert.Equal(["D3-FA"], Assert.Single(result.Techniques).Countermeasures.Select(c => c.DefensiveTechnique.ExternalId));
+    }
+
+    [Fact]
+    public async Task Import_OntoAReleaseWhoseFrameworkDefinesNoMappings_Is400()
+    {
+        var attack = await SeedRelease("1.0");
+
+        var response = await Upload(RootClient, attack.Id, D3fendMappings.Standard());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("framework defines no mappings to import", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    /// <summary>A release from before frameworks has no definition to read the file with until it is given one.</summary>
+    [Fact]
+    public async Task Import_OntoAReleaseWithNoFramework_Is400_AskingForOne()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0", withFramework: false);
+
+        var response = await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("has no technique framework", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    [Fact]
+    public async Task Import_OntoAReleaseThatIsNotThere_Is404()
+    {
+        var response = await Upload(RootClient, Guid.NewGuid(), D3fendMappings.Standard());
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>The mappings file is not a release; the release endpoint says where it goes.</summary>
+    [Fact]
+    public async Task ImportRelease_OfTheMappingsFile_Is400_SayingToImportItOntoARelease()
+    {
+        using var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(Encoding.UTF8.GetBytes(D3fendMappings.Standard()));
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Add(file, "ToUpload", "d3fend-full-mappings.json");
+
+        var response = await RootClient.PostAsync("api/techniquereleases/import", content, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("import the mappings onto it", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    [Fact]
+    public async Task DeleteRelease_TakesItsMappingsWithIt()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+
+        var response = await RootClient.DeleteAsync($"api/techniquereleases/{d3fend.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.False(await ReadBack(rb => rb.TechniqueCountermeasures.AnyAsync(c => c.ReleaseId == d3fend.Id, Ct)));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // One technique's countermeasures, from a release
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>Mappings are reference data like the releases, so any signed-in user reads them.</summary>
+    [Fact]
+    public async Task GetByRelease_ForAnyUser_RanksATechniquesCountermeasuresByWeight()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+        var actor = await Actor().SeedAsync();
+
+        var list = await Get<List<TechniqueCountermeasure>>(Client(actor), $"api/techniquereleases/{d3fend.Id}/countermeasures?offensiveId=T1003.005");
+
+        Assert.Equal(["D3-CH", "D3-CBAN"], list.Select(c => c.DefensiveTechnique.ExternalId));
+        Assert.Equal([3, 1], list.Select(c => c.Weight));
+        Assert.All(list, c => Assert.False(c.InheritedFromParent));
+        Assert.All(list, c => Assert.Equal("T1003.005", c.OffensiveExternalId));
+        Assert.All(list, c => Assert.Equal(d3fend.Id, c.TechniqueReleaseId));
+        var hardening = list[0];
+        Assert.Equal(Technique(d3fend, "D3-CH").Id, hardening.DefensiveTechniqueId);
+        Assert.Equal("d3fend", hardening.DefensiveTechnique.Domain);
+        Assert.True(hardening.DefensiveTechnique.IsDefensive);
+        Assert.Equal("Credential Hardening", hardening.DefensiveTechnique.Name);
+        Assert.Equal("Harden", hardening.DefensiveTactic);
+        Assert.Equal("hardens Credential; T1003.005 accesses Encrypted Credential", hardening.Rationale);
+    }
+
+    /// <summary>
+    /// D3FEND maps many techniques only at the parent, so a sub-technique with none of its own is answered with the
+    /// parent an attack release imported it under.
+    /// </summary>
+    [Fact]
+    public async Task GetByRelease_ForASubTechniqueWithoutMappings_AnswersWithItsParents_Flagged()
+    {
+        await SeedRelease("1.0");
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+
+        var list = await Get<List<TechniqueCountermeasure>>(RootClient, $"api/techniquereleases/{d3fend.Id}/countermeasures?offensiveId=T1059.001");
+
+        var analysis = Assert.Single(list);
+        Assert.Equal("D3-FA", analysis.DefensiveTechnique.ExternalId);
+        Assert.Equal("T1059", analysis.OffensiveExternalId);
+        Assert.True(analysis.InheritedFromParent);
+    }
+
+    /// <summary>The newest attack release decides: where it makes the technique top-level, nothing is inherited.</summary>
+    [Fact]
+    public async Task GetByRelease_ForATechniqueTheNewestAttackReleaseMakesTopLevel_InheritsNothing()
+    {
+        await SeedRelease("1.0");
+        var newer = await TechniqueFrameworks.ReadAsync(TechniqueBundles.Enterprise("2.0").Replace("\"subtechnique-of\"", "\"related-to\""));
+        newer.ReleaseDate = DateTime.UtcNow;
+        await Seed(newer);
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+
+        Assert.Empty(await Get<List<TechniqueCountermeasure>>(RootClient, $"api/techniquereleases/{d3fend.Id}/countermeasures?offensiveId=T1059.001"));
+    }
+
+    /// <summary>The parent is the one imported, not read from the id: with no attack release holding T1059.001 there is none.</summary>
+    [Fact]
+    public async Task GetByRelease_ForASubTechniqueNoAttackReleaseHolds_IsEmpty()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+
+        Assert.Empty(await Get<List<TechniqueCountermeasure>>(RootClient, $"api/techniquereleases/{d3fend.Id}/countermeasures?offensiveId=T1059.001"));
+    }
+
+    [Fact]
+    public async Task GetByRelease_ForATechniqueNothingCounters_IsEmpty()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+
+        Assert.Empty(await Get<List<TechniqueCountermeasure>>(RootClient, $"api/techniquereleases/{d3fend.Id}/countermeasures?offensiveId=T1053"));
+        // a technique, not a sub-technique: there is no parent to fall back to
+        Assert.Empty(await Get<List<TechniqueCountermeasure>>(RootClient, $"api/techniquereleases/{d3fend.Id}/countermeasures?offensiveId=AML.T0000"));
+    }
+
+    [Fact]
+    public async Task GetByRelease_WithoutAnId_ListsEveryMapping()
+    {
+        var d3fend = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, d3fend.Id, D3fendMappings.Standard());
+
+        var list = await Get<List<TechniqueCountermeasure>>(RootClient, $"api/techniquereleases/{d3fend.Id}/countermeasures");
+
+        Assert.Equal(["T0800", "T1003", "T1003.005", "T1003.005", "T1059"], list.Select(c => c.OffensiveExternalId));
+        Assert.Equal(["D3-CH", "D3-CBAN"], list.Where(c => c.OffensiveExternalId == "T1003.005").Select(c => c.DefensiveTechnique.ExternalId));
+    }
+
+    [Fact]
+    public async Task GetByRelease_OfAReleaseThatIsNotThere_Is404()
+    {
+        var response = await RootClient.GetAsync($"api/techniquereleases/{Guid.NewGuid()}/countermeasures?offensiveId=T1003", Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // A MSEL's whole attack pool
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>The MSEL's defensive techniques pin a D3FEND release, so its mappings are the ones offered - not a newer release's.</summary>
+    [Fact]
+    public async Task GetByMsel_ForAViewer_UsesThePinnedDefensiveRelease_AndGroupsByTechnique()
+    {
+        var attack = await SeedRelease("1.0");
+        var pinned = await SeedD3fendRelease("1.6.0");
+        var newer = await SeedD3fendRelease("1.7.0");
+        await Upload(RootClient, pinned.Id, D3fendMappings.Standard());
+        await Upload(RootClient, newer.Id, D3fendMappings.Standard());
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1003").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1059.001").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1053").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(pinned, "D3-CH").Id) { Id = Guid.NewGuid() });
+        var viewer = await Actor().OnMsel(msel, MselRole.Viewer).SeedAsync();
+
+        var result = await Get<MselCountermeasures>(Client(viewer), $"api/msels/{msel.Id}/techniques/countermeasures");
+
+        Assert.Equal(msel.Id, result.MselId);
+        Assert.Equal(pinned.Id, result.TechniqueReleaseId);
+        Assert.True(result.HasMappings);
+        Assert.Equal(["T1003", "T1053", "T1059.001"], result.Techniques.Select(t => t.OffensiveExternalId));
+        var dumping = result.Techniques[0];
+        Assert.Equal(Technique(attack, "T1003").Id, dumping.TechniqueId);
+        Assert.Null(dumping.InheritedFrom);
+        var hardening = Assert.Single(dumping.Countermeasures);
+        Assert.Equal("D3-CH", hardening.DefensiveTechnique.ExternalId);
+        Assert.False(hardening.InheritedFromParent);
+        Assert.Equal(pinned.Id, hardening.TechniqueReleaseId);
+        Assert.Equal(Technique(pinned, "D3-CH").Id, hardening.DefensiveTechniqueId);
+        Assert.Equal("hardens Credential; T1003 may access Credential", hardening.Rationale);
+        Assert.Empty(result.Techniques[1].Countermeasures);
+        Assert.Null(result.Techniques[1].InheritedFrom);
+        var interpreter = result.Techniques[2];
+        Assert.Equal("T1059", interpreter.InheritedFrom);
+        Assert.Equal(["D3-FA"], interpreter.Countermeasures.Select(c => c.DefensiveTechnique.ExternalId));
+        Assert.All(interpreter.Countermeasures, c => Assert.True(c.InheritedFromParent));
+    }
+
+    [Fact]
+    public async Task GetByMsel_WithoutDefensiveTechniques_UsesTheNewestD3fendReleaseWithMappings()
+    {
+        var attack = await SeedRelease("1.0");
+        var withMappings = await SeedD3fendRelease("1.6.0");
+        await SeedD3fendRelease("1.7.0");
+        await Upload(RootClient, withMappings.Id, D3fendMappings.Standard());
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
+
+        Assert.Equal(withMappings.Id, result.TechniqueReleaseId);
+        Assert.True(result.HasMappings);
+        Assert.Equal(["D3-FA"], Assert.Single(result.Techniques).Countermeasures.Select(c => c.DefensiveTechnique.ExternalId));
+    }
+
+    /// <summary>
+    /// A MSEL pooling defensive techniques from two releases reads the mappings of each that has them, whichever
+    /// the pool lists first.
+    /// </summary>
+    [Fact]
+    public async Task GetByMsel_PoolingTwoDefensiveReleases_ReadsTheOneWithMappings()
+    {
+        var attack = await SeedRelease("1.0");
+        var withMappings = await SeedD3fendRelease("1.6.0");
+        var without = await SeedD3fendRelease("1.7.0");
+        await Upload(RootClient, withMappings.Id, D3fendMappings.Standard());
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(without, "D3-CH").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(withMappings, "D3-FA").Id) { Id = Guid.NewGuid() });
+
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
+
+        Assert.Equal(withMappings.Id, result.TechniqueReleaseId);
+        Assert.True(result.HasMappings);
+        Assert.Equal(["D3-FA"], Assert.Single(result.Techniques).Countermeasures.Select(c => c.DefensiveTechnique.ExternalId));
+    }
+
+    /// <summary>
+    /// Each pooled defensive release falls back to the parent on its own: one release's direct mapping of a
+    /// sub-technique does not hide another's mapping of its parent.
+    /// </summary>
+    [Fact]
+    public async Task GetByMsel_PoolingTwoDefensiveReleases_InheritsFromTheOneWithoutADirectMapping()
+    {
+        var attack = await SeedRelease("1.0");
+        var direct = await SeedD3fendRelease("1.6.0");
+        var parentOnly = await SeedD3fendRelease("1.7.0");
+        await Upload(RootClient, direct.Id, D3fendMappings.File(
+            D3fendMappings.Row("T1059.001", "PowerShell", "T1059", "enterprise", "CredentialHardening", "Credential Hardening", "Harden",
+                "hardens", "Credential", "accesses", "Credential")));
+        // two paths to File Analysis, so the parent's mapping outweighs the direct one
+        await Upload(RootClient, parentOnly.Id, D3fendMappings.File(
+            D3fendMappings.Row("T1059", "Command and Scripting Interpreter", null, "enterprise", "FileAnalysis", "File Analysis", "Detect",
+                "analyzes", "File", "executes", "Script"),
+            D3fendMappings.Row("T1059", "Command and Scripting Interpreter", null, "enterprise", "FileAnalysis", "File Analysis", "Detect",
+                "analyzes", "File", "creates", "Executable File")));
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1059.001").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(direct, "D3-CH").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(parentOnly, "D3-FA").Id) { Id = Guid.NewGuid() });
+
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
+
+        var group = Assert.Single(result.Techniques);
+        Assert.Equal("T1059", group.InheritedFrom);
+        // ranked together by weight, the inherited mapping first
+        Assert.Equal(
+            [("D3-FA", true, 2), ("D3-CH", false, 1)],
+            group.Countermeasures.Select(c => (c.DefensiveTechnique.ExternalId, c.InheritedFromParent, c.Weight)));
+    }
+
+    /// <summary>A release with no date is not taken for the newest: Postgres would sort its null first.</summary>
+    [Fact]
+    public async Task GetByMsel_WithoutDefensiveTechniques_PrefersADatedReleaseToAnUndatedOne()
+    {
+        var attack = await SeedRelease("1.0");
+        await SeedFrameworks();
+        var undated = await TechniqueFrameworks.ReadAsync(D3fendOntologies.Ontology("1.7.0"));
+        undated.ReleaseDate = null;
+        await Seed(undated);
+        var dated = await SeedD3fendRelease("1.6.0");
+        await Upload(RootClient, undated.Id, D3fendMappings.Standard());
+        await Upload(RootClient, dated.Id, D3fendMappings.Standard());
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
+
+        Assert.Equal(dated.Id, result.TechniqueReleaseId);
+    }
+
+    /// <summary>A pinned release without mappings is still the one named, so the client can say which release wants them.</summary>
+    [Fact]
+    public async Task GetByMsel_WithAPinnedReleaseWithoutMappings_SaysSo()
+    {
+        var attack = await SeedRelease("1.0");
+        var older = await SeedD3fendRelease("1.6.0");
+        var pinned = await SeedD3fendRelease("1.7.0");
+        await Upload(RootClient, older.Id, D3fendMappings.Standard());
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(
+            new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() },
+            new MselTechniqueEntity(msel.Id, Technique(pinned, "D3-CH").Id) { Id = Guid.NewGuid() });
+
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
+
+        Assert.Equal(pinned.Id, result.TechniqueReleaseId);
+        Assert.False(result.HasMappings);
+        Assert.Empty(Assert.Single(result.Techniques).Countermeasures);
+    }
+
+    [Fact]
+    public async Task GetByMsel_WithNoD3fendRelease_NamesNone()
+    {
+        var attack = await SeedRelease("1.0");
+        var msel = TestData.Msel();
+        await Seed(msel);
+        await Seed(new MselTechniqueEntity(msel.Id, Technique(attack, "T1059").Id) { Id = Guid.NewGuid() });
+
+        var result = await Get<MselCountermeasures>(RootClient, $"api/msels/{msel.Id}/techniques/countermeasures");
+
+        Assert.Null(result.TechniqueReleaseId);
+        Assert.False(result.HasMappings);
+        Assert.Equal("T1059", Assert.Single(result.Techniques).OffensiveExternalId);
+    }
+
+    [Fact]
+    public async Task GetByMsel_IsForbiddenForAUserNotOnTheMsel()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var stranger = await Actor().SeedAsync();
+
+        var response = await Client(stranger).GetAsync($"api/msels/{msel.Id}/techniques/countermeasures", Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+
+    private bool _frameworksSeeded;
+
+    private async Task SeedFrameworks()
+    {
+        if (_frameworksSeeded)
+            return;
+        await Seed(TechniqueFrameworks.All().ToArray<object>());
+        _frameworksSeeded = true;
+    }
+
+    private async Task<TechniqueReleaseEntity> SeedRelease(string version)
+    {
+        await SeedFrameworks();
+        var release = await TechniqueFrameworks.ReadAsync(TechniqueBundles.Enterprise(version));
+        await Seed(release);
+        return release;
+    }
+
+    private async Task<TechniqueReleaseEntity> SeedD3fendRelease(string version, bool withFramework = true)
+    {
+        await SeedFrameworks();
+        var release = await TechniqueFrameworks.ReadAsync(D3fendOntologies.Ontology(version));
+        if (!withFramework)
+            release.TechniqueFrameworkId = null;
+        await Seed(release);
+        return release;
+    }
+
+    private static TechniqueEntity Technique(TechniqueReleaseEntity release, string externalId) =>
+        release.Techniques.Single(t => t.ExternalId == externalId);
+
+    /// <remarks>Awaited inside the <c>using</c>: <c>TestServer</c> reads the body during <c>SendAsync</c>.</remarks>
+    private async Task<HttpResponseMessage> Upload(HttpClient client, Guid releaseId, string json)
+    {
+        using var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(Encoding.UTF8.GetBytes(json));
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Add(file, "ToUpload", "d3fend-full-mappings.json");
+
+        return await client.PostAsync($"api/techniquereleases/{releaseId}/countermeasures", content, Ct);
+    }
+
+    private async Task<T> Get<T>(HttpClient client, string url)
+    {
+        var response = await client.GetAsync(url, Ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await Read<T>(response);
+    }
+
+    private async Task<T> Read<T>(HttpResponseMessage response) =>
+        await response.Content.ReadFromJsonAsync<T>(JsonOptions, Ct);
+}

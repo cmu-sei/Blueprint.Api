@@ -362,11 +362,16 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Contains("DataFieldService.GetAsync", failure.Detail);
     }
 
-    /// <summary>A data field's type goes out by its name, the address types included.</summary>
+    /// <summary>
+    /// A data field's type goes out by its name, the address and technique types included, so a client tells the
+    /// attack column from the defensive one.
+    /// </summary>
     [Theory]
     [InlineData(DataFieldType.IpAddress, "IpAddress")]
     [InlineData(DataFieldType.Network, "Network")]
-    public async Task Get_AnswersAnAddressTypeByItsName(DataFieldType dataType, string name)
+    [InlineData(DataFieldType.AttackTechnique, "AttackTechnique")]
+    [InlineData(DataFieldType.DefensiveTechnique, "DefensiveTechnique")]
+    public async Task Get_AnswersATypeByItsName(DataFieldType dataType, string name)
     {
         var msel = TestData.Msel();
         await Seed(msel);
@@ -422,7 +427,9 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     [Theory]
     [InlineData(DataFieldType.IpAddress)]
     [InlineData(DataFieldType.Network)]
-    public async Task Create_OfAnAddressField_StoresItsType(DataFieldType dataType)
+    [InlineData(DataFieldType.AttackTechnique)]
+    [InlineData(DataFieldType.DefensiveTechnique)]
+    public async Task Create_OfAnAddressOrTechniqueField_StoresItsType(DataFieldType dataType)
     {
         var msel = TestData.Msel();
         await Seed(msel);

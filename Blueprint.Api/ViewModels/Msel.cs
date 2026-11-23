@@ -91,5 +91,6 @@ namespace Blueprint.Api.ViewModels
         public ICollection<MselPage> Pages { get; set; } = new List<MselPage>();
         public virtual ICollection<Invitation> Invitations { get; set; } = new HashSet<Invitation>();
         public ICollection<MselCompetency> MselCompetencies { get; set; } = new List<MselCompetency>();
+        public ICollection<MselTechnique> MselTechniques { get; set; } = new List<MselTechnique>();
    }
 }

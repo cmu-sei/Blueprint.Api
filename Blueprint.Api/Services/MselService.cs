@@ -323,6 +323,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
+                .Include(m => m.MselTechniques)
                 .Include(m => m.Pages)
                 .Include(m => m.ScoringModel)
                 .ThenInclude(sm => sm.Categories)
@@ -470,6 +471,14 @@ namespace Blueprint.Api.Services
                 mselCompetency.MselId = mselEntity.Id;
                 mselCompetency.Msel = null;
                 mselCompetency.Competency = null;
+            }
+            // copy the MSEL's technique pool
+            foreach (var mselTechnique in mselEntity.MselTechniques)
+            {
+                mselTechnique.Id = Guid.NewGuid();
+                mselTechnique.MselId = mselEntity.Id;
+                mselTechnique.Msel = null;
+                mselTechnique.Technique = null;
             }
             // copy Gallery Cards
             foreach (var card in mselEntity.Cards)
@@ -2187,6 +2196,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
+                .Include(m => m.MselTechniques)
                 .Include(m => m.Pages)
                 .Include(m => m.ScoringModel)
                 .ThenInclude(sm => sm.Categories)
@@ -2347,6 +2357,52 @@ namespace Blueprint.Api.Services
                 MselScoringModelService.Validate(mselEntity.ScoringModel);
                 mselEntity.CiteScoringModelId = null;
                 mselEntity.CiteScoringModelName = null;
+            }
+            // A technique's id is the same on every installation that imported its release, so the pool carries
+            // over wherever that release is loaded. Drop the rest rather than fail the import.
+            foreach (var mselTechnique in mselEntity.MselTechniques)
+            {
+                mselTechnique.Msel = null;
+                mselTechnique.Technique = null;
+            }
+            // A pool holds a technique once; a file listing one twice (a hand-merged export) keeps the first.
+            var distinctTechniques = mselEntity.MselTechniques.DistinctBy(t => t.TechniqueId).ToList();
+            if (distinctTechniques.Count < mselEntity.MselTechniques.Count)
+            {
+                AddChange(result, "techniques", $"{mselEntity.MselTechniques.Count - distinctTechniques.Count} techniques were listed more than once; each was imported once.");
+                mselEntity.MselTechniques = distinctTechniques;
+            }
+            if (mselEntity.MselTechniques.Count > 0)
+            {
+                var fileTechniqueIds = mselEntity.MselTechniques.Select(t => t.TechniqueId).ToList();
+                var known = await _context.Techniques
+                    .Where(t => fileTechniqueIds.Contains(t.Id))
+                    .Select(t => new { t.Id, t.TechniqueReleaseId, t.TechniqueRelease.Domain, t.TechniqueRelease.Version, t.TechniqueRelease.ReleaseDate })
+                    .ToListAsync(ct);
+                var knownTechniqueIds = known.Select(t => t.Id).ToHashSet();
+                var missingTechniques = fileTechniqueIds.Count(id => !knownTechniqueIds.Contains(id));
+                if (missingTechniques > 0)
+                {
+                    mselEntity.MselTechniques = mselEntity.MselTechniques
+                        .Where(t => knownTechniqueIds.Contains(t.TechniqueId))
+                        .ToList();
+                    AddChange(result, "techniques", $"{missingTechniques} techniques were not imported because their release is not loaded here. Import the release, then add them to the MSEL.");
+                }
+
+                // A pool holds one release per domain, as adding to it checks. A file naming techniques of two keeps
+                // the release most of them are from (the newer on a tie) and drops the rest.
+                foreach (var domain in known.GroupBy(t => t.Domain).Where(g => g.Select(t => t.TechniqueReleaseId).Distinct().Count() > 1))
+                {
+                    var keep = domain
+                        .GroupBy(t => t.TechniqueReleaseId)
+                        .OrderByDescending(g => g.Count())
+                        .ThenByDescending(g => g.First().ReleaseDate.HasValue)
+                        .ThenByDescending(g => g.First().ReleaseDate)
+                        .First();
+                    var dropped = domain.Where(t => t.TechniqueReleaseId != keep.Key).Select(t => t.Id).ToHashSet();
+                    mselEntity.MselTechniques = mselEntity.MselTechniques.Where(t => !dropped.Contains(t.TechniqueId)).ToList();
+                    AddChange(result, "techniques", $"{dropped.Count} {domain.Key} techniques were not imported because they are from another release than the MSEL's other {domain.Key} techniques ({keep.First().Version}).");
+                }
             }
 
             // Validate and fix scoring model linkage if MSEL uses CITE integration.

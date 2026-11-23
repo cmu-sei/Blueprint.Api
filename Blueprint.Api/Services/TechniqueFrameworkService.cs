@@ -75,7 +75,7 @@ namespace Blueprint.Api.Services
             Apply(entity, framework);
             _context.TechniqueFrameworks.Add(entity);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning("Technique framework {FrameworkId} ({Domain}) created by {UserId}", entity.Id, entity.Domain, _user.GetId());
+            _logger.LogWarning("Technique framework {FrameworkId} created by {UserId}", entity.Id, _user.GetId());
 
             return await GetAsync(entity.Id, ct);
         }
@@ -99,7 +99,7 @@ namespace Blueprint.Api.Services
             entity.ModifiedBy = _user.GetId();
             entity.DateModified = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning("Technique framework {FrameworkId} ({Domain}) edited by {UserId}", entity.Id, entity.Domain, _user.GetId());
+            _logger.LogWarning("Technique framework {FrameworkId} edited by {UserId}", entity.Id, _user.GetId());
 
             return await GetAsync(id, ct);
         }
@@ -112,7 +112,7 @@ namespace Blueprint.Api.Services
             // its releases stay, with no framework
             _context.TechniqueFrameworks.Remove(entity);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning("Technique framework {FrameworkId} ({Domain}) deleted by {UserId}", entity.Id, entity.Domain, _user.GetId());
+            _logger.LogWarning("Technique framework {FrameworkId} deleted by {UserId}", entity.Id, _user.GetId());
             return true;
         }
 

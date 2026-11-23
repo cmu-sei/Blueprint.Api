@@ -206,8 +206,8 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             await _context.Database.CommitTransactionAsync(ct);
 
-            _logger.LogWarning("MSEL {MselId} {Domain} techniques upgraded to release {ReleaseId} by {UserId}: {Kept} kept, {Dropped} dropped",
-                mselId, release.Domain, techniqueReleaseId, _user.GetId(), result.Kept, result.Dropped.Count);
+            _logger.LogWarning("MSEL {MselId} techniques upgraded to release {ReleaseId} by {UserId}: {Kept} kept, {Dropped} dropped",
+                mselId, techniqueReleaseId, _user.GetId(), result.Kept, result.Dropped.Count);
             return result;
         }
 

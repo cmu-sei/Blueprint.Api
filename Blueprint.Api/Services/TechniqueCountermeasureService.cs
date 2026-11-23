@@ -131,8 +131,8 @@ namespace Blueprint.Api.Services
                 PairsSkipped = skipped,
                 OffensiveTechniqueCount = rows.Select(r => r.OffensiveExternalId).Distinct().Count()
             };
-            _logger.LogWarning("Mappings imported onto release {ReleaseId} ({Domain}) by {UserId}: {Rows} rows, {Pairs} pairs stored, {Skipped} skipped, {Sources} source techniques",
-                release.Id, release.Domain, _user.GetId(), result.RowsRead, result.PairsStored, result.PairsSkipped, result.OffensiveTechniqueCount);
+            _logger.LogWarning("Mappings imported onto release {ReleaseId} by {UserId}: {Rows} rows, {Pairs} pairs stored, {Skipped} skipped, {Sources} source techniques",
+                release.Id, _user.GetId(), result.RowsRead, result.PairsStored, result.PairsSkipped, result.OffensiveTechniqueCount);
             return result;
         }
 

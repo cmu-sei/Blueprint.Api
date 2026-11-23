@@ -1,6 +1,7 @@
 // Copyright 2026 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
+using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Services;
 using Xunit;
 
@@ -160,6 +161,37 @@ public class ArticleMarkingsTests
         Assert.Equal(("Tlp", "AMBER+STRICT"), ArticleMarkings.Clean("tlp", "tlp:amber+strict"));
         Assert.Equal(("Tlp", "CLEAR"), ArticleMarkings.Clean("Tlp", null));
         Assert.Equal(("Classification", new string('x', 120)), ArticleMarkings.Clean("Classification", new string('x', 200)));
+    }
+
+    [Theory]
+    [InlineData("green", "GREEN")]
+    [InlineData(" TLP:Amber+Strict ", "AMBER+STRICT")]
+    public void CleanRequested_KeepsAKnownTlpLevel(string text, string saved)
+    {
+        Assert.Equal(("Tlp", saved), ArticleMarkings.CleanRequested("tlp", text));
+    }
+
+    /// <summary>A TLP level that is missing or not one is refused, not saved as CLEAR, the least restrictive level.</summary>
+    [Theory]
+    [InlineData("purple")]
+    [InlineData("AMBER STRICT")]
+    [InlineData("TLP:")]
+    [InlineData(null)]
+    [InlineData("  ")]
+    public void CleanRequested_RefusesATlpLevelItDoesNotKnow(string text)
+    {
+        var error = Assert.Throws<BadRequestException>(() => ArticleMarkings.CleanRequested("Tlp", text));
+
+        Assert.Contains("CLEAR, GREEN, AMBER, AMBER+STRICT, RED", error.Message);
+    }
+
+    /// <summary>Only a TLP level is refused; the other markings are cleaned as <see cref="ArticleMarkings.Clean"/> cleans them.</summary>
+    [Fact]
+    public void CleanRequested_CleansTheOtherMarkingsAsCleanDoes()
+    {
+        Assert.Equal(("None", null), ArticleMarkings.CleanRequested("Bogus", "purple"));
+        Assert.Equal(("None", null), ArticleMarkings.CleanRequested("Classification", " "));
+        Assert.Equal(("Exercise", null), ArticleMarkings.CleanRequested("exercise", "purple"));
     }
 
     [Fact]

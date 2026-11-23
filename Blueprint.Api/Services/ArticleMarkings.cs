@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Blueprint.Api.Infrastructure.Exceptions;
 
 namespace Blueprint.Api.Services
 {
@@ -37,11 +38,30 @@ namespace Blueprint.Api.Services
             var value = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
             return kind switch
             {
-                Tlp => (kind, TlpLevels.FirstOrDefault(l => l.Equals(value?.Replace("TLP:", "", StringComparison.OrdinalIgnoreCase).Trim(), StringComparison.OrdinalIgnoreCase)) ?? "CLEAR"),
+                Tlp => (kind, TlpLevel(value) ?? "CLEAR"),
                 Classification => value == null ? (otherwise, null) : (kind, value.Length > 120 ? value[..120] : value),
                 _ => (kind, null)
             };
         }
+
+        /// <summary>
+        /// The marking a create, a save or an imported file asks for, cleaned as <see cref="Clean"/> cleans it, except that a
+        /// TLP marking with no level, or one that is not a TLP level, is refused rather than saved as the least restrictive.
+        /// </summary>
+        /// <exception cref="BadRequestException">The marking is TLP and its level is missing or not a TLP level.</exception>
+        public static (string Marking, string Text) CleanRequested(string marking, string text)
+        {
+            var cleaned = Clean(marking, text);
+            if (cleaned.Marking == Tlp && TlpLevel(text) == null)
+                throw new BadRequestException(string.IsNullOrWhiteSpace(text)
+                    ? $"A TLP marking needs a level: {string.Join(", ", TlpLevels)}."
+                    : $"\"{text.Trim()}\" is not a TLP level. Use {string.Join(", ", TlpLevels)}.");
+            return cleaned;
+        }
+
+        // the TLP level the text names, in any case and with or without TLP:, or null for none
+        private static string TlpLevel(string text) =>
+            TlpLevels.FirstOrDefault(l => l.Equals(text?.Replace("TLP:", "", StringComparison.OrdinalIgnoreCase).Trim(), StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
         /// The article with its MSEL's marking: at the top, and at the bottom too for a classification. An article with no

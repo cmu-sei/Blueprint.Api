@@ -182,6 +182,21 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.Equal(savedText, imported.ArticleMarkingText);
     }
 
+    /// <summary>A file whose TLP level is not one is refused, rather than imported as CLEAR, the least restrictive level.</summary>
+    [Fact]
+    public async Task Upload_WithATlpLevelItDoesNotKnow_Is400()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(Exported(m => { })).AsObject();
+        file["ArticleMarking"] = "Tlp";
+        file["ArticleMarkingText"] = "AMBER STRICT";
+
+        var response = await Post(Client(actor), file.ToJsonString(), UploadRoute);
+
+        var title = (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.BadRequest, response)).Title;
+        Assert.Equal("\"AMBER STRICT\" is not a TLP level. Use CLEAR, GREEN, AMBER, AMBER+STRICT, RED.", title);
+    }
+
     /// <summary>A file from before the setting existed imports as a scenario someone starts by hand.</summary>
     [Fact]
     public async Task Upload_OfAFileWithoutTheSteamfitterStartMode_StartsTheScenarioManually()

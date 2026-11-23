@@ -1275,13 +1275,11 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal((savedMarking, savedText), (read.ArticleMarking, read.ArticleMarkingText));
     }
 
-    /// <summary>A marking Blueprint does not know, or a classification with no words, is saved as none; a TLP
-    /// level it does not know is CLEAR, and a classification is cut to 120 characters.</summary>
+    /// <summary>A marking Blueprint does not know, or a classification with no words, is saved as none.</summary>
     [Theory]
     [InlineData("Bogus", "x", "None", null)]
     [InlineData(null, "x", "None", null)]
     [InlineData("Classification", "  ", "None", null)]
-    [InlineData("Tlp", "purple", "Tlp", "CLEAR")]
     public async Task Update_CleansAnInvalidMarking(string marking, string text, string savedMarking, string savedText)
     {
         var msel = TestData.Msel();
@@ -1295,6 +1293,45 @@ public class MselEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
 
         var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct));
         Assert.Equal((savedMarking, savedText), (stored.ArticleMarking, stored.ArticleMarkingText));
+    }
+
+    /// <summary>A TLP marking with no level, or one that is not a TLP level, is refused rather than saved as CLEAR,
+    /// the least restrictive level, and the MSEL keeps the marking it had.</summary>
+    [Theory]
+    [InlineData("purple")]
+    [InlineData("AMBER STRICT")]
+    [InlineData(null)]
+    [InlineData(" ")]
+    public async Task Update_WithATlpLevelItDoesNotKnow_Is400(string text)
+    {
+        var msel = TestData.Msel();
+        msel.ArticleMarking = "Tlp";
+        msel.ArticleMarkingText = "RED";
+        await Seed(msel);
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var body = Body(msel);
+        body.ArticleMarking = "Tlp";
+        body.ArticleMarkingText = text;
+
+        var response = await Client(actor).PutAsJsonAsync($"/api/msels/{msel.Id}", body, JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var stored = await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct));
+        Assert.Equal(("Tlp", "RED"), (stored.ArticleMarking, stored.ArticleMarkingText));
+    }
+
+    [Fact]
+    public async Task Create_WithATlpLevelItDoesNotKnow_Is400()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "/api/msels",
+            new Msel { Name = "Hurricane response", ArticleMarking = "Tlp", ArticleMarkingText = "purple" },
+            JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.False(await ReadBack(rb => rb.Msels.AnyAsync(x => x.Name == "Hurricane response", Ct)));
     }
 
     [Fact]

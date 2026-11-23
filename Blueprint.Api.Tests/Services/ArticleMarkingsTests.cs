@@ -57,6 +57,16 @@ public class ArticleMarkingsTests
     [InlineData("CUI", "#502B85")]
     [InlineData("SECRET//NOFORN", "#C8102E")]
     [InlineData("TOP SECRET//SCI", "#FCE83A")]
+    // the level abbreviated before the first //, as planners often type it
+    [InlineData("TS//SCI", "#FCE83A")]
+    [InlineData("TS//NOFORN", "#FF8C00")]
+    [InlineData("S//NF", "#C8102E")]
+    [InlineData("s // rel to usa", "#C8102E")]
+    [InlineData("C//REL TO USA", "#0033A0")]
+    [InlineData("TS", "#FF8C00")]
+    // a word that only starts with a level's letter is not that level
+    [InlineData("CUI//SP-PRVCY", "#502B85")]
+    [InlineData("SAMPLE//EXERCISE", "#007A33")]
     public void Apply_MarksTheClassificationTopAndBottom(string text, string background)
     {
         var html = ArticleMarkings.Apply(Article, "Classification", text, "Deep Bite");

@@ -102,13 +102,15 @@ namespace Blueprint.Api.Services
             return Banner(background, colour, text.ToUpperInvariant(), null);
         }
 
-        // the colours used on US classification banners, by the level the text names
+        // the colours used on US classification banners, by the level the text names, in words or abbreviated
+        // before the first // (TS//SCI, S//NF, C//REL TO USA)
         private static (string Background, string Colour) ClassificationColours(string text)
         {
             var upper = text.ToUpperInvariant();
-            return upper.Contains("TOP SECRET") ? (upper.Contains("SCI") ? "#FCE83A" : "#FF8C00", "#000000")
-                : Regex.IsMatch(upper, @"\bSECRET\b") ? ("#C8102E", "#FFFFFF")
-                : upper.Contains("CONFIDENTIAL") ? ("#0033A0", "#FFFFFF")
+            var abbreviated = upper.Split("//", 2)[0].Trim();
+            return upper.Contains("TOP SECRET") || abbreviated == "TS" ? (upper.Contains("SCI") ? "#FCE83A" : "#FF8C00", "#000000")
+                : Regex.IsMatch(upper, @"\bSECRET\b") || abbreviated == "S" ? ("#C8102E", "#FFFFFF")
+                : upper.Contains("CONFIDENTIAL") || abbreviated == "C" ? ("#0033A0", "#FFFFFF")
                 : Regex.IsMatch(upper, @"\bCUI\b|CONTROLLED UNCLASSIFIED") ? ("#502B85", "#FFFFFF")
                 : ("#007A33", "#FFFFFF");
         }

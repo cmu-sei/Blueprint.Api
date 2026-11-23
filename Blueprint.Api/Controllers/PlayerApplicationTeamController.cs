@@ -141,7 +141,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="id">The Id of the PlayerApplicationTeam to update</param>
         /// <param name="playerApplicationTeam">The updated PlayerApplicationTeam values</param>
         /// <param name="ct"></param>
-        [HttpPut("playerApplicationteams/{id}")]
+        [HttpPut("teamplayerApplications/{id}")]
         [ProducesResponseType(typeof(PlayerApplicationTeam), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updatePlayerApplicationTeam")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] PlayerApplicationTeamEdit playerApplicationTeam, CancellationToken ct)
@@ -150,6 +150,27 @@ namespace Blueprint.Api.Controllers
                 throw new ForbiddenException();
             var updatedPlayerApplicationTeam = await _playerApplicationTeamService.UpdateAsync(id, playerApplicationTeam, ct);
             return Ok(updatedPlayerApplicationTeam);
+        }
+
+        /// <summary>
+        /// Updates a PlayerApplicationTeam at the route it was first published under
+        /// </summary>
+        /// <remarks>
+        /// Kept so clients generated before the update moved to teamplayerApplications/{id} keep working.
+        /// It is left out of the API document so that new clients use the route the other operations share,
+        /// and each response carries Deprecation and Link: successor-version headers naming that route.
+        /// Remove it only once blueprint.ui and Blueprint.Api.Client have been regenerated to call teamplayerApplications/{id}.
+        /// </remarks>
+        /// <param name="id">The Id of the PlayerApplicationTeam to update</param>
+        /// <param name="playerApplicationTeam">The updated PlayerApplicationTeam values</param>
+        /// <param name="ct"></param>
+        [HttpPut("playerApplicationteams/{id}")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        [Obsolete("Use PUT teamplayerApplications/{id}.")]
+        public Task<IActionResult> UpdateAtFormerRoute([FromRoute] Guid id, [FromBody] PlayerApplicationTeamEdit playerApplicationTeam, CancellationToken ct)
+        {
+            Response.MarkDeprecated(DeprecatedRouteExtensions.TeamLinkUpdateRoutesDeprecated, $"/api/teamplayerApplications/{id}");
+            return Update(id, playerApplicationTeam, ct);
         }
 
         /// <summary>

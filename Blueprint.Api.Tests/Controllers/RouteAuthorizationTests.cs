@@ -188,6 +188,11 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             """{"playerApplicationId":"{sparePlayerApplication}","teamId":"{team}","displayOrder":1}"""
         },
         {
+            "PUT", "api/teamplayerApplications/{playerapplicationteam}", "EditMsels",
+            """{"id":"{playerapplicationteam}","playerApplicationId":"{playerapplication}","teamId":"{team}","displayOrder":1}"""
+        },
+        // the update's former route, still served for clients generated before it moved
+        {
             "PUT", "api/playerApplicationteams/{playerapplicationteam}", "EditMsels",
             """{"id":"{playerapplicationteam}","playerApplicationId":"{playerapplication}","teamId":"{team}","displayOrder":1}"""
         },

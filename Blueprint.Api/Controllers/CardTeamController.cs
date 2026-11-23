@@ -141,7 +141,7 @@ namespace Blueprint.Api.Controllers
         /// <param name="id">The Id of the CardTeam to update</param>
         /// <param name="cardTeam">The updated CardTeam values</param>
         /// <param name="ct"></param>
-        [HttpPut("cardteams/{id}")]
+        [HttpPut("teamcards/{id}")]
         [ProducesResponseType(typeof(CardTeam), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "updateCardTeam")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] CardTeamEdit cardTeam, CancellationToken ct)
@@ -150,6 +150,27 @@ namespace Blueprint.Api.Controllers
                 throw new ForbiddenException();
             var updatedCardTeam = await _cardTeamService.UpdateAsync(id, cardTeam, ct);
             return Ok(updatedCardTeam);
+        }
+
+        /// <summary>
+        /// Updates a CardTeam at the route it was first published under
+        /// </summary>
+        /// <remarks>
+        /// Kept so clients generated before the update moved to teamcards/{id} keep working.
+        /// It is left out of the API document so that new clients use the route the other operations share,
+        /// and each response carries Deprecation and Link: successor-version headers naming that route.
+        /// Remove it only once blueprint.ui and Blueprint.Api.Client have been regenerated to call teamcards/{id}.
+        /// </remarks>
+        /// <param name="id">The Id of the CardTeam to update</param>
+        /// <param name="cardTeam">The updated CardTeam values</param>
+        /// <param name="ct"></param>
+        [HttpPut("cardteams/{id}")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        [Obsolete("Use PUT teamcards/{id}.")]
+        public Task<IActionResult> UpdateAtFormerRoute([FromRoute] Guid id, [FromBody] CardTeamEdit cardTeam, CancellationToken ct)
+        {
+            Response.MarkDeprecated(DeprecatedRouteExtensions.TeamLinkUpdateRoutesDeprecated, $"/api/teamcards/{id}");
+            return Update(id, cardTeam, ct);
         }
 
         /// <summary>

@@ -1033,6 +1033,159 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.ToTable("moves");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselCasterExportDirectoryEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<int?>("AzureDestroyFailureThreshold")
+                        .HasColumnType("integer")
+                        .HasColumnName("azure_destroy_failure_threshold");
+
+                    b.Property<bool>("AzureDestroyFailureThresholdEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("azure_destroy_failure_threshold_enabled");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<DateTime?>("DateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_modified");
+
+                    b.Property<int>("Level")
+                        .HasColumnType("integer")
+                        .HasColumnName("level");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modified_by");
+
+                    b.Property<Guid>("MselCasterExportId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("msel_caster_export_id");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<int?>("Parallelism")
+                        .HasColumnType("integer")
+                        .HasColumnName("parallelism");
+
+                    b.Property<string>("TerraformVersion")
+                        .HasColumnType("text")
+                        .HasColumnName("terraform_version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MselCasterExportId");
+
+                    b.ToTable("msel_caster_export_directories");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselCasterExportEntity", b =>
+                {
+                    b.Property<Guid>("MselId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("msel_id");
+
+                    b.Property<byte[]>("Archive")
+                        .HasColumnType("bytea")
+                        .HasColumnName("archive");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<DateTime>("DateExported")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_exported");
+
+                    b.Property<DateTime?>("DateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_modified");
+
+                    b.Property<Guid?>("ExportedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("exported_by");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modified_by");
+
+                    b.Property<string>("ProjectName")
+                        .HasColumnType("text")
+                        .HasColumnName("project_name");
+
+                    b.Property<Guid?>("SourceDirectoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_directory_id");
+
+                    b.Property<Guid?>("SourceProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_project_id");
+
+                    b.HasKey("MselId");
+
+                    b.ToTable("msel_caster_exports");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselCasterExportFileEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<string>("Content")
+                        .HasColumnType("text")
+                        .HasColumnName("content");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<DateTime?>("DateModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_modified");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modified_by");
+
+                    b.Property<Guid>("MselCasterExportDirectoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("msel_caster_export_directory_id");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MselCasterExportDirectoryId");
+
+                    b.ToTable("msel_caster_export_files");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselCompetencyEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3178,6 +3331,33 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("Msel");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselCasterExportDirectoryEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.MselCasterExportEntity", null)
+                        .WithMany("Directories")
+                        .HasForeignKey("MselCasterExportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselCasterExportEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.MselEntity", null)
+                        .WithOne("CasterExport")
+                        .HasForeignKey("Blueprint.Api.Data.Models.MselCasterExportEntity", "MselId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselCasterExportFileEntity", b =>
+                {
+                    b.HasOne("Blueprint.Api.Data.Models.MselCasterExportDirectoryEntity", null)
+                        .WithMany("Files")
+                        .HasForeignKey("MselCasterExportDirectoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselCompetencyEntity", b =>
                 {
                     b.HasOne("Blueprint.Api.Data.Models.CompetencyEntity", "Competency")
@@ -3619,9 +3799,21 @@ namespace Blueprint.Api.Migrations.PostgreSQL.Migrations
                     b.Navigation("DataFields");
                 });
 
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselCasterExportDirectoryEntity", b =>
+                {
+                    b.Navigation("Files");
+                });
+
+            modelBuilder.Entity("Blueprint.Api.Data.Models.MselCasterExportEntity", b =>
+                {
+                    b.Navigation("Directories");
+                });
+
             modelBuilder.Entity("Blueprint.Api.Data.Models.MselEntity", b =>
                 {
                     b.Navigation("Cards");
+
+                    b.Navigation("CasterExport");
 
                     b.Navigation("CiteActions");
 

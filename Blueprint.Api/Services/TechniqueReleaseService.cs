@@ -152,8 +152,8 @@ namespace Blueprint.Api.Services
                 // another import of the same release saved between the check above and this one
                 throw new ConflictException(AlreadyImported(release));
             }
-            _logger.LogWarning("Release {Domain} {Version} imported by {UserId}: {Tactics} tactics, {Techniques} techniques",
-                release.Domain, release.Version, _user.GetId(), release.Tactics.Count, release.Techniques.Count);
+            _logger.LogWarning("Release {ReleaseId} ({Domain}) imported by {UserId}: {Tactics} tactics, {Techniques} techniques",
+                release.Id, release.Domain, _user.GetId(), release.Tactics.Count, release.Techniques.Count);
 
             return await GetAsync(release.Id, ct);
         }
@@ -189,7 +189,7 @@ namespace Blueprint.Api.Services
             release.TermsUrl = termsUrl;
             release.ModifiedBy = _user.GetId();
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning("Release {Domain} {Version} framework and notice edited by {UserId}", release.Domain, release.Version, _user.GetId());
+            _logger.LogWarning("Release {ReleaseId} ({Domain}) framework and notice edited by {UserId}", release.Id, release.Domain, _user.GetId());
 
             return await GetAsync(id, ct);
         }
@@ -221,7 +221,7 @@ namespace Blueprint.Api.Services
 
             _context.TechniqueReleases.Remove(release);
             await _context.SaveChangesAsync(ct);
-            _logger.LogWarning("Release {Domain} {Version} deleted by {UserId}", release.Domain, release.Version, _user.GetId());
+            _logger.LogWarning("Release {ReleaseId} ({Domain}) deleted by {UserId}", release.Id, release.Domain, _user.GetId());
             return true;
         }
 

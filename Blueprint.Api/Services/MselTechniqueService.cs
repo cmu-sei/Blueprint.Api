@@ -121,7 +121,7 @@ namespace Blueprint.Api.Services
             _context.MselTechniques.Add(entity);
             await _context.SaveChangesAsync(ct);
             await _context.Database.CommitTransactionAsync(ct);
-            _logger.LogWarning("Technique {ExternalId} added to MSEL {MselId} by {UserId}", technique.ExternalId, msel.Id, _user.GetId());
+            _logger.LogWarning("Technique {TechniqueId} added to MSEL {MselId} by {UserId}", technique.Id, msel.Id, _user.GetId());
             return await GetAsync(entity.Id, true, false, ct);
         }
 

@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Options;
 using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
@@ -634,12 +635,15 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
                 "object.definition.extensions",
                 "https://w3id.org/xapi/tla/extensions/competency-identifier").GetString());
 
-        Assert.Equal(3, At(statement, "result.score.raw").GetDouble());
-        Assert.Equal(1, At(statement, "result.score.min").GetDouble());
-        Assert.Equal(5, At(statement, "result.score.max").GetDouble());
-        Assert.Equal(0.5, At(statement, "result.score.scaled").GetDouble());
-        Assert.True(At(statement, "result.completion").GetBoolean());
-        Assert.Equal("handled the escalation well", Text(statement, "result.response"));
+        // the TLA "asserted" template excludes result and requires evidence
+        Assert.False(statement.TryGetProperty("result", out _));
+        Assert.Equal(JsonValueKind.Array, Extension(statement, "context.extensions", "https://w3id.org/xapi/tla/extensions/evidence").ValueKind);
+        var rating = Extension(statement, "context.extensions", "https://crucible.sei.cmu.edu/xapi/ext/assessment");
+        Assert.Equal(3, rating.GetProperty("raw").GetDouble());
+        Assert.Equal(1, rating.GetProperty("min").GetDouble());
+        Assert.Equal(5, rating.GetProperty("max").GetDouble());
+        Assert.Equal(0.5, rating.GetProperty("scaled").GetDouble());
+        Assert.Equal("handled the escalation well", rating.GetProperty("comment").GetString());
         Assert.Equal(graph.Msel.Id.ToString(), Text(statement, "context.registration"));
     }
 
@@ -650,7 +654,8 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
 
         await Service().AssertCompetencyAsync(Assertion(graph), true, Ct);
 
-        Assert.False(At(await QueuedStatement(), "result").TryGetProperty("response", out _));
+        Assert.False(Extension(await QueuedStatement(), "context.extensions", "https://crucible.sei.cmu.edu/xapi/ext/assessment")
+            .TryGetProperty("comment", out _));
     }
 
     /// <summary>A scale with one level records the raw score and no scaled score.</summary>
@@ -662,11 +667,13 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         await Service().AssertCompetencyAsync(Assertion(graph), true, Ct);
 
         var statement = await QueuedStatement();
-        Assert.Equal(4, At(statement, "result.score.raw").GetDouble());
-        Assert.False(At(statement, "result.score").TryGetProperty("scaled", out _));
+        var rating = Extension(statement, "context.extensions", "https://crucible.sei.cmu.edu/xapi/ext/assessment");
+        Assert.Equal(4, rating.GetProperty("raw").GetDouble());
+        Assert.False(rating.TryGetProperty("scaled", out _));
     }
 
-    /// <summary>Assert competency always claims total confidence.</summary>
+    /// <summary>Assert competency always claims total confidence: nothing captures how sure the assessor
+    /// is, so there is no source to take it from.</summary>
     [Fact]
     public async Task AssertCompetency_AlwaysClaimsTotalConfidence()
     {
@@ -682,25 +689,194 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
                 "https://w3id.org/xapi/tla/extensions/confidence").GetDouble());
     }
 
-    /// <summary>Assert competency records the assessor and not who was assessed.</summary>
+    /// <summary>The assessed member is the actor and the learner; the assessor is the instructor; the team
+    /// lists everyone on it.</summary>
     [Fact]
-    public async Task AssertCompetency_RecordsTheAssessorAndNotWhoWasAssessed()
+    public async Task AssertCompetency_NamesTheMemberAsTheLearnerAndTheAssessorAsTheInstructor()
     {
         var graph = await SeedAssertionGraph();
-        var team = TestData.Team(graph.Msel.Id);
-        await Seed(team);
         var assessor = await Actor().WithId(UserId).WithName("The Assessor").SeedAsync();
-        await Actor().WithName("The Participant").OnTeam(team).SeedAsync();
 
-        await Service(user: Principal(assessor.Id))
-            .AssertCompetencyAsync(Assertion(graph, teamId: team.Id), true, Ct);
+        await Service(user: Principal(assessor.Id)).AssertCompetencyAsync(Assertion(graph), true, Ct);
 
-        var statement = await QueuedStatement();
-        Assert.Equal("The Assessor", Text(statement, "actor.name"));
+        var row = await Queued();
+        Assert.Equal(graph.Team.Id, row.TeamId);
+
+        var statement = Json(row);
+        Assert.Equal("Agent", Text(statement, "actor.objectType"));
+        Assert.Equal(graph.Participant.Name, Text(statement, "actor.name"));
+        Assert.Equal(graph.Participant.Id.ToString(), Text(statement, "actor.account.name"));
+        Assert.Equal(Issuer, Text(statement, "actor.account.homePage"));
+
+        Assert.Equal("The Assessor", Text(statement, "context.instructor.name"));
+        Assert.Equal(assessor.Id.ToString(), Text(statement, "context.instructor.account.name"));
+        Assert.Equal(Issuer, Text(statement, "context.instructor.account.homePage"));
+
+        // the actor is the learner, so the validated-only learner extension is not repeated
+        Assert.False(At(statement, "context.extensions").TryGetProperty("https://w3id.org/xapi/tla/extensions/learner", out _));
+        Assert.True(Guid.TryParse(Text(statement, "id"), out _));
+        Assert.EndsWith("Z", Text(statement, "timestamp"));
+
+        Assert.Equal(graph.Team.Id.ToString(), Text(statement, "context.team.account.name"));
         Assert.Equal(
-            "The Assessor",
-            Text(Assert.Single(Items(statement, "context.team.member")), "name"));
-        Assert.False(At(statement, "context").TryGetProperty("instructor", out _));
+            graph.Participant.Id.ToString(),
+            Text(Assert.Single(Items(statement, "context.team.member")), "account.name"));
+    }
+
+    /// <summary>With no user ids, every member of the team is assessed except observers and the assessor,
+    /// one statement each - and every statement still lists the whole team.</summary>
+    [Fact]
+    public async Task AssertCompetency_WithNoUserIds_AssessesEveryEligibleMember()
+    {
+        var graph = await SeedAssertionGraph();
+        var second = await Actor().WithName("Second Participant").OnTeam(graph.Team).SeedAsync();
+        var observer = await Actor().WithName("The Observer").OnTeam(graph.Team).SeedAsync();
+        await Seed(TestData.UserTeamRole(observer.Id, graph.Team.Id, "Observer"));
+        var assessor = await Actor().WithId(UserId).WithName("The Assessor").OnTeam(graph.Team).SeedAsync();
+
+        await Service(user: Principal(assessor.Id)).AssertCompetencyAsync(Assertion(graph), true, Ct);
+
+        var statements = await QueuedStatements();
+        Assert.Equal(
+            new[] { graph.Participant.Id.ToString(), second.Id.ToString() }.Order(),
+            statements.Select(x => Text(x, "actor.account.name")).Order());
+        Assert.All(statements, x => Assert.Equal(assessor.Id.ToString(), Text(x, "context.instructor.account.name")));
+        Assert.All(statements, x => Assert.Equal(4, Items(x, "context.team.member").Count()));
+    }
+
+    /// <summary>A member who is a Gallery observer through their MSEL role is not assessed either,
+    /// whether or not they have an Observer team role.</summary>
+    [Fact]
+    public async Task AssertCompetency_WithNoUserIds_SkipsAGalleryObserver()
+    {
+        var graph = await SeedAssertionGraph();
+        var watcher = await Actor().WithName("The Watcher").OnTeam(graph.Team).SeedAsync();
+        await Seed(new UserMselRoleEntity
+        {
+            Id = Guid.NewGuid(),
+            MselId = graph.Msel.Id,
+            UserId = watcher.Id,
+            Role = MselRole.Viewer,
+            GalleryExhibitRole = "Observer",
+            CreatedBy = Guid.NewGuid()
+        });
+
+        await Service().AssertCompetencyAsync(Assertion(graph), true, Ct);
+
+        var statement = Assert.Single(await QueuedStatements());
+        Assert.Equal(graph.Participant.Id.ToString(), Text(statement, "actor.account.name"));
+    }
+
+    /// <summary>A fan-out is queued in one save, so a failure partway rates nobody rather than the
+    /// members before it, and a retry duplicates nobody.</summary>
+    [Fact]
+    public async Task AssertCompetency_QueuesEveryMemberInOneSave()
+    {
+        var graph = await SeedAssertionGraph();
+        await Actor().WithName("Second Participant").OnTeam(graph.Team).SeedAsync();
+        await Actor().WithName("Third Participant").OnTeam(graph.Team).SeedAsync();
+        var saves = 0;
+        Db.SavedChanges += (_, _) => saves++;
+
+        await Service().AssertCompetencyAsync(Assertion(graph), true, Ct);
+
+        Assert.Equal(1, saves);
+        Assert.Equal(3, await QueuedCount());
+    }
+
+    [Fact]
+    public async Task AssertCompetency_WithUserIds_AssessesOnlyThoseMembers()
+    {
+        var graph = await SeedAssertionGraph();
+        await Actor().WithName("Not Selected").OnTeam(graph.Team).SeedAsync();
+
+        await Service().AssertCompetencyAsync(Assertion(graph, userIds: [graph.Participant.Id]), true, Ct);
+
+        Assert.Equal(graph.Participant.Id.ToString(), Text(await QueuedStatement(), "actor.account.name"));
+    }
+
+    [Fact]
+    public async Task AssertCompetency_WithAUserIdNotOnTheTeam_IsRefusedAndQueuesNothing()
+    {
+        var graph = await SeedAssertionGraph();
+        var outsider = await Actor().WithName("Outsider").SeedAsync();
+
+        var refusal = await Assert.ThrowsAsync<BadRequestException>(() =>
+            Service().AssertCompetencyAsync(
+                Assertion(graph, userIds: [graph.Participant.Id, outsider.Id]), true, Ct));
+
+        Assert.Contains(outsider.Id.ToString(), refusal.Message);
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    /// <summary>Naming an observer or the assessor is refused rather than quietly dropped.</summary>
+    [Theory]
+    [InlineData("observer")]
+    [InlineData("assessor")]
+    public async Task AssertCompetency_NamingAMemberWhoIsNotAssessed_IsRefused(string who)
+    {
+        var graph = await SeedAssertionGraph();
+        var assessor = await Actor().WithId(UserId).WithName("The Assessor").OnTeam(graph.Team).SeedAsync();
+        var observer = await Actor().WithName("The Observer").OnTeam(graph.Team).SeedAsync();
+        await Seed(TestData.UserTeamRole(observer.Id, graph.Team.Id, "observer"));
+        var named = who == "observer" ? observer.Id : assessor.Id;
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            Service(user: Principal(assessor.Id))
+                .AssertCompetencyAsync(Assertion(graph, userIds: [graph.Participant.Id, named]), true, Ct));
+
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    /// <summary>Naming a member who is a Gallery observer through their MSEL role is refused too.</summary>
+    [Fact]
+    public async Task AssertCompetency_NamingAGalleryObserver_IsRefused()
+    {
+        var graph = await SeedAssertionGraph();
+        var watcher = await Actor().WithName("The Watcher").OnTeam(graph.Team).SeedAsync();
+        await Seed(new UserMselRoleEntity
+        {
+            Id = Guid.NewGuid(),
+            MselId = graph.Msel.Id,
+            UserId = watcher.Id,
+            Role = MselRole.Viewer,
+            GalleryExhibitRole = "Observer",
+            CreatedBy = Guid.NewGuid()
+        });
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            Service().AssertCompetencyAsync(Assertion(graph, userIds: [watcher.Id]), true, Ct));
+
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    [Fact]
+    public async Task AssertCompetency_ForATeamWithNobodyToAssess_IsRefused()
+    {
+        var graph = await SeedAssertionGraph();
+        var empty = TestData.Team(graph.Msel.Id);
+        await Seed(empty);
+        var assessor = await Actor().WithId(UserId).OnTeam(empty).SeedAsync();
+
+        var refusal = await Assert.ThrowsAsync<BadRequestException>(() =>
+            Service(user: Principal(assessor.Id))
+                .AssertCompetencyAsync(Assertion(graph, teamId: empty.Id), true, Ct));
+
+        Assert.Contains("no members to assess", refusal.Message);
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    [Fact]
+    public async Task AssertCompetency_WithNoTeam_IsRefused()
+    {
+        var graph = await SeedAssertionGraph();
+        var assertion = Assertion(graph);
+        assertion.TeamId = null;
+
+        await Assert.ThrowsAsync<BadRequestException>(
+            () => Service().AssertCompetencyAsync(assertion, true, Ct));
+
+        Assert.Equal(0, await QueuedCount());
     }
 
     [Fact]
@@ -1720,6 +1896,14 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
 
     private async Task<JsonElement> QueuedStatement() => Json(await Queued());
 
+    /// <summary>Every row queued, as statements - for a call that fans out.</summary>
+    private async Task<List<JsonElement>> QueuedStatements()
+    {
+        await using var context = NewContext();
+
+        return (await context.XApiQueuedStatements.ToListAsync(Ct)).Select(Json).ToList();
+    }
+
     /// <summary>
     /// The categories of the statement <paramref name="act"/> queues. Hoisted out of the two tests that
     /// want them because <c>CS4007</c> forbids a <c>JsonElement</c> span crossing an <c>await</c>.
@@ -1793,14 +1977,17 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
     }
 
     /// <summary>
-    /// Everything an assertion needs to exist: a MSEL, a framework, a competency and a scale.
+    /// Everything an assertion needs to exist: a MSEL, a framework, a competency, a scale, and a team on
+    /// the MSEL with one participant to assess.
     /// </summary>
     private sealed record Graph(
         MselEntity Msel,
         CompetencyFrameworkEntity Framework,
         CompetencyEntity Competency,
         ProficiencyScaleEntity Scale,
-        ProficiencyLevelEntity[] Levels)
+        ProficiencyLevelEntity[] Levels,
+        TeamEntity Team,
+        TestActor Participant)
     {
         /// <summary>The middle level, so a scaled score is neither 0 nor 1 by accident.</summary>
         public ProficiencyLevelEntity Level => Levels[Levels.Length / 2];
@@ -1842,10 +2029,13 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
             })
             .ToArray();
 
-        await Seed(msel, framework, competency, scale);
-        await Seed(levels);
+        var team = TestData.Team(msel.Id);
 
-        return new Graph(msel, framework, competency, scale, levels);
+        await Seed(msel, framework, competency, scale, team);
+        await Seed(levels);
+        var participant = await Actor().WithName("The Participant").OnTeam(team).SeedAsync();
+
+        return new Graph(msel, framework, competency, scale, levels, team, participant);
     }
 
     /// <summary>
@@ -1854,7 +2044,8 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
     /// <remarks>
     /// <c>CompetencyAssertion</c> is a class with settable properties, so a test that wants a different
     /// id mutates the object this returns. That is safe here where it would not be over the wire: the
-    /// object is handed straight to the service, so "absent" and "null" are the same thing.
+    /// object is handed straight to the service, so "absent" and "null" are the same thing. The team
+    /// defaults to <paramref name="graph"/>'s, because an assertion without one names nobody.
     /// </remarks>
     private static ViewModels.CompetencyAssertion Assertion(
         Graph graph,
@@ -1862,14 +2053,16 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         Guid? teamId = null,
         Guid? scenarioEventId = null,
         int? moveNumber = null,
-        int? groupNumber = null) =>
+        int? groupNumber = null,
+        List<Guid> userIds = null) =>
         new()
         {
             MselId = graph.Msel.Id,
             CompetencyId = graph.Competency.Id,
             ProficiencyLevelId = graph.Level.Id,
             Comment = comment,
-            TeamId = teamId,
+            TeamId = teamId ?? graph.Team.Id,
+            UserIds = userIds,
             ScenarioEventId = scenarioEventId,
             MoveNumber = moveNumber,
             GroupNumber = groupNumber,

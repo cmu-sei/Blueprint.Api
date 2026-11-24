@@ -217,15 +217,14 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
     }
 
     /// <summary>Every member of the body binds and reaches the queued statement: the ids, the comment, the
-    /// team, the scenario event, the move and the group.</summary>
+    /// team and its selected member, the scenario event, the move and the group.</summary>
     [Fact]
     public async Task CreateAssertion_QueuesAnAssertedStatement()
     {
         var graph = await SeedAssertionGraph();
         var actor = await Actor().OnMsel(graph.Msel, MselRole.Evaluator).SeedAsync();
         var scenarioEvent = TestData.ScenarioEvent(graph.MselId);
-        var team = TestData.Team(graph.MselId);
-        await Seed(scenarioEvent, team);
+        await Seed(scenarioEvent);
 
         var response = await Client(actor).PostAsJsonAsync(
             XApiEndpointTests.Assertions,
@@ -234,7 +233,8 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
                 mselId = graph.MselId,
                 competencyId = graph.CompetencyId,
                 scenarioEventId = scenarioEvent.Id,
-                teamId = team.Id,
+                teamId = graph.TeamId,
+                userIds = new[] { graph.ParticipantId },
                 proficiencyLevelId = graph.LevelId,
                 comment = "held the line",
                 moveNumber = AssertedMove,
@@ -247,17 +247,19 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
         var row = await Queued();
         Assert.Equal("asserted", row.Verb);
         Assert.Equal(graph.MselId, row.MselId);
-        Assert.Equal(team.Id, row.TeamId);
+        Assert.Equal(graph.TeamId, row.TeamId);
         Assert.Equal(CompetencyIri, row.ActivityId);
 
         var statement = Statement(row);
         Assert.Equal("https://w3id.org/xapi/tla/verbs/asserted", Text(statement, "verb.id"));
         Assert.Equal(CompetencyIri, Text(statement, "object.id"));
-        Assert.Equal("held the line", Text(statement, "result.response"));
-        Assert.Equal(3, At(statement, "result.score.raw").GetDouble());
-        Assert.Equal(actor.Id.ToString(), Text(statement, "actor.account.name"));
+        var rating = At(statement, "context.extensions").GetProperty("https://crucible.sei.cmu.edu/xapi/ext/assessment");
+        Assert.Equal("held the line", rating.GetProperty("comment").GetString());
+        Assert.Equal(3, rating.GetProperty("raw").GetDouble());
+        Assert.Equal(graph.ParticipantId.ToString(), Text(statement, "actor.account.name"));
+        Assert.Equal(actor.Id.ToString(), Text(statement, "context.instructor.account.name"));
         Assert.Equal(graph.MselId.ToString(), Text(statement, "context.registration"));
-        Assert.Equal(team.Id.ToString(), Text(statement, "context.team.account.name"));
+        Assert.Equal(graph.TeamId.ToString(), Text(statement, "context.team.account.name"));
 
         var groupings = GroupingIds(statement);
         Assert.Contains(XApiEnabledFactory.ApiUrl + "scenarioevents/" + scenarioEvent.Id, groupings);
@@ -281,7 +283,7 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
 
         var response = await Client(actor).PostAsJsonAsync(
             XApiEndpointTests.Assertions,
-            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId, teamId = graph.TeamId },
             Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -313,7 +315,7 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
 
         var response = await Client(await Actor().OnMsel(graph.Msel, role).SeedAsync()).PostAsJsonAsync(
             XApiEndpointTests.Assertions,
-            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId, teamId = graph.TeamId },
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -330,7 +332,7 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
 
         var response = await Client(actor).PostAsJsonAsync(
             XApiEndpointTests.Assertions,
-            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId, teamId = graph.TeamId },
             Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -346,7 +348,7 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
 
         var response = await Client(actor).PostAsJsonAsync(
             XApiEndpointTests.Assertions,
-            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId, teamId = graph.TeamId },
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -362,7 +364,7 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
 
         var response = await Client(actor).PostAsJsonAsync(
             XApiEndpointTests.Assertions,
-            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId, teamId = graph.TeamId },
             Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -377,7 +379,7 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
 
         var response = await Client(actor).PostAsJsonAsync(
             XApiEndpointTests.Assertions,
-            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId, teamId = graph.TeamId },
             Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -392,11 +394,51 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
 
         var response = await Client(actor).PostAsJsonAsync(
             XApiEndpointTests.Assertions,
-            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId, teamId = graph.TeamId },
             Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(1, await QueuedCount());
+    }
+
+    // Same case as XApiServiceTests.AssertCompetency_WithAUserIdNotOnTheTeam_IsRefusedAndQueuesNothing.
+    [Fact]
+    public async Task CreateAssertion_NamingAUserWhoIsNotOnTheTeam_Is400AndRecordsNothing()
+    {
+        var graph = await SeedAssertionGraph();
+        var actor = await Actor().OnMsel(graph.Msel, MselRole.Evaluator).SeedAsync();
+        var outsider = Guid.NewGuid();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            XApiEndpointTests.Assertions,
+            new
+            {
+                mselId = graph.MselId,
+                competencyId = graph.CompetencyId,
+                proficiencyLevelId = graph.LevelId,
+                teamId = graph.TeamId,
+                userIds = new[] { graph.ParticipantId, outsider },
+            },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(outsider.ToString(), await Title(response));
+        Assert.Equal(0, await QueuedCount());
+    }
+
+    [Fact]
+    public async Task CreateAssertion_WithNoTeam_Is400AndRecordsNothing()
+    {
+        var graph = await SeedAssertionGraph();
+        var actor = await Actor().OnMsel(graph.Msel, MselRole.Evaluator).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            XApiEndpointTests.Assertions,
+            new { mselId = graph.MselId, competencyId = graph.CompetencyId, proficiencyLevelId = graph.LevelId },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, await QueuedCount());
     }
 
     // Same case as XApiServiceTests.AssertCompetency_AboutSomethingThatIsNotThere_Throws.
@@ -444,6 +486,7 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
                 mselId = graph.MselId,
                 competencyId = graph.CompetencyId,
                 proficiencyLevelId = graph.LevelId,
+                teamId = graph.TeamId,
                 scenarioEventId = otherEvent.Id,
             },
             Ct);
@@ -708,14 +751,16 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
         return error.GetProperty("title").GetString();
     }
 
-    /// <summary>The ids of everything an assertion has to name: a MSEL, a competency and a scale.</summary>
-    private sealed record AssertionGraph(MselEntity Msel, Guid CompetencyId, Guid LevelId)
+    /// <summary>The ids of everything an assertion has to name: a MSEL, a competency, a scale, and a team
+    /// with one participant to assess.</summary>
+    private sealed record AssertionGraph(MselEntity Msel, Guid CompetencyId, Guid LevelId, Guid TeamId, Guid ParticipantId)
     {
         public Guid MselId => Msel.Id;
     }
 
     /// <summary>
-    /// Seeds a MSEL, a framework, a competency and a three-point scale, and returns the ids an assertion
+    /// Seeds a MSEL, a framework, a competency, a three-point scale and a team with one participant, and
+    /// returns the ids an assertion
     /// naming the middle level needs. A thinner version of <c>XApiServiceTests.SeedAssertionGraph</c>,
     /// which varies the scale; here the only interesting thing about it is that the raw score is 3.
     /// </summary>
@@ -748,9 +793,12 @@ public class XApiLiveEndpointTests(DatabaseFixture fixture, XApiEnabledFactory f
             })
             .ToArray();
 
-        await Seed(msel, framework, competency, scale);
-        await Seed(levels);
+        var team = TestData.Team(msel.Id);
 
-        return new AssertionGraph(msel, competency.Id, levels[1].Id);
+        await Seed(msel, framework, competency, scale, team);
+        await Seed(levels);
+        var participant = await Actor().WithName("The Participant").OnTeam(team).SeedAsync();
+
+        return new AssertionGraph(msel, competency.Id, levels[1].Id, team.Id, participant.Id);
     }
 }

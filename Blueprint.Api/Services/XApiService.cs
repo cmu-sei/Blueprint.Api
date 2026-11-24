@@ -59,6 +59,12 @@ namespace Blueprint.Api.Services
         private Context _xApiContext;
         private readonly ILogger<XApiService> _logger;
 
+        /// <summary>The team role whose holders watch a team rather than play on it, and so are never assessed.</summary>
+        private const string ObserverTeamRole = "Observer";
+
+        /// <summary>The Gallery exhibit role of a MSEL user who watches the exercise rather than plays in it.</summary>
+        private const string GalleryObserverRole = "Observer";
+
         public XApiService(
             BlueprintContext context,
             IPrincipal user,
@@ -488,8 +494,17 @@ namespace Blueprint.Api.Services
                 !await EvaluatorRequirement.IsMet(_user.GetId(), msel.Id, _context))
                 throw new ForbiddenException();
 
-            if (assertion.TeamId.HasValue && assertion.TeamId.Value != Guid.Empty &&
-                !await _context.Teams.AnyAsync(t => t.Id == assertion.TeamId.Value && t.MselId == msel.Id, ct))
+            // the learner is a member of the assessed team, so an assertion without a team names nobody
+            if (!assertion.TeamId.HasValue || assertion.TeamId.Value == Guid.Empty)
+                throw new BadRequestException("A competency assertion must name the team being assessed");
+
+            var team = await _context.Teams
+                .AsSplitQuery()
+                .Include(t => t.TeamUsers)
+                .ThenInclude(tu => tu.User)
+                .Include(t => t.UserTeamRoles)
+                .FirstOrDefaultAsync(t => t.Id == assertion.TeamId.Value && t.MselId == msel.Id, ct);
+            if (team == null)
                 throw new ArgumentException($"Team {assertion.TeamId} not found on MSEL {assertion.MselId}");
 
             var competency = await _context.Competencies
@@ -511,6 +526,13 @@ namespace Blueprint.Api.Services
                 if (scenarioEvent == null)
                     throw new ArgumentException($"Scenario event {assertion.ScenarioEventId} not found on MSEL {assertion.MselId}");
             }
+
+            // an observer in Gallery is a MSEL role, not a team role, and watches rather than plays
+            var galleryObserverIds = await _context.UserMselRoles
+                .Where(r => r.MselId == msel.Id && r.GalleryExhibitRole == GalleryObserverRole)
+                .Select(r => r.UserId)
+                .ToListAsync(ct);
+            var learners = SelectAssessedMembers(team, assertion.UserIds, galleryObserverIds);
 
             var scale = proficiencyLevel.ProficiencyScale;
             var allLevels = await _context.ProficiencyLevels
@@ -543,49 +565,36 @@ namespace Blueprint.Api.Services
                     ["https://w3id.org/xapi/tla/extensions/competency-identifier"] = competency.IdNumber
                 });
 
-            var result = new TinCan.Result();
-            result.Score = new TinCan.Score();
-            result.Score.Raw = proficiencyLevel.Value;
-            result.Score.Min = minValue;
-            result.Score.Max = maxValue;
+            // The TLA "asserted" template excludes result, so the assessor's rating travels in a Crucible
+            // extension: the level's value on the scale it was chosen from, and the assessor's comment.
+            var rating = new Newtonsoft.Json.Linq.JObject
+            {
+                ["raw"] = proficiencyLevel.Value,
+                ["min"] = minValue,
+                ["max"] = maxValue
+            };
             if (maxValue > minValue)
-                result.Score.Scaled = (double)(proficiencyLevel.Value - minValue) / (maxValue - minValue);
-            result.Completion = true;
+                rating["scaled"] = (double)(proficiencyLevel.Value - minValue) / (maxValue - minValue);
             if (!string.IsNullOrEmpty(assertion.Comment))
-            {
-                result.Response = assertion.Comment;
-            }
+                rating["comment"] = assertion.Comment;
 
-            var context = new Context();
-            context.Platform = _xApiContext.Platform;
-            context.Language = "en-US";
-            context.Registration = assertion.MselId;
-            context.Extensions = new TinCan.Extensions(
-                new Newtonsoft.Json.Linq.JObject {
-                    ["https://w3id.org/xapi/tla/extensions/confidence"] = 1.0
-                });
-
-            if (assertion.TeamId.HasValue && assertion.TeamId.Value != Guid.Empty)
+            // the team as it stands, every member listed, whoever of them is being assessed
+            var group = new TinCan.Group();
+            group.Name = team.ShortName;
+            if (!string.IsNullOrEmpty(_xApiOptions.EmailDomain))
             {
-                var team = _context.Teams.Find(assertion.TeamId.Value);
-                if (team != null)
-                {
-                    var group = new TinCan.Group();
-                    group.Name = team.ShortName;
-                    if (!string.IsNullOrEmpty(_xApiOptions.EmailDomain))
-                    {
-                        group.Mbox = "mailto:" + team.ShortName + "@" + _xApiOptions.EmailDomain;
-                    }
-                    group.Account = new AgentAccount();
-                    group.Account.HomePage = new Uri(_xApiOptions.UiUrl);
-                    group.Account.Name = team.Id.ToString();
-                    group.Member = new List<Agent> { _agent };
-                    context.Team = group;
-                }
+                group.Mbox = "mailto:" + team.ShortName + "@" + _xApiOptions.EmailDomain;
             }
+            group.Account = new AgentAccount();
+            group.Account.HomePage = new Uri(_xApiOptions.UiUrl);
+            group.Account.Name = team.Id.ToString();
+            group.Member = team.TeamUsers
+                .Where(tu => tu.User != null)
+                .OrderBy(tu => tu.User.Name)
+                .Select(tu => BuildUserAgent(tu.User))
+                .ToList();
 
             var contextActivities = new ContextActivities();
-            context.ContextActivities = contextActivities;
 
             // Parent: the MSEL
             contextActivities.Parent = new List<Activity>();
@@ -672,29 +681,124 @@ namespace Blueprint.Api.Services
             crucibleProfile.Definition.Name.Add("en-US", "Crucible xAPI Profile");
             contextActivities.Category.Add(crucibleProfile);
 
-            var statement = new Statement();
-            statement.Actor = _agent;
-            statement.Verb = verb;
-            statement.Target = activity;
-            statement.Result = result;
-            statement.Context = context;
-
-            var statementJson = statement.ToJson();
-
-            var queuedStatement = new XApiQueuedStatementEntity
+            // One statement per assessed member: the member is the actor (the learner, which is how an
+            // "asserted" statement is read downstream), and the assessor is the instructor. All of them
+            // are queued in one save, so a failure rates nobody and a retry duplicates nobody.
+            var queued = new List<XApiQueuedStatementEntity>(learners.Count);
+            foreach (var learner in learners)
             {
-                Id = Guid.NewGuid(),
-                StatementJson = statementJson,
-                Verb = "asserted",
-                ActivityId = activity.Id,
-                MselId = assertion.MselId,
-                TeamId = assertion.TeamId
-            };
+                var learnerAgent = BuildUserAgent(learner);
 
-            await _queueService.EnqueueAsync(queuedStatement, ct);
-            _logger.LogInformation("Enqueued competency assertion for {CompetencyId} on MSEL {MselId}", assertion.CompetencyId, assertion.MselId);
+                var context = new Context();
+                context.Platform = _xApiContext.Platform;
+                context.Language = "en-US";
+                context.Registration = assertion.MselId;
+                context.Instructor = _agent;
+                context.Team = group;
+                context.ContextActivities = contextActivities;
+                context.Extensions = new TinCan.Extensions(
+                    new Newtonsoft.Json.Linq.JObject {
+                        // There is no source for confidence: neither the assessor view nor the proficiency
+                        // scale captures how sure the assessor is, so every assertion claims full confidence.
+                        ["https://w3id.org/xapi/tla/extensions/confidence"] = 1.0,
+                        // The template requires evidence, a list of statements behind the assertion. An
+                        // assessor's rating is their own observation, so there are none to point at.
+                        ["https://w3id.org/xapi/tla/extensions/evidence"] = new Newtonsoft.Json.Linq.JArray(),
+                        ["https://crucible.sei.cmu.edu/xapi/ext/assessment"] = rating
+                    });
+
+                var statement = new Statement();
+                // the TLA general restrictions want every statement to carry its own id and a UTC timestamp
+                statement.Id = Guid.NewGuid();
+                statement.Timestamp = DateTime.UtcNow;
+                statement.Actor = learnerAgent;
+                statement.Verb = verb;
+                statement.Target = activity;
+                statement.Context = context;
+
+                var queuedStatement = new XApiQueuedStatementEntity
+                {
+                    Id = Guid.NewGuid(),
+                    StatementJson = statement.ToJson(),
+                    Verb = "asserted",
+                    ActivityId = activity.Id,
+                    MselId = assertion.MselId,
+                    TeamId = team.Id
+                };
+
+                queued.Add(queuedStatement);
+            }
+
+            await _queueService.EnqueueRangeAsync(queued, ct);
+
+            _logger.LogInformation(
+                "Enqueued {Count} competency assertions for {CompetencyId} on team {TeamId} of MSEL {MselId}, assessed users {UserIds}",
+                learners.Count, assertion.CompetencyId, team.Id, assertion.MselId, string.Join(", ", learners.Select(l => l.Id)));
 
             return true;
+        }
+
+        /// <summary>
+        /// The members of <paramref name="team"/> an assertion is about. With no <paramref name="requested"/>
+        /// ids that is every eligible member; with ids, exactly those members, each of whom must be eligible.
+        /// Observers and the assessor are never eligible.
+        /// </summary>
+        /// <exception cref="BadRequestException">
+        /// An id is not on the team or not eligible, or the team has nobody eligible to assess.
+        /// </exception>
+        private List<UserEntity> SelectAssessedMembers(TeamEntity team, List<Guid> requested, List<Guid> galleryObserverIds)
+        {
+            var assessorId = _user.GetId();
+            var observerIds = team.UserTeamRoles
+                .Where(r => string.Equals(r.Role, ObserverTeamRole, StringComparison.OrdinalIgnoreCase))
+                .Select(r => r.UserId)
+                .Concat(galleryObserverIds)
+                .ToHashSet();
+            var members = team.TeamUsers
+                .Where(tu => tu.User != null)
+                .Select(tu => tu.User)
+                .OrderBy(u => u.Name)
+                .ToList();
+
+            bool IsEligible(UserEntity user) => user.Id != assessorId && !observerIds.Contains(user.Id);
+
+            if (requested == null || requested.Count == 0)
+            {
+                var eligible = members.Where(IsEligible).ToList();
+                if (eligible.Count == 0)
+                    throw new BadRequestException(
+                        $"Team {team.ShortName} has no members to assess: observers and the assessor are not assessed");
+                return eligible;
+            }
+
+            var ids = requested.Distinct().ToList();
+            var memberIds = members.Select(m => m.Id).ToHashSet();
+
+            var notOnTeam = ids.Where(id => !memberIds.Contains(id)).ToList();
+            if (notOnTeam.Count > 0)
+                throw new BadRequestException(
+                    $"Not members of team {team.ShortName}: {string.Join(", ", notOnTeam)}");
+
+            var ineligible = members.Where(m => ids.Contains(m.Id) && !IsEligible(m)).ToList();
+            if (ineligible.Count > 0)
+                throw new BadRequestException(
+                    $"Observers and the assessor cannot be assessed: {string.Join(", ", ineligible.Select(m => m.Name ?? m.Id.ToString()))}");
+
+            return members.Where(m => ids.Contains(m.Id)).ToList();
+        }
+
+        /// <summary>
+        /// A Blueprint user as an xAPI agent, identified the same way the caller is: the Keycloak sub as the
+        /// account name under the identity provider's home page.
+        /// </summary>
+        private Agent BuildUserAgent(UserEntity user)
+        {
+            var agent = new Agent();
+            agent.Name = user.Name;
+            agent.Account = new AgentAccount();
+            agent.Account.HomePage = _account.HomePage;
+            agent.Account.Name = user.Id.ToString();
+            return agent;
         }
 
         public async Task<bool> RecordCheckboxChangeAsync(Guid mselId, Guid eventId, Guid dataFieldId, string dataFieldName, bool isChecked, CancellationToken ct)
@@ -869,6 +973,7 @@ namespace Blueprint.Api.Services
             httpClient.DefaultRequestHeaders.Add("Authorization", $"Basic {credentials}");
             httpClient.DefaultRequestHeaders.Add("X-Experience-API-Version", "1.0.3");
 
+            // limit is the page size: each registration is read to the end of its more links
             var allStatements = new List<string>();
             foreach (var registrationId in registrationIds)
             {

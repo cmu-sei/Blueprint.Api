@@ -7,6 +7,7 @@ using System.Linq;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using System.Threading;
 using System.Threading.Tasks;
 using Blueprint.Api.Data;
@@ -26,7 +27,8 @@ namespace Blueprint.Api.Hubs
         private readonly DatabaseOptions _options;
         private readonly CancellationToken _ct;
         private readonly IBlueprintAuthorizationService _blueprintAuthorizationService;
-        private readonly HubCache _hubCache;
+        private readonly IPresenceTracker _presence;
+        private readonly ILogger<MainHub> _logger;
         public const string ADMIN_DATA_GROUP = "AdminDataGroup";
         public const string GROUP_GROUP = "AdminGroupGroup";
         public const string ROLE_GROUP = "AdminRoleGroup";
@@ -38,7 +40,8 @@ namespace Blueprint.Api.Hubs
             BlueprintContext context,
             DatabaseOptions options,
             IBlueprintAuthorizationService blueprintAuthorizationService,
-            HubCache hubCache
+            IPresenceTracker presence,
+            ILogger<MainHub> logger
         )
         {
             _teamService = teamService;
@@ -48,7 +51,8 @@ namespace Blueprint.Api.Hubs
             CancellationTokenSource source = new CancellationTokenSource();
             _ct = source.Token;
             _blueprintAuthorizationService = blueprintAuthorizationService;
-            _hubCache = hubCache;
+            _presence = presence;
+            _logger = logger;
         }
 
         public async Task Join()
@@ -66,7 +70,6 @@ namespace Blueprint.Api.Hubs
         public async Task Leave()
         {
             var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
-            var userName = Context.User.Identities.First().Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? "Unknown";
             var idList = await GetMselIdList(userId);
             idList.Add(userId);
             foreach (var id in idList)
@@ -74,91 +77,64 @@ namespace Blueprint.Api.Hubs
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, id.ToString());
             }
 
-            // broadcast departure if tracked
-            if (_hubCache.Connections.TryRemove(Context.ConnectionId, out var connection) && !string.IsNullOrEmpty(connection.MselId))
-            {
-                await Clients.OthersInGroup(connection.MselId).SendAsync(
-                    MainHubMethods.PresenceDeparted,
-                    new { id = userId, name = userName });
-            }
+            await LeavePresence();
         }
 
         public override async Task OnDisconnectedAsync(Exception exception)
         {
-            if (_hubCache.Connections.TryRemove(Context.ConnectionId, out var connection) && !string.IsNullOrEmpty(connection.MselId))
-            {
-                await Clients.OthersInGroup(connection.MselId).SendAsync(
-                    MainHubMethods.PresenceDeparted,
-                    new { id = connection.UserId, name = connection.UserName });
-            }
+            // Forget the connection first, so that a send that fails can't leave it listed.
+            await LeavePresence(swallowFailures: true);
             await base.OnDisconnectedAsync(exception);
         }
 
-        public async Task SelectMsel(Guid[] args)
+        /// <summary>
+        /// Makes the connection the caller's only one on a MSEL, or on none when <paramref name="args"/> is
+        /// empty, and tells the MSEL's group who is there when that changed it.
+        /// </summary>
+        /// <returns>
+        /// Everyone present on the MSEL now, the caller included, as of a version; null when no MSEL was
+        /// joined. An update can reach the caller before this answer does, so the caller keeps whichever has
+        /// the higher version.
+        /// </returns>
+        public async Task<MselPresence> SelectMsel(Guid[] args)
         {
             // leave all other MSELs
             var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
-            var userName = Context.User.Identities.First().Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? "Unknown";
             var idList = await GetMselIdList(userId);
+            var selected = args.Count() == 1 && idList.Contains(args[0].ToString()) ? args[0] : (Guid?)null;
 
-            // depart from previous MSEL presence if tracked
-            if (_hubCache.Connections.TryGetValue(Context.ConnectionId, out var previousConnection) && !string.IsNullOrEmpty(previousConnection.MselId))
-            {
-                await Clients.OthersInGroup(previousConnection.MselId).SendAsync(
-                    MainHubMethods.PresenceDeparted,
-                    new { id = userId, name = userName });
-            }
+            // Selecting the MSEL the connection is already on changes nothing for the others.
+            await LeavePresence(swallowFailures: true, except: selected);
 
             foreach (var id in idList)
             {
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, id.ToString());
             }
             // join the selected MSEL
-            if (args.Count() == 1)
+            if (selected is not null)
             {
-                var mselId = args[0].ToString();
-                if (idList.Contains(mselId))
+                await Groups.AddToGroupAsync(Context.ConnectionId, selected.Value.ToString());
+
+                var change = _presence.Join(selected.Value, Context.ConnectionId, GetPresentUser(userId));
+
+                // The connection can have closed while this was waiting. Its disconnect has then already
+                // looked for what it had open and may have found nothing, so a join that registered it now
+                // must not leave it registered.
+                if (Context.ConnectionAborted.IsCancellationRequested)
                 {
-                    await Groups.AddToGroupAsync(Context.ConnectionId, mselId);
-
-                    // track connection and broadcast arrival
-                    _hubCache.Connections[Context.ConnectionId] = new CachedConnection
-                    {
-                        ConnectionId = Context.ConnectionId,
-                        MselId = mselId,
-                        UserId = userId,
-                        UserName = userName
-                    };
-
-                    await Clients.OthersInGroup(mselId).SendAsync(
-                        MainHubMethods.PresenceArrived,
-                        new { id = userId, name = userName });
+                    await LeavePresence(swallowFailures: true);
+                    return null;
                 }
-            }
-            else
-            {
-                // no MSEL selected, remove from cache
-                _hubCache.Connections.TryRemove(Context.ConnectionId, out _);
-            }
-        }
 
-        public async Task Greet(string mselId)
-        {
-            var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
-            var userName = Context.User.Identities.First().Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? "Unknown";
-            await Clients.OthersInGroup(mselId).SendAsync(
-                MainHubMethods.PresenceGreeted,
-                new { id = userId, name = userName });
-        }
+                if (change.Changed)
+                {
+                    await SendPresence(change.State);
+                }
 
-        public Task<List<object>> GetPresence(string mselId)
-        {
-            var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
-            var result = _hubCache.Connections.Values
-                .Where(c => c.MselId == mselId && c.UserId != userId)
-                .Select(c => (object)new { id = c.UserId, name = c.UserName })
-                .ToList();
-            return Task.FromResult(result);
+                return ToWire(change.State);
+            }
+
+            return null;
         }
 
         public async Task JoinAdmin()
@@ -178,6 +154,52 @@ namespace Blueprint.Api.Hubs
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, id.ToString());
             }
         }
+
+        private PresentUser GetPresentUser(string userId)
+        {
+            var name = Context.User.Identities.First().Claims.FirstOrDefault(c => c.Type == "name")?.Value;
+            return new PresentUser(Guid.Parse(userId), string.IsNullOrWhiteSpace(name) ? "Unknown" : name);
+        }
+
+        /// <summary>
+        /// Takes the connection out of the presence of every MSEL it was in, except <paramref name="except"/>,
+        /// telling those that changed.
+        /// </summary>
+        private async Task LeavePresence(bool swallowFailures = false, Guid? except = null)
+        {
+            var changes = except is null
+                ? _presence.LeaveAll(Context.ConnectionId)
+                : [.. _presence.ScopesOf(Context.ConnectionId)
+                    .Where(x => x != except)
+                    .Select(x => _presence.Leave(x, Context.ConnectionId))
+                    .Where(x => x is not null)];
+
+            foreach (var change in changes.Where(x => x.Changed))
+            {
+                if (!swallowFailures)
+                {
+                    await SendPresence(change.State);
+                    continue;
+                }
+
+                // A send that fails only costs the others one update, and must not stop the ones after it.
+                try
+                {
+                    await SendPresence(change.State);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not send presence for MSEL {MselId}", change.State.ScopeId);
+                }
+            }
+        }
+
+        private Task SendPresence(PresenceState state) =>
+            Clients.Group(state.ScopeId.ToString()).SendAsync(MainHubMethods.PresenceChanged, ToWire(state));
+
+        // The wire names the scope for what it is here.
+        private static MselPresence ToWire(PresenceState state) =>
+            new(state.ScopeId, state.Version, state.Users);
 
         private async Task<List<string>> GetMselIdList(string userId)
         {
@@ -263,6 +285,9 @@ namespace Blueprint.Api.Hubs
 
     }
 
+    /// <summary>Everyone present on a MSEL as of a version, as the hub sends it.</summary>
+    public record MselPresence(Guid MselId, long Version, IReadOnlyList<PresentUser> Users);
+
     public static class MainHubMethods
     {
         public const string CardCreated = "CardCreated";
@@ -343,8 +368,6 @@ namespace Blueprint.Api.Hubs
         public const string SystemRoleCreated = "SystemRoleCreated";
         public const string SystemRoleUpdated = "SystemRoleUpdated";
         public const string SystemRoleDeleted = "SystemRoleDeleted";
-        public const string PresenceArrived = "PresenceArrived";
-        public const string PresenceDeparted = "PresenceDeparted";
-        public const string PresenceGreeted = "PresenceGreeted";
+        public const string PresenceChanged = "PresenceChanged";
     }
 }

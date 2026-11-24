@@ -121,7 +121,7 @@ namespace Blueprint.Api.Services
             _context.MselTechniques.Add(entity);
             await _context.SaveChangesAsync(ct);
             await _context.Database.CommitTransactionAsync(ct);
-            _logger.LogWarning("Technique {ExternalId} added to MSEL {MselId} by {UserId}", technique.ExternalId, msel.Id, _user.GetId());
+            _logger.LogWarning("Technique {TechniqueId} from release {ReleaseId} added to MSEL {MselId} by {UserId}", technique.Id, technique.TechniqueReleaseId, msel.Id, _user.GetId());
             return await GetAsync(entity.Id, true, false, ct);
         }
 
@@ -206,8 +206,8 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             await _context.Database.CommitTransactionAsync(ct);
 
-            _logger.LogWarning("MSEL {MselId} {Domain} techniques upgraded to release {ReleaseId} by {UserId}: {Kept} kept, {Dropped} dropped",
-                mselId, release.Domain, techniqueReleaseId, _user.GetId(), result.Kept, result.Dropped.Count);
+            _logger.LogWarning("MSEL {MselId} techniques upgraded to release {ReleaseId} by {UserId}: {Kept} kept, {Dropped} dropped",
+                mselId, techniqueReleaseId, _user.GetId(), result.Kept, result.Dropped.Count);
             return result;
         }
 

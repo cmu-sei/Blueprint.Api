@@ -100,24 +100,20 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Create Cite Moves for this MSEL
         public static async Task CreateMovesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {
-            // Build work items without starting execution, and check every move first so none is sent if one fails
-            var moves = msel.Moves.ToList();
-            var situationTimes = moves.ToDictionary(m => m, SituationTimeOf);
+            // Build every CITE move before sending any, so a move with no situation time stops the push before it starts
+            var citeMoves = msel.Moves.Select(move => new Move() {
+                EvaluationId = (Guid)msel.CiteEvaluationId,
+                Description = move.Description,
+                MoveNumber = move.MoveNumber,
+                SituationTime = SituationTimeOf(move),
+                SituationDescription = move.SituationDescription
+            }).ToList();
 
             // Process in parallel batches
-            for (int i = 0; i < moves.Count; i += batchSize)
+            for (int i = 0; i < citeMoves.Count; i += batchSize)
             {
-                var batch = moves.Skip(i).Take(batchSize);
-                await Task.WhenAll(batch.Select(move => {
-                    var citeMove = new Move() {
-                        EvaluationId = (Guid)msel.CiteEvaluationId,
-                        Description = move.Description,
-                        MoveNumber = move.MoveNumber,
-                        SituationTime = situationTimes[move],
-                        SituationDescription = move.SituationDescription
-                    };
-                    return citeApiClient.CreateMoveAsync(citeMove, ct);
-                }));
+                var batch = citeMoves.Skip(i).Take(batchSize);
+                await Task.WhenAll(batch.Select(citeMove => citeApiClient.CreateMoveAsync(citeMove, ct)));
             }
         }
 

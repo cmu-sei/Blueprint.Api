@@ -44,44 +44,69 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Contains(actor.Id, users.Select(x => x.Id));
     }
 
-    /// <summary>Get all for a caller on a team holding no permission at all returns every user in the installation.</summary>
+    /// <summary>ViewMsels is the content-author alternative, as ViewEvaluations is in CITE and ViewScenarios
+    /// in Steamfitter: the seeded Content Developer role holds it and not ViewUsers.</summary>
     [Fact]
-    public async Task GetAll_ForACallerOnATeamHoldingNoPermissionAtAll_ReturnsEveryUserInTheInstallation()
+    public async Task GetAll_WithViewMsels_ReturnsEveryUserInTheInstallation()
     {
         var stranger = TestData.User();
         await Seed(stranger);
-        var msel = await SeedMsel();
-        var team = await SeedTeam(msel.Id);
-        var actor = await Actor().OnTeam(team).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var users = await GetUsers(Client(actor));
 
         Assert.Contains(stranger.Id, users.Select(x => x.Id));
+        Assert.Contains(actor.Id, users.Select(x => x.Id));
+    }
+
+    /// <summary>A team membership is not a permission: one row on any team used to open the whole directory.</summary>
+    [Fact]
+    public async Task GetAll_ForACallerOnATeamHoldingNoPermissionAtAll_Is403()
+    {
+        var msel = await SeedMsel();
+        var team = await SeedTeam(msel.Id);
+        var actor = await Actor().OnTeam(team).SeedAsync();
+
+        var response = await Client(actor).GetAsync(Users, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
-    public async Task GetAll_ForACallerOnNoTeam_ReturnsOnlyThemselves()
+    public async Task GetAll_ForACallerOnNoTeamHoldingNoPermissionAtAll_Is403()
     {
-        await Seed(TestData.User(), TestData.User());
         var actor = await Actor().SeedAsync();
 
-        var users = await GetUsers(Client(actor));
+        var response = await Client(actor).GetAsync(Users, Ct);
 
-        Assert.Equal(actor.Id, Assert.Single(users).Id);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>A MSEL owner reaching it through a unit, on no team, lists only themselves.</summary>
+    /// <summary>A MSEL owner lists the people they can put on its teams through <c>GET msels/{id}/users</c>,
+    /// not through the directory.</summary>
     [Fact]
-    public async Task GetAll_ForAMselOwnerReachingItThroughAUnit_ReturnsOnlyThemselves()
+    public async Task GetAll_ForAMselOwnerWithoutViewUsersOrViewMsels_Is403()
     {
-        var stranger = TestData.User();
-        await Seed(stranger);
         var msel = await SeedMsel();
         var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
 
-        var users = await GetUsers(Client(actor));
+        var response = await Client(actor).GetAsync(Users, Ct);
 
-        Assert.Equal(actor.Id, Assert.Single(users).Id);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetAll_WithEveryPermissionButViewUsersAndViewMsels_Is403()
+    {
+        var actor = await Actor()
+            .WithSystemPermissions(Enum.GetValues<SystemPermission>()
+                .Where(x => x != SystemPermission.ViewUsers && x != SystemPermission.ViewMsels)
+                .ToArray())
+            .SeedAsync();
+
+        var response = await Client(actor).GetAsync(Users, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <remarks>

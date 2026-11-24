@@ -34,7 +34,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Returns a list of all of the Users in the system.
         /// <para />
-        /// Only accessible to a SuperUser
+        /// Accessible to a User with the ViewUsers or ViewMsels permission
         /// </remarks>
         /// <returns></returns>
         [HttpGet("users")]
@@ -42,8 +42,10 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUsers")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewUsers], ct);
-            var list = await _userService.GetAsync(hasSystemPermission, ct);
+            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewUsers, SystemPermission.ViewMsels], ct))
+                throw new ForbiddenException();
+
+            var list = await _userService.GetAsync(ct);
             return Ok(list);
         }
 

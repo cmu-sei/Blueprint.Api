@@ -23,7 +23,7 @@ namespace Blueprint.Api.Services
 {
     public interface IUserService
     {
-        Task<IEnumerable<ViewModels.User>> GetAsync(bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.User>> GetAsync(CancellationToken ct);
         Task<ViewModels.User> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.User>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.User>> GetByTeamAsync(Guid teamId, bool hasSystemPermission, CancellationToken ct);
@@ -48,23 +48,11 @@ namespace Blueprint.Api.Services
             _logger = logger;
         }
 
-        public async Task<IEnumerable<ViewModels.User>> GetAsync(bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.User>> GetAsync(CancellationToken ct)
         {
-            if (!hasSystemPermission &&
-                !(await _context.TeamUsers.AnyAsync(tu => tu.UserId == _user.GetId()))
-            )
-            {
-                return await _context.Users
-                    .Where(u => u.Id == _user.GetId())
-                    .ProjectToUser()
-                    .ToArrayAsync(ct);
-            }
-            else
-            {
-                return await _context.Users
-                    .ProjectToUser()
-                    .ToArrayAsync(ct);
-            }
+            return await _context.Users
+                .ProjectToUser()
+                .ToArrayAsync(ct);
         }
 
         public async Task<ViewModels.User> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)

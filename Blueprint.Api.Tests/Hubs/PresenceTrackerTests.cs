@@ -138,7 +138,7 @@ public class PresenceTrackerTests
         _tracker.Join(other, "a1", _alice);
         _tracker.Join(other, "b1", _bob);
 
-        Assert.Equal([_scope, other], _tracker.ScopesOf("a1").Order());
+        Assert.Equal(new[] { _scope, other }.Order(), _tracker.ScopesOf("a1").Order());
         Assert.Equal([other], _tracker.ScopesOf("b1"));
         Assert.Empty(_tracker.ScopesOf("nobody"));
     }

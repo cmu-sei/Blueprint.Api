@@ -50,12 +50,13 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Creates a competency assertion xAPI statement
+        /// Creates competency assertion xAPI statements, one per assessed team member
         /// </summary>
         /// <remarks>
         /// Queues one xAPI "asserted" statement per assessed member of the team, recording an assessor's
         /// competency rating. The member is the actor and the assessor is the context instructor. By default
-        /// every member except observers and the assessor is assessed; <c>UserIds</c> narrows it.
+        /// every member except observers and the assessor is assessed; <c>UserIds</c> narrows it, and an id
+        /// that is not an eligible member of the team is a 400.
         /// </remarks>
         [HttpPost("xapi/assertions")]
         [ProducesResponseType((int)HttpStatusCode.OK)]

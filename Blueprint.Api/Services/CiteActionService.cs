@@ -25,7 +25,7 @@ namespace Blueprint.Api.Services
 {
     public interface ICiteActionService
     {
-        Task<IEnumerable<ViewModels.CiteAction>> GetTemplatesAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.CiteAction>> GetTemplatesAsync(bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.CiteAction>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.CiteAction> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.CiteAction> CreateAsync(ViewModels.CiteActionCreate citeAction, bool hasMselPermission, bool hasCiteActionPermission, CancellationToken ct);
@@ -48,8 +48,12 @@ namespace Blueprint.Api.Services
             _user = user as ClaimsPrincipal;
         }
 
-        public async Task<IEnumerable<ViewModels.CiteAction>> GetTemplatesAsync(CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.CiteAction>> GetTemplatesAsync(bool hasSystemPermission, CancellationToken ct)
         {
+            // a library no MSEL owns: the permissions that manage it, or working on some MSEL
+            if (!hasSystemPermission && !await AnyMselRequirement.IsMetAsync(_user.GetId(), _context, ct))
+                throw new ForbiddenException();
+
             var citeActionEntities = await _context.CiteActions
                 .Where(citeAction => citeAction.IsTemplate && citeAction.MselId == null)
                 .ToListAsync(ct);

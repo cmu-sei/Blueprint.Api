@@ -43,7 +43,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getPlayerApplicationTemplates")]
         public async Task<IActionResult> GetPlayerApplicationTemplates(CancellationToken ct)
         {
-            var list = await _playerApplicationService.GetTemplatesAsync(ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewPlayerApplications, SystemPermission.ManagePlayerApplications, SystemPermission.ViewMsels], ct);
+            var list = await _playerApplicationService.GetTemplatesAsync(hasSystemPermission, ct);
             return Ok(list);
         }
 

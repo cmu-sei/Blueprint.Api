@@ -26,7 +26,7 @@ namespace Blueprint.Api.Services
 {
     public interface IPlayerApplicationService
     {
-        Task<IEnumerable<ViewModels.PlayerApplication>> GetTemplatesAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.PlayerApplication>> GetTemplatesAsync(bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.PlayerApplication>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.PlayerApplication> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, bool hasPlayerApplicationPermission, CancellationToken ct);
@@ -53,8 +53,12 @@ namespace Blueprint.Api.Services
             _user = user as ClaimsPrincipal;
         }
 
-        public async Task<IEnumerable<ViewModels.PlayerApplication>> GetTemplatesAsync(CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.PlayerApplication>> GetTemplatesAsync(bool hasSystemPermission, CancellationToken ct)
         {
+            // a library no MSEL owns: the permissions that manage it, or working on some MSEL
+            if (!hasSystemPermission && !await AnyMselRequirement.IsMetAsync(_user.GetId(), _context, ct))
+                throw new ForbiddenException();
+
             var playerApplicationEntities = await _context.PlayerApplications
                 .Where(playerApplication => playerApplication.IsTemplate && playerApplication.MselId == null)
                 .ToListAsync(ct);

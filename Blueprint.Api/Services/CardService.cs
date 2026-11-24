@@ -25,7 +25,7 @@ namespace Blueprint.Api.Services
 {
     public interface ICardService
     {
-        Task<IEnumerable<ViewModels.Card>> GetTemplatesAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.Card>> GetTemplatesAsync(bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Card>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Card> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Card> CreateAsync(ViewModels.CardCreate card, bool hasMselPermission, bool hasGalleryCardPermission, CancellationToken ct);
@@ -48,8 +48,12 @@ namespace Blueprint.Api.Services
             _user = user as ClaimsPrincipal;
         }
 
-        public async Task<IEnumerable<ViewModels.Card>> GetTemplatesAsync(CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Card>> GetTemplatesAsync(bool hasSystemPermission, CancellationToken ct)
         {
+            // a library no MSEL owns: the permissions that manage it, or working on some MSEL
+            if (!hasSystemPermission && !await AnyMselRequirement.IsMetAsync(_user.GetId(), _context, ct))
+                throw new ForbiddenException();
+
             var cardEntities = await _context.Cards
                 .Where(card => card.IsTemplate && card.MselId == null)
                 .ToListAsync(ct);

@@ -47,14 +47,18 @@ namespace Blueprint.Api.Tests.Controllers;
 /// action's authorization check, so a JSON body would assert nothing. Add a row per route as each
 /// remaining service is covered; do not add per-service 401/403 tests.
 /// <para />
-/// Six routes are deliberately absent because each resolves no authorization at all and so cannot
+/// Three routes are deliberately absent because each resolves no authorization at all and so cannot
 /// satisfy <see cref="EveryRoute_is_forbidden_for_a_caller_holding_every_permission_but_the_named_one"/>: <c>GET lmt/resource/{mselId}</c>
 /// (<c>LmtController</c> is <c>[AllowAnonymous]</c> - see <see cref="LmtEndpointTests"/>),
-/// <c>GET my-catalogs</c>, <c>GET citeActions/templates</c>, <c>GET citeDuties/templates</c>,
-/// <c>GET playerApplications/templates</c> and <c>GET proficiencyScales/{id}</c>. The latter five are
-/// covered by the happy-path test in their own files, which is where the absence of a check is recorded,
-/// and <c>GET proficiencyScales/{id}</c> also holds a row in <see cref="RoutesWithoutAPermission"/> so its
+/// <c>GET my-catalogs</c> and <c>GET proficiencyScales/{id}</c>. The latter two are covered by the
+/// happy-path test in their own files, which is where the absence of a check is recorded, and
+/// <c>GET proficiencyScales/{id}</c> also holds a row in <see cref="RoutesWithoutAPermission"/> so its
 /// refusal of an anonymous caller is still asserted.
+/// <para />
+/// Routes that more than one permission opens cannot hold a row either, since a row lifts its refusal with
+/// exactly one: <c>GET users</c> and <c>GET units</c> are tested in their own files, and the six template
+/// libraries (<c>cards</c>, <c>citeActions</c>, <c>citeDuties</c>, <c>playerApplications</c>,
+/// <c>organizations</c> and <c>dataFields</c>) in <see cref="TemplateLibraryAuthorizationTests"/>.
 /// <para />
 /// A seventh is absent for a different reason: <c>POST playerApplications/push</c> does resolve
 /// <c>EditMsels</c>, but it is covered end to end by <see cref="PlayerServiceTests"/>, including its

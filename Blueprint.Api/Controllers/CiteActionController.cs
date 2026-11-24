@@ -43,7 +43,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCiteActionTemplates")]
         public async Task<IActionResult> GetCiteActionTemplates(CancellationToken ct)
         {
-            var list = await _citeActionService.GetTemplatesAsync(ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewCiteActions, SystemPermission.ManageCiteActions, SystemPermission.ViewMsels], ct);
+            var list = await _citeActionService.GetTemplatesAsync(hasSystemPermission, ct);
             return Ok(list);
         }
 

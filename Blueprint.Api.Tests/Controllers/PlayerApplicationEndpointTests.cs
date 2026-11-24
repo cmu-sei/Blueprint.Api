@@ -43,11 +43,11 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
     // GET playerApplications/templates
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Templates with no permissions returns only the templates.</summary>
+    /// <summary>A viewer of some MSEL, with no system permission, reads only the templates.</summary>
     [Fact]
-    public async Task Templates_WithNoPermissions_ReturnsOnlyTheTemplates()
+    public async Task Templates_ForAMselViewer_ReturnsOnlyTheTemplates()
     {
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
         var msel = await SeedMsel();
         var template = TestData.PlayerApplicationTemplate("Virtual Machines");
         await Seed(template, TestData.PlayerApplication(msel.Id, "a msel's"));
@@ -66,12 +66,12 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
 
     /// <summary>
     /// A template belongs to no MSEL, so a MSEL's row flagged as a template - which a create can no longer
-    /// write - stays out of the list any signed-in user may read.
+    /// write - stays out of the template list.
     /// </summary>
     [Fact]
     public async Task Templates_LeavesOutAMselsApplicationFlaggedAsATemplate()
     {
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
         var msel = await SeedMsel();
         var row = TestData.PlayerApplication(msel.Id);
         row.IsTemplate = true;

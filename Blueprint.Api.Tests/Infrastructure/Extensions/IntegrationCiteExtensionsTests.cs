@@ -225,9 +225,9 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
         Assert.Empty(handler.Sent);
     }
 
-    /// <summary>Create evaluation with a move zero having no situation time throws.</summary>
+    /// <summary>Create evaluation with a move zero having no situation time throws, naming the move, before sending.</summary>
     [Fact]
-    public async Task CreateEvaluation_WithAMoveZeroHavingNoSituationTime_Throws()
+    public async Task CreateEvaluation_WithAMoveZeroHavingNoSituationTime_ThrowsBeforeSending()
     {
         var msel = Msel();
         var move = Move(0);
@@ -239,7 +239,7 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
         var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             IntegrationCiteExtensions.CreateEvaluationAsync(msel, Client(handler), null, Ct));
 
-        Assert.Equal("Nullable object must have a value.", thrown.Message);
+        Assert.Equal("Move 0 has no situation time.", thrown.Message);
         Assert.Empty(handler.Sent);
     }
 
@@ -251,8 +251,10 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
 
         var handler = Evaluations();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             IntegrationCiteExtensions.CreateEvaluationAsync(msel, Client(handler), null, Ct));
+
+        Assert.Equal($"MSEL {msel.Id} has no CITE scoring model.", thrown.Message);
 
         Assert.Empty(handler.Sent);
     }
@@ -410,19 +412,24 @@ public class IntegrationCiteExtensionsTests(DatabaseFixture fixture) : DatabaseT
         Assert.Equal(situationTime, body["situationTime"].GetDateTimeOffset().UtcDateTime);
     }
 
-    /// <summary>A move with no situation time throws.</summary>
+    /// <summary>A move with no situation time throws, naming the move, before any move is sent - even
+    /// one in an earlier batch.</summary>
     [Fact]
-    public async Task CreateMoves_ForAMoveWithNoSituationTime_Throws()
+    public async Task CreateMoves_ForAMoveWithNoSituationTime_ThrowsBeforeSendingAny()
     {
         var msel = Msel();
+        msel.Moves.Add(Move(0));
         var move = Move(1);
         move.SituationTime = null;
         msel.Moves.Add(move);
 
         var handler = Moves();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            IntegrationCiteExtensions.CreateMovesAsync(msel, Client(handler), null, 10, Ct));
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            IntegrationCiteExtensions.CreateMovesAsync(msel, Client(handler), null, 1, Ct));
+
+        Assert.Equal("Move 1 has no situation time.", thrown.Message);
+        Assert.Empty(handler.Sent);
     }
 
     /// <summary>Moves are posted <c>batchSize</c> at a time.</summary>

@@ -2895,6 +2895,27 @@ namespace Blueprint.Api.Services
                     $"Fix the moves before pushing. {string.Join(" ", problems)} Each move must start after the move before it, and every scenario event must start in a move.");
         }
 
+        // The CITE push makes an evaluation from the MSEL's scoring model and a CITE move from each move, at its
+        // situation time. The MSEL can be saved without either, but the push needs both.
+        private async Task ValidateCiteSetupAsync(MselEntity msel, CancellationToken ct)
+        {
+            var problems = new List<string>();
+            if (msel.CiteScoringModelId == null &&
+                !await _context.MselScoringModels.AnyAsync(sm => sm.MselId == msel.Id, ct))
+                problems.Add("The MSEL has no CITE scoring model. Choose one from CITE or author one in Blueprint.");
+            var untimedMoves = await _context.Moves.AsNoTracking()
+                .Where(m => m.MselId == msel.Id && m.SituationTime == null)
+                .OrderBy(m => m.MoveNumber)
+                .Select(m => m.MoveNumber)
+                .ToListAsync(ct);
+            if (untimedMoves.Count == 1)
+                problems.Add($"Move {untimedMoves[0]} has no situation time.");
+            else if (untimedMoves.Count > 1)
+                problems.Add($"Moves {string.Join(", ", untimedMoves)} have no situation time.");
+            if (problems.Count > 0)
+                throw new ConflictException($"Fix the CITE setup before pushing. {string.Join(" ", problems)}");
+        }
+
         public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
@@ -2913,6 +2934,8 @@ namespace Blueprint.Api.Services
             if (msel.UseCaster)
                 await ValidateCasterSetupAsync(msel, true, ct);
             await ValidateMovesAsync(mselId, ct);
+            if (msel.UseCite)
+                await ValidateCiteSetupAsync(msel, ct);
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
@@ -3343,6 +3366,8 @@ namespace Blueprint.Api.Services
                 await ValidateCasterSetupAsync(template, false, ct);
             // the launch pushes, so a template with moves out of order fails here for the planner to fix, not later for the participant
             await ValidateMovesAsync(mselId, ct);
+            if (template.UseCite)
+                await ValidateCiteSetupAsync(template, ct);
 
             // clone the template MSEL
             // A launch needs the template's directory, so it has no use for the copy, and the invitee, who owns the

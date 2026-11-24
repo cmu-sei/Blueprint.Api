@@ -994,6 +994,65 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         Assert.Equal(isChecked, At(statement, "result.success").GetBoolean());
     }
 
+    /// <summary>The queue is told every checkbox change is a completion.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task TheQueueIsToldEveryCheckboxChangeIsACompletion(bool isChecked)
+    {
+        var msel = TestData.Msel();
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        await Seed(msel, scenarioEvent);
+
+        await Service().RecordCheckboxChangeAsync(
+            msel.Id, scenarioEvent.Id, Guid.NewGuid(), "Comms restored", isChecked, Ct);
+
+        Assert.Equal("completed", (await Queued()).Verb);
+    }
+
+    [Fact]
+    public async Task Checkbox_NamesTheMselAsTheParentAndTheEventAsAGrouping()
+    {
+        var msel = TestData.Msel();
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        await Seed(msel, scenarioEvent);
+
+        await Service().RecordCheckboxChangeAsync(
+            msel.Id, scenarioEvent.Id, Guid.NewGuid(), "Comms restored", true, Ct);
+
+        var statement = await QueuedStatement();
+        var parent = Assert.Single(Items(statement, "context.contextActivities.parent"));
+        Assert.Equal($"{ApiUrl}msels/{msel.Id}", Text(parent, "id"));
+
+        var grouping = Assert.Single(Items(statement, "context.contextActivities.grouping"));
+        Assert.Equal($"{ApiUrl}scenarioevents/{scenarioEvent.Id}", Text(grouping, "id"));
+        Assert.Equal("Scenario Event", Text(grouping, "definition.name.en-US"));
+    }
+
+    /// <summary>The two hand built paths name the MSEL two different ways.</summary>
+    [Fact]
+    public async Task TheTwoHandBuiltPathsNameTheMselTwoDifferentWays()
+    {
+        var graph = await SeedAssertionGraph();
+        var scenarioEvent = TestData.ScenarioEvent(graph.Msel.Id);
+        await Seed(scenarioEvent);
+        var service = Service();
+
+        await service.AssertCompetencyAsync(Assertion(graph), true, Ct);
+        await service.RecordCheckboxChangeAsync(
+            graph.Msel.Id, scenarioEvent.Id, Guid.NewGuid(), "Comms restored", true, Ct);
+
+        await using var context = NewContext();
+        var rows = await context.XApiQueuedStatements.OrderBy(x => x.QueuedAt).ToListAsync(Ct);
+
+        Assert.Equal(
+            $"{ApiUrl}msel/{graph.Msel.Id}",
+            Text(Items(Json(rows[0]), "context.contextActivities.parent").First(), "id"));
+        Assert.Equal(
+            $"{ApiUrl}msels/{graph.Msel.Id}",
+            Text(Items(Json(rows[1]), "context.contextActivities.parent").First(), "id"));
+    }
+
     [Fact]
     public async Task Checkbox_IsGroupedUnderTheMoveTheEventFallsIn()
     {

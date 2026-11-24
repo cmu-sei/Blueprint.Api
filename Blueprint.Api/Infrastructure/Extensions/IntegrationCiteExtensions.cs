@@ -61,14 +61,15 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 Description = msel.Name,
                 Status = Cite.Api.Client.ItemStatus.Pending,
                 CurrentMoveNumber = 0,
-                ScoringModelId = scoringModelId ?? (Guid)msel.CiteScoringModelId,
+                ScoringModelId = scoringModelId ?? msel.CiteScoringModelId ??
+                    throw new InvalidOperationException($"MSEL {msel.Id} has no CITE scoring model."),
                 GalleryExhibitId = msel.GalleryExhibitId,
                 SituationDescription = "Preparing for the start of the exercise."
             };
             if (move0 != null)
             {
                 newEvaluation.SituationDescription = move0.SituationDescription;
-                newEvaluation.SituationTime = (DateTimeOffset)move0.SituationTime;
+                newEvaluation.SituationTime = SituationTimeOf(move0);
             }
             newEvaluation = await citeApiClient.CreateEvaluationAsync(newEvaluation, ct);
             // delete the default move 0 that was created when the evaluation was created
@@ -77,6 +78,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
             return newEvaluation;
         }
+
+        // The CITE move needs a situation time, which a Blueprint move can be saved without
+        private static DateTimeOffset SituationTimeOf(MoveEntity move) =>
+            move.SituationTime ?? throw new InvalidOperationException($"Move {move.MoveNumber} has no situation time.");
 
         // Update a Cite Evaluation for this MSEL
         public static async Task ActivateAsync(Evaluation evaluation, CiteApiClient citeApiClient, BlueprintContext blueprintContext, CancellationToken ct)
@@ -95,8 +100,9 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Create Cite Moves for this MSEL
         public static async Task CreateMovesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {
-            // Build work items without starting execution
+            // Build work items without starting execution, and check every move first so none is sent if one fails
             var moves = msel.Moves.ToList();
+            var situationTimes = moves.ToDictionary(m => m, SituationTimeOf);
 
             // Process in parallel batches
             for (int i = 0; i < moves.Count; i += batchSize)
@@ -107,7 +113,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                         EvaluationId = (Guid)msel.CiteEvaluationId,
                         Description = move.Description,
                         MoveNumber = move.MoveNumber,
-                        SituationTime = (DateTimeOffset)move.SituationTime,
+                        SituationTime = situationTimes[move],
                         SituationDescription = move.SituationDescription
                     };
                     return citeApiClient.CreateMoveAsync(citeMove, ct);

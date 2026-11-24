@@ -1125,6 +1125,25 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
+    /// <summary>A launch pushes, so a CITE template with no scoring model is a 409 for the planner, and the
+    /// invitation is not used up.</summary>
+    [Fact]
+    public async Task Launch_OfACiteTemplateWithNoScoringModel_Is409AndKeepsTheInvitation()
+    {
+        var template = await SeedTemplate(m => m.UseCite = true);
+        var team = await SeedTeam(template);
+        var invitation = await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        var title = (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.StartsWith("Fix the CITE setup before pushing.", title);
+        await using var db = NewContext();
+        Assert.Equal(invitation.UserCount, (await db.Invitations.SingleAsync(i => i.Id == invitation.Id, Ct)).UserCount);
+        Assert.Empty(DrainIntegrationQueue());
+    }
+
     [Fact]
     public async Task Launch_WithAValidInvitationOnlyToAnotherTemplate_Is403()
     {

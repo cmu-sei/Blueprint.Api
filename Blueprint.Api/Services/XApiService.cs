@@ -62,6 +62,9 @@ namespace Blueprint.Api.Services
         /// <summary>The team role whose holders watch a team rather than play on it, and so are never assessed.</summary>
         private const string ObserverTeamRole = "Observer";
 
+        /// <summary>The Gallery exhibit role of a MSEL user who watches the exercise rather than plays in it.</summary>
+        private const string GalleryObserverRole = "Observer";
+
         public XApiService(
             BlueprintContext context,
             IPrincipal user,
@@ -524,7 +527,12 @@ namespace Blueprint.Api.Services
                     throw new ArgumentException($"Scenario event {assertion.ScenarioEventId} not found on MSEL {assertion.MselId}");
             }
 
-            var learners = SelectAssessedMembers(team, assertion.UserIds);
+            // an observer in Gallery is a MSEL role, not a team role, and watches rather than plays
+            var galleryObserverIds = await _context.UserMselRoles
+                .Where(r => r.MselId == msel.Id && r.GalleryExhibitRole == GalleryObserverRole)
+                .Select(r => r.UserId)
+                .ToListAsync(ct);
+            var learners = SelectAssessedMembers(team, assertion.UserIds, galleryObserverIds);
 
             var scale = proficiencyLevel.ProficiencyScale;
             var allLevels = await _context.ProficiencyLevels
@@ -724,8 +732,8 @@ namespace Blueprint.Api.Services
             await _queueService.EnqueueRangeAsync(queued, ct);
 
             _logger.LogInformation(
-                "Enqueued {Count} competency assertions for {CompetencyId} on team {TeamId} of MSEL {MselId}",
-                learners.Count, assertion.CompetencyId, team.Id, assertion.MselId);
+                "Enqueued {Count} competency assertions for {CompetencyId} on team {TeamId} of MSEL {MselId}, assessed users {UserIds}",
+                learners.Count, assertion.CompetencyId, team.Id, assertion.MselId, string.Join(", ", learners.Select(l => l.Id)));
 
             return true;
         }
@@ -738,12 +746,13 @@ namespace Blueprint.Api.Services
         /// <exception cref="BadRequestException">
         /// An id is not on the team or not eligible, or the team has nobody eligible to assess.
         /// </exception>
-        private List<UserEntity> SelectAssessedMembers(TeamEntity team, List<Guid> requested)
+        private List<UserEntity> SelectAssessedMembers(TeamEntity team, List<Guid> requested, List<Guid> galleryObserverIds)
         {
             var assessorId = _user.GetId();
             var observerIds = team.UserTeamRoles
                 .Where(r => string.Equals(r.Role, ObserverTeamRole, StringComparison.OrdinalIgnoreCase))
                 .Select(r => r.UserId)
+                .Concat(galleryObserverIds)
                 .ToHashSet();
             var members = team.TeamUsers
                 .Where(tu => tu.User != null)

@@ -744,6 +744,29 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         Assert.All(statements, x => Assert.Equal(4, Items(x, "context.team.member").Count()));
     }
 
+    /// <summary>A member who is a Gallery observer through their MSEL role is not assessed either,
+    /// whether or not they have an Observer team role.</summary>
+    [Fact]
+    public async Task AssertCompetency_WithNoUserIds_SkipsAGalleryObserver()
+    {
+        var graph = await SeedAssertionGraph();
+        var watcher = await Actor().WithName("The Watcher").OnTeam(graph.Team).SeedAsync();
+        await Seed(new UserMselRoleEntity
+        {
+            Id = Guid.NewGuid(),
+            MselId = graph.Msel.Id,
+            UserId = watcher.Id,
+            Role = MselRole.Viewer,
+            GalleryExhibitRole = "Observer",
+            CreatedBy = Guid.NewGuid()
+        });
+
+        await Service().AssertCompetencyAsync(Assertion(graph), true, Ct);
+
+        var statement = Assert.Single(await QueuedStatements());
+        Assert.Equal(graph.Participant.Id.ToString(), Text(statement, "actor.account.name"));
+    }
+
     /// <summary>A fan-out is queued in one save, so a failure partway rates nobody rather than the
     /// members before it, and a retry duplicates nobody.</summary>
     [Fact]

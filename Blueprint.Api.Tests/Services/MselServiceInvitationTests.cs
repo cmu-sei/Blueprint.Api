@@ -1144,6 +1144,52 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Empty(DrainIntegrationQueue());
     }
 
+    /// <summary>A CITE template with a move that has no situation time is a 409 naming the move, before the
+    /// template is cloned.</summary>
+    [Fact]
+    public async Task Launch_OfACiteTemplateWithAMoveWithoutASituationTime_Is409AndClonesNothing()
+    {
+        var template = await SeedTemplate(m =>
+        {
+            m.UseCite = true;
+            m.CiteScoringModelId = Guid.NewGuid();
+        });
+        var move = TestData.Move(template.Id, moveNumber: 0);
+        move.SituationTime = null;
+        await Seed(move);
+        var team = await SeedTeam(template);
+        var invitation = await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        var title = (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.Equal("Fix the CITE setup before pushing. Move 0 has no situation time.", title);
+        await using var db = NewContext();
+        Assert.Equal(invitation.UserCount, (await db.Invitations.SingleAsync(i => i.Id == invitation.Id, Ct)).UserCount);
+        Assert.Equal(1, await db.Msels.CountAsync(m => m.Name.StartsWith(template.Name), Ct));
+        Assert.Empty(DrainIntegrationQueue());
+    }
+
+    /// <summary>A CITE template with an authored scoring model and timed moves launches, and the push is queued
+    /// for the clone.</summary>
+    [Fact]
+    public async Task Launch_OfACiteTemplateWithAnAuthoredScoringModel_QueuesThePush()
+    {
+        var template = await SeedTemplate(m => m.UseCite = true);
+        await Seed(TestData.MselScoringModel(template.Id));
+        await Seed(TestData.Move(template.Id, moveNumber: 0));
+        var team = await SeedTeam(template);
+        await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var launched = await Read<Msel>(response);
+        Assert.Equal(launched.Id, Assert.Single(DrainIntegrationQueue()).MselId);
+    }
+
     [Fact]
     public async Task Launch_WithAValidInvitationOnlyToAnotherTemplate_Is403()
     {

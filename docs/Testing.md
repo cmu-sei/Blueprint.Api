@@ -120,7 +120,7 @@ Both fixtures arrive by constructor injection: `DatabaseFixture` from `[assembly
 
 Migrations are applied once, to a template database, by the shared `PostgresTestDatabase<BlueprintContext>` that `DatabaseFixture` wraps (migrations assembly `Blueprint.Api.Migrations.PostgreSQL`). Each test gets its own database created from that template, a file-level copy. It is real isolation rather than a rolled-back transaction, which matters here: `EntityEventInterceptor` publishes on `SavedChanges` only when there is no ambient transaction, so a test wrapped in one would silence every notification the application sends.
 
-The host is shared by every test in a class, and the tests of a class run in order. Everything registered as a singleton (the queues, `HubCache`, `CompetencyFrameworkImportProgressService`) is shared within the class, so key what a test arranges and asserts on to ids it owns.
+The host is shared by every test in a class, and the tests of a class run in order. Everything registered as a singleton (the queues, `PresenceTracker`, `CompetencyFrameworkImportProgressService`) is shared within the class, so key what a test arranges and asserts on to ids it owns.
 
 # Adding a test
 

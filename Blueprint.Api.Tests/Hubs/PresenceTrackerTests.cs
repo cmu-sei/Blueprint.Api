@@ -142,4 +142,26 @@ public class PresenceTrackerTests
         Assert.Equal([other], _tracker.ScopesOf("b1"));
         Assert.Empty(_tracker.ScopesOf("nobody"));
     }
+
+    /// <summary>
+    /// Verifies: when a user's tabs carry different names, the one listed is always the same, and the version
+    /// moves when the listed name does, so the others never keep a name that is no longer shown.
+    /// </summary>
+    [Fact]
+    public void A_user_whose_tabs_carry_different_names_is_listed_by_one_name_and_a_change_of_it_is_a_change()
+    {
+        var renamed = new PresentUser(_alice.Id, "Alice B.");
+        var first = _tracker.Join(_scope, "a1", renamed);
+        var second = _tracker.Join(_scope, "a2", _alice);
+
+        Assert.Equal([_alice], second.State.Users);
+        Assert.True(second.Changed);
+        Assert.True(second.State.Version > first.State.Version);
+
+        var left = _tracker.Leave(_scope, "a2");
+
+        Assert.Equal([renamed], left.State.Users);
+        Assert.True(left.Changed);
+        Assert.True(left.State.Version > second.State.Version);
+    }
 }

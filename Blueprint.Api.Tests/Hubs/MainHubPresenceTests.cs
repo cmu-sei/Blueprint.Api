@@ -177,6 +177,26 @@ public class MainHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase(fi
             Sent(alice.Harness.Group(now.Id.ToString())).Single().Users);
     }
 
+    /// <summary>
+    /// Verifies: a failed send of the departure from the old MSEL doesn't stop the new one being joined.
+    /// </summary>
+    [Fact]
+    public async Task SelectMsel_switching_msels_joins_the_new_one_when_the_old_ones_send_fails()
+    {
+        var was = await SeedMsel();
+        var now = await SeedMsel();
+        var alice = Connect("Alice");
+        await alice.Hub.SelectMsel([was.Id]);
+        alice.Harness.Group(was.Id.ToString())
+            .SendCoreAsync(MainHubMethods.PresenceChanged, Arg.Any<object[]>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("send failed"));
+
+        var answer = await alice.Hub.SelectMsel([now.Id]);
+
+        Assert.Equal(now.Id, answer.MselId);
+        Assert.Contains(now.Id.ToString(), alice.Harness.JoinedGroups);
+    }
+
     [Fact]
     public async Task Leave_tells_the_group_who_is_left()
     {

@@ -73,10 +73,10 @@ public class PresenceTracker : IPresenceTracker
             if (connections.ContainsKey(connectionId))
                 return new PresenceChange(StateLocked(scopeId), false);
 
-            var alreadyPresent = connections.Values.Any(x => x.Id == user.Id);
+            var before = StateLocked(scopeId).Users;
             connections[connectionId] = user;
 
-            return Result(scopeId, changed: !alreadyPresent);
+            return Result(scopeId, before);
         }
     }
 
@@ -110,12 +110,12 @@ public class PresenceTracker : IPresenceTracker
 
     private PresenceChange LeaveLocked(Guid scopeId, string connectionId)
     {
-        if (!_scopes.TryGetValue(scopeId, out var connections) ||
-            !connections.Remove(connectionId, out var user))
+        if (!_scopes.TryGetValue(scopeId, out var connections) || !connections.ContainsKey(connectionId))
             return null;
 
-        var stillPresent = connections.Values.Any(x => x.Id == user.Id);
-        var result = Result(scopeId, changed: !stillPresent);
+        var before = StateLocked(scopeId).Users;
+        connections.Remove(connectionId);
+        var result = Result(scopeId, before);
 
         if (connections.Count == 0)
             _scopes.Remove(scopeId);
@@ -123,9 +123,12 @@ public class PresenceTracker : IPresenceTracker
         return result;
     }
 
-    // A change that leaves the users as they were keeps the version, so only real changes are sent on.
-    private PresenceChange Result(Guid scopeId, bool changed)
+    // A change that leaves the users as they were, names included, keeps the version, so only changes
+    // the others can see are sent on.
+    private PresenceChange Result(Guid scopeId, IReadOnlyList<PresentUser> before)
     {
+        var changed = !before.SequenceEqual(StateLocked(scopeId).Users);
+
         if (changed)
             _version++;
 
@@ -137,7 +140,7 @@ public class PresenceTracker : IPresenceTracker
         var users = _scopes.TryGetValue(scopeId, out var connections)
             ? connections.Values
                 .GroupBy(x => x.Id)
-                .Select(x => x.First())
+                .Select(x => x.OrderBy(y => y.Name, StringComparer.Ordinal).First())
                 .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(x => x.Id)
                 .ToList()

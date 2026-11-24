@@ -104,7 +104,7 @@ namespace Blueprint.Api.Hubs
             var selected = args.Count() == 1 && idList.Contains(args[0].ToString()) ? args[0] : (Guid?)null;
 
             // Selecting the MSEL the connection is already on changes nothing for the others.
-            await LeavePresence(except: selected);
+            await LeavePresence(swallowFailures: true, except: selected);
 
             foreach (var id in idList)
             {

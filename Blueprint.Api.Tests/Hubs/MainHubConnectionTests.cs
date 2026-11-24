@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Tests.Support;
 using Microsoft.AspNetCore.Authorization;
@@ -28,16 +29,6 @@ public class MainHubConnectionTests(DatabaseFixture fixture, BlueprintAppFactory
 {
     /// <summary>Where <c>Startup.cs:350</c> maps the hub, and what blueprint.ui dials.</summary>
     private const string HubPath = "/hubs/main";
-
-    public override async ValueTask InitializeAsync()
-    {
-        await base.InitializeAsync();
-
-        // The cache is a host-wide singleton and the host serves the whole class.
-        Cache.Connections.Clear();
-    }
-
-    private HubCache Cache => Factory.Services.GetRequiredService<HubCache>();
 
     // ---------------------------------------------------------------------------------------------
     // Where the hub is, and what it demands
@@ -103,47 +94,83 @@ public class MainHubConnectionTests(DatabaseFixture fixture, BlueprintAppFactory
     }
 
     /// <remarks>
-    /// Presence is kept in a singleton dictionary rather than in SignalR's own group state, so the
-    /// hub's answer to "who else is on this MSEL" is only right while there is one instance of the
-    /// cache per application. Nothing in the hub would notice a scoped registration; every presence
-    /// list would just be empty. (Nothing notices a second *host* either - blueprint keeps no
-    /// cross-instance presence at all, so a scaled-out deployment shows each replica's own users.)
+    /// Presence is kept in a singleton rather than in SignalR's own group state, so the hub's answer to
+    /// "who else is on this MSEL" is only right while there is one tracker per application. Nothing in the
+    /// hub would notice a scoped registration; every presence list would just be empty. (Nothing notices a
+    /// second *host* either - blueprint keeps no cross-instance presence at all, so a scaled-out
+    /// deployment shows each replica's own users.)
     /// </remarks>
     [Fact]
-    public void TheHubCache_IsOneInstanceForTheWholeApplication()
+    public void ThePresenceTracker_IsOneInstanceForTheWholeApplication()
     {
         using var first = Factory.Services.CreateScope();
         using var second = Factory.Services.CreateScope();
 
         Assert.Same(
-            first.ServiceProvider.GetRequiredService<HubCache>(),
-            second.ServiceProvider.GetRequiredService<HubCache>());
+            first.ServiceProvider.GetRequiredService<IPresenceTracker>(),
+            second.ServiceProvider.GetRequiredService<IPresenceTracker>());
     }
 
     // ---------------------------------------------------------------------------------------------
     // An invocation over the wire
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Over a real connection, a caller holding no role is answered the occupants of any MSEL.</summary>
+    /// <summary>
+    /// Presence over real connections: a member already on the MSEL hears the second arrive, is in the
+    /// second's answer, and hears the list without them when their connection closes without leaving, the
+    /// disconnect path.
+    /// </summary>
     [Fact]
-    public async Task GetPresence_OverARealConnection_AnswersAStrangerTheOccupantsOfAnyMsel()
+    public async Task A_member_on_the_msel_sees_another_arrive_and_depart_on_disconnect()
     {
-        var mselId = Guid.NewGuid();
-        Cache.Connections["somebody-elses-connection"] = new CachedConnection
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var bob = await Actor().WithName("Bob").WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+        var alice = await Actor().WithName("Alice").WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+        var afterAlice = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var afterDeparture = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var bobs = Connect(bob);
+        bobs.On<JsonElement>(MainHubMethods.PresenceChanged, x =>
         {
-            ConnectionId = "somebody-elses-connection",
-            MselId = mselId.ToString(),
-            UserId = Guid.NewGuid().ToString(),
-            UserName = "working-on-it"
-        };
+            if (Users(x).Count == 2)
+                afterAlice.TrySetResult(x);
+            else if (afterAlice.Task.IsCompleted)
+                afterDeparture.TrySetResult(x);
+        });
+        await bobs.StartAsync(Ct);
+        var first = await bobs.InvokeAsync<JsonElement>(nameof(MainHub.SelectMsel), new[] { msel.Id }, Ct);
+        Assert.Equal(["Bob"], Users(first));
+
+        var alices = Connect(alice);
+        await alices.StartAsync(Ct);
+        var present = await alices.InvokeAsync<JsonElement>(nameof(MainHub.SelectMsel), new[] { msel.Id }, Ct);
+
+        Assert.Equal(["Alice", "Bob"], Users(present));
+        Assert.Equal(["Alice", "Bob"], Users(await afterAlice.Task.WaitAsync(Waits.Budget, Ct)));
+
+        await alices.DisposeAsync();
+
+        var departed = await afterDeparture.Task.WaitAsync(Waits.Budget, Ct);
+        Assert.Equal(["Bob"], Users(departed));
+        Assert.True(departed.GetProperty("version").GetInt64() > present.GetProperty("version").GetInt64());
+    }
+
+    /// <summary>
+    /// Over a real connection, a caller holding no role gets nothing for a MSEL they can't reach, which the
+    /// earlier <c>GetPresence</c> answered with the MSEL's occupants.
+    /// </summary>
+    [Fact]
+    public async Task SelectMsel_OverARealConnection_AnswersAStrangerNothing()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
         var stranger = await Actor().WithName("a-stranger").SeedAsync();
         await using var connection = Connect(stranger);
         await connection.StartAsync(Ct);
 
-        var presence = await connection.InvokeAsync<List<JsonElement>>(
-            nameof(MainHub.GetPresence), mselId.ToString(), Ct);
+        var answer = await connection.InvokeAsync<JsonElement?>(nameof(MainHub.SelectMsel), new[] { msel.Id }, Ct);
 
-        Assert.Equal("working-on-it", Name(Assert.Single(presence)));
+        Assert.True(answer is null || answer.Value.ValueKind == JsonValueKind.Null);
     }
 
     private Task<HttpResponseMessage> Negotiate(HttpClient client, string path) =>
@@ -199,13 +226,7 @@ public class MainHubConnectionTests(DatabaseFixture fixture, BlueprintAppFactory
     private string SessionHeader() =>
         Client().DefaultRequestHeaders.GetValues(TestDatabaseScope.HeaderName).First();
 
-    /// <remarks>
-    /// The presence payload is an anonymous object, so the name of its <c>name</c> property on the
-    /// wire is whatever SignalR's payload serializer made of it. Matched case-insensitively rather
-    /// than asserted, because what this test is about is the value.
-    /// </remarks>
-    private static string Name(JsonElement entry) =>
-        entry.EnumerateObject()
-            .First(x => string.Equals(x.Name, "name", StringComparison.OrdinalIgnoreCase))
-            .Value.GetString();
+    /// <summary>The names in a presence state's <c>users</c>, in the order the hub sent them.</summary>
+    private static List<string> Users(JsonElement state) =>
+        [.. state.GetProperty("users").EnumerateArray().Select(x => x.GetProperty("name").GetString())];
 }

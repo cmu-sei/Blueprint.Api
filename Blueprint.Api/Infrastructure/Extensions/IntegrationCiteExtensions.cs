@@ -100,7 +100,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
         // Create Cite Moves for this MSEL
         public static async Task CreateMovesAsync(MselEntity msel, CiteApiClient citeApiClient, BlueprintContext blueprintContext, int batchSize, CancellationToken ct)
         {
-            // Build every CITE move before sending any, so a move with no situation time stops the push before it starts
+            // Build every CITE move before sending any, so a move with no situation time fails before a move is sent
             var citeMoves = msel.Moves.Select(move => new Move() {
                 EvaluationId = (Guid)msel.CiteEvaluationId,
                 Description = move.Description,

@@ -23,7 +23,7 @@ namespace Blueprint.Api.Services
     public interface IInjectService
     {
         Task<IEnumerable<ViewModels.Injectm>> GetByCatalogAsync(Guid catalogId, bool hasSystemPermission, CancellationToken ct);
-        Task<IEnumerable<ViewModels.Injectm>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct);
+        Task<IEnumerable<ViewModels.Injectm>> GetByInjectTypeAsync(Guid injectTypeId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Injectm> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Injectm> CreateAsync(Guid catalogId, ViewModels.Injectm inject, CancellationToken ct);
         Task<ViewModels.Injectm> UpdateAsync(Guid id, ViewModels.Injectm inject, CancellationToken ct);
@@ -48,7 +48,7 @@ namespace Blueprint.Api.Services
 
         public async Task<IEnumerable<ViewModels.Injectm>> GetByCatalogAsync(Guid catalogId, bool hasSystemPermission, CancellationToken ct)
         {
-            // user must have ViewMsels permission or be a Catalog viewer
+            // user must have ViewCatalogs permission or be a Catalog viewer
             if (!hasSystemPermission && !await CatalogViewRequirement.IsMet(_user.GetId(), catalogId, _context))
                 throw new ForbiddenException();
 
@@ -60,12 +60,20 @@ namespace Blueprint.Api.Services
             return injects.Select(x => x.ToInjectm()).ToList();
         }
 
-        public async Task<IEnumerable<ViewModels.Injectm>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Injectm>> GetByInjectTypeAsync(Guid injectTypeId, bool hasSystemPermission, CancellationToken ct)
         {
             var injects = await _context.Injects
                 .Where(i => i.InjectTypeId == injectTypeId)
                 .Include(m => m.DataValues)
                 .ToListAsync(ct);
+
+            // the type spans catalogs, so without ViewCatalogs the caller sees only the injects of catalogs they can view
+            if (!hasSystemPermission)
+            {
+                var viewable = await CatalogViewRequirement.ViewableInjectIdsAsync(_user.GetId(), injects.Select(x => x.Id), _context, ct);
+                injects = injects.Where(x => viewable.Contains(x.Id)).ToList();
+            }
+
             return injects.Select(x => x.ToInjectm()).ToList();
         }
 

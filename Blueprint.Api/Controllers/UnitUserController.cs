@@ -29,27 +29,6 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets all UnitUsers in the system
-        /// </summary>
-        /// <remarks>
-        /// Returns a list of all of the UnitUsers in the system.
-        /// <para />
-        /// Only accessible to a SuperUser
-        /// </remarks>
-        /// <returns></returns>
-        [HttpGet("unitusers")]
-        [ProducesResponseType(typeof(IEnumerable<UnitUser>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getAllUnitUsers")]
-        public async Task<IActionResult> Get(CancellationToken ct)
-        {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewUnits], ct))
-                throw new ForbiddenException();
-
-            var list = await _unitUserService.GetAsync(ct);
-            return Ok(list);
-        }
-
-        /// <summary>
         /// Gets a specific UnitUser by id
         /// </summary>
         /// <remarks>

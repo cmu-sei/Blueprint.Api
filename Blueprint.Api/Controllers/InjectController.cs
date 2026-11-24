@@ -41,7 +41,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getInjectsByCatalog")]
         public async Task<IActionResult> GetByCatalog(Guid catalogId, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewCatalogs], ct);
             var list = await _injectService.GetByCatalogAsync(catalogId, hasSystemPermission, ct);
             return Ok(list);
         }
@@ -50,7 +50,8 @@ namespace Blueprint.Api.Controllers
         /// Gets Injects for an InjectType
         /// </summary>
         /// <remarks>
-        /// Returns a list of Injects for the InjectType.
+        /// Returns a list of Injects for the InjectType: every one of them to a User with the ViewCatalogs
+        /// permission, and to anybody else those in a Catalog they can view.
         /// </remarks>
         /// <param name="injectTypeId">The ID of the InjectType</param>
         /// <param name="ct"></param>
@@ -60,9 +61,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getInjectsByInjectType")]
         public async Task<IActionResult> GetByInjectType(Guid injectTypeId, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct))
-                throw new ForbiddenException();
-            var list = await _injectService.GetByInjectTypeAsync(injectTypeId, ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewCatalogs], ct);
+            var list = await _injectService.GetByInjectTypeAsync(injectTypeId, hasSystemPermission, ct);
             return Ok(list);
         }
 
@@ -72,7 +72,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Returns the Inject with the id specified
         /// <para />
-        /// Accessible to a User that is a member of a Team within the specified Inject
+        /// Accessible to a User with the ViewCatalogs permission, or who can view a Catalog the Inject is in
         /// </remarks>
         /// <param name="id">The id of the Inject</param>
         /// <param name="ct"></param>
@@ -82,7 +82,7 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getInject")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewCatalogs], ct);
             var inject = await _injectService.GetAsync(id, hasSystemPermission, ct);
 
             if (inject == null)

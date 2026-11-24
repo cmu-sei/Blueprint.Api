@@ -21,7 +21,6 @@ namespace Blueprint.Api.Services
 {
     public interface ICardTeamService
     {
-        Task<IEnumerable<ViewModels.CardTeam>> GetAsync(CancellationToken ct);
         Task<ViewModels.CardTeam> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.CardTeam>> GetByCardAsync(Guid cardId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.CardTeam>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
@@ -40,14 +39,6 @@ namespace Blueprint.Api.Services
         {
             _context = context;
             _user = team as ClaimsPrincipal;
-        }
-
-        public async Task<IEnumerable<ViewModels.CardTeam>> GetAsync(CancellationToken ct)
-        {
-            var items = await _context.CardTeams
-                .ToListAsync(ct);
-
-            return items.Select(x => x.ToCardTeam()).ToList();
         }
 
         public async Task<ViewModels.CardTeam> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)

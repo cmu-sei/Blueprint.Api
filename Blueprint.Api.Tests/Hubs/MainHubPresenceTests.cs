@@ -103,18 +103,18 @@ public class MainHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase(fi
     }
 
     [Fact]
-    public async Task SelectMsel_again_on_the_same_connection_sends_nothing()
+    public async Task SelectMsel_again_on_the_same_connection_sends_nothing_and_answers_with_the_same_state()
     {
         var msel = await SeedMsel();
         var alice = Connect("Alice");
-        await alice.Hub.SelectMsel([msel.Id]);
+        var first = await alice.Hub.SelectMsel([msel.Id]);
 
-        await alice.Hub.SelectMsel([msel.Id]);
+        var again = await alice.Hub.SelectMsel([msel.Id]);
 
-        // Leaving and joining the same MSEL is two changes, so two more states: gone, then back.
-        var sent = Sent(alice.Harness.Group(msel.Id.ToString()));
-        Assert.Equal(3, sent.Count);
-        Assert.Equal([1, 0, 1], sent.Select(x => x.Users.Count));
+        // Only the first selection announced anyone: the others never saw Alice leave and come back.
+        Assert.Single(Sent(alice.Harness.Group(msel.Id.ToString())));
+        Assert.Equal(first.Version, again.Version);
+        Assert.Equal(first.Users, again.Users);
     }
 
     [Fact]

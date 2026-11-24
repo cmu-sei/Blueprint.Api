@@ -41,6 +41,9 @@ public interface IPresenceTracker
     /// <returns>The result, or null when the connection was not present in the scope.</returns>
     PresenceChange Leave(Guid scopeId, string connectionId);
 
+    /// <summary>The scopes <paramref name="connectionId"/> is present in.</summary>
+    IReadOnlyList<Guid> ScopesOf(string connectionId);
+
     /// <summary>Forgets every scope <paramref name="connectionId"/> was present in, for a disconnect.</summary>
     /// <returns>The result for each scope the connection was present in.</returns>
     IReadOnlyList<PresenceChange> LeaveAll(string connectionId);
@@ -94,6 +97,14 @@ public class PresenceTracker : IPresenceTracker
                 .Select(x => x.Key)
                 .ToList()
                 .Select(scopeId => LeaveLocked(scopeId, connectionId))];
+        }
+    }
+
+    public IReadOnlyList<Guid> ScopesOf(string connectionId)
+    {
+        lock (_lock)
+        {
+            return [.. _scopes.Where(x => x.Value.ContainsKey(connectionId)).Select(x => x.Key)];
         }
     }
 

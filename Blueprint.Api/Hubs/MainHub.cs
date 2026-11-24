@@ -101,39 +101,37 @@ namespace Blueprint.Api.Hubs
             // leave all other MSELs
             var userId = Context.User.Identities.First().Claims.First(c => c.Type == "sub")?.Value;
             var idList = await GetMselIdList(userId);
+            var selected = args.Count() == 1 && idList.Contains(args[0].ToString()) ? args[0] : (Guid?)null;
 
-            await LeavePresence();
+            // Selecting the MSEL the connection is already on changes nothing for the others.
+            await LeavePresence(except: selected);
 
             foreach (var id in idList)
             {
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, id.ToString());
             }
             // join the selected MSEL
-            if (args.Count() == 1)
+            if (selected is not null)
             {
-                var mselId = args[0].ToString();
-                if (idList.Contains(mselId))
+                await Groups.AddToGroupAsync(Context.ConnectionId, selected.Value.ToString());
+
+                var change = _presence.Join(selected.Value, Context.ConnectionId, GetPresentUser(userId));
+
+                // The connection can have closed while this was waiting. Its disconnect has then already
+                // looked for what it had open and may have found nothing, so a join that registered it now
+                // must not leave it registered.
+                if (Context.ConnectionAborted.IsCancellationRequested)
                 {
-                    await Groups.AddToGroupAsync(Context.ConnectionId, mselId);
-
-                    var change = _presence.Join(args[0], Context.ConnectionId, GetPresentUser(userId));
-
-                    // The connection can have closed while this was waiting. Its disconnect has then already
-                    // looked for what it had open and may have found nothing, so a join that registered it now
-                    // must not leave it registered.
-                    if (Context.ConnectionAborted.IsCancellationRequested)
-                    {
-                        await LeavePresence(swallowFailures: true);
-                        return null;
-                    }
-
-                    if (change.Changed)
-                    {
-                        await SendPresence(change.State);
-                    }
-
-                    return ToWire(change.State);
+                    await LeavePresence(swallowFailures: true);
+                    return null;
                 }
+
+                if (change.Changed)
+                {
+                    await SendPresence(change.State);
+                }
+
+                return ToWire(change.State);
             }
 
             return null;
@@ -163,10 +161,20 @@ namespace Blueprint.Api.Hubs
             return new PresentUser(Guid.Parse(userId), string.IsNullOrWhiteSpace(name) ? "Unknown" : name);
         }
 
-        /// <summary>Takes the connection out of the presence of every MSEL it was in, telling those that changed.</summary>
-        private async Task LeavePresence(bool swallowFailures = false)
+        /// <summary>
+        /// Takes the connection out of the presence of every MSEL it was in, except <paramref name="except"/>,
+        /// telling those that changed.
+        /// </summary>
+        private async Task LeavePresence(bool swallowFailures = false, Guid? except = null)
         {
-            foreach (var change in _presence.LeaveAll(Context.ConnectionId).Where(x => x.Changed))
+            var changes = except is null
+                ? _presence.LeaveAll(Context.ConnectionId)
+                : [.. _presence.ScopesOf(Context.ConnectionId)
+                    .Where(x => x != except)
+                    .Select(x => _presence.Leave(x, Context.ConnectionId))
+                    .Where(x => x is not null)];
+
+            foreach (var change in changes.Where(x => x.Changed))
             {
                 if (!swallowFailures)
                 {

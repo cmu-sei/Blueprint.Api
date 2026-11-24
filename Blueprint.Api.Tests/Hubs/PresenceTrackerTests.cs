@@ -129,4 +129,17 @@ public class PresenceTrackerTests
         Assert.Single(departures, x => x.Changed);
         Assert.Empty(departures.Single(x => x.Changed).State.Users);
     }
+
+    [Fact]
+    public void ScopesOf_lists_the_scopes_a_connection_is_present_in()
+    {
+        var other = Guid.NewGuid();
+        _tracker.Join(_scope, "a1", _alice);
+        _tracker.Join(other, "a1", _alice);
+        _tracker.Join(other, "b1", _bob);
+
+        Assert.Equal([_scope, other], _tracker.ScopesOf("a1").Order());
+        Assert.Equal([other], _tracker.ScopesOf("b1"));
+        Assert.Empty(_tracker.ScopesOf("nobody"));
+    }
 }

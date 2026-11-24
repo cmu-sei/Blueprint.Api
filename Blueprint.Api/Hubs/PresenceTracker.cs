@@ -19,7 +19,7 @@ public record PresenceState(Guid ScopeId, long Version, IReadOnlyList<PresentUse
 
 /// <summary>
 /// What a change to a scope's presence left behind. <see cref="Changed"/> is true only when the set of
-/// users changed, the only time the others need telling.
+/// users, or the name listed for one of them, changed: the only time the others need telling.
 /// </summary>
 public record PresenceChange(PresenceState State, bool Changed);
 

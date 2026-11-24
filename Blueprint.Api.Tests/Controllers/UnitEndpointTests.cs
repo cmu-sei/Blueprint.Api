@@ -42,16 +42,75 @@ public class UnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(new[] { first.Id, second.Id }.Order(), units.Select(x => x.Id).Order());
     }
 
-    /// <summary>Get all for a caller with no permission at all is answered with a 200.</summary>
+    /// <summary>A caller who works on no MSEL and holds none of the unit list's permissions is refused it,
+    /// a unit's member included.</summary>
     [Fact]
-    public async Task GetAll_ForACallerWithNoPermissionAtAll_Is200()
+    public async Task GetAll_ForACallerWithNoPermissionAndNoMsel_Is403()
     {
         var unit = await SeedUnit();
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().InUnit(unit).SeedAsync();
+
+        var response = await Client(actor).GetAsync(Units, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>Every role on a MSEL opens its Contributors and Teams tabs, which list the units.</summary>
+    [Theory]
+    [InlineData(MselRole.Owner)]
+    [InlineData(MselRole.Editor)]
+    [InlineData(MselRole.Approver)]
+    [InlineData(MselRole.MoveEditor)]
+    [InlineData(MselRole.Viewer)]
+    [InlineData(MselRole.Evaluator)]
+    public async Task GetAll_ForAnyRoleOnAnyMsel_ReturnsEveryUnit(MselRole role)
+    {
+        var unit = await SeedUnit();
+        var actor = await Actor().OnNewMsel(role).SeedAsync();
 
         var units = await GetRows(Client(actor), Units);
 
-        Assert.Equal(unit.Id, Assert.Single(units).Id);
+        Assert.Contains(unit.Id, units.Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetAll_ForTheCreatorOfAMsel_Is200()
+    {
+        var actor = await Actor().SeedAsync();
+        await Seed(TestData.Msel(createdBy: actor.Id));
+
+        var response = await Client(actor).GetAsync(Units, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>The new-MSEL page lists the units, so <c>CreateMsels</c> and <c>ViewMsels</c> read them as
+    /// <c>ViewUnits</c> does.</summary>
+    [Theory]
+    [InlineData(SystemPermission.ViewUnits)]
+    [InlineData(SystemPermission.CreateMsels)]
+    [InlineData(SystemPermission.ViewMsels)]
+    public async Task GetAll_WithEachPermissionThatOpensIt_Is200(SystemPermission permission)
+    {
+        var actor = await Actor().WithSystemPermissions(permission).SeedAsync();
+
+        var response = await Client(actor).GetAsync(Units, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetAll_WithEveryOtherPermission_Is403()
+    {
+        var actor = await Actor()
+            .WithSystemPermissions(Enum.GetValues<SystemPermission>()
+                .Where(x => x is not (SystemPermission.ViewUnits or SystemPermission.CreateMsels or SystemPermission.ViewMsels))
+                .ToArray())
+            .SeedAsync();
+
+        var response = await Client(actor).GetAsync(Units, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -59,7 +118,7 @@ public class UnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     {
         var unit = await SeedUnit();
         var member = await Actor().InUnit(unit).SeedAsync();
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewUnits).SeedAsync();
 
         var units = await GetRows(Client(actor), Units);
 
@@ -239,9 +298,9 @@ public class UnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    /// <summary>Get for a member of the unit without view units is answered with a 403 though the list route shows it to them.</summary>
+    /// <summary>Get for a member of the unit without view units is answered with a 403.</summary>
     [Fact]
-    public async Task Get_ForAMemberOfTheUnitWithoutViewUnits_Is403_ThoughTheListRouteShowsItToThem()
+    public async Task Get_ForAMemberOfTheUnitWithoutViewUnits_Is403()
     {
         var unit = await SeedUnit();
         var actor = await Actor().InUnit(unit).SeedAsync();
@@ -249,7 +308,6 @@ public class UnitEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         var response = await Client(actor).GetAsync(UnitRoute(unit.Id), Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Equal(unit.Id, Assert.Single(await GetRows(Client(actor), Units)).Id);
     }
 
     /// <summary>Get answers an empty users list for a unit that has members.</summary>

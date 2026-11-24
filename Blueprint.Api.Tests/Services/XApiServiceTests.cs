@@ -828,6 +828,28 @@ public class XApiServiceTests(DatabaseFixture fixture) : DatabaseTestBase(fixtur
         Assert.Equal(0, await QueuedCount());
     }
 
+    /// <summary>Naming a member who is a Gallery observer through their MSEL role is refused too.</summary>
+    [Fact]
+    public async Task AssertCompetency_NamingAGalleryObserver_IsRefused()
+    {
+        var graph = await SeedAssertionGraph();
+        var watcher = await Actor().WithName("The Watcher").OnTeam(graph.Team).SeedAsync();
+        await Seed(new UserMselRoleEntity
+        {
+            Id = Guid.NewGuid(),
+            MselId = graph.Msel.Id,
+            UserId = watcher.Id,
+            Role = MselRole.Viewer,
+            GalleryExhibitRole = "Observer",
+            CreatedBy = Guid.NewGuid()
+        });
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            Service().AssertCompetencyAsync(Assertion(graph, userIds: [watcher.Id]), true, Ct));
+
+        Assert.Equal(0, await QueuedCount());
+    }
+
     [Fact]
     public async Task AssertCompetency_ForATeamWithNobodyToAssess_IsRefused()
     {

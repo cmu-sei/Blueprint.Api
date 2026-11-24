@@ -53,8 +53,9 @@ namespace Blueprint.Api.Controllers
         /// Creates a competency assertion xAPI statement
         /// </summary>
         /// <remarks>
-        /// Writes an xAPI statement with the "asserted" verb to the LRS, recording an assessor's
-        /// competency rating for a participant/team on a specific scenario event.
+        /// Queues one xAPI "asserted" statement per assessed member of the team, recording an assessor's
+        /// competency rating. The member is the actor and the assessor is the context instructor. By default
+        /// every member except observers and the assessor is assessed; <c>UserIds</c> narrows it.
         /// </remarks>
         [HttpPost("xapi/assertions")]
         [ProducesResponseType((int)HttpStatusCode.OK)]

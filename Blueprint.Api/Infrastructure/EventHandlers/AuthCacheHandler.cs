@@ -5,10 +5,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
-using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Services;
 using Crucible.Common.EntityEvents.Events;
 
 namespace Blueprint.Api.Infrastructure.EventHandlers
@@ -39,23 +38,35 @@ namespace Blueprint.Api.Infrastructure.EventHandlers
         }
     }
 
-    /// <summary>A role's permissions are every holder's, so a change to the role reaches all of them.</summary>
-    /// <remarks>
-    /// A user matched to the role by an IdP role claim holds no row naming it, and so keeps their entry
-    /// until it expires or their next token arrives (see <c>UserClaimsService.AddUserClaims</c>).
-    /// </remarks>
-    public class SystemRoleUpdatedAuthCacheHandler(IMemoryCache cache, BlueprintContext db)
-        : INotificationHandler<EntityUpdated<SystemRoleEntity>>
+    /// <summary>
+    /// A role's permissions are every holder's, and a user matched to it by an IdP role claim holds no row
+    /// naming it, so any change to a role - a new one an IdP role name now matches included - makes every
+    /// user's cached claims stale.
+    /// </summary>
+    public class SystemRoleCreatedAuthCacheHandler(IMemoryCache cache) : INotificationHandler<EntityCreated<SystemRoleEntity>>
     {
-        public async Task Handle(EntityUpdated<SystemRoleEntity> notification, CancellationToken cancellationToken)
+        public Task Handle(EntityCreated<SystemRoleEntity> notification, CancellationToken cancellationToken)
         {
-            var holderIds = await db.Users
-                .Where(u => u.RoleId == notification.Entity.Id)
-                .Select(u => u.Id)
-                .ToListAsync(cancellationToken);
+            UserClaimsService.ChangeRolesVersion(cache);
+            return Task.CompletedTask;
+        }
+    }
 
-            foreach (var userId in holderIds)
-                cache.Remove(userId);
+    public class SystemRoleUpdatedAuthCacheHandler(IMemoryCache cache) : INotificationHandler<EntityUpdated<SystemRoleEntity>>
+    {
+        public Task Handle(EntityUpdated<SystemRoleEntity> notification, CancellationToken cancellationToken)
+        {
+            UserClaimsService.ChangeRolesVersion(cache);
+            return Task.CompletedTask;
+        }
+    }
+
+    public class SystemRoleDeletedAuthCacheHandler(IMemoryCache cache) : INotificationHandler<EntityDeleted<SystemRoleEntity>>
+    {
+        public Task Handle(EntityDeleted<SystemRoleEntity> notification, CancellationToken cancellationToken)
+        {
+            UserClaimsService.ChangeRolesVersion(cache);
+            return Task.CompletedTask;
         }
     }
 }

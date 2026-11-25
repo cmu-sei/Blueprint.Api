@@ -49,8 +49,9 @@ namespace Blueprint.Api.Services
             var identity = ((ClaimsIdentity)principal.Identity);
             var userId = principal.GetId();
 
-            // Don't use cached claims if given a new token and we are using roles or groups from the token
-            if (_cache.TryGetValue(userId, out claims) && (_options.UseGroupsFromIdP || _options.UseRolesFromIdP))
+            // Don't use cached claims if given a new token: a new sign-in or token refresh re-reads the user's
+            // role and the IdP's claims, whether or not roles or groups come from the token
+            if (_cache.TryGetValue(userId, out claims))
             {
                 var cachedTokenId = claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
                 var newTokenId = identity.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;

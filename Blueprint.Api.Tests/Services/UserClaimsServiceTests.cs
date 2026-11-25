@@ -277,9 +277,12 @@ public class UserClaimsServiceTests(DatabaseFixture fixture) : DatabaseTestBase(
         Assert.NotEmpty(Permissions(principal));
     }
 
-    /// <summary>Add user claims with caching and no id p roles ignores a new token id.</summary>
+    /// <summary>
+    /// Without IdP roles or groups a new token still rebuilds the claims, so a role revoked in Blueprint is
+    /// gone after the user's next sign-in or token refresh, not only when the cache entry expires.
+    /// </summary>
     [Fact]
-    public async Task AddUserClaims_WithCachingAndNoIdPRoles_IgnoresANewTokenId()
+    public async Task AddUserClaims_WithCachingAndNoIdPRolesOrGroups_RebuildsOnANewTokenId()
     {
         var actor = await Actor().WithAllSystemPermissions().SeedAsync();
 
@@ -289,13 +292,24 @@ public class UserClaimsServiceTests(DatabaseFixture fixture) : DatabaseTestBase(
         var principal = await Service(Caching())
             .AddUserClaims(Token(actor.Id, jti: "token-2"), update: false);
 
+        Assert.Empty(Permissions(principal));
+    }
+
+    [Fact]
+    public async Task AddUserClaims_WithCachingAndNoIdPRolesOrGroups_KeepsTheCacheForTheSameTokenId()
+    {
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+
+        await Service(Caching()).AddUserClaims(Token(actor.Id, jti: "token-1"), update: false);
+        await GiveRole(actor.Id, null);
+
+        var principal = await Service(Caching())
+            .AddUserClaims(Token(actor.Id, jti: "token-1"), update: false);
+
         Assert.NotEmpty(Permissions(principal));
     }
 
-    /// <summary>
-    /// With IdP roles in play the guard is satisfied, and a new token does rebuild the claims. This is the
-    /// behaviour the shipped configuration misses.
-    /// </summary>
+    /// <summary>With IdP roles in play a new token rebuilds the claims too.</summary>
     [Fact]
     public async Task AddUserClaims_WithCachingAndIdPRoles_RebuildsOnANewTokenId()
     {

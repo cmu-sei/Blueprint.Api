@@ -95,13 +95,33 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    [Fact]
-    public async Task GetAll_WithEveryPermissionButViewUsersAndViewMsels_Is403()
+    /// <summary>A group or unit manager adds members by picking from the user list, as Alloy and Caster let
+    /// group-membership managers list users, and a user manager manages that list.</summary>
+    [Theory]
+    [InlineData(SystemPermission.ManageUsers)]
+    [InlineData(SystemPermission.ManageGroups)]
+    [InlineData(SystemPermission.ManageUnits)]
+    public async Task GetAll_WithAPermissionThatAddsMembers_ReturnsEveryUser(SystemPermission permission)
     {
+        var stranger = TestData.User();
+        await Seed(stranger);
+        var actor = await Actor().WithSystemPermissions(permission).SeedAsync();
+
+        var users = await GetUsers(Client(actor));
+
+        Assert.Contains(stranger.Id, users.Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetAll_WithEveryPermissionButThoseThatOpenIt_Is403()
+    {
+        SystemPermission[] opens =
+        [
+            SystemPermission.ViewUsers, SystemPermission.ManageUsers, SystemPermission.ViewMsels,
+            SystemPermission.ManageGroups, SystemPermission.ManageUnits
+        ];
         var actor = await Actor()
-            .WithSystemPermissions(Enum.GetValues<SystemPermission>()
-                .Where(x => x != SystemPermission.ViewUsers && x != SystemPermission.ViewMsels)
-                .ToArray())
+            .WithSystemPermissions(Enum.GetValues<SystemPermission>().Except(opens).ToArray())
             .SeedAsync();
 
         var response = await Client(actor).GetAsync(Users, Ct);

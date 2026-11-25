@@ -122,4 +122,32 @@ public class PlayerApplicationUrlsTests
     {
         Assert.False(PlayerApplicationUrls.IsAllowed(url));
     }
+
+    /// <summary>
+    /// A push assigns the Player, CITE, Gallery and Steamfitter ids before it sends the applications, so their
+    /// pending ids stand in; the Caster workspace is created after, and an unused integration never gets an
+    /// id, so a host built from either would be empty when sent.
+    /// </summary>
+    [Theory]
+    [InlineData("https://{playerViewId}.labs.example/app", true)]
+    [InlineData("https://{citeEvaluationId}.labs.example/app", true)]
+    [InlineData("https://{casterWorkspaceId}.labs.example/app", false)]
+    public void PushProblem_ForAPendingIdInAHostName_AllowsOnlyIdsAssignedBeforeTheApplicationsAreSent(string url, bool sendable)
+    {
+        var msel = new Blueprint.Api.Data.Models.MselEntity { UsePlayer = true, UseCite = true, UseCaster = true };
+
+        var problem = PlayerApplicationUrls.PushProblem(url, msel, new Blueprint.Api.Infrastructure.Options.ClientOptions());
+
+        Assert.Equal(sendable ? null : PlayerApplicationUrls.UnsendableMessage, problem);
+    }
+
+    [Fact]
+    public void PushProblem_ForAnUnusedIntegrationsIdInAHostName_IsUnsendable()
+    {
+        var msel = new Blueprint.Api.Data.Models.MselEntity { UsePlayer = true };
+
+        Assert.Equal(
+            PlayerApplicationUrls.UnsendableMessage,
+            PlayerApplicationUrls.PushProblem("https://{citeEvaluationId}.labs.example/app", msel, new Blueprint.Api.Infrastructure.Options.ClientOptions()));
+    }
 }

@@ -38,14 +38,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IUserClaimsService _userClaimsService;
         private readonly ILogger<IUserService> _logger;
 
-        public UserService(BlueprintContext context, IPrincipal user, IUserClaimsService userClaimsService, ILogger<IUserService> logger)
+        public UserService(BlueprintContext context, IPrincipal user, ILogger<IUserService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _userClaimsService = userClaimsService;
             _logger = logger;
         }
 

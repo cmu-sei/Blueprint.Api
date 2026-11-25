@@ -352,6 +352,24 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    /// <summary>Two fields mapped to one article parameter would fail the article push, so the push is a 409
+    /// naming the parameter and the fields, not a 500.</summary>
+    [Fact]
+    public async Task Push_OfAGalleryMselWithTwoFieldsMappedToOneParameter_Is409NamingThem()
+    {
+        var msel = await SeedGalleryMsel(("Fine", "https://fine.example/"));
+        var second = TestData.DataField(msel.Id, name: "Second link", displayOrder: 3);
+        second.GalleryArticleParameter = GalleryArticleParameter.Url.ToString();
+        await Seed(second);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        var title = (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.Contains("Url (\"Link\", \"Second link\")", title);
+        AssertNothingEnqueued();
+    }
+
     /// <summary>An approved MSEL using Gallery, with a Name and a Url article field and one Gallery
     /// scenario event per article.</summary>
     private async Task<MselEntity> SeedGalleryMsel(params (string Name, string Url)[] articles)

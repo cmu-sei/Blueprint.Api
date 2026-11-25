@@ -2941,6 +2941,16 @@ namespace Blueprint.Api.Services
             var dataFields = await _context.DataFields.AsNoTracking()
                 .Where(df => df.MselId == mselId)
                 .ToListAsync(ct);
+            // the article push reads each parameter from the one field mapped to it, and fails on two
+            var duplicated = dataFields
+                .Where(df => !string.IsNullOrEmpty(df.GalleryArticleParameter))
+                .GroupBy(df => df.GalleryArticleParameter)
+                .Where(g => g.Count() > 1)
+                .Select(g => $"{g.Key} ({string.Join(", ", g.Select(df => $"\"{df.Name}\""))})")
+                .ToList();
+            if (duplicated.Count > 0)
+                throw new ConflictException(
+                    $"Fix the Gallery articles before pushing. Each Gallery article parameter can be mapped to one data field, but these are mapped to more than one: {string.Join("; ", duplicated)}.");
             var urlKey = GalleryArticleParameter.Url.ToString();
             if (!dataFields.Any(df => df.GalleryArticleParameter == urlKey))
                 return;

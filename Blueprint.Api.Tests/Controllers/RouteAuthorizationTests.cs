@@ -47,12 +47,12 @@ namespace Blueprint.Api.Tests.Controllers;
 /// action's authorization check, so a JSON body would assert nothing. Add a row per route as each
 /// remaining service is covered; do not add per-service 401/403 tests.
 /// <para />
-/// Three routes are deliberately absent because each resolves no authorization at all and so cannot
+/// Three routes are deliberately absent because each resolves no permission at all and so cannot
 /// satisfy <see cref="EveryRoute_is_forbidden_for_a_caller_holding_every_permission_but_the_named_one"/>: <c>GET lmt/resource/{mselId}</c>
-/// (<c>LmtController</c> is <c>[AllowAnonymous]</c> - see <see cref="LmtEndpointTests"/>),
-/// <c>GET my-catalogs</c> and <c>GET proficiencyScales/{id}</c>. The latter two are covered by the
-/// happy-path test in their own files, which is where the absence of a check is recorded, and
-/// <c>GET proficiencyScales/{id}</c> also holds a row in <see cref="RoutesWithoutAPermission"/> so its
+/// (any signed-in caller, for an approved template - see <see cref="LmtEndpointTests"/>),
+/// <c>GET my-catalogs</c> and <c>GET proficiencyScales/{id}</c>. Each is covered by the happy-path test
+/// in its own file, which is where the absence of a check is recorded, and the LMT route and
+/// <c>GET proficiencyScales/{id}</c> also hold a row in <see cref="RoutesWithoutAPermission"/> so their
 /// refusal of an anonymous caller is still asserted.
 /// <para />
 /// Routes that more than one permission opens cannot hold a row either, since a row lifts its refusal with
@@ -374,7 +374,8 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
     {
         { "GET", "api/caster/directories" },
         { "GET", "api/caster/directories/00000000-0000-0000-0000-000000000001/team-variables" },
-        { "GET", "api/proficiencyScales/{proficiencyscale}" }
+        { "GET", "api/proficiencyScales/{proficiencyscale}" },
+        { "GET", "api/lmt/resource/{msel}" }
     };
 
     [Theory]

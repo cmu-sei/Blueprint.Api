@@ -5,14 +5,12 @@ using System;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Blueprint.Api.Services;
 using Swashbuckle.AspNetCore.Annotations;
 
 namespace Blueprint.Api.Controllers
 {
-    [AllowAnonymous]
     public class LmtController : BaseController
     {
         private readonly ILmtService _lmtService;
@@ -27,8 +25,9 @@ namespace Blueprint.Api.Controllers
         /// </summary>
         /// <remarks>
         /// Returns LMT (Learning Metadata) as JSON-LD conforming to IEEE 2881 schema.
-        /// This endpoint is publicly accessible to enable catalog discovery by LMS systems,
-        /// PCTE registries, and other TLA components. The JSON-LD includes:
+        /// Accessible to any signed-in caller, to enable catalog discovery by LMS systems,
+        /// PCTE registries, and other TLA components, and only for a published MSEL: a template
+        /// with the Approved status. Any other MSEL is a 404. The JSON-LD includes:
         /// - Exercise name, description, objectives
         /// - Competencies assessed (lrmi:assesses from MselCompetency associations)
         /// - Educational metadata (difficulty, purpose, mode, keywords)

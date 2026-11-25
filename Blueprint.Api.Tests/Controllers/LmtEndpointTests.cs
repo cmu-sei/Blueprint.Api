@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Tests.Support;
 using Xunit;
 
@@ -16,9 +17,9 @@ namespace Blueprint.Api.Tests.Controllers;
 /// publishes a MSEL's IEEE 2881 learning metadata for LMS and PCTE catalog discovery.
 /// </summary>
 /// <remarks>
-/// The only <c>[AllowAnonymous]</c> controller in the API, which is deliberate - and the only one with no
-/// published-or-template check, which is not. It is therefore absent from
-/// <see cref="RouteAuthorizationTests"/>: there is no authorization here to assert.
+/// Any signed-in caller may read it, and only for a published MSEL - a template with the Approved status;
+/// every other MSEL answers 404, as one that is not there does. It asks no permission, so its refusal of
+/// an anonymous caller is asserted in <see cref="RouteAuthorizationTests"/> and the rest here.
 /// </remarks>
 public class LmtEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
@@ -26,7 +27,7 @@ public class LmtEndpointTests(DatabaseFixture fixture, BlueprintAppFactory facto
     [Fact]
     public async Task Get_ForAMsel_AnswersItsMetadata()
     {
-        var msel = TestData.Msel();
+        var msel = Published();
         msel.Name = "Cyber Shield 26";
         msel.Description = "A defensive exercise";
         msel.EducationalLevel = "Intermediate";
@@ -34,7 +35,7 @@ public class LmtEndpointTests(DatabaseFixture fixture, BlueprintAppFactory facto
         msel.Keywords = " blue team , SOC ";
         await Seed(msel);
 
-        var response = await Client().GetAsync($"api/lmt/resource/{msel.Id}", Ct);
+        var response = await (await Reader()).GetAsync($"api/lmt/resource/{msel.Id}", Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("application/ld+json", response.Content.Headers.ContentType.MediaType);
@@ -60,10 +61,10 @@ public class LmtEndpointTests(DatabaseFixture fixture, BlueprintAppFactory facto
     [Fact]
     public async Task Get_ForAMselWithNoEducationalMetadata_PublishesTheDefaults()
     {
-        var msel = TestData.Msel();
+        var msel = Published();
         await Seed(msel);
 
-        var root = await Document(await Client().GetAsync($"api/lmt/resource/{msel.Id}", Ct));
+        var root = await Document(await (await Reader()).GetAsync($"api/lmt/resource/{msel.Id}", Ct));
 
         Assert.Equal("Assessment", root.GetProperty("educationalUse").GetString());
         Assert.Equal("Online", root.GetProperty("courseMode").GetString());
@@ -76,7 +77,7 @@ public class LmtEndpointTests(DatabaseFixture fixture, BlueprintAppFactory facto
     [Fact]
     public async Task Get_PublishesTheMselsCompetenciesAsAssesses()
     {
-        var msel = TestData.Msel();
+        var msel = Published();
         var framework = TestData.CompetencyFramework(idNumber: "https://example.test/framework");
         await Seed(msel, framework);
         var competency = TestData.Competency(framework.Id, "https://example.test/c/1");
@@ -88,7 +89,7 @@ public class LmtEndpointTests(DatabaseFixture fixture, BlueprintAppFactory facto
             TestData.MselCompetency(msel.Id, competency.Id),
             TestData.MselCompetency(msel.Id, other.Id));
 
-        var root = await Document(await Client().GetAsync($"api/lmt/resource/{msel.Id}", Ct));
+        var root = await Document(await (await Reader()).GetAsync($"api/lmt/resource/{msel.Id}", Ct));
 
         var assesses = root.GetProperty("assesses").EnumerateArray().ToList();
         Assert.Equal(2, assesses.Count);
@@ -109,7 +110,7 @@ public class LmtEndpointTests(DatabaseFixture fixture, BlueprintAppFactory facto
     [Fact]
     public async Task Get_ForAnIdThatIsNotThere_Is404()
     {
-        var response = await Client().GetAsync($"api/lmt/resource/{Guid.NewGuid()}", Ct);
+        var response = await (await Reader()).GetAsync($"api/lmt/resource/{Guid.NewGuid()}", Ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -118,10 +119,10 @@ public class LmtEndpointTests(DatabaseFixture fixture, BlueprintAppFactory facto
     [Fact]
     public async Task Get_AnswersTheJsonLdKeywordsWithoutTheirAtPrefix()
     {
-        var msel = TestData.Msel();
+        var msel = Published();
         await Seed(msel);
 
-        var body = await Client().GetStringAsync($"api/lmt/resource/{msel.Id}", Ct);
+        var body = await (await Reader()).GetStringAsync($"api/lmt/resource/{msel.Id}", Ct);
 
         Assert.DoesNotContain("@context", body);
         Assert.DoesNotContain("@type", body);
@@ -130,27 +131,65 @@ public class LmtEndpointTests(DatabaseFixture fixture, BlueprintAppFactory facto
         Assert.Contains("\"type\": \"LearningResource\"", body);
     }
 
-    /// <summary>Get for a pending MSEL that is not a template publishes it anyway.</summary>
-    [Fact]
-    public async Task Get_ForAPendingMselThatIsNotATemplate_PublishesItAnyway()
+    /// <summary>Only a template with the Approved status is published: a live exercise, approved or
+    /// not, and a template still in draft all answer 404, with nothing about them in the body.</summary>
+    [Theory]
+    [InlineData(false, MselItemStatus.Pending)]
+    [InlineData(false, MselItemStatus.Approved)]
+    [InlineData(false, MselItemStatus.Deployed)]
+    [InlineData(true, MselItemStatus.Pending)]
+    [InlineData(true, MselItemStatus.Entered)]
+    [InlineData(true, MselItemStatus.Archived)]
+    public async Task Get_ForAMselThatIsNotAnApprovedTemplate_Is404(bool isTemplate, MselItemStatus status)
     {
-        var msel = TestData.Msel(isTemplate: false);
+        var msel = TestData.Msel(isTemplate: isTemplate, status: status);
         msel.Name = "Not for publication";
         await Seed(msel);
 
-        var root = await Document(await Client().GetAsync($"api/lmt/resource/{msel.Id}", Ct));
+        var response = await (await Reader()).GetAsync($"api/lmt/resource/{msel.Id}", Ct);
 
-        Assert.Equal("Not for publication", root.GetProperty("name").GetString());
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.DoesNotContain("Not for publication", await response.Content.ReadAsStringAsync(Ct));
     }
+
+    [Fact]
+    public async Task Get_ForAnApprovedTemplate_IsReadableByASignedInCallerWithNoPermissionOrRole()
+    {
+        var msel = Published();
+        await Seed(msel);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/lmt/resource/{msel.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_ForAnApprovedTemplate_RefusesAnAnonymousCaller()
+    {
+        var msel = Published();
+        await Seed(msel);
+
+        var response = await Client().GetAsync($"api/lmt/resource/{msel.Id}", Ct);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    /// <summary>A published MSEL: a template with the Approved status.</summary>
+    private static Data.Models.MselEntity Published() =>
+        TestData.Msel(isTemplate: true, status: MselItemStatus.Approved);
+
+    /// <summary>A signed-in caller holding no permission and no role.</summary>
+    private async Task<System.Net.Http.HttpClient> Reader() => Client(await Actor().SeedAsync());
 
     /// <summary>Get answers an id that does not include the API path base.</summary>
     [Fact]
     public async Task Get_AnswersAnIdThatDoesNotIncludeTheApiPathBase()
     {
-        var msel = TestData.Msel();
+        var msel = Published();
         await Seed(msel);
 
-        var root = await Document(await Client().GetAsync($"api/lmt/resource/{msel.Id}", Ct));
+        var root = await Document(await (await Reader()).GetAsync($"api/lmt/resource/{msel.Id}", Ct));
 
         Assert.Equal($"http://localhost:4724/lmt/resource/{msel.Id}", root.GetProperty("id").GetString());
         Assert.Equal($"http://localhost:4725/#/msel/{msel.Id}", root.GetProperty("url").GetString());

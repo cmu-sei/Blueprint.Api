@@ -2919,15 +2919,18 @@ namespace Blueprint.Api.Services
         // Player refuses an application url with a scheme other than http(s). A MSEL's applications are checked
         // when they are saved, but a copied or imported MSEL brings its own, so the push checks them all first
         // rather than leave Player's refusal to the background push, which only logs it.
-        private static void ValidatePlayerApplicationUrls(MselEntity msel)
+        private async Task ValidatePlayerApplicationUrlsAsync(Guid mselId, CancellationToken ct)
         {
-            var refused = msel.PlayerApplications
-                .Where(a => !PlayerApplicationUrls.IsAllowed(a.Url))
-                .Select(a => $"\"{a.Name}\"")
+            var applications = await _context.PlayerApplications.AsNoTracking()
+                .Where(a => a.MselId == mselId)
+                .ToListAsync(ct);
+            var problems = applications
+                .Select(a => (a.Name, Problem: PlayerApplicationUrls.Problem(a.Url)))
+                .Where(x => x.Problem != null)
+                .Select(x => $"\"{x.Name}\": {x.Problem}")
                 .ToList();
-            if (refused.Count > 0)
-                throw new ConflictException(
-                    $"Fix the Player applications before pushing. {(refused.Count == 1 ? "The application" : "The applications")} {string.Join(", ", refused)}: {PlayerApplicationUrls.InvalidMessage}");
+            if (problems.Count > 0)
+                throw new ConflictException($"Fix the Player applications before pushing. {string.Join(" ", problems)}");
         }
 
         // Gallery refuses an article url that is not empty or an absolute http(s) url. The push sends each
@@ -2982,7 +2985,7 @@ namespace Blueprint.Api.Services
             if (msel.UseCite)
                 await ValidateCiteSetupAsync(msel, ct);
             if (msel.UsePlayer)
-                ValidatePlayerApplicationUrls(msel);
+                await ValidatePlayerApplicationUrlsAsync(mselId, ct);
             if (msel.UseGallery)
                 await ValidateGalleryArticleUrlsAsync(mselId, ct);
             // verify that no users are on more than one team
@@ -3417,6 +3420,11 @@ namespace Blueprint.Api.Services
             await ValidateMovesAsync(mselId, ct);
             if (template.UseCite)
                 await ValidateCiteSetupAsync(template, ct);
+            // the copy keeps the template's application and article urls, and its push sends them
+            if (template.UsePlayer)
+                await ValidatePlayerApplicationUrlsAsync(mselId, ct);
+            if (template.UseGallery)
+                await ValidateGalleryArticleUrlsAsync(mselId, ct);
 
             // clone the template MSEL
             // A launch needs the template's directory, so it has no use for the copy, and the invitee, who owns the

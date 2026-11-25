@@ -1144,6 +1144,52 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
         Assert.Empty(DrainIntegrationQueue());
     }
 
+    /// <summary>The launch's push sends the template's application urls, so one Player would refuse is a 409
+    /// for the planner, before the template is cloned or the invitation used up.</summary>
+    [Fact]
+    public async Task Launch_OfAPlayerTemplateWithAnApplicationUrlPlayerRefuses_Is409AndKeepsTheInvitation()
+    {
+        var template = await SeedTemplate(m => m.UsePlayer = true);
+        await Seed(TestData.PlayerApplication(template.Id, "Bad", url: "javascript:alert(1)"));
+        var team = await SeedTeam(template);
+        var invitation = await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+        var mselCount = await ReadBack(db => db.Msels.CountAsync(Ct));
+
+        var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        var title = (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.StartsWith("Fix the Player applications before pushing. \"Bad\": ", title);
+        await using var db = NewContext();
+        Assert.Equal(invitation.UserCount, (await db.Invitations.SingleAsync(i => i.Id == invitation.Id, Ct)).UserCount);
+        Assert.Equal(mselCount, await db.Msels.CountAsync(Ct));
+        Assert.Empty(DrainIntegrationQueue());
+    }
+
+    /// <summary>The same for an article url Gallery would refuse.</summary>
+    [Fact]
+    public async Task Launch_OfAGalleryTemplateWithAnArticleUrlGalleryRefuses_Is409AndKeepsTheInvitation()
+    {
+        var template = await SeedTemplate(m => m.UseGallery = true);
+        var urlField = TestData.DataField(template.Id, name: "Link");
+        urlField.GalleryArticleParameter = GalleryArticleParameter.Url.ToString();
+        var scenarioEvent = TestData.ScenarioEvent(template.Id);
+        scenarioEvent.IntegrationTarget = "Gallery";
+        await Seed(urlField, scenarioEvent);
+        await Seed(TestData.DataValue(urlField.Id, scenarioEvent.Id, "/relative"));
+        var team = await SeedTeam(template);
+        var invitation = await SeedInvitation(template, team);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Launch(ClientWithEmail(actor, "a@example.test"), template.Id);
+
+        var title = (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.StartsWith("Fix the Gallery articles before pushing.", title);
+        await using var db = NewContext();
+        Assert.Equal(invitation.UserCount, (await db.Invitations.SingleAsync(i => i.Id == invitation.Id, Ct)).UserCount);
+        Assert.Empty(DrainIntegrationQueue());
+    }
+
     /// <summary>A CITE template with a move that has no situation time is a 409 naming the move, before the
     /// template is cloned.</summary>
     [Fact]

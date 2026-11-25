@@ -30,6 +30,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ApplicationTemplate>> GetApplicationTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<View>> GetMyViewsAsync(CancellationToken ct);
         Task PushApplication(PlayerApplication playerApplication, CancellationToken ct);
+        Task EnsurePushableAsync(Guid mselId, string url, CancellationToken ct);
     }
 
     public class PlayerService : IPlayerService
@@ -88,17 +89,35 @@ namespace Blueprint.Api.Services
             return views;
         }
 
-        public async Task PushApplication(PlayerApplication application, CancellationToken ct)
+        /// <summary>
+        /// Refuses an application that cannot be pushed to the MSEL's Player view: the MSEL has none, or the url,
+        /// filled in as the full push fills it, is one Player would refuse or Blueprint cannot send. Checked on
+        /// the request rather than in the background worker, which could only log the failure.
+        /// </summary>
+        public async Task EnsurePushableAsync(Guid mselId, string url, CancellationToken ct)
         {
-            var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == application.MselId, ct);
+            var msel = await _context.Msels.AsNoTracking().SingleOrDefaultAsync(m => m.Id == mselId, ct);
+            ResolvePushable(msel, url);
+        }
+
+        // the url filled in for the push, or a ConflictException
+        private string ResolvePushable(MselEntity msel, string url)
+        {
             if (msel?.PlayerViewId == null)
                 throw new ConflictException("The MSEL has not been pushed to Player, so the application cannot be added to its view.");
 
-            // filled in and checked as the full push does, here rather than in the background worker, so a url
-            // Player would refuse is answered on this request instead of failing out of sight
-            var url = PlayerApplicationUrls.Resolve(application.Url, msel, _clientOptions);
-            if (!PlayerApplicationUrls.IsAllowed(url))
-                throw new ConflictException(PlayerApplicationUrls.InvalidMessage);
+            var resolved = PlayerApplicationUrls.Resolve(url, msel, _clientOptions);
+            var problem = PlayerApplicationUrls.ResolvedProblem(resolved);
+            if (problem != null)
+                throw new ConflictException(problem);
+
+            return resolved;
+        }
+
+        public async Task PushApplication(PlayerApplication application, CancellationToken ct)
+        {
+            var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == application.MselId, ct);
+            var url = ResolvePushable(msel, application.Url);
 
             var playerApplication = new Application() {
                 Name = application.Name,

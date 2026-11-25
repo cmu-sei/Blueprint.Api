@@ -310,7 +310,7 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
 
         Assert.Equal(
-            "Fix the Player applications before pushing. The application \"Bad\": A Player application's Url must be an absolute http or https URL, or a relative one.",
+            "Fix the Player applications before pushing. \"Bad\": A Player application's Url must be an absolute http or https URL, or a relative one.",
             (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
         Assert.Equal(
             MselItemStatus.Approved,

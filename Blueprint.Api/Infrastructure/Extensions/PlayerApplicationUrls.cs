@@ -25,6 +25,17 @@ namespace Blueprint.Api.Infrastructure.Extensions
         public const string InvalidMessage =
             "A Player application's Url must be an absolute http or https URL, or a relative one.";
 
+        public const string UnsendableMessage =
+            "Blueprint cannot send Player an application Url whose host or port is a placeholder. Use an address, or one of Blueprint's own placeholders such as {vmUrl}.";
+
+        /// <summary>The address Blueprint's own url placeholders stand in for while a template is checked.</summary>
+        private static readonly ClientOptions CheckAddresses = new()
+        {
+            PlayerUiUrl = "https://player.check", CiteUiUrl = "https://cite.check", GalleryUiUrl = "https://gallery.check",
+            SteamfitterUiUrl = "https://steamfitter.check", CasterUiUrl = "https://caster.check",
+            VmUiUrl = "https://vm.check", BlueprintUiUrl = "https://blueprint.check"
+        };
+
         /// <summary>Stands in for each placeholder while the url is checked.</summary>
         private const char Hole = '\0';
 
@@ -72,6 +83,34 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 return true;
 
             return prefix.Replace(Hole.ToString(), string.Empty).TrimStart().Any(c => !IsSchemeCharacter(c));
+        }
+
+        /// <summary>
+        /// Why Blueprint cannot save <paramref name="url"/> as an application url, or null when it can: Player
+        /// would refuse it, or, with Blueprint's placeholders filled in, it is not a url Player's client can
+        /// carry. That client sends a <see cref="Uri"/>, which cannot hold a placeholder in place of a host or
+        /// port (<c>https://{vm-ui}/views/{viewId}</c>), so such a url would reach Player as none.
+        /// </summary>
+        public static string Problem(string url)
+        {
+            if (!IsAllowed(url))
+                return InvalidMessage;
+            if (string.IsNullOrWhiteSpace(url))
+                return null;
+
+            var resolved = Resolve(url, new MselEntity(), CheckAddresses);
+            return ToPlayerUri(resolved) == null ? UnsendableMessage : null;
+        }
+
+        /// <summary>Why Blueprint cannot send an already filled-in url to Player, or null when it can.</summary>
+        public static string ResolvedProblem(string resolvedUrl)
+        {
+            if (!IsAllowed(resolvedUrl))
+                return InvalidMessage;
+            if (string.IsNullOrWhiteSpace(resolvedUrl))
+                return null;
+
+            return ToPlayerUri(resolvedUrl) == null ? UnsendableMessage : null;
         }
 
         /// <summary>

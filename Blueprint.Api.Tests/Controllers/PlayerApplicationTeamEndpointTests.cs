@@ -237,8 +237,8 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
         var graph = await SeedGraph();
-        var second = TestData.PlayerApplication(graph.Msel.Id, "second");
-        var added = TestData.PlayerApplication(graph.Msel.Id, "added");
+        var second = TestData.PlayerApplication(graph.Msel.Id, "second", url: "http://second.example/");
+        var added = TestData.PlayerApplication(graph.Msel.Id, "added", url: "http://added.example/");
         await Seed(second, added);
         var secondRow = TestData.PlayerApplicationTeam(second.Id, graph.Team.Id, 2);
         await Seed(secondRow);
@@ -272,6 +272,55 @@ public class PlayerApplicationTeamEndpointTests(DatabaseFixture fixture, Bluepri
             "api/teamplayerApplications", Body(application.Id, team.Id), Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>
+    /// A team shows each view once in Player: giving it the same application again, or another for a view it has
+    /// (CITE opens on the dashboard, as CITE Dashboard does), is a 409 naming what it has, and nothing is added.
+    /// </summary>
+    [Fact]
+    public async Task Create_ForAViewTheTeamHasAlready_Is409()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var team = TestData.Team(msel.Id);
+        team.ShortName = "BLUE";
+        var cite = TestData.PlayerApplication(msel.Id, name: "CITE", url: "{citeUrl}?evaluation={citeEvaluationId}{theme}");
+        var dashboard = TestData.PlayerApplication(msel.Id, name: "CITE Dashboard", url: "{citeUrl}?section=dashboard&evaluation={citeEvaluationId}{theme}");
+        await Seed(team, cite, dashboard);
+        await Seed(TestData.PlayerApplicationTeam(cite.Id, team.Id, 1));
+
+        var again = await Client(actor).PostAsJsonAsync("api/teamplayerApplications", Body(cite.Id, team.Id), Ct);
+        var sameView = await Client(actor).PostAsJsonAsync("api/teamplayerApplications", Body(dashboard.Id, team.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, sameView.StatusCode);
+        Assert.Contains("BLUE already has CITE, which shows the same view as CITE Dashboard", await sameView.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(1, await ReadBack(rb => rb.PlayerApplicationTeams.CountAsync(x => x.TeamId == team.Id, Ct)));
+    }
+
+    /// <summary>
+    /// A team that already shows two applications for one view keeps both: only a new link is refused, so the 409 does
+    /// not strand a MSEL saved before it. Another view can still be added to that team.
+    /// </summary>
+    [Fact]
+    public async Task Create_ForATeamWithTwoApplicationsForOneView_AddsAnotherViewAndKeepsBoth()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var team = TestData.Team(msel.Id);
+        var cite = TestData.PlayerApplication(msel.Id, name: "CITE", url: "{citeUrl}?evaluation={citeEvaluationId}{theme}");
+        var dashboard = TestData.PlayerApplication(msel.Id, name: "CITE Dashboard", url: "{citeUrl}?section=dashboard&evaluation={citeEvaluationId}{theme}");
+        var gallery = TestData.PlayerApplication(msel.Id, name: "Gallery", url: "{galleryUrl}?exhibit={galleryExhibitId}{theme}");
+        await Seed(team, cite, dashboard, gallery);
+        await Seed(TestData.PlayerApplicationTeam(cite.Id, team.Id, 1), TestData.PlayerApplicationTeam(dashboard.Id, team.Id, 2));
+
+        var response = await Client(actor).PostAsJsonAsync("api/teamplayerApplications", Body(gallery.Id, team.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(3, await ReadBack(rb => rb.PlayerApplicationTeams.CountAsync(x => x.TeamId == team.Id, Ct)));
     }
 
     [Fact]

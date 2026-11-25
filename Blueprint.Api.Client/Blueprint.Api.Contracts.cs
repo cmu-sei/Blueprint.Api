@@ -7054,7 +7054,8 @@ namespace Blueprint.Api.Client
         /// <remarks>
         /// Returns a list of all of the Users in the system.
         /// <br/>&lt;para /&gt;
-        /// <br/>Accessible to a User with the ViewUsers or ViewMsels permission
+        /// <br/>Accessible to a User with the ViewUsers, ManageUsers or ViewMsels permission, or with ManageGroups
+        /// <br/>or ManageUnits, who pick users to add as members
         /// </remarks>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>
@@ -7067,7 +7068,8 @@ namespace Blueprint.Api.Client
         /// <remarks>
         /// Returns a list of all of the Users in the system.
         /// <br/>&lt;para /&gt;
-        /// <br/>Accessible to a User with the ViewUsers or ViewMsels permission
+        /// <br/>Accessible to a User with the ViewUsers, ManageUsers or ViewMsels permission, or with ManageGroups
+        /// <br/>or ManageUnits, who pick users to add as members
         /// </remarks>
         /// <returns>OK</returns>
         /// <exception cref="ApiException">A server side error occurred.</exception>

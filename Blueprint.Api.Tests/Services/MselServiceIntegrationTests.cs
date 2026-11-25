@@ -318,6 +318,64 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         AssertNothingEnqueued();
     }
 
+    /// <summary>A Gallery push with an article whose url Gallery would refuse is a 409 naming the article,
+    /// and nothing is marked or queued; without the check Gallery refused it in the background push.</summary>
+    [Fact]
+    public async Task Push_OfAGalleryMselWithAnArticleUrlGalleryRefuses_Is409NamingIt()
+    {
+        var msel = await SeedGalleryMsel(("Fine", "https://fine.example/"), ("Bad", "javascript:alert(1)"), ("Relative", "/news/1"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        var title = (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.StartsWith("Fix the Gallery articles before pushing. The articles ", title);
+        Assert.Contains("\"Bad\"", title);
+        Assert.Contains("\"Relative\"", title);
+        Assert.DoesNotContain("\"Fine\"", title);
+        Assert.EndsWith(": A Gallery article's URL must be empty, or an absolute http or https URL.", title);
+        Assert.Equal(
+            MselItemStatus.Approved,
+            (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).Status);
+        AssertNothingEnqueued();
+    }
+
+    /// <summary>Empty and absolute http(s) urls are what Gallery accepts, so they do not stop the push.</summary>
+    [Fact]
+    public async Task Push_OfAGalleryMselWithArticleUrlsGalleryAccepts_Is200()
+    {
+        var msel = await SeedGalleryMsel(("Empty", ""), ("Http", "http://news.example/a"), ("Https", "https://news.example/b"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>An approved MSEL using Gallery, with a Name and a Url article field and one Gallery
+    /// scenario event per article.</summary>
+    private async Task<MselEntity> SeedGalleryMsel(params (string Name, string Url)[] articles)
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        msel.UseGallery = true;
+        await Seed(msel);
+        var nameField = TestData.DataField(msel.Id, name: "Title");
+        nameField.GalleryArticleParameter = GalleryArticleParameter.Name.ToString();
+        var urlField = TestData.DataField(msel.Id, name: "Link", displayOrder: 2);
+        urlField.GalleryArticleParameter = GalleryArticleParameter.Url.ToString();
+        await Seed(nameField, urlField);
+        foreach (var (name, url) in articles)
+        {
+            var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+            scenarioEvent.IntegrationTarget = "Gallery";
+            await Seed(scenarioEvent);
+            await Seed(
+                TestData.DataValue(nameField.Id, scenarioEvent.Id, name),
+                TestData.DataValue(urlField.Id, scenarioEvent.Id, url));
+        }
+        return msel;
+    }
+
     /// <summary>A CITE push with moves that have no situation time is a 409 naming the moves.</summary>
     [Fact]
     public async Task Push_OfACiteMselWithMovesWithoutASituationTime_Is409NamingThem()

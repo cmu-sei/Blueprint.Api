@@ -2930,6 +2930,37 @@ namespace Blueprint.Api.Services
                     $"Fix the Player applications before pushing. {(refused.Count == 1 ? "The application" : "The applications")} {string.Join(", ", refused)}: {PlayerApplicationUrls.InvalidMessage}");
         }
 
+        // Gallery refuses an article url that is not empty or an absolute http(s) url. The push sends each
+        // Gallery scenario event's Url value as it was typed, so it checks them all first rather than leave
+        // Gallery's refusal to the background push, which only logs it.
+        private async Task ValidateGalleryArticleUrlsAsync(Guid mselId, CancellationToken ct)
+        {
+            var dataFields = await _context.DataFields.AsNoTracking()
+                .Where(df => df.MselId == mselId)
+                .ToListAsync(ct);
+            var urlKey = GalleryArticleParameter.Url.ToString();
+            if (!dataFields.Any(df => df.GalleryArticleParameter == urlKey))
+                return;
+
+            var scenarioEvents = await _context.ScenarioEvents.AsNoTracking()
+                .Where(se => se.MselId == mselId && se.IntegrationTarget != null && se.IntegrationTarget.Contains("Gallery"))
+                .Include(se => se.DataValues)
+                .ToListAsync(ct);
+            var refused = scenarioEvents
+                .Where(se => !GalleryArticleUrls.IsAllowed(
+                    IntegrationGalleryExtensions.GetArticleValue(urlKey, se.DataValues, dataFields)))
+                .Select(se =>
+                {
+                    var name = IntegrationGalleryExtensions.GetArticleValue(
+                        GalleryArticleParameter.Name.ToString(), se.DataValues, dataFields);
+                    return string.IsNullOrWhiteSpace(name) ? "one with no name" : $"\"{name}\"";
+                })
+                .ToList();
+            if (refused.Count > 0)
+                throw new ConflictException(
+                    $"Fix the Gallery articles before pushing. {(refused.Count == 1 ? "The article" : "The articles")} {string.Join(", ", refused)}: {GalleryArticleUrls.InvalidMessage}");
+        }
+
         public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
@@ -2952,6 +2983,8 @@ namespace Blueprint.Api.Services
                 await ValidateCiteSetupAsync(msel, ct);
             if (msel.UsePlayer)
                 ValidatePlayerApplicationUrls(msel);
+            if (msel.UseGallery)
+                await ValidateGalleryArticleUrlsAsync(mselId, ct);
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))

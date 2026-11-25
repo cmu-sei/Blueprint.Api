@@ -25,12 +25,18 @@ namespace Blueprint.Api.Tests.Migrations;
 /// file. Both are given the same tasks and held to the same expectations, so they cannot drift apart.
 /// </summary>
 /// <remarks>
-/// The migration test takes its own database back down to <c>AddAutomation</c>, the schema before the conversion,
-/// seeds Steamfitter tasks there, and migrates up again.
+/// The migration test takes its own database back down to the migration before the conversion, whichever that is in
+/// order (main's <c>AddMselArticleMarking</c> falls between <c>AddAutomation</c> and the conversion), seeds Steamfitter
+/// tasks there, and migrates up again.
 /// </remarks>
 public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 {
-    private const string BeforeTheConversion = "20261118231321_AddAutomation";
+    /// <summary>The migration just before <c>ReplaceSteamfitterWithAutomation</c>, in the order they are applied.</summary>
+    private string BeforeTheConversion()
+    {
+        var ids = Db.GetService<IMigrationsAssembly>().Migrations.Keys.Order(StringComparer.Ordinal).ToList();
+        return ids[ids.FindIndex(id => id.EndsWith("_ReplaceSteamfitterWithAutomation", StringComparison.Ordinal)) - 1];
+    }
 
     /// <summary>
     /// One Steamfitter task each, on events of one MSEL. Three share a time, so they were one group, which the push
@@ -53,7 +59,7 @@ public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseT
     public async Task TheMigration_ConvertsEachStoredSteamfitterTask()
     {
         var migrator = Db.GetService<IMigrator>();
-        await migrator.MigrateAsync(BeforeTheConversion, Ct);
+        await migrator.MigrateAsync(BeforeTheConversion(), Ct);
 
         var msel = TestData.Msel(status: MselItemStatus.Deployed);
         var draft = TestData.Msel();

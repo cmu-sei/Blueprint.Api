@@ -68,6 +68,10 @@ namespace Blueprint.Api.Services
             if (systemRoleToUpdate == null)
                 throw new EntityNotFoundException<SystemRole>();
 
+            // a built-in role, the Administrator role among them, is not renamed or re-permissioned
+            if (systemRoleToUpdate.Immutable)
+                throw new ConflictException("Immutable Role cannot be changed.");
+
             systemRole.ApplyTo(systemRoleToUpdate);
 
             _context.SystemRoles.Update(systemRoleToUpdate);
@@ -83,6 +87,9 @@ namespace Blueprint.Api.Services
 
             if (systemRoleToDelete == null)
                 throw new EntityNotFoundException<SystemRole>();
+
+            if (systemRoleToDelete.Immutable)
+                throw new ConflictException("Immutable Role cannot be deleted.");
 
             _context.SystemRoles.Remove(systemRoleToDelete);
             await _context.SaveChangesAsync(ct);

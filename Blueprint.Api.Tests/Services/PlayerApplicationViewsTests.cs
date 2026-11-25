@@ -33,11 +33,20 @@ public class PlayerApplicationViewsTests
     [InlineData("{citeUrl}?SECTION=Dashboard", "{citeUrl}?section=dashboard")]
     [InlineData("{citeUrl}/?section=dashboard", "{citeUrl}?section=dashboard")]
     [InlineData("{citeUrl}?section=dashboard#help", "{citeUrl}?section=dashboard")]
+    [InlineData("{galleryUrl}?section=archive#top", "{galleryUrl}")]
     [InlineData("{citeUrl}?section=%64ashboard", "{citeUrl}?section=dashboard")]
     [InlineData("https://host/app/?b=2&a=1", "https://host/app?a=1&b=2")]
     [InlineData("https://host/app/?", "https://host/app")]
     public void Same_ForADifferentSpelling_IsTrue(string url, string other) =>
         Assert.True(PlayerApplicationViews.Same(url, other));
+
+    /// <summary>A page an application routes to by its fragment is not the same page as another fragment, and a value holding & or = is not a second parameter.</summary>
+    [Theory]
+    [InlineData("https://host/app#/one", "https://host/app#/two")]
+    [InlineData("https://host/app?a=1%262", "https://host/app?a=1&2")]
+    [InlineData("https://host/app?a=b%3Dc", "https://host/app?a=b&c=")]
+    public void Same_ForADifferentFragmentOrEncodedSeparator_IsFalse(string url, string other) =>
+        Assert.False(PlayerApplicationViews.Same(url, other));
 
     /// <summary>Other query values still tell two ordinary pages apart.</summary>
     [Fact]

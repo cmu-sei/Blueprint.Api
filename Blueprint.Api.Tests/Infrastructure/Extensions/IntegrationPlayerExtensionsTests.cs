@@ -643,6 +643,33 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         Assert.Single(handler.Sent, x => x.Path.EndsWith("application-instances"));
     }
 
+    /// <summary>When two applications for one page share a display order, the lower application id is the one kept, on every push.</summary>
+    [Fact]
+    public async Task CreateApplications_WhenTwoApplicationsForAPageShareAnOrder_KeepsTheLowerId()
+    {
+        var msel = await SeedMsel();
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+
+        var low = TestData.PlayerApplication(msel.Id, name: "CITE low", url: "{citeUrl}?evaluation={citeEvaluationId}");
+        low.Id = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var high = TestData.PlayerApplication(msel.Id, name: "CITE high", url: "{citeUrl}?section=dashboard&evaluation={citeEvaluationId}");
+        high.Id = Guid.Parse("ffffffff-0000-0000-0000-000000000002");
+        await Seed(low, high);
+        await Seed(
+            TestData.PlayerApplicationTeam(high.Id, team.Id, displayOrder: 1),
+            TestData.PlayerApplicationTeam(low.Id, team.Id, displayOrder: 1));
+
+        var handler = Handler()
+            .AnswersJson($"api/views/{ViewId}/applications", ApplicationJson, HttpStatusCode.Created)
+            .AnswersJson($"api/teams/{team.Id}/application-instances", InstanceJson, HttpStatusCode.Created);
+
+        await CreateApplications(msel.Id, handler);
+
+        var created = handler.Sent.Where(x => x.Path.EndsWith("/applications")).Select(x => Body(x.Body)["name"].GetString()).ToList();
+        Assert.Equal(["CITE low"], created);
+    }
+
     /// <summary>The instance names the application id Player answered with.</summary>
     [Fact]
     public async Task CreateApplications_UsesTheApplicationIdPlayerAnsweredWith()

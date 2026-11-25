@@ -27,16 +27,18 @@ namespace Blueprint.Api.Services
         };
 
         /// <summary>
-        /// The URL without its fragment or trailing slash before the query, with the query's parameters in order; for CITE and
-        /// Gallery only the section it opens on, their default when it names none or an empty one, since every other parameter
-        /// is the MSEL's own evaluation, exhibit or theme
+        /// The URL without its trailing slash before the query, with the query's parameters in order; for CITE and Gallery only
+        /// the section it opens on (their default when it names none or an empty one) and no fragment, since every other
+        /// parameter is the MSEL's own evaluation, exhibit or theme. An ordinary URL keeps its fragment, as an application may
+        /// route by it.
         /// </summary>
         public static string View(string url)
         {
             url = (url ?? "").Trim();
-            var fragment = url.IndexOf('#');
-            if (fragment >= 0)
-                url = url[..fragment];
+            var fragmentAt = url.IndexOf('#');
+            var fragment = fragmentAt < 0 ? "" : url[fragmentAt..];
+            if (fragmentAt >= 0)
+                url = url[..fragmentAt];
             var query = url.IndexOf('?');
             var path = (query < 0 ? url : url[..query]).TrimEnd('/');
             var parameters = (query < 0 ? "" : url[(query + 1)..])
@@ -48,8 +50,8 @@ namespace Blueprint.Api.Services
             if (app == null)
             {
                 var ordered = parameters.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.Value, StringComparer.Ordinal)
-                    .Select(p => p.Name + "=" + p.Value);
-                return path + (parameters.Count == 0 ? "" : "?" + string.Join('&', ordered));
+                    .Select(p => Uri.EscapeDataString(p.Name) + "=" + Uri.EscapeDataString(p.Value));
+                return path + (parameters.Count == 0 ? "" : "?" + string.Join('&', ordered)) + fragment;
             }
             var section = parameters.Where(p => p.Name.Equals("section", StringComparison.OrdinalIgnoreCase) && p.Value.Length > 0)
                 .Select(p => p.Value).FirstOrDefault();

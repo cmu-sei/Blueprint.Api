@@ -2916,6 +2916,20 @@ namespace Blueprint.Api.Services
                 throw new ConflictException($"Fix the CITE setup before pushing. {string.Join(" ", problems)}");
         }
 
+        // Player refuses an application url with a scheme other than http(s). A MSEL's applications are checked
+        // when they are saved, but a copied or imported MSEL brings its own, so the push checks them all first
+        // rather than leave Player's refusal to the background push, which only logs it.
+        private static void ValidatePlayerApplicationUrls(MselEntity msel)
+        {
+            var refused = msel.PlayerApplications
+                .Where(a => !PlayerApplicationUrls.IsAllowed(a.Url))
+                .Select(a => $"\"{a.Name}\"")
+                .ToList();
+            if (refused.Count > 0)
+                throw new ConflictException(
+                    $"Fix the Player applications before pushing. {(refused.Count == 1 ? "The application" : "The applications")} {string.Join(", ", refused)}: {PlayerApplicationUrls.InvalidMessage}");
+        }
+
         public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
@@ -2936,6 +2950,8 @@ namespace Blueprint.Api.Services
             await ValidateMovesAsync(mselId, ct);
             if (msel.UseCite)
                 await ValidateCiteSetupAsync(msel, ct);
+            if (msel.UsePlayer)
+                ValidatePlayerApplicationUrls(msel);
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))

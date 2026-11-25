@@ -293,6 +293,31 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         AssertNothingEnqueued();
     }
 
+    /// <summary>A Player push with an application whose url Player would refuse - one a copied or imported
+    /// MSEL can bring, since only saving an application checks it - is a 409 naming the application, and
+    /// nothing is marked or queued.</summary>
+    [Fact]
+    public async Task Push_OfAPlayerMselWithAnApplicationUrlPlayerRefuses_Is409NamingIt()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        msel.UsePlayer = true;
+        await Seed(msel);
+        await Seed(
+            TestData.PlayerApplication(msel.Id, "Fine", url: "https://fine.example/"),
+            TestData.PlayerApplication(msel.Id, "Bad", url: "javascript:alert(1)"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(
+            "Fix the Player applications before pushing. The application \"Bad\": A Player application's Url must be an absolute http or https URL, or a relative one.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        Assert.Equal(
+            MselItemStatus.Approved,
+            (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).Status);
+        AssertNothingEnqueued();
+    }
+
     /// <summary>A CITE push with moves that have no situation time is a 409 naming the moves.</summary>
     [Fact]
     public async Task Push_OfACiteMselWithMovesWithoutASituationTime_Is409NamingThem()

@@ -43,6 +43,7 @@ public class PlayerApplicationViewsTests
     /// <summary>A page an application routes to by its fragment is not the same page as another fragment, and a value holding & or = is not a second parameter.</summary>
     [Theory]
     [InlineData("https://host/app#/one", "https://host/app#/two")]
+    [InlineData("https://host/app?a=1%26b%3D2", "https://host/app?a=1&b=2")]
     [InlineData("https://host/app?a=1%262", "https://host/app?a=1&2")]
     [InlineData("https://host/app?a=b%3Dc", "https://host/app?a=b&c=")]
     public void Same_ForADifferentFragmentOrEncodedSeparator_IsFalse(string url, string other) =>

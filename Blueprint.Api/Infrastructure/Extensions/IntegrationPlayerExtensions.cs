@@ -124,21 +124,20 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 .Include(apt => apt.Team)
                 .ToListAsync(ct);
             // a team shows each view once: of two applications for the same view, the team keeps the one it shows first
-            var kept = new HashSet<Guid>();
-            foreach (var teamApplications in allApplicationTeams.GroupBy(apt => apt.TeamId))
-            {
-                var views = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var applicationTeam in teamApplications.OrderBy(apt => apt.DisplayOrder))
-                {
-                    var application = msel.PlayerApplications.FirstOrDefault(a => a.Id == applicationTeam.PlayerApplicationId);
-                    if (application != null && views.Add(Services.PlayerApplicationViews.View(application.Url)))
-                        kept.Add(applicationTeam.Id);
-                }
-            }
-            allApplicationTeams = allApplicationTeams.Where(apt => kept.Contains(apt.Id)).ToList();
+            // (the lower display order, then the lower application id, so the same one wins on every push)
+            var urls = msel.PlayerApplications.ToDictionary(a => a.Id, a => a.Url);
+            var keptTeams = allApplicationTeams
+                .Where(apt => urls.ContainsKey(apt.PlayerApplicationId))
+                .GroupBy(apt => apt.TeamId)
+                .SelectMany(g => g.OrderBy(apt => apt.DisplayOrder).ThenBy(apt => apt.PlayerApplicationId)
+                    .DistinctBy(apt => Services.PlayerApplicationViews.View(urls[apt.PlayerApplicationId]), StringComparer.OrdinalIgnoreCase))
+                .ToList();
+            // an application whose every team link was a repeat is left out, not created for nobody
+            var droppedOnly = allApplicationTeams.Select(apt => apt.PlayerApplicationId).Except(keptTeams.Select(apt => apt.PlayerApplicationId)).ToHashSet();
+            allApplicationTeams = keptTeams;
 
             // Create applications in parallel batches
-            var applicationTasks = msel.PlayerApplications.Select(async application => {
+            var applicationTasks = msel.PlayerApplications.Where(a => !droppedOnly.Contains(a.Id)).Select(async application => {
                 var urlString = application.Url
                     .Replace("{blueprintMselId}", msel.Id.ToString())
                     .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())

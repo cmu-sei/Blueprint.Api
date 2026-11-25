@@ -27,21 +27,45 @@ namespace Blueprint.Api.Services
         };
 
         /// <summary>
-        /// The URL without its trailing slash before the query; for CITE and Gallery only the section it opens on, their
-        /// default when it names none, since every other parameter is the MSEL's own evaluation, exhibit or theme
+        /// The URL without its fragment or trailing slash before the query, with the query's parameters in order; for CITE and
+        /// Gallery only the section it opens on, their default when it names none or an empty one, since every other parameter
+        /// is the MSEL's own evaluation, exhibit or theme
         /// </summary>
         public static string View(string url)
         {
             url = (url ?? "").Trim();
+            var fragment = url.IndexOf('#');
+            if (fragment >= 0)
+                url = url[..fragment];
             var query = url.IndexOf('?');
             var path = (query < 0 ? url : url[..query]).TrimEnd('/');
-            var parameters = query < 0 ? "" : url[(query + 1)..];
+            var parameters = (query < 0 ? "" : url[(query + 1)..])
+                .Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Split('=', 2))
+                .Select(p => (Name: Decode(p[0]), Value: p.Length == 2 ? Decode(p[1]) : ""))
+                .ToList();
             var app = _defaultSections.Keys.FirstOrDefault(k => path.Equals(k, StringComparison.OrdinalIgnoreCase));
             if (app == null)
-                return path + (query < 0 ? "" : "?" + parameters);
-            var section = parameters.Split('&').Select(p => p.Split('=', 2))
-                .Where(p => p.Length == 2 && p[0].Equals("section", StringComparison.OrdinalIgnoreCase)).Select(p => p[1]).FirstOrDefault();
+            {
+                var ordered = parameters.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.Value, StringComparer.Ordinal)
+                    .Select(p => p.Name + "=" + p.Value);
+                return path + (parameters.Count == 0 ? "" : "?" + string.Join('&', ordered));
+            }
+            var section = parameters.Where(p => p.Name.Equals("section", StringComparison.OrdinalIgnoreCase) && p.Value.Length > 0)
+                .Select(p => p.Value).FirstOrDefault();
             return path + "?section=" + (section ?? _defaultSections[app]).ToLowerInvariant();
+        }
+
+        private static string Decode(string value)
+        {
+            try
+            {
+                return Uri.UnescapeDataString(value.Replace('+', ' '));
+            }
+            catch (UriFormatException)
+            {
+                return value;
+            }
         }
 
         public static bool Same(string url, string other) =>
@@ -57,13 +81,12 @@ namespace Blueprint.Api.Services
                 .Where(pt => pt.TeamId == teamId)
                 .Select(pt => new { pt.PlayerApplicationId, pt.PlayerApplication.Name, pt.PlayerApplication.Url, Team = pt.Team.ShortName ?? pt.Team.Name })
                 .ToListAsync(ct);
-            var team = teamApplications.FirstOrDefault()?.Team
-                ?? await context.Teams.Where(t => t.Id == teamId).Select(t => t.ShortName ?? t.Name).FirstOrDefaultAsync(ct);
+            // the team's name is read with its applications, so a team with none has nothing to refuse
             if (teamApplications.Any(a => a.PlayerApplicationId == application.Id))
-                throw new ConflictException($"{team} already has {application.Name}.");
+                throw new ConflictException($"{teamApplications[0].Team} already has {application.Name}.");
             var same = teamApplications.FirstOrDefault(a => Same(a.Url, application.Url));
             if (same != null)
-                throw new ConflictException($"{team} already has {same.Name}, which shows the same view as {application.Name}.");
+                throw new ConflictException($"{same.Team} already has {same.Name}, which shows the same view as {application.Name}.");
         }
     }
 }

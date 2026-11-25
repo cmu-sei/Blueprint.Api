@@ -613,6 +613,36 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         Assert.Equal(1, instances.Count(t => t == second.Id.ToString()));
     }
 
+    /// <summary>
+    /// Of two applications for one page the team keeps the one it shows first, and an application every one of whose links was
+    /// a repeat is not created in Player for nobody.
+    /// </summary>
+    [Fact]
+    public async Task CreateApplications_KeepsTheFirstApplicationForAPageAndSkipsOneNoTeamShows()
+    {
+        var msel = await SeedMsel();
+        var team = TestData.Team(msel.Id);
+        await Seed(team);
+
+        var cite = TestData.PlayerApplication(msel.Id, name: "CITE", url: "{citeUrl}?evaluation={citeEvaluationId}");
+        var dashboard = TestData.PlayerApplication(msel.Id, name: "CITE Dashboard", url: "{citeUrl}?section=dashboard&evaluation={citeEvaluationId}");
+        await Seed(cite, dashboard);
+        // the dashboard is linked first in the list but shown second
+        await Seed(
+            TestData.PlayerApplicationTeam(dashboard.Id, team.Id, displayOrder: 2),
+            TestData.PlayerApplicationTeam(cite.Id, team.Id, displayOrder: 1));
+
+        var handler = Handler()
+            .AnswersJson($"api/views/{ViewId}/applications", ApplicationJson, HttpStatusCode.Created)
+            .AnswersJson($"api/teams/{team.Id}/application-instances", InstanceJson, HttpStatusCode.Created);
+
+        await CreateApplications(msel.Id, handler);
+
+        var created = handler.Sent.Where(x => x.Path.EndsWith("/applications")).Select(x => Body(x.Body)["name"].GetString()).ToList();
+        Assert.Equal(["CITE"], created);
+        Assert.Single(handler.Sent, x => x.Path.EndsWith("application-instances"));
+    }
+
     /// <summary>The instance names the application id Player answered with.</summary>
     [Fact]
     public async Task CreateApplications_UsesTheApplicationIdPlayerAnsweredWith()

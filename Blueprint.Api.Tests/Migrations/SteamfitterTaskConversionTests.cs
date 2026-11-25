@@ -25,8 +25,8 @@ namespace Blueprint.Api.Tests.Migrations;
 /// file. Both are given the same tasks and held to the same expectations, so they cannot drift apart.
 /// </summary>
 /// <remarks>
-/// The migration test takes its own database back down to the migration before the conversion, whichever that is in
-/// order (main's <c>AddMselArticleMarking</c> falls between <c>AddAutomation</c> and the conversion), seeds Steamfitter
+/// The migration test seeds its own database's MSELs and events through the current model, takes it back down to the
+/// migration before the conversion, which keeps those rows but has none of the automation columns, adds Steamfitter
 /// tasks there, and migrates up again.
 /// </remarks>
 public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
@@ -59,8 +59,6 @@ public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseT
     public async Task TheMigration_ConvertsEachStoredSteamfitterTask()
     {
         var migrator = Db.GetService<IMigrator>();
-        await migrator.MigrateAsync(BeforeTheConversion(), Ct);
-
         var msel = TestData.Msel(status: MselItemStatus.Deployed);
         var draft = TestData.Msel();
         var events = Cases.ToDictionary(c => c.Key, c =>
@@ -70,6 +68,7 @@ public class SteamfitterTaskConversionTests(DatabaseFixture fixture) : DatabaseT
             return scenarioEvent;
         });
         await Seed([msel, draft, .. events.Values]);
+        await migrator.MigrateAsync(BeforeTheConversion(), Ct);
         var taskIds = new Dictionary<string, Guid>();
         await using (var context = NewContext())
         {

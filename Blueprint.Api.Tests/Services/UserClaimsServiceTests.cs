@@ -705,9 +705,10 @@ public class UserClaimsServiceTests(DatabaseFixture fixture) : DatabaseTestBase(
         Assert.Empty(Permissions(await Service(options).AddUserClaims(token, update: false)));
     }
 
-    /// <summary>Add user claims for a string claim ignores the rest of the claim path.</summary>
+    /// <summary>A plain string claim at the head of a longer path is not the value the path names, so a
+    /// <c>realm_access</c> string saying "Administrator" grants nothing.</summary>
     [Fact]
-    public async Task AddUserClaims_ForAStringClaim_IgnoresTheRestOfTheClaimPath()
+    public async Task AddUserClaims_ForAStringClaimAtTheHeadOfALongerPath_GrantsNothing()
     {
         var actor = await Actor().SeedAsync();
         var options = NoCaching();
@@ -715,6 +716,20 @@ public class UserClaimsServiceTests(DatabaseFixture fixture) : DatabaseTestBase(
         options.RolesClaimPath = "realm_access.roles";
 
         var token = Token(actor.Id, extra: new Claim("realm_access", "Administrator"));
+
+        Assert.Empty(Permissions(await Service(options).AddUserClaims(token, update: false)));
+    }
+
+    /// <summary>A path of one segment ends at the claim, so its string value is the role.</summary>
+    [Fact]
+    public async Task AddUserClaims_ForAStringClaimThatIsTheWholePath_GrantsItsRole()
+    {
+        var actor = await Actor().SeedAsync();
+        var options = NoCaching();
+        options.UseRolesFromIdP = true;
+        options.RolesClaimPath = "role";
+
+        var token = Token(actor.Id, extra: new Claim("role", "Administrator"));
         var permissions = Permissions(await Service(options).AddUserClaims(token, update: false));
 
         Assert.Equal(Enum.GetValues<SystemPermission>().Length, permissions.Length);

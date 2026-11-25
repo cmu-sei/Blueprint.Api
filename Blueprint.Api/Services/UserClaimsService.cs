@@ -259,10 +259,12 @@ namespace Blueprint.Api.Services
                 return Array.Empty<string>();
             }
 
-            // Handle both string and JSON value types
+            // Handle both string and JSON value types. A string has no members, so it answers only a path that
+            // ends at the claim itself: for "realm_access.roles" a plain string named realm_access is not the
+            // roles, and accepting it would let its value stand in for them.
             return tokenClaim.ValueType switch
             {
-                ClaimValueTypes.String => new[] { tokenClaim.Value },
+                ClaimValueTypes.String when pathSegments.Length == 1 => new[] { tokenClaim.Value },
                 "JSON" => ExtractJsonClaimValues(tokenClaim.Value, pathSegments.Skip(1)),
                 _ => Array.Empty<string>()
             };

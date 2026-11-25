@@ -335,6 +335,24 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    /// <summary>An integration the MSEL does not use is never given an id, so its placeholder in a host name
+    /// would leave the host empty and the application with no url: the push is refused, naming it.</summary>
+    [Fact]
+    public async Task Push_OfAPlayerMselWithAnUnusedIntegrationsIdInAHostName_Is409NamingIt()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        msel.UsePlayer = true;
+        await Seed(msel);
+        await Seed(TestData.PlayerApplication(msel.Id, "Cite lab", url: "https://{citeEvaluationId}.labs.example/app"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        var title = (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.StartsWith("Fix the Player applications before pushing. \"Cite lab\": ", title);
+        AssertNothingEnqueued();
+    }
+
     /// <summary>The push also checks each url as it fills it in from this installation's UI addresses, so a
     /// misconfigured address is a 409 naming the application, not an application pushed with no url.</summary>
     [Fact]

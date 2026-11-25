@@ -114,19 +114,21 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
         /// <summary>
         /// Why the push of <paramref name="msel"/> would not be able to send <paramref name="url"/>, filled in from
-        /// this installation's UI addresses, or null when it can. An integration id the push has not assigned
-        /// yet stands in as an empty guid, as the push fills it in once it is assigned.
+        /// this installation's UI addresses, or null when it can. The id of an integration the MSEL uses and the
+        /// push has not assigned yet stands in as an empty guid, as the push fills it in once it is assigned; an
+        /// integration the MSEL does not use is never assigned one, so its placeholder stays empty, as it will be.
         /// </summary>
         public static string PushProblem(string url, MselEntity msel, ClientOptions clientOptions)
         {
+            static Guid? Pending(bool used, Guid? id) => id ?? (used ? Guid.Empty : null);
             var pending = new MselEntity
             {
                 Id = msel.Id,
-                PlayerViewId = msel.PlayerViewId ?? Guid.Empty,
-                CiteEvaluationId = msel.CiteEvaluationId ?? Guid.Empty,
-                GalleryExhibitId = msel.GalleryExhibitId ?? Guid.Empty,
-                SteamfitterScenarioId = msel.SteamfitterScenarioId ?? Guid.Empty,
-                CasterWorkspaceId = msel.CasterWorkspaceId ?? Guid.Empty
+                PlayerViewId = Pending(msel.UsePlayer, msel.PlayerViewId),
+                CiteEvaluationId = Pending(msel.UseCite, msel.CiteEvaluationId),
+                GalleryExhibitId = Pending(msel.UseGallery, msel.GalleryExhibitId),
+                SteamfitterScenarioId = Pending(msel.UseSteamfitter, msel.SteamfitterScenarioId),
+                CasterWorkspaceId = Pending(msel.UseCaster, msel.CasterWorkspaceId)
             };
             return ResolvedProblem(Resolve(url, pending, clientOptions));
         }

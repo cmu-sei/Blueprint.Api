@@ -2927,7 +2927,7 @@ namespace Blueprint.Api.Services
             // the template, and then the url as the push fills it in from this installation's UI addresses
             var problems = applications
                 .Select(a => (a.Name, Problem: PlayerApplicationUrls.Problem(a.Url) ??
-                    PlayerApplicationUrls.ResolvedProblem(PlayerApplicationUrls.Resolve(a.Url, msel, _clientOptions))))
+                    PlayerApplicationUrls.PushProblem(a.Url, msel, _clientOptions)))
                 .Where(x => x.Problem != null)
                 .Select(x => $"\"{x.Name}\": {x.Problem}")
                 .ToList();

@@ -319,6 +319,22 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         AssertNothingEnqueued();
     }
 
+    /// <summary>An id the push assigns, such as the Player view's, is not set when the push is checked, so it
+    /// stands in as one would be: a template using it in a host name is pushed, not refused.</summary>
+    [Fact]
+    public async Task Push_OfAPlayerMselWithAnIdPlaceholderInAHostName_Is200()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        msel.UsePlayer = true;
+        await Seed(msel);
+        await Seed(TestData.PlayerApplication(msel.Id, "Lab", url: "https://{playerViewId}.labs.example/app"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     /// <summary>The push also checks each url as it fills it in from this installation's UI addresses, so a
     /// misconfigured address is a 409 naming the application, not an application pushed with no url.</summary>
     [Fact]

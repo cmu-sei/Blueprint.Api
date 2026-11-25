@@ -112,6 +112,25 @@ namespace Blueprint.Api.Infrastructure.Extensions
             return ToPlayerUri(resolved) == null ? UnsendableMessage : null;
         }
 
+        /// <summary>
+        /// Why the push of <paramref name="msel"/> would not be able to send <paramref name="url"/>, filled in from
+        /// this installation's UI addresses, or null when it can. An integration id the push has not assigned
+        /// yet stands in as an empty guid, as the push fills it in once it is assigned.
+        /// </summary>
+        public static string PushProblem(string url, MselEntity msel, ClientOptions clientOptions)
+        {
+            var pending = new MselEntity
+            {
+                Id = msel.Id,
+                PlayerViewId = msel.PlayerViewId ?? Guid.Empty,
+                CiteEvaluationId = msel.CiteEvaluationId ?? Guid.Empty,
+                GalleryExhibitId = msel.GalleryExhibitId ?? Guid.Empty,
+                SteamfitterScenarioId = msel.SteamfitterScenarioId ?? Guid.Empty,
+                CasterWorkspaceId = msel.CasterWorkspaceId ?? Guid.Empty
+            };
+            return ResolvedProblem(Resolve(url, pending, clientOptions));
+        }
+
         /// <summary>Why Blueprint cannot send an already filled-in url to Player, or null when it can.</summary>
         public static string ResolvedProblem(string resolvedUrl)
         {

@@ -152,34 +152,12 @@ public class LmtEndpointTests(DatabaseFixture fixture, BlueprintAppFactory facto
         Assert.DoesNotContain("Not for publication", await response.Content.ReadAsStringAsync(Ct));
     }
 
-    [Fact]
-    public async Task Get_ForAnApprovedTemplate_IsReadableByASignedInCallerWithNoPermissionOrRole()
-    {
-        var msel = Published();
-        await Seed(msel);
-        var actor = await Actor().SeedAsync();
-
-        var response = await Client(actor).GetAsync($"api/lmt/resource/{msel.Id}", Ct);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Get_ForAnApprovedTemplate_RefusesAnAnonymousCaller()
-    {
-        var msel = Published();
-        await Seed(msel);
-
-        var response = await Client().GetAsync($"api/lmt/resource/{msel.Id}", Ct);
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
     /// <summary>A published MSEL: a template with the Approved status.</summary>
     private static Data.Models.MselEntity Published() =>
         TestData.Msel(isTemplate: true, status: MselItemStatus.Approved);
 
-    /// <summary>A signed-in caller holding no permission and no role.</summary>
+    /// <summary>A signed-in caller holding no permission and no role: every test reads as one, and the
+    /// refusal of an anonymous caller is in <see cref="RouteAuthorizationTests"/>.</summary>
     private async Task<System.Net.Http.HttpClient> Reader() => Client(await Actor().SeedAsync());
 
     /// <summary>Get answers an id that does not include the API path base.</summary>

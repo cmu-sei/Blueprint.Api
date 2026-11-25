@@ -31,6 +31,15 @@ namespace Blueprint.Api.Services
 
     public class UserClaimsService : IUserClaimsService
     {
+        /// <summary>
+        /// The claim a cached entry carries to say what it was built from: the system roles' version and the
+        /// token. It is never added to a principal.
+        /// </summary>
+        private const string CacheKeyClaimType = "blueprint:claims-cache-key";
+
+        /// <summary>The cache entry holding the system roles' version, which every user's entry depends on.</summary>
+        private const string RolesVersionKey = "blueprint:system-roles-version";
+
         private readonly BlueprintContext _context;
         private readonly ClaimsTransformationOptions _options;
         private IMemoryCache _cache;
@@ -49,17 +58,14 @@ namespace Blueprint.Api.Services
             var identity = ((ClaimsIdentity)principal.Identity);
             var userId = principal.GetId();
 
-            // Don't use cached claims if given a new token: a new sign-in or token refresh re-reads the user's
-            // role and the IdP's claims, whether or not roles or groups come from the token
-            if (_cache.TryGetValue(userId, out claims))
+            // Don't use cached claims built from another token, or before a system role changed: a new sign-in
+            // or token refresh re-reads the user's role and the IdP's claims, whether or not roles or groups come
+            // from the token, and a role's change reaches every holder, an IdP-matched one included
+            var cacheKey = CacheKey(identity);
+            if (_cache.TryGetValue(userId, out claims) &&
+                claims.FirstOrDefault(x => x.Type == CacheKeyClaimType)?.Value != cacheKey)
             {
-                var cachedTokenId = claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
-                var newTokenId = identity.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
-
-                if (newTokenId != cachedTokenId)
-                {
-                    claims = null;
-                }
+                claims = null;
             }
 
             if (claims == null)
@@ -77,6 +83,7 @@ namespace Blueprint.Api.Services
                     }
 
                     claims.AddRange(await GetPermissionClaims(userId, principal));
+                    claims.Add(new Claim(CacheKeyClaimType, cacheKey));
 
                     if (_options.EnableCaching)
                     {
@@ -308,12 +315,59 @@ namespace Blueprint.Api.Services
             return values.ToArray();
         }
 
+        /// <summary>
+        /// Makes every user's cached claims stale, so each is rebuilt on its next request. Called when a system
+        /// role is created, changed or deleted: a role's permissions are its holders', and a user matched to it
+        /// by an IdP role claim holds no row naming it.
+        /// </summary>
+        public static void ChangeRolesVersion(IMemoryCache cache) =>
+            cache.Set(RolesVersionKey, Guid.NewGuid().ToString(), new MemoryCacheEntryOptions { Priority = CacheItemPriority.NeverRemove });
+
+        private string CacheKey(ClaimsIdentity identity)
+        {
+            var rolesVersion = _cache.GetOrCreate(RolesVersionKey, entry =>
+            {
+                entry.Priority = CacheItemPriority.NeverRemove;
+                return Guid.NewGuid().ToString();
+            });
+
+            return $"{rolesVersion}|{TokenKey(identity)}";
+        }
+
+        /// <summary>
+        /// What tells one token from another: its <c>jti</c>, or, for an IdP that issues none, its <c>iat</c> and
+        /// the role and group claims the configured paths read, value types included (a JSON claim and a plain
+        /// string with the same text grant differently). So a new token is not answered from the cache; only a
+        /// token with neither a <c>jti</c> nor an <c>iat</c>, and the same roles, cannot be told from the last.
+        /// </summary>
+        private string TokenKey(ClaimsIdentity identity)
+        {
+            var tokenId = identity.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
+            if (tokenId != null)
+                return $"jti:{tokenId}";
+
+            var claimTypes = new List<string>();
+            if (_options.UseRolesFromIdP && !string.IsNullOrEmpty(_options.RolesClaimPath))
+                claimTypes.Add(Regex.Split(_options.RolesClaimPath, @"(?<!\\)\.")[0].Replace("\\.", "."));
+            if (_options.UseGroupsFromIdP && !string.IsNullOrEmpty(_options.GroupsClaimPath))
+                claimTypes.Add(Regex.Split(_options.GroupsClaimPath, @"(?<!\\)\.")[0].Replace("\\.", "."));
+
+            var issuedAt = identity.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Iat)?.Value;
+            return "idp:" + JsonSerializer.Serialize(new
+            {
+                iat = issuedAt,
+                claims = identity.Claims
+                    .Where(x => claimTypes.Contains(x.Type))
+                    .Select(x => new[] { x.Type, x.ValueType, x.Value })
+            });
+        }
+
         private void addNewClaims(ClaimsIdentity identity, List<Claim> claims)
         {
             var newClaims = new List<Claim>();
             claims.ForEach(delegate (Claim claim)
             {
-                if (!identity.Claims.Any(identityClaim => identityClaim.Type == claim.Type))
+                if (claim.Type != CacheKeyClaimType && !identity.Claims.Any(identityClaim => identityClaim.Type == claim.Type))
                 {
                     newClaims.Add(claim);
                 }

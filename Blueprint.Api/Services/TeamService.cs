@@ -69,16 +69,6 @@ namespace Blueprint.Api.Services
             return item.ToTeam();
         }
 
-        // the team as the write routes answer it, once they have authorized the caller
-        private async Task<ViewModels.Team> GetAuthorizedAsync(Guid id, CancellationToken ct)
-        {
-            var item = await _context.Teams
-                .Include(t => t.TeamUsers)
-                .ThenInclude(tu => tu.User)
-                .SingleOrDefaultAsync(o => o.Id == id, ct);
-            return item.ToTeam();
-        }
-
         public async Task<IEnumerable<ViewModels.Team>> GetMineAsync(CancellationToken ct)
         {
             var items = await _context.TeamUsers
@@ -137,7 +127,7 @@ namespace Blueprint.Api.Services
             _context.Teams.Add(teamEntity);
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"Team ({teamEntity.Id}) created by {_user.GetId()}");
-            return await GetAuthorizedAsync(teamEntity.Id, ct);
+            return await GetAsync(teamEntity.Id, true, ct);
         }
 
         public async Task<ViewModels.Team> CreateFromUnitAsync(Guid unitId, Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -178,7 +168,7 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"Team ({team.Id}) created by {_user.GetId()}");
 
-            return await GetAuthorizedAsync(team.Id, ct);
+            return await GetAsync(team.Id, true, ct);
         }
 
         public async Task<ViewModels.Team> UpdateAsync(Guid id, ViewModels.TeamEdit team, bool hasSystemPermission, CancellationToken ct)
@@ -201,7 +191,7 @@ namespace Blueprint.Api.Services
             _context.Teams.Update(teamToUpdate);
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"Team ({teamToUpdate.Id}) updated by {_user.GetId()}");
-            return await GetAuthorizedAsync(id, ct);
+            return await GetAsync(id, true, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)

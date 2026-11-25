@@ -25,6 +25,27 @@ namespace Blueprint.Api.Infrastructure.Extensions
         public const string InvalidMessage =
             "A Player application's Url must be an absolute http or https URL, or a relative one.";
 
+        public const string UnsendableMessage =
+            "Blueprint cannot send Player an application Url whose host or port is a placeholder. Use an address, or one of Blueprint's own placeholders such as {vmUrl}.";
+
+        /// <summary>
+        /// The ids Blueprint's id placeholders stand in for while a template is checked. Each is set, as a pushed
+        /// MSEL's are, so a placeholder somewhere only an id is valid, such as a port, is caught.
+        /// </summary>
+        private static readonly MselEntity CheckMsel = new()
+        {
+            Id = Guid.Empty, PlayerViewId = Guid.Empty, CiteEvaluationId = Guid.Empty, GalleryExhibitId = Guid.Empty,
+            SteamfitterScenarioId = Guid.Empty, CasterWorkspaceId = Guid.Empty
+        };
+
+        /// <summary>The address Blueprint's own url placeholders stand in for while a template is checked.</summary>
+        private static readonly ClientOptions CheckAddresses = new()
+        {
+            PlayerUiUrl = "https://player.check", CiteUiUrl = "https://cite.check", GalleryUiUrl = "https://gallery.check",
+            SteamfitterUiUrl = "https://steamfitter.check", CasterUiUrl = "https://caster.check",
+            VmUiUrl = "https://vm.check", BlueprintUiUrl = "https://blueprint.check"
+        };
+
         /// <summary>Stands in for each placeholder while the url is checked.</summary>
         private const char Hole = '\0';
 
@@ -72,6 +93,55 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 return true;
 
             return prefix.Replace(Hole.ToString(), string.Empty).TrimStart().Any(c => !IsSchemeCharacter(c));
+        }
+
+        /// <summary>
+        /// Why Blueprint cannot save <paramref name="url"/> as an application url, or null when it can: Player
+        /// would refuse it, or, with Blueprint's placeholders filled in, it is not a url Player's client can
+        /// carry. That client sends a <see cref="Uri"/>, which cannot hold a placeholder in place of a host or
+        /// port (<c>https://{vm-ui}/views/{viewId}</c>), so such a url would reach Player as none.
+        /// </summary>
+        public static string Problem(string url)
+        {
+            if (!IsAllowed(url))
+                return InvalidMessage;
+            if (string.IsNullOrWhiteSpace(url))
+                return null;
+
+            var resolved = Resolve(url, CheckMsel, CheckAddresses);
+            return ToPlayerUri(resolved) == null ? UnsendableMessage : null;
+        }
+
+        /// <summary>
+        /// Why the push of <paramref name="msel"/> would not be able to send <paramref name="url"/>, filled in from
+        /// this installation's UI addresses, or null when it can. The id of an integration the MSEL uses and the
+        /// push has not assigned yet stands in as an empty guid, as the push fills it in once it is assigned; an
+        /// integration the MSEL does not use is never assigned one, so its placeholder stays empty, as it will be.
+        /// </summary>
+        public static string PushProblem(string url, MselEntity msel, ClientOptions clientOptions)
+        {
+            static Guid? Pending(bool used, Guid? id) => id ?? (used ? Guid.Empty : null);
+            var pending = new MselEntity
+            {
+                Id = msel.Id,
+                PlayerViewId = Pending(msel.UsePlayer, msel.PlayerViewId),
+                CiteEvaluationId = Pending(msel.UseCite, msel.CiteEvaluationId),
+                GalleryExhibitId = Pending(msel.UseGallery, msel.GalleryExhibitId),
+                SteamfitterScenarioId = Pending(msel.UseSteamfitter, msel.SteamfitterScenarioId),
+                CasterWorkspaceId = Pending(msel.UseCaster, msel.CasterWorkspaceId)
+            };
+            return ResolvedProblem(Resolve(url, pending, clientOptions));
+        }
+
+        /// <summary>Why Blueprint cannot send an already filled-in url to Player, or null when it can.</summary>
+        public static string ResolvedProblem(string resolvedUrl)
+        {
+            if (!IsAllowed(resolvedUrl))
+                return InvalidMessage;
+            if (string.IsNullOrWhiteSpace(resolvedUrl))
+                return null;
+
+            return ToPlayerUri(resolvedUrl) == null ? UnsendableMessage : null;
         }
 
         /// <summary>

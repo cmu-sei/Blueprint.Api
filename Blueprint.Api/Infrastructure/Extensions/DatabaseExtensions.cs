@@ -50,17 +50,18 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             ctx.Database.EnsureCreated();
                         }
 
+                        step = "locating the seed file";
                         IHostEnvironment env = services.GetService<IHostEnvironment>();
                         IConfiguration configuration = services.GetService<IConfiguration>();
-                        string seedFile = Path.Combine(
-                            env.ContentRootPath,
-                            databaseOptions.SeedFile
-                        );
+                        // no SeedFile setting means no seed file, and the SeedData section is read instead
+                        string seedFile = string.IsNullOrWhiteSpace(databaseOptions.SeedFile)
+                            ? null
+                            : Path.Combine(env.ContentRootPath, databaseOptions.SeedFile);
 
                         SeedDataOptions seedDataOptions = null;
 
                         // Try to load from seed file first
-                        if (File.Exists(seedFile))
+                        if (seedFile != null && File.Exists(seedFile))
                         {
                             step = $"reading the seed file {seedFile}";
                             seedDataOptions = JsonSerializer.Deserialize<SeedDataOptions>(File.ReadAllText(seedFile));

@@ -277,6 +277,26 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
         Assert.Equal(0, await ReadBack(db => db.PlayerApplications.CountAsync(x => x.Url == url, Ct)));
     }
 
+    /// <summary>Player accepts a placeholder in place of a host or port, but Blueprint sends a url through
+    /// Player's client as a <c>Uri</c>, which cannot hold one, so it would reach Player as no url at all. It is
+    /// refused when it is saved, saying so.</summary>
+    [Theory]
+    [InlineData("https://{vm-ui}/views/{viewId}")]
+    [InlineData("https://{host}:{port}/views/{viewId}")]
+    [InlineData("https://server.example:{playerViewId}/app")]
+    public async Task Create_WithAPlaceholderInPlaceOfTheHost_Is409(string url)
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/playerApplications", Body(msel.Id) with { url = url }, Ct);
+
+        Assert.Equal(
+            "Blueprint cannot send Player an application Url whose host or port is a placeholder. Use an address, or one of Blueprint's own placeholders such as {vmUrl}.",
+            (await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title);
+    }
+
     /// <summary>Blueprint's own placeholders, Player's, and a relative url are all urls Player accepts.</summary>
     [Theory]
     [InlineData("{vmUrl}/views/{playerViewId}")]

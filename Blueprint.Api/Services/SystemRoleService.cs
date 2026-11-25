@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Models;
+using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
 using Blueprint.Api.Infrastructure.Mappings;
@@ -53,6 +54,9 @@ namespace Blueprint.Api.Services
 
         public async Task<SystemRole> CreateAsync(SystemRole systemRole, CancellationToken ct)
         {
+            if (!HeldPermissions.HoldsAll(_user, systemRole.AllPermissions, systemRole.Permissions))
+                throw new ForbiddenException("You cannot give a role permissions you do not hold");
+
             var systemRoleEntity = systemRole.ToEntity();
 
             _context.SystemRoles.Add(systemRoleEntity);
@@ -71,6 +75,10 @@ namespace Blueprint.Api.Services
             // a built-in role, the Administrator role among them, is not renamed or re-permissioned
             if (systemRoleToUpdate.Immutable)
                 throw new ConflictException("Immutable Role cannot be changed.");
+
+            // a ManageRoles holder could otherwise give their own role every permission in the installation
+            if (!HeldPermissions.HoldsAll(_user, systemRole.AllPermissions, systemRole.Permissions))
+                throw new ForbiddenException("You cannot give a role permissions you do not hold");
 
             systemRole.ApplyTo(systemRoleToUpdate);
 

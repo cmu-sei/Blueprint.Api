@@ -326,6 +326,115 @@ public class UserClaimsServiceTests(DatabaseFixture fixture) : DatabaseTestBase(
         Assert.Empty(Permissions(principal));
     }
 
+    /// <summary>
+    /// A role's permissions reach a user matched to it by an IdP role claim, who holds no row naming the role.
+    /// The role handlers change the roles version, so the same token's next request is rebuilt, not answered
+    /// from the cache.
+    /// </summary>
+    [Fact]
+    public async Task AddUserClaims_WithCachingAndAnIdPMatchedRole_RebuildsWhenTheRolesVersionChanges()
+    {
+        var role = TestData.SystemRole("idp-auditor", permissions: [SystemPermission.ViewRoles]);
+        await Seed(role);
+        var actor = await Actor().SeedAsync();
+        var options = Caching();
+        options.UseRolesFromIdP = true;
+        options.RolesClaimPath = "realm_access.roles";
+        ClaimsPrincipal Request() =>
+            Token(actor.Id, jti: "token-1", extra: Json("realm_access", """{"roles":["idp-auditor"]}"""));
+
+        Assert.Equal(["ViewRoles"], Permissions(await Service(options).AddUserClaims(Request(), update: false)));
+        var stored = await Db.SystemRoles.SingleAsync(x => x.Id == role.Id, Ct);
+        stored.Permissions = [];
+        await Db.SaveChangesAsync(Ct);
+
+        Assert.Equal(["ViewRoles"], Permissions(await Service(options).AddUserClaims(Request(), update: false)));
+
+        UserClaimsService.ChangeRolesVersion(_cache);
+
+        Assert.Empty(Permissions(await Service(options).AddUserClaims(Request(), update: false)));
+    }
+
+    /// <summary>
+    /// An IdP that issues no <c>jti</c> still has its tokens told apart, by the role claims the configured
+    /// path reads: a new token whose roles differ is rebuilt rather than answered from the cache.
+    /// </summary>
+    [Fact]
+    public async Task AddUserClaims_WithCachingAndNoTokenId_RebuildsForATokenWhoseRolesDiffer()
+    {
+        var actor = await Actor().SeedAsync();
+        var options = Caching();
+        options.UseRolesFromIdP = true;
+        options.RolesClaimPath = "realm_access.roles";
+
+        await Service(options).AddUserClaims(
+            Token(actor.Id, extra: Json("realm_access", """{"roles":["Administrator"]}""")), update: false);
+        var principal = await Service(options).AddUserClaims(
+            Token(actor.Id, extra: Json("realm_access", """{"roles":["Observer"]}""")), update: false);
+
+        Assert.All(Permissions(principal), x => Assert.StartsWith("View", x));
+        Assert.DoesNotContain("ManageUsers", Permissions(principal));
+    }
+
+    [Fact]
+    public async Task AddUserClaims_WithCachingAndNoTokenId_KeepsTheCacheForTheSameRoles()
+    {
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+        var options = Caching();
+        options.UseRolesFromIdP = true;
+        options.RolesClaimPath = "realm_access.roles";
+        ClaimsPrincipal Request() =>
+            Token(actor.Id, extra: Json("realm_access", """{"roles":["Observer"]}"""));
+
+        await Service(options).AddUserClaims(Request(), update: false);
+        await GiveRole(actor.Id, null);
+
+        Assert.Contains("ManageUsers", Permissions(await Service(options).AddUserClaims(Request(), update: false)));
+    }
+
+    /// <summary>A JSON claim and a plain string with the same text grant differently, so they are different
+    /// tokens to the cache.</summary>
+    [Fact]
+    public async Task AddUserClaims_WithCachingAndNoTokenId_TellsAJsonClaimFromAStringWithTheSameText()
+    {
+        var actor = await Actor().SeedAsync();
+        var options = Caching();
+        options.UseRolesFromIdP = true;
+        options.RolesClaimPath = "realm_access.roles";
+        const string text = """{"roles":["Administrator"]}""";
+
+        await Service(options).AddUserClaims(Token(actor.Id, extra: Json("realm_access", text)), update: false);
+        var principal = await Service(options).AddUserClaims(
+            Token(actor.Id, extra: new Claim("realm_access", text)), update: false);
+
+        Assert.Empty(Permissions(principal));
+    }
+
+    /// <summary>A token's iat tells a new token without a jti from the last, roles or no roles.</summary>
+    [Fact]
+    public async Task AddUserClaims_WithCachingAndNoTokenId_RebuildsForANewIssuedAt()
+    {
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+
+        await Service(Caching()).AddUserClaims(Token(actor.Id, extra: new Claim("iat", "1700000000")), update: false);
+        await GiveRole(actor.Id, null);
+        var principal = await Service(Caching()).AddUserClaims(
+            Token(actor.Id, extra: new Claim("iat", "1700000300")), update: false);
+
+        Assert.Empty(Permissions(principal));
+    }
+
+    /// <summary>The cache's own bookkeeping claim is never added to the principal.</summary>
+    [Fact]
+    public async Task AddUserClaims_WithCaching_AddsNoCacheKeyClaimToThePrincipal()
+    {
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+
+        var principal = await Service(Caching()).AddUserClaims(Token(actor.Id, jti: "token-1"), update: false);
+
+        Assert.DoesNotContain(principal.Claims, x => x.Type.StartsWith("blueprint:"));
+    }
+
     [Fact]
     public async Task AddUserClaims_WithCachingAndIdPRoles_KeepsTheCacheForTheSameTokenId()
     {

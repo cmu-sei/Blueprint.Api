@@ -7455,7 +7455,7 @@
           "Lmt"
         ],
         "summary": "Gets IEEE 2881 (LMT) metadata for an MSEL as JSON-LD",
-        "description": "Returns LMT (Learning Metadata) as JSON-LD conforming to IEEE 2881 schema.\nThis endpoint is publicly accessible to enable catalog discovery by LMS systems,\nPCTE registries, and other TLA components. The JSON-LD includes:\n- Exercise name, description, objectives\n- Competencies assessed (lrmi:assesses from MselCompetency associations)\n- Educational metadata (difficulty, purpose, mode, keywords)\n- Prerequisites (if configured)\n            \nAny LMS that supports LTI 1.3 Deep Linking or Content-Item can consume this\nmetadata to auto-link competencies, tags, and prerequisites when importing\nthe exercise.",
+        "description": "Returns LMT (Learning Metadata) as JSON-LD conforming to IEEE 2881 schema.\nAccessible to any signed-in caller, to enable catalog discovery by LMS systems,\nPCTE registries, and other TLA components, and only for a published MSEL: a template\nwith the Approved status. Any other MSEL is a 404. The JSON-LD includes:\n- Exercise name, description, objectives\n- Competencies assessed (lrmi:assesses from MselCompetency associations)\n- Educational metadata (difficulty, purpose, mode, keywords)\n- Prerequisites (if configured)\n            \nAny LMS that supports LTI 1.3 Deep Linking or Content-Item can consume this\nmetadata to auto-link competencies, tags, and prerequisites when importing\nthe exercise.",
         "operationId": "getLmtResource",
         "parameters": [
           {

@@ -3089,8 +3089,9 @@ namespace Blueprint.Api.Client
         /// </summary>
         /// <remarks>
         /// Returns LMT (Learning Metadata) as JSON-LD conforming to IEEE 2881 schema.
-        /// <br/>This endpoint is publicly accessible to enable catalog discovery by LMS systems,
-        /// <br/>PCTE registries, and other TLA components. The JSON-LD includes:
+        /// <br/>Accessible to any signed-in caller, to enable catalog discovery by LMS systems,
+        /// <br/>PCTE registries, and other TLA components, and only for a published MSEL: a template
+        /// <br/>with the Approved status. Any other MSEL is a 404. The JSON-LD includes:
         /// <br/>- Exercise name, description, objectives
         /// <br/>- Competencies assessed (lrmi:assesses from MselCompetency associations)
         /// <br/>- Educational metadata (difficulty, purpose, mode, keywords)
@@ -3110,8 +3111,9 @@ namespace Blueprint.Api.Client
         /// </summary>
         /// <remarks>
         /// Returns LMT (Learning Metadata) as JSON-LD conforming to IEEE 2881 schema.
-        /// <br/>This endpoint is publicly accessible to enable catalog discovery by LMS systems,
-        /// <br/>PCTE registries, and other TLA components. The JSON-LD includes:
+        /// <br/>Accessible to any signed-in caller, to enable catalog discovery by LMS systems,
+        /// <br/>PCTE registries, and other TLA components, and only for a published MSEL: a template
+        /// <br/>with the Approved status. Any other MSEL is a 404. The JSON-LD includes:
         /// <br/>- Exercise name, description, objectives
         /// <br/>- Competencies assessed (lrmi:assesses from MselCompetency associations)
         /// <br/>- Educational metadata (difficulty, purpose, mode, keywords)

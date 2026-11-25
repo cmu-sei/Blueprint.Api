@@ -335,8 +335,10 @@ namespace Blueprint.Api.Services
         }
 
         /// <summary>
-        /// What tells one token from another: its <c>jti</c>, or, for an IdP that issues none, the role and group
-        /// claims the configured paths read, so a new token whose roles differ is not answered from the cache.
+        /// What tells one token from another: its <c>jti</c>, or, for an IdP that issues none, its <c>iat</c> and
+        /// the role and group claims the configured paths read, value types included (a JSON claim and a plain
+        /// string with the same text grant differently). So a new token is not answered from the cache; only a
+        /// token with neither a <c>jti</c> nor an <c>iat</c>, and the same roles, cannot be told from the last.
         /// </summary>
         private string TokenKey(ClaimsIdentity identity)
         {
@@ -350,9 +352,14 @@ namespace Blueprint.Api.Services
             if (_options.UseGroupsFromIdP && !string.IsNullOrEmpty(_options.GroupsClaimPath))
                 claimTypes.Add(Regex.Split(_options.GroupsClaimPath, @"(?<!\\)\.")[0].Replace("\\.", "."));
 
-            return "idp:" + JsonSerializer.Serialize(identity.Claims
-                .Where(x => claimTypes.Contains(x.Type))
-                .Select(x => new[] { x.Type, x.Value }));
+            var issuedAt = identity.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Iat)?.Value;
+            return "idp:" + JsonSerializer.Serialize(new
+            {
+                iat = issuedAt,
+                claims = identity.Claims
+                    .Where(x => claimTypes.Contains(x.Type))
+                    .Select(x => new[] { x.Type, x.ValueType, x.Value })
+            });
         }
 
         private void addNewClaims(ClaimsIdentity identity, List<Claim> claims)

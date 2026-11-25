@@ -392,6 +392,38 @@ public class UserClaimsServiceTests(DatabaseFixture fixture) : DatabaseTestBase(
         Assert.Contains("ManageUsers", Permissions(await Service(options).AddUserClaims(Request(), update: false)));
     }
 
+    /// <summary>A JSON claim and a plain string with the same text grant differently, so they are different
+    /// tokens to the cache.</summary>
+    [Fact]
+    public async Task AddUserClaims_WithCachingAndNoTokenId_TellsAJsonClaimFromAStringWithTheSameText()
+    {
+        var actor = await Actor().SeedAsync();
+        var options = Caching();
+        options.UseRolesFromIdP = true;
+        options.RolesClaimPath = "realm_access.roles";
+        const string text = """{"roles":["Administrator"]}""";
+
+        await Service(options).AddUserClaims(Token(actor.Id, extra: Json("realm_access", text)), update: false);
+        var principal = await Service(options).AddUserClaims(
+            Token(actor.Id, extra: new Claim("realm_access", text)), update: false);
+
+        Assert.Empty(Permissions(principal));
+    }
+
+    /// <summary>A token's iat tells a new token without a jti from the last, roles or no roles.</summary>
+    [Fact]
+    public async Task AddUserClaims_WithCachingAndNoTokenId_RebuildsForANewIssuedAt()
+    {
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+
+        await Service(Caching()).AddUserClaims(Token(actor.Id, extra: new Claim("iat", "1700000000")), update: false);
+        await GiveRole(actor.Id, null);
+        var principal = await Service(Caching()).AddUserClaims(
+            Token(actor.Id, extra: new Claim("iat", "1700000300")), update: false);
+
+        Assert.Empty(Permissions(principal));
+    }
+
     /// <summary>The cache's own bookkeeping claim is never added to the principal.</summary>
     [Fact]
     public async Task AddUserClaims_WithCaching_AddsNoCacheKeyClaimToThePrincipal()

@@ -181,15 +181,7 @@ namespace Blueprint.Api.Services
             if (role == null)
                 return;
 
-            var granted = role.AllPermissions
-                ? Enum.GetValues<SystemPermission>().ToList()
-                : role.Permissions ?? new List<SystemPermission>();
-            var held = _user.Claims
-                .Where(c => c.Type == AuthorizationConstants.PermissionClaimType)
-                .Select(c => c.Value)
-                .ToHashSet();
-
-            if (granted.Any(p => !held.Contains(p.ToString())))
+            if (!HeldPermissions.HoldsAll(_user, role.AllPermissions, role.Permissions))
                 throw new ForbiddenException("You cannot assign a role with permissions you do not hold");
         }
 

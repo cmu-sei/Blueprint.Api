@@ -186,9 +186,9 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task Create_WithManageRolesOnly_Is201()
+    public async Task Create_WithManageRolesAndThePermissionsItGives_Is201()
     {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles, SystemPermission.ViewMsels).SeedAsync();
         var id = Guid.NewGuid();
 
         var response = await Post(Client(actor), Body("auditor") with
@@ -271,7 +271,8 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     [Fact]
     public async Task Create_StoresADuplicatedAndAnUndefinedPermission()
     {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+        // an undefined permission grants nothing, so the caller need not hold it
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles, SystemPermission.ViewMsels).SeedAsync();
         var id = Guid.NewGuid();
 
         var response = await Post(Client(actor), Body("auditor") with
@@ -291,17 +292,48 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     }
 
     /// <remarks>
-    /// What <c>ManageRoles</c> is worth, end to end. The role is created with an <em>empty</em> permission
-    /// list and <c>AllPermissions</c> set, then given to a user, and that user's very next request holds
-    /// permissions nobody enumerated: <c>ViewRoles</c> here, and <c>ViewUnits</c> to show it is not one
-    /// permission but the set. <c>UserClaimsService.cs:209</c> is the single line that does it. So a
-    /// <c>ManageRoles</c> holder is an administrator in two requests, and the second one need not even be
-    /// about themselves.
+    /// An <c>AllPermissions</c> role grants every permission in the installation, so only a caller holding
+    /// every one may create it: <c>ManageRoles</c> alone would otherwise make its holder an administrator in
+    /// two requests, by creating the role and giving it to an account they control.
     /// </remarks>
     [Fact]
-    public async Task Create_WithAllPermissions_GrantsItsHolderEveryPermissionInTheInstallation()
+    public async Task Create_WithAllPermissions_ByACallerWithManageRolesOnly_Is403()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+        var id = Guid.NewGuid();
+
+        var response = await Post(Client(actor), Body("second administrator") with
+        {
+            Id = id,
+            AllPermissions = true,
+            Permissions = []
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(await Stored(id));
+    }
+
+    /// <summary>A ManageRoles holder cannot give the role they hold a permission they lack, which would make
+    /// them an administrator on their next request.</summary>
+    [Fact]
+    public async Task Update_GivingTheCallersOwnRoleAllPermissions_Is403()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+        var roleId = (await ReadBack(rb => rb.Users.SingleAsync(x => x.Id == actor.Id, Ct))).RoleId!.Value;
+        var role = await Stored(roleId);
+
+        var response = await Put(Client(actor), roleId, BodyFor(role) with { AllPermissions = true });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.False((await Stored(roleId)).AllPermissions);
+    }
+
+    /// <summary>Created by an administrator, the role is given to a user, whose very next request holds
+    /// permissions nobody enumerated: <c>ViewRoles</c> here, and <c>ViewUnits</c> to show it is the set.</summary>
+    [Fact]
+    public async Task Create_WithAllPermissions_ByAnAdministrator_GrantsItsHolderEveryPermissionInTheInstallation()
+    {
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
         var id = Guid.NewGuid();
 
         var response = await Post(Client(actor), Body("second administrator") with
@@ -349,10 +381,12 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task Update_WithManageRolesOnly_RenamesTheRole()
+    public async Task Update_WithManageRolesAndThePermissionsItGives_RenamesTheRole()
     {
         var role = await SeedRole("auditor", SystemPermission.ViewMsels);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+        var actor = await Actor()
+            .WithSystemPermissions(SystemPermission.ManageRoles, SystemPermission.ViewMsels, SystemPermission.ViewUnits)
+            .SeedAsync();
 
         var response = await Put(Client(actor), role.Id, BodyFor(role) with
         {

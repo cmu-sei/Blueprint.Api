@@ -166,6 +166,22 @@ public class DatabaseInitializationTests(DatabaseFixture fixture) : DatabaseTest
         Assert.Empty(await NewMsels());
     }
 
+    /// <summary>A Database section with no SeedFile reads the SeedData section instead, and starts.</summary>
+    [Fact]
+    public void Initialize_WithNoSeedFileSetting_StartsAndSaysNothing()
+    {
+        var options = Options();
+        options.SeedFile = null;
+        var (host, log) = HostFor(options);
+
+        using (host)
+        {
+            Assert.Same(host, host.InitializeDatabase());
+        }
+
+        Assert.Empty(log.At(LogLevel.Error));
+    }
+
     [Fact]
     public void Initialize_WithNoContextRegistered_LogsOneErrorAndThrows()
     {

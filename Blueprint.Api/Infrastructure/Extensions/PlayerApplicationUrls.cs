@@ -114,9 +114,10 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
         /// <summary>
         /// Why the push of <paramref name="msel"/> would not be able to send <paramref name="url"/>, filled in from
-        /// this installation's UI addresses, or null when it can. The id of an integration the MSEL uses and the
-        /// push has not assigned yet stands in as an empty guid, as the push fills it in once it is assigned; an
-        /// integration the MSEL does not use is never assigned one, so its placeholder stays empty, as it will be.
+        /// this installation's UI addresses, or null when it can. The id of an integration the MSEL uses, which
+        /// the push assigns before it sends the applications (Player, CITE, Gallery, Steamfitter), stands in as an
+        /// empty guid until then. The Caster workspace is created after the applications are sent, and an unused
+        /// integration never gets an id, so those placeholders stay as they are, as they will be when sent.
         /// </summary>
         public static string PushProblem(string url, MselEntity msel, ClientOptions clientOptions)
         {
@@ -128,7 +129,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 CiteEvaluationId = Pending(msel.UseCite, msel.CiteEvaluationId),
                 GalleryExhibitId = Pending(msel.UseGallery, msel.GalleryExhibitId),
                 SteamfitterScenarioId = Pending(msel.UseSteamfitter, msel.SteamfitterScenarioId),
-                CasterWorkspaceId = Pending(msel.UseCaster, msel.CasterWorkspaceId)
+                CasterWorkspaceId = msel.CasterWorkspaceId
             };
             return ResolvedProblem(Resolve(url, pending, clientOptions));
         }

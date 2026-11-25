@@ -29,25 +29,6 @@ namespace Blueprint.Api.Controllers
         }
 
         /// <summary>
-        /// Gets all CardTeams in the system
-        /// </summary>
-        /// <remarks>
-        /// Returns a list of all of the CardTeams in the system.
-        /// <para />
-        /// </remarks>
-        /// <returns></returns>
-        [HttpGet("teamcards")]
-        [ProducesResponseType(typeof(IEnumerable<CardTeam>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "getCardTeams")]
-        public async Task<IActionResult> Get(CancellationToken ct)
-        {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct))
-                throw new ForbiddenException();
-            var list = await _cardTeamService.GetAsync(ct);
-            return Ok(list);
-        }
-
-        /// <summary>
         /// Gets all CardTeams for a MSEL
         /// </summary>
         /// <remarks>

@@ -18,6 +18,7 @@ using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
+using Blueprint.Api.Infrastructure.Options;
 using Player.Api.Client;
 using Blueprint.Api.ViewModels;
 using Blueprint.Api.Infrastructure.Mappings;
@@ -29,6 +30,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ApplicationTemplate>> GetApplicationTemplatesAsync(CancellationToken ct);
         Task<IEnumerable<View>> GetMyViewsAsync(CancellationToken ct);
         Task PushApplication(PlayerApplication playerApplication, CancellationToken ct);
+        Task EnsurePushableAsync(Guid mselId, string url, CancellationToken ct);
     }
 
     public class PlayerService : IPlayerService
@@ -39,6 +41,7 @@ namespace Blueprint.Api.Services
         private readonly ClaimsPrincipal _user;
         private readonly IHubContext<MainHub> _hubContext;
         private readonly IAddApplicationQueue _addApplicationQueue;
+        private readonly ClientOptions _clientOptions;
 
         public PlayerService(
             IHttpContextAccessor httpContextAccessor,
@@ -48,7 +51,8 @@ namespace Blueprint.Api.Services
             IUserClaimsService claimsService,
             BlueprintContext context,
             IHubContext<MainHub> hubContext,
-            IAddApplicationQueue addApplicationQueue)
+            IAddApplicationQueue addApplicationQueue,
+            ClientOptions clientOptions)
 
         {
             _playerApiClient = playerApiClient;
@@ -57,6 +61,7 @@ namespace Blueprint.Api.Services
             _hubContext = hubContext;
             _authorizationService = authorizationService;
             _addApplicationQueue = addApplicationQueue;
+            _clientOptions = clientOptions;
         }
 
         public async Task<IEnumerable<ApplicationTemplate>> GetApplicationTemplatesAsync(CancellationToken ct)
@@ -84,15 +89,44 @@ namespace Blueprint.Api.Services
             return views;
         }
 
+        /// <summary>
+        /// Refuses an application that cannot be pushed to the MSEL's Player view: the MSEL has none, or the url,
+        /// filled in as the full push fills it, is one Player would refuse or Blueprint cannot send. Checked on
+        /// the request rather than in the background worker, which could only log the failure.
+        /// </summary>
+        public async Task EnsurePushableAsync(Guid mselId, string url, CancellationToken ct)
+        {
+            var msel = await _context.Msels.AsNoTracking().SingleOrDefaultAsync(m => m.Id == mselId, ct);
+            if (msel == null)
+                throw new EntityNotFoundException<MselEntity>();
+            ResolvePushable(msel, url);
+        }
+
+        // the url filled in for the push, or a ConflictException
+        private string ResolvePushable(MselEntity msel, string url)
+        {
+            if (msel?.PlayerViewId == null)
+                throw new ConflictException("The MSEL has not been pushed to Player, so the application cannot be added to its view.");
+
+            var resolved = PlayerApplicationUrls.Resolve(url, msel, _clientOptions);
+            var problem = PlayerApplicationUrls.ResolvedProblem(resolved);
+            if (problem != null)
+                throw new ConflictException(problem);
+
+            return resolved;
+        }
+
         public async Task PushApplication(PlayerApplication application, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == application.MselId, ct);
+            var url = ResolvePushable(msel, application.Url);
+
             var playerApplication = new Application() {
                 Name = application.Name,
                 Embeddable = application.Embeddable,
                 ViewId = (Guid)msel.PlayerViewId,
-                Url = new Uri(application.Url),
-                Icon = application.Icon,
+                Url = PlayerApplicationUrls.ToPlayerUri(url),
+                Icon = PlayerApplicationUrls.Resolve(application.Icon, msel, _clientOptions),
                 LoadInBackground = application.LoadInBackground
             };
             // get the Player Team ID

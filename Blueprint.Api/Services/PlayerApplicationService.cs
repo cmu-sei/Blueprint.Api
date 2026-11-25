@@ -26,7 +26,7 @@ namespace Blueprint.Api.Services
 {
     public interface IPlayerApplicationService
     {
-        Task<IEnumerable<ViewModels.PlayerApplication>> GetTemplatesAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.PlayerApplication>> GetTemplatesAsync(bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.PlayerApplication>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.PlayerApplication> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.PlayerApplication> CreateAsync(ViewModels.PlayerApplicationCreate playerApplication, bool hasSystemPermission, bool hasPlayerApplicationPermission, CancellationToken ct);
@@ -53,8 +53,12 @@ namespace Blueprint.Api.Services
             _user = user as ClaimsPrincipal;
         }
 
-        public async Task<IEnumerable<ViewModels.PlayerApplication>> GetTemplatesAsync(CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.PlayerApplication>> GetTemplatesAsync(bool hasSystemPermission, CancellationToken ct)
         {
+            // a library no MSEL owns: the permissions that manage it, or working on some MSEL
+            if (!hasSystemPermission && !await AnyMselRequirement.IsMetAsync(_user.GetId(), _context, ct))
+                throw new ForbiddenException();
+
             var playerApplicationEntities = await _context.PlayerApplications
                 .Where(playerApplication => playerApplication.IsTemplate && playerApplication.MselId == null)
                 .ToListAsync(ct);
@@ -100,6 +104,9 @@ namespace Blueprint.Api.Services
             // a template belongs to no MSEL, so a MSEL's application cannot be listed as one
             if (playerApplication.MselId.HasValue && playerApplication.IsTemplate)
                 throw new ConflictException("A Player application cannot belong to a MSEL and be a template.");
+            var urlProblem = PlayerApplicationUrls.Problem(playerApplication.Url);
+            if (urlProblem != null)
+                throw new ConflictException(urlProblem);
 
             if (playerApplication.MselId.HasValue)
             {
@@ -129,6 +136,11 @@ namespace Blueprint.Api.Services
             // a template has no MSEL, so there is no Player view to push it to
             if (!playerApplication.MselId.HasValue || playerApplication.IsTemplate)
                 throw new ConflictException("A Player application template cannot be pushed to Player.");
+            // authorized first, so the push check says nothing about a MSEL the caller may not change
+            if (!hasSystemPermission && !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context))
+                throw new ForbiddenException();
+            // refused before the row is saved, so the MSEL is not left with an application its Player view never got
+            await _playerService.EnsurePushableAsync((Guid)playerApplication.MselId, playerApplication.Url, ct);
             // authorization will be checked in CreateAsync
             var item = await CreateAsync(playerApplication, hasSystemPermission, false, ct);
             // push the application to Player
@@ -156,6 +168,10 @@ namespace Blueprint.Api.Services
                 if (!hasPlayerApplicationPermission)
                     throw new ForbiddenException();
             }
+
+            var urlProblem = PlayerApplicationUrls.Problem(playerApplication.Url);
+            if (urlProblem != null)
+                throw new ConflictException(urlProblem);
 
             playerApplication.ApplyTo(playerApplicationToUpdate);
             playerApplicationToUpdate.ModifiedBy = _user.GetId();
@@ -223,6 +239,11 @@ namespace Blueprint.Api.Services
                 PropertyNameCaseInsensitive = true,
             };
             var incoming = JsonSerializer.Deserialize<List<ViewModels.PlayerApplication>>(json, options) ?? new List<ViewModels.PlayerApplication>();
+
+            // the whole file is refused, naming the template, rather than importing the rest without it
+            var refused = incoming.FirstOrDefault(item => PlayerApplicationUrls.Problem(item.Url) != null);
+            if (refused != null)
+                throw new ConflictException($"The Player application template \"{refused.Name}\" was not imported. {PlayerApplicationUrls.Problem(refused.Url)}");
 
             var created = new List<ViewModels.PlayerApplication>();
             var userId = _user.GetId();

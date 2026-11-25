@@ -22,7 +22,7 @@ namespace Blueprint.Api.Services
 {
     public interface ITeamService
     {
-        Task<ViewModels.Team> GetAsync(Guid id, CancellationToken ct);
+        Task<ViewModels.Team> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Team>> GetMineAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Team>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Team>> GetByUserAsync(Guid userId, CancellationToken ct);
@@ -45,12 +45,27 @@ namespace Blueprint.Api.Services
             _logger = logger;
         }
 
-        public async Task<ViewModels.Team> GetAsync(Guid id, CancellationToken ct)
+        public async Task<ViewModels.Team> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct)
         {
             var item = await _context.Teams
                 .Include(t => t.TeamUsers)
                 .ThenInclude(tu => tu.User)
                 .SingleOrDefaultAsync(o => o.Id == id, ct);
+
+            if (item == null)
+                throw new EntityNotFoundException<Team>();
+
+            // the same rule as GET msels/{id}/teams: a viewer of the team's MSEL, or anybody for a template
+            if (!hasSystemPermission && !(await MselViewRequirement.IsMet(_user.GetId(), item.MselId, _context)))
+            {
+                var isTemplate = await _context.Msels
+                    .Where(m => m.Id == item.MselId)
+                    .Select(m => m.IsTemplate)
+                    .FirstOrDefaultAsync(ct);
+                if (!isTemplate)
+                    throw new ForbiddenException();
+            }
+
             return item.ToTeam();
         }
 
@@ -112,7 +127,7 @@ namespace Blueprint.Api.Services
             _context.Teams.Add(teamEntity);
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"Team ({teamEntity.Id}) created by {_user.GetId()}");
-            return await GetAsync(teamEntity.Id, ct);
+            return await GetAsync(teamEntity.Id, true, ct);
         }
 
         public async Task<ViewModels.Team> CreateFromUnitAsync(Guid unitId, Guid mselId, bool hasSystemPermission, CancellationToken ct)
@@ -153,7 +168,7 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"Team ({team.Id}) created by {_user.GetId()}");
 
-            return await GetAsync(team.Id, ct);
+            return await GetAsync(team.Id, true, ct);
         }
 
         public async Task<ViewModels.Team> UpdateAsync(Guid id, ViewModels.TeamEdit team, bool hasSystemPermission, CancellationToken ct)
@@ -176,7 +191,7 @@ namespace Blueprint.Api.Services
             _context.Teams.Update(teamToUpdate);
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"Team ({teamToUpdate.Id}) updated by {_user.GetId()}");
-            return await GetAsync(id, ct);
+            return await GetAsync(id, true, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct)

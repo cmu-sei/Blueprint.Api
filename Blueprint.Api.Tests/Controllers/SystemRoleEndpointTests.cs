@@ -186,9 +186,9 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task Create_WithManageRolesOnly_Is201()
+    public async Task Create_WithManageRolesAndThePermissionsItGives_Is201()
     {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles, SystemPermission.ViewMsels).SeedAsync();
         var id = Guid.NewGuid();
 
         var response = await Post(Client(actor), Body("auditor") with
@@ -210,6 +210,20 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         Assert.Equal("reads everything", stored.Description);
         Assert.Equal([SystemPermission.ViewMsels], stored.Permissions);
+    }
+
+    /// <summary>A body cannot create an immutable role, which nobody could then change or delete.</summary>
+    [Fact]
+    public async Task Create_IgnoresTheBodysImmutable()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+        var id = Guid.NewGuid();
+
+        var response = await Post(Client(actor), Body("auditor") with { Id = id, Immutable = true });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.False((await Read<ViewModels.SystemRole>(response)).Immutable);
+        Assert.False((await Stored(id)).Immutable);
     }
 
     [Fact]
@@ -257,7 +271,8 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     [Fact]
     public async Task Create_StoresADuplicatedAndAnUndefinedPermission()
     {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+        // an undefined permission grants nothing, so the caller need not hold it
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles, SystemPermission.ViewMsels).SeedAsync();
         var id = Guid.NewGuid();
 
         var response = await Post(Client(actor), Body("auditor") with
@@ -277,17 +292,48 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     }
 
     /// <remarks>
-    /// What <c>ManageRoles</c> is worth, end to end. The role is created with an <em>empty</em> permission
-    /// list and <c>AllPermissions</c> set, then given to a user, and that user's very next request holds
-    /// permissions nobody enumerated: <c>ViewRoles</c> here, and <c>ViewUnits</c> to show it is not one
-    /// permission but the set. <c>UserClaimsService.cs:209</c> is the single line that does it. So a
-    /// <c>ManageRoles</c> holder is an administrator in two requests, and the second one need not even be
-    /// about themselves.
+    /// An <c>AllPermissions</c> role grants every permission in the installation, so only a caller holding
+    /// every one may create it: <c>ManageRoles</c> alone would otherwise make its holder an administrator in
+    /// two requests, by creating the role and giving it to an account they control.
     /// </remarks>
     [Fact]
-    public async Task Create_WithAllPermissions_GrantsItsHolderEveryPermissionInTheInstallation()
+    public async Task Create_WithAllPermissions_ByACallerWithManageRolesOnly_Is403()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+        var id = Guid.NewGuid();
+
+        var response = await Post(Client(actor), Body("second administrator") with
+        {
+            Id = id,
+            AllPermissions = true,
+            Permissions = []
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(await Stored(id));
+    }
+
+    /// <summary>A ManageRoles holder cannot give the role they hold a permission they lack, which would make
+    /// them an administrator on their next request.</summary>
+    [Fact]
+    public async Task Update_GivingTheCallersOwnRoleAllPermissions_Is403()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+        var roleId = (await ReadBack(rb => rb.Users.SingleAsync(x => x.Id == actor.Id, Ct))).RoleId!.Value;
+        var role = await Stored(roleId);
+
+        var response = await Put(Client(actor), roleId, BodyFor(role) with { AllPermissions = true });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.False((await Stored(roleId)).AllPermissions);
+    }
+
+    /// <summary>Created by an administrator, the role is given to a user, whose very next request holds
+    /// permissions nobody enumerated: <c>ViewRoles</c> here, and <c>ViewUnits</c> to show it is the set.</summary>
+    [Fact]
+    public async Task Create_WithAllPermissions_ByAnAdministrator_GrantsItsHolderEveryPermissionInTheInstallation()
+    {
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
         var id = Guid.NewGuid();
 
         var response = await Post(Client(actor), Body("second administrator") with
@@ -335,10 +381,12 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task Update_WithManageRolesOnly_RenamesTheRole()
+    public async Task Update_WithManageRolesAndThePermissionsItGives_RenamesTheRole()
     {
         var role = await SeedRole("auditor", SystemPermission.ViewMsels);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+        var actor = await Actor()
+            .WithSystemPermissions(SystemPermission.ManageRoles, SystemPermission.ViewMsels, SystemPermission.ViewUnits)
+            .SeedAsync();
 
         var response = await Put(Client(actor), role.Id, BodyFor(role) with
         {
@@ -411,9 +459,10 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal("auditor", (await Stored(role.Id)).Name);
     }
 
-    /// <summary>Update may rewrite the seeded administrator role.</summary>
+    /// <summary>The seeded Administrator role is immutable, so a <c>ManageRoles</c> holder - normally its own
+    /// holder - can neither rename it nor clear its <c>AllPermissions</c> and lock themselves out.</summary>
     [Fact]
-    public async Task Update_MayRewriteTheSeededAdministratorRole()
+    public async Task Update_ForTheSeededAdministratorRole_Is409AndChangesNothing()
     {
         var actor = await Actor().WithAllSystemPermissions().SeedAsync();
         var client = Client(actor);
@@ -423,19 +472,35 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             Id = SystemRoleDefaults.AdministratorRoleId,
             Name = "Administrator (retired)",
             AllPermissions = false,
-            Immutable = true,
+            Immutable = false,
             Permissions = []
         });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            "Immutable Role cannot be changed.",
+            (await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title);
 
         var stored = await Stored(SystemRoleDefaults.AdministratorRoleId);
 
-        Assert.Equal("Administrator (retired)", stored.Name);
-        Assert.False(stored.AllPermissions);
+        Assert.Equal("Administrator", stored.Name);
+        Assert.True(stored.AllPermissions);
         Assert.True(stored.Immutable);
 
-        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(SystemRoles, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(SystemRoles, Ct)).StatusCode);
+    }
+
+    /// <summary>A body cannot mark a role immutable: only the seed data sets the flag.</summary>
+    [Fact]
+    public async Task Update_IgnoresTheBodysImmutable()
+    {
+        var role = await SeedRole("auditor");
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+
+        var response = await Put(Client(actor), role.Id, BodyFor(role) with { Immutable = true });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False((await Read<ViewModels.SystemRole>(response)).Immutable);
+        Assert.False((await Stored(role.Id)).Immutable);
     }
 
     [Fact]
@@ -506,9 +571,9 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.NotNull(await Stored(role.Id));
     }
 
-    /// <summary>Delete may delete the seeded administrator role.</summary>
+    /// <summary>The seeded Administrator role cannot be deleted, even when nobody holds it.</summary>
     [Fact]
-    public async Task Delete_MayDeleteTheSeededAdministratorRole()
+    public async Task Delete_ForTheSeededAdministratorRole_Is409()
     {
         await NobodyHoldsTheAdministratorRole();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
@@ -516,8 +581,24 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var response = await Client(actor)
             .DeleteAsync(RoleRoute(SystemRoleDefaults.AdministratorRoleId), Ct);
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.Null(await Stored(SystemRoleDefaults.AdministratorRoleId));
+        Assert.Equal(
+            "Immutable Role cannot be deleted.",
+            (await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title);
+        Assert.NotNull(await Stored(SystemRoleDefaults.AdministratorRoleId));
+    }
+
+    /// <summary>Any immutable role is refused, not only the seeded Administrator.</summary>
+    [Fact]
+    public async Task Delete_ForAnImmutableRole_Is409()
+    {
+        var role = TestData.SystemRole("built-in", immutable: true);
+        await Seed(role);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync(RoleRoute(role.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.NotNull(await Stored(role.Id));
     }
 
     /// <summary>The delete broadcast carries the bare id.</summary>

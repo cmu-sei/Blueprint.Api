@@ -505,12 +505,16 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
         Assert.Single(rows);
     }
 
+    /// <summary>
+    /// <c>ViewCatalogs</c> is the permission that reads every catalog's injects, so it is what lets the copy
+    /// take an inject from a private catalog the caller is not on.
+    /// </summary>
     [Fact]
-    public async Task CreateFromInjects_FromAPrivateCatalog_WithViewMsels_Succeeds()
+    public async Task CreateFromInjects_FromAPrivateCatalog_WithViewCatalogs_Succeeds()
     {
         var msel = await SeedMsel();
         var source = await SeedInjects(1, isPublic: false);
-        var actor = await Actor().OnMsel(msel, MselRole.Owner).WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
 
         var rows = await FromInjects(Client(actor), msel, source);
 
@@ -518,15 +522,15 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
     }
 
     /// <summary>
-    /// <c>ViewCatalogs</c> is not what the copy asks: it is refused like any other caller who cannot see
-    /// the catalog.
+    /// <c>ViewMsels</c> is not what the copy asks: it is refused like any other caller who cannot see
+    /// the catalog, so a private catalog's inject cannot be read by copying it into a MSEL.
     /// </summary>
     [Fact]
-    public async Task CreateFromInjects_FromAPrivateCatalog_WithViewCatalogs_Is404()
+    public async Task CreateFromInjects_FromAPrivateCatalog_WithViewMsels_Is404()
     {
         var msel = await SeedMsel();
         var source = await SeedInjects(1, isPublic: false);
-        var actor = await Actor().OnMsel(msel, MselRole.Owner).WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Post(Client(actor), msel.Id, source.InjectType.Id, [source.Injects[0].Id]);
 

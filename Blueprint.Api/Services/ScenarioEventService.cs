@@ -27,7 +27,7 @@ namespace Blueprint.Api.Services
         Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.ScenarioEvent> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> CreateAsync(ViewModels.ScenarioEventCreate scenarioEvent, bool hasSystemPermission, CancellationToken ct);
-        Task<IEnumerable<ViewModels.ScenarioEvent>> CreateFromInjectsAsync(CreateFromInjectsForm createFromInjectsForm, bool hasSystemPermission, bool hasViewMselsPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.ScenarioEvent>> CreateFromInjectsAsync(CreateFromInjectsForm createFromInjectsForm, bool hasSystemPermission, bool hasViewCatalogsPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> CopyScenarioEventsToMselAsync(Guid mselId, List<Guid> scenarioEventIdList, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEventEdit scenarioEvent, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
@@ -157,7 +157,7 @@ namespace Blueprint.Api.Services
             return  scenarioEventEnitities.Select(x => x.ToScenarioEvent()).ToList();
         }
 
-        public async Task<IEnumerable<ViewModels.ScenarioEvent>> CreateFromInjectsAsync(CreateFromInjectsForm createFromInjectsForm, bool hasSystemPermission, bool hasViewMselsPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.ScenarioEvent>> CreateFromInjectsAsync(CreateFromInjectsForm createFromInjectsForm, bool hasSystemPermission, bool hasViewCatalogsPermission, CancellationToken ct)
         {
             var userId = _user.GetId();
             // user must be a Content Developer or a MSEL owner
@@ -186,7 +186,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.DataValues)
                 .Where(x => injectIdList.Contains(x.Id))
                 .ToDictionaryAsync(x => x.Id, ct);
-            var viewableInjectIds = hasViewMselsPermission
+            var viewableInjectIds = hasViewCatalogsPermission
                 ? null
                 : await CatalogViewRequirement.ViewableInjectIdsAsync(userId, injects.Keys, _context, ct);
             foreach (var injectId in injectIdList)

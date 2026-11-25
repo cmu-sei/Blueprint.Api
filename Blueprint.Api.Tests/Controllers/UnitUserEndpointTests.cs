@@ -26,62 +26,19 @@ public class UnitUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
 {
     // ---------------------------------------------------------------------------------------------
-    // GET unitusers
+    // GET unitusers (removed)
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Get all returns every row in the installation.</summary>
+    /// <summary>The installation-wide list was removed: nothing called it, and it answered every unit's
+    /// memberships to any ViewUnits holder. <c>GET units/{id}/users</c> remains.</summary>
     [Fact]
-    public async Task GetAll_ReturnsEveryRowInTheInstallation()
+    public async Task GetAll_IsNoLongerARoute()
     {
-        var mine = await SeedUnit();
-        var theirs = await SeedUnit();
-        var first = await Actor().SeedAsync();
-        var second = await Actor().SeedAsync();
-        await Seed(
-            TestData.UnitUser(first.Id, mine.Id),
-            TestData.UnitUser(second.Id, theirs.Id));
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewUnits).SeedAsync();
-
-        var rows = await GetRows(Client(actor));
-
-        Assert.Equal(
-            new[] { first.Id, second.Id }.Order(), rows.Select(x => x.UserId).Order());
-    }
-
-    [Fact]
-    public async Task GetAll_WithViewUnitsOnly_Is200()
-    {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewUnits).SeedAsync();
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
 
         var response = await Client(actor).GetAsync(UnitUsers, Ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task GetAll_WithoutViewUnits_Is403()
-    {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
-
-        var response = await Client(actor).GetAsync(UnitUsers, Ct);
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    /// <summary>The list route answers each row with a null user; the single read includes it.</summary>
-    [Fact]
-    public async Task GetAll_AnswersANullUserOnEveryRow()
-    {
-        var unit = await SeedUnit();
-        var member = await Actor().WithName("Listed Member").SeedAsync();
-        await Seed(TestData.UnitUser(member.Id, unit.Id));
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewUnits).SeedAsync();
-
-        var row = Assert.Single(await GetRows(Client(actor)));
-
-        Assert.Equal(member.Id, row.UserId);
-        Assert.Null(row.User);
-        Assert.Null(row.Unit);
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -552,7 +509,6 @@ public class UnitUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     // ---------------------------------------------------------------------------------------------
 
     [Theory]
-    [InlineData("GET", "unitusers")]
     [InlineData("GET", "unitusers/00000000-0000-0000-0000-000000000001")]
     [InlineData("POST", "unitusers")]
     [InlineData("DELETE", "unitusers/00000000-0000-0000-0000-000000000001")]
@@ -635,15 +591,6 @@ public class UnitUserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
     private Task<HttpResponseMessage> Post(HttpClient client, UnitUserBody body) =>
         client.PostAsJsonAsync(UnitUsers, body, Ct);
-
-    private async Task<List<ViewModels.UnitUser>> GetRows(HttpClient client)
-    {
-        var response = await client.GetAsync(UnitUsers, Ct);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        return await Read<List<ViewModels.UnitUser>>(response);
-    }
 
     private async Task<ViewModels.UnitUser> GetRow(HttpClient client, Guid id)
     {

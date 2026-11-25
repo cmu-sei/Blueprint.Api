@@ -32,11 +32,11 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     // GET citeDuties/templates
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Templates with no permissions returns only the templates.</summary>
+    /// <summary>A viewer of some MSEL, with no system permission, reads only the templates.</summary>
     [Fact]
-    public async Task Templates_WithNoPermissions_ReturnsOnlyTheTemplates()
+    public async Task Templates_ForAMselViewer_ReturnsOnlyTheTemplates()
     {
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
         var (msel, team) = await SeedMselAndTeam();
         var template = TestData.CiteDuty();
         await Seed(template, TestData.CiteDuty(msel.Id, team.Id));
@@ -52,12 +52,12 @@ public class CiteDutyEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
 
     /// <summary>
     /// A template belongs to no MSEL, so a MSEL's row flagged as a template - which a create can no longer
-    /// write - stays out of the list any signed-in user may read.
+    /// write - stays out of the template list.
     /// </summary>
     [Fact]
     public async Task Templates_LeavesOutAMselsCiteDutyFlaggedAsATemplate()
     {
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
         var (msel, team) = await SeedMselAndTeam();
         var row = TestData.CiteDuty(msel.Id, team.Id);
         row.IsTemplate = true;

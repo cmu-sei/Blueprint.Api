@@ -121,7 +121,7 @@ public class SeededTemplateCopyTests(DatabaseFixture fixture, BlueprintAppFactor
     public async Task Templates_FromTheShippedSeedFile_ComeBackFromEachTemplatesEndpoint()
     {
         SeedFromTheShippedSeedFile();
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
         var client = Client(actor);
 
         await AssertTemplates<Card>(client, "cards", "Cards", x => x.Id, x => x.MselId, x => x.IsTemplate);

@@ -20,12 +20,13 @@ using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.ViewModels;
 using Blueprint.Api.Infrastructure.Mappings;
+using Blueprint.Api.Infrastructure.Authorization;
 
 namespace Blueprint.Api.Services
 {
     public interface IUnitService
     {
-        Task<IEnumerable<ViewModels.Unit>> GetAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.Unit>> GetAsync(bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Unit> GetAsync(Guid id, CancellationToken ct);
         Task<IEnumerable<ViewModels.Unit>> GetMineAsync(CancellationToken ct);
         Task<IEnumerable<ViewModels.Unit>> GetByUserAsync(Guid userId, CancellationToken ct);
@@ -49,8 +50,12 @@ namespace Blueprint.Api.Services
             _logger = logger;
         }
 
-        public async Task<IEnumerable<ViewModels.Unit>> GetAsync(CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Unit>> GetAsync(bool hasSystemPermission, CancellationToken ct)
         {
+            // a library no MSEL owns: the permissions that manage it, or working on some MSEL
+            if (!hasSystemPermission && !await AnyMselRequirement.IsMetAsync(_user.GetId(), _context, ct))
+                throw new ForbiddenException();
+
             var items = await _context.Units
                 .ToArrayAsync(ct);
             return items.Select(x => x.ToUnit()).ToList();

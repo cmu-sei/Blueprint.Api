@@ -26,7 +26,7 @@ namespace Blueprint.Api.Services
 {
     public interface IDataFieldService
     {
-        Task<IEnumerable<ViewModels.DataField>> GetTemplatesAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.DataField>> GetTemplatesAsync(bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.DataField>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.DataField>> GetByInjectTypeAsync(Guid injectTypeId, CancellationToken ct);
         Task<ViewModels.DataField> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
@@ -50,8 +50,12 @@ namespace Blueprint.Api.Services
             _user = user as ClaimsPrincipal;
         }
 
-        public async Task<IEnumerable<ViewModels.DataField>> GetTemplatesAsync(CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.DataField>> GetTemplatesAsync(bool hasSystemPermission, CancellationToken ct)
         {
+            // a library no MSEL owns: the permissions that manage it, or working on some MSEL
+            if (!hasSystemPermission && !await AnyMselRequirement.IsMetAsync(_user.GetId(), _context, ct))
+                throw new ForbiddenException();
+
             var dataFieldEntities = await _context.DataFields
                 .Where(dataField => dataField.IsTemplate && dataField.MselId == null)
                 .Include(dataField => dataField.DataOptions)

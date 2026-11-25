@@ -53,19 +53,20 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         Assert.Empty(await GetOrganizations(Client(actor), "/api/organizations/templates"));
     }
 
-    /// <summary>Templates with no system role is answered with a 200.</summary>
+    /// <summary>A viewer of some MSEL with no system role reads the templates.</summary>
     [Fact]
-    public async Task Templates_WithNoSystemRole_Is200()
+    public async Task Templates_ForAMselViewerWithNoSystemRole_Is200()
     {
         await Seed(TestData.Organization());
 
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
 
         Assert.Single(await GetOrganizations(Client(actor), "/api/organizations/templates"));
     }
 
     /// <summary>A user with no row is provisioned by <c>UserClaimsService.ValidateUser</c> on the first
-    /// request.</summary>
+    /// request, which runs before the route's own check - so the provisioning happens though a caller who
+    /// works on no MSEL is then refused the templates.</summary>
     [Fact]
     public async Task Templates_AsAUserWithNoRow_ProvisionsTheUser()
     {
@@ -74,7 +75,7 @@ public class OrganizationEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         var response = await ClientFor(userId, "Provisioned Once").GetAsync(
             "/api/organizations/templates", Ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         await using var context = NewContext();
         var user = await context.Users.AsNoTracking().SingleAsync(x => x.Id == userId, Ct);

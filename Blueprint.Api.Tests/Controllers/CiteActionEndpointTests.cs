@@ -26,7 +26,7 @@ namespace Blueprint.Api.Tests.Controllers;
 /// </summary>
 /// <remarks>
 /// 401 and 403 for these routes live in <see cref="RouteAuthorizationTests"/>, except
-/// <c>GET citeActions/templates</c>, which resolves no permission at all and so cannot be refused.
+/// <c>GET citeActions/templates</c>, whose gate is shared with the other template libraries and tested in <see cref=\"TemplateLibraryAuthorizationTests\"/>.
 /// </remarks>
 public class CiteActionEndpointTests(DatabaseFixture fixture, BlueprintAppFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
@@ -35,11 +35,11 @@ public class CiteActionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
     // GET citeActions/templates
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Templates with no permissions returns only the templates.</summary>
+    /// <summary>A viewer of some MSEL, with no system permission, reads only the templates.</summary>
     [Fact]
-    public async Task Templates_WithNoPermissions_ReturnsOnlyTheTemplates()
+    public async Task Templates_ForAMselViewer_ReturnsOnlyTheTemplates()
     {
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
         var (msel, team) = await SeedMselAndTeam();
         var template = TestData.CiteAction();
         await Seed(template, TestData.CiteAction(msel.Id, team.Id));
@@ -55,12 +55,12 @@ public class CiteActionEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
     /// <summary>
     /// A template belongs to no MSEL, so a MSEL's row flagged as a template - which a create can no longer
-    /// write - stays out of the list any signed-in user may read.
+    /// write - stays out of the template list.
     /// </summary>
     [Fact]
     public async Task Templates_LeavesOutAMselsCiteActionFlaggedAsATemplate()
     {
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
         var (msel, team) = await SeedMselAndTeam();
         var row = TestData.CiteAction(msel.Id, team.Id);
         row.IsTemplate = true;

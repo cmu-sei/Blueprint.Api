@@ -21,7 +21,6 @@ namespace Blueprint.Api.Services
 {
     public interface IUnitUserService
     {
-        Task<IEnumerable<ViewModels.UnitUser>> GetAsync(CancellationToken ct);
         Task<ViewModels.UnitUser> GetAsync(Guid id, CancellationToken ct);
         Task<ViewModels.UnitUser> CreateAsync(ViewModels.UnitUser unitUser, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, CancellationToken ct);
@@ -39,14 +38,6 @@ namespace Blueprint.Api.Services
             _context = context;
             _user = user as ClaimsPrincipal;
             _logger = logger;
-        }
-
-        public async Task<IEnumerable<ViewModels.UnitUser>> GetAsync(CancellationToken ct)
-        {
-            var items = await _context.UnitUsers
-                .ToListAsync(ct);
-
-            return items.Select(x => x.ToUnitUser()).ToList();
         }
 
         public async Task<ViewModels.UnitUser> GetAsync(Guid id, CancellationToken ct)

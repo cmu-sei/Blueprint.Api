@@ -33,36 +33,36 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     {
         var template = await SeedCard(null, isTemplate: true);
         await SeedCard((await SeedMsel()).Id);
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
 
         var cards = await Read<List<ViewModels.Card>>(await Client(actor).GetAsync(Templates, Ct));
 
         Assert.Equal(template.Id, Assert.Single(cards).Id);
     }
 
-    /// <summary>Templates for a caller with no permission and no role anywhere is answered with a 200.</summary>
+    /// <summary>A caller with no permission and no role anywhere is refused the templates; see
+    /// <see cref="TemplateLibraryAuthorizationTests"/> for who is let in.</summary>
     [Fact]
-    public async Task Templates_ForACallerWithNoPermissionAndNoRoleAnywhere_Is200()
+    public async Task Templates_ForACallerWithNoPermissionAndNoRoleAnywhere_Is403()
     {
         await SeedCard(null, isTemplate: true);
         var actor = await Actor().SeedAsync();
 
         var response = await Client(actor).GetAsync(Templates, Ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Single(await Read<List<ViewModels.Card>>(response));
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <remarks>
     /// A template belongs to no MSEL, so a MSEL's card flagged as a template - which a create can no longer
-    /// write - stays out of the template list a stranger may read.
+    /// write - stays out of the template list.
     /// </remarks>
     [Fact]
     public async Task Templates_LeavesOutAMselsCardFlaggedAsATemplate()
     {
         var msel = await SeedMsel();
         await SeedCard(msel.Id, isTemplate: true);
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
 
         var cards = await Read<List<ViewModels.Card>>(await Client(actor).GetAsync(Templates, Ct));
 
@@ -78,7 +78,7 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     public async Task Templates_SerializesTheIntegersAsStrings()
     {
         await SeedCard(null, move: 3, inject: 4, isTemplate: true);
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
 
         var body = await (await Client(actor).GetAsync(Templates, Ct)).Content.ReadAsStringAsync(Ct);
 
@@ -543,7 +543,7 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     public async Task Templates_LeavesOutACardWithNoMselThatIsNotMarkedATemplate()
     {
         await Seed(TestData.Card(null, isTemplate: false));
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
 
         var templates = await Read<List<ViewModels.Card>>(await Client(actor).GetAsync(Templates, Ct));
 
@@ -1115,9 +1115,10 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Null(await Stored(chosen));
     }
 
-    /// <summary>Upload JSON keeps the gallery id from the file.</summary>
+    /// <summary>The file's gallery id names a card in another Gallery, so an imported template drops it,
+    /// as a template made here starts without one.</summary>
     [Fact]
-    public async Task UploadJson_KeepsTheGalleryIdFromTheFile()
+    public async Task UploadJson_DropsTheGalleryIdFromTheFile()
     {
         var galleryId = Guid.NewGuid();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageGalleryCards).SeedAsync();
@@ -1126,8 +1127,8 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             [{"name":"one","galleryId":"{{galleryId}}"}]
             """)));
 
-        Assert.Equal(galleryId, created.GalleryId);
-        Assert.Equal(galleryId, (await Stored(created.Id)).GalleryId);
+        Assert.Null(created.GalleryId);
+        Assert.Null((await Stored(created.Id)).GalleryId);
     }
 
     [Fact]

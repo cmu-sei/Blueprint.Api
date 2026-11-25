@@ -25,6 +25,8 @@ namespace Blueprint.Api.Infrastructure.Extensions
             using (var scope = webHost.Services.CreateScope())
             {
                 var services = scope.ServiceProvider;
+                // what was under way, so the log line says which part of the configuration to look at
+                var step = "resolving the database context";
 
                 try
                 {
@@ -33,6 +35,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
                     if (ctx != null)
                     {
+                        step = "migrating the database";
                         if (databaseOptions.DevModeRecreate)
                             ctx.Database.EnsureDeleted();
 
@@ -47,29 +50,33 @@ namespace Blueprint.Api.Infrastructure.Extensions
                             ctx.Database.EnsureCreated();
                         }
 
+                        step = "locating the seed file";
                         IHostEnvironment env = services.GetService<IHostEnvironment>();
                         IConfiguration configuration = services.GetService<IConfiguration>();
-                        string seedFile = Path.Combine(
-                            env.ContentRootPath,
-                            databaseOptions.SeedFile
-                        );
+                        // no SeedFile setting means no seed file, and the SeedData section is read instead
+                        string seedFile = string.IsNullOrWhiteSpace(databaseOptions.SeedFile)
+                            ? null
+                            : Path.Combine(env.ContentRootPath, databaseOptions.SeedFile);
 
                         SeedDataOptions seedDataOptions = null;
 
                         // Try to load from seed file first
-                        if (File.Exists(seedFile))
+                        if (seedFile != null && File.Exists(seedFile))
                         {
+                            step = $"reading the seed file {seedFile}";
                             seedDataOptions = JsonSerializer.Deserialize<SeedDataOptions>(File.ReadAllText(seedFile));
                         }
                         // Fall back to SeedData section in appsettings.json
                         else
                         {
+                            step = "reading the SeedData configuration section";
                             seedDataOptions = new SeedDataOptions();
                             configuration.GetSection("SeedData").Bind(seedDataOptions);
                         }
 
                         if (seedDataOptions != null)
                         {
+                            step = "seeding the database";
                             ProcessSeedDataOptions(seedDataOptions, ctx);
                         }
                     }
@@ -77,13 +84,12 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 }
                 catch (Exception ex)
                 {
-                    var message = ex.Message;
-                    if (ex.InnerException != null)
-                    {
-                        message = message + ex.InnerException.Message;
-                    }
                     var logger = services.GetRequiredService<ILogger<Program>>();
-                    logger.LogError(message);
+                    logger.LogError(ex, "Database initialization failed while {Step}", step);
+
+                    // a database that did not migrate or seed is not one to serve requests from; exit, so the
+                    // failure is seen and the application can be restarted once it is fixed
+                    throw;
                 }
             }
 

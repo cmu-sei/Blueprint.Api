@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Infrastructure.Options;
 
 namespace Blueprint.Api.Services
@@ -29,7 +30,9 @@ namespace Blueprint.Api.Services
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.Id == mselId, ct);
 
-            if (msel == null)
+            // only a published template is catalog metadata; a live exercise or a draft is not published,
+            // and answers as though it were not there
+            if (msel == null || !msel.IsTemplate || msel.Status != MselItemStatus.Approved)
                 return null;
 
             // Load MSEL competencies with framework and competency details

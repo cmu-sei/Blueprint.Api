@@ -43,7 +43,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getCardTemplates")]
         public async Task<IActionResult> GetCardTemplates(CancellationToken ct)
         {
-            var list = await _cardService.GetTemplatesAsync(ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewGalleryCards, SystemPermission.ManageGalleryCards, SystemPermission.ViewMsels], ct);
+            var list = await _cardService.GetTemplatesAsync(hasSystemPermission, ct);
             return Ok(list);
         }
 

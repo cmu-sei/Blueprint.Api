@@ -509,13 +509,14 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
             Body(Assert.Single(handler.Sent).Body)["url"].GetString());
     }
 
-    /// <summary>Create applications for a url that does not resolve sends no url at all.</summary>
+    /// <summary>A url with a scheme Player refuses goes as none rather than failing the application. The
+    /// push refuses such a MSEL before it starts, so only a url a configured UI address turned bad gets
+    /// here.</summary>
     [Theory]
-    [InlineData("not a url")]
-    [InlineData("/relative/path")]
     [InlineData("htp://typo.example/")]
     [InlineData("javascript:alert(1)")]
-    public async Task CreateApplications_ForAUrlThatDoesNotResolve_SendsNoUrlAtAll(string url)
+    [InlineData("data:text/html,hi")]
+    public async Task CreateApplications_ForAUrlPlayerRefuses_SendsNoUrlAtAll(string url)
     {
         var msel = await SeedMsel();
         await Seed(TestData.PlayerApplication(msel.Id, url: url));
@@ -527,16 +528,34 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         Assert.Equal(JsonValueKind.Null, Body(Assert.Single(handler.Sent).Body)["url"].ValueKind);
     }
 
-    /// <summary>Create applications for an application with no url throws a null reference.</summary>
+    /// <summary>A url with no scheme is one Player accepts and resolves against its own address, so it is
+    /// sent as it is.</summary>
+    [Theory]
+    [InlineData("/relative/path")]
+    [InlineData("console.example/index.html")]
+    public async Task CreateApplications_ForARelativeUrl_SendsIt(string url)
+    {
+        var msel = await SeedMsel();
+        await Seed(TestData.PlayerApplication(msel.Id, url: url));
+
+        var handler = Handler().AnswersJson($"api/views/{ViewId}/applications", ApplicationJson, HttpStatusCode.Created);
+
+        await CreateApplications(msel.Id, handler);
+
+        Assert.Equal(url, Body(Assert.Single(handler.Sent).Body)["url"].GetString());
+    }
+
     [Fact]
-    public async Task CreateApplications_ForAnApplicationWithNoUrl_ThrowsANullReference()
+    public async Task CreateApplications_ForAnApplicationWithNoUrl_SendsNoUrl()
     {
         var msel = await SeedMsel();
         await Seed(TestData.PlayerApplication(msel.Id, url: null));
 
         var handler = Handler().AnswersJson($"api/views/{ViewId}/applications", ApplicationJson, HttpStatusCode.Created);
 
-        await Assert.ThrowsAsync<NullReferenceException>(() => CreateApplications(msel.Id, handler));
+        await CreateApplications(msel.Id, handler);
+
+        Assert.Equal(JsonValueKind.Null, Body(Assert.Single(handler.Sent).Body)["url"].ValueKind);
     }
 
     [Fact]

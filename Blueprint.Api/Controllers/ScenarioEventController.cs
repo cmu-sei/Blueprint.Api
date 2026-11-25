@@ -109,8 +109,8 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> CreateFromInjects([FromBody] CreateFromInjectsForm createFromInjectsForm, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.EditMsels], ct);
-            var hasViewMselsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
-            var list = await _scenarioEventService.CreateFromInjectsAsync(createFromInjectsForm, hasSystemPermission, hasViewMselsPermission, ct);
+            var hasViewCatalogsPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewCatalogs], ct);
+            var list = await _scenarioEventService.CreateFromInjectsAsync(createFromInjectsForm, hasSystemPermission, hasViewCatalogsPermission, ct);
             return Ok(list);
         }
 

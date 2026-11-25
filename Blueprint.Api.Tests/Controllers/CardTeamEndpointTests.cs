@@ -25,37 +25,19 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     : ApiTestBase(fixture, factory), IClassFixture<BlueprintAppFactory>
 {
     // ---------------------------------------------------------------------------------------------
-    // GET teamcards
+    // GET teamcards (removed)
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Get all with view MSELs returns every row in the installation.</summary>
+    /// <summary>The installation-wide list was removed: nothing called it, and it answered every MSEL's rows
+    /// to any ViewMsels holder. <c>GET msels/{id}/teamcards</c> and <c>GET cards/{id}/teamcards</c> remain.</summary>
     [Fact]
-    public async Task GetAll_WithViewMsels_ReturnsEveryRowInTheInstallation()
+    public async Task GetAll_IsNoLongerARoute()
     {
-        var mine = await SeedMsel();
-        var theirs = await SeedMsel();
-        var ours = await SeedCardTeam(mine);
-        var others = await SeedCardTeam(theirs);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
-
-        var rows = await Read<List<ViewModels.CardTeam>>(await Client(actor).GetAsync(TeamCards, Ct));
-
-        var ids = rows.Select(x => x.Id).ToList();
-        Assert.Equal(2, ids.Count);
-        Assert.Contains(ours.Id, ids);
-        Assert.Contains(others.Id, ids);
-    }
-
-    [Fact]
-    public async Task GetAll_ForAMselOwnerWithoutViewMsels_Is403()
-    {
-        var msel = await SeedMsel();
-        await SeedCardTeam(msel);
-        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
 
         var response = await Client(actor).GetAsync(TeamCards, Ct);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -873,7 +855,6 @@ public class CardTeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
     // ---------------------------------------------------------------------------------------------
 
     [Theory]
-    [InlineData("GET", "teamcards")]
     [InlineData("GET", "msels/00000000-0000-0000-0000-000000000001/teamcards")]
     [InlineData("GET", "cards/00000000-0000-0000-0000-000000000001/teamcards")]
     [InlineData("GET", "teamcards/00000000-0000-0000-0000-000000000001")]

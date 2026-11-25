@@ -43,7 +43,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getDataFieldTemplates")]
         public async Task<IActionResult> GetDataFieldTemplates(CancellationToken ct)
         {
-            var list = await _dataFieldService.GetTemplatesAsync(ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewDataFields, SystemPermission.ManageDataFields, SystemPermission.ViewMsels], ct);
+            var list = await _dataFieldService.GetTemplatesAsync(hasSystemPermission, ct);
             return Ok(list);
         }
 

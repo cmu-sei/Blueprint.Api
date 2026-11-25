@@ -99,13 +99,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getTeam")]
         public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         {
-            if (!await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct))
-                throw new ForbiddenException();
-
-            var team = await _teamService.GetAsync(id, ct);
-
-            if (team == null)
-                throw new EntityNotFoundException<Team>();
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewMsels], ct);
+            var team = await _teamService.GetAsync(id, hasSystemPermission, ct);
 
             return Ok(team);
         }

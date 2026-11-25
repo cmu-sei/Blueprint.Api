@@ -16,14 +16,17 @@ public static partial class SystemRoleMapper
 {
     public static partial SystemRole ToSystemRole(this SystemRoleEntity source);
 
+    /// <remarks><c>Immutable</c> is the seed data's alone to set, so a created role is never immutable.</remarks>
     [MapperRequiredMapping(RequiredMappingStrategy.Source)]
+    [MapperIgnoreSource(nameof(SystemRole.Immutable))]
     public static partial SystemRoleEntity ToEntity(this SystemRole source);
 
     /// <remarks>
     /// Writes the body's id onto the row as well, so a body whose id is not the route's (or has none) tries
-    /// to change the key and fails the save.
+    /// to change the key and fails the save. <c>Immutable</c> is left as stored: a body cannot set or clear it.
     /// </remarks>
     [MapperRequiredMapping(RequiredMappingStrategy.Source)]
+    [MapperIgnoreSource(nameof(SystemRole.Immutable))]
     public static partial void ApplyTo(this SystemRole source, SystemRoleEntity target);
 
     /// <remarks>The stored role written back onto the update's body, which is what the update answers.</remarks>

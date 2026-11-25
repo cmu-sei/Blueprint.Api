@@ -36,7 +36,7 @@ namespace Blueprint.Api.Controllers
         /// <remarks>
         /// Returns a list of all of the Units in the system.
         /// <para />
-        /// Only accessible to a SuperUser
+        /// Accessible to a User with the ViewUnits, CreateMsels or ViewMsels permission, or who works on a MSEL
         /// </remarks>
         /// <returns></returns>
         [HttpGet("units")]
@@ -44,7 +44,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getUnits")]
         public async Task<IActionResult> Get(CancellationToken ct)
         {
-            var list = await _unitService.GetAsync(ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewUnits, SystemPermission.CreateMsels, SystemPermission.ViewMsels], ct);
+            var list = await _unitService.GetAsync(hasSystemPermission, ct);
             return Ok(list);
         }
 

@@ -16,6 +16,7 @@ using Blueprint.Api.Tests.Support;
 using Blueprint.Api.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
 using Xunit.Sdk;
@@ -291,6 +292,168 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
             MselItemStatus.Approved,
             (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).Status);
         AssertNothingEnqueued();
+    }
+
+    /// <summary>A Player push with an application whose url Player would refuse - one a copied or imported
+    /// MSEL can bring, since only saving an application checks it - is a 409 naming the application, and
+    /// nothing is marked or queued.</summary>
+    [Fact]
+    public async Task Push_OfAPlayerMselWithAnApplicationUrlPlayerRefuses_Is409NamingIt()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        msel.UsePlayer = true;
+        await Seed(msel);
+        await Seed(
+            TestData.PlayerApplication(msel.Id, "Fine", url: "https://fine.example/"),
+            TestData.PlayerApplication(msel.Id, "Bad", url: "javascript:alert(1)"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(
+            "Fix the Player applications before pushing. \"Bad\": A Player application's Url must be an absolute http or https URL, or a relative one.",
+            (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title);
+        Assert.Equal(
+            MselItemStatus.Approved,
+            (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).Status);
+        AssertNothingEnqueued();
+    }
+
+    /// <summary>An id the push assigns, such as the Player view's, is not set when the push is checked, so it
+    /// stands in as one would be: a template using it in a host name is pushed, not refused.</summary>
+    [Fact]
+    public async Task Push_OfAPlayerMselWithAnIdPlaceholderInAHostName_Is200()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        msel.UsePlayer = true;
+        await Seed(msel);
+        await Seed(TestData.PlayerApplication(msel.Id, "Lab", url: "https://{playerViewId}.labs.example/app"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>An integration the MSEL does not use is never given an id, so its placeholder in a host name
+    /// would leave the host empty and the application with no url: the push is refused, naming it.</summary>
+    [Fact]
+    public async Task Push_OfAPlayerMselWithAnUnusedIntegrationsIdInAHostName_Is409NamingIt()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        msel.UsePlayer = true;
+        await Seed(msel);
+        await Seed(TestData.PlayerApplication(msel.Id, "Cite lab", url: "https://{citeEvaluationId}.labs.example/app"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        var title = (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.StartsWith("Fix the Player applications before pushing. \"Cite lab\": ", title);
+        AssertNothingEnqueued();
+    }
+
+    /// <summary>The push also checks each url as it fills it in from this installation's UI addresses, so a
+    /// misconfigured address is a 409 naming the application, not an application pushed with no url.</summary>
+    [Fact]
+    public async Task Push_OfAPlayerMselWhoseUrlAConfiguredUiAddressSpoils_Is409NamingIt()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        msel.UsePlayer = true;
+        await Seed(msel);
+        await Seed(TestData.PlayerApplication(msel.Id, "Console", url: "{vmUrl}/views/{playerViewId}"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+        var options = Factory.Services.GetRequiredService<IOptionsMonitor<Blueprint.Api.Infrastructure.Options.ClientOptions>>().CurrentValue;
+        var configured = options.VmUiUrl;
+        options.VmUiUrl = "javascript:alert(1)//";
+        try
+        {
+            var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+            var title = (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title;
+            Assert.StartsWith("Fix the Player applications before pushing. \"Console\": ", title);
+            AssertNothingEnqueued();
+        }
+        finally
+        {
+            options.VmUiUrl = configured;
+        }
+    }
+
+    /// <summary>A Gallery push with an article whose url Gallery would refuse is a 409 naming the article,
+    /// and nothing is marked or queued; without the check Gallery refused it in the background push.</summary>
+    [Fact]
+    public async Task Push_OfAGalleryMselWithAnArticleUrlGalleryRefuses_Is409NamingIt()
+    {
+        var msel = await SeedGalleryMsel(("Fine", "https://fine.example/"), ("Bad", "javascript:alert(1)"), ("Relative", "/news/1"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        var title = (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.StartsWith("Fix the Gallery articles before pushing. The articles ", title);
+        Assert.Contains("\"Bad\"", title);
+        Assert.Contains("\"Relative\"", title);
+        Assert.DoesNotContain("\"Fine\"", title);
+        Assert.EndsWith(": A Gallery article's URL must be empty, or an absolute http or https URL.", title);
+        Assert.Equal(
+            MselItemStatus.Approved,
+            (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).Status);
+        AssertNothingEnqueued();
+    }
+
+    /// <summary>Empty and absolute http(s) urls are what Gallery accepts, so they do not stop the push.</summary>
+    [Fact]
+    public async Task Push_OfAGalleryMselWithArticleUrlsGalleryAccepts_Is200()
+    {
+        var msel = await SeedGalleryMsel(("Empty", ""), ("Http", "http://news.example/a"), ("Https", "https://news.example/b"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>Two fields mapped to one article parameter would fail the article push, so the push is a 409
+    /// naming the parameter and the fields, not a 500.</summary>
+    [Fact]
+    public async Task Push_OfAGalleryMselWithTwoFieldsMappedToOneParameter_Is409NamingThem()
+    {
+        var msel = await SeedGalleryMsel(("Fine", "https://fine.example/"));
+        var second = TestData.DataField(msel.Id, name: "Second link", displayOrder: 3);
+        second.GalleryArticleParameter = GalleryArticleParameter.Url.ToString();
+        await Seed(second);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+        var title = (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title;
+        Assert.Contains("Url (\"Link\", \"Second link\")", title);
+        AssertNothingEnqueued();
+    }
+
+    /// <summary>An approved MSEL using Gallery, with a Name and a Url article field and one Gallery
+    /// scenario event per article.</summary>
+    private async Task<MselEntity> SeedGalleryMsel(params (string Name, string Url)[] articles)
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        msel.UseGallery = true;
+        await Seed(msel);
+        var nameField = TestData.DataField(msel.Id, name: "Title");
+        nameField.GalleryArticleParameter = GalleryArticleParameter.Name.ToString();
+        var urlField = TestData.DataField(msel.Id, name: "Link", displayOrder: 2);
+        urlField.GalleryArticleParameter = GalleryArticleParameter.Url.ToString();
+        await Seed(nameField, urlField);
+        foreach (var (name, url) in articles)
+        {
+            var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+            scenarioEvent.IntegrationTarget = "Gallery";
+            await Seed(scenarioEvent);
+            await Seed(
+                TestData.DataValue(nameField.Id, scenarioEvent.Id, name),
+                TestData.DataValue(urlField.Id, scenarioEvent.Id, url));
+        }
+        return msel;
     }
 
     /// <summary>A CITE push with moves that have no situation time is a 409 naming the moves.</summary>

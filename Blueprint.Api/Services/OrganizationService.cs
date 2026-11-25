@@ -25,7 +25,7 @@ namespace Blueprint.Api.Services
 {
     public interface IOrganizationService
     {
-        Task<IEnumerable<ViewModels.Organization>> GetTemplatesAsync(CancellationToken ct);
+        Task<IEnumerable<ViewModels.Organization>> GetTemplatesAsync(bool hasSystemPermission, CancellationToken ct);
         Task<IEnumerable<ViewModels.Organization>> GetByMselAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Organization> GetAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
         Task<ViewModels.Organization> CreateAsync(ViewModels.OrganizationCreate organization, bool hasMselPermission, bool hasOrganizationPermission, CancellationToken ct);
@@ -48,8 +48,12 @@ namespace Blueprint.Api.Services
             _user = user as ClaimsPrincipal;
         }
 
-        public async Task<IEnumerable<ViewModels.Organization>> GetTemplatesAsync(CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.Organization>> GetTemplatesAsync(bool hasSystemPermission, CancellationToken ct)
         {
+            // a library no MSEL owns: the permissions that manage it, or working on some MSEL
+            if (!hasSystemPermission && !await AnyMselRequirement.IsMetAsync(_user.GetId(), _context, ct))
+                throw new ForbiddenException();
+
             var organizationEntities = await _context.Organizations
                 .Where(organization => organization.Msel == null)
                 .ToListAsync(ct);

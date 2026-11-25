@@ -75,20 +75,20 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
             returned.DataOptions.Select(x => x.OptionName).Order(StringComparer.Ordinal));
     }
 
-    /// <summary>Templates with no system role is answered with a 200.</summary>
+    /// <summary>A viewer of some MSEL with no system role reads the templates.</summary>
     [Fact]
-    public async Task Templates_WithNoSystemRole_Is200()
+    public async Task Templates_ForAMselViewerWithNoSystemRole_Is200()
     {
         await Seed(TestData.DataField());
 
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
 
         Assert.Single(await GetFields(Client(actor), "/api/dataFields/templates"));
     }
 
     /// <summary>
     /// A template belongs to no MSEL, so a MSEL's column flagged <c>IsTemplate</c> - which a create can no
-    /// longer write - stays out of the shared template list any signed-in user may read.
+    /// longer write - stays out of the shared template list.
     /// </summary>
     [Fact]
     public async Task Templates_LeavesOutAMselScopedFieldFlaggedAsATemplate()
@@ -99,7 +99,7 @@ public class DataFieldEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         var field = TestData.DataField(mselId: msel.Id, isTemplate: true);
         await Seed(field);
 
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
 
         Assert.Empty(await GetFields(Client(actor), "/api/dataFields/templates"));
     }

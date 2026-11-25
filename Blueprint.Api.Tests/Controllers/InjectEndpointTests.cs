@@ -100,12 +100,12 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     }
 
     [Fact]
-    public async Task GetByCatalog_ForAPrivateCatalog_is_forbidden_for_a_caller_holding_only_ViewCatalogs()
+    public async Task GetByCatalog_ForAPrivateCatalog_is_forbidden_for_a_caller_holding_only_ViewMsels()
     {
         var type = await SeedInjectType();
         var catalog = await SeedCatalog(type.Id);
         await SeedInject(type.Id, catalog.Id);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(actor).GetAsync(InjectsOf(catalog.Id), Ct);
 
@@ -148,12 +148,12 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     }
 
     [Fact]
-    public async Task GetByCatalog_ForAPrivateCatalog_WithViewMsels_Is200()
+    public async Task GetByCatalog_ForAPrivateCatalog_WithViewCatalogs_Is200()
     {
         var type = await SeedInjectType();
         var catalog = await SeedCatalog(type.Id);
         var inject = await SeedInject(type.Id, catalog.Id);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
 
         var injects = await Read<List<ViewModels.Injectm>>(
             await Client(actor).GetAsync(InjectsOf(catalog.Id), Ct));
@@ -164,9 +164,9 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     /// <summary>An unknown catalog is a 403, the answer <c>CatalogViewRequirement</c> gives a catalog it cannot
     /// find.</summary>
     [Fact]
-    public async Task GetByCatalog_ForACatalogThatIsNotThere_is_forbidden_for_a_caller_holding_only_ViewCatalogs()
+    public async Task GetByCatalog_ForACatalogThatIsNotThere_is_forbidden_for_a_caller_holding_only_ViewMsels()
     {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
         var response = await Client(actor).GetAsync(InjectsOf(Guid.NewGuid()), Ct);
 
@@ -174,13 +174,13 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     }
 
     /// <remarks>
-    /// And for a caller holding <c>ViewMsels</c> the requirement is never asked, so the same request is an
+    /// And for a caller holding <c>ViewCatalogs</c> the requirement is never asked, so the same request is an
     /// empty list. One route, two answers to "that catalog does not exist", chosen by permission.
     /// </remarks>
     [Fact]
-    public async Task GetByCatalog_ForACatalogThatIsNotThere_WithViewMsels_Is200AndEmpty()
+    public async Task GetByCatalog_ForACatalogThatIsNotThere_WithViewCatalogs_Is200AndEmpty()
     {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
 
         var injects = await Read<List<ViewModels.Injectm>>(
             await Client(actor).GetAsync(InjectsOf(Guid.NewGuid()), Ct));
@@ -197,7 +197,7 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     {
         var type = await SeedInjectType();
         var inject = await SeedInject(type.Id);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
 
         var injects = await Read<List<ViewModels.Injectm>>(
             await Client(actor).GetAsync(InjectsOfType(type.Id), Ct));
@@ -212,7 +212,7 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var other = await SeedInjectType();
         var inject = await SeedInject(type.Id);
         await SeedInject(other.Id);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
 
         var injects = await Read<List<ViewModels.Injectm>>(
             await Client(actor).GetAsync(InjectsOfType(type.Id), Ct));
@@ -227,7 +227,7 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var field = await SeedDataField(type.Id);
         var inject = await SeedInject(type.Id);
         await SeedDataValue(field.Id, inject.Id, "cell");
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
 
         var injects = await Read<List<ViewModels.Injectm>>(
             await Client(actor).GetAsync(InjectsOfType(type.Id), Ct));
@@ -235,15 +235,16 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         Assert.Equal("cell", Assert.Single(Assert.Single(injects).DataValues).Value);
     }
 
-    /// <summary>Get by inject type is not scoped to any catalog.</summary>
+    /// <summary>A <c>ViewCatalogs</c> holder reads every inject of the type, private catalogs' and those in no
+    /// catalog at all.</summary>
     [Fact]
-    public async Task GetByInjectType_IsNotScopedToAnyCatalog()
+    public async Task GetByInjectType_WithViewCatalogs_IsNotScopedToAnyCatalog()
     {
         var type = await SeedInjectType();
         var privateCatalog = await SeedCatalog(type.Id);
         var inCatalog = await SeedInject(type.Id, privateCatalog.Id);
         var orphan = await SeedInject(type.Id);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
 
         var injects = await Read<List<ViewModels.Injectm>>(
             await Client(actor).GetAsync(InjectsOfType(type.Id), Ct));
@@ -257,22 +258,46 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
         Assert.Equal(inCatalog.Id, Assert.Single(byCatalog).Id);
     }
 
+    /// <summary>Without <c>ViewCatalogs</c> - <c>ViewMsels</c> included, which used to read them all - the
+    /// type answers only the injects of catalogs the caller can view, by <c>CatalogViewRequirement</c>.</summary>
     [Fact]
-    public async Task GetByInjectType_is_forbidden_for_a_caller_holding_only_ViewCatalogs()
+    public async Task GetByInjectType_WithoutViewCatalogs_ReturnsOnlyTheInjectsOfCatalogsTheCallerCanView()
     {
         var type = await SeedInjectType();
+        var inPublic = await SeedInject(type.Id, (await SeedCatalog(type.Id, isPublic: true)).Id);
+        var unitCatalog = await SeedCatalog(type.Id);
+        var inUnitCatalog = await SeedInject(type.Id, unitCatalog.Id);
+        await SeedInject(type.Id, (await SeedCatalog(type.Id)).Id);
         await SeedInject(type.Id);
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
+        var unit = TestData.Unit();
+        await Seed(unit, TestData.CatalogUnit(unit.Id, unitCatalog.Id));
+        var actor = await Actor().InUnit(unit).WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
-        var response = await Client(actor).GetAsync(InjectsOfType(type.Id), Ct);
+        var injects = await Read<List<ViewModels.Injectm>>(
+            await Client(actor).GetAsync(InjectsOfType(type.Id), Ct));
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(
+            new HashSet<Guid> { inPublic.Id, inUnitCatalog.Id },
+            injects.Select(x => x.Id).ToHashSet());
+    }
+
+    [Fact]
+    public async Task GetByInjectType_WithNoPermissionAndNoCatalog_IsAnEmptyList()
+    {
+        var type = await SeedInjectType();
+        await SeedInject(type.Id, (await SeedCatalog(type.Id)).Id);
+        var actor = await Actor().SeedAsync();
+
+        var injects = await Read<List<ViewModels.Injectm>>(
+            await Client(actor).GetAsync(InjectsOfType(type.Id), Ct));
+
+        Assert.Empty(injects);
     }
 
     [Fact]
     public async Task GetByInjectType_ForATypeThatIsNotThere_Is200AndEmpty()
     {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
 
         var injects = await Read<List<ViewModels.Injectm>>(
             await Client(actor).GetAsync(InjectsOfType(Guid.NewGuid()), Ct));
@@ -285,20 +310,32 @@ public class InjectEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fa
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task Get_WithViewMsels_ReturnsTheInjectAndItsDataValues()
+    public async Task Get_WithViewCatalogs_ReturnsTheInjectAndItsDataValues()
     {
         var type = await SeedInjectType();
         var field = await SeedDataField(type.Id);
-        var catalog = await SeedCatalog(type.Id, isPublic: true);
+        var catalog = await SeedCatalog(type.Id);
         var inject = await SeedInject(type.Id, catalog.Id);
         await SeedDataValue(field.Id, inject.Id, "cell");
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewCatalogs).SeedAsync();
 
         var answer = await Read<ViewModels.Injectm>(await Client(actor).GetAsync(Inject(inject.Id), Ct));
 
         Assert.Equal(inject.Id, answer.Id);
         Assert.Equal(inject.Name, answer.Name);
         Assert.Equal("cell", Assert.Single(answer.DataValues).Value);
+    }
+
+    [Fact]
+    public async Task Get_ForAnInjectInAPrivateCatalog_is_forbidden_for_a_caller_holding_only_ViewMsels()
+    {
+        var type = await SeedInjectType();
+        var inject = await SeedInject(type.Id, (await SeedCatalog(type.Id)).Id);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Client(actor).GetAsync(Inject(inject.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>

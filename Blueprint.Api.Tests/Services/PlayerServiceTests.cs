@@ -15,6 +15,8 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Blueprint.Api.Infrastructure.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Player.Api.Client;
@@ -264,26 +266,30 @@ public class PlayerServiceTests(DatabaseFixture fixture, BlueprintAppFactory fac
         await AssertStoredButNotQueued(msel.Id, body.Name);
     }
 
-    /// <summary>Push for a MSEL that was never deployed is answered with a 500 and keeps the row.</summary>
+    /// <summary>A MSEL with no Player view has nowhere to put the application, so the push is refused
+    /// before the row is saved, and nothing is queued or broadcast.</summary>
     [Fact]
-    public async Task Push_ForAMselThatWasNeverDeployed_Is500_AndKeepsTheRow()
+    public async Task Push_ForAMselThatWasNeverDeployed_Is409_AndSavesNothing()
     {
         var msel = TestData.Msel();
         await Seed(msel);
         var actor = await Actor().OnMsel(msel, Data.Enumerations.MselRole.Owner).SeedAsync();
 
-        var body = Application(msel.Id);
-        var response = await Client(actor).PostAsJsonAsync(Push, body, JsonOptions, Ct);
+        var response = await Client(actor).PostAsJsonAsync(Push, Application(msel.Id), JsonOptions, Ct);
 
-        var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Nullable object must have a value.", failure.Title);
-        Assert.Contains("PlayerService.PushApplication", failure.Detail);
-        await AssertStoredButNotQueued(msel.Id, body.Name);
+        Assert.Equal(
+            "The MSEL has not been pushed to Player, so the application cannot be added to its view.",
+            (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title);
+        await using var context = NewContext();
+        Assert.Empty(await context.PlayerApplications.Where(x => x.MselId == msel.Id).ToListAsync(Ct));
+        AssertNothingQueued();
+        Assert.Empty(Hub.Of(MainHubMethods.PlayerApplicationCreated, msel.Id));
     }
 
-    /// <summary>Push with a url that is not absolute is answered with a 500 and keeps the row.</summary>
+    /// <summary>A url with no scheme is one Player accepts and resolves against its own address, so it is
+    /// queued as it is.</summary>
     [Fact]
-    public async Task Push_WithAUrlThatIsNotAbsolute_Is500_AndKeepsTheRow()
+    public async Task Push_WithARelativeUrl_QueuesIt()
     {
         var msel = await Deployed();
         var actor = await Actor().OnMsel(msel, Data.Enumerations.MselRole.Owner).SeedAsync();
@@ -291,13 +297,100 @@ public class PlayerServiceTests(DatabaseFixture fixture, BlueprintAppFactory fac
         var body = Application(msel.Id) with { Url = "console.example/index.html" };
         var response = await Client(actor).PostAsJsonAsync(Push, body, JsonOptions, Ct);
 
-        Assert.Equal("Invalid URI: The format of the URI could not be determined.", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
-        await AssertStoredButNotQueued(msel.Id, body.Name);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal("console.example/index.html", Queued(body.Name).Application.Url.OriginalString);
     }
 
-    /// <summary>A push with no url is answered 500.</summary>
+    /// <summary>A scheme Player refuses is refused here, on the request, before the row is saved - not by
+    /// Player in the background worker, which could only log it.</summary>
+    [Theory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("data:text/html,hi")]
+    [InlineData("java\tscript:alert(1)")]
+    public async Task Push_WithAUrlPlayerRefuses_Is409_AndSavesNothing(string url)
+    {
+        var msel = await Deployed();
+        var actor = await Actor().OnMsel(msel, Data.Enumerations.MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(Push, Application(msel.Id) with { Url = url }, JsonOptions, Ct);
+
+        Assert.Equal(
+            "A Player application's Url must be an absolute http or https URL, or a relative one.",
+            (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title);
+        await using var context = NewContext();
+        Assert.Empty(await context.PlayerApplications.Where(x => x.MselId == msel.Id).ToListAsync(Ct));
+        AssertNothingQueued();
+    }
+
+    /// <summary>Blueprint's placeholders are filled in as the full push fills them, so Player is sent the
+    /// address and not the template.</summary>
     [Fact]
-    public async Task Push_WithNoUrlAtAll_Is500()
+    public async Task Push_FillsInTheMselsPlaceholders()
+    {
+        var msel = await Deployed();
+        var actor = await Actor().OnMsel(msel, Data.Enumerations.MselRole.Owner).SeedAsync();
+
+        var body = Application(msel.Id) with { Url = "https://player.example/views/{playerViewId}/msel/{blueprintMselId}" };
+        await Client(actor).PostAsJsonAsync(Push, body, JsonOptions, Ct);
+
+        Assert.Equal(
+            new Uri($"https://player.example/views/{msel.PlayerViewId}/msel/{msel.Id}"),
+            Queued(body.Name).Application.Url);
+    }
+
+    /// <summary>A template that passes the save check can still fill in, from this installation's UI addresses,
+    /// to a url Player would refuse. That is checked before the row is saved, so nothing is left behind.</summary>
+    [Fact]
+    public async Task Push_WhenAConfiguredUiAddressFillsInAUrlPlayerRefuses_Is409_AndSavesNothing()
+    {
+        var msel = await Deployed();
+        var actor = await Actor().OnMsel(msel, Data.Enumerations.MselRole.Owner).SeedAsync();
+        var options = Factory.Services.GetRequiredService<IOptionsMonitor<ClientOptions>>().CurrentValue;
+        var configured = options.CasterUiUrl;
+        options.CasterUiUrl = "javascript:alert(1)//";
+        try
+        {
+            var response = await Client(actor).PostAsJsonAsync(
+                Push, Application(msel.Id) with { Url = "{casterUrl}/x" }, JsonOptions, Ct);
+
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            await using var context = NewContext();
+            Assert.Empty(await context.PlayerApplications.Where(x => x.MselId == msel.Id).ToListAsync(Ct));
+            AssertNothingQueued();
+        }
+        finally
+        {
+            options.CasterUiUrl = configured;
+        }
+    }
+
+    /// <summary>The caller is authorized before the push is checked, so a stranger learns nothing about whether
+    /// the MSEL has a Player view.</summary>
+    [Fact]
+    public async Task Push_ToAnUndeployedMsel_ForACallerWhoIsNotItsOwner_Is403()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(Push, Application(msel.Id), JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Push_ToAMselThatIsNotThere_WithEditMsels_Is404()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(Push, Application(Guid.NewGuid()), JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>No url is allowed, as in Player, where an application takes its template's.</summary>
+    [Fact]
+    public async Task Push_WithNoUrlAtAll_QueuesItWithNone()
     {
         var msel = await Deployed();
         var actor = await Actor().OnMsel(msel, Data.Enumerations.MselRole.Owner).SeedAsync();
@@ -305,8 +398,8 @@ public class PlayerServiceTests(DatabaseFixture fixture, BlueprintAppFactory fac
         var body = Application(msel.Id) with { Url = null };
         var response = await Client(actor).PostAsJsonAsync(Push, body, JsonOptions, Ct);
 
-        Assert.Equal("Value cannot be null. (Parameter 'uriString')", (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response)).Title);
-        await AssertStoredButNotQueued(msel.Id, body.Name);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Null(Queued(body.Name).Application.Url);
     }
 
     /// <summary>One broadcast, from the create, to the MSEL's group and the admin group; nothing about the
@@ -330,18 +423,19 @@ public class PlayerServiceTests(DatabaseFixture fixture, BlueprintAppFactory fac
             Hub.Recipients(MainHubMethods.PlayerApplicationCreated, msel.Id));
     }
 
-    /// <summary>Push when the push fails has already broadcast the create.</summary>
+    /// <summary>When the push itself fails after the row is saved, the create has already been broadcast.</summary>
     [Fact]
     public async Task Push_WhenThePushFails_HasAlreadyBroadcastTheCreate()
     {
-        var msel = TestData.Msel();
-        await Seed(msel);
-        var actor = await Actor().OnMsel(msel, Data.Enumerations.MselRole.Owner).SeedAsync();
+        var msel = await Deployed();
+        var first = TestData.Team(msel.Id);
+        var second = TestData.Team(msel.Id);
+        await Seed(first, second);
+        var actor = await Actor().OnMsel(msel, Data.Enumerations.MselRole.Owner).OnTeam(first).OnTeam(second).SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync(Push, Application(msel.Id), JsonOptions, Ct);
 
         var failure = await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.InternalServerError, response);
-        Assert.Equal("Nullable object must have a value.", failure.Title);
         Assert.Contains("PlayerService.PushApplication", failure.Detail);
         Assert.NotEmpty(Hub.Of(MainHubMethods.PlayerApplicationCreated, msel.Id));
     }

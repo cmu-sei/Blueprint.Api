@@ -43,11 +43,11 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
     // GET playerApplications/templates
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Templates with no permissions returns only the templates.</summary>
+    /// <summary>A viewer of some MSEL, with no system permission, reads only the templates.</summary>
     [Fact]
-    public async Task Templates_WithNoPermissions_ReturnsOnlyTheTemplates()
+    public async Task Templates_ForAMselViewer_ReturnsOnlyTheTemplates()
     {
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
         var msel = await SeedMsel();
         var template = TestData.PlayerApplicationTemplate("Virtual Machines");
         await Seed(template, TestData.PlayerApplication(msel.Id, "a msel's"));
@@ -66,12 +66,12 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
 
     /// <summary>
     /// A template belongs to no MSEL, so a MSEL's row flagged as a template - which a create can no longer
-    /// write - stays out of the list any signed-in user may read.
+    /// write - stays out of the template list.
     /// </summary>
     [Fact]
     public async Task Templates_LeavesOutAMselsApplicationFlaggedAsATemplate()
     {
-        var actor = await Actor().SeedAsync();
+        var actor = await Actor().OnNewMsel(MselRole.Viewer).SeedAsync();
         var msel = await SeedMsel();
         var row = TestData.PlayerApplication(msel.Id);
         row.IsTemplate = true;
@@ -253,6 +253,66 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
         Assert.Equal("created", stored.Name);
     }
 
+    /// <summary>A url Player would refuse is refused when it is saved, a template's included, so a push
+    /// cannot fail on it later in the background. Player answers these with a 409 too.</summary>
+    [Theory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("data:text/html,hi")]
+    [InlineData("{teamName}javascript:alert(1)")]
+    public async Task Create_WithAUrlPlayerRefuses_Is409AndCreatesNothing(string url)
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner)
+            .WithSystemPermissions(SystemPermission.ManagePlayerApplications).SeedAsync();
+
+        var forMsel = await Client(actor).PostAsJsonAsync(
+            "api/playerApplications", Body(msel.Id) with { url = url }, Ct);
+        var template = await Client(actor).PostAsJsonAsync(
+            "api/playerApplications", Body(null) with { url = url }, Ct);
+
+        Assert.Equal(
+            "A Player application's Url must be an absolute http or https URL, or a relative one.",
+            (await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.Conflict, forMsel)).Title);
+        Assert.Equal(HttpStatusCode.Conflict, template.StatusCode);
+        Assert.Equal(0, await ReadBack(db => db.PlayerApplications.CountAsync(x => x.Url == url, Ct)));
+    }
+
+    /// <summary>Player accepts a placeholder in place of a host or port, but Blueprint sends a url through
+    /// Player's client as a <c>Uri</c>, which cannot hold one, so it would reach Player as no url at all. It is
+    /// refused when it is saved, saying so.</summary>
+    [Theory]
+    [InlineData("https://{vm-ui}/views/{viewId}")]
+    [InlineData("https://{host}:{port}/views/{viewId}")]
+    [InlineData("https://server.example:{playerViewId}/app")]
+    public async Task Create_WithAPlaceholderInPlaceOfTheHost_Is409(string url)
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/playerApplications", Body(msel.Id) with { url = url }, Ct);
+
+        Assert.Equal(
+            "Blueprint cannot send Player an application Url whose host or port is a placeholder. Use an address, or one of Blueprint's own placeholders such as {vmUrl}.",
+            (await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title);
+    }
+
+    /// <summary>Blueprint's own placeholders, Player's, and a relative url are all urls Player accepts.</summary>
+    [Theory]
+    [InlineData("{vmUrl}/views/{playerViewId}")]
+    [InlineData("https://cite.example/?evaluation={citeEvaluationId}")]
+    [InlineData("/vm/views/{viewId}")]
+    public async Task Create_WithAUrlPlayerAccepts_Is201(string url)
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/playerApplications", Body(msel.Id) with { url = url }, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
     /// <summary>A body naming no MSEL is a template, and only <c>ManagePlayerApplications</c> is asked
     /// for.</summary>
     [Fact]
@@ -365,6 +425,25 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
     // ---------------------------------------------------------------------------------------------
     // PUT playerApplications/{id}
     // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Update_WithAUrlPlayerRefuses_Is409AndLeavesTheRowAlone()
+    {
+        var msel = await SeedMsel();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var application = TestData.PlayerApplication(msel.Id, "before");
+        await Seed(application);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/playerApplications/{application.Id}",
+            Body(msel.Id) with { id = application.Id, name = "after", url = "javascript:alert(1)" },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var stored = await ReadBack(rb => rb.PlayerApplications.SingleAsync(x => x.Id == application.Id, Ct));
+        Assert.Equal("before", stored.Name);
+        Assert.Equal(application.Url, stored.Url);
+    }
 
     [Fact]
     public async Task Update_ForAnOwnerOfTheMsel_Is200()
@@ -633,6 +712,23 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
         Assert.Equal("http://exported.example/{viewId}", created.Url);
         Assert.Equal("mdi-map", created.Icon);
         Assert.Equal(2, await ReadBack(db => db.PlayerApplications.CountAsync(x => x.IsTemplate && x.MselId == null, Ct)));
+    }
+
+    /// <summary>A file holding one template with a url Player would refuse is refused whole, naming that
+    /// template, and imports nothing.</summary>
+    [Fact]
+    public async Task UploadJson_WithATemplateWhoseUrlPlayerRefuses_Is409AndImportsNothing()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManagePlayerApplications).SeedAsync();
+
+        var response = await UploadJson(Client(actor), """
+            [{"name":"fine","url":"https://fine.example/"},{"name":"bad","url":"javascript:alert(1)"}]
+            """);
+
+        Assert.Equal(
+            "The Player application template \"bad\" was not imported. A Player application's Url must be an absolute http or https URL, or a relative one.",
+            (await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title);
+        Assert.Equal(0, await ReadBack(db => db.PlayerApplications.CountAsync(x => x.Name == "fine" || x.Name == "bad", Ct)));
     }
 
     /// <summary>A file naming a MSEL still lands in the templates, not in that MSEL.</summary>

@@ -78,17 +78,16 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(msel.Id, mine.MselId);
     }
 
-    /// <summary>A member of a team without <c>ViewMsels</c> is refused the team by id.</summary>
+    /// <summary>A member of a team reads it by id without <c>ViewMsels</c>, as they read it in
+    /// <c>GET msels/{id}/teams</c>.</summary>
     [Fact]
-    public async Task Get_is_forbidden_for_a_member_of_the_team_without_ViewMsels()
+    public async Task Get_ForAMemberOfTheTeamWithoutViewMsels_Is200()
     {
         var msel = await SeedMsel();
         var team = await SeedTeam(msel);
         var actor = await Actor().OnTeam(team).SeedAsync();
 
-        var response = await Client(actor).GetAsync(TeamRoute(team.Id), Ct);
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(team.Id, (await GetTeam(Client(actor), team.Id)).Id);
     }
 
     /// <summary>Get mine answers each team without its members.</summary>
@@ -329,11 +328,16 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(member.Id, Assert.Single(answered.Users).Id);
     }
 
-    /// <summary>An unknown team is a 404 from the controller's own null check.</summary>
-    [Fact]
-    public async Task Get_ForAnIdThatIsNotThere_Is404()
+    /// <summary>An unknown team is a 404 for everybody, before any MSEL check.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Get_ForAnIdThatIsNotThere_Is404(bool hasViewMsels)
     {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
+        var builder = Actor();
+        if (hasViewMsels)
+            builder = builder.WithSystemPermissions(SystemPermission.ViewMsels);
+        var actor = await builder.SeedAsync();
 
         var response = await Client(actor).GetAsync(TeamRoute(Guid.NewGuid()), Ct);
 
@@ -350,17 +354,41 @@ public class TeamEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(team.Id, (await GetTeam(Client(actor), team.Id)).Id);
     }
 
-    /// <summary>The MSEL's owner without <c>ViewMsels</c> cannot read its team by id.</summary>
+    /// <summary>The MSEL's owner without <c>ViewMsels</c> follows the <c>Location</c> header their own
+    /// create answered.</summary>
     [Fact]
-    public async Task Get_ForTheMselsOwnerWithoutViewMsels_Is403()
+    public async Task Get_ForTheMselsOwnerWithoutViewMsels_FollowsTheLocationOfTheirCreate()
     {
         var msel = await SeedMsel();
-        var team = await SeedTeam(msel);
-        var actor = await Actor().OnMsel(msel, MselRole.Owner).OnTeam(team).SeedAsync();
+        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
+        var client = Client(actor);
+        var created = await Post(client, Body(msel.Id) with { Name = "Red Cell" });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        var response = await client.GetAsync(created.Headers.Location, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Red Cell", (await Read<ViewModels.Team>(response)).Name);
+    }
+
+    [Fact]
+    public async Task Get_is_forbidden_for_a_caller_holding_Owner_only_in_another_msel()
+    {
+        var team = await SeedTeam(await SeedMsel());
+        var actor = await Actor().OnNewMsel(MselRole.Owner).SeedAsync();
 
         var response = await Client(actor).GetAsync(TeamRoute(team.Id), Ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_ForATemplateMselsTeam_IsReadableWithNoRoleAtAll()
+    {
+        var team = await SeedTeam(await SeedMsel(isTemplate: true));
+        var actor = await Actor().SeedAsync();
+
+        Assert.Equal(team.Id, (await GetTeam(Client(actor), team.Id)).Id);
     }
 
     // ---------------------------------------------------------------------------------------------

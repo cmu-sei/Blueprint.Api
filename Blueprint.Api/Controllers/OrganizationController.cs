@@ -43,7 +43,8 @@ namespace Blueprint.Api.Controllers
         [SwaggerOperation(OperationId = "getOrganizationTemplates")]
         public async Task<IActionResult> GetOrganizationTemplates(CancellationToken ct)
         {
-            var list = await _organizationService.GetTemplatesAsync(ct);
+            var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ViewOrganizations, SystemPermission.ManageOrganizations, SystemPermission.ViewMsels, SystemPermission.CreateMsels], ct);
+            var list = await _organizationService.GetTemplatesAsync(hasSystemPermission, ct);
             return Ok(list);
         }
 

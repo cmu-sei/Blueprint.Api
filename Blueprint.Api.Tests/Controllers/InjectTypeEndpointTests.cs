@@ -630,9 +630,10 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal(0, await context.DataOptions.CountAsync(x => x.DataFieldId == field.Id, Ct));
     }
 
-    /// <summary>Delete silently destroys every catalog and inject built on the type.</summary>
+    /// <summary>A type still in use is refused with a 409 that counts what uses it, and nothing built on
+    /// it is touched - the database would otherwise cascade the delete through all of it.</summary>
     [Fact]
-    public async Task Delete_SilentlyDestroysEveryCatalogAndInjectBuiltOnTheType()
+    public async Task Delete_ForATypeCatalogsAndInjectsUse_Is409AndDestroysNothing()
     {
         var type = await SeedInjectType();
         var field = await SeedDataField(type.Id);
@@ -646,28 +647,55 @@ public class InjectTypeEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
 
         var response = await Client(actor).DeleteAsync(InjectType(type.Id), Ct);
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(
+            "The inject type is used by 1 catalog(s) and 1 inject(s). Delete them before deleting the inject type.",
+            (await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title);
         await using var context = NewContext();
-        Assert.Equal(0, await context.Catalogs.CountAsync(x => x.Id == catalog.Id, Ct));
-        Assert.Equal(0, await context.Injects.CountAsync(x => x.Id == inject.Id, Ct));
-        Assert.Equal(0, await context.CatalogInjects.CountAsync(x => x.CatalogId == catalog.Id, Ct));
-        Assert.Equal(0, await context.DataValues.CountAsync(x => x.InjectId == inject.Id, Ct));
+        Assert.NotNull(await Stored(type.Id));
+        Assert.Equal(1, await context.Catalogs.CountAsync(x => x.Id == catalog.Id, Ct));
+        Assert.Equal(1, await context.Injects.CountAsync(x => x.Id == inject.Id, Ct));
+        Assert.Equal(1, await context.CatalogInjects.CountAsync(x => x.CatalogId == catalog.Id, Ct));
+        Assert.Equal(1, await context.DataValues.CountAsync(x => x.InjectId == inject.Id, Ct));
+        Assert.Empty(Hub.Recipients(MainHubMethods.InjectTypeDeleted, type.Id));
     }
 
-    /// <summary>Delete broadcasts only that the type is gone.</summary>
     [Fact]
-    public async Task Delete_BroadcastsOnlyThatTheTypeIsGone()
+    public async Task Delete_ForATypeOnlyACatalogUses_Is409()
     {
         var type = await SeedInjectType();
-        var catalog = TestData.Catalog(type.Id);
-        await Seed(catalog);
+        await Seed(TestData.Catalog(type.Id));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageInjectTypes).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync(InjectType(type.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.NotNull(await Stored(type.Id));
+    }
+
+    [Fact]
+    public async Task Delete_ForATypeOnlyAnInjectUses_Is409()
+    {
+        var type = await SeedInjectType();
+        await Seed(TestData.Inject(type.Id));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageInjectTypes).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync(InjectType(type.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.NotNull(await Stored(type.Id));
+    }
+
+    /// <summary>Delete broadcasts that the type is gone.</summary>
+    [Fact]
+    public async Task Delete_BroadcastsThatTheTypeIsGone()
+    {
+        var type = await SeedInjectType();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageInjectTypes).SeedAsync();
 
         await Client(actor).DeleteAsync(InjectType(type.Id), Ct);
 
-        Assert.Equal([MainHub.ADMIN_DATA_GROUP], Hub.Recipients(MainHubMethods.InjectTypeDeleted, type.Id, catalog.Id));
-        Assert.Equal(type.Id, Assert.IsType<Guid>(Hub.Of(MainHubMethods.InjectTypeDeleted, type.Id, catalog.Id)[0].Payload));
-        Assert.Empty(Hub.Recipients(MainHubMethods.CatalogDeleted, catalog.Id, type.Id));
+        Assert.Equal([MainHub.ADMIN_DATA_GROUP], Hub.Recipients(MainHubMethods.InjectTypeDeleted, type.Id));
+        Assert.Equal(type.Id, Assert.IsType<Guid>(Hub.Of(MainHubMethods.InjectTypeDeleted, type.Id)[0].Payload));
     }
 
     [Fact]

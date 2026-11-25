@@ -49,8 +49,9 @@ namespace Blueprint.Api.Services
             var identity = ((ClaimsIdentity)principal.Identity);
             var userId = principal.GetId();
 
-            // Don't use cached claims if given a new token and we are using roles or groups from the token
-            if (_cache.TryGetValue(userId, out claims) && (_options.UseGroupsFromIdP || _options.UseRolesFromIdP))
+            // Don't use cached claims if given a new token: a new sign-in or token refresh re-reads the user's
+            // role and the IdP's claims, whether or not roles or groups come from the token
+            if (_cache.TryGetValue(userId, out claims))
             {
                 var cachedTokenId = claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
                 var newTokenId = identity.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
@@ -258,10 +259,12 @@ namespace Blueprint.Api.Services
                 return Array.Empty<string>();
             }
 
-            // Handle both string and JSON value types
+            // Handle both string and JSON value types. A string has no members, so it answers only a path that
+            // ends at the claim itself: for "realm_access.roles" a plain string named realm_access is not the
+            // roles, and accepting it would let its value stand in for them.
             return tokenClaim.ValueType switch
             {
-                ClaimValueTypes.String => new[] { tokenClaim.Value },
+                ClaimValueTypes.String when pathSegments.Length == 1 => new[] { tokenClaim.Value },
                 "JSON" => ExtractJsonClaimValues(tokenClaim.Value, pathSegments.Skip(1)),
                 _ => Array.Empty<string>()
             };

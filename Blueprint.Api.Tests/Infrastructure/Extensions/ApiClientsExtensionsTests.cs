@@ -177,6 +177,23 @@ public class ApiClientsExtensionsTests
         Assert.False(clientSettings.PlayerApiUrl.EndsWith('/'));
     }
 
+    /// <summary>
+    /// The shipped settings validate the discovery document, so the service account's credentials go only
+    /// to a token endpoint on the configured authority. A deployment that needs otherwise - a dev IdP whose
+    /// issuer differs from the address blueprint reaches it by - turns it off explicitly.
+    /// </summary>
+    [Fact]
+    public void TheShippedSettings_ValidateTheDiscoveryDocument()
+    {
+        var options = new ConfigurationBuilder()
+            .AddJsonFile("appsettings.json")
+            .Build()
+            .GetSection("ResourceOwnerAuthorization")
+            .Get<ResourceOwnerAuthorizationOptions>();
+
+        Assert.True(options.ValidateDiscoveryDocument);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // RequestTokenAsync - the happy path
     // ---------------------------------------------------------------------------------------------

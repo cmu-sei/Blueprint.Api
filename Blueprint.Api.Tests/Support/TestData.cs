@@ -712,9 +712,8 @@ public static class TestData
     /// when - which is the audit trail for granting somebody every permission in the installation.
     /// <c>Name</c> is uniquely indexed, hence the generated default.
     /// <para />
-    /// <paramref name="immutable"/> is stored and read by nothing: <c>Immutable</c> has no reader anywhere in
-    /// production, so a <c>ManageRoles</c> holder may rename, re-permission or delete the seeded Administrator
-    /// role (<c>SystemRoleEndpointTests.Update_MayRewriteTheSeededAdministratorRole</c>).
+    /// <paramref name="immutable"/> makes <c>SystemRoleService</c> refuse the role's update and delete with a
+    /// 409, as it refuses the seeded Administrator role's; a request body can neither set nor clear it.
     /// <c>AllPermissions</c> has exactly one reader, <c>UserClaimsService.cs:209</c>, where it expands to every
     /// value of the enum.
     /// </remarks>

@@ -277,9 +277,12 @@ public class UserClaimsServiceTests(DatabaseFixture fixture) : DatabaseTestBase(
         Assert.NotEmpty(Permissions(principal));
     }
 
-    /// <summary>Add user claims with caching and no id p roles ignores a new token id.</summary>
+    /// <summary>
+    /// Without IdP roles or groups a new token still rebuilds the claims, so a role revoked in Blueprint is
+    /// gone after the user's next sign-in or token refresh, not only when the cache entry expires.
+    /// </summary>
     [Fact]
-    public async Task AddUserClaims_WithCachingAndNoIdPRoles_IgnoresANewTokenId()
+    public async Task AddUserClaims_WithCachingAndNoIdPRolesOrGroups_RebuildsOnANewTokenId()
     {
         var actor = await Actor().WithAllSystemPermissions().SeedAsync();
 
@@ -289,13 +292,24 @@ public class UserClaimsServiceTests(DatabaseFixture fixture) : DatabaseTestBase(
         var principal = await Service(Caching())
             .AddUserClaims(Token(actor.Id, jti: "token-2"), update: false);
 
+        Assert.Empty(Permissions(principal));
+    }
+
+    [Fact]
+    public async Task AddUserClaims_WithCachingAndNoIdPRolesOrGroups_KeepsTheCacheForTheSameTokenId()
+    {
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+
+        await Service(Caching()).AddUserClaims(Token(actor.Id, jti: "token-1"), update: false);
+        await GiveRole(actor.Id, null);
+
+        var principal = await Service(Caching())
+            .AddUserClaims(Token(actor.Id, jti: "token-1"), update: false);
+
         Assert.NotEmpty(Permissions(principal));
     }
 
-    /// <summary>
-    /// With IdP roles in play the guard is satisfied, and a new token does rebuild the claims. This is the
-    /// behaviour the shipped configuration misses.
-    /// </summary>
+    /// <summary>With IdP roles in play a new token rebuilds the claims too.</summary>
     [Fact]
     public async Task AddUserClaims_WithCachingAndIdPRoles_RebuildsOnANewTokenId()
     {
@@ -691,9 +705,10 @@ public class UserClaimsServiceTests(DatabaseFixture fixture) : DatabaseTestBase(
         Assert.Empty(Permissions(await Service(options).AddUserClaims(token, update: false)));
     }
 
-    /// <summary>Add user claims for a string claim ignores the rest of the claim path.</summary>
+    /// <summary>A plain string claim at the head of a longer path is not the value the path names, so a
+    /// <c>realm_access</c> string saying "Administrator" grants nothing.</summary>
     [Fact]
-    public async Task AddUserClaims_ForAStringClaim_IgnoresTheRestOfTheClaimPath()
+    public async Task AddUserClaims_ForAStringClaimAtTheHeadOfALongerPath_GrantsNothing()
     {
         var actor = await Actor().SeedAsync();
         var options = NoCaching();
@@ -701,6 +716,20 @@ public class UserClaimsServiceTests(DatabaseFixture fixture) : DatabaseTestBase(
         options.RolesClaimPath = "realm_access.roles";
 
         var token = Token(actor.Id, extra: new Claim("realm_access", "Administrator"));
+
+        Assert.Empty(Permissions(await Service(options).AddUserClaims(token, update: false)));
+    }
+
+    /// <summary>A path of one segment ends at the claim, so its string value is the role.</summary>
+    [Fact]
+    public async Task AddUserClaims_ForAStringClaimThatIsTheWholePath_GrantsItsRole()
+    {
+        var actor = await Actor().SeedAsync();
+        var options = NoCaching();
+        options.UseRolesFromIdP = true;
+        options.RolesClaimPath = "role";
+
+        var token = Token(actor.Id, extra: new Claim("role", "Administrator"));
         var permissions = Permissions(await Service(options).AddUserClaims(token, update: false));
 
         Assert.Equal(Enum.GetValues<SystemPermission>().Length, permissions.Length);

@@ -1115,9 +1115,10 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Null(await Stored(chosen));
     }
 
-    /// <summary>Upload JSON keeps the gallery id from the file.</summary>
+    /// <summary>The file's gallery id names a card in another Gallery, so an imported template drops it,
+    /// as a template made here starts without one.</summary>
     [Fact]
-    public async Task UploadJson_KeepsTheGalleryIdFromTheFile()
+    public async Task UploadJson_DropsTheGalleryIdFromTheFile()
     {
         var galleryId = Guid.NewGuid();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageGalleryCards).SeedAsync();
@@ -1126,8 +1127,8 @@ public class CardEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             [{"name":"one","galleryId":"{{galleryId}}"}]
             """)));
 
-        Assert.Equal(galleryId, created.GalleryId);
-        Assert.Equal(galleryId, (await Stored(created.Id)).GalleryId);
+        Assert.Null(created.GalleryId);
+        Assert.Null((await Stored(created.Id)).GalleryId);
     }
 
     [Fact]

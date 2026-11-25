@@ -114,6 +114,14 @@ namespace Blueprint.Api.Services
             if (injectTypeToDelete == null)
                 throw new EntityNotFoundException<InjectType>();
 
+            // the database would cascade the delete to every catalog and inject of the type, their data
+            // values and join rows included, so a type still in use is refused instead
+            var catalogCount = await _context.Catalogs.CountAsync(c => c.InjectTypeId == id, ct);
+            var injectCount = await _context.Injects.CountAsync(i => i.InjectTypeId == id, ct);
+            if (catalogCount > 0 || injectCount > 0)
+                throw new ConflictException(
+                    $"The inject type is used by {catalogCount} catalog(s) and {injectCount} inject(s). Delete them before deleting the inject type.");
+
             _context.InjectTypes.Remove(injectTypeToDelete);
             await _context.SaveChangesAsync(ct);
 

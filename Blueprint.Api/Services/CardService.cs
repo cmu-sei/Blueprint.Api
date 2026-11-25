@@ -225,6 +225,9 @@ namespace Blueprint.Api.Services
                 item.Id = Guid.NewGuid();
                 item.IsTemplate = true;
                 item.MselId = null;
+                // the file's GalleryId names a card in whatever Gallery it came from; a template has none
+                // until a push creates its card in this installation's Gallery
+                item.GalleryId = null;
                 item.CreatedBy = userId;
                 item.DateCreated = DateTime.UtcNow;
                 item.ModifiedBy = null;

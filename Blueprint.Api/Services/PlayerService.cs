@@ -18,6 +18,7 @@ using Blueprint.Api.Hubs;
 using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
+using Blueprint.Api.Infrastructure.Options;
 using Player.Api.Client;
 using Blueprint.Api.ViewModels;
 using Blueprint.Api.Infrastructure.Mappings;
@@ -39,6 +40,7 @@ namespace Blueprint.Api.Services
         private readonly ClaimsPrincipal _user;
         private readonly IHubContext<MainHub> _hubContext;
         private readonly IAddApplicationQueue _addApplicationQueue;
+        private readonly ClientOptions _clientOptions;
 
         public PlayerService(
             IHttpContextAccessor httpContextAccessor,
@@ -48,7 +50,8 @@ namespace Blueprint.Api.Services
             IUserClaimsService claimsService,
             BlueprintContext context,
             IHubContext<MainHub> hubContext,
-            IAddApplicationQueue addApplicationQueue)
+            IAddApplicationQueue addApplicationQueue,
+            ClientOptions clientOptions)
 
         {
             _playerApiClient = playerApiClient;
@@ -57,6 +60,7 @@ namespace Blueprint.Api.Services
             _hubContext = hubContext;
             _authorizationService = authorizationService;
             _addApplicationQueue = addApplicationQueue;
+            _clientOptions = clientOptions;
         }
 
         public async Task<IEnumerable<ApplicationTemplate>> GetApplicationTemplatesAsync(CancellationToken ct)
@@ -87,12 +91,21 @@ namespace Blueprint.Api.Services
         public async Task PushApplication(PlayerApplication application, CancellationToken ct)
         {
             var msel = await _context.Msels.SingleOrDefaultAsync(m => m.Id == application.MselId, ct);
+            if (msel?.PlayerViewId == null)
+                throw new ConflictException("The MSEL has not been pushed to Player, so the application cannot be added to its view.");
+
+            // filled in and checked as the full push does, here rather than in the background worker, so a url
+            // Player would refuse is answered on this request instead of failing out of sight
+            var url = PlayerApplicationUrls.Resolve(application.Url, msel, _clientOptions);
+            if (!PlayerApplicationUrls.IsAllowed(url))
+                throw new ConflictException(PlayerApplicationUrls.InvalidMessage);
+
             var playerApplication = new Application() {
                 Name = application.Name,
                 Embeddable = application.Embeddable,
                 ViewId = (Guid)msel.PlayerViewId,
-                Url = new Uri(application.Url),
-                Icon = application.Icon,
+                Url = PlayerApplicationUrls.ToPlayerUri(url),
+                Icon = PlayerApplicationUrls.Resolve(application.Icon, msel, _clientOptions),
                 LoadInBackground = application.LoadInBackground
             };
             // get the Player Team ID

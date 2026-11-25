@@ -212,6 +212,20 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal([SystemPermission.ViewMsels], stored.Permissions);
     }
 
+    /// <summary>A body cannot create an immutable role, which nobody could then change or delete.</summary>
+    [Fact]
+    public async Task Create_IgnoresTheBodysImmutable()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+        var id = Guid.NewGuid();
+
+        var response = await Post(Client(actor), Body("auditor") with { Id = id, Immutable = true });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.False((await Read<ViewModels.SystemRole>(response)).Immutable);
+        Assert.False((await Stored(id)).Immutable);
+    }
+
     [Fact]
     public async Task Create_WithoutManageRoles_Is403()
     {
@@ -411,9 +425,10 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.Equal("auditor", (await Stored(role.Id)).Name);
     }
 
-    /// <summary>Update may rewrite the seeded administrator role.</summary>
+    /// <summary>The seeded Administrator role is immutable, so a <c>ManageRoles</c> holder - normally its own
+    /// holder - can neither rename it nor clear its <c>AllPermissions</c> and lock themselves out.</summary>
     [Fact]
-    public async Task Update_MayRewriteTheSeededAdministratorRole()
+    public async Task Update_ForTheSeededAdministratorRole_Is409AndChangesNothing()
     {
         var actor = await Actor().WithAllSystemPermissions().SeedAsync();
         var client = Client(actor);
@@ -423,19 +438,35 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
             Id = SystemRoleDefaults.AdministratorRoleId,
             Name = "Administrator (retired)",
             AllPermissions = false,
-            Immutable = true,
+            Immutable = false,
             Permissions = []
         });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            "Immutable Role cannot be changed.",
+            (await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title);
 
         var stored = await Stored(SystemRoleDefaults.AdministratorRoleId);
 
-        Assert.Equal("Administrator (retired)", stored.Name);
-        Assert.False(stored.AllPermissions);
+        Assert.Equal("Administrator", stored.Name);
+        Assert.True(stored.AllPermissions);
         Assert.True(stored.Immutable);
 
-        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(SystemRoles, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(SystemRoles, Ct)).StatusCode);
+    }
+
+    /// <summary>A body cannot mark a role immutable: only the seed data sets the flag.</summary>
+    [Fact]
+    public async Task Update_IgnoresTheBodysImmutable()
+    {
+        var role = await SeedRole("auditor");
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+
+        var response = await Put(Client(actor), role.Id, BodyFor(role) with { Immutable = true });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False((await Read<ViewModels.SystemRole>(response)).Immutable);
+        Assert.False((await Stored(role.Id)).Immutable);
     }
 
     [Fact]
@@ -506,9 +537,9 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         Assert.NotNull(await Stored(role.Id));
     }
 
-    /// <summary>Delete may delete the seeded administrator role.</summary>
+    /// <summary>The seeded Administrator role cannot be deleted, even when nobody holds it.</summary>
     [Fact]
-    public async Task Delete_MayDeleteTheSeededAdministratorRole()
+    public async Task Delete_ForTheSeededAdministratorRole_Is409()
     {
         await NobodyHoldsTheAdministratorRole();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
@@ -516,8 +547,24 @@ public class SystemRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFactor
         var response = await Client(actor)
             .DeleteAsync(RoleRoute(SystemRoleDefaults.AdministratorRoleId), Ct);
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.Null(await Stored(SystemRoleDefaults.AdministratorRoleId));
+        Assert.Equal(
+            "Immutable Role cannot be deleted.",
+            (await AssertJsonError<ViewModels.ApiError>(HttpStatusCode.Conflict, response)).Title);
+        Assert.NotNull(await Stored(SystemRoleDefaults.AdministratorRoleId));
+    }
+
+    /// <summary>Any immutable role is refused, not only the seeded Administrator.</summary>
+    [Fact]
+    public async Task Delete_ForAnImmutableRole_Is409()
+    {
+        var role = TestData.SystemRole("built-in", immutable: true);
+        await Seed(role);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync(RoleRoute(role.Id), Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.NotNull(await Stored(role.Id));
     }
 
     /// <summary>The delete broadcast carries the bare id.</summary>

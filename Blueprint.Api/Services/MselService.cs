@@ -2895,6 +2895,72 @@ namespace Blueprint.Api.Services
                     $"Fix the moves before pushing. {string.Join(" ", problems)} Each move must start after the move before it, and every scenario event must start in a move.");
         }
 
+        // The CITE push makes an evaluation from the MSEL's scoring model and a CITE move from each move, at its
+        // situation time. The MSEL can be saved without either, but the push needs both.
+        private async Task ValidateCiteSetupAsync(MselEntity msel, CancellationToken ct)
+        {
+            var problems = new List<string>();
+            if (msel.CiteScoringModelId == null &&
+                !await _context.MselScoringModels.AnyAsync(sm => sm.MselId == msel.Id, ct))
+                problems.Add("The MSEL has no CITE scoring model. Choose one from CITE or author one in Blueprint.");
+            var untimedMoves = await _context.Moves.AsNoTracking()
+                .Where(m => m.MselId == msel.Id && m.SituationTime == null)
+                .OrderBy(m => m.MoveNumber)
+                .Select(m => m.MoveNumber)
+                .ToListAsync(ct);
+            if (untimedMoves.Count == 1)
+                problems.Add($"Move {untimedMoves[0]} has no situation time.");
+            else if (untimedMoves.Count > 1)
+                problems.Add($"Moves {string.Join(", ", untimedMoves)} have no situation time.");
+            if (problems.Count > 0)
+                throw new ConflictException($"Fix the CITE setup before pushing. {string.Join(" ", problems)}");
+        }
+
+        // Player refuses an application url with a scheme other than http(s). A MSEL's applications are checked
+        // when they are saved, but a copied or imported MSEL brings its own, so the push checks them all first
+        // rather than leave Player's refusal to the background push, which only logs it.
+        private static void ValidatePlayerApplicationUrls(MselEntity msel)
+        {
+            var refused = msel.PlayerApplications
+                .Where(a => !PlayerApplicationUrls.IsAllowed(a.Url))
+                .Select(a => $"\"{a.Name}\"")
+                .ToList();
+            if (refused.Count > 0)
+                throw new ConflictException(
+                    $"Fix the Player applications before pushing. {(refused.Count == 1 ? "The application" : "The applications")} {string.Join(", ", refused)}: {PlayerApplicationUrls.InvalidMessage}");
+        }
+
+        // Gallery refuses an article url that is not empty or an absolute http(s) url. The push sends each
+        // Gallery scenario event's Url value as it was typed, so it checks them all first rather than leave
+        // Gallery's refusal to the background push, which only logs it.
+        private async Task ValidateGalleryArticleUrlsAsync(Guid mselId, CancellationToken ct)
+        {
+            var dataFields = await _context.DataFields.AsNoTracking()
+                .Where(df => df.MselId == mselId)
+                .ToListAsync(ct);
+            var urlKey = GalleryArticleParameter.Url.ToString();
+            if (!dataFields.Any(df => df.GalleryArticleParameter == urlKey))
+                return;
+
+            var scenarioEvents = await _context.ScenarioEvents.AsNoTracking()
+                .Where(se => se.MselId == mselId && se.IntegrationTarget != null && se.IntegrationTarget.Contains("Gallery"))
+                .Include(se => se.DataValues)
+                .ToListAsync(ct);
+            var refused = scenarioEvents
+                .Where(se => !GalleryArticleUrls.IsAllowed(
+                    IntegrationGalleryExtensions.GetArticleValue(urlKey, se.DataValues, dataFields)))
+                .Select(se =>
+                {
+                    var name = IntegrationGalleryExtensions.GetArticleValue(
+                        GalleryArticleParameter.Name.ToString(), se.DataValues, dataFields);
+                    return string.IsNullOrWhiteSpace(name) ? "one with no name" : $"\"{name}\"";
+                })
+                .ToList();
+            if (refused.Count > 0)
+                throw new ConflictException(
+                    $"Fix the Gallery articles before pushing. {(refused.Count == 1 ? "The article" : "The articles")} {string.Join(", ", refused)}: {GalleryArticleUrls.InvalidMessage}");
+        }
+
         public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
@@ -2913,6 +2979,12 @@ namespace Blueprint.Api.Services
             if (msel.UseCaster)
                 await ValidateCasterSetupAsync(msel, true, ct);
             await ValidateMovesAsync(mselId, ct);
+            if (msel.UseCite)
+                await ValidateCiteSetupAsync(msel, ct);
+            if (msel.UsePlayer)
+                ValidatePlayerApplicationUrls(msel);
+            if (msel.UseGallery)
+                await ValidateGalleryArticleUrlsAsync(mselId, ct);
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
@@ -3343,6 +3415,8 @@ namespace Blueprint.Api.Services
                 await ValidateCasterSetupAsync(template, false, ct);
             // the launch pushes, so a template with moves out of order fails here for the planner to fix, not later for the participant
             await ValidateMovesAsync(mselId, ct);
+            if (template.UseCite)
+                await ValidateCiteSetupAsync(template, ct);
 
             // clone the template MSEL
             // A launch needs the template's directory, so it has no use for the copy, and the invitee, who owns the

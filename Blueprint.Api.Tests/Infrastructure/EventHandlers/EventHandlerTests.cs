@@ -582,9 +582,13 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         await handling;
     }
 
+    /// <remarks>
+    /// The SignalR handler for the notification. The claims cache handlers (<c>AuthCacheHandler.cs</c>)
+    /// answer some of the same notifications and are tested in <c>ClaimsCacheInvalidationTests</c>.
+    /// </remarks>
     private static Type HandlerFor(Type handlerInterface) =>
         typeof(Startup).Assembly.GetTypes()
-            .Single(x => !x.IsAbstract && handlerInterface.IsAssignableFrom(x));
+            .Single(x => !x.IsAbstract && handlerInterface.IsAssignableFrom(x) && !x.Name.EndsWith("AuthCacheHandler"));
 
     /// <remarks>
     /// The service argument is <c>null</c> deliberately: every handler in the set injects one and not one

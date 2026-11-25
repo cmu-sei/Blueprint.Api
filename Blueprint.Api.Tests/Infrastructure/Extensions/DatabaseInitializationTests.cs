@@ -117,9 +117,12 @@ public class DatabaseInitializationTests(DatabaseFixture fixture) : DatabaseTest
         Assert.Empty(await NewMsels());
     }
 
-    /// <summary>Initialize when seeding fails part way through keeps what it already saved.</summary>
+    /// <remarks>
+    /// A failure is logged once, with its exception and the step that was under way, and then rethrown, so
+    /// <c>Program.Main</c> stops instead of serving requests from a database that did not migrate or seed.
+    /// </remarks>
     [Fact]
-    public async Task Initialize_WhenSeedingFailsPartWayThrough_KeepsWhatItAlreadySaved()
+    public async Task Initialize_WhenSeedingFailsPartWayThrough_KeepsWhatItAlreadySavedAndThrows()
     {
         WriteSeedFile($$"""
             {
@@ -132,19 +135,20 @@ public class DatabaseInitializationTests(DatabaseFixture fixture) : DatabaseTest
 
         using (host)
         {
-            Assert.Same(host, host.InitializeDatabase());
+            Assert.ThrowsAny<Exception>(() => host.InitializeDatabase());
         }
 
-        Assert.Single(log.At(LogLevel.Error));
+        var error = Assert.Single(log.At(LogLevel.Error));
+        Assert.Equal("Database initialization failed while seeding the database", error.Message);
+        Assert.NotNull(error.Exception);
         Assert.Single(await NewMsels());
 
         await using var context = NewContext();
         Assert.Empty(await context.Moves.ToListAsync(Ct));
     }
 
-    /// <summary>Initialize with an unreadable seed file logs one error and starts anyway.</summary>
     [Fact]
-    public async Task Initialize_WithAnUnreadableSeedFile_LogsOneErrorAndStartsAnyway()
+    public async Task Initialize_WithAnUnreadableSeedFile_LogsWhichFileAndThrows()
     {
         WriteSeedFile("not json");
 
@@ -152,59 +156,61 @@ public class DatabaseInitializationTests(DatabaseFixture fixture) : DatabaseTest
 
         using (host)
         {
-            Assert.Same(host, host.InitializeDatabase());
+            Assert.ThrowsAny<System.Text.Json.JsonException>(() => host.InitializeDatabase());
         }
 
         var error = Assert.Single(log.At(LogLevel.Error));
 
-        Assert.Equal(LogLevel.Error, error.Level);
-        Assert.Null(error.Exception);
+        Assert.StartsWith("Database initialization failed while reading the seed file ", error.Message);
+        Assert.IsAssignableFrom<System.Text.Json.JsonException>(error.Exception);
         Assert.Empty(await NewMsels());
     }
 
-    /// <summary>With no context registered, one error is logged and the host is returned.</summary>
     [Fact]
-    public void Initialize_WithNoContextRegistered_LogsOneErrorAndStartsAnyway()
+    public void Initialize_WithNoContextRegistered_LogsOneErrorAndThrows()
     {
         var (host, log) = HostFor(Options(), context: false);
 
         using (host)
         {
-            Assert.Same(host, host.InitializeDatabase());
+            Assert.Throws<InvalidOperationException>(() => host.InitializeDatabase());
         }
 
-        Assert.Single(log.At(LogLevel.Error));
+        Assert.Equal(
+            "Database initialization failed while resolving the database context",
+            Assert.Single(log.At(LogLevel.Error)).Message);
     }
 
-    /// <summary>Initialize with no database options blames a null reference.</summary>
     [Fact]
-    public void Initialize_WithNoDatabaseOptions_BlamesANullReference()
+    public void Initialize_WithNoDatabaseOptions_LogsTheNullReferenceAndThrows()
     {
         var (host, log) = HostFor(options: null);
 
         using (host)
         {
-            host.InitializeDatabase();
+            Assert.Throws<NullReferenceException>(() => host.InitializeDatabase());
         }
 
-        Assert.Contains("Object reference", Assert.Single(log.At(LogLevel.Error)).Message);
+        Assert.IsType<NullReferenceException>(Assert.Single(log.At(LogLevel.Error)).Exception);
     }
 
-    /// <summary>Initialize with an inner exception runs the two messages together.</summary>
+    /// <summary>The exception itself is logged, inner exception and all, rather than its messages run
+    /// together into one string.</summary>
     [Fact]
-    public void Initialize_WithAnInnerException_RunsTheTwoMessagesTogether()
+    public void Initialize_WithAnInnerException_LogsTheExceptionAndRethrowsIt()
     {
-        var (host, log) = HostFor(
-            Options(),
-            failure: new InvalidOperationException(
-                "The outer sentence.", new InvalidOperationException("The inner sentence.")));
+        var failure = new InvalidOperationException(
+            "The outer sentence.", new InvalidOperationException("The inner sentence."));
+        var (host, log) = HostFor(Options(), failure: failure);
 
         using (host)
         {
-            host.InitializeDatabase();
+            Assert.Same(failure, Assert.Throws<InvalidOperationException>(() => host.InitializeDatabase()));
         }
 
-        Assert.Equal("The outer sentence.The inner sentence.", Assert.Single(log.At(LogLevel.Error)).Message);
+        var error = Assert.Single(log.At(LogLevel.Error));
+        Assert.Same(failure, error.Exception);
+        Assert.Equal("The inner sentence.", error.Exception.InnerException?.Message);
     }
 
     // ---------------------------------------------------------------------------------------------

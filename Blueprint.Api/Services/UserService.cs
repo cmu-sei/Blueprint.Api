@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.Infrastructure.Authorization;
@@ -37,14 +38,12 @@ namespace Blueprint.Api.Services
     {
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
-        private readonly IUserClaimsService _userClaimsService;
         private readonly ILogger<IUserService> _logger;
 
-        public UserService(BlueprintContext context, IPrincipal user, IUserClaimsService userClaimsService, ILogger<IUserService> logger)
+        public UserService(BlueprintContext context, IPrincipal user, ILogger<IUserService> logger)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
-            _userClaimsService = userClaimsService;
             _logger = logger;
         }
 
@@ -126,6 +125,8 @@ namespace Blueprint.Api.Services
 
         public async Task<ViewModels.User> CreateAsync(ViewModels.User user, CancellationToken ct)
         {
+            await EnsureCallerHoldsTheRoleAsync(user.RoleId, ct);
+
             user.CreatedBy = _user.GetId();
             var userEntity = user.ToEntity();
 
@@ -148,6 +149,15 @@ namespace Blueprint.Api.Services
             if (userToUpdate == null)
                 throw new EntityNotFoundException<User>();
 
+            if (user.RoleId != userToUpdate.RoleId)
+            {
+                // nobody changes their own role, so a ManageUsers holder cannot promote themselves
+                if (id == _user.GetId())
+                    throw new ForbiddenException("You cannot change your own role");
+
+                await EnsureCallerHoldsTheRoleAsync(user.RoleId, ct);
+            }
+
             user.ModifiedBy = _user.GetId();
             user.ApplyTo(userToUpdate);
 
@@ -155,6 +165,32 @@ namespace Blueprint.Api.Services
             await _context.SaveChangesAsync(ct);
             _logger.LogWarning($"User ({userToUpdate.Id}) updated by {_user.GetId()}");
             return await GetAsync(id, true, ct);
+        }
+
+        /// <summary>
+        /// Refuses to give anybody a role holding a permission the caller does not hold themselves, so
+        /// <c>ManageUsers</c> cannot be turned into every permission by assigning the Administrator role to an
+        /// account the caller controls. No role, and a role that names no system role, ask nothing.
+        /// </summary>
+        private async Task EnsureCallerHoldsTheRoleAsync(Guid? roleId, CancellationToken ct)
+        {
+            if (roleId == null)
+                return;
+
+            var role = await _context.SystemRoles.AsNoTracking().SingleOrDefaultAsync(r => r.Id == roleId, ct);
+            if (role == null)
+                return;
+
+            var granted = role.AllPermissions
+                ? Enum.GetValues<SystemPermission>().ToList()
+                : role.Permissions ?? new List<SystemPermission>();
+            var held = _user.Claims
+                .Where(c => c.Type == AuthorizationConstants.PermissionClaimType)
+                .Select(c => c.Value)
+                .ToHashSet();
+
+            if (granted.Any(p => !held.Contains(p.ToString())))
+                throw new ForbiddenException("You cannot assign a role with permissions you do not hold");
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

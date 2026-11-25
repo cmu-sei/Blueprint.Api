@@ -126,40 +126,11 @@ namespace Blueprint.Api.Infrastructure.Extensions
 
             // Create applications in parallel batches
             var applicationTasks = msel.PlayerApplications.Select(async application => {
-                var urlString = application.Url
-                    .Replace("{blueprintMselId}", msel.Id.ToString())
-                    .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
-                    .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
-                    .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
-                    .Replace("{casterWorkspaceId}", msel.CasterWorkspaceId.ToString())
-                    .Replace("{playerViewId}", msel.PlayerViewId.ToString())
-                    .Replace("{playerUrl}", clientOptions.PlayerUiUrl ?? "")
-                    .Replace("{citeUrl}", clientOptions.CiteUiUrl ?? "")
-                    .Replace("{galleryUrl}", clientOptions.GalleryUiUrl ?? "")
-                    .Replace("{steamfitterUrl}", clientOptions.SteamfitterUiUrl ?? "")
-                    .Replace("{casterUrl}", clientOptions.CasterUiUrl ?? "")
-                    .Replace("{vmUrl}", (clientOptions.VmUiUrl ?? "").TrimEnd('/'))
-                    .Replace("{blueprintUrl}", clientOptions.BlueprintUiUrl ?? "");
-                Uri applicationUrl;
-                if (!Uri.TryCreate(urlString, UriKind.Absolute, out applicationUrl) || !(applicationUrl.Scheme == Uri.UriSchemeHttp || applicationUrl.Scheme == Uri.UriSchemeHttps))
-                {
-                    applicationUrl = null;
-                }
-
-                var iconString = application.Icon
-                    ?.Replace("{blueprintMselId}", msel.Id.ToString())
-                    .Replace("{citeEvaluationId}", msel.CiteEvaluationId.ToString())
-                    .Replace("{galleryExhibitId}", msel.GalleryExhibitId.ToString())
-                    .Replace("{steamfitterScenarioId}", msel.SteamfitterScenarioId.ToString())
-                    .Replace("{casterWorkspaceId}", msel.CasterWorkspaceId.ToString())
-                    .Replace("{playerViewId}", msel.PlayerViewId.ToString())
-                    .Replace("{playerUrl}", clientOptions.PlayerUiUrl ?? "")
-                    .Replace("{citeUrl}", clientOptions.CiteUiUrl ?? "")
-                    .Replace("{galleryUrl}", clientOptions.GalleryUiUrl ?? "")
-                    .Replace("{steamfitterUrl}", clientOptions.SteamfitterUiUrl ?? "")
-                    .Replace("{casterUrl}", clientOptions.CasterUiUrl ?? "")
-                    .Replace("{vmUrl}", (clientOptions.VmUiUrl ?? "").TrimEnd('/'))
-                    .Replace("{blueprintUrl}", clientOptions.BlueprintUiUrl ?? "");
+                // a url Player would refuse goes as none; the push checks every url first, so only a url
+                // that a configured UI address turned bad gets here
+                var applicationUrl = PlayerApplicationUrls.ToPlayerUri(
+                    PlayerApplicationUrls.Resolve(application.Url, msel, clientOptions));
+                var iconString = PlayerApplicationUrls.Resolve(application.Icon, msel, clientOptions);
 
                 var playerApplication = new Application() {
                     Name = application.Name,

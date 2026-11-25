@@ -604,9 +604,10 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             Assert.IsType<ViewModels.User>(Hub.Of(MainHubMethods.UserCreated, actor.Id)[0].Payload).Id);
     }
 
-    // Same case as Update_lets_a_caller_holding_only_ManageUsers_give_itself_the_Administrator_role.
+    /// <summary>A caller holding only <c>ManageUsers</c> cannot create an Administrator - an account it could
+    /// then sign in as - since the role holds permissions the caller does not.</summary>
     [Fact]
-    public async Task Create_lets_a_caller_holding_only_ManageUsers_create_an_Administrator()
+    public async Task Create_is_forbidden_for_a_caller_holding_only_ManageUsers_creating_an_Administrator()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
         var id = Guid.NewGuid();
@@ -618,9 +619,40 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
             RoleId = SystemRoleDefaults.AdministratorRoleId
         });
 
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.False(await ReadBack(rb => rb.Users.AnyAsync(x => x.Id == id, Ct)));
+    }
+
+    [Fact]
+    public async Task Create_WithEveryPermission_MayCreateAnAdministrator()
+    {
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+        var id = Guid.NewGuid();
+
+        var response = await Post(Client(actor), new UserBody
+        {
+            Id = id,
+            Name = "administrator",
+            RoleId = SystemRoleDefaults.AdministratorRoleId
+        });
+
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.Equal(SystemRoleDefaults.AdministratorRoleId, (await ReadBack(rb => rb.Users.SingleAsync(x => x.Id == id, Ct))).RoleId);
-        Assert.Equal(HttpStatusCode.OK, (await ClientFor(id, "administrator").GetAsync(SystemRolesRoute, Ct)).StatusCode);
+        Assert.Equal(SystemRoleDefaults.AdministratorRoleId, (await Stored(id)).RoleId);
+    }
+
+    [Fact]
+    public async Task Create_WithARoleWhosePermissionsTheCallerHolds_Is201()
+    {
+        var role = TestData.SystemRole("viewer", permissions: [SystemPermission.ViewMsels]);
+        await Seed(role);
+        var actor = await Actor()
+            .WithSystemPermissions(SystemPermission.ManageUsers, SystemPermission.ViewMsels).SeedAsync();
+        var id = Guid.NewGuid();
+
+        var response = await Post(Client(actor), new UserBody { Id = id, Name = "viewer", RoleId = role.Id });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(role.Id, (await Stored(id)).RoleId);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -682,23 +714,123 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>A caller holding only <c>ManageUsers</c> puts the seeded Administrator role on its own row.</summary>
+    /// <summary>A caller holding only <c>ManageUsers</c> cannot put the Administrator role on its own row.</summary>
     [Fact]
-    public async Task Update_lets_a_caller_holding_only_ManageUsers_give_itself_the_Administrator_role()
+    public async Task Update_is_forbidden_for_a_caller_holding_only_ManageUsers_giving_itself_the_Administrator_role()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
-        var client = Client(actor);
+        var self = await Stored(actor.Id);
 
-        var response = await Put(client, actor.Id, new UserBody
+        var response = await Put(Client(actor), actor.Id, BodyFor(self) with
         {
-            Id = actor.Id,
-            Name = actor.Name,
+            RoleId = SystemRoleDefaults.AdministratorRoleId
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(self.RoleId, (await Stored(actor.Id)).RoleId);
+    }
+
+    /// <summary>Nor on a second account it controls, which is why the rule is about the role's permissions
+    /// and not only about the caller's own row.</summary>
+    [Fact]
+    public async Task Update_is_forbidden_for_a_caller_holding_only_ManageUsers_giving_another_user_the_Administrator_role()
+    {
+        var subject = TestData.User();
+        await Seed(subject);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
+
+        var response = await Put(Client(actor), subject.Id, BodyFor(subject) with
+        {
+            RoleId = SystemRoleDefaults.AdministratorRoleId
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null((await Stored(subject.Id)).RoleId);
+    }
+
+    /// <summary>Nobody changes their own role, an administrator included.</summary>
+    [Fact]
+    public async Task Update_ThatChangesTheCallersOwnRole_Is403EvenWithEveryPermission()
+    {
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+        var self = await Stored(actor.Id);
+
+        var response = await Put(Client(actor), actor.Id, BodyFor(self) with { RoleId = null });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(self.RoleId, (await Stored(actor.Id)).RoleId);
+    }
+
+    [Fact]
+    public async Task Update_OfTheCallersOwnRowThatKeepsItsRole_Is200()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
+        var self = await Stored(actor.Id);
+
+        var response = await Put(Client(actor), actor.Id, BodyFor(self) with { Name = "renamed" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("renamed", (await Stored(actor.Id)).Name);
+    }
+
+    [Fact]
+    public async Task Update_WithEveryPermission_MayGiveAnotherUserTheAdministratorRole()
+    {
+        var subject = TestData.User();
+        await Seed(subject);
+        var actor = await Actor().WithAllSystemPermissions().SeedAsync();
+
+        var response = await Put(Client(actor), subject.Id, BodyFor(subject) with
+        {
             RoleId = SystemRoleDefaults.AdministratorRoleId
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(SystemRoleDefaults.AdministratorRoleId, (await ReadBack(rb => rb.Users.SingleAsync(x => x.Id == actor.Id, Ct))).RoleId);
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(SystemRolesRoute, Ct)).StatusCode);
+        Assert.Equal(SystemRoleDefaults.AdministratorRoleId, (await Stored(subject.Id)).RoleId);
+    }
+
+    [Fact]
+    public async Task Update_GivingARoleWhosePermissionsTheCallerHolds_Is200()
+    {
+        var role = TestData.SystemRole("viewer", permissions: [SystemPermission.ViewMsels]);
+        var subject = TestData.User();
+        await Seed(role, subject);
+        var actor = await Actor()
+            .WithSystemPermissions(SystemPermission.ManageUsers, SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Put(Client(actor), subject.Id, BodyFor(subject) with { RoleId = role.Id });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(role.Id, (await Stored(subject.Id)).RoleId);
+    }
+
+    [Fact]
+    public async Task Update_GivingARoleWithOnePermissionTheCallerLacks_Is403()
+    {
+        var role = TestData.SystemRole("editor", permissions: [SystemPermission.ViewMsels, SystemPermission.EditMsels]);
+        var subject = TestData.User();
+        await Seed(role, subject);
+        var actor = await Actor()
+            .WithSystemPermissions(SystemPermission.ManageUsers, SystemPermission.ViewMsels).SeedAsync();
+
+        var response = await Put(Client(actor), subject.Id, BodyFor(subject) with { RoleId = role.Id });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null((await Stored(subject.Id)).RoleId);
+    }
+
+    /// <remarks>Taking a role away grants nothing, so it asks for no permission beyond <c>ManageUsers</c>.</remarks>
+    [Fact]
+    public async Task Update_ThatRemovesAnotherUsersRole_WithManageUsersOnly_Is200()
+    {
+        var subject = TestData.User(roleId: SystemRoleDefaults.AdministratorRoleId);
+        await Seed(subject);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
+
+        var response = await Put(Client(actor), subject.Id, BodyFor(subject) with { RoleId = null });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null((await Stored(subject.Id)).RoleId);
     }
 
     /// <remarks>
@@ -911,7 +1043,6 @@ public class UserEndpointTests(DatabaseFixture fixture, BlueprintAppFactory fact
     private const string Users = "/api/users";
 
     /// <summary>A route gated on <c>ViewRoles</c>, which the Administrator role holds and <c>ManageUsers</c> does not grant.</summary>
-    private const string SystemRolesRoute = "/api/system-roles";
 
     private static string UserRoute(Guid id) => $"{Users}/{id}";
 

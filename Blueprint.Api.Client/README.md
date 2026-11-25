@@ -4,8 +4,9 @@
 3. swagger tofile --output ../Blueprint.Api.Client/swagger.json bin/Debug/net10.0/Blueprint.Api.dll v1
 4. cd ../Blueprint.Api.Client
 5. npm install
-6. ./node_modules/.bin/nswag run /runtime:Net60
-7. dotnet pack -c Release /p:version=x.y.z
+6. ./node_modules/.bin/nswag run /runtime:Net100
+7. Put back the copyright header at the top of Blueprint.Api.Client.cs and Blueprint.Api.Contracts.cs, which the generator leaves out
+8. dotnet pack -c Release /p:version=x.y.z
 
 
 # To install swagger on Windows managed machine

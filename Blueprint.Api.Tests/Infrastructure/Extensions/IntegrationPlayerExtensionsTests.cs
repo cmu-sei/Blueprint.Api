@@ -581,6 +581,38 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
         Assert.Equal(7, instances[second.Id.ToString()]);
     }
 
+    /// <summary>
+    /// A team shows each view once: of two applications for the same view (CITE opens on its dashboard, as CITE Dashboard
+    /// does), the team gets only the one it shows first; another team keeps the second when it lacks the first.
+    /// </summary>
+    [Fact]
+    public async Task CreateApplications_GivesATeamOneTabForEachView()
+    {
+        var msel = await SeedMsel();
+        var first = TestData.Team(msel.Id);
+        var second = TestData.Team(msel.Id);
+        await Seed(first, second);
+
+        var cite = TestData.PlayerApplication(msel.Id, name: "CITE", url: "{citeUrl}?evaluation={citeEvaluationId}");
+        var dashboard = TestData.PlayerApplication(msel.Id, name: "CITE Dashboard", url: "{citeUrl}?section=dashboard&evaluation={citeEvaluationId}");
+        await Seed(cite, dashboard);
+        await Seed(
+            TestData.PlayerApplicationTeam(cite.Id, first.Id, displayOrder: 1),
+            TestData.PlayerApplicationTeam(dashboard.Id, first.Id, displayOrder: 2),
+            TestData.PlayerApplicationTeam(dashboard.Id, second.Id, displayOrder: 1));
+
+        var handler = Handler()
+            .AnswersJson($"api/views/{ViewId}/applications", ApplicationJson, HttpStatusCode.Created)
+            .AnswersJson($"api/teams/{first.Id}/application-instances", InstanceJson, HttpStatusCode.Created)
+            .AnswersJson($"api/teams/{second.Id}/application-instances", InstanceJson, HttpStatusCode.Created);
+
+        await CreateApplications(msel.Id, handler);
+
+        var instances = handler.Sent.Where(x => x.Path.EndsWith("application-instances")).Select(x => Body(x.Body)["teamId"].GetString()).ToList();
+        Assert.Equal(1, instances.Count(t => t == first.Id.ToString()));
+        Assert.Equal(1, instances.Count(t => t == second.Id.ToString()));
+    }
+
     /// <summary>The instance names the application id Player answered with.</summary>
     [Fact]
     public async Task CreateApplications_UsesTheApplicationIdPlayerAnsweredWith()
@@ -617,7 +649,7 @@ public class IntegrationPlayerExtensionsTests(DatabaseFixture fixture) : Databas
 
         for (var i = 0; i < 3; i++)
         {
-            var application = TestData.PlayerApplication(msel.Id, name: $"application-{i}");
+            var application = TestData.PlayerApplication(msel.Id, name: $"application-{i}", url: $"http://application.example/{i}");
             await Seed(application);
             await Seed(TestData.PlayerApplicationTeam(application.Id, team.Id, displayOrder: i));
         }

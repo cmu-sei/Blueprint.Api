@@ -113,6 +113,8 @@ namespace Blueprint.Api.Services
 
             await using var transaction = await _context.Database.BeginTransactionAsync(ct);
             await LockTeamOrderAsync(playerApplicationTeam.TeamId, ct);
+            // checked under the team's lock, so two requests cannot both add a view the team does not have yet
+            await PlayerApplicationViews.EnsureTeamHasNoSameViewAsync(_context, playerApplicationTeam.TeamId, playerApplication, ct);
             // make sure that the display order is valid
             var itemList = await TeamOrderAsync(playerApplicationTeam.TeamId, null, ct);
             if (playerApplicationTeam.DisplayOrder > itemList.Count + 1 || playerApplicationTeam.DisplayOrder < 1)

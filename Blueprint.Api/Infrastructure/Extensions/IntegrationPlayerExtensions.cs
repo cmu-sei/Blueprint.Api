@@ -123,6 +123,19 @@ namespace Blueprint.Api.Infrastructure.Extensions
                 .Where(apt => applicationIds.Contains(apt.PlayerApplicationId))
                 .Include(apt => apt.Team)
                 .ToListAsync(ct);
+            // a team shows each view once: of two applications for the same view, the team keeps the one it shows first
+            var kept = new HashSet<Guid>();
+            foreach (var teamApplications in allApplicationTeams.GroupBy(apt => apt.TeamId))
+            {
+                var views = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var applicationTeam in teamApplications.OrderBy(apt => apt.DisplayOrder))
+                {
+                    var application = msel.PlayerApplications.FirstOrDefault(a => a.Id == applicationTeam.PlayerApplicationId);
+                    if (application != null && views.Add(Services.PlayerApplicationViews.View(application.Url)))
+                        kept.Add(applicationTeam.Id);
+                }
+            }
+            allApplicationTeams = allApplicationTeams.Where(apt => kept.Contains(apt.Id)).ToList();
 
             // Create applications in parallel batches
             var applicationTasks = msel.PlayerApplications.Select(async application => {

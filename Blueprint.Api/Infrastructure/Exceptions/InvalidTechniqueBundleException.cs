@@ -1,0 +1,22 @@
+// Copyright 2026 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
+
+using System;
+using System.Net;
+
+namespace Blueprint.Api.Infrastructure.Exceptions
+{
+    /// <summary>Thrown when an uploaded file is neither a STIX 2.x bundle nor a defensive ontology Blueprint can read.</summary>
+    public class InvalidTechniqueBundleException : Exception, IApiException
+    {
+        public InvalidTechniqueBundleException(string message)
+            : base(message)
+        {
+        }
+
+        public HttpStatusCode GetStatusCode()
+        {
+            return HttpStatusCode.BadRequest;
+        }
+    }
+}

@@ -262,6 +262,7 @@ namespace Blueprint.Api.Services
             // the integration IDs and status are not part of the request, so a new MSEL starts with none
             var mselEntity = msel.ToEntity();
             mselEntity.Id = msel.Id != Guid.Empty ? msel.Id : Guid.NewGuid();
+            (mselEntity.ArticleMarking, mselEntity.ArticleMarkingText) = ArticleMarkings.CleanRequested(msel.ArticleMarking, msel.ArticleMarkingText);
             mselEntity.CreatedBy = _user.GetId();
 
             _context.Msels.Add(mselEntity);
@@ -329,6 +330,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
+                .Include(m => m.MselTechniques)
                 .Include(m => m.Pages)
                 .Include(m => m.ScoringModel)
                 .ThenInclude(sm => sm.Categories)
@@ -486,6 +488,14 @@ namespace Blueprint.Api.Services
                 mselCompetency.MselId = mselEntity.Id;
                 mselCompetency.Msel = null;
                 mselCompetency.Competency = null;
+            }
+            // copy the MSEL's technique pool
+            foreach (var mselTechnique in mselEntity.MselTechniques)
+            {
+                mselTechnique.Id = Guid.NewGuid();
+                mselTechnique.MselId = mselEntity.Id;
+                mselTechnique.Msel = null;
+                mselTechnique.Technique = null;
             }
             // copy Gallery Cards
             foreach (var card in mselEntity.Cards)
@@ -692,6 +702,7 @@ namespace Blueprint.Api.Services
             // okay to update this msel
             msel.ApplyTo(mselToUpdate);
             mselToUpdate.CiteScoringModelName = msel.CiteScoringModelId == null ? null : linkedName;
+            (mselToUpdate.ArticleMarking, mselToUpdate.ArticleMarkingText) = ArticleMarkings.CleanRequested(msel.ArticleMarking, msel.ArticleMarkingText);
             mselToUpdate.ModifiedBy = _user.GetId();
 
             _context.Msels.Update(mselToUpdate);
@@ -2199,6 +2210,7 @@ namespace Blueprint.Api.Services
                 .Include(m => m.PlayerApplications)
                 .ThenInclude(pa => pa.PlayerApplicationTeams)
                 .Include(m => m.MselCompetencies)
+                .Include(m => m.MselTechniques)
                 .Include(m => m.Pages)
                 .Include(m => m.ScoringModel)
                 .ThenInclude(sm => sm.Categories)
@@ -2367,6 +2379,8 @@ namespace Blueprint.Api.Services
             // importer's to write, so keeping the date would copy whatever image that ID has here,
             // even one of a MSEL the importer cannot view.
             mselEntity.ImageDateModified = null;
+            // the file's marking is read straight into the entity, so it is cleaned as a create or save cleans it
+            (mselEntity.ArticleMarking, mselEntity.ArticleMarkingText) = ArticleMarkings.CleanRequested(mselEntity.ArticleMarking, mselEntity.ArticleMarkingText);
             var droppedTeamUsers = mselEntity.Teams.Sum(t => t.TeamUsers?.Count ?? 0);
             if (droppedTeamUsers > 0)
                 AddChange(result, "teams", $"{droppedTeamUsers} team members were not imported. Add users to the teams before pushing.");
@@ -2414,6 +2428,52 @@ namespace Blueprint.Api.Services
                 MselScoringModelService.Validate(mselEntity.ScoringModel);
                 mselEntity.CiteScoringModelId = null;
                 mselEntity.CiteScoringModelName = null;
+            }
+            // A technique's id is the same on every installation that imported its release, so the pool carries
+            // over wherever that release is loaded. Drop the rest rather than fail the import.
+            foreach (var mselTechnique in mselEntity.MselTechniques)
+            {
+                mselTechnique.Msel = null;
+                mselTechnique.Technique = null;
+            }
+            // A pool holds a technique once; a file listing one twice (a hand-merged export) keeps the first.
+            var distinctTechniques = mselEntity.MselTechniques.DistinctBy(t => t.TechniqueId).ToList();
+            if (distinctTechniques.Count < mselEntity.MselTechniques.Count)
+            {
+                AddChange(result, "techniques", $"{mselEntity.MselTechniques.Count - distinctTechniques.Count} techniques were listed more than once; each was imported once.");
+                mselEntity.MselTechniques = distinctTechniques;
+            }
+            if (mselEntity.MselTechniques.Count > 0)
+            {
+                var fileTechniqueIds = mselEntity.MselTechniques.Select(t => t.TechniqueId).ToList();
+                var known = await _context.Techniques
+                    .Where(t => fileTechniqueIds.Contains(t.Id))
+                    .Select(t => new { t.Id, t.TechniqueReleaseId, t.TechniqueRelease.Domain, t.TechniqueRelease.Version, t.TechniqueRelease.ReleaseDate })
+                    .ToListAsync(ct);
+                var knownTechniqueIds = known.Select(t => t.Id).ToHashSet();
+                var missingTechniques = fileTechniqueIds.Count(id => !knownTechniqueIds.Contains(id));
+                if (missingTechniques > 0)
+                {
+                    mselEntity.MselTechniques = mselEntity.MselTechniques
+                        .Where(t => knownTechniqueIds.Contains(t.TechniqueId))
+                        .ToList();
+                    AddChange(result, "techniques", $"{missingTechniques} techniques were not imported because their release is not loaded here. Import the release, then add them to the MSEL.");
+                }
+
+                // A pool holds one release per domain, as adding to it checks. A file naming techniques of two keeps
+                // the release most of them are from (the newer on a tie) and drops the rest.
+                foreach (var domain in known.GroupBy(t => t.Domain).Where(g => g.Select(t => t.TechniqueReleaseId).Distinct().Count() > 1))
+                {
+                    var keep = domain
+                        .GroupBy(t => t.TechniqueReleaseId)
+                        .OrderByDescending(g => g.Count())
+                        .ThenByDescending(g => g.First().ReleaseDate.HasValue)
+                        .ThenByDescending(g => g.First().ReleaseDate)
+                        .First();
+                    var dropped = domain.Where(t => t.TechniqueReleaseId != keep.Key).Select(t => t.Id).ToHashSet();
+                    mselEntity.MselTechniques = mselEntity.MselTechniques.Where(t => !dropped.Contains(t.TechniqueId)).ToList();
+                    AddChange(result, "techniques", $"{dropped.Count} {domain.Key} techniques were not imported because they are from another release than the MSEL's other {domain.Key} techniques ({keep.First().Version}).");
+                }
             }
 
             // Validate and fix scoring model linkage if MSEL uses CITE integration.
@@ -2901,6 +2961,27 @@ namespace Blueprint.Api.Services
                     $"Fix the moves before pushing. {string.Join(" ", problems)} Each move must start after the move before it, and every scenario event must start in a move.");
         }
 
+        // The CITE push makes an evaluation from the MSEL's scoring model and a CITE move from each move, at its
+        // situation time. The MSEL can be saved without either, but the push needs both.
+        private async Task ValidateCiteSetupAsync(MselEntity msel, CancellationToken ct)
+        {
+            var problems = new List<string>();
+            if (msel.CiteScoringModelId == null &&
+                !await _context.MselScoringModels.AnyAsync(sm => sm.MselId == msel.Id, ct))
+                problems.Add("The MSEL has no CITE scoring model. Choose one from CITE or author one in Blueprint.");
+            var untimedMoves = await _context.Moves.AsNoTracking()
+                .Where(m => m.MselId == msel.Id && m.SituationTime == null)
+                .OrderBy(m => m.MoveNumber)
+                .Select(m => m.MoveNumber)
+                .ToListAsync(ct);
+            if (untimedMoves.Count == 1)
+                problems.Add($"Move {untimedMoves[0]} has no situation time.");
+            else if (untimedMoves.Count > 1)
+                problems.Add($"Moves {string.Join(", ", untimedMoves)} have no situation time.");
+            if (problems.Count > 0)
+                throw new ConflictException($"Fix the CITE setup before pushing. {string.Join(" ", problems)}");
+        }
+
         public async Task<ViewModels.Msel> PushIntegrationsAsync(Guid mselId, bool hasSystemPermission, CancellationToken ct)
         {
             // user must be a Content Developer or a MSEL owner
@@ -2919,6 +3000,8 @@ namespace Blueprint.Api.Services
             if (msel.UseCaster)
                 await ValidateCasterSetupAsync(msel, true, ct);
             await ValidateMovesAsync(mselId, ct);
+            if (msel.UseCite)
+                await ValidateCiteSetupAsync(msel, ct);
             // verify that no users are on more than one team
             var userVerificationErrorMessage = await FindDuplicateMselUsersAsync(mselId, ct);
             if (!String.IsNullOrWhiteSpace(userVerificationErrorMessage))
@@ -3349,6 +3432,8 @@ namespace Blueprint.Api.Services
                 await ValidateCasterSetupAsync(template, false, ct);
             // the launch pushes, so a template with moves out of order fails here for the planner to fix, not later for the participant
             await ValidateMovesAsync(mselId, ct);
+            if (template.UseCite)
+                await ValidateCiteSetupAsync(template, ct);
 
             // clone the template MSEL
             // A launch needs the template's directory, so it has no use for the copy, and the invitee, who owns the

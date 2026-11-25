@@ -15,7 +15,6 @@ using Blueprint.Api.Infrastructure.Authorization;
 using Blueprint.Api.Infrastructure.Exceptions;
 using Blueprint.Api.Infrastructure.Extensions;
 using Blueprint.Api.ViewModels;
-using System.IO;
 using Blueprint.Api.Infrastructure.Mappings;
 
 namespace Blueprint.Api.Services
@@ -112,8 +111,10 @@ namespace Blueprint.Api.Services
                 throw new EntityNotFoundException<PlayerApplication>();
             await ServiceUtilities.EnsureTeamIsInMselAsync(playerApplicationTeam.TeamId, playerApplication.MselId, _context, ct);
 
+            await using var transaction = await _context.Database.BeginTransactionAsync(ct);
+            await LockTeamOrderAsync(playerApplicationTeam.TeamId, ct);
             // make sure that the display order is valid
-            var itemList = await _context.PlayerApplicationTeams.Where(m => m.TeamId == playerApplicationTeam.TeamId).OrderBy(m => m.DisplayOrder).ToListAsync();
+            var itemList = await TeamOrderAsync(playerApplicationTeam.TeamId, null, ct);
             if (playerApplicationTeam.DisplayOrder > itemList.Count + 1 || playerApplicationTeam.DisplayOrder < 1)
             {
                 playerApplicationTeam.DisplayOrder = itemList.Count + 1;
@@ -121,10 +122,11 @@ namespace Blueprint.Api.Services
             // create the new item
             var playerApplicationTeamEntity = playerApplicationTeam.ToEntity();
             playerApplicationTeamEntity.Id = playerApplicationTeamEntity.Id != Guid.Empty ? playerApplicationTeamEntity.Id : Guid.NewGuid();
-            // save the new item
+            // save the new item and the shifted order together
             _context.PlayerApplicationTeams.Add(playerApplicationTeamEntity);
+            ShiftSiblings(playerApplicationTeamEntity, itemList);
             await _context.SaveChangesAsync(ct);
-            await UpdateOrdering(playerApplicationTeamEntity, itemList, ct);
+            await transaction.CommitAsync(ct);
 
             return await GetAsync(playerApplicationTeamEntity.Id, true, ct);
         }
@@ -136,20 +138,21 @@ namespace Blueprint.Api.Services
             if (playerApplicationTeamToUpdate == null)
                 throw new EntityNotFoundException<PlayerApplicationTeam>();
 
+            await using var transaction = await _context.Database.BeginTransactionAsync(ct);
+            await LockTeamOrderAsync(playerApplicationTeamToUpdate.TeamId, ct);
             // make sure that the display order is valid among the stored team's other applications
-            var itemList = await _context.PlayerApplicationTeams.Where(m => m.TeamId == playerApplicationTeamToUpdate.TeamId && m.Id != id).OrderBy(m => m.DisplayOrder).ToListAsync();
+            var itemList = await TeamOrderAsync(playerApplicationTeamToUpdate.TeamId, id, ct);
             if (playerApplicationTeam.DisplayOrder > itemList.Count + 1 || playerApplicationTeam.DisplayOrder < 1)
-                throw new InvalidDataException("The requested display order is not valid");
+                throw new BadRequestException($"The requested display order is not valid. It must be from 1 to {itemList.Count + 1}.");
 
+            // save the moved item and the shifted order together
             playerApplicationTeam.ApplyTo(playerApplicationTeamToUpdate);
-
             _context.PlayerApplicationTeams.Update(playerApplicationTeamToUpdate);
+            ShiftSiblings(playerApplicationTeamToUpdate, itemList);
             await _context.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
 
-            var updated = await GetAsync(playerApplicationTeamToUpdate.Id, true, ct);
-            await UpdateOrdering(playerApplicationTeamToUpdate, itemList, ct);
-
-            return updated;
+            return await GetAsync(playerApplicationTeamToUpdate.Id, true, ct);
         }
 
         public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
@@ -159,12 +162,15 @@ namespace Blueprint.Api.Services
             if (playerApplicationTeamToDelete == null)
                 throw new EntityNotFoundException<PlayerApplicationTeam>();
 
+            await using var transaction = await _context.Database.BeginTransactionAsync(ct);
+            await LockTeamOrderAsync(playerApplicationTeamToDelete.TeamId, ct);
+            // close the gap the removed item leaves, in the same save as the removal
+            var itemList = await TeamOrderAsync(playerApplicationTeamToDelete.TeamId, id, ct);
             _context.PlayerApplicationTeams.Remove(playerApplicationTeamToDelete);
-            await _context.SaveChangesAsync(ct);
-            // make sure that the remaining display order is valid
-            var itemList = await _context.PlayerApplicationTeams.Where(m => m.TeamId == playerApplicationTeamToDelete.TeamId).OrderBy(m => m.DisplayOrder).ToListAsync();
             playerApplicationTeamToDelete.DisplayOrder = itemList.Count + 1;
-            await UpdateOrdering(playerApplicationTeamToDelete, itemList, ct);
+            ShiftSiblings(playerApplicationTeamToDelete, itemList);
+            await _context.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
 
             return true;
         }
@@ -182,7 +188,28 @@ namespace Blueprint.Api.Services
             return true;
         }
 
-        private async Task UpdateOrdering(PlayerApplicationTeamEntity newItem, List<PlayerApplicationTeamEntity> itemList, CancellationToken ct)
+        /// <summary>
+        /// Holds the team's row until the transaction ends, so requests that change the same team's
+        /// application order run one after another instead of each shifting an order the other has
+        /// already changed. FOR NO KEY UPDATE, unlike FOR UPDATE, does not block inserts of other rows
+        /// that reference the team. Only PostgreSQL has migrations, so the other providers skip the lock.
+        /// </summary>
+        private async Task LockTeamOrderAsync(Guid teamId, CancellationToken ct)
+        {
+            if (_context.Database.IsNpgsql())
+                await _context.Database.ExecuteSqlInterpolatedAsync(
+                    $"SELECT 1 FROM teams WHERE id = {teamId} FOR NO KEY UPDATE", ct);
+        }
+
+        // the team's applications in display order, leaving out the one being placed
+        private Task<List<PlayerApplicationTeamEntity>> TeamOrderAsync(Guid teamId, Guid? excludedId, CancellationToken ct) =>
+            _context.PlayerApplicationTeams
+                .Where(m => m.TeamId == teamId && m.Id != excludedId)
+                .OrderBy(m => m.DisplayOrder)
+                .ToListAsync(ct);
+
+        // renumbers the team's other applications around the placed one; the caller saves
+        private static void ShiftSiblings(PlayerApplicationTeamEntity newItem, List<PlayerApplicationTeamEntity> itemList)
         {
             // update pre-existing items that come before the new item, if necessary
             for (int index = 0; index < newItem.DisplayOrder - 1; index++)
@@ -202,9 +229,6 @@ namespace Blueprint.Api.Services
                     item.DisplayOrder = index + 2;
                 }
             }
-            await _context.SaveChangesAsync(ct);
-
         }
-
     }
 }

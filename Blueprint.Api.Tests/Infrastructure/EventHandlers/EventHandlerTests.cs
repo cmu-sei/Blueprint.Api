@@ -471,9 +471,9 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
         Assert.Equal(created, HandledEntities(typeof(EntityDeleted<>)));
     }
 
-    /// <summary>Twenty five of the fifty two entities raise events no handler receives.</summary>
+    /// <summary>Thirty one of the fifty eight entities raise events no handler receives.</summary>
     [Fact]
-    public void TwentyFiveOfTheFiftyTwoEntities_RaiseEventsNoHandlerReceives()
+    public void ThirtyOneOfTheFiftyEightEntities_RaiseEventsNoHandlerReceives()
     {
         var tracked = typeof(BlueprintContext).GetProperties()
             .Where(x => x.PropertyType.IsGenericType
@@ -485,7 +485,7 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(52, tracked.Count);
+        Assert.Equal(58, tracked.Count);
         Assert.Equal(
             new[]
             {
@@ -506,11 +506,17 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
                 "MselScoringModelEntity",
                 "MselScoringOptionEntity",
                 "MselTeamEntity",
+                "MselTechniqueEntity",
                 "MselUnitEntity",
                 "PermissionEntity",
                 "ProficiencyLevelEntity",
                 "ProficiencyScaleEntity",
                 "TeamCompetencyEntity",
+                "TechniqueCountermeasureEntity",
+                "TechniqueEntity",
+                "TechniqueFrameworkEntity",
+                "TechniqueReleaseEntity",
+                "TechniqueTacticEntity",
                 "UserPermissionEntity",
                 "UserTeamRoleEntity",
                 "XApiQueuedStatementEntity"

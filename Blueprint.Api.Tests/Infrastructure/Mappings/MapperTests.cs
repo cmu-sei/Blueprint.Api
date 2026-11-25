@@ -198,6 +198,43 @@ public class MapperTests
         Assert.Null(clearedUnit.Unit);
     }
 
+    /// <summary>
+    /// A technique takes its domain and family from its release, which leaves them empty when the release is not
+    /// loaded; its stored lists are split, its links are read from their JSON array, and it is a sub-technique when
+    /// it has a parent. A pooled technique carries the same mapping.
+    /// </summary>
+    [Fact]
+    public void A_technique_reads_its_release_and_its_stored_lists()
+    {
+        var release = new TechniqueReleaseEntity { Id = Guid.NewGuid(), Domain = "defences", IsDefensive = true };
+        var entity = new TechniqueEntity
+        {
+            Id = Guid.NewGuid(), TechniqueReleaseId = release.Id, TechniqueRelease = release, ExternalId = "EX-1.1",
+            ParentId = Guid.NewGuid(), Tactics = "harden, detect", Platforms = "", Weaknesses = null,
+            ReferenceLinks = """[{"source":"Site","label":"Example | page","url":"https://example.org/1"},{"source":"Other","label":"Second","url":"https://example.org/2"}]"""
+        };
+
+        var technique = entity.ToTechnique();
+        var pooled = new MselTechniqueEntity { Id = Guid.NewGuid(), MselId = Guid.NewGuid(), TechniqueId = entity.Id, Technique = entity }.ToMselTechnique();
+        var unloaded = new TechniqueEntity { Id = Guid.NewGuid(), ExternalId = "EX-2" }.ToTechnique();
+
+        Assert.Equal("defences", technique.Domain);
+        Assert.True(technique.IsDefensive);
+        Assert.True(technique.IsSubTechnique);
+        Assert.Equal(["harden", "detect"], technique.Tactics);
+        Assert.Empty(technique.Platforms);
+        Assert.Empty(technique.Weaknesses);
+        Assert.Equal(["Site", "Other"], technique.ReferenceLinks.Select(l => l.Source));
+        Assert.Equal("Example | page", technique.ReferenceLinks[0].Label);
+        Assert.Equal("https://example.org/2", technique.ReferenceLinks[1].Url);
+        Assert.Equal("EX-1.1", pooled.Technique.ExternalId);
+        Assert.Equal("defences", pooled.Technique.Domain);
+        Assert.Null(unloaded.Domain);
+        Assert.False(unloaded.IsDefensive);
+        Assert.False(unloaded.IsSubTechnique);
+        Assert.Null(((TechniqueEntity)null).ToTechnique());
+    }
+
     /// <summary>A null entity maps to a null view model, as AutoMapper's <c>Map</c> answered.</summary>
     [Fact]
     public void A_null_entity_maps_to_null()

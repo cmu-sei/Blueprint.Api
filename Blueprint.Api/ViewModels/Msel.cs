@@ -30,6 +30,8 @@ namespace Blueprint.Api.ViewModels
         public bool UseCite { get; set; }
         public Guid? CiteEvaluationId { get; set; }
         public Guid? CiteScoringModelId { get; set; }
+        public string ArticleMarking { get; set; }
+        public string ArticleMarkingText { get; set; }
         public IntegrationType CiteIntegrationType { get; set; }
         public bool UseCaster { get; set; }
         public Guid? CasterDirectoryId { get; set; }
@@ -98,5 +100,6 @@ namespace Blueprint.Api.ViewModels
         public ICollection<MselPage> Pages { get; set; } = new List<MselPage>();
         public virtual ICollection<Invitation> Invitations { get; set; } = new HashSet<Invitation>();
         public ICollection<MselCompetency> MselCompetencies { get; set; } = new List<MselCompetency>();
+        public ICollection<MselTechnique> MselTechniques { get; set; } = new List<MselTechnique>();
    }
 }

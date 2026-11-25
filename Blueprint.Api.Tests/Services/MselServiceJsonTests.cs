@@ -418,6 +418,41 @@ public class MselServiceJsonTests(DatabaseFixture fixture, BlueprintAppFactory f
         Assert.False(imported.HideNamesOnAssessorView);
     }
 
+    /// <summary>
+    /// A file's marking is cleaned as a create or save cleans it: a hand-edited file's lower-case TLP becomes the
+    /// marking and level the Info tab offers, and one Blueprint does not know is none.
+    /// </summary>
+    [Theory]
+    [InlineData("tlp", "green", "Tlp", "GREEN")]
+    [InlineData("Bogus", "x", "None", null)]
+    public async Task Upload_CleansTheFilesMarking(string marking, string text, string savedMarking, string savedText)
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(Exported(m => { })).AsObject();
+        file["ArticleMarking"] = marking;
+        file["ArticleMarkingText"] = text;
+
+        var imported = await Upload(Client(actor), file.ToJsonString());
+
+        Assert.Equal(savedMarking, imported.ArticleMarking);
+        Assert.Equal(savedText, imported.ArticleMarkingText);
+    }
+
+    /// <summary>A file whose TLP level is not one is refused, rather than imported as CLEAR, the least restrictive level.</summary>
+    [Fact]
+    public async Task Upload_WithATlpLevelItDoesNotKnow_Is400()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.CreateMsels).SeedAsync();
+        var file = System.Text.Json.Nodes.JsonNode.Parse(Exported(m => { })).AsObject();
+        file["ArticleMarking"] = "Tlp";
+        file["ArticleMarkingText"] = "AMBER STRICT";
+
+        var response = await Post(Client(actor), file.ToJsonString(), UploadRoute);
+
+        var title = (await AssertJsonError<Blueprint.Api.ViewModels.ApiError>(HttpStatusCode.BadRequest, response)).Title;
+        Assert.Equal("\"AMBER STRICT\" is not a TLP level. Use CLEAR, GREEN, AMBER, AMBER+STRICT, RED.", title);
+    }
+
     /// <summary>Text outside ASCII survives the export, as <c>\uXXXX</c> escapes in an ASCII file.</summary>
     [Fact]
     public async Task Download_KeepsTextOutsideAscii()

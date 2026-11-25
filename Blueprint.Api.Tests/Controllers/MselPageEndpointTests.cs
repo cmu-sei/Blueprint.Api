@@ -125,6 +125,32 @@ public class MselPageEndpointTests(DatabaseFixture fixture, BlueprintAppFactory 
         Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
     }
 
+    /// <summary>
+    /// A page carries its MSEL's marking and name, so a reader who may read the page but not the MSEL, such as a member
+    /// of one of its units, still sees the banner.
+    /// </summary>
+    [Fact]
+    public async Task Get_CarriesTheMselsMarking_ForAReaderTheMselIsRefused()
+    {
+        var msel = TestData.Msel();
+        msel.Name = "Deep Bite";
+        msel.ArticleMarking = "Classification";
+        msel.ArticleMarkingText = "SECRET//NOFORN";
+        await Seed(msel);
+        // a member of one of the MSEL's units: a MSEL user for its open pages, but not one who may view the MSEL
+        var actor = await Actor().InUnitOf(msel).SeedAsync();
+        var page = TestData.MselPage(msel.Id, "briefing", allCanView: true);
+        await Seed(page);
+
+        var answered = await (await Client(actor).GetAsync($"api/mselpages/{page.Id}", Ct)).Content.ReadFromJsonAsync<ViewModels.MselPage>(JsonOptions, Ct);
+        var mselResponse = await Client(actor).GetAsync($"api/msels/{msel.Id}", Ct);
+
+        Assert.Equal("Classification", answered.ArticleMarking);
+        Assert.Equal("SECRET//NOFORN", answered.ArticleMarkingText);
+        Assert.Equal("Deep Bite", answered.MselName);
+        Assert.Equal(HttpStatusCode.Forbidden, mselResponse.StatusCode);
+    }
+
     /// <summary>A contributors-only page is answered for every contributor, such as an Evaluator, and for the MSEL's creator.</summary>
     [Fact]
     public async Task Get_ForAContributorsOnlyPage_Is200ForAnEvaluatorAndTheCreator()

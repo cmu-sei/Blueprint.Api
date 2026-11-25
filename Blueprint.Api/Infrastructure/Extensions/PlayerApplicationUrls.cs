@@ -28,6 +28,16 @@ namespace Blueprint.Api.Infrastructure.Extensions
         public const string UnsendableMessage =
             "Blueprint cannot send Player an application Url whose host or port is a placeholder. Use an address, or one of Blueprint's own placeholders such as {vmUrl}.";
 
+        /// <summary>
+        /// The ids Blueprint's id placeholders stand in for while a template is checked. Each is set, as a pushed
+        /// MSEL's are, so a placeholder somewhere only an id is valid, such as a port, is caught.
+        /// </summary>
+        private static readonly MselEntity CheckMsel = new()
+        {
+            Id = Guid.Empty, PlayerViewId = Guid.Empty, CiteEvaluationId = Guid.Empty, GalleryExhibitId = Guid.Empty,
+            SteamfitterScenarioId = Guid.Empty, CasterWorkspaceId = Guid.Empty
+        };
+
         /// <summary>The address Blueprint's own url placeholders stand in for while a template is checked.</summary>
         private static readonly ClientOptions CheckAddresses = new()
         {
@@ -98,7 +108,7 @@ namespace Blueprint.Api.Infrastructure.Extensions
             if (string.IsNullOrWhiteSpace(url))
                 return null;
 
-            var resolved = Resolve(url, new MselEntity(), CheckAddresses);
+            var resolved = Resolve(url, CheckMsel, CheckAddresses);
             return ToPlayerUri(resolved) == null ? UnsendableMessage : null;
         }
 

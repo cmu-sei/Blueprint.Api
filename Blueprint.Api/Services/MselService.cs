@@ -2919,13 +2919,15 @@ namespace Blueprint.Api.Services
         // Player refuses an application url with a scheme other than http(s). A MSEL's applications are checked
         // when they are saved, but a copied or imported MSEL brings its own, so the push checks them all first
         // rather than leave Player's refusal to the background push, which only logs it.
-        private async Task ValidatePlayerApplicationUrlsAsync(Guid mselId, CancellationToken ct)
+        private async Task ValidatePlayerApplicationUrlsAsync(MselEntity msel, CancellationToken ct)
         {
             var applications = await _context.PlayerApplications.AsNoTracking()
-                .Where(a => a.MselId == mselId)
+                .Where(a => a.MselId == msel.Id)
                 .ToListAsync(ct);
+            // the template, and then the url as the push fills it in from this installation's UI addresses
             var problems = applications
-                .Select(a => (a.Name, Problem: PlayerApplicationUrls.Problem(a.Url)))
+                .Select(a => (a.Name, Problem: PlayerApplicationUrls.Problem(a.Url) ??
+                    PlayerApplicationUrls.ResolvedProblem(PlayerApplicationUrls.Resolve(a.Url, msel, _clientOptions))))
                 .Where(x => x.Problem != null)
                 .Select(x => $"\"{x.Name}\": {x.Problem}")
                 .ToList();
@@ -2995,7 +2997,7 @@ namespace Blueprint.Api.Services
             if (msel.UseCite)
                 await ValidateCiteSetupAsync(msel, ct);
             if (msel.UsePlayer)
-                await ValidatePlayerApplicationUrlsAsync(mselId, ct);
+                await ValidatePlayerApplicationUrlsAsync(msel, ct);
             if (msel.UseGallery)
                 await ValidateGalleryArticleUrlsAsync(mselId, ct);
             // verify that no users are on more than one team
@@ -3432,7 +3434,7 @@ namespace Blueprint.Api.Services
                 await ValidateCiteSetupAsync(template, ct);
             // the copy keeps the template's application and article urls, and its push sends them
             if (template.UsePlayer)
-                await ValidatePlayerApplicationUrlsAsync(mselId, ct);
+                await ValidatePlayerApplicationUrlsAsync(template, ct);
             if (template.UseGallery)
                 await ValidateGalleryArticleUrlsAsync(mselId, ct);
 

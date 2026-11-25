@@ -97,6 +97,8 @@ namespace Blueprint.Api.Services
         public async Task EnsurePushableAsync(Guid mselId, string url, CancellationToken ct)
         {
             var msel = await _context.Msels.AsNoTracking().SingleOrDefaultAsync(m => m.Id == mselId, ct);
+            if (msel == null)
+                throw new EntityNotFoundException<MselEntity>();
             ResolvePushable(msel, url);
         }
 

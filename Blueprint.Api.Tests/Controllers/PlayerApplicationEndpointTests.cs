@@ -283,6 +283,7 @@ public class PlayerApplicationEndpointTests(DatabaseFixture fixture, BlueprintAp
     [Theory]
     [InlineData("https://{vm-ui}/views/{viewId}")]
     [InlineData("https://{host}:{port}/views/{viewId}")]
+    [InlineData("https://server.example:{playerViewId}/app")]
     public async Task Create_WithAPlaceholderInPlaceOfTheHost_Is409(string url)
     {
         var msel = await SeedMsel();

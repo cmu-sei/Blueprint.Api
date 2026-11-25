@@ -15,6 +15,8 @@ using Blueprint.Api.Services;
 using Blueprint.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Blueprint.Api.Infrastructure.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Player.Api.Client;
@@ -334,6 +336,56 @@ public class PlayerServiceTests(DatabaseFixture fixture, BlueprintAppFactory fac
         Assert.Equal(
             new Uri($"https://player.example/views/{msel.PlayerViewId}/msel/{msel.Id}"),
             Queued(body.Name).Application.Url);
+    }
+
+    /// <summary>A template that passes the save check can still fill in, from this installation's UI addresses,
+    /// to a url Player would refuse. That is checked before the row is saved, so nothing is left behind.</summary>
+    [Fact]
+    public async Task Push_WhenAConfiguredUiAddressFillsInAUrlPlayerRefuses_Is409_AndSavesNothing()
+    {
+        var msel = await Deployed();
+        var actor = await Actor().OnMsel(msel, Data.Enumerations.MselRole.Owner).SeedAsync();
+        var options = Factory.Services.GetRequiredService<IOptionsMonitor<ClientOptions>>().CurrentValue;
+        var configured = options.CasterUiUrl;
+        options.CasterUiUrl = "javascript:alert(1)//";
+        try
+        {
+            var response = await Client(actor).PostAsJsonAsync(
+                Push, Application(msel.Id) with { Url = "{casterUrl}/x" }, JsonOptions, Ct);
+
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            await using var context = NewContext();
+            Assert.Empty(await context.PlayerApplications.Where(x => x.MselId == msel.Id).ToListAsync(Ct));
+            AssertNothingQueued();
+        }
+        finally
+        {
+            options.CasterUiUrl = configured;
+        }
+    }
+
+    /// <summary>The caller is authorized before the push is checked, so a stranger learns nothing about whether
+    /// the MSEL has a Player view.</summary>
+    [Fact]
+    public async Task Push_ToAnUndeployedMsel_ForACallerWhoIsNotItsOwner_Is403()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var actor = await Actor().SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(Push, Application(msel.Id), JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Push_ToAMselThatIsNotThere_WithEditMsels_Is404()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditMsels).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(Push, Application(Guid.NewGuid()), JsonOptions, Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     /// <summary>No url is allowed, as in Player, where an application takes its template's.</summary>

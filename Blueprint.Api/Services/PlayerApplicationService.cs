@@ -136,6 +136,9 @@ namespace Blueprint.Api.Services
             // a template has no MSEL, so there is no Player view to push it to
             if (!playerApplication.MselId.HasValue || playerApplication.IsTemplate)
                 throw new ConflictException("A Player application template cannot be pushed to Player.");
+            // authorized first, so the push check says nothing about a MSEL the caller may not change
+            if (!hasSystemPermission && !await MselOwnerRequirement.IsMet(_user.GetId(), playerApplication.MselId, _context))
+                throw new ForbiddenException();
             // refused before the row is saved, so the MSEL is not left with an application its Player view never got
             await _playerService.EnsurePushableAsync((Guid)playerApplication.MselId, playerApplication.Url, ct);
             // authorization will be checked in CreateAsync

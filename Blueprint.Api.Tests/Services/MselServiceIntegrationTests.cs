@@ -16,6 +16,7 @@ using Blueprint.Api.Tests.Support;
 using Blueprint.Api.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
 using Xunit.Sdk;
@@ -316,6 +317,33 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
             MselItemStatus.Approved,
             (await ReadBack(rb => rb.Msels.SingleAsync(x => x.Id == msel.Id, Ct))).Status);
         AssertNothingEnqueued();
+    }
+
+    /// <summary>The push also checks each url as it fills it in from this installation's UI addresses, so a
+    /// misconfigured address is a 409 naming the application, not an application pushed with no url.</summary>
+    [Fact]
+    public async Task Push_OfAPlayerMselWhoseUrlAConfiguredUiAddressSpoils_Is409NamingIt()
+    {
+        var msel = TestData.Msel(status: MselItemStatus.Approved);
+        msel.UsePlayer = true;
+        await Seed(msel);
+        await Seed(TestData.PlayerApplication(msel.Id, "Console", url: "{vmUrl}/views/{playerViewId}"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
+        var options = Factory.Services.GetRequiredService<IOptionsMonitor<Blueprint.Api.Infrastructure.Options.ClientOptions>>().CurrentValue;
+        var configured = options.VmUiUrl;
+        options.VmUiUrl = "javascript:alert(1)//";
+        try
+        {
+            var response = await Client(actor).PostAsync($"/api/msels/{msel.Id}/integrations", null, Ct);
+
+            var title = (await AssertJsonError<ApiError>(HttpStatusCode.Conflict, response)).Title;
+            Assert.StartsWith("Fix the Player applications before pushing. \"Console\": ", title);
+            AssertNothingEnqueued();
+        }
+        finally
+        {
+            options.VmUiUrl = configured;
+        }
     }
 
     /// <summary>A Gallery push with an article whose url Gallery would refuse is a 409 naming the article,

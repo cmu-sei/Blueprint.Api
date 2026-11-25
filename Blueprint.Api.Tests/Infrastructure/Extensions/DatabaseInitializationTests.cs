@@ -267,7 +267,6 @@ public class DatabaseInitializationTests(DatabaseFixture fixture) : DatabaseTest
         Assert.True(msel.UsePlayer);
         Assert.True(msel.UseGallery);
         Assert.True(msel.UseCite);
-        Assert.True(msel.UseSteamfitter);
         Assert.Null(msel.PlayerViewId);
         Assert.Null(msel.CiteScoringModelId);
 

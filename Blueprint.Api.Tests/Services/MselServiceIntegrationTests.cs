@@ -37,8 +37,8 @@ namespace Blueprint.Api.Tests.Services;
 /// <para>
 /// None of these endpoints does the integration work. Each one writes a status, hands the MSEL to the
 /// singleton <see cref="IIntegrationQueue"/> and answers immediately; <c>IntegrationService</c> - a hosted
-/// service the harness removes, because it would dial the identity provider and then Player, Gallery, CITE
-/// and Steamfitter - drains the queue on a background thread. So what these tests assert is the request
+/// service the harness removes, because it would dial the identity provider and then Player, Gallery and
+/// CITE - drains the queue on a background thread. So what these tests assert is the request
 /// path: the authorization, the status transition, and the one item that went on the queue. The queue is
 /// left real for exactly this reason, and with no worker running nothing takes items off it but the tests.
 /// </para>
@@ -688,7 +688,6 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         msel.PlayerViewId = playerViewId;
         msel.GalleryCollectionId = Guid.NewGuid();
         msel.CiteEvaluationId = Guid.NewGuid();
-        msel.SteamfitterScenarioId = Guid.NewGuid();
         await Seed(msel);
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageMsels).SeedAsync();
 
@@ -701,7 +700,6 @@ public class MselServiceIntegrationTests(DatabaseFixture fixture, BlueprintAppFa
         Assert.Equal(playerViewId, stored.PlayerViewId);
         Assert.NotNull(stored.GalleryCollectionId);
         Assert.NotNull(stored.CiteEvaluationId);
-        Assert.NotNull(stored.SteamfitterScenarioId);
     }
 
     /// <summary>

@@ -160,6 +160,7 @@ public class MselViewRequirementTests(DatabaseFixture fixture) : DatabaseTestBas
     [InlineData(MselRole.Approver)]
     [InlineData(MselRole.MoveEditor)]
     [InlineData(MselRole.Evaluator)]
+    [InlineData(MselRole.Facilitator)]
     [InlineData(MselRole.Owner)]
     public async Task IsMet_ForAUnitMemberHoldingAViewingRole_IsTrue(MselRole role)
     {

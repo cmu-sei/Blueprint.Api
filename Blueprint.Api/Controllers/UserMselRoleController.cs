@@ -123,7 +123,7 @@ namespace Blueprint.Api.Controllers
         public async Task<IActionResult> SetIntegrationRoles(Guid mselId, Guid userId, [FromBody] IntegrationRoleUpdate update, CancellationToken ct)
         {
             var hasSystemPermission = await _authorizationService.AuthorizeAsync([SystemPermission.ManageMsels], ct);
-            var updated = await _userUserMselRoleService.SetIntegrationRolesAsync(mselId, userId, update?.CiteEvaluationRole, update?.GalleryExhibitRole, update?.SteamfitterScenarioRole, hasSystemPermission, ct);
+            var updated = await _userUserMselRoleService.SetIntegrationRolesAsync(mselId, userId, update?.CiteEvaluationRole, update?.GalleryExhibitRole, hasSystemPermission, ct);
             return Ok(updated);
         }
 
@@ -131,7 +131,6 @@ namespace Blueprint.Api.Controllers
         {
             public string CiteEvaluationRole { get; set; }
             public string GalleryExhibitRole { get; set; }
-            public string SteamfitterScenarioRole { get; set; }
         }
 
     }

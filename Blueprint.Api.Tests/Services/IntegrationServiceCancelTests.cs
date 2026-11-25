@@ -34,7 +34,7 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
     public async Task CancelPush_PullsEveryIntegrationTheMselHas()
     {
         var msel = await SeedDeployedMsel();
-        var handler = Idp().AllFourPullsSucceed();
+        var handler = Idp().AllPullsSucceed();
 
         Service(handler).CancelPush(msel.Id);
 
@@ -42,7 +42,6 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
 
         Assert.Equal(
             [
-                $"api/scenarios/{SteamfitterScenarioId}",
                 $"api/evaluations/{CiteEvaluationId}",
                 $"api/collections/{GalleryCollectionId}",
                 $"api/views/{PlayerViewId}",
@@ -52,15 +51,15 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
     }
 
     /// <remarks>
-    /// The order is Steamfitter, CITE, Gallery, Player - the reverse of the order a push creates them in,
-    /// which is what you would want if the later ones referred to the earlier ones. They do: a Gallery
-    /// exhibit names a Steamfitter scenario, and a CITE evaluation names a Gallery exhibit.
+    /// The order is CITE, Gallery, Player - the reverse of the order a push creates them in, which is what
+    /// you would want if the later ones referred to the earlier ones. They do: a CITE evaluation names a
+    /// Gallery exhibit.
     /// </remarks>
     [Fact]
     public async Task CancelPush_SkipsAnIntegrationTheMselDoesNotHave()
     {
         var msel = await SeedDeployedMsel(withCite: false, withGallery: false);
-        var handler = Idp().AllFourPullsSucceed();
+        var handler = Idp().AllPullsSucceed();
 
         Service(handler).CancelPush(msel.Id);
 
@@ -70,7 +69,6 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
 
         Assert.Equal(
             [
-                $"api/scenarios/{SteamfitterScenarioId}",
                 $"api/views/{PlayerViewId}",
                 $"api/views/{PlayerViewId}"
             ],
@@ -81,8 +79,8 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
     [Fact]
     public async Task CancelPush_SendsTwoDeletesToPlayer()
     {
-        var msel = await SeedDeployedMsel(withCite: false, withGallery: false, withSteamfitter: false);
-        var handler = Idp().AllFourPullsSucceed();
+        var msel = await SeedDeployedMsel(withCite: false, withGallery: false);
+        var handler = Idp().AllPullsSucceed();
 
         Service(handler).CancelPush(msel.Id);
 
@@ -98,7 +96,7 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
     public async Task CancelPush_ClearsEveryIntegrationIdAndApprovesTheMsel()
     {
         var msel = await SeedDeployedMsel();
-        var handler = Idp().AllFourPullsSucceed();
+        var handler = Idp().AllPullsSucceed();
 
         Service(handler).CancelPush(msel.Id);
 
@@ -111,7 +109,6 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
         Assert.Null(cleared.GalleryCollectionId);
         Assert.Null(cleared.GalleryExhibitId);
         Assert.Null(cleared.CiteEvaluationId);
-        Assert.Null(cleared.SteamfitterScenarioId);
         Assert.Null(cleared.IntegrationStatus);
         Assert.Equal(MselItemStatus.Approved, cleared.Status);
     }
@@ -125,7 +122,7 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
     public async Task CancelPush_AnnouncesItselfBeforeDoingAnything()
     {
         var msel = await SeedDeployedMsel();
-        var handler = Idp().AllFourPullsSucceed();
+        var handler = Idp().AllPullsSucceed();
 
         Service(handler).CancelPush(msel.Id);
 
@@ -143,7 +140,7 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
     public async Task CancelPush_BroadcastsEveryStatusToTheMselGroupAndTheAdminGroup()
     {
         var msel = await SeedDeployedMsel();
-        var handler = Idp().AllFourPullsSucceed();
+        var handler = Idp().AllPullsSucceed();
 
         Service(handler).CancelPush(msel.Id);
 
@@ -164,7 +161,7 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
     public async Task CancelPush_AnnouncesEachIntegrationAsItPullsIt()
     {
         var msel = await SeedDeployedMsel();
-        var handler = Idp().AllFourPullsSucceed();
+        var handler = Idp().AllPullsSucceed();
 
         Service(handler).CancelPush(msel.Id);
 
@@ -178,7 +175,6 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
         Assert.Equal(
             [
                 "Cancelling - removing partial integrations",
-                "Cancelling - pulling Steamfitter Scenario",
                 "Cancelling - pulling CITE Evaluation",
                 "Cancelling - pulling Gallery Collection",
                 "Cancelling - pulling Player View"
@@ -186,21 +182,20 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
             announced);
     }
 
-    /// <summary>Each pull has its own <c>try</c>: an unreachable Steamfitter does not stop the other three, and
+    /// <summary>Each pull has its own <c>try</c>: an unreachable CITE does not stop the other two, and
     /// the MSEL is still approved and cleared.</summary>
     [Fact]
     public async Task CancelPush_WhenOnePullFails_StillPullsTheRestAndApprovesTheMsel()
     {
         var msel = await SeedDeployedMsel();
         var handler = Idp()
-            .Throws($"api/scenarios/{SteamfitterScenarioId}")
-            .AllFourPullsSucceed();
+            .Throws($"api/evaluations/{CiteEvaluationId}")
+            .AllPullsSucceed();
 
         Service(handler).CancelPush(msel.Id);
 
         await WaitForApproval(msel.Id);
 
-        Assert.Contains($"api/evaluations/{CiteEvaluationId}", handler.Paths);
         Assert.Contains($"api/collections/{GalleryCollectionId}", handler.Paths);
         Assert.Contains($"api/views/{PlayerViewId}", handler.Paths);
     }
@@ -212,7 +207,7 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
         var msel = await SeedDeployedMsel();
         var handler = new SiblingApiHandler()
             .AnswersJson(DiscoveryPath, "not found", HttpStatusCode.NotFound)
-            .AllFourPullsSucceed();
+            .AllPullsSucceed();
 
         Service(handler).CancelPush(msel.Id);
 
@@ -224,7 +219,6 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
         Assert.Equal(PlayerViewId, status.PlayerViewId);
         Assert.Equal(CiteEvaluationId, status.CiteEvaluationId);
         Assert.Equal(GalleryCollectionId, status.GalleryCollectionId);
-        Assert.Equal(SteamfitterScenarioId, status.SteamfitterScenarioId);
         Assert.DoesNotContain(handler.Paths, x => x.StartsWith("api/"));
     }
 
@@ -237,7 +231,7 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
         var msel = await SeedDeployedMsel();
         var handler = new SiblingApiHandler()
             .AnswersJson(DiscoveryPath, "not found", HttpStatusCode.NotFound)
-            .AllFourPullsSucceed();
+            .AllPullsSucceed();
 
         Service(handler).CancelPush(msel.Id);
 
@@ -259,7 +253,7 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
     public async Task CancelPush_ForAMselThatDoesNotExist_BroadcastsAnywayAndPullsNothing()
     {
         var unknown = Guid.NewGuid();
-        var handler = Idp().AllFourPullsSucceed();
+        var handler = Idp().AllPullsSucceed();
 
         Service(handler).CancelPush(unknown);
 
@@ -272,14 +266,14 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
     }
 
     /// <remarks>
-    /// A token is fetched once for the whole cleanup and shared by all four clients, which is the one place
-    /// in the integration layer that does not pay for a token per operation. Three round trips, not twelve.
+    /// A token is fetched once for the whole cleanup and shared by all three clients, which is the one place
+    /// in the integration layer that does not pay for a token per operation. Three round trips, not nine.
     /// </remarks>
     [Fact]
-    public async Task CancelPush_FetchesOneTokenForAllFourPulls()
+    public async Task CancelPush_FetchesOneTokenForEveryPull()
     {
         var msel = await SeedDeployedMsel();
-        var handler = Idp().AllFourPullsSucceed();
+        var handler = Idp().AllPullsSucceed();
 
         Service(handler).CancelPush(msel.Id);
 
@@ -296,7 +290,6 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
     private static readonly Guid GalleryCollectionId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly Guid GalleryExhibitId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private static readonly Guid CiteEvaluationId = Guid.Parse("44444444-4444-4444-4444-444444444444");
-    private static readonly Guid SteamfitterScenarioId = Guid.Parse("55555555-5555-5555-5555-555555555555");
 
     private const string Realm = "realms/crucible";
     private const string DiscoveryPath = $"{Realm}/.well-known/openid-configuration";
@@ -349,18 +342,17 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
         {
             PlayerApiUrl = "http://player.example/",
             GalleryApiUrl = "http://gallery.example/",
-            CiteApiUrl = "http://cite.example/",
-            SteamfitterApiUrl = "http://steamfitter.example/"
+            CiteApiUrl = "http://cite.example/"
         });
 
         return monitor;
     }
 
     /// <summary>
-    /// A MSEL deployed to all four applications, which is the state a cancel acts on.
+    /// A MSEL deployed to all three applications, which is the state a cancel acts on.
     /// </summary>
     private async Task<MselEntity> SeedDeployedMsel(
-        bool withPlayer = true, bool withGallery = true, bool withCite = true, bool withSteamfitter = true)
+        bool withPlayer = true, bool withGallery = true, bool withCite = true)
     {
         var msel = TestData.Msel(status: MselItemStatus.Deployed);
 
@@ -378,11 +370,6 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
         if (withCite)
         {
             msel.CiteEvaluationId = CiteEvaluationId;
-        }
-
-        if (withSteamfitter)
-        {
-            msel.SteamfitterScenarioId = SteamfitterScenarioId;
         }
 
         await Seed(msel);
@@ -457,7 +444,7 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
                 ClientId = "blueprint-admin",
                 UserName = "blueprint-admin",
                 Password = string.Empty,
-                Scope = "player player-vm cite gallery steamfitter"
+                Scope = "player player-vm cite gallery"
             });
             services.AddScoped(_ => Substitute.For<IScenarioEventService>());
 
@@ -468,12 +455,11 @@ public class IntegrationServiceCancelTests(DatabaseFixture fixture) : DatabaseTe
     }
 }
 
-/// <summary>Stub rules for the four pulls, so each test says only what it is about.</summary>
+/// <summary>Stub rules for the three pulls, so each test says only what it is about.</summary>
 internal static class CancelPullStubs
 {
-    public static SiblingApiHandler AllFourPullsSucceed(this SiblingApiHandler handler) =>
+    public static SiblingApiHandler AllPullsSucceed(this SiblingApiHandler handler) =>
         handler
-            .Answers("api/scenarios/*", HttpStatusCode.NoContent)
             .Answers("api/evaluations/*", HttpStatusCode.NoContent)
             .Answers("api/collections/*", HttpStatusCode.NoContent)
             .Answers("api/views/*", HttpStatusCode.NoContent);

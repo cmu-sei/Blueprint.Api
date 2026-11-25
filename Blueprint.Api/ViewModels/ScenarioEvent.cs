@@ -20,7 +20,5 @@ namespace Blueprint.Api.ViewModels
         public Guid? InjectId { get; set; }
         public string IntegrationTarget { get; set; }
         public string Information { get; set; }
-        public Guid? SteamfitterTaskId { get; set; }
-        public SteamfitterTask SteamfitterTask { get; set; }
    }
 }

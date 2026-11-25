@@ -35,7 +35,8 @@ namespace Blueprint.Api.Tests.Controllers;
 /// <c>{sparePlayerApplication}</c>, <c>{playerapplicationteam}</c>, <c>{mselpage}</c>,
 /// <c>{competency}</c>, <c>{spareCompetency}</c>, <c>{mselcompetency}</c>, <c>{teamcompetency}</c>,
 /// <c>{proficiencyscale}</c>, <c>{proficiencylevel}</c>, <c>{techniquerelease}</c>, <c>{technique}</c>,
-/// <c>{spareTechnique}</c>, <c>{mseltechnique}</c>, and <c>{unique}</c> for a name that has to clear
+/// <c>{spareTechnique}</c>, <c>{mseltechnique}</c>, <c>{scenarioevent}</c>,
+/// <c>{automationtask}</c>, <c>{automationrun}</c>, and <c>{unique}</c> for a name that has to clear
 /// a unique index.
 /// So a row exercises the real object rather than an id nothing matches, and the 403 it asserts is the
 /// permission check answering rather than a 404 arriving first. The spares exist so a row that creates a
@@ -332,6 +333,31 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         { "PUT", "api/msels/{msel}/scoringmodel/link", "EditMsels", "{}" },
         { "DELETE", "api/msels/{msel}/scoringmodel", "EditMsels", null },
 
+        // AutomationService / AutomationController - reads want ViewMsels, the rest EditMsels; each falls back to a
+        // role on the MSEL. The seeded MSEL is not deployed, so running a task, rerunning a run and starting a move
+        // lift to a 409. POST msels/{msel}/automationTasks/vmPreview is absent: it also needs a Player view the caller
+        // can see, a data-row gate no system permission lifts; AutomationEndpointTests covers it.
+        { "GET", "api/msels/{msel}/automationTasks", "ViewMsels", null },
+        { "GET", "api/scenarioEvents/{scenarioevent}/automationTasks", "ViewMsels", null },
+        {
+            "POST", "api/automationTasks/test", "EditMsels",
+            """{"scenarioEventId":"{scenarioevent}","task":{"name":"{unique}","action":"http_get","actionParameters":{"Url":"http://localhost:4720/"}}}"""
+        },
+        { "POST", "api/automationTasks/{automationtask}/run", "EditMsels", "{}" },
+        { "GET", "api/msels/{msel}/automationRuns", "ViewMsels", null },
+        { "GET", "api/automationRuns/{automationrun}", "ViewMsels", null },
+        { "POST", "api/automationRuns/{automationrun}/cancel", "EditMsels", null },
+        { "POST", "api/automationRuns/{automationrun}/rerun", "EditMsels", "{}" },
+
+        // MselExecutionService / MselExecutionController - the read wants ViewMsels, the rest EditMsels.
+        // the Tasks page: read with ViewMsels, run with EditMsels (the graph's MSEL is not deployed, so a run is a 409)
+        { "GET", "api/msels/{msel}/participantTasks", "ViewMsels", null },
+        { "POST", "api/msels/{msel}/participantTasks/{automationtask}/run", "EditMsels", null },
+        { "GET", "api/msels/{msel}/execution", "ViewMsels", null },
+        { "POST", "api/msels/{msel}/execution/moves/0/start", "EditMsels", "{}" },
+        { "POST", "api/msels/{msel}/execution/moves/0/groups/0/start", "EditMsels", "{}" },
+        { "PUT", "api/msels/{msel}/execution/paused", "EditMsels", """{"paused":true}""" },
+
         // CasterExportService / MselCasterExportController - the reads want ViewMsels, the writes EditMsels; each
         // falls back to a role on the MSEL. The seeded MSEL links no Caster directory and carries no copy of one, so
         // the copy's read lifts to a 204, the team variables to an empty 200, the copy from Caster to a 409 and the
@@ -370,7 +396,9 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
     {
         { "GET", "api/caster/directories" },
         { "GET", "api/caster/directories/00000000-0000-0000-0000-000000000001/team-variables" },
-        { "GET", "api/proficiencyScales/{proficiencyscale}" }
+        { "GET", "api/proficiencyScales/{proficiencyscale}" },
+        { "GET", "api/automationActions" },
+        { "GET", "api/player/views" }
     };
 
     [Theory]
@@ -520,6 +548,14 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
         var mselTechnique = new Blueprint.Api.Data.Models.MselTechniqueEntity(msel.Id, technique.Id) { Id = Guid.NewGuid() };
         await Seed(mselTechnique);
 
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        await Seed(scenarioEvent);
+        var automationTask = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        await Seed(automationTask);
+        var automationRun = Blueprint.Api.Automation.AutomationRuns.New(automationTask, msel.Id, AutomationRunKind.Exercise,
+            AutomationRunSource.Manual, DateTime.UtcNow, null, null, null);
+        await Seed(automationRun);
+
         return new Dictionary<string, string>
         {
             ["msel"] = msel.Id.ToString(),
@@ -554,6 +590,9 @@ public class RouteAuthorizationTests(DatabaseFixture fixture, BlueprintAppFactor
             ["mseltechnique"] = mselTechnique.Id.ToString(),
             ["proficiencyscale"] = proficiencyScale.Id.ToString(),
             ["proficiencylevel"] = proficiencyLevel.Id.ToString(),
+            ["scenarioevent"] = scenarioEvent.Id.ToString(),
+            ["automationtask"] = automationTask.Id.ToString(),
+            ["automationrun"] = automationRun.Id.ToString(),
             ["unique"] = $"row-{Guid.NewGuid()}"
         };
     }

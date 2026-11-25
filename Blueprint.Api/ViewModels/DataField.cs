@@ -30,6 +30,7 @@ namespace Blueprint.Api.ViewModels
         public bool IsInformationField { get; set; }  // will be displayed for Information scenario event types
         public bool IsFacilitationField { get; set; }  // will be displayed for Facilitation scenario event types
         public bool IsAssessorVisible { get; set; }
+        public bool OnFacilitatorView { get; set; }  // will be displayed on the Facilitator View
     }
 
 }

@@ -133,10 +133,10 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
     }
 
     /// <remarks>
-    /// The three integration roles are the only reason this row is read by anything other than an
-    /// authorization check: they are what <c>IntegrationCiteExtensions</c>,
-    /// <c>IntegrationGalleryExtensions</c> and <c>IntegrationSteamfitterExtensions</c> match by name
-    /// against the sibling applications' own role names. All three are free text with no validation.
+    /// The two integration roles are the only reason this row is read by anything other than an
+    /// authorization check: they are what <c>IntegrationCiteExtensions</c> and
+    /// <c>IntegrationGalleryExtensions</c> match by name against the sibling applications' own role names.
+    /// Both are free text with no validation.
     /// </remarks>
     [Fact]
     public async Task GetByMsel_AnswersTheIntegrationRoles()
@@ -146,7 +146,6 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         var row = TestData.UserMselRole(subject.Id, msel.Id, MselRole.Evaluator);
         row.CiteEvaluationRole = "Inject";
         row.GalleryExhibitRole = "Blue";
-        row.SteamfitterScenarioRole = "Observer";
         await Seed(row);
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewMsels).SeedAsync();
 
@@ -154,7 +153,6 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         Assert.Equal("Inject", only.CiteEvaluationRole);
         Assert.Equal("Blue", only.GalleryExhibitRole);
-        Assert.Equal("Observer", only.SteamfitterScenarioRole);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -616,8 +614,7 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         var response = await SetIntegrationRoles(Client(actor), msel.Id, subject.Id, new
         {
             citeEvaluationRole = "Inject",
-            galleryExhibitRole = "Blue",
-            steamfitterScenarioRole = "Observer"
+            galleryExhibitRole = "Blue"
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -630,7 +627,6 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         {
             Assert.Equal("Inject", row.CiteEvaluationRole);
             Assert.Equal("Blue", row.GalleryExhibitRole);
-            Assert.Equal("Observer", row.SteamfitterScenarioRole);
         });
     }
 
@@ -674,8 +670,7 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         var response = await SetIntegrationRoles(Client(actor), msel.Id, actor.Id, new
         {
             citeEvaluationRole = "Inject",
-            galleryExhibitRole = "Blue",
-            steamfitterScenarioRole = "Observer"
+            galleryExhibitRole = "Blue"
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -744,7 +739,6 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         var row = TestData.UserMselRole(subject.Id, msel.Id, MselRole.Editor);
         row.CiteEvaluationRole = "Inject";
         row.GalleryExhibitRole = "Blue";
-        row.SteamfitterScenarioRole = "Observer";
         await Seed(row);
 
         var response = await SetIntegrationRoles(
@@ -756,7 +750,6 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
 
         Assert.Equal("Red", stored.GalleryExhibitRole);
         Assert.Null(stored.CiteEvaluationRole);
-        Assert.Null(stored.SteamfitterScenarioRole);
     }
 
     [Fact]
@@ -846,7 +839,6 @@ public class UserMselRoleEndpointTests(DatabaseFixture fixture, BlueprintAppFact
         public MselRole Role { get; init; }
         public string CiteEvaluationRole { get; init; }
         public string GalleryExhibitRole { get; init; }
-        public string SteamfitterScenarioRole { get; init; }
 
         public Guid CreatedBy { get; init; }
         public DateTime DateCreated { get; init; }

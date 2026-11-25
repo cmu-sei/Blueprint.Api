@@ -9,7 +9,6 @@ using Blueprint.Api.ViewModels;
 using Cite.Api.Client;
 using Gallery.Api.Client;
 using Player.Api.Client;
-using Steamfitter.Api.Client;
 using Caster.Api.Client;
 
 namespace Blueprint.Api.Services
@@ -36,7 +35,6 @@ namespace Blueprint.Api.Services
         private readonly IPlayerApiClient _playerApiClient;
         private readonly IGalleryApiClient _galleryApiClient;
         private readonly ICiteApiClient _citeApiClient;
-        private readonly ISteamfitterApiClient _steamfitterApiClient;
         private readonly ICasterApiClient _casterApiClient;
         private readonly ILogger<IntegrationNameService> _logger;
 
@@ -45,7 +43,6 @@ namespace Blueprint.Api.Services
             IPlayerApiClient playerApiClient,
             IGalleryApiClient galleryApiClient,
             ICiteApiClient citeApiClient,
-            ISteamfitterApiClient steamfitterApiClient,
             ICasterApiClient casterApiClient,
             ILogger<IntegrationNameService> logger)
         {
@@ -53,7 +50,6 @@ namespace Blueprint.Api.Services
             _playerApiClient = playerApiClient;
             _galleryApiClient = galleryApiClient;
             _citeApiClient = citeApiClient;
-            _steamfitterApiClient = steamfitterApiClient;
             _casterApiClient = casterApiClient;
             _logger = logger;
         }
@@ -102,16 +98,6 @@ namespace Blueprint.Api.Services
                 var id = msel.CiteScoringModelId.Value;
                 names.CiteScoringModelName = await ResolveAsync("CITE scoring model", id,
                     async () => (await _citeApiClient.GetScoringModelAsync(id, ct))?.Description, ct);
-            }
-
-            if (msel.SteamfitterScenarioId.HasValue)
-            {
-                var id = msel.SteamfitterScenarioId.Value;
-                // the status comes with the name, and tells whether the push's start of the scenario took
-                Steamfitter.Api.Client.Scenario scenario = null;
-                names.SteamfitterScenarioName = await ResolveAsync("Steamfitter scenario", id,
-                    async () => (scenario = await _steamfitterApiClient.GetScenarioAsync(id, ct))?.Name, ct);
-                names.SteamfitterScenarioStatus = scenario?.Status.ToString() ?? "";
             }
 
             if (msel.CasterDirectoryId.HasValue)

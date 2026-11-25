@@ -38,13 +38,6 @@ namespace Blueprint.Api.ViewModels
         /// <summary>The TLP level (CLEAR, GREEN, AMBER, AMBER+STRICT, RED), or the classification banner's text, up to 120 characters</summary>
         public string ArticleMarkingText { get; set; }
         public IntegrationType CiteIntegrationType { get; set; }
-        public bool UseSteamfitter { get; set; }
-        public IntegrationType SteamfitterIntegrationType { get; set; }
-        /// <summary>
-        /// When the push's Steamfitter scenario is started. Not an integration setting: it does not change what
-        /// the push builds, so it can be changed while the MSEL is pushed.
-        /// </summary>
-        public SteamfitterScenarioStartMode SteamfitterScenarioStartMode { get; set; }
         public bool UseCaster { get; set; }
         /// <summary>The Caster directory a push deploys from, which the caller must be able to view.</summary>
         public Guid? CasterDirectoryId { get; set; }
@@ -79,6 +72,10 @@ namespace Blueprint.Api.ViewModels
         /// ViewMsels still see the names. The statements in the LRS are unchanged.
         /// </summary>
         public bool HideNamesOnAssessorView { get; set; }
+        public bool ShowTimeOnFacilitatorView { get; set; } = true;
+        public bool ShowMoveOnFacilitatorView { get; set; } = true;
+        public bool ShowGroupOnFacilitatorView { get; set; } = true;
+        public bool ShowIntegrationTargetOnFacilitatorView { get; set; }
         public string HeaderRowMetadata { get; set; }
         // IEEE 2881 (LMT) metadata fields
         public string EducationalLevel { get; set; }

@@ -14,7 +14,7 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Services;
 
-/// <summary><c>IntegrationService.PullIntegrations</c> - taking a MSEL's deployment back out of the four
+/// <summary><c>IntegrationService.PullIntegrations</c> - taking a MSEL's deployment back out of the three
 /// sibling applications.</summary>
 public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 {
@@ -29,7 +29,6 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
 
         Assert.Equal(
             [
-                $"steamfitter/api/scenarios/{SteamfitterScenarioId}",
                 $"cite/api/evaluations/{CiteEvaluationId}",
                 $"gallery/api/collections/{GalleryCollectionId}",
                 $"player/api/views/{PlayerViewId}",
@@ -40,13 +39,12 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
 
     /// <remarks>
     /// The reverse of the order a push creates them in, which is what you want when the later ones name the
-    /// earlier: a Gallery exhibit names a Steamfitter scenario, and a CITE evaluation names a Gallery
-    /// exhibit.
+    /// earlier: a CITE evaluation names a Gallery exhibit.
     /// </remarks>
     [Fact]
     public async Task Pull_SkipsAnIntegrationTheMselDoesNotHave()
     {
-        var msel = await SeedDeployedMsel(withCite: false, withSteamfitter: false);
+        var msel = await SeedDeployedMsel(withCite: false);
         var harness = Harness();
 
         await harness.PullAsync(msel.Id);
@@ -65,7 +63,7 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
     [Fact]
     public async Task Pull_SendsTwoDeletesToPlayer()
     {
-        var msel = await SeedDeployedMsel(withCite: false, withGallery: false, withSteamfitter: false);
+        var msel = await SeedDeployedMsel(withCite: false, withGallery: false);
         var harness = Harness();
 
         await harness.PullAsync(msel.Id);
@@ -112,7 +110,6 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
         Assert.Null(pulled.GalleryCollectionId);
         Assert.Null(pulled.GalleryExhibitId);
         Assert.Null(pulled.CiteEvaluationId);
-        Assert.Null(pulled.SteamfitterScenarioId);
         Assert.Null(pulled.IntegrationStatus);
     }
 
@@ -133,7 +130,6 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
         Assert.Equal(
             [
                 "Pulling Integrations",
-                "Pulling Steamfitter Scenario",
                 "Pulling CITE Evaluation",
                 "Pulling Gallery Collection",
                 "Pulling Player View"
@@ -157,22 +153,21 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
         Assert.Contains(MainHub.ADMIN_DATA_GROUP, recipients);
     }
 
-    /// <summary>Each pull has its own <c>try</c>: an unreachable Steamfitter does not stop the other three, and
+    /// <summary>Each pull has its own <c>try</c>: an unreachable CITE does not stop the other two, and
     /// the MSEL reaches its final status with every id cleared.</summary>
     [Fact]
     public async Task Pull_WhenOnePullFails_StillPullsTheRestAndFinishes()
     {
         var msel = await SeedDeployedMsel();
-        var harness = Harness(x => x.Throws($"steamfitter/api/scenarios/{SteamfitterScenarioId}"));
+        var harness = Harness(x => x.Throws($"cite/api/evaluations/{CiteEvaluationId}"));
 
         await harness.PullAsync(msel.Id);
 
         var pulled = await harness.WaitForFinalStatus(msel.Id, MselItemStatus.Approved, Ct);
 
-        Assert.Contains($"cite/api/evaluations/{CiteEvaluationId}", harness.Handler.Paths);
         Assert.Contains($"gallery/api/collections/{GalleryCollectionId}", harness.Handler.Paths);
         Assert.Contains($"player/api/views/{PlayerViewId}", harness.Handler.Paths);
-        Assert.Null(pulled.SteamfitterScenarioId);
+        Assert.Null(pulled.CiteEvaluationId);
     }
 
     /// <remarks>
@@ -203,7 +198,6 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
         Assert.Equal(PlayerViewId, failed.PlayerViewId);
         Assert.Equal(CiteEvaluationId, failed.CiteEvaluationId);
         Assert.Equal(GalleryCollectionId, failed.GalleryCollectionId);
-        Assert.Equal(SteamfitterScenarioId, failed.SteamfitterScenarioId);
         Assert.DoesNotContain(harness.Handler.Paths, x => !x.StartsWith("realms/"));
     }
 
@@ -228,11 +222,11 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
     }
 
     /// <remarks>
-    /// One token for the whole pull, shared by all four clients - the same economy the cancel path has, and
+    /// One token for the whole pull, shared by all three clients - the same economy the cancel path has, and
     /// the opposite of every other caller in the integration layer, which fetches one per operation.
     /// </remarks>
     [Fact]
-    public async Task Pull_FetchesOneTokenForAllFourPulls()
+    public async Task Pull_FetchesOneTokenForEveryPull()
     {
         var msel = await SeedDeployedMsel();
         var harness = Harness();
@@ -251,7 +245,6 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
     private static readonly Guid GalleryCollectionId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly Guid GalleryExhibitId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private static readonly Guid CiteEvaluationId = Guid.Parse("44444444-4444-4444-4444-444444444444");
-    private static readonly Guid SteamfitterScenarioId = Guid.Parse("55555555-5555-5555-5555-555555555555");
 
     /// <remarks>
     /// <paramref name="first"/> is applied before the general rules, because rules are matched in the order
@@ -262,7 +255,7 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
         new(Session, Everything(first));
 
     private async Task<MselEntity> SeedDeployedMsel(
-        bool withPlayer = true, bool withGallery = true, bool withCite = true, bool withSteamfitter = true)
+        bool withPlayer = true, bool withGallery = true, bool withCite = true)
     {
         var msel = TestData.Msel(status: MselItemStatus.Deployed);
 
@@ -282,17 +275,12 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
             msel.CiteEvaluationId = CiteEvaluationId;
         }
 
-        if (withSteamfitter)
-        {
-            msel.SteamfitterScenarioId = SteamfitterScenarioId;
-        }
-
         await Seed(msel);
 
         return msel;
     }
 
-    /// <summary>The identity provider and the four deletes a pull makes, and nothing else.</summary>
+    /// <summary>The identity provider and the deletes a pull makes, and nothing else.</summary>
     private static SiblingApiHandler Everything(Func<SiblingApiHandler, SiblingApiHandler> first = null) =>
         (first is null ? new SiblingApiHandler() : first(new SiblingApiHandler()))
             .AnswersJson(IntegrationServiceHarness.DiscoveryPath, """
@@ -309,7 +297,6 @@ public class IntegrationServicePullTests(DatabaseFixture fixture) : DatabaseTest
             .AnswersJson(IntegrationServiceHarness.JwksPath, """{"keys":[]}""")
             .AnswersJson(IntegrationServiceHarness.TokenPath,
                 """{"access_token":"abc123","token_type":"Bearer","expires_in":300}""")
-            .Answers("steamfitter/api/scenarios/*", HttpStatusCode.NoContent)
             .Answers("cite/api/evaluations/*", HttpStatusCode.NoContent)
             .Answers("gallery/api/collections/*", HttpStatusCode.NoContent)
             .Answers("player/api/views/*", HttpStatusCode.NoContent);

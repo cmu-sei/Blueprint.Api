@@ -34,10 +34,6 @@ namespace Blueprint.Api.Data.Models
         public string ArticleMarkingText { get; set; }
         public string CiteScoringModelName { get; set; }
         public IntegrationType CiteIntegrationType { get; set; }
-        public bool UseSteamfitter { get; set; }
-        public Guid? SteamfitterScenarioId { get; set; }
-        public IntegrationType SteamfitterIntegrationType { get; set; }
-        public SteamfitterScenarioStartMode SteamfitterScenarioStartMode { get; set; }
         public bool UseCaster { get; set; }
         public Guid? CasterDirectoryId { get; set; }
         public Guid? CasterWorkspaceId { get; set; }
@@ -63,6 +59,20 @@ namespace Blueprint.Api.Data.Models
         public bool ShowGroupOnAssessorView { get; set; }
         public bool ShowIntegrationTargetOnAssessorView { get; set; }
         public bool HideNamesOnAssessorView { get; set; }
+        public bool ShowTimeOnFacilitatorView { get; set; } = true;
+        public bool ShowMoveOnFacilitatorView { get; set; } = true;
+        public bool ShowGroupOnFacilitatorView { get; set; } = true;
+        public bool ShowIntegrationTargetOnFacilitatorView { get; set; }
+        // the deployment the MSEL is in: set when a push deploys it, cleared when it is pulled
+        public Guid? DeploymentId { get; set; }
+        // where the deployed exercise is, as the Facilitator View last started it
+        public int? CurrentMoveNumber { get; set; }
+        public int? CurrentGroupNumber { get; set; }
+        public DateTime? CurrentGroupStartedAt { get; set; }
+        // stops the scheduler from starting tasks at their event time; manual runs still work
+        public bool AutomationPaused { get; set; }
+        // the Player view an author last tested the MSEL's automation tasks against
+        public Guid? AutomationTestPlayerViewId { get; set; }
         public virtual ICollection<MoveEntity> Moves { get; set; } = new HashSet<MoveEntity>();
         public virtual ICollection<DataFieldEntity> DataFields { get; set; } = new HashSet<DataFieldEntity>();
         public virtual ICollection<ScenarioEventEntity> ScenarioEvents { get; set; } = new HashSet<ScenarioEventEntity>();

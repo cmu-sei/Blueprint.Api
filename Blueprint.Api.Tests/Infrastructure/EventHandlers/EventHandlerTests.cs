@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 using Blueprint.Api.Data;
+using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
 using Blueprint.Api.Hubs;
 using Blueprint.Api.Tests.Support;
@@ -19,7 +20,7 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Infrastructure.EventHandlers;
 
-/// <summary>The 24 handler families under <c>Infrastructure/EventHandlers</c>: which groups each one
+/// <summary>The 27 handler families under <c>Infrastructure/EventHandlers</c>: which groups each one
 /// addresses, what it puts on the wire, and what it does when the row it broadcasts about is not
 /// there.</summary>
 public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
@@ -465,14 +466,14 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
     {
         var created = HandledEntities(typeof(EntityCreated<>));
 
-        Assert.Equal(24, created.Count);
+        Assert.Equal(27, created.Count);
         Assert.Equal(created, HandledEntities(typeof(EntityUpdated<>)));
         Assert.Equal(created, HandledEntities(typeof(EntityDeleted<>)));
     }
 
-    /// <summary>Thirty two of the fifty six entities raise events no handler receives.</summary>
+    /// <summary>Thirty one of the fifty eight entities raise events no handler receives.</summary>
     [Fact]
-    public void ThirtyTwoOfTheFiftySixEntities_RaiseEventsNoHandlerReceives()
+    public void ThirtyOneOfTheFiftyEightEntities_RaiseEventsNoHandlerReceives()
     {
         var tracked = typeof(BlueprintContext).GetProperties()
             .Where(x => x.PropertyType.IsGenericType
@@ -484,7 +485,7 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(56, tracked.Count);
+        Assert.Equal(58, tracked.Count);
         Assert.Equal(
             new[]
             {
@@ -510,7 +511,6 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
                 "PermissionEntity",
                 "ProficiencyLevelEntity",
                 "ProficiencyScaleEntity",
-                "SteamfitterTaskEntity",
                 "TeamCompetencyEntity",
                 "TechniqueCountermeasureEntity",
                 "TechniqueEntity",
@@ -522,6 +522,96 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
                 "XApiQueuedStatementEntity"
             },
             unhandled);
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // Automation
+    // -------------------------------------------------------------------------------------------------
+
+    /// <summary>A task goes to the MSEL's group, as its scenario event does, and never carries its secrets.</summary>
+    [Fact]
+    public async Task AnAutomationTask_TellsTheMselsGroup_WithItsSecretsNamedButNotSent()
+    {
+        var mselId = Guid.NewGuid();
+        var task = TestData.AutomationTask(mselId, Guid.NewGuid());
+        task.SecretParameters = "{\"Password\":\"enc:v1:k:abc\"}";
+
+        await Created(task);
+
+        AssertTold(MainHubMethods.AutomationTaskCreated, mselId.ToString(), MainHub.ADMIN_DATA_GROUP);
+        var sent = Assert.IsType<Blueprint.Api.ViewModels.AutomationTask>(_hub.Of(MainHubMethods.AutomationTaskCreated, mselId)[0].Payload);
+        Assert.Equal(["Password"], sent.SecretParameterKeys);
+        Assert.DoesNotContain(typeof(Blueprint.Api.ViewModels.AutomationTask).GetProperties(), p => p.Name == "SecretParameters");
+    }
+
+    /// <summary>
+    /// A run and its results go to the MSEL's facilitation group, not its own group: a result can hold what a guest printed,
+    /// and an Evaluator, a Viewer or a Move Editor of the MSEL does not see automation.
+    /// </summary>
+    [Fact]
+    public async Task AnAutomationRunAndItsResults_TellTheFacilitationGroupOnly()
+    {
+        var msel = TestData.Msel();
+        await Seed(msel);
+        var run = new AutomationRunEntity { Id = Guid.NewGuid(), MselId = msel.Id, TaskName = "t", Status = AutomationStatus.Running, DueAt = DateTime.UtcNow };
+        await Seed(run);
+        var result = new AutomationResultEntity { Id = Guid.NewGuid(), RunId = run.Id, Iteration = 1, ActualOutput = new string('x', 5000) };
+
+        await Created(run);
+        await Updated(result, "Status", "ActualOutput");
+        await Deleted(run);
+
+        var facilitation = MainHub.FacilitationGroup(msel.Id);
+        AssertTold(MainHubMethods.AutomationRunCreated, facilitation, MainHub.ADMIN_DATA_GROUP);
+        AssertTold(MainHubMethods.AutomationResultUpdated, facilitation, MainHub.ADMIN_DATA_GROUP);
+        AssertTold(MainHubMethods.AutomationRunDeleted, facilitation, MainHub.ADMIN_DATA_GROUP);
+        Assert.Empty(_hub.ToGroup(msel.Id.ToString()));
+        var sent = Assert.IsType<Blueprint.Api.ViewModels.AutomationResult>(_hub.Of(MainHubMethods.AutomationResultUpdated, facilitation)[0].Payload);
+        Assert.Equal(4096, sent.ActualOutput.Length);
+        Assert.True(sent.OutputTruncated);
+    }
+
+    /// <summary>
+    /// The Tasks page's group is told, with the MSEL's id alone, when an exercise run of a task starts or changes status, a
+    /// task changes, or the MSEL is paused or pulled; not for a test, a group start's record, a run's other changes, or
+    /// a MSEL's other changes.
+    /// </summary>
+    [Fact]
+    public async Task TheTasksPage_IsToldOnlyThatItsTasksChanged()
+    {
+        var msel = TestData.Msel();
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        await Seed(msel, scenarioEvent, task);
+        AutomationRunEntity Run(AutomationRunKind kind, Guid? taskId) => new()
+        {
+            Id = Guid.NewGuid(), MselId = msel.Id, AutomationTaskId = taskId, Kind = kind, TaskName = "t",
+            Status = AutomationStatus.Running, DueAt = DateTime.UtcNow,
+        };
+        var participants = MainHub.ParticipantGroup(msel.Id);
+        int Told() => _hub.Of(MainHubMethods.ParticipantTasksChanged, participants).Count;
+
+        await Created(Run(AutomationRunKind.Test, task.Id));
+        await Created(Run(AutomationRunKind.Exercise, null));
+        await Updated(Run(AutomationRunKind.Exercise, task.Id), "LeaseUntil");
+        await Updated(msel, "Name");
+        Assert.Equal(0, Told());
+
+        await Created(Run(AutomationRunKind.Exercise, task.Id));
+        await Updated(Run(AutomationRunKind.Exercise, task.Id), "Status");
+        await Updated(task, "Name");
+        await Updated(msel, "AutomationPaused");
+        Assert.Equal(4, Told());
+        Assert.All(_hub.Of(MainHubMethods.ParticipantTasksChanged, participants), x => Assert.Equal(msel.Id, x.Payload));
+    }
+
+    /// <summary>A result whose run is not there is told to nobody.</summary>
+    [Fact]
+    public async Task AnAutomationResultOfARunThatIsNotThere_TellsNobody()
+    {
+        await Created(new AutomationResultEntity { Id = Guid.NewGuid(), RunId = Guid.NewGuid(), Iteration = 1 });
+
+        Assert.Empty(_hub.Of(MainHubMethods.AutomationResultCreated, MainHub.ADMIN_DATA_GROUP));
     }
 
     /// <summary>Three broadcast method names are declared for an entity no handler serves.</summary>
@@ -564,27 +654,33 @@ public class EventHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(fixtu
             ? Activator.CreateInstance(notificationType, entity, modifiedProperties)
             : Activator.CreateInstance(notificationType, entity);
         var handlerInterface = typeof(INotificationHandler<>).MakeGenericType(notificationType);
-        var handler = Construct(HandlerFor(handlerInterface), db ?? Db);
 
-        Task handling;
-        try
+        // every handler of the notification, as MediatR publishes it
+        foreach (var handlerType in HandlersFor(handlerInterface))
         {
-            handling = (Task)handlerInterface.GetMethod("Handle")
-                .Invoke(handler, [notification, Ct]);
-        }
-        catch (TargetInvocationException ex)
-        {
-            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            var handler = Construct(handlerType, db ?? Db);
+            Task handling;
+            try
+            {
+                handling = (Task)handlerInterface.GetMethod("Handle")
+                    .Invoke(handler, [notification, Ct]);
+            }
+            catch (TargetInvocationException ex)
+            {
+                ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
 
-            throw;
-        }
+                throw;
+            }
 
-        await handling;
+            await handling;
+        }
     }
 
-    private static Type HandlerFor(Type handlerInterface) =>
+    private static List<Type> HandlersFor(Type handlerInterface) =>
         typeof(Startup).Assembly.GetTypes()
-            .Single(x => !x.IsAbstract && handlerInterface.IsAssignableFrom(x));
+            .Where(x => !x.IsAbstract && handlerInterface.IsAssignableFrom(x))
+            .OrderBy(x => x.FullName, StringComparer.Ordinal)
+            .ToList();
 
     /// <remarks>
     /// The service argument is <c>null</c> deliberately: every handler in the set injects one and not one

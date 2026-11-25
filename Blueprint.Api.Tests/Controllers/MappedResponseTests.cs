@@ -81,89 +81,27 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
         Assert.Equal([SystemPermission.ViewMsels, SystemPermission.ManageUnits], stored.Permissions);
     }
 
-    /// <summary>
-    /// A Steamfitter task stored without action parameters is answered with an empty dictionary, on the
-    /// event and on the MSEL's event list.
-    /// </summary>
+    /// <summary>An automation task stored without action parameters is answered with an empty dictionary.</summary>
     [Fact]
-    public async Task A_steamfitter_task_stored_without_action_parameters_is_read_with_an_empty_dictionary()
+    public async Task An_automation_task_stored_without_action_parameters_is_read_with_an_empty_dictionary()
     {
-        var (msel, scenarioEvent) = await SeedEventWithTask(actionParameters: null);
+        var (msel, _) = await SeedEventWithTask(actionParameters: null);
 
-        var one = await ReadAsync<ViewModels.ScenarioEvent>(await RootClient.GetAsync($"api/scenarioEvents/{scenarioEvent.Id}", Ct), JsonOptions);
-        var all = await ReadAsync<List<ViewModels.ScenarioEvent>>(await RootClient.GetAsync($"api/msels/{msel.Id}/scenarioEvents", Ct), JsonOptions);
+        var tasks = await ReadAsync<List<ViewModels.AutomationTask>>(await RootClient.GetAsync($"api/msels/{msel.Id}/automationTasks", Ct), JsonOptions);
 
-        Assert.NotNull(one.SteamfitterTask.ActionParameters);
-        Assert.Empty(one.SteamfitterTask.ActionParameters);
-        Assert.Empty(Assert.Single(all).SteamfitterTask.ActionParameters);
+        Assert.NotNull(Assert.Single(tasks).ActionParameters);
+        Assert.Empty(tasks[0].ActionParameters);
     }
 
-    /// <summary>A Steamfitter task's action parameters are answered as stored.</summary>
+    /// <summary>An automation task's action parameters are answered as stored.</summary>
     [Fact]
-    public async Task A_steamfitter_tasks_action_parameters_are_read_as_stored()
+    public async Task An_automation_tasks_action_parameters_are_read_as_stored()
     {
-        var (_, scenarioEvent) = await SeedEventWithTask(new Dictionary<string, string> { ["url"] = "https://example.test" });
+        var (msel, _) = await SeedEventWithTask(new Dictionary<string, string> { ["Text"] = "stand by" });
 
-        var one = await ReadAsync<ViewModels.ScenarioEvent>(await RootClient.GetAsync($"api/scenarioEvents/{scenarioEvent.Id}", Ct), JsonOptions);
+        var tasks = await ReadAsync<List<ViewModels.AutomationTask>>(await RootClient.GetAsync($"api/msels/{msel.Id}/automationTasks", Ct), JsonOptions);
 
-        Assert.Equal(new Dictionary<string, string> { ["url"] = "https://example.test" }, one.SteamfitterTask.ActionParameters);
-        Assert.Null(one.SteamfitterTask.ScenarioEvent);
-    }
-
-    /// <summary>A scenario event created with a task whose action parameters are null stores an empty dictionary.</summary>
-    [Fact]
-    public async Task A_scenario_event_created_with_null_action_parameters_stores_an_empty_dictionary()
-    {
-        var msel = TestData.Msel(createdBy: Root.Id);
-        await Seed(msel);
-
-        var created = await ReadAsync<List<ViewModels.ScenarioEvent>>(await RootClient.PostAsJsonAsync("api/scenarioEvents",
-            new
-            {
-                mselId = msel.Id,
-                scenarioEventType = "Inject",
-                integrationTarget = "Steamfitter",
-                steamfitterTask = new { name = "Task", taskType = "Notification", actionParameters = (Dictionary<string, string>)null },
-            }, Ct), JsonOptions);
-
-        var answered = Assert.Single(created);
-        Assert.Empty(answered.SteamfitterTask.ActionParameters);
-        var stored = await ReadBack(db => db.SteamfitterTasks.SingleAsync(x => x.ScenarioEventId == answered.Id, Ct));
-        Assert.Equal("Task", stored.Name);
-        Assert.NotNull(stored.ActionParameters);
-        Assert.Empty(stored.ActionParameters);
-    }
-
-    /// <summary>
-    /// An edit whose task has null action parameters empties the stored ones; an edit that sends some
-    /// replaces them.
-    /// </summary>
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task A_scenario_event_edit_writes_the_tasks_action_parameters(bool send)
-    {
-        var (msel, scenarioEvent) = await SeedEventWithTask(new Dictionary<string, string> { ["old"] = "value" });
-        var parameters = send ? new Dictionary<string, string> { ["new"] = "value" } : null;
-
-        var response = await RootClient.PutAsJsonAsync($"api/scenarioEvents/{scenarioEvent.Id}",
-            new
-            {
-                id = scenarioEvent.Id,
-                mselId = msel.Id,
-                deltaSeconds = scenarioEvent.DeltaSeconds,
-                groupOrder = scenarioEvent.GroupOrder,
-                scenarioEventType = "Inject",
-                integrationTarget = "Steamfitter",
-                steamfitterTask = new { name = "Edited", taskType = "Notification", actionParameters = parameters },
-            }, Ct);
-
-        var answered = Assert.Single(await ReadAsync<List<ViewModels.ScenarioEvent>>(response, JsonOptions));
-        var expected = parameters ?? [];
-        Assert.Equal(expected, answered.SteamfitterTask.ActionParameters);
-        var stored = await ReadBack(db => db.SteamfitterTasks.SingleAsync(x => x.ScenarioEventId == scenarioEvent.Id, Ct));
-        Assert.Equal("Edited", stored.Name);
-        Assert.Equal(expected, stored.ActionParameters);
+        Assert.Equal(new Dictionary<string, string> { ["Text"] = "stand by" }, Assert.Single(tasks).ActionParameters);
     }
 
     /// <summary>A proficiency scale created or updated with a null level list is answered with an empty one.</summary>
@@ -559,7 +497,6 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
     [InlineData("system-roles")]
     [InlineData("injectTypes")]
     [InlineData("scenarioEvents")]
-    [InlineData("steamfitterTask")]
     public async Task An_update_with_null_values_clears_them(string kind)
     {
         var msel = TestData.Msel(createdBy: Root.Id);
@@ -770,21 +707,7 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
                         async db => { var x = await db.ScenarioEvents.SingleAsync(y => y.Id == row.Id, Ct); return [x.Information, x.RowMetadata, x.IntegrationTarget]; });
                 }
                 default:
-                {
-                    var (_, row) = await SeedEventWithTask(new Dictionary<string, string> { ["key"] = "value" });
-                    return ($"scenarioEvents/{row.Id}",
-                        new
-                        {
-                            id = row.Id,
-                            mselId = msel.Id,
-                            deltaSeconds = row.DeltaSeconds,
-                            groupOrder = row.GroupOrder,
-                            scenarioEventType = "Inject",
-                            integrationTarget = "Steamfitter",
-                            steamfitterTask = new { name = "Task", taskType = "Notification", actionParameters = new Dictionary<string, string>() },
-                        },
-                        async db => { var x = await db.SteamfitterTasks.SingleAsync(y => y.ScenarioEventId == row.Id, Ct); return [x.Description, x.VmMask, x.ApiUrl, x.ExpectedOutput]; });
-                }
+                    throw new ArgumentOutOfRangeException(nameof(kind));
             }
         }
 
@@ -905,9 +828,9 @@ public class MappedResponseTests(DatabaseFixture fixture, BlueprintAppFactory fa
         var msel = TestData.Msel(createdBy: Root.Id);
         await Seed(msel);
         var scenarioEvent = TestData.ScenarioEvent(msel.Id);
-        scenarioEvent.IntegrationTarget = "Steamfitter";
         await Seed(scenarioEvent);
-        var task = TestData.SteamfitterTask(scenarioEvent.Id, actionParameters: actionParameters);
+        var task = TestData.AutomationTask(msel.Id, scenarioEvent.Id);
+        task.ActionParameters = actionParameters;
         await Seed(task);
 
         return (msel, scenarioEvent);

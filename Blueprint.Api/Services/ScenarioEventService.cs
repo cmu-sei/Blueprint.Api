@@ -9,6 +9,7 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Blueprint.Api.Automation;
 using Blueprint.Api.Data;
 using Blueprint.Api.Data.Enumerations;
 using Blueprint.Api.Data.Models;
@@ -40,16 +41,25 @@ namespace Blueprint.Api.Services
         private readonly BlueprintContext _context;
         private readonly ClaimsPrincipal _user;
         private readonly DatabaseOptions _options;
+        private readonly IAutomationTaskWriter _automationTaskWriter;
 
         public ScenarioEventService(
             BlueprintContext context,
             IPrincipal user,
-            DatabaseOptions options)
+            DatabaseOptions options,
+            IAutomationTaskWriter automationTaskWriter)
         {
             _context = context;
             _user = user as ClaimsPrincipal;
             _options = options;
+            _automationTaskWriter = automationTaskWriter;
         }
+
+        /// <summary>Replaces the event's automation tasks when the request lists them.</summary>
+        private Task ApplyAutomationTasksAsync(Guid mselId, Guid scenarioEventId, List<ViewModels.AutomationTaskFields> tasks, CancellationToken ct) =>
+            tasks == null
+                ? Task.CompletedTask
+                : _automationTaskWriter.ApplyAsync(mselId, scenarioEventId, tasks, _user.GetId(), ct);
 
         public async Task<IEnumerable<ViewModels.ScenarioEvent>> GetByMselAsync(Guid mselId, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct)
         {
@@ -61,7 +71,6 @@ namespace Blueprint.Api.Services
             var isLimited = await MselParticipantScope.IsLimitedAsync(_user.GetId(), mselId, hasSystemPermission, _context);
             var scenarioEvents = await _context.ScenarioEvents
                 .Where(i => i.MselId == mselId && (!isLimited || !i.IsHidden))
-                .Include(e => e.SteamfitterTask)
                 .OrderBy(se => se.DeltaSeconds)
                 .ThenBy(se => se.GroupOrder)
                 .ToListAsync(ct);
@@ -73,7 +82,6 @@ namespace Blueprint.Api.Services
         {
             var item = await _context.ScenarioEvents
                 .Include(se => se.DataValues)
-                .Include(se => se.SteamfitterTask)
                 .SingleAsync(a => a.Id == id, ct);
 
             if (item == null)
@@ -111,17 +119,8 @@ namespace Blueprint.Api.Services
             var scenarioEventEntity = scenarioEvent.ToEntity();
             scenarioEventEntity.Id = scenarioEvent.Id != Guid.Empty ? scenarioEvent.Id : Guid.NewGuid();
             scenarioEventEntity.CreatedBy = _user.GetId();
-            // a new event's task is a new task, whatever identity the body gave it
-            if (scenarioEvent.SteamfitterTask != null)
-            {
-                var steamfitterTaskEntity = scenarioEvent.SteamfitterTask.ToEntity();
-                steamfitterTaskEntity.Id = Guid.NewGuid();
-                steamfitterTaskEntity.ScenarioEventId = scenarioEventEntity.Id;
-                steamfitterTaskEntity.CreatedBy = scenarioEventEntity.CreatedBy;
-                scenarioEventEntity.SteamfitterTask = steamfitterTaskEntity;
-                scenarioEventEntity.SteamfitterTaskId = steamfitterTaskEntity.Id;
-            }
             _context.ScenarioEvents.Add(scenarioEventEntity);
+            await ApplyAutomationTasksAsync(scenarioEventEntity.MselId, scenarioEventEntity.Id, scenarioEvent.AutomationTasks, ct);
             var scenarioEventEnitities = new List<ScenarioEventEntity>
             {
                 scenarioEventEntity
@@ -224,6 +223,7 @@ namespace Blueprint.Api.Services
                     IsChosenFromList = false,
                     OnScenarioEventList = true,
                     OnExerciseView = true,
+                    OnFacilitatorView = true,
                 };
                 _context.DataFields.Add(mselDataFieldEntity);
             }
@@ -253,6 +253,7 @@ namespace Blueprint.Api.Services
                     IsChosenFromList = false,
                     OnScenarioEventList = true,
                     OnExerciseView = true,
+                    OnFacilitatorView = true,
                 };
                 _context.DataFields.Add(mselDataFieldEntity);
             }
@@ -273,6 +274,7 @@ namespace Blueprint.Api.Services
                         IsChosenFromList = injectDataField.IsChosenFromList,
                         OnScenarioEventList = showIt,
                         OnExerciseView = showIt,
+                        OnFacilitatorView = showIt,
                     };
                     _context.DataFields.Add(mselDataFieldEntity);
                     if (injectDataField.IsChosenFromList)
@@ -354,7 +356,6 @@ namespace Blueprint.Api.Services
             // return all msel scenarioEvents
             var scenarioEventEnitities = await _context.ScenarioEvents
                 .Include(m => m.DataValues)
-                .Include(se => se.SteamfitterTask)
                 .Where(m => m.MselId == msel.Id)
                 .ToListAsync(ct);
             return scenarioEventEnitities.Select(x => x.ToScenarioEvent()).ToList();
@@ -380,7 +381,7 @@ namespace Blueprint.Api.Services
                 .ThenInclude(s => s.DataValues)
                 .Include(m => m.Msel)
                 .ThenInclude(m => m.ScenarioEvents)
-                .ThenInclude(s => s.SteamfitterTask)
+                .ThenInclude(s => s.AutomationTasks)
                 .Select(m => m.Msel)
                 .AsSplitQuery()
                 .AsNoTracking()
@@ -437,6 +438,7 @@ namespace Blueprint.Api.Services
                         IsChosenFromList = sourceDataField.IsChosenFromList,
                         OnScenarioEventList = sourceDataField.OnScenarioEventList,
                         OnExerciseView = sourceDataField.OnExerciseView,
+                        OnFacilitatorView = sourceDataField.OnFacilitatorView,
                     };
                     _context.DataFields.Add(destinationDataField);
                     if (sourceDataField.IsChosenFromList)
@@ -463,6 +465,7 @@ namespace Blueprint.Api.Services
                 .Where(df => df.MselId == destinationMsel.Id)
                 .Select(df => df.Id);
             // Loop through the source scenario events
+            var copiedTasks = new List<(AutomationTaskEntity, Guid)>();
             foreach (var sourceScenarioEvent in sourceScenarioEvents)
             {
                 var destinationScenarioEvent = new ScenarioEventEntity()
@@ -477,31 +480,8 @@ namespace Blueprint.Api.Services
                     Information = sourceScenarioEvent.Information,
                     CreatedBy = userId,
                 };
-                if (sourceScenarioEvent.SteamfitterTaskId != null)
-                {
-                    sourceScenarioEvent.SteamfitterTaskId = Guid.NewGuid();
-                    var destinationSteamfitterTask = new SteamfitterTask()
-                    {
-                        Id = (Guid)sourceScenarioEvent.SteamfitterTaskId,
-                        ScenarioEventId = destinationScenarioEvent.Id,
-                        TaskType = sourceScenarioEvent.SteamfitterTask.TaskType,
-                        Name = sourceScenarioEvent.SteamfitterTask.Name,
-                        Description = sourceScenarioEvent.SteamfitterTask.Description,
-                        Action = sourceScenarioEvent.SteamfitterTask.Action,
-                        ActionParameters = sourceScenarioEvent.SteamfitterTask.ActionParameters,
-                        VmMask = sourceScenarioEvent.SteamfitterTask.VmMask,
-                        ApiUrl = sourceScenarioEvent.SteamfitterTask.ApiUrl,
-                        ExpectedOutput = sourceScenarioEvent.SteamfitterTask.ExpectedOutput,
-                        ExpirationSeconds = sourceScenarioEvent.SteamfitterTask.ExpirationSeconds,
-                        DelaySeconds = sourceScenarioEvent.SteamfitterTask.DelaySeconds,
-                        IntervalSeconds = sourceScenarioEvent.SteamfitterTask.IntervalSeconds,
-                        Iterations = sourceScenarioEvent.SteamfitterTask.Iterations,
-                        TriggerCondition = sourceScenarioEvent.SteamfitterTask.TriggerCondition,
-                        UserExecutable = sourceScenarioEvent.SteamfitterTask.UserExecutable,
-                        Repeatable = sourceScenarioEvent.SteamfitterTask.Repeatable,
-                        CreatedBy = userId
-                    };
-                }
+                foreach (var task in sourceScenarioEvent.AutomationTasks)
+                    copiedTasks.Add((task, destinationScenarioEvent.Id));
                 _context.ScenarioEvents.Add(destinationScenarioEvent);
                 // create blank data values
                 foreach (var dataFieldId in dataFieldIdList)
@@ -518,13 +498,14 @@ namespace Blueprint.Api.Services
                     _context.DataValues.Add(dataValue);
                 }
             }
+            // the events' automation tasks come with them
+            _context.AutomationTasks.AddRange(AutomationTaskCopier.Copy(copiedTasks, destinationMsel.Id, userId));
             await _context.SaveChangesAsync(ct);
             // commit the transaction
             await _context.Database.CommitTransactionAsync(ct);
             // return all msel scenarioEvents
             var scenarioEventEnitities = await _context.ScenarioEvents
                 .Include(m => m.DataValues)
-                .Include(se => se.SteamfitterTask)
                 .Where(m => m.MselId == destinationMsel.Id)
                 .ToListAsync(ct);
             return scenarioEventEnitities.Select(x => x.ToScenarioEvent()).ToList();
@@ -533,7 +514,7 @@ namespace Blueprint.Api.Services
         public async Task<IEnumerable<ViewModels.ScenarioEvent>> UpdateAsync(Guid id, ViewModels.ScenarioEventEdit scenarioEvent, bool hasSystemPermission, CancellationToken ct)
         {
             // make sure entity exists
-            var scenarioEventToUpdate = await _context.ScenarioEvents.Include(m => m.SteamfitterTask).SingleOrDefaultAsync(v => v.Id == id, ct);
+            var scenarioEventToUpdate = await _context.ScenarioEvents.SingleOrDefaultAsync(v => v.Id == id, ct);
             if (scenarioEventToUpdate == null)
                 throw new EntityNotFoundException<ScenarioEventEntity>($"ScenarioEvent not found {id}.");
 
@@ -556,33 +537,7 @@ namespace Blueprint.Api.Services
             scenarioEvent.ApplyTo(scenarioEventToUpdate);
             scenarioEventToUpdate.ModifiedBy = modifiedBy;
             _context.ScenarioEvents.Update(scenarioEventToUpdate);
-            // the task is this event's own: edit the stored one, or give a taskless event a new one
-            if (scenarioEvent.SteamfitterTask != null)
-            {
-                if (scenarioEventToUpdate.SteamfitterTask != null)
-                {
-                    scenarioEvent.SteamfitterTask.ApplyTo(scenarioEventToUpdate.SteamfitterTask);
-                    scenarioEventToUpdate.SteamfitterTask.ModifiedBy = modifiedBy;
-                }
-                else
-                {
-                    var steamfitterTaskEntity = scenarioEvent.SteamfitterTask.ToEntity();
-                    steamfitterTaskEntity.Id = Guid.NewGuid();
-                    steamfitterTaskEntity.ScenarioEventId = scenarioEventToUpdate.Id;
-                    steamfitterTaskEntity.CreatedBy = modifiedBy;
-                    _context.SteamfitterTasks.Add(steamfitterTaskEntity);
-                    scenarioEventToUpdate.SteamfitterTaskId = steamfitterTaskEntity.Id;
-                }
-            }
-            else if (scenarioEventToUpdate.SteamfitterTask != null &&
-                !(scenarioEvent.IntegrationTarget ?? "").Contains("Steamfitter"))
-            {
-                // an event that no longer targets Steamfitter loses its task; an edit that only omits
-                // the task, as the timeline does, keeps it
-                _context.SteamfitterTasks.Remove(scenarioEventToUpdate.SteamfitterTask);
-                scenarioEventToUpdate.SteamfitterTask = null;
-                scenarioEventToUpdate.SteamfitterTaskId = null;
-            }
+            await ApplyAutomationTasksAsync(mselId, scenarioEventToUpdate.Id, scenarioEvent.AutomationTasks, ct);
             var scenarioEventEnitities = new List<ScenarioEventEntity>
             {
                 scenarioEventToUpdate
@@ -592,12 +547,6 @@ namespace Blueprint.Api.Services
                 scenarioEventEnitities.AddRange(await ReorderScenarioEvents(scenarioEventToUpdate, false, ct));
             }
             await _context.SaveChangesAsync(ct);
-            // verify the SteamfitterTask
-            var steamfitterTask = await _context.SteamfitterTasks.SingleOrDefaultAsync(m => m.ScenarioEventId == scenarioEventToUpdate.Id, ct);
-            if (steamfitterTask != null && scenarioEventToUpdate.SteamfitterTaskId == null)
-            {
-                scenarioEventToUpdate.SteamfitterTaskId = steamfitterTask.Id;
-            }
             // get the DataField IDs for the event's MSEL
             var dataFieldIdList = await _context.DataFields
                 .Where(df => df.MselId == mselId)
@@ -667,6 +616,7 @@ namespace Blueprint.Api.Services
 
             // start a transaction, because we may also update DataValues and other scenario events
             await _context.Database.BeginTransactionAsync();
+            await FreeTasksTriggeredFromAsync(new[] { scenarioEventToDelete.Id }, ct);
             _context.ScenarioEvents.Remove(scenarioEventToDelete);
             await _context.SaveChangesAsync(ct);
             // update the MSEL modified info
@@ -675,6 +625,24 @@ namespace Blueprint.Api.Services
             await _context.Database.CommitTransactionAsync(ct);
 
             return true;
+        }
+
+        /// <summary>
+        /// The events' tasks go with them, and a task of another event that one of them triggered is now run by hand, as
+        /// when an edit removes a task: the database would only clear its trigger, and leave it waiting for none.
+        /// </summary>
+        private async Task FreeTasksTriggeredFromAsync(IReadOnlyCollection<Guid> scenarioEventIds, CancellationToken ct)
+        {
+            var orphans = await _context.AutomationTasks
+                .Where(t => !scenarioEventIds.Contains(t.ScenarioEventId) && t.TriggerTaskId != null &&
+                    _context.AutomationTasks.Any(trigger => trigger.Id == t.TriggerTaskId && scenarioEventIds.Contains(trigger.ScenarioEventId)))
+                .ToListAsync(ct);
+            foreach (var orphan in orphans)
+            {
+                orphan.TriggerTaskId = null;
+                orphan.TriggerCondition = AutomationTrigger.Manual;
+                orphan.ModifiedBy = _user.GetId();
+            }
         }
 
         public async Task<bool> BatchDeleteAsync(Guid[] idList, bool hasSystemPermission, CancellationToken ct)
@@ -705,6 +673,7 @@ namespace Blueprint.Api.Services
             }
 
             await _context.Database.BeginTransactionAsync();
+            await FreeTasksTriggeredFromAsync(scenarioEventList.Select(e => e.Id).ToList(), ct);
             foreach (var scenarioEventToDelete in scenarioEventList)
             {
                 // start a transaction, because we may also update DataValues and other scenario events
@@ -743,43 +712,9 @@ namespace Blueprint.Api.Services
 
         public async Task<Dictionary<Guid, int[]>> GetMovesAndInjects(Guid mselId, CancellationToken ct)
         {
-            var movesAndInjects= new Dictionary<Guid, int[]>();
-            // order scenario events and moves by DeltaSeconds
-            var scenarioEvents = await _context.ScenarioEvents.Where(se => se.MselId == mselId).OrderBy(se => se.DeltaSeconds).ToArrayAsync(ct);
-            // each move starts after the one before it, but a MSEL saved before that was required can have moves
-            // sharing a start time; they are ordered by number, so an event at that time goes to the higher-numbered
-            // move, as Blueprint shows it
-            var moves = await _context.Moves.Where(se => se.MselId == mselId).OrderBy(m => m.DeltaSeconds).ThenBy(m => m.MoveNumber).ToArrayAsync(ct);
-            var m = 0;  // move index
-            var inject = 0;  // inject value
-            var deltaSeconds = scenarioEvents.Length > 0 ? scenarioEvents[0].DeltaSeconds : 0;  // value of the previous scenario event.  Used to determine the inject number.
-            // loop through the chronological scenario events
-            for (int s = 0; s < scenarioEvents.Length; s++)
-            {
-                // if not on the last move, check this scenario event time to determine if it is in the current move
-                if (moves.Length == 0 || m == +moves.Length - 1 || +scenarioEvents[s].DeltaSeconds < +moves[m + 1].DeltaSeconds)
-                {
-                    if (scenarioEvents[s].DeltaSeconds != deltaSeconds)
-                    {
-                        inject++;
-                    }
-                }
-                else
-                {
-                    // the move must be incremented
-                    while (m < +moves.Length - 1 && +scenarioEvents[s].DeltaSeconds >= +moves[m + 1].DeltaSeconds)
-                    {
-                        m++;  // increment the move
-                    }
-                    inject = 0;  // start with inject 0 for this new move
-                }
-                // with no moves every event is in move 0, as the Steamfitter push puts it
-                var moveNumber = moves.Length > m ? moves[m].MoveNumber : 0;
-                deltaSeconds = scenarioEvents[s].DeltaSeconds;
-                movesAndInjects.Add(scenarioEvents[s].Id, new int[] {moveNumber, inject});
-            }
-
-            return movesAndInjects;
+            var scenarioEvents = await _context.ScenarioEvents.Where(se => se.MselId == mselId).ToArrayAsync(ct);
+            var moves = await _context.Moves.Where(m => m.MselId == mselId).ToArrayAsync(ct);
+            return MselTimeline.Positions(scenarioEvents, moves);
         }
 
         private async Task<List<ScenarioEventEntity>> ReorderScenarioEvents(ScenarioEventEntity scenarioEventEntity, Boolean isNewEvent, CancellationToken ct)
@@ -790,8 +725,7 @@ namespace Blueprint.Api.Services
                     se.GroupOrder >= scenarioEventEntity.GroupOrder &&
                     se.Id != scenarioEventEntity.Id)
                     .Include(se => se.DataValues)
-                    .Include(se => se.SteamfitterTask)
-                .OrderBy(se => se.GroupOrder)
+                    .OrderBy(se => se.GroupOrder)
                 .ToListAsync(ct);
             // for newly created events with a zero GroupOrder created after/simultaneously with all of the others, assume it should be appended to the end
             var reorder = scenarioEvents.Any(se => se.GroupOrder == scenarioEventEntity.GroupOrder) &&

@@ -899,6 +899,30 @@ public class MselServiceInvitationTests(DatabaseFixture fixture, BlueprintAppFac
     }
 
     /// <summary>
+    /// The launch brings the template's automation tasks without their secrets: the invitee owns the launch and could
+    /// otherwise use the template's passwords, keys and headers in a task of their own.
+    /// </summary>
+    [Fact]
+    public async Task Launch_CopiesTheTemplatesTasksWithoutTheirSecrets()
+    {
+        var template = await SeedTemplate();
+        var team = await SeedTeam(template);
+        await SeedInvitation(template, team);
+        var scenarioEvent = TestData.ScenarioEvent(template.Id);
+        var task = TestData.AutomationTask(template.Id, scenarioEvent.Id);
+        task.SecretParameters = "{\"Password\":\"enc:v1:test:abc\"}";
+        await Seed(scenarioEvent, task);
+        var actor = await Actor().SeedAsync();
+
+        var launched = await Read<Msel>(await Launch(ClientWithEmail(actor, "someone@example.test"), template.Id));
+
+        await using var db = NewContext();
+        var copied = await db.AutomationTasks.SingleAsync(t => t.MselId == launched.Id, Ct);
+        Assert.Equal(task.Name, copied.Name);
+        Assert.Null(copied.SecretParameters);
+    }
+
+    /// <summary>
     /// The launching participant is added to the clone's copy of the invited team, as a Submitter. This is
     /// the only path in the application that reaches that branch of the copy.
     /// </summary>

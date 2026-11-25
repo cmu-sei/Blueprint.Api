@@ -16,7 +16,7 @@ namespace Blueprint.Api.Tests.Support;
 /// </para>
 /// <para>
 /// <c>Authorization:AuthorizationScope</c> is deliberately not here. The shipped value
-/// (<c>"blueprint player player-vm cite gallery steamfitter"</c>) is what <c>Startup</c> builds its MVC-wide
+/// (<c>"blueprint player player-vm cite gallery"</c>) is what <c>Startup</c> builds its MVC-wide
 /// authorization filter from, requiring every scope, and what the shared <c>TestAuthHandler</c> reads to mint
 /// the <c>scope</c> claims, so the two cannot drift apart.
 /// </para>
@@ -41,5 +41,12 @@ internal static class TestConfiguration
         // IMemoryCache keyed on user id alone, so cached claims would let one test's permissions answer
         // another test's request. UserClaimsServiceTests drive the cache directly.
         ["ClaimsTransformation:EnableCaching"] = "false",
+
+        // The shipped settings set no key, so a task's password, private key or headers could not be saved.
+        // A key here lets the task routes store secrets, as a deployment with Automation:SecretKeys does.
+        ["Automation:SecretKeys:test"] = SecretKey,
     };
+
+    /// <summary>The automation secret key the host encrypts with: 32 fixed bytes, base64.</summary>
+    public const string SecretKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 }

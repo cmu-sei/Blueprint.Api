@@ -31,12 +31,8 @@ public class EnumRangeEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     [InlineData("PUT", "galleryIntegrationType", HttpStatusCode.OK, "api/msels/{0}")]
     [InlineData("POST", "citeIntegrationType", HttpStatusCode.Created, "api/msels")]
     [InlineData("PUT", "citeIntegrationType", HttpStatusCode.OK, "api/msels/{0}")]
-    [InlineData("POST", "steamfitterIntegrationType", HttpStatusCode.Created, "api/msels")]
-    [InlineData("PUT", "steamfitterIntegrationType", HttpStatusCode.OK, "api/msels/{0}")]
     [InlineData("POST", "casterIntegrationType", HttpStatusCode.Created, "api/msels")]
     [InlineData("PUT", "casterIntegrationType", HttpStatusCode.OK, "api/msels/{0}")]
-    [InlineData("POST", "steamfitterScenarioStartMode", HttpStatusCode.Created, "api/msels")]
-    [InlineData("PUT", "steamfitterScenarioStartMode", HttpStatusCode.OK, "api/msels/{0}")]
     public async Task Write_stores_and_returns_an_undefined_Msel_enum(string method, string member, HttpStatusCode status, string route)
     {
         var msel = TestData.Msel();
@@ -58,12 +54,6 @@ public class EnumRangeEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
     [Theory]
     [InlineData("POST", "scenarioEventType", "api/scenarioEvents")]
     [InlineData("PUT", "scenarioEventType", "api/scenarioEvents/{0}")]
-    [InlineData("POST", "taskType", "api/scenarioEvents")]
-    [InlineData("PUT", "taskType", "api/scenarioEvents/{0}")]
-    [InlineData("POST", "action", "api/scenarioEvents")]
-    [InlineData("PUT", "action", "api/scenarioEvents/{0}")]
-    [InlineData("POST", "triggerCondition", "api/scenarioEvents")]
-    [InlineData("PUT", "triggerCondition", "api/scenarioEvents/{0}")]
     public async Task Write_stores_and_returns_an_undefined_scenario_event_enum(string method, string member, string route)
     {
         var msel = TestData.Msel();
@@ -77,8 +67,48 @@ public class EnumRangeEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var answered = (await response.Content.ReadFromJsonAsync<List<ViewModels.ScenarioEvent>>(JsonOptions, Ct)).Single(x => x.Id == id);
         Assert.Equal(Undefined, EventMembers(answered)[member]);
-        var stored = await ReadBack(rb => rb.ScenarioEvents.Include(x => x.SteamfitterTask).SingleAsync(x => x.Id == id, Ct));
+        var stored = await ReadBack(rb => rb.ScenarioEvents.SingleAsync(x => x.Id == id, Ct));
         Assert.Equal(Undefined, EventMembers(stored)[member]);
+    }
+
+    /// <remarks>
+    /// Unlike the event's own enums, an automation task's are refused: the engine would have nothing to run, or no
+    /// rule to start or stop it by.
+    /// </remarks>
+    [Theory]
+    [InlineData("action")]
+    [InlineData("triggerCondition")]
+    [InlineData("iterationTermination")]
+    public async Task Write_refuses_an_undefined_automation_task_enum(string member)
+    {
+        var msel = TestData.Msel();
+        var scenarioEvent = TestData.ScenarioEvent(msel.Id);
+        await Seed(msel, scenarioEvent);
+        var task = new JsonObject
+        {
+            ["name"] = "numeric task enum",
+            ["action"] = 100,
+            ["actionParameters"] = new JsonObject { ["Text"] = "hello" },
+            ["triggerCondition"] = 0,
+            ["iterationTermination"] = 0,
+            ["iterations"] = 1,
+            ["enabled"] = true
+        };
+        task[member] = Undefined;
+        var body = new JsonObject
+        {
+            ["id"] = scenarioEvent.Id, ["mselId"] = msel.Id, ["scenarioEventType"] = 10,
+            ["automationTasks"] = new JsonArray(task)
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/scenarioEvents/{scenarioEvent.Id}")
+        {
+            Content = JsonContent.Create(body)
+        };
+
+        var response = await RootClient.SendAsync(request, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.False(await ReadBack(rb => rb.AutomationTasks.AnyAsync(x => x.ScenarioEventId == scenarioEvent.Id, Ct)));
     }
 
     private static Dictionary<string, int> MselMembers(Data.Models.MselEntity row) => new()
@@ -87,37 +117,24 @@ public class EnumRangeEndpointTests(DatabaseFixture fixture, BlueprintAppFactory
         ["playerIntegrationType"] = (int)row.PlayerIntegrationType,
         ["galleryIntegrationType"] = (int)row.GalleryIntegrationType,
         ["citeIntegrationType"] = (int)row.CiteIntegrationType,
-        ["steamfitterIntegrationType"] = (int)row.SteamfitterIntegrationType,
-        ["casterIntegrationType"] = (int)row.CasterIntegrationType,
-        ["steamfitterScenarioStartMode"] = (int)row.SteamfitterScenarioStartMode
+        ["casterIntegrationType"] = (int)row.CasterIntegrationType
     };
 
     private static HttpRequestMessage EventRequest(string method, string member, Guid id, Guid mselId, string route)
     {
-        var task = new JsonObject { ["name"] = "numeric task enum", ["taskType"] = 1, ["action"] = 11, ["triggerCondition"] = 1 };
-        var body = new JsonObject { ["id"] = id, ["mselId"] = mselId, ["scenarioEventType"] = 10, ["steamfitterTask"] = task };
-        var targets = new Dictionary<string, JsonObject>
-        {
-            ["scenarioEventType"] = body, ["taskType"] = task, ["action"] = task, ["triggerCondition"] = task
-        };
-        targets[member][member] = Undefined;
+        var body = new JsonObject { ["id"] = id, ["mselId"] = mselId, ["scenarioEventType"] = 10 };
+        body[member] = Undefined;
         return new HttpRequestMessage(new HttpMethod(method),
             string.Format(route, id)) { Content = JsonContent.Create(body) };
     }
 
     private static Dictionary<string, int> EventMembers(ViewModels.ScenarioEvent row) => new()
     {
-        ["scenarioEventType"] = (int)row.ScenarioEventType,
-        ["taskType"] = (int)row.SteamfitterTask.TaskType,
-        ["action"] = (int)row.SteamfitterTask.Action,
-        ["triggerCondition"] = (int)row.SteamfitterTask.TriggerCondition
+        ["scenarioEventType"] = (int)row.ScenarioEventType
     };
 
     private static Dictionary<string, int> EventMembers(Data.Models.ScenarioEventEntity row) => new()
     {
-        ["scenarioEventType"] = (int)row.ScenarioEventType,
-        ["taskType"] = (int)row.SteamfitterTask.TaskType,
-        ["action"] = (int)row.SteamfitterTask.Action,
-        ["triggerCondition"] = (int)row.SteamfitterTask.TriggerCondition
+        ["scenarioEventType"] = (int)row.ScenarioEventType
     };
 }

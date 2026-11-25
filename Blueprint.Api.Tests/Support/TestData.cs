@@ -233,8 +233,8 @@ public static class TestData
     /// One move of a MSEL's timeline: the coarse division that scenario events are grouped into.
     /// </summary>
     /// <remarks>
-    /// <c>DeltaSeconds</c> is what everything orders and groups by; <c>MoveNumber</c> is what CITE, Gallery
-    /// and Steamfitter are told. The two are independent and may disagree - a move 2 starting before move 1
+    /// <c>DeltaSeconds</c> is what everything orders and groups by; <c>MoveNumber</c> is what CITE and Gallery
+    /// are told. The two are independent and may disagree - a move 2 starting before move 1
     /// is accepted - but they are not both unconstrained: <c>MoveEntityConfiguration</c> declares
     /// <c>(MselId, MoveNumber)</c> unique, so one MSEL cannot hold two move zeroes; the API refuses a second
     /// one with a 400 (see <c>MoveEndpointTests.Create_WithAMoveNumberTheMselAlreadyUses_Is400NamingTheNumber</c>)
@@ -434,45 +434,33 @@ public static class TestData
     }
 
     /// <summary>
-    /// The Steamfitter work one scenario event triggers. One per event: the foreign key lives on this
-    /// side and is uniquely constrained by the one-to-one relationship.
+    /// An automation task of a scenario event: a Player notification by default, which needs no VM, triggered by hand.
     /// </summary>
-    /// <remarks>
-    /// <c>ScenarioEventEntity.SteamfitterTaskId</c> is <em>not</em> the foreign key - the relationship is
-    /// configured with <c>HasForeignKey&lt;SteamfitterTaskEntity&gt;(t => t.ScenarioEventId)</c> - so that
-    /// column is a denormalized copy that nothing keeps current. Set it yourself when a test needs the
-    /// branches that read it.
-    /// </remarks>
-    public static SteamfitterTaskEntity SteamfitterTask(
+    public static AutomationTaskEntity AutomationTask(
+        Guid mselId,
         Guid scenarioEventId,
-        string name = null,
-        Guid? createdBy = null,
-        Dictionary<string, string> actionParameters = null)
+        Data.Enumerations.AutomationAction action = Data.Enumerations.AutomationAction.player_notification,
+        Data.Enumerations.AutomationTrigger trigger = Data.Enumerations.AutomationTrigger.Manual,
+        Guid? triggerTaskId = null,
+        int displayOrder = 0,
+        Guid? createdBy = null)
     {
         var id = Guid.NewGuid();
 
-        return new SteamfitterTaskEntity
+        return new AutomationTaskEntity
         {
             Id = id,
+            MselId = mselId,
             ScenarioEventId = scenarioEventId,
-            Name = name ?? $"steamfitterTask-{id}",
-            Description = "Seeded by TestData.SteamfitterTask",
-            TaskType = SteamfitterIntegrationType.Notification,
-            Action = SteamfitterTaskAction.http_post,
-            TriggerCondition = SteamfitterTaskTrigger.Time,
-            VmMask = "vm-mask",
-            ApiUrl = "https://steamfitter.example/api",
-            ExpectedOutput = "expected",
-            ExpirationSeconds = 60,
-            DelaySeconds = 5,
-            IntervalSeconds = 10,
-            Iterations = 2,
-            UserExecutable = true,
-            Repeatable = false,
-            // Left null by default, because that is how a row arrives from the database unless something
-            // set it - and it is the shape that makes IntegrationSteamfitterExtensions throw for the two
-            // task types that write into it.
-            ActionParameters = actionParameters,
+            DisplayOrder = displayOrder,
+            Name = $"task-{id}",
+            Description = "Seeded by TestData.AutomationTask",
+            Action = action,
+            ActionParameters = new() { ["Text"] = "Seeded" },
+            TriggerCondition = trigger,
+            TriggerTaskId = triggerTaskId,
+            Iterations = 1,
+            Enabled = true,
             CreatedBy = createdBy ?? Guid.NewGuid()
         };
     }

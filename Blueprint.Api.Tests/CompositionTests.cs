@@ -21,7 +21,7 @@ using Xunit;
 namespace Blueprint.Api.Tests;
 
 /// <summary>What the application composes, rather than what it answers: every service resolves, every
-/// controller activates, the serializer carries the converters <c>Startup</c> gave it, and five background
+/// controller activates, the serializer carries the converters <c>Startup</c> gave it, and six background
 /// workers are asked for.</summary>
 public class CompositionTests(DatabaseFixture fixture, CompositionFactory factory)
     : ApiTestBase(fixture, factory), IClassFixture<CompositionFactory>
@@ -104,13 +104,14 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
         Assert.Empty(failures);
     }
 
-    /// <summary>Two service types are registered twice.</summary>
+    /// <summary>Two service types are registered twice. The automation action handlers are many by design, and left out.</summary>
     [Fact]
     public void TwoServiceTypes_AreRegisteredTwice()
     {
         var duplicates = _factory.Registrations
             .Where(x => !x.IsKeyedService)
             .Where(x => IsBlueprints(x.ServiceType))
+            .Where(x => x.ServiceType != typeof(Blueprint.Api.Automation.IAutomationActionHandler))
             .GroupBy(x => x.ServiceType)
             .Where(x => x.Count() > 1)
             .Select(x => x.Key.Name)
@@ -118,6 +119,19 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
             .ToList();
 
         Assert.Equal(["BlueprintContext", "IInjectTypeService"], duplicates);
+    }
+
+    /// <summary>Each automation action handler is registered once, and the runner is handed all of them.</summary>
+    [Fact]
+    public void TheAutomationActionHandlers_AreRegisteredOnceEach()
+    {
+        var handlers = _factory.Registrations
+            .Where(x => x.ServiceType == typeof(Blueprint.Api.Automation.IAutomationActionHandler))
+            .Select(x => x.ImplementationType.Name)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(["BlueprintActionHandler", "EmailActionHandler", "HttpActionHandler", "SshActionHandler", "VmActionHandler"], handlers);
     }
 
     /// <summary>The duplicate registration resolves the same implementation.</summary>
@@ -193,10 +207,10 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
         Assert.Null(scope.ServiceProvider.GetService<IPrincipal>());
     }
 
-    /// <summary>The application registers five background workers of its own, and the harness removes
+    /// <summary>The application registers six background workers of its own, and the harness removes
     /// them.</summary>
     [Fact]
-    public void TheApplication_StartsFiveBackgroundWorkers()
+    public void TheApplication_StartsSixBackgroundWorkers()
     {
         var registered = _factory.Registrations
             .Where(x => x.ServiceType == typeof(IHostedService))
@@ -215,8 +229,8 @@ public class CompositionTests(DatabaseFixture fixture, CompositionFactory factor
             .Select(x => x.ImplementationType.Name)
             .ToList();
 
-        Assert.Equal(5, registered.Count);
-        Assert.Equal(["AddApplicationService", "JoinService", "SteamfitterStartService", "XApiBackgroundService"], named);
+        Assert.Equal(6, registered.Count);
+        Assert.Equal(["AddApplicationService", "AutomationDispatcher", "AutomationSecretUpgrader", "JoinService", "XApiBackgroundService"], named);
         Assert.Empty(surviving);
     }
 

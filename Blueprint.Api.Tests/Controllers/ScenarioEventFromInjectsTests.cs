@@ -19,7 +19,7 @@ using Xunit;
 
 namespace Blueprint.Api.Tests.Controllers;
 
-/// <summary>The two bulk <c>scenarioEvents</c> routes, and the Steamfitter task that hangs off a row. Both
+/// <summary>The two bulk <c>scenarioEvents</c> routes, and the automation tasks that hang off a row. Both
 /// routes fill an MSEL's timeline from somewhere else: <c>fromInjects</c> from the reusable inject library,
 /// <c>copy</c> from another MSEL. Both have to reconcile two sets of data fields to do it, and that
 /// reconciliation is where they differ from one another and from the single-row routes.</summary>
@@ -945,256 +945,52 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
     }
 
     // ---------------------------------------------------------------------------------------------
-    // The Steamfitter task on a row
+    // The automation tasks on a row
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task Get_ReturnsTheRowsSteamfitterTask()
+    public async Task Delete_AlsoDeletesTheRowsAutomationTasks()
     {
-        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
-
-        var row = await Read<ScenarioEvent>(
-            await Client(scene.Actor).GetAsync($"/api/scenarioEvents/{scene.Rows[0].Id}", Ct));
-
-        Assert.NotNull(row.SteamfitterTask);
-        Assert.Equal(scene.Task.Name, row.SteamfitterTask.Name);
-        Assert.Equal(scene.Task.TaskType, row.SteamfitterTask.TaskType);
-        Assert.Equal(scene.Task.Iterations, row.SteamfitterTask.Iterations);
-    }
-
-    /// <summary>
-    /// A task arriving nested inside a create is written, because the profile maps the navigation property
-    /// - the only route that creates one.
-    /// </summary>
-    [Fact]
-    public async Task Create_WithASteamfitterTask_StoresTheTask()
-    {
-        var msel = await SeedMsel();
-        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
-
-        var rows = await Read<List<ScenarioEvent>>(await Client(actor).PostAsJsonAsync(
-            "/api/scenarioEvents",
-            new
-            {
-                MselId = msel.Id,
-                ScenarioEventType = EventType.Inject,
-                Information = "carries a task",
-                CreatedBy = Guid.Empty,
-                DateCreated = DateTime.UtcNow,
-                SteamfitterTask = new
-                {
-                    Name = "sent with the row",
-                    TaskType = SteamfitterIntegrationType.Email,
-                    Action = SteamfitterTaskAction.http_post,
-                    TriggerCondition = SteamfitterTaskTrigger.Manual,
-                    Iterations = 3,
-                    CreatedBy = Guid.Empty,
-                    DateCreated = DateTime.UtcNow
-                }
-            },
-            Ct));
-
-        var stored = await StoredTask(rows.Single().Id);
-
-        Assert.Equal("sent with the row", stored.Name);
-        Assert.Equal(SteamfitterIntegrationType.Email, stored.TaskType);
-        Assert.Equal(3, stored.Iterations);
-    }
-
-    /// <summary>
-    /// <c>ScenarioEventEntity.SteamfitterTaskId</c> is a denormalized copy of the task's own
-    /// <c>ScenarioEventId</c> relationship, which a create fills in with the task's server-generated id.
-    /// </summary>
-    [Fact]
-    public async Task Create_WithASteamfitterTask_SetsTheRowsTaskId()
-    {
-        var msel = await SeedMsel();
-        var actor = await Actor().OnMsel(msel, MselRole.Owner).SeedAsync();
-
-        var rows = await Read<List<ScenarioEvent>>(await Client(actor).PostAsJsonAsync(
-            "/api/scenarioEvents",
-            new
-            {
-                MselId = msel.Id,
-                ScenarioEventType = EventType.Inject,
-                Information = "carries a task",
-                CreatedBy = Guid.Empty,
-                DateCreated = DateTime.UtcNow,
-                SteamfitterTask = new
-                {
-                    Name = "sent with the row",
-                    CreatedBy = Guid.Empty,
-                    DateCreated = DateTime.UtcNow
-                }
-            },
-            Ct));
-
-        var task = await StoredTask(rows.Single().Id);
-        Assert.NotNull(task);
-        Assert.Equal(task.Id, (await Stored(rows.Single().Id)).SteamfitterTaskId);
-    }
-
-    /// <summary>
-    /// A task's identity is the server's: a create naming another event's task gets a new task of its
-    /// own, and the named one stays where it was.
-    /// </summary>
-    [Fact]
-    public async Task Create_WithAnotherEventsTaskId_CreatesANewTaskAndLeavesThatOneAlone()
-    {
-        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
-
-        var rows = await Read<List<ScenarioEvent>>(await Client(scene.Actor).PostAsJsonAsync(
-            "/api/scenarioEvents",
-            new
-            {
-                MselId = scene.Destination.Id,
-                ScenarioEventType = EventType.Inject,
-                SteamfitterTask = new { scene.Task.Id, ScenarioEventId = scene.Rows[0].Id, Name = "taken" }
-            },
-            Ct));
-
-        var created = await StoredTask(rows.Single().Id);
-        Assert.NotEqual(scene.Task.Id, created.Id);
-        Assert.Equal("taken", created.Name);
-        var original = await StoredTask(scene.Rows[0].Id);
-        Assert.Equal(scene.Task.Id, original.Id);
-        Assert.Equal(scene.Task.Name, original.Name);
-    }
-
-    /// <summary>
-    /// The task is written by the service, not mapped, so a body that still targets Steamfitter but does
-    /// not mention the task - as the timeline's edits do - leaves the row's task as it was.
-    /// </summary>
-    [Fact]
-    public async Task Update_WithoutTheTaskInTheBody_KeepsTheRowsSteamfitterTask()
-    {
-        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
-
-        var response = await Update(scene, deltaSeconds: 60);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var stored = await StoredTask(scene.Rows[0].Id);
-        Assert.Equal(scene.Task.Id, stored.Id);
-        Assert.Equal(scene.Task.Name, stored.Name);
-    }
-
-    /// <summary>
-    /// An event whose integration target no longer includes Steamfitter loses its task, which is how the
-    /// edit dialog removes one.
-    /// </summary>
-    [Fact]
-    public async Task Update_ThatNoLongerTargetsSteamfitter_RemovesTheRowsSteamfitterTask()
-    {
-        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
-        var row = scene.Rows[0];
-
-        var response = await Client(scene.Actor).PutAsJsonAsync(
-            $"/api/scenarioEvents/{row.Id}",
-            new { row.DeltaSeconds, row.GroupOrder, ScenarioEventType = EventType.Inject, IntegrationTarget = "Gallery" },
-            Ct);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Null(await StoredTask(row.Id));
-    }
-
-    /// <summary>
-    /// A taskless event edited with another MSEL's task in its body gets a new task of its own. The named
-    /// task is neither changed nor moved.
-    /// </summary>
-    [Fact]
-    public async Task Update_OfATasklessEvent_WithAnotherMselsTaskInTheBody_LeavesThatTaskAlone()
-    {
-        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
-        var other = await SeedMsel();
-        var mine = TestData.ScenarioEvent(other.Id, 0);
-        await Seed(mine);
-        var owner = await Actor().OnMsel(other, MselRole.Owner).SeedAsync();
-
-        var response = await Client(owner).PutAsJsonAsync(
-            $"/api/scenarioEvents/{mine.Id}",
-            new
-            {
-                mine.GroupOrder,
-                mine.ScenarioEventType,
-                SteamfitterTask = new { scene.Task.Id, ScenarioEventId = scene.Rows[0].Id, Name = "taken" }
-            },
-            Ct);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var original = await StoredTask(scene.Rows[0].Id);
-        Assert.Equal(scene.Task.Id, original.Id);
-        Assert.Equal(scene.Task.Name, original.Name);
-        var added = await StoredTask(mine.Id);
-        Assert.NotEqual(scene.Task.Id, added.Id);
-        Assert.Equal("taken", added.Name);
-    }
-
-    /// <summary>An update whose body carries the task back-fills the row's <c>SteamfitterTaskId</c>.</summary>
-    [Fact]
-    public async Task Update_WithTheTaskInTheBody_BackfillsTheRowsSteamfitterTaskId()
-    {
-        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
-
-        Assert.Null((await Stored(scene.Rows[0].Id)).SteamfitterTaskId);
-
-        var response = await Update(scene, deltaSeconds: 60, steamfitterTask: new
-        {
-            scene.Task.Id,
-            ScenarioEventId = scene.Rows[0].Id,
-            Name = "still here",
-            scene.Task.TaskType,
-            scene.Task.Action,
-            scene.Task.TriggerCondition,
-            CreatedBy = Guid.Empty,
-            DateCreated = DateTime.UtcNow
-        });
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        var stored = await StoredTask(scene.Rows[0].Id);
-
-        Assert.Equal("still here", stored.Name);
-        Assert.Equal(stored.Id, (await Stored(scene.Rows[0].Id)).SteamfitterTaskId);
-    }
-
-    [Fact]
-    public async Task Delete_AlsoDeletesTheRowsSteamfitterTask()
-    {
-        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
+        var scene = await SeedCopy(rows: 1, withTasks: true);
 
         var response = await Client(scene.Actor)
             .DeleteAsync($"/api/scenarioEvents/{scene.Rows[0].Id}", Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Null(await StoredTask(scene.Rows[0].Id));
+        Assert.Empty(await StoredTasks(scene.Rows[0].Id));
     }
 
-    /// <summary>Copy loses the source rows steamfitter task.</summary>
+    /// <summary>
+    /// A copied row brings its automation tasks: a task triggered by another copied task is triggered by that one's copy,
+    /// and the source keeps its own.
+    /// </summary>
     [Fact]
-    public async Task Copy_LosesTheSourceRowsSteamfitterTask()
+    public async Task Copy_BringsTheRowsAutomationTasks_TriggeredByEachOthersCopies()
     {
-        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true, backfillTaskId: true);
+        var scene = await SeedCopy(rows: 2, withTasks: true);
 
         var rows = await Copy(Client(scene.Actor), scene.Destination, scene.Rows);
 
-        var copied = rows.Single();
-
-        Assert.Null(copied.SteamfitterTask);
-        Assert.Null(await StoredTask(copied.Id));
-        Assert.NotNull(await StoredTask(scene.Rows[0].Id));
+        var copied = (await StoredTasks(rows.Select(r => r.Id).ToArray())).ToDictionary(t => t.Name);
+        Assert.Equal(["first", "second"], copied.Keys.Order());
+        Assert.All(copied.Values, t => Assert.Equal(scene.Destination.Id, t.MselId));
+        Assert.Equal(copied["first"].Id, copied["second"].TriggerTaskId);
+        Assert.Equal(AutomationTrigger.OnSuccess, copied["second"].TriggerCondition);
+        Assert.Equal(2, (await StoredTasks(scene.Rows.Select(r => r.Id).ToArray())).Count);
     }
 
-    /// <summary>Copy for a row whose task id was never backfilled does not even try.</summary>
+    /// <summary>A copied task whose trigger was not copied with it is run by hand.</summary>
     [Fact]
-    public async Task Copy_ForARowWhoseTaskIdWasNeverBackfilled_DoesNotEvenTry()
+    public async Task Copy_OfATaskWithoutTheTaskThatTriggersIt_MakesItManual()
     {
-        var scene = await SeedCopy(rows: 1, withSteamfitterTask: true);
+        var scene = await SeedCopy(rows: 2, withTasks: true);
 
-        Assert.Null((await Stored(scene.Rows[0].Id)).SteamfitterTaskId);
+        var rows = await Copy(Client(scene.Actor), scene.Destination, [scene.Rows[1]]);
 
-        var rows = await Copy(Client(scene.Actor), scene.Destination, scene.Rows);
-
-        Assert.Null(await StoredTask(rows.Single().Id));
+        var copied = Assert.Single(await StoredTasks(rows.Select(r => r.Id).ToArray()));
+        Assert.Equal("second", copied.Name);
+        Assert.Null(copied.TriggerTaskId);
+        Assert.Equal(AutomationTrigger.Manual, copied.TriggerCondition);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1233,7 +1029,7 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
         MselEntity Destination,
         DataFieldEntity Field,
         List<ScenarioEventEntity> Rows,
-        SteamfitterTaskEntity Task);
+        List<AutomationTaskEntity> Tasks);
 
     private async Task<MselEntity> SeedMsel(Guid? createdBy = null)
     {
@@ -1297,8 +1093,7 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
         string value = "seeded",
         bool ownsSource = true,
         bool ownsDestination = true,
-        bool withSteamfitterTask = false,
-        bool backfillTaskId = false)
+        bool withTasks = false)
     {
         var actor = await Actor().SeedAsync();
         var source = await SeedMsel(createdBy: ownsSource ? actor.Id : null);
@@ -1308,7 +1103,7 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
         await Seed(field);
 
         var seeded = new List<ScenarioEventEntity>();
-        SteamfitterTaskEntity task = null;
+        var tasks = new List<AutomationTaskEntity>();
 
         for (var i = 0; i < rows; i++)
         {
@@ -1318,24 +1113,22 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
             seeded.Add(row);
         }
 
-        if (withSteamfitterTask)
+        // the first row's task triggers the second row's, when there are two
+        if (withTasks)
         {
-            task = TestData.SteamfitterTask(seeded[0].Id);
-            await Seed(task);
-
-            await using var context = NewContext();
-            var stored = await context.ScenarioEvents.SingleAsync(x => x.Id == seeded[0].Id, Ct);
-            stored.IntegrationTarget = "Steamfitter";
-            if (backfillTaskId)
+            var first = TestData.AutomationTask(source.Id, seeded[0].Id);
+            first.Name = "first";
+            tasks.Add(first);
+            if (seeded.Count > 1)
             {
-                stored.SteamfitterTaskId = task.Id;
+                var second = TestData.AutomationTask(source.Id, seeded[1].Id, trigger: AutomationTrigger.OnSuccess, triggerTaskId: first.Id);
+                second.Name = "second";
+                tasks.Add(second);
             }
-            await context.SaveChangesAsync(Ct);
-            seeded[0].IntegrationTarget = stored.IntegrationTarget;
+            await Seed(tasks.Cast<object>().ToArray());
         }
 
-
-        return new CopyScene(actor, source, destination, field, seeded, task);
+        return new CopyScene(actor, source, destination, field, seeded, tasks);
     }
 
     private Task<HttpResponseMessage> Post(
@@ -1369,33 +1162,6 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
             addDataFields);
 
         return await Read<List<ScenarioEvent>>(response);
-    }
-
-    /// <summary>
-    /// A PUT of the scene's first row. <paramref name="steamfitterTask"/> is <c>object</c> rather than a
-    /// typed body because the point of these tests is what the service does with the property being
-    /// present or absent, and a nullable field cannot express "absent".
-    /// </summary>
-    private Task<HttpResponseMessage> Update(CopyScene scene, int deltaSeconds, object steamfitterTask = null)
-    {
-        var row = scene.Rows[0];
-
-        return Client(scene.Actor).PutAsJsonAsync(
-            $"/api/scenarioEvents/{row.Id}",
-            new
-            {
-                row.Id,
-                row.MselId,
-                DeltaSeconds = deltaSeconds,
-                row.GroupOrder,
-                row.ScenarioEventType,
-                row.IntegrationTarget,
-                Information = "edited",
-                CreatedBy = Guid.Empty,
-                DateCreated = DateTime.UtcNow,
-                SteamfitterTask = steamfitterTask
-            },
-            Ct);
     }
 
     private Task<HttpResponseMessage> PostCopy(HttpClient client, Guid mselId, Guid[] ids) =>
@@ -1437,13 +1203,14 @@ public class ScenarioEventFromInjectsTests(DatabaseFixture fixture, BlueprintApp
         return await context.ScenarioEvents.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, Ct);
     }
 
-    private async Task<SteamfitterTaskEntity> StoredTask(Guid scenarioEventId)
+    private async Task<List<AutomationTaskEntity>> StoredTasks(params Guid[] scenarioEventIds)
     {
         await using var context = NewContext();
 
-        return await context.SteamfitterTasks
+        return await context.AutomationTasks
             .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.ScenarioEventId == scenarioEventId, Ct);
+            .Where(x => scenarioEventIds.Contains(x.ScenarioEventId))
+            .ToListAsync(Ct);
     }
 
     private async Task<MselEntity> StoredMsel(Guid id)

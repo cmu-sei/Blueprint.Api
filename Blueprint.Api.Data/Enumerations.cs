@@ -22,28 +22,11 @@ namespace Blueprint.Api.Data.Enumerations
         Connect = 30
     }
 
-    // when Blueprint starts the Steamfitter scenario it pushes; Steamfitter runs no task until it is started
-    public enum SteamfitterScenarioStartMode
-    {
-        Manual = 0,
-        OnPush = 10,
-        AtStartTime = 20
-    }
-
     public enum EventType
     {
         Inject = 10,
         Information = 20,
         Facilitation = 30
-    }
-
-    public enum EventExecutionStatus
-    {
-        Executed = 10,
-        Completed = 20,
-        Succeeded = 30,
-        Failed = 40,
-        Expired = 50
     }
 
     public enum DataFieldType
@@ -79,7 +62,91 @@ namespace Blueprint.Api.Data.Enumerations
         Approver = 30,
         MoveEditor = 40,
         Viewer = 50,
-        Evaluator = 60
+        Evaluator = 60,
+        // runs the MSEL while it is deployed: starts moves and groups and runs its automation tasks
+        Facilitator = 70
+    }
+
+    // what an automation task does; the action catalog (automationActions.json) describes each one's parameters
+    public enum AutomationAction
+    {
+        // http requests, numbered as Steamfitter numbered them
+        http_get = 11,
+        http_post = 12,
+        http_put = 13,
+        http_delete = 14,
+        // Blueprint's own actions, aimed at the MSEL's own Player view, CITE evaluation and Gallery exhibit
+        player_notification = 100,
+        cite_situation_update = 110,
+        cite_move_set = 120,
+        gallery_move_inject_set = 130,
+        // actions on the VMs of a Player view, through the Player VM API
+        vm_hw_power_on = 200,
+        vm_hw_power_off = 201,
+        vm_snapshot_create = 210,
+        vm_snapshot_revert = 211,
+        vm_snapshot_delete = 212,
+        guest_process_run = 220,
+        guest_process_run_fast = 221,
+        guest_file_read = 230,
+        guest_file_upload_content = 231,
+        guest_file_upload_file = 232,
+        // commands over SSH
+        core_remote = 300,
+        linux_file_touch = 301,
+        linux_rm = 302,
+        send_email = 400
+    }
+
+    // what starts an automation task
+    public enum AutomationTrigger
+    {
+        Manual = 0,          // a facilitator runs it
+        AtEventTime = 10,    // the MSEL's start time plus its scenario event's DeltaSeconds
+        OnSuccess = 20,      // its trigger task succeeded
+        OnFailure = 30,      // its trigger task failed
+        OnCompletion = 40,   // its trigger task succeeded or failed
+        OnExpiration = 50    // its trigger task ran out of time
+    }
+
+    // when a task that runs more than once stops
+    public enum AutomationIterationTermination
+    {
+        IterationCount = 0,
+        UntilSuccess = 10,
+        UntilFailure = 20
+    }
+
+    public enum AutomationStatus
+    {
+        Pending = 10,     // waiting for its due time
+        Queued = 20,      // claimed by a worker
+        Running = 30,
+        Succeeded = 40,
+        Failed = 50,
+        Expired = 60,
+        Cancelled = 70,
+        Error = 80,       // it could not run: no VM matched, the API restarted while it ran, ...
+        Skipped = 90      // its scheduled time passed while it could not run
+    }
+
+    // a run of the deployed exercise, or a test run while the MSEL is being written
+    public enum AutomationRunKind
+    {
+        Exercise = 0,
+        Test = 10
+    }
+
+    // what created a run
+    public enum AutomationRunSource
+    {
+        Manual = 0,
+        Schedule = 10,
+        Chain = 20,
+        Rerun = 30,
+        GroupStart = 40,
+        // a participant ran it from the MSEL's Tasks page
+        Participant = 50
     }
 
     public enum GalleryArticleParameter
@@ -119,43 +186,10 @@ namespace Blueprint.Api.Data.Enumerations
         Orders
     }
 
-    public enum SteamfitterTaskAction
-    {
-        // http actions
-        http_get = 11,
-        http_post = 12,
-        http_put = 13,
-        http_delete = 14
-    }
-
-    public enum SteamfitterTaskTrigger
-    {
-        Time = 1,
-        Success = 2,
-        Failure = 3,
-        Completion = 4,
-        Expiration = 5,
-        Manual = 6
-    }
-
+    // where a scenario event is delivered: as a Gallery article, or not
     public enum IntegrationTarget
     {
-        Gallery,
-        Steamfitter
-    }
-
-    public enum SteamfitterIntegrationType
-    {
-        // blueprint helpers
-        Notification = 1,
-        Email = 2,
-        SituationUpdate = 3,
-        // steamfitter http actions
-        http_get = 11,
-        http_post = 12,
-        http_put = 13,
-        http_delete = 14,
-
+        Gallery
     }
 
     public enum SystemPermission

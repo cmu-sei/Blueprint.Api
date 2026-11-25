@@ -42,6 +42,20 @@ namespace Blueprint.Api.Controllers
             return Ok(list);
         }
 
+        /// <summary>
+        /// Gets the Player views the caller can see
+        /// </summary>
+        /// <remarks>
+        /// The views an automation task can be tested against: Player answers as the caller, so the list is theirs.
+        /// </remarks>
+        [HttpGet("player/views")]
+        [ProducesResponseType(typeof(IEnumerable<View>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "getMyPlayerViews")]
+        public async Task<IActionResult> GetMyViews(CancellationToken ct)
+        {
+            return Ok(await _playerService.GetMyViewsAsync(ct));
+        }
+
     }
 
 }

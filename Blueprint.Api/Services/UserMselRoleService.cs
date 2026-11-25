@@ -26,7 +26,7 @@ namespace Blueprint.Api.Services
         Task<ViewModels.UserMselRole> GetAsync(Guid id, bool hasSystemPermission, bool hasCreateMselsPermission, CancellationToken ct);
         Task<ViewModels.UserMselRole> CreateAsync(ViewModels.UserMselRole userMselRole, bool hasSystemPermission, CancellationToken ct);
         Task<bool> DeleteAsync(Guid id, bool hasSystemPermission, CancellationToken ct);
-        Task<IEnumerable<ViewModels.UserMselRole>> SetIntegrationRolesAsync(Guid mselId, Guid userId, string citeEvaluationRole, string galleryExhibitRole, string steamfitterScenarioRole, bool hasSystemPermission, CancellationToken ct);
+        Task<IEnumerable<ViewModels.UserMselRole>> SetIntegrationRolesAsync(Guid mselId, Guid userId, string citeEvaluationRole, string galleryExhibitRole, bool hasSystemPermission, CancellationToken ct);
     }
 
     public class UserMselRoleService : IUserMselRoleService
@@ -112,7 +112,7 @@ namespace Blueprint.Api.Services
             return true;
         }
 
-        public async Task<IEnumerable<ViewModels.UserMselRole>> SetIntegrationRolesAsync(Guid mselId, Guid userId, string citeEvaluationRole, string galleryExhibitRole, string steamfitterScenarioRole, bool hasSystemPermission, CancellationToken ct)
+        public async Task<IEnumerable<ViewModels.UserMselRole>> SetIntegrationRolesAsync(Guid mselId, Guid userId, string citeEvaluationRole, string galleryExhibitRole, bool hasSystemPermission, CancellationToken ct)
         {
             if (!hasSystemPermission && !(await MselOwnerRequirement.IsMet(_user.GetId(), mselId, _context)))
                 throw new ForbiddenException();
@@ -133,8 +133,7 @@ namespace Blueprint.Api.Services
                     UserId = userId,
                     MselId = mselId,
                     CiteEvaluationRole = citeEvaluationRole,
-                    GalleryExhibitRole = galleryExhibitRole,
-                    SteamfitterScenarioRole = steamfitterScenarioRole
+                    GalleryExhibitRole = galleryExhibitRole
                 };
                 var newRows = new List<UserMselRole>();
                 newRows.Add(await CreateAsync(userMselRole, true, ct));
@@ -145,7 +144,6 @@ namespace Blueprint.Api.Services
             {
                 row.CiteEvaluationRole = citeEvaluationRole;
                 row.GalleryExhibitRole = galleryExhibitRole;
-                row.SteamfitterScenarioRole = steamfitterScenarioRole;
             }
             await _context.SaveChangesAsync(ct);
             await ServiceUtilities.SetMselModifiedAsync(mselId, _user.GetId(), DateTime.UtcNow, _context, ct);

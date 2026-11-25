@@ -24,7 +24,7 @@
     {
       "Id": "73e1cd7e-c37d-4df2-b5e3-db6125d12365",
       "Name": "Crucible MSEL",
-      "Description": "Player, Gallery, CITE and Steamfitter ready: every Gallery Article Parameter is mapped, and the teams have Player applications, a Gallery card, and CITE duties and actions. Before pushing, choose the CITE scoring model and each team's CITE team type, or turn CITE off.",
+      "Description": "Player, Gallery and CITE ready: every Gallery Article Parameter is mapped, and the teams have Player applications, a Gallery card, and CITE duties and actions. Before pushing, choose the CITE scoring model and each team's CITE team type, or turn CITE off.",
       "Status": 20,
       "IsTemplate": true,
       "UsePlayer": true,
@@ -33,8 +33,6 @@
       "GalleryIntegrationType": 10,
       "UseCite": true,
       "CiteIntegrationType": 10,
-      "UseSteamfitter": true,
-      "SteamfitterIntegrationType": 10,
       "DurationSeconds": 10800
     }
   ],

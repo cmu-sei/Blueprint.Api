@@ -65,6 +65,8 @@ namespace Blueprint.Api.Infrastructure.Authorization
                                 umr.Role == Data.Enumerations.MselRole.MoveEditor ||
                                 // an Evaluator assesses the MSEL, so must be able to read it
                                 umr.Role == Data.Enumerations.MselRole.Evaluator ||
+                                // a Facilitator runs the deployed MSEL, so must be able to read it
+                                umr.Role == Data.Enumerations.MselRole.Facilitator ||
                                 umr.Role == Data.Enumerations.MselRole.Owner
                             )
                         )

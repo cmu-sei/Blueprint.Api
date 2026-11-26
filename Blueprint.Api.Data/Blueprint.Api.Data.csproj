@@ -10,6 +10,7 @@
   <ItemGroup>
     <PackageReference Include="Crucible.Common.EntityEvents" />
     <PackageReference Include="MediatR" />
+    <PackageReference Include="Microsoft.Extensions.Logging" VersionOverride="10.0.15" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
 

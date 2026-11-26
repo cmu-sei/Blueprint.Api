@@ -112,8 +112,8 @@
        dependencies need newer (System.ComponentModel.Annotations, Newtonsoft.Json). -->
   <ItemGroup>
     <!-- Through Microsoft.VisualStudio.Web.CodeGeneration.Design, which carries 6.12.1. -->
-    <PackageVersion Include="NuGet.Packaging" Version="6.12.5" />
-    <PackageVersion Include="NuGet.Protocol" Version="6.12.5" />
+    <PackageVersion Include="NuGet.Packaging" Version="7.9.0" />
+    <PackageVersion Include="NuGet.Protocol" Version="7.9.0" />
     <!-- Through Microsoft.Data.SqlClient, which carries 9.0.11 even under EF Core 10.0.13. -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <!-- Through Swashbuckle.AspNetCore 10.0.1, which carries 2.3.0. Swashbuckle 10.2.1+ carries
